@@ -31,7 +31,7 @@ pub async fn try_validate<J: Json>(
     Ok(validator_for(schema).await?.validate(instance))
 }
 
-pub async fn iter_errors<'s, 'i, J: Json>(
+pub async fn iter_errors<'s, 'i, J: Json + 'static>(
     schema: &'s J,
     instance: &'i J,
 ) -> ValidationErrorIter<'static, 'i, J> {
@@ -40,7 +40,7 @@ pub async fn iter_errors<'s, 'i, J: Json>(
         .expect("Invalid schema")
 }
 
-pub async fn try_iter_errors<'s, 'i, J: Json>(
+pub async fn try_iter_errors<'s, 'i, J: Json + 'static>(
     schema: &'s J,
     instance: &'i J,
 ) -> BuildResult<ValidationErrorIter<'static, 'i, J>> {
@@ -48,13 +48,16 @@ pub async fn try_iter_errors<'s, 'i, J: Json>(
     Ok(validator.iter_errors_once(instance))
 }
 
-pub async fn evaluate<'i, J: Json>(instance: &'i J, schema: &J) -> Output<'static, 'i, J> {
+pub async fn evaluate<'i, J: Json + 'static>(
+    instance: &'i J,
+    schema: &J,
+) -> Output<'static, 'i, J> {
     try_evaluate(instance, schema)
         .await
         .expect("Invalid schema")
 }
 
-pub async fn try_evaluate<'i, J: Json>(
+pub async fn try_evaluate<'i, J: Json + 'static>(
     instance: &'i J,
     schema: &J,
 ) -> BuildResult<Output<'static, 'i, J>> {
