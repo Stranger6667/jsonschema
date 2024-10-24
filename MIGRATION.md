@@ -1,5 +1,36 @@
 # Migration Guide
 
+## Upgrading from 0.25.x to 0.26.0
+
+The `Validator::validate` method now returns `Result<(), ValidationError<'i>>` instead of an error iterator. If you need to iterate over all validation errors, use the new `Validator::iter_errors` method.
+
+Example:
+
+```rust
+// Old (0.25.x)
+let validator = jsonschema::validator_for(&schema)?;
+
+if let Err(errors) = validator.validate(&instance) {
+    for error in errors {
+        println!("Error: {error}");
+    }
+}
+
+// New (0.26.0)
+let validator = jsonschema::validator_for(&schema)?;
+
+// To get the first error only
+match validator.validate(&instance) {
+    Ok(()) => println!("Valid!"),
+    Err(error) => println!("Error: {error}"),
+}
+
+// To iterate over all errors
+for error in validator.iter_errors(&instance) {
+    println!("Error: {error}");
+}
+```
+
 ## Upgrading from 0.22.x to 0.23.0
 
 Replace:

@@ -1,6 +1,6 @@
 use crate::{
     compiler,
-    error::{error, no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     keywords::{type_, CompilationResult},
     paths::{LazyLocation, Location},
     primitive_type::{PrimitiveType, PrimitiveTypesBitMap},
@@ -62,11 +62,15 @@ impl Validate for MultipleTypesValidator {
             Value::String(_) => self.types.contains_type(PrimitiveType::String),
         }
     }
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance) {
-            no_error()
+            Ok(())
         } else {
-            error(ValidationError::multiple_type_error(
+            Err(ValidationError::multiple_type_error(
                 self.location.clone(),
                 location.into(),
                 instance,
@@ -95,12 +99,15 @@ impl Validate for IntegerTypeValidator {
             false
         }
     }
-
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance) {
-            no_error()
+            Ok(())
         } else {
-            error(ValidationError::single_type_error(
+            Err(ValidationError::single_type_error(
                 self.location.clone(),
                 location.into(),
                 instance,

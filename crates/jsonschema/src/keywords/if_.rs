@@ -5,6 +5,7 @@ use crate::{
     node::SchemaNode,
     paths::LazyLocation,
     validator::{PartialApplication, Validate},
+    ValidationError,
 };
 use serde_json::{Map, Value};
 
@@ -34,6 +35,16 @@ impl IfThenValidator {
 }
 
 impl Validate for IfThenValidator {
+    #[allow(clippy::needless_collect)]
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+        if self.schema.is_valid(instance) {
+            let errors: Vec<_> = self.then_schema.iter_errors(instance, location).collect();
+            Box::new(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
     fn is_valid(&self, instance: &Value) -> bool {
         if self.schema.is_valid(instance) {
             self.then_schema.is_valid(instance)
@@ -42,13 +53,15 @@ impl Validate for IfThenValidator {
         }
     }
 
-    #[allow(clippy::needless_collect)]
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if self.schema.is_valid(instance) {
-            let errors: Vec<_> = self.then_schema.validate(instance, location).collect();
-            Box::new(errors.into_iter())
+            self.then_schema.validate(instance, location)
         } else {
-            no_error()
+            Ok(())
         }
     }
 
@@ -90,6 +103,16 @@ impl IfElseValidator {
 }
 
 impl Validate for IfElseValidator {
+    #[allow(clippy::needless_collect)]
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+        if self.schema.is_valid(instance) {
+            no_error()
+        } else {
+            let errors: Vec<_> = self.else_schema.iter_errors(instance, location).collect();
+            Box::new(errors.into_iter())
+        }
+    }
+
     fn is_valid(&self, instance: &Value) -> bool {
         if self.schema.is_valid(instance) {
             true
@@ -98,13 +121,15 @@ impl Validate for IfElseValidator {
         }
     }
 
-    #[allow(clippy::needless_collect)]
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if self.schema.is_valid(instance) {
-            no_error()
+            Ok(())
         } else {
-            let errors: Vec<_> = self.else_schema.validate(instance, location).collect();
-            Box::new(errors.into_iter())
+            self.else_schema.validate(instance, location)
         }
     }
 
@@ -150,6 +175,17 @@ impl IfThenElseValidator {
 }
 
 impl Validate for IfThenElseValidator {
+    #[allow(clippy::needless_collect)]
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+        if self.schema.is_valid(instance) {
+            let errors: Vec<_> = self.then_schema.iter_errors(instance, location).collect();
+            Box::new(errors.into_iter())
+        } else {
+            let errors: Vec<_> = self.else_schema.iter_errors(instance, location).collect();
+            Box::new(errors.into_iter())
+        }
+    }
+
     fn is_valid(&self, instance: &Value) -> bool {
         if self.schema.is_valid(instance) {
             self.then_schema.is_valid(instance)
@@ -158,14 +194,15 @@ impl Validate for IfThenElseValidator {
         }
     }
 
-    #[allow(clippy::needless_collect)]
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if self.schema.is_valid(instance) {
-            let errors: Vec<_> = self.then_schema.validate(instance, location).collect();
-            Box::new(errors.into_iter())
+            self.then_schema.validate(instance, location)
         } else {
-            let errors: Vec<_> = self.else_schema.validate(instance, location).collect();
-            Box::new(errors.into_iter())
+            self.else_schema.validate(instance, location)
         }
     }
 

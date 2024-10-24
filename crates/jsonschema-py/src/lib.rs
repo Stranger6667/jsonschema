@@ -193,11 +193,9 @@ fn iter_on_error(
     let mut pyerrors = vec![];
 
     panic::catch_unwind(AssertUnwindSafe(|| {
-        if let Err(errors) = validator.validate(&instance) {
-            for error in errors {
-                pyerrors.push(into_py_err(py, error)?);
-            }
-        };
+        for error in validator.iter_errors(&instance) {
+            pyerrors.push(into_py_err(py, error)?);
+        }
         PyResult::Ok(())
     }))
     .map_err(handle_format_checked_panic)??;
@@ -212,11 +210,9 @@ fn raise_on_error(
     instance: &Bound<'_, PyAny>,
 ) -> PyResult<()> {
     let instance = ser::to_value(instance)?;
-    let result = panic::catch_unwind(AssertUnwindSafe(|| validator.validate(&instance)))
-        .map_err(handle_format_checked_panic)?;
-    let error = result
-        .err()
-        .map(|mut errors| errors.next().expect("Iterator should not be empty"));
+    let error = panic::catch_unwind(AssertUnwindSafe(|| validator.validate(&instance)))
+        .map_err(handle_format_checked_panic)?
+        .err();
     error.map_or_else(|| Ok(()), |err| Err(into_py_err(py, err)?))
 }
 

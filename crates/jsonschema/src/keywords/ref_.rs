@@ -146,8 +146,15 @@ impl Validate for LazyRefValidator {
     fn is_valid(&self, instance: &Value) -> bool {
         self.lazy_compile().is_valid(instance)
     }
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         self.lazy_compile().validate(instance, location)
+    }
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+        self.lazy_compile().iter_errors(instance, location)
     }
     fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
         self.lazy_compile().apply(instance, location)
@@ -161,11 +168,20 @@ impl Validate for RefValidator {
             RefValidator::Lazy(lazy) => lazy.is_valid(instance),
         }
     }
-
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         match self {
             RefValidator::Default { inner } => inner.validate(instance, location),
             RefValidator::Lazy(lazy) => lazy.validate(instance, location),
+        }
+    }
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+        match self {
+            RefValidator::Default { inner } => inner.iter_errors(instance, location),
+            RefValidator::Lazy(lazy) => lazy.iter_errors(instance, location),
         }
     }
     fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
@@ -287,7 +303,7 @@ mod tests {
                 "$defs": { "codes": { "enum": ["AA", "BB"] } }
         });
         let validator = crate::validator_for(&schema).expect("Invalid schema");
-        let mut iter = validator.validate(&instance).expect_err("Should fail");
+        let mut iter = validator.iter_errors(&instance);
         let expected = "/properties/things/items/properties/code/$ref/enum";
         assert_eq!(
             iter.next()

@@ -1,6 +1,6 @@
 use crate::{
     compiler,
-    error::{error, no_error, ErrorIterator, ValidationError},
+    error::{no_error, ErrorIterator, ValidationError},
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
     primitive_type::PrimitiveType,
@@ -45,7 +45,27 @@ impl Validate for RequiredValidator {
         }
     }
 
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::Object(item) = instance {
+            for property_name in &self.required {
+                if !item.contains_key(property_name) {
+                    return Err(ValidationError::required(
+                        self.location.clone(),
+                        location.into(),
+                        instance,
+                        // Value enum is needed for proper string escaping
+                        Value::String(property_name.clone()),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
         if let Value::Object(item) = instance {
             let mut errors = vec![];
             for property_name in &self.required {
@@ -83,9 +103,13 @@ impl SingleItemRequiredValidator {
 }
 
 impl Validate for SingleItemRequiredValidator {
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if !self.is_valid(instance) {
-            return error(ValidationError::required(
+            return Err(ValidationError::required(
                 self.location.clone(),
                 location.into(),
                 instance,
@@ -93,7 +117,7 @@ impl Validate for SingleItemRequiredValidator {
                 Value::String(self.value.clone()),
             ));
         }
-        no_error()
+        Ok(())
     }
 
     fn is_valid(&self, instance: &Value) -> bool {

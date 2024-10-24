@@ -7,10 +7,9 @@ fuzz_target!(|data: (&[u8], &[u8])| {
         if let Ok(validator) = jsonschema::validator_for(&schema) {
             if let Ok(instance) = serde_json::from_slice(instance) {
                 let _ = validator.is_valid(&instance);
-                if let Err(errors) = validator.validate(&instance) {
-                    for error in errors {
-                        let _ = error.to_string();
-                    }
+                let _ = validator.validate(&instance);
+                for error in validator.iter_errors(&instance) {
+                    let _ = error.to_string();
                 }
                 let output = validator.apply(&instance).basic();
                 let _ = serde_json::to_value(output).expect("Failed to serialize");

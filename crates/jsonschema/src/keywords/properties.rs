@@ -41,6 +41,26 @@ impl PropertiesValidator {
 }
 
 impl Validate for PropertiesValidator {
+    #[allow(clippy::needless_collect)]
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+        if let Value::Object(item) = instance {
+            let errors: Vec<_> = self
+                .properties
+                .iter()
+                .flat_map(move |(name, node)| {
+                    let option = item.get(name);
+                    option.into_iter().flat_map(move |item| {
+                        let instance_path = location.push(name.as_str());
+                        node.iter_errors(item, &instance_path)
+                    })
+                })
+                .collect();
+            Box::new(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::Object(item) = instance {
             self.properties.iter().all(move |(name, node)| {
@@ -52,24 +72,19 @@ impl Validate for PropertiesValidator {
         }
     }
 
-    #[allow(clippy::needless_collect)]
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
-            let errors: Vec<_> = self
-                .properties
-                .iter()
-                .flat_map(move |(name, node)| {
-                    let option = item.get(name);
-                    option.into_iter().flat_map(move |item| {
-                        let instance_path = location.push(name.as_str());
-                        node.validate(item, &instance_path)
-                    })
-                })
-                .collect();
-            Box::new(errors.into_iter())
-        } else {
-            no_error()
+            for (name, node) in self.properties.iter() {
+                if let Some(item) = item.get(name) {
+                    node.validate(item, &location.push(name))?;
+                }
+            }
         }
+        Ok(())
     }
 
     fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {

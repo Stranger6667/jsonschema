@@ -1,6 +1,6 @@
 use crate::{
     compiler,
-    error::{error, no_error, ErrorIterator, ValidationError},
+    error::{no_error, ErrorIterator, ValidationError},
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location},
@@ -23,19 +23,8 @@ impl PropertyNamesObjectValidator {
 }
 
 impl Validate for PropertyNamesObjectValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
-        if let Value::Object(item) = &instance {
-            item.keys().all(move |key| {
-                let wrapper = Value::String(key.to_string());
-                self.node.is_valid(&wrapper)
-            })
-        } else {
-            true
-        }
-    }
-
     #[allow(clippy::needless_collect)]
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
         if let Value::Object(item) = &instance {
             let errors: Vec<_> = item
                 .keys()
@@ -43,7 +32,7 @@ impl Validate for PropertyNamesObjectValidator {
                     let wrapper = Value::String(key.to_string());
                     let errors: Vec<_> = self
                         .node
-                        .validate(&wrapper, location)
+                        .iter_errors(&wrapper, location)
                         .map(|error| {
                             ValidationError::property_names(
                                 error.schema_path.clone(),
@@ -60,6 +49,41 @@ impl Validate for PropertyNamesObjectValidator {
         } else {
             no_error()
         }
+    }
+
+    fn is_valid(&self, instance: &Value) -> bool {
+        if let Value::Object(item) = &instance {
+            item.keys().all(move |key| {
+                let wrapper = Value::String(key.to_string());
+                self.node.is_valid(&wrapper)
+            })
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::Object(item) = &instance {
+            for key in item.keys() {
+                let wrapper = Value::String(key.to_string());
+                match self.node.validate(&wrapper, location) {
+                    Ok(_) => {}
+                    Err(error) => {
+                        return Err(ValidationError::property_names(
+                            error.schema_path.clone(),
+                            location.into(),
+                            instance,
+                            error.into_owned(),
+                        ))
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
@@ -98,11 +122,15 @@ impl Validate for PropertyNamesBooleanValidator {
         true
     }
 
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance) {
-            no_error()
+            Ok(())
         } else {
-            error(ValidationError::false_schema(
+            Err(ValidationError::false_schema(
                 self.location.clone(),
                 location.into(),
                 instance,

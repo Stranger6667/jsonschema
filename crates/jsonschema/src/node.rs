@@ -173,25 +173,25 @@ impl SchemaNode {
     ) -> NodeValidatorsErrIter<'a> {
         match &self.validators {
             NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
-                NodeValidatorsErrIter::Single(kvs.validators[0].1.validate(instance, location))
+                NodeValidatorsErrIter::Single(kvs.validators[0].1.iter_errors(instance, location))
             }
             NodeValidators::Keyword(kvs) => NodeValidatorsErrIter::Multiple(
                 kvs.validators
                     .iter()
-                    .flat_map(|(_, v)| v.validate(instance, location))
+                    .flat_map(|(_, v)| v.iter_errors(instance, location))
                     .collect::<Vec<_>>()
                     .into_iter(),
             ),
             NodeValidators::Boolean {
                 validator: Some(v), ..
-            } => NodeValidatorsErrIter::Single(v.validate(instance, location)),
+            } => NodeValidatorsErrIter::Single(v.iter_errors(instance, location)),
             NodeValidators::Boolean {
                 validator: None, ..
             } => NodeValidatorsErrIter::NoErrs,
             NodeValidators::Array { validators } => NodeValidatorsErrIter::Multiple(
                 validators
                     .iter()
-                    .flat_map(move |v| v.validate(instance, location))
+                    .flat_map(move |v| v.iter_errors(instance, location))
                     .collect::<Vec<_>>()
                     .into_iter(),
             ),
@@ -292,8 +292,36 @@ impl SchemaNode {
 }
 
 impl Validate for SchemaNode {
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
         Box::new(self.err_iter(instance, location))
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
+        match &self.validators {
+            NodeValidators::Keyword(kvs) => {
+                for (_, validator) in &kvs.validators {
+                    validator.validate(instance, location)?;
+                }
+            }
+            NodeValidators::Array { validators } => {
+                for validator in validators {
+                    validator.validate(instance, location)?;
+                }
+            }
+            NodeValidators::Boolean { validator: Some(_) } => {
+                return Err(ValidationError::false_schema(
+                    self.location.clone(),
+                    location.into(),
+                    instance,
+                ))
+            }
+            NodeValidators::Boolean { validator: None } => return Ok(()),
+        }
+        Ok(())
     }
 
     fn is_valid(&self, instance: &Value) -> bool {

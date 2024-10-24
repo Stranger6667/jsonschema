@@ -5,6 +5,7 @@ use crate::{
     node::SchemaNode,
     paths::LazyLocation,
     validator::{PartialApplication, Validate},
+    ValidationError,
 };
 use serde_json::{Map, Value};
 
@@ -28,6 +29,21 @@ impl ItemsArrayValidator {
     }
 }
 impl Validate for ItemsArrayValidator {
+    #[allow(clippy::needless_collect)]
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+        if let Value::Array(items) = instance {
+            let errors: Vec<_> = items
+                .iter()
+                .zip(self.items.iter())
+                .enumerate()
+                .flat_map(move |(idx, (item, node))| node.iter_errors(item, &location.push(idx)))
+                .collect();
+            Box::new(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::Array(items) = instance {
             items
@@ -39,19 +55,17 @@ impl Validate for ItemsArrayValidator {
         }
     }
 
-    #[allow(clippy::needless_collect)]
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
-            let errors: Vec<_> = items
-                .iter()
-                .zip(self.items.iter())
-                .enumerate()
-                .flat_map(move |(idx, (item, node))| node.validate(item, &location.push(idx)))
-                .collect();
-            Box::new(errors.into_iter())
-        } else {
-            no_error()
+            for (idx, (item, node)) in items.iter().zip(self.items.iter()).enumerate() {
+                node.validate(item, &location.push(idx))?;
+            }
         }
+        Ok(())
     }
 }
 
@@ -68,6 +82,20 @@ impl ItemsObjectValidator {
     }
 }
 impl Validate for ItemsObjectValidator {
+    #[allow(clippy::needless_collect)]
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+        if let Value::Array(items) = instance {
+            let errors: Vec<_> = items
+                .iter()
+                .enumerate()
+                .flat_map(move |(idx, item)| self.node.iter_errors(item, &location.push(idx)))
+                .collect();
+            Box::new(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::Array(items) = instance {
             items.iter().all(|i| self.node.is_valid(i))
@@ -76,18 +104,17 @@ impl Validate for ItemsObjectValidator {
         }
     }
 
-    #[allow(clippy::needless_collect)]
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
-            let errors: Vec<_> = items
-                .iter()
-                .enumerate()
-                .flat_map(move |(idx, item)| self.node.validate(item, &location.push(idx)))
-                .collect();
-            Box::new(errors.into_iter())
-        } else {
-            no_error()
+            for (idx, item) in items.iter().enumerate() {
+                self.node.validate(item, &location.push(idx))?;
+            }
         }
+        Ok(())
     }
 
     fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
@@ -134,6 +161,24 @@ impl ItemsObjectSkipPrefixValidator {
 }
 
 impl Validate for ItemsObjectSkipPrefixValidator {
+    #[allow(clippy::needless_collect)]
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+        if let Value::Array(items) = instance {
+            let errors: Vec<_> = items
+                .iter()
+                .skip(self.skip_prefix)
+                .enumerate()
+                .flat_map(move |(idx, item)| {
+                    self.node
+                        .iter_errors(item, &location.push(idx + self.skip_prefix))
+                })
+                .collect();
+            Box::new(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::Array(items) = instance {
             items
@@ -145,22 +190,18 @@ impl Validate for ItemsObjectSkipPrefixValidator {
         }
     }
 
-    #[allow(clippy::needless_collect)]
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
-            let errors: Vec<_> = items
-                .iter()
-                .skip(self.skip_prefix)
-                .enumerate()
-                .flat_map(move |(idx, item)| {
-                    self.node
-                        .validate(item, &location.push(idx + self.skip_prefix))
-                })
-                .collect();
-            Box::new(errors.into_iter())
-        } else {
-            no_error()
+            for (idx, item) in items.iter().skip(self.skip_prefix).enumerate() {
+                self.node
+                    .validate(item, &location.push(idx + self.skip_prefix))?;
+            }
         }
+        Ok(())
     }
 
     fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {

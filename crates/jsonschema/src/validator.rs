@@ -2,7 +2,7 @@
 //! The main idea is to create a tree from the input JSON Schema. This tree will contain
 //! everything needed to perform such validation in runtime.
 use crate::{
-    error::ErrorIterator,
+    error::{error, no_error, ErrorIterator},
     node::SchemaNode,
     output::{Annotations, ErrorDescription, Output, OutputUnit},
     paths::LazyLocation,
@@ -26,11 +26,22 @@ use std::{collections::VecDeque, sync::Arc};
 /// `is_valid`. `apply` is only necessary for validators which compose other validators. See the
 /// documentation for `apply` for more information.
 pub(crate) trait Validate: Send + Sync {
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i>;
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+        match self.validate(instance, location) {
+            Ok(()) => no_error(),
+            Err(err) => error(err),
+        }
+    }
     // The same as above, but does not construct ErrorIterator.
     // It is faster for cases when the result is not needed (like anyOf), since errors are
     // not constructed
     fn is_valid(&self, instance: &Value) -> bool;
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>>;
 
     /// `apply` applies this validator and any sub-validators it is composed of to the value in
     /// question and collects the resulting annotations or errors. Note that the result of `apply`
@@ -77,7 +88,7 @@ pub(crate) trait Validate: Send + Sync {
     /// so you can use `sum()` and `collect()` in simple cases.
     fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
         let errors: Vec<ErrorDescription> = self
-            .validate(instance, location)
+            .iter_errors(instance, location)
             .map(ErrorDescription::from)
             .collect();
         if errors.is_empty() {
@@ -184,14 +195,13 @@ impl Validator {
     }
     /// Run validation against `instance` and return an iterator over [`ValidationError`] in the error case.
     #[inline]
-    pub fn validate<'i>(&'i self, instance: &'i Value) -> Result<(), ErrorIterator<'i>> {
-        let instance_path = LazyLocation::new();
-        let mut errors = self.root.validate(instance, &instance_path).peekable();
-        if errors.peek().is_none() {
-            Ok(())
-        } else {
-            Err(Box::new(errors))
-        }
+    pub fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+        self.root.validate(instance, &LazyLocation::new())
+    }
+    /// Run validation against `instance` and return an iterator over [`ValidationError`] in the error case.
+    #[inline]
+    pub fn iter_errors<'i>(&'i self, instance: &'i Value) -> ErrorIterator<'i> {
+        self.root.iter_errors(instance, &LazyLocation::new())
     }
     /// Run validation against `instance` but return a boolean result instead of an iterator.
     /// It is useful for cases, where it is important to only know the fact if the data is valid or not.
@@ -262,11 +272,11 @@ impl Validator {
 #[cfg(test)]
 mod tests {
     use crate::{
-        error::{self, no_error, ValidationError},
+        error::ValidationError,
         keywords::custom::Keyword,
         paths::{LazyLocation, Location},
         primitive_type::PrimitiveType,
-        ErrorIterator, Validator,
+        Validator,
     };
     use fancy_regex::Regex;
     use num_cmp::NumCmp;
@@ -321,8 +331,7 @@ mod tests {
         let schema = json!({"minProperties": 2, "propertyNames": {"minLength": 3}});
         let value = json!({"a": 3});
         let validator = crate::validator_for(&schema).unwrap();
-        let result = validator.validate(&value);
-        let errors: Vec<ValidationError> = result.unwrap_err().collect();
+        let errors: Vec<_> = validator.iter_errors(&value).collect();
         assert_eq!(errors.len(), 2);
         assert_eq!(
             errors[0].to_string(),
@@ -343,20 +352,18 @@ mod tests {
                 &self,
                 instance: &'i Value,
                 location: &LazyLocation,
-            ) -> ErrorIterator<'i> {
-                let mut errors = vec![];
+            ) -> Result<(), ValidationError<'i>> {
                 for key in instance.as_object().unwrap().keys() {
                     if !key.is_ascii() {
-                        let error = ValidationError::custom(
+                        return Err(ValidationError::custom(
                             Location::new(),
                             location.into(),
                             instance,
                             "Key is not ASCII",
-                        );
-                        errors.push(error);
+                        ));
                     }
                 }
-                Box::new(errors.into_iter())
+                Ok(())
             }
 
             fn is_valid(&self, instance: &Value) -> bool {
@@ -407,11 +414,7 @@ mod tests {
 
         // Verify validator detects invalid custom-object-type
         let instance = json!({ "å" : 1 });
-        let error = validator
-            .validate(&instance)
-            .expect_err("Should fail")
-            .next()
-            .expect("Not empty");
+        let error = validator.validate(&instance).expect_err("Should fail");
         assert_eq!(error.to_string(), "Key is not ASCII");
         assert!(!validator.is_valid(&instance));
     }
@@ -439,11 +442,11 @@ mod tests {
                 &self,
                 instance: &'i Value,
                 location: &LazyLocation,
-            ) -> ErrorIterator<'i> {
+            ) -> Result<(), ValidationError<'i>> {
                 if self.is_valid(instance) {
-                    no_error()
+                    Ok(())
                 } else {
-                    error::error(ValidationError::minimum(
+                    Err(ValidationError::minimum(
                         self.location.clone(),
                         location.into(),
                         instance,

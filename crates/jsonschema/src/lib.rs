@@ -20,7 +20,7 @@
 //!
 //! The `jsonschema` crate offers two main approaches to validation: one-off validation and reusable validators.
 //!
-//! For simple use cases where you need to validate an instance against a schema once, use the [`is_valid`] function:
+//! For simple use cases where you need to validate an instance against a schema once, use [`is_valid`] or [`validate`] functions:
 //!
 //! ```rust
 //! use serde_json::json;
@@ -29,6 +29,7 @@
 //! let instance = json!("Hello, world!");
 //!
 //! assert!(jsonschema::is_valid(&schema, &instance));
+//! assert!(jsonschema::validate(&schema, &instance).is_ok());
 //! ```
 //!
 //! For better performance, especially when validating multiple instances against the same schema, build a validator once and reuse it:
@@ -42,15 +43,13 @@
 //!
 //! assert!(validator.is_valid(&json!("Hello, world!")));
 //! assert!(!validator.is_valid(&json!(42)));
+//! assert!(validator.validate(&json!(42)).is_err());
 //!
 //! // Iterate over all errors
 //! let instance = json!(42);
-//! let result = validator.validate(&instance);
-//! if let Err(errors) = result {
-//!     for error in errors {
-//!         eprintln!("Error: {}", error);
-//!         eprintln!("Location: {}", error.instance_path);
-//!     }
+//! for error in validator.iter_errors(&instance) {
+//!     eprintln!("Error: {}", error);
+//!     eprintln!("Location: {}", error.instance_path);
 //! }
 //! # Ok(())
 //! # }
@@ -72,7 +71,8 @@
 //!
 //! Each module provides:
 //! - A `new` function to create a validator
-//! - An `is_valid` function for quick validation
+//! - An `is_valid` function for validation with a boolean result
+//! - An `validate` function for getting the first validation error
 //! - An `options` function to create a draft-specific configuration builder
 //!
 //! Here's how you can explicitly use a specific draft version:
@@ -85,11 +85,12 @@
 //! let validator = jsonschema::draft7::new(&schema)?;
 //!
 //! assert!(validator.is_valid(&json!("Hello")));
+//! assert!(validator.validate(&json!("Hello")).is_ok());
 //! # Ok(())
 //! # }
 //! ```
 //!
-//! You can also use the convenience [`is_valid`] function for quick validation:
+//! You can also use the convenience [`is_valid`] and [`validate`] functions:
 //!
 //! ```rust
 //! use serde_json::json;
@@ -98,6 +99,7 @@
 //! let instance = json!(42);
 //!
 //! assert!(jsonschema::draft202012::is_valid(&schema, &instance));
+//! assert!(jsonschema::draft202012::validate(&schema, &instance).is_ok());
 //! ```
 //!
 //! For more advanced configuration, you can use the draft-specific `options` function:
@@ -120,9 +122,9 @@
 //!
 //! ## General Configuration
 //!
-//! For configuration options that are not draft-specific, `jsonschema` provides a general builder via `jsonschema::options()`.
+//! For configuration options that are not draft-specific, `jsonschema` provides a builder via `jsonschema::options()`.
 //!
-//! Here's an example of using the options builder:
+//! Here's an example:
 //!
 //! ```rust
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -284,7 +286,7 @@
 //! ```rust
 //! use jsonschema::{
 //!     paths::{LazyLocation, Location},
-//!     ErrorIterator, Keyword, ValidationError,
+//!     Keyword, ValidationError,
 //! };
 //! use serde_json::{json, Map, Value};
 //! use std::iter::once;
@@ -297,27 +299,25 @@
 //!         &self,
 //!         instance: &'i Value,
 //!         location: &LazyLocation,
-//!     ) -> ErrorIterator<'i> {
+//!     ) -> Result<(), ValidationError<'i>> {
 //!         if let Value::Number(n) = instance {
 //!             if n.as_u64().map_or(false, |n| n % 2 == 0) {
-//!                 Box::new(None.into_iter())
+//!                 Ok(())
 //!             } else {
-//!                 let error = ValidationError::custom(
+//!                 return Err(ValidationError::custom(
 //!                     Location::new(),
 //!                     location.into(),
 //!                     instance,
 //!                     "Number must be even",
-//!                 );
-//!                 Box::new(once(error))
+//!                 ));
 //!             }
 //!         } else {
-//!             let error = ValidationError::custom(
+//!             Err(ValidationError::custom(
 //!                 Location::new(),
 //!                 location.into(),
 //!                 instance,
 //!                 "Value must be a number",
-//!             );
-//!             Box::new(once(error))
+//!             ))
 //!         }
 //!     }
 //!
@@ -369,7 +369,7 @@
 //! ```rust
 //! # use jsonschema::{
 //! #     paths::LazyLocation,
-//! #     ErrorIterator, Keyword, ValidationError,
+//! #     Keyword, ValidationError,
 //! # };
 //! # use serde_json::{json, Map, Value};
 //! # use std::iter::once;
@@ -381,8 +381,8 @@
 //! #         &self,
 //! #         instance: &'i Value,
 //! #         location: &LazyLocation,
-//! #     ) -> ErrorIterator<'i> {
-//! #         Box::new(None.into_iter())
+//! #     ) -> Result<(), ValidationError<'i>> {
+//! #         Ok(())
 //! #     }
 //! #
 //! #     fn is_valid(&self, instance: &Value) -> bool {
@@ -493,7 +493,8 @@ use serde_json::Value;
 ))]
 compile_error!("Features 'resolve-http' and 'resolve-file' are not supported on WASM.");
 
-/// A shortcut for validating `instance` against `schema`. Draft is detected automatically.
+/// Validate `instance` against `schema` and get a `true` if the instance is valid and `false`
+/// otherwise. Draft is detected automatically.
 ///
 /// # Examples
 ///
@@ -514,6 +515,28 @@ pub fn is_valid(schema: &Value, instance: &Value) -> bool {
     validator_for(schema)
         .expect("Invalid schema")
         .is_valid(instance)
+}
+
+/// Validate `instance` against `schema` and return the first error if any. Draft is detected automatically.
+///
+/// # Examples
+///
+/// ```rust
+/// use serde_json::json;
+///
+/// let schema = json!({"maxLength": 5});
+/// let instance = json!("foo");
+/// assert!(jsonschema::validate(&schema, &instance).is_ok());
+/// ```
+///
+/// # Panics
+///
+/// This function panics if an invalid schema is passed.
+#[inline]
+pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+    validator_for(schema)
+        .expect("Invalid schema")
+        .validate(instance)
 }
 
 /// Create a validator for the input schema with automatic draft detection and default options.
@@ -631,15 +654,32 @@ pub mod draft4 {
     /// use serde_json::json;
     ///
     /// let schema = json!({"minimum": 5});
-    /// let valid_instance = json!(42);
-    /// let invalid_instance = json!(3);
+    /// let valid = json!(42);
+    /// let invalid = json!(3);
     ///
-    /// assert!(jsonschema::draft4::is_valid(&schema, &valid_instance));
-    /// assert!(!jsonschema::draft4::is_valid(&schema, &invalid_instance));
+    /// assert!(jsonschema::draft4::is_valid(&schema, &valid));
+    /// assert!(!jsonschema::draft4::is_valid(&schema, &invalid));
     /// ```
     #[must_use]
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
+    }
+    /// Validate an instance against a schema using Draft 4 specifications without creating a validator.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use serde_json::json;
+    ///
+    /// let schema = json!({"minimum": 5});
+    /// let valid = json!(42);
+    /// let invalid = json!(3);
+    ///
+    /// assert!(jsonschema::draft4::validate(&schema, &valid).is_ok());
+    /// assert!(jsonschema::draft4::validate(&schema, &invalid).is_err());
+    /// ```
+    pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+        new(schema).expect("Invalid schema").validate(instance)
     }
     /// Creates a [`ValidationOptions`] builder pre-configured for JSON Schema Draft 4.
     ///
@@ -719,15 +759,32 @@ pub mod draft6 {
     /// use serde_json::json;
     ///
     /// let schema = json!({"minimum": 5});
-    /// let valid_instance = json!(42);
-    /// let invalid_instance = json!(3);
+    /// let valid = json!(42);
+    /// let invalid = json!(3);
     ///
-    /// assert!(jsonschema::draft6::is_valid(&schema, &valid_instance));
-    /// assert!(!jsonschema::draft6::is_valid(&schema, &invalid_instance));
+    /// assert!(jsonschema::draft6::is_valid(&schema, &valid));
+    /// assert!(!jsonschema::draft6::is_valid(&schema, &invalid));
     /// ```
     #[must_use]
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
+    }
+    /// Validate an instance against a schema using Draft 6 specifications without creating a validator.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use serde_json::json;
+    ///
+    /// let schema = json!({"minimum": 5});
+    /// let valid = json!(42);
+    /// let invalid = json!(3);
+    ///
+    /// assert!(jsonschema::draft6::validate(&schema, &valid).is_ok());
+    /// assert!(jsonschema::draft6::validate(&schema, &invalid).is_err());
+    /// ```
+    pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+        new(schema).expect("Invalid schema").validate(instance)
     }
     /// Creates a [`ValidationOptions`] builder pre-configured for JSON Schema Draft 6.
     ///
@@ -807,15 +864,32 @@ pub mod draft7 {
     /// use serde_json::json;
     ///
     /// let schema = json!({"minimum": 5});
-    /// let valid_instance = json!(42);
-    /// let invalid_instance = json!(3);
+    /// let valid = json!(42);
+    /// let invalid = json!(3);
     ///
-    /// assert!(jsonschema::draft7::is_valid(&schema, &valid_instance));
-    /// assert!(!jsonschema::draft7::is_valid(&schema, &invalid_instance));
+    /// assert!(jsonschema::draft7::is_valid(&schema, &valid));
+    /// assert!(!jsonschema::draft7::is_valid(&schema, &invalid));
     /// ```
     #[must_use]
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
+    }
+    /// Validate an instance against a schema using Draft 7 specifications without creating a validator.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use serde_json::json;
+    ///
+    /// let schema = json!({"minimum": 5});
+    /// let valid = json!(42);
+    /// let invalid = json!(3);
+    ///
+    /// assert!(jsonschema::draft7::validate(&schema, &valid).is_ok());
+    /// assert!(jsonschema::draft7::validate(&schema, &invalid).is_err());
+    /// ```
+    pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+        new(schema).expect("Invalid schema").validate(instance)
     }
     /// Creates a [`ValidationOptions`] builder pre-configured for JSON Schema Draft 7.
     ///
@@ -895,15 +969,32 @@ pub mod draft201909 {
     /// use serde_json::json;
     ///
     /// let schema = json!({"minimum": 5});
-    /// let valid_instance = json!(42);
-    /// let invalid_instance = json!(3);
+    /// let valid = json!(42);
+    /// let invalid = json!(3);
     ///
-    /// assert!(jsonschema::draft201909::is_valid(&schema, &valid_instance));
-    /// assert!(!jsonschema::draft201909::is_valid(&schema, &invalid_instance));
+    /// assert!(jsonschema::draft201909::is_valid(&schema, &valid));
+    /// assert!(!jsonschema::draft201909::is_valid(&schema, &invalid));
     /// ```
     #[must_use]
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
+    }
+    /// Validate an instance against a schema using Draft 2019-09 specifications without creating a validator.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use serde_json::json;
+    ///
+    /// let schema = json!({"minimum": 5});
+    /// let valid = json!(42);
+    /// let invalid = json!(3);
+    ///
+    /// assert!(jsonschema::draft201909::validate(&schema, &valid).is_ok());
+    /// assert!(jsonschema::draft201909::validate(&schema, &invalid).is_err());
+    /// ```
+    pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+        new(schema).expect("Invalid schema").validate(instance)
     }
     /// Creates a [`ValidationOptions`] builder pre-configured for JSON Schema Draft 2019-09.
     ///
@@ -986,15 +1077,32 @@ pub mod draft202012 {
     /// use serde_json::json;
     ///
     /// let schema = json!({"minimum": 5});
-    /// let valid_instance = json!(42);
-    /// let invalid_instance = json!(3);
+    /// let valid = json!(42);
+    /// let invalid = json!(3);
     ///
-    /// assert!(jsonschema::draft202012::is_valid(&schema, &valid_instance));
-    /// assert!(!jsonschema::draft202012::is_valid(&schema, &invalid_instance));
+    /// assert!(jsonschema::draft202012::is_valid(&schema, &valid));
+    /// assert!(!jsonschema::draft202012::is_valid(&schema, &invalid));
     /// ```
     #[must_use]
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
+    }
+    /// Validate an instance against a schema using Draft 2020-12 specifications without creating a validator.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use serde_json::json;
+    ///
+    /// let schema = json!({"minimum": 5});
+    /// let valid = json!(42);
+    /// let invalid = json!(3);
+    ///
+    /// assert!(jsonschema::draft202012::validate(&schema, &valid).is_ok());
+    /// assert!(jsonschema::draft202012::validate(&schema, &invalid).is_err());
+    /// ```
+    pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+        new(schema).expect("Invalid schema").validate(instance)
     }
     /// Creates a [`ValidationOptions`] builder pre-configured for JSON Schema Draft 2020-12.
     ///
@@ -1046,6 +1154,11 @@ pub(crate) mod tests_util {
             instance
         );
         assert!(
+            validator.iter_errors(instance).next().is_some(),
+            "{} should not be valid (via validate)",
+            instance
+        );
+        assert!(
             !validator.apply(instance).basic().is_valid(),
             "{} should not be valid (via apply)",
             instance
@@ -1075,8 +1188,7 @@ pub(crate) mod tests_util {
         assert_eq!(
             crate::validator_for(schema)
                 .expect("Should be a valid schema")
-                .validate(instance)
-                .expect_err(format!("{} should not be valid", instance).as_str())
+                .iter_errors(instance)
                 .map(|e| e.to_string())
                 .collect::<Vec<String>>(),
             errors
@@ -1085,8 +1197,7 @@ pub(crate) mod tests_util {
 
     #[track_caller]
     pub(crate) fn is_valid_with(validator: &Validator, instance: &Value) {
-        if let Err(mut errors) = validator.validate(instance) {
-            let first = errors.next().expect("Errors iterator is empty");
+        if let Some(first) = validator.iter_errors(instance).next() {
             panic!(
                 "{} should be valid (via validate). Error: {} at {}",
                 instance, first, first.instance_path
@@ -1094,6 +1205,11 @@ pub(crate) mod tests_util {
         }
         assert!(
             validator.is_valid(instance),
+            "{} should be valid (via is_valid)",
+            instance
+        );
+        assert!(
+            validator.validate(instance).is_ok(),
             "{} should be valid (via is_valid)",
             instance
         );
@@ -1128,8 +1244,6 @@ pub(crate) mod tests_util {
         let err = validator
             .validate(instance)
             .expect_err("Should be an error")
-            .next()
-            .expect("Should be an error")
             .into_owned();
         err
     }
@@ -1143,9 +1257,7 @@ pub(crate) mod tests_util {
     #[track_caller]
     pub(crate) fn assert_locations(schema: &Value, instance: &Value, expected: &[&str]) {
         let validator = crate::validator_for(schema).unwrap();
-        let errors = validator
-            .validate(instance)
-            .expect_err("Should be an error");
+        let errors = validator.iter_errors(instance);
         for (error, location) in errors.zip(expected) {
             assert_eq!(error.schema_path.as_str(), *location)
         }
@@ -1154,7 +1266,7 @@ pub(crate) mod tests_util {
 
 #[cfg(test)]
 mod tests {
-    use crate::validator_for;
+    use crate::{validator_for, ValidationError};
 
     use super::Draft;
     use serde_json::json;
@@ -1187,6 +1299,40 @@ mod tests {
 
         assert!(is_valid_fn(&schema, &valid_instance));
         assert!(!is_valid_fn(&schema, &invalid_instance));
+    }
+
+    #[test_case(crate::validate ; "autodetect")]
+    #[test_case(crate::draft4::validate ; "draft4")]
+    #[test_case(crate::draft6::validate ; "draft6")]
+    #[test_case(crate::draft7::validate ; "draft7")]
+    #[test_case(crate::draft201909::validate ; "draft201909")]
+    #[test_case(crate::draft202012::validate ; "draft202012")]
+    fn test_validate(
+        validate_fn: for<'i> fn(
+            &serde_json::Value,
+            &'i serde_json::Value,
+        ) -> Result<(), ValidationError<'i>>,
+    ) {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "integer", "minimum": 0}
+            },
+            "required": ["name"]
+        });
+
+        let valid_instance = json!({
+            "name": "John Doe",
+            "age": 30
+        });
+
+        let invalid_instance = json!({
+            "age": -5
+        });
+
+        assert!(validate_fn(&schema, &valid_instance).is_ok());
+        assert!(validate_fn(&schema, &invalid_instance).is_err());
     }
 
     #[test_case(Draft::Draft4)]

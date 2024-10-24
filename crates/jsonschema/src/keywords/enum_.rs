@@ -1,6 +1,6 @@
 use crate::{
     compiler,
-    error::{error, no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     keywords::{helpers, CompilationResult},
     paths::{LazyLocation, Location},
     primitive_type::{PrimitiveType, PrimitiveTypesBitMap},
@@ -38,11 +38,15 @@ impl EnumValidator {
 }
 
 impl Validate for EnumValidator {
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance) {
-            no_error()
+            Ok(())
         } else {
-            error(ValidationError::enumeration(
+            Err(ValidationError::enumeration(
                 self.location.clone(),
                 location.into(),
                 instance,
@@ -86,11 +90,15 @@ impl SingleValueEnumValidator {
 }
 
 impl Validate for SingleValueEnumValidator {
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance) {
-            no_error()
+            Ok(())
         } else {
-            error(ValidationError::enumeration(
+            Err(ValidationError::enumeration(
                 self.location.clone(),
                 location.into(),
                 instance,

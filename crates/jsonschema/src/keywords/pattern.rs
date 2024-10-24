@@ -1,6 +1,6 @@
 use crate::{
     compiler, ecma,
-    error::{error, no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
     primitive_type::PrimitiveType,
@@ -108,12 +108,16 @@ impl PatternValidator {
 }
 
 impl Validate for PatternValidator {
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::String(item) = instance {
             match self.pattern.is_match(item) {
                 Ok(is_match) => {
                     if !is_match {
-                        return error(ValidationError::pattern(
+                        return Err(ValidationError::pattern(
                             self.location.clone(),
                             location.into(),
                             instance,
@@ -122,7 +126,7 @@ impl Validate for PatternValidator {
                     }
                 }
                 Err(e) => {
-                    return error(ValidationError::backtrack_limit(
+                    return Err(ValidationError::backtrack_limit(
                         self.location.clone(),
                         location.into(),
                         instance,
@@ -131,7 +135,7 @@ impl Validate for PatternValidator {
                 }
             }
         }
-        no_error()
+        Ok(())
     }
 
     fn is_valid(&self, instance: &Value) -> bool {

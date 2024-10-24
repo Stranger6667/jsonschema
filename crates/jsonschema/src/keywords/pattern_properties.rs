@@ -45,6 +45,27 @@ impl PatternPropertiesValidator {
 }
 
 impl Validate for PatternPropertiesValidator {
+    #[allow(clippy::needless_collect)]
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+        if let Value::Object(item) = instance {
+            let errors: Vec<_> = self
+                .patterns
+                .iter()
+                .flat_map(move |(re, node)| {
+                    item.iter()
+                        .filter(move |(key, _)| re.is_match(key).unwrap_or(false))
+                        .flat_map(move |(key, value)| {
+                            let location = location.push(key.as_str());
+                            node.iter_errors(value, &location)
+                        })
+                })
+                .collect();
+            Box::new(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::Object(item) = instance {
             self.patterns.iter().all(move |(re, node)| {
@@ -57,25 +78,21 @@ impl Validate for PatternPropertiesValidator {
         }
     }
 
-    #[allow(clippy::needless_collect)]
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
-            let errors: Vec<_> = self
-                .patterns
-                .iter()
-                .flat_map(move |(re, node)| {
-                    item.iter()
-                        .filter(move |(key, _)| re.is_match(key).unwrap_or(false))
-                        .flat_map(move |(key, value)| {
-                            let instance_path = location.push(key.as_str());
-                            node.validate(value, &instance_path)
-                        })
-                })
-                .collect();
-            Box::new(errors.into_iter())
-        } else {
-            no_error()
+            for (re, node) in self.patterns.iter() {
+                for (key, value) in item.iter() {
+                    if re.is_match(key).unwrap_or(false) {
+                        node.validate(value, &location.push(key))?;
+                    }
+                }
+            }
         }
+        Ok(())
     }
 
     fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
@@ -134,6 +151,23 @@ impl SingleValuePatternPropertiesValidator {
 }
 
 impl Validate for SingleValuePatternPropertiesValidator {
+    #[allow(clippy::needless_collect)]
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+        if let Value::Object(item) = instance {
+            let errors: Vec<_> = item
+                .iter()
+                .filter(move |(key, _)| self.pattern.is_match(key).unwrap_or(false))
+                .flat_map(move |(key, value)| {
+                    let instance_path = location.push(key.as_str());
+                    self.node.iter_errors(value, &instance_path)
+                })
+                .collect();
+            Box::new(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::Object(item) = instance {
             item.iter()
@@ -144,21 +178,19 @@ impl Validate for SingleValuePatternPropertiesValidator {
         }
     }
 
-    #[allow(clippy::needless_collect)]
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
-            let errors: Vec<_> = item
-                .iter()
-                .filter(move |(key, _)| self.pattern.is_match(key).unwrap_or(false))
-                .flat_map(move |(key, value)| {
-                    let instance_path = location.push(key.as_str());
-                    self.node.validate(value, &instance_path)
-                })
-                .collect();
-            Box::new(errors.into_iter())
-        } else {
-            no_error()
+            for (key, value) in item.iter() {
+                if self.pattern.is_match(key).unwrap_or(false) {
+                    self.node.validate(value, &location.push(key))?;
+                }
+            }
         }
+        Ok(())
     }
 
     fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {

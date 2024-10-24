@@ -1,6 +1,6 @@
 use crate::{
     compiler,
-    error::{error, no_error, ErrorIterator, ValidationError},
+    error::{no_error, ErrorIterator, ValidationError},
     keywords::{boolean::FalseValidator, CompilationResult},
     node::SchemaNode,
     paths::{LazyLocation, Location},
@@ -28,6 +28,21 @@ impl AdditionalItemsObjectValidator {
     }
 }
 impl Validate for AdditionalItemsObjectValidator {
+    #[allow(clippy::needless_collect)]
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+        if let Value::Array(items) = instance {
+            let errors: Vec<_> = items
+                .iter()
+                .enumerate()
+                .skip(self.items_count)
+                .flat_map(|(idx, item)| self.node.iter_errors(item, &location.push(idx)))
+                .collect();
+            Box::new(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::Array(items) = instance {
             items
@@ -39,19 +54,17 @@ impl Validate for AdditionalItemsObjectValidator {
         }
     }
 
-    #[allow(clippy::needless_collect)]
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
-            let errors: Vec<_> = items
-                .iter()
-                .enumerate()
-                .skip(self.items_count)
-                .flat_map(|(idx, item)| self.node.validate(item, &location.push(idx)))
-                .collect();
-            Box::new(errors.into_iter())
-        } else {
-            no_error()
+            for (idx, item) in items.iter().enumerate().skip(self.items_count) {
+                self.node.validate(item, &location.push(idx))?;
+            }
         }
+        Ok(())
     }
 }
 
@@ -78,10 +91,14 @@ impl Validate for AdditionalItemsBooleanValidator {
         true
     }
 
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             if items.len() > self.items_count {
-                return error(ValidationError::additional_items(
+                return Err(ValidationError::additional_items(
                     self.location.clone(),
                     location.into(),
                     instance,
@@ -89,7 +106,7 @@ impl Validate for AdditionalItemsBooleanValidator {
                 ));
             }
         }
-        no_error()
+        Ok(())
     }
 }
 
@@ -155,11 +172,7 @@ mod tests {
             .with_draft(Draft::Draft7)
             .build(schema)
             .expect("Invalid schema");
-        let error = validator
-            .validate(instance)
-            .expect_err("Should fail")
-            .next()
-            .expect("Should be non empty");
+        let error = validator.validate(instance).expect_err("Should fail");
         assert_eq!(error.schema_path.as_str(), expected);
     }
 }

@@ -32,6 +32,22 @@ impl PrefixItemsValidator {
 }
 
 impl Validate for PrefixItemsValidator {
+    #[allow(clippy::needless_collect)]
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+        if let Value::Array(items) = instance {
+            let errors: Vec<_> = self
+                .schemas
+                .iter()
+                .zip(items.iter())
+                .enumerate()
+                .flat_map(|(idx, (n, i))| n.iter_errors(i, &location.push(idx)))
+                .collect();
+            Box::new(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::Array(items) = instance {
             self.schemas
@@ -43,20 +59,17 @@ impl Validate for PrefixItemsValidator {
         }
     }
 
-    #[allow(clippy::needless_collect)]
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
-            let errors: Vec<_> = self
-                .schemas
-                .iter()
-                .zip(items.iter())
-                .enumerate()
-                .flat_map(|(idx, (n, i))| n.validate(i, &location.push(idx)))
-                .collect();
-            Box::new(errors.into_iter())
-        } else {
-            no_error()
+            for (idx, (schema, item)) in self.schemas.iter().zip(items.iter()).enumerate() {
+                schema.validate(item, &location.push(idx))?
+            }
         }
+        Ok(())
     }
 
     fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {

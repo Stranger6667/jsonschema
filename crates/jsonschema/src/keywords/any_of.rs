@@ -42,15 +42,31 @@ impl AnyOfValidator {
 }
 
 impl Validate for AnyOfValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
-        self.schemas.iter().any(|s| s.is_valid(instance))
-    }
-
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
         if self.is_valid(instance) {
             no_error()
         } else {
             error(ValidationError::any_of(
+                self.location.clone(),
+                location.into(),
+                instance,
+            ))
+        }
+    }
+
+    fn is_valid(&self, instance: &Value) -> bool {
+        self.schemas.iter().any(|s| s.is_valid(instance))
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
+        if self.is_valid(instance) {
+            Ok(())
+        } else {
+            Err(ValidationError::any_of(
                 self.location.clone(),
                 location.into(),
                 instance,

@@ -30,5 +30,5 @@ test-py-no-rebuild *FLAGS:
   uvx --with="crates/jsonschema-py[tests]" pytest crates/jsonschema-py/tests-py -rs {{FLAGS}}
 
 bench-py *FLAGS:
-  uvx --with="crates/jsonschema-py[bench]" pytest crates/jsonschema-py/benches/bench.py --benchmark-columns=min {{FLAGS}}
+  uvx --with="crates/jsonschema-py[bench]" --refresh pytest crates/jsonschema-py/benches/bench.py --benchmark-columns=min {{FLAGS}}
 

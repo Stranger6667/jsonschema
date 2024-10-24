@@ -17,16 +17,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // One-off validation
     assert!(jsonschema::is_valid(&schema, &instance));
+    assert!(jsonschema::validate(&schema, &instance));
 
     // Build & reuse (faster)
     let validator = jsonschema::validator_for(&schema)?;
 
+    // Fail on first error
+    assert!(validator.validate(&instance));
+
     // Iterate over errors
-    if let Err(errors) = validator.validate(&instance) {
-        for error in errors {
-            eprintln!("Error: {}", error);
-            eprintln!("Location: {}", error.instance_path);
-        }
+    for error in validator.iter_errors(&instance) {
+        eprintln!("Error: {error}");
+        eprintln!("Location: {}", error.instance_path);
     }
 
     // Boolean result

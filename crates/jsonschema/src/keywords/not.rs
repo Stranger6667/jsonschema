@@ -1,10 +1,6 @@
 use crate::{
-    compiler,
-    error::{error, no_error, ErrorIterator, ValidationError},
-    keywords::CompilationResult,
-    node::SchemaNode,
-    paths::LazyLocation,
-    validator::Validate,
+    compiler, error::ValidationError, keywords::CompilationResult, node::SchemaNode,
+    paths::LazyLocation, validator::Validate,
 };
 use serde_json::{Map, Value};
 
@@ -30,11 +26,15 @@ impl Validate for NotValidator {
         !self.node.is_valid(instance)
     }
 
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance) {
-            no_error()
+            Ok(())
         } else {
-            error(ValidationError::not(
+            Err(ValidationError::not(
                 self.node.location().clone(),
                 location.into(),
                 instance,

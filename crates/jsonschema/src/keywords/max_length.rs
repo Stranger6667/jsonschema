@@ -1,6 +1,6 @@
 use crate::{
     compiler,
-    error::{error, no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     keywords::{helpers::fail_on_non_positive_integer, CompilationResult},
     paths::{LazyLocation, Location},
     validator::Validate,
@@ -48,10 +48,14 @@ impl Validate for MaxLengthValidator {
         true
     }
 
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::String(item) = instance {
             if (bytecount::num_chars(item.as_bytes()) as u64) > self.limit {
-                return error(ValidationError::max_length(
+                return Err(ValidationError::max_length(
                     self.location.clone(),
                     location.into(),
                     instance,
@@ -59,7 +63,7 @@ impl Validate for MaxLengthValidator {
                 ));
             }
         }
-        no_error()
+        Ok(())
     }
 }
 

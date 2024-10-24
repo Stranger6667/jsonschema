@@ -321,16 +321,12 @@ pub(crate) fn build_validator(
 
     // Validate the schema itself
     if config.validate_schema {
-        if let Some(mut errors) = META_SCHEMA_VALIDATORS
+        if let Err(error) = META_SCHEMA_VALIDATORS
             .get(&draft)
             .expect("Existing draft")
             .validate(schema)
-            .err()
         {
-            return Err(errors
-                .next()
-                .expect("Should have at least one element")
-                .into_owned());
+            return Err(error.into_owned());
         }
     }
 

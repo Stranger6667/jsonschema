@@ -434,13 +434,7 @@ mod tests {
             .should_validate_formats(true)
             .build(schema)
             .expect("Invalid schema");
-        let errors: Vec<_> = validator
-            .validate(instance)
-            .expect_err(&format!(
-                "Validation error is expected. Schema=`{:?}` Instance=`{:?}`",
-                schema, instance
-            ))
-            .collect();
+        let errors: Vec<_> = validator.iter_errors(instance).collect();
         assert_eq!(errors[0].to_string(), expected);
     }
 
@@ -524,10 +518,7 @@ mod tests {
         let schema = json!({"required": ["foo", "bar"]});
         let instance = json!({});
         let validator = crate::validator_for(&schema).unwrap();
-        let errors: Vec<_> = validator
-            .validate(&instance)
-            .expect_err("Validation errors")
-            .collect();
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
         assert_eq!(errors.len(), 2);
         assert_eq!(errors[0].to_string(), r#""foo" is a required property"#);
         assert_eq!(errors[1].to_string(), r#""bar" is a required property"#);

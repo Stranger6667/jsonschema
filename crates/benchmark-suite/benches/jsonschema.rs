@@ -28,7 +28,7 @@ fn bench_validate(c: &mut Criterion, name: &str, schema: &Value, instance: &Valu
         instance,
         |b, instance| {
             b.iter(|| {
-                let _ = validator.validate(instance);
+                let _ = validator.iter_errors(instance);
             })
         },
     );

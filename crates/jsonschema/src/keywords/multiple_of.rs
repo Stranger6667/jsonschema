@@ -1,6 +1,6 @@
 use crate::{
     compiler,
-    error::{error, no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
     primitive_type::PrimitiveType,
@@ -45,16 +45,20 @@ impl Validate for MultipleOfFloatValidator {
         }
     }
 
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if !self.is_valid(instance) {
-            return error(ValidationError::multiple_of(
+            return Err(ValidationError::multiple_of(
                 self.location.clone(),
                 location.into(),
                 instance,
                 self.multiple_of,
             ));
         }
-        no_error()
+        Ok(())
     }
 }
 
@@ -85,16 +89,20 @@ impl Validate for MultipleOfIntegerValidator {
         }
     }
 
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if !self.is_valid(instance) {
-            return error(ValidationError::multiple_of(
+            return Err(ValidationError::multiple_of(
                 self.location.clone(),
                 location.into(),
                 instance,
                 self.multiple_of,
             ));
         }
-        no_error()
+        Ok(())
     }
 }
 

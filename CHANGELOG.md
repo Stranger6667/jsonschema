@@ -2,9 +2,16 @@
 
 ## [Unreleased]
 
+**Important:** This release contains breaking changes. See the [Migration Guide](MIGRATION.md) for details on transitioning to the new API.
+
+### Added
+
+- `Validator::iter_errors` that iterates over all validation errors.
+
 ### Changed
 
 - **BREAKING**: Remove unused `ValidationErrorKind::JSONParse`, `ValidationErrorKind::InvalidReference`, `ValidationErrorKind::Schema`, `ValidationErrorKind::FileNotFound` and `ValidationErrorKind::Utf8`.
+- **BREAKING**: `Validator::validate` now returns the first error instead of an iterator in the `Err` variant. 
 
 ### Performance
 

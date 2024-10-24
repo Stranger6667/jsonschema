@@ -13,7 +13,7 @@ use uuid_simd::{parse_hyphenated, Out};
 
 use crate::{
     compiler, ecma,
-    error::{error, no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
     primitive_type::PrimitiveType,
@@ -640,10 +640,10 @@ macro_rules! format_validators {
                     &self,
                     instance: &'i Value,
                     location: &LazyLocation,
-                ) -> ErrorIterator<'i> {
+                ) -> Result<(), ValidationError<'i>> {
                     if let Value::String(_item) = instance {
                         if !self.is_valid(instance) {
-                            return error(ValidationError::format(
+                            return Err(ValidationError::format(
                                 self.location.clone(),
                                 location.into(),
                                 instance,
@@ -651,7 +651,7 @@ macro_rules! format_validators {
                             ));
                         }
                     }
-                    no_error()
+                    Ok(())
                 }
             }
         )+
@@ -712,16 +712,21 @@ impl CustomFormatValidator {
 }
 
 impl Validate for CustomFormatValidator {
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
-        if !self.is_valid(instance) {
-            return error(ValidationError::format(
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
+        if self.is_valid(instance) {
+            Ok(())
+        } else {
+            return Err(ValidationError::format(
                 self.location.clone(),
                 location.into(),
                 instance,
                 self.format_name.clone(),
             ));
         }
-        no_error()
     }
 
     fn is_valid(&self, instance: &Value) -> bool {

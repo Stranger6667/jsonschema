@@ -1,6 +1,6 @@
 use crate::{
     compiler,
-    error::{error, no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
     primitive_type::PrimitiveType,
@@ -32,11 +32,11 @@ macro_rules! validate {
                 &self,
                 instance: &'i Value,
                 location: &LazyLocation,
-            ) -> ErrorIterator<'i> {
+            ) -> Result<(), ValidationError<'i>> {
                 if self.is_valid(instance) {
-                    no_error()
+                    Ok(())
                 } else {
-                    error(ValidationError::minimum(
+                    Err(ValidationError::minimum(
                         self.location.clone(),
                         location.into(),
                         instance,
@@ -80,11 +80,15 @@ impl Validate for MinimumF64Validator {
         true
     }
 
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance) {
-            no_error()
+            Ok(())
         } else {
-            error(ValidationError::minimum(
+            Err(ValidationError::minimum(
                 self.location.clone(),
                 location.into(),
                 instance,

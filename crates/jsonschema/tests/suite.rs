@@ -39,23 +39,27 @@ mod tests {
         let validator = options
             .build(&test.schema)
             .expect("Failed to build a schema");
-        let result = validator.validate(&test.data);
 
         if test.valid {
-            if let Err(mut errors_iterator) = result {
-                let first_error = errors_iterator.next();
-                assert!(
-                    first_error.is_none(),
-                    "Test case should not have validation errors:\nGroup: {}\nTest case: {}\nSchema: {}\nInstance: {}\nError: {:?}",
+            if let Some(first) = validator.iter_errors(&test.data).next() {
+                panic!(
+                    "Test case should not have validation errors:\nGroup: {}\nTest case: {}\nSchema: {}\nInstance: {}\nError: {first:?}",
                     test.case,
                     test.description,
                     pretty_json(&test.schema),
                     pretty_json(&test.data),
-                    first_error.map(|err| err.to_string()),
                 );
             }
             assert!(
                 validator.is_valid(&test.data),
+                "Test case should be valid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                test.case,
+                test.description,
+                pretty_json(&test.schema),
+                pretty_json(&test.data),
+            );
+            assert!(
+                validator.validate(&test.data).is_ok(),
                 "Test case should be valid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
                 test.case,
                 test.description,
@@ -73,15 +77,15 @@ mod tests {
                 output
             );
         } else {
+            let errors = validator.iter_errors(&test.data).collect::<Vec<_>>();
             assert!(
-                result.is_err(),
+                !errors.is_empty(),
                 "Test case should have validation errors:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
                 test.case,
                 test.description,
                 pretty_json(&test.schema),
                 pretty_json(&test.data),
             );
-            let errors = result.unwrap_err();
             for error in errors {
                 let pointer = error.instance_path.as_str();
                 assert_eq!(
@@ -102,6 +106,26 @@ mod tests {
                 test.description,
                 pretty_json(&test.schema),
                 pretty_json(&test.data),
+            );
+            let Some(error) = validator.validate(&test.data).err() else {
+                panic!(
+                    "Test case should be invalid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                );
+            };
+            let pointer = error.instance_path.as_str();
+            assert_eq!(
+                test.data.pointer(pointer), Some(&*error.instance),
+                "Expected error instance did not match actual error instance:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}\nExpected pointer: {:#?}\nActual pointer: {:#?}",
+                test.case,
+                test.description,
+                pretty_json(&test.schema),
+                pretty_json(&test.data),
+                &*error.instance,
+                &pointer,
             );
             let output = validator.apply(&test.data).basic();
             assert!(
@@ -152,16 +176,12 @@ mod tests {
                         instance_path.push_str(segment.as_str().expect("A string"));
                     }
                     let instance = &data[suite_id]["tests"][test_id]["data"];
-                    let error = validator
-                        .validate(instance)
-                        .expect_err(&format!(
-                            "\nFile: {}\nSuite: {}\nTest: {}",
-                            filename,
-                            &data[suite_id]["description"],
-                            &data[suite_id]["tests"][test_id]["description"],
-                        ))
-                        .next()
-                        .expect("Validation error");
+                    let error = validator.validate(instance).expect_err(&format!(
+                        "\nFile: {}\nSuite: {}\nTest: {}",
+                        filename,
+                        &data[suite_id]["description"],
+                        &data[suite_id]["tests"][test_id]["description"],
+                    ));
                     assert_eq!(
                         error.instance_path.as_str(),
                         instance_path,

@@ -8,11 +8,10 @@ use serde_json::{Map, Value};
 
 use crate::{
     compiler, ecma,
-    error::no_error,
     node::SchemaNode,
     paths::{LazyLocation, Location},
     validator::Validate,
-    ErrorIterator, ValidationError, ValidationOptions,
+    ValidationError, ValidationOptions,
 };
 
 use super::CompilationResult;
@@ -57,6 +56,34 @@ impl<F: PropertiesFilter> UnevaluatedPropertiesValidator<F> {
 }
 
 impl<F: PropertiesFilter> Validate for UnevaluatedPropertiesValidator<F> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::Object(properties) = instance {
+            let mut evaluated = AHashSet::new();
+            self.filter
+                .mark_evaluated_properties(instance, &mut evaluated);
+
+            let mut unevaluated = vec![];
+            for (property, value) in properties {
+                if !evaluated.contains(property) && !self.filter.is_valid(value) {
+                    unevaluated.push(property.clone());
+                }
+            }
+            if !unevaluated.is_empty() {
+                return Err(ValidationError::unevaluated_properties(
+                    self.location.clone(),
+                    location.into(),
+                    instance,
+                    unevaluated,
+                ));
+            }
+        }
+        Ok(())
+    }
+
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::Object(properties) = instance {
             let mut evaluated = AHashSet::new();
@@ -70,33 +97,6 @@ impl<F: PropertiesFilter> Validate for UnevaluatedPropertiesValidator<F> {
             }
         }
         true
-    }
-
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
-        if let Value::Object(properties) = instance {
-            let mut evaluated = AHashSet::new();
-            self.filter
-                .mark_evaluated_properties(instance, &mut evaluated);
-
-            let mut unevaluated = vec![];
-            for (property, value) in properties {
-                if !evaluated.contains(property) && !self.filter.is_valid(value) {
-                    unevaluated.push(property.clone());
-                }
-            }
-            if !unevaluated.is_empty() {
-                return Box::new(
-                    vec![ValidationError::unevaluated_properties(
-                        self.location.clone(),
-                        location.into(),
-                        instance,
-                        unevaluated,
-                    )]
-                    .into_iter(),
-                );
-            }
-        }
-        no_error()
     }
 }
 

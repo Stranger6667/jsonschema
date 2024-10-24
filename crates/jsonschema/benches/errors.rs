@@ -4,11 +4,7 @@ use serde_json::Value;
 
 fn bench_error_formatting(c: &mut Criterion, name: &str, schema: &Value, instance: &Value) {
     let validator = jsonschema::validator_for(schema).expect("Valid schema");
-    let error = validator
-        .validate(instance)
-        .unwrap_err()
-        .next()
-        .expect("Should have at least one error");
+    let error = validator.validate(instance).unwrap_err();
 
     c.bench_with_input(
         BenchmarkId::new("error_formatting", name),

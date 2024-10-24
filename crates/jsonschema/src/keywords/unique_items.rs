@@ -1,6 +1,6 @@
 use crate::{
     compiler,
-    error::{error, no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     keywords::{helpers::equal, CompilationResult},
     paths::Location,
     validator::Validate,
@@ -117,11 +117,15 @@ impl Validate for UniqueItemsValidator {
         true
     }
 
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance) {
-            no_error()
+            Ok(())
         } else {
-            error(ValidationError::unique_items(
+            Err(ValidationError::unique_items(
                 self.location.clone(),
                 location.into(),
                 instance,

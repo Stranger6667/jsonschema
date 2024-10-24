@@ -3,11 +3,10 @@ use serde_json::{Map, Value};
 
 use crate::{
     compiler,
-    error::no_error,
     node::SchemaNode,
     paths::{LazyLocation, Location},
     validator::Validate,
-    ErrorIterator, ValidationError,
+    ValidationError,
 };
 
 use super::CompilationResult;
@@ -63,7 +62,11 @@ impl<F: ItemsFilter> Validate for UnevaluatedItemsValidator<F> {
         true
     }
 
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             // NOTE: It could be a packed bitset instead
             let mut indexes = vec![false; items.len()];
@@ -75,18 +78,15 @@ impl<F: ItemsFilter> Validate for UnevaluatedItemsValidator<F> {
                 }
             }
             if !unevaluated.is_empty() {
-                return Box::new(
-                    vec![ValidationError::unevaluated_items(
-                        self.location.clone(),
-                        location.into(),
-                        instance,
-                        unevaluated,
-                    )]
-                    .into_iter(),
-                );
+                return Err(ValidationError::unevaluated_items(
+                    self.location.clone(),
+                    location.into(),
+                    instance,
+                    unevaluated,
+                ));
             }
         }
-        no_error()
+        Ok(())
     }
 }
 

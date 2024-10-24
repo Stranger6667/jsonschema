@@ -155,7 +155,7 @@ jobs:
       - run: cargo fmt --all -- --check
 
   lints-rust:
-    name: Rust lints on WASM
+    name: Rust lints
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -175,7 +175,7 @@ jobs:
         working-directory: fuzz
 
   lints-wasm:
-    name: Rust lints
+    name: Rust lints on WASM
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4

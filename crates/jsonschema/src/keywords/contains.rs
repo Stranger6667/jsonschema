@@ -1,6 +1,6 @@
 use crate::{
     compiler,
-    error::{error, no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     keywords::CompilationResult,
     node::SchemaNode,
     paths::LazyLocation,
@@ -34,18 +34,22 @@ impl Validate for ContainsValidator {
         }
     }
 
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             if items.iter().any(|i| self.node.is_valid(i)) {
-                return no_error();
+                return Ok(());
             }
-            error(ValidationError::contains(
+            Err(ValidationError::contains(
                 self.node.location().clone(),
                 location.into(),
                 instance,
             ))
         } else {
-            no_error()
+            Ok(())
         }
     }
 
@@ -107,12 +111,12 @@ impl MinContainsValidator {
 }
 
 impl Validate for MinContainsValidator {
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
-            // From docs:
-            //   An array instance is valid against "minContains" if the number of elements
-            //   that are valid against the schema for "contains" is greater than, or equal to,
-            //   the value of this keyword.
             let mut matches = 0;
             for item in items {
                 if self
@@ -121,24 +125,22 @@ impl Validate for MinContainsValidator {
                     .all(|validator| validator.is_valid(item))
                 {
                     matches += 1;
-                    // Shortcircuit - there is enough matches to satisfy `minContains`
                     if matches >= self.min_contains {
-                        return no_error();
+                        return Ok(());
                     }
                 }
             }
             if self.min_contains > 0 {
-                error(ValidationError::contains(
+                Err(ValidationError::contains(
                     self.node.location().clone(),
                     location.into(),
                     instance,
                 ))
             } else {
-                // No matches needed
-                no_error()
+                Ok(())
             }
         } else {
-            no_error()
+            Ok(())
         }
     }
 
@@ -188,12 +190,12 @@ impl MaxContainsValidator {
 }
 
 impl Validate for MaxContainsValidator {
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
-            // From docs:
-            //   An array instance is valid against "maxContains" if the number of elements
-            //   that are valid against the schema for "contains" is less than, or equal to,
-            //   the value of this keyword.
             let mut matches = 0;
             for item in items {
                 if self
@@ -202,9 +204,8 @@ impl Validate for MaxContainsValidator {
                     .all(|validator| validator.is_valid(item))
                 {
                     matches += 1;
-                    // Shortcircuit - there should be no more than `self.max_contains` matches
                     if matches > self.max_contains {
-                        return error(ValidationError::contains(
+                        return Err(ValidationError::contains(
                             self.node.location().clone(),
                             location.into(),
                             instance,
@@ -213,19 +214,16 @@ impl Validate for MaxContainsValidator {
                 }
             }
             if matches > 0 {
-                // It is also less or equal to `self.max_contains`
-                // otherwise the loop above would exit early
-                no_error()
+                Ok(())
             } else {
-                // No matches - it should be at least one match to satisfy `contains`
-                return error(ValidationError::contains(
+                Err(ValidationError::contains(
                     self.node.location().clone(),
                     location.into(),
                     instance,
-                ));
+                ))
             }
         } else {
-            no_error()
+            Ok(())
         }
     }
 
@@ -279,7 +277,11 @@ impl MinMaxContainsValidator {
 }
 
 impl Validate for MinMaxContainsValidator {
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             let mut matches = 0;
             for item in items {
@@ -289,9 +291,8 @@ impl Validate for MinMaxContainsValidator {
                     .all(|validator| validator.is_valid(item))
                 {
                     matches += 1;
-                    // Shortcircuit - there should be no more than `self.max_contains` matches
                     if matches > self.max_contains {
-                        return error(ValidationError::contains(
+                        return Err(ValidationError::contains(
                             self.node.location().join("maxContains"),
                             location.into(),
                             instance,
@@ -300,20 +301,18 @@ impl Validate for MinMaxContainsValidator {
                 }
             }
             if matches < self.min_contains {
-                // Not enough matches
-                error(ValidationError::contains(
+                Err(ValidationError::contains(
                     self.node.location().join("minContains"),
                     location.into(),
                     instance,
                 ))
             } else {
-                no_error()
+                Ok(())
             }
         } else {
-            no_error()
+            Ok(())
         }
     }
-
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::Array(items) = instance {
             let mut matches = 0;

@@ -395,18 +395,17 @@ impl ValidationOptions {
     ///         &self,
     ///         instance: &'i Value,
     ///         location: &LazyLocation,
-    ///     ) -> ErrorIterator<'i> {
+    ///     ) -> Result<(), ValidationError<'i>> {
     ///         // ... validate instance ...
     ///         if !instance.is_object() {
-    ///             let error = ValidationError::custom(
+    ///             return Err(ValidationError::custom(
     ///                 Location::new(),
     ///                 location.into(),
     ///                 instance,
     ///                 "Boom!",
-    ///             );
-    ///             Box::new(once(error))
+    ///             ));
     ///         } else {
-    ///             Box::new(None.into_iter())
+    ///             Ok(())
     ///         }
     ///     }
     ///     fn is_valid(&self, instance: &Value) -> bool {

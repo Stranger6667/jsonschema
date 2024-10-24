@@ -3,7 +3,7 @@ use crate::{
     compiler,
     content_encoding::{ContentEncodingCheckType, ContentEncodingConverterType},
     content_media_type::ContentMediaTypeCheckType,
-    error::{error, no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
     primitive_type::PrimitiveType,
@@ -43,12 +43,16 @@ impl Validate for ContentMediaTypeValidator {
         }
     }
 
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::String(item) = instance {
             if (self.func)(item) {
-                no_error()
+                Ok(())
             } else {
-                error(ValidationError::content_media_type(
+                Err(ValidationError::content_media_type(
                     self.location.clone(),
                     location.into(),
                     instance,
@@ -56,7 +60,7 @@ impl Validate for ContentMediaTypeValidator {
                 ))
             }
         } else {
-            no_error()
+            Ok(())
         }
     }
 }
@@ -92,12 +96,16 @@ impl Validate for ContentEncodingValidator {
         }
     }
 
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::String(item) = instance {
             if (self.func)(item) {
-                no_error()
+                Ok(())
             } else {
-                error(ValidationError::content_encoding(
+                Err(ValidationError::content_encoding(
                     self.location.clone(),
                     location.into(),
                     instance,
@@ -105,7 +113,7 @@ impl Validate for ContentEncodingValidator {
                 ))
             }
         } else {
-            no_error()
+            Ok(())
         }
     }
 }
@@ -151,10 +159,14 @@ impl Validate for ContentMediaTypeAndEncodingValidator {
         }
     }
 
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         if let Value::String(item) = instance {
             match (self.converter)(item) {
-                Ok(None) => error(ValidationError::content_encoding(
+                Ok(None) => Err(ValidationError::content_encoding(
                     self.location.join("contentEncoding"),
                     location.into(),
                     instance,
@@ -162,9 +174,9 @@ impl Validate for ContentMediaTypeAndEncodingValidator {
                 )),
                 Ok(Some(converted)) => {
                     if (self.func)(&converted) {
-                        no_error()
+                        Ok(())
                     } else {
-                        error(ValidationError::content_media_type(
+                        Err(ValidationError::content_media_type(
                             self.location.join("contentMediaType"),
                             location.into(),
                             instance,
@@ -172,10 +184,10 @@ impl Validate for ContentMediaTypeAndEncodingValidator {
                         ))
                     }
                 }
-                Err(e) => error(e),
+                Err(e) => Err(e),
             }
         } else {
-            no_error()
+            Ok(())
         }
     }
 }
@@ -278,11 +290,7 @@ mod tests {
             .with_draft(Draft::Draft7)
             .build(schema)
             .expect("Invalid schema");
-        let error = validator
-            .validate(instance)
-            .expect_err("Should fail")
-            .next()
-            .expect("Should be non empty");
+        let error = validator.validate(instance).expect_err("Should fail");
         assert_eq!(error.schema_path.as_str(), expected);
     }
 }

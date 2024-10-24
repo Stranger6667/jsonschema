@@ -40,14 +40,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = validator.is_valid(&instance);
             }
             "validate" => {
-                if let Err(errors) = validator.validate(&instance) {
-                    for _error in errors {}
-                }
+                let _ = validator.validate(&instance);
             }
+            "iter_errors" => for _error in validator.iter_errors(&instance) {},
             "apply" => {
                 let _ = validator.apply(&instance).basic();
             }
-            _ => panic!("Invalid method. Use 'build', 'is_valid', 'validate', or 'apply'"),
+            _ => panic!(
+                "Invalid method. Use 'build', 'is_valid', 'validate', 'iter_errors`, or 'apply'"
+            ),
         }
     }
 

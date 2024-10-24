@@ -1,6 +1,6 @@
 use crate::{
     compiler,
-    error::{error, no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     keywords::CompilationResult,
     node::SchemaNode,
     output::BasicOutput,
@@ -68,19 +68,23 @@ impl Validate for OneOfValidator {
         let first_valid_idx = self.get_first_valid(instance);
         first_valid_idx.map_or(false, |idx| !self.are_others_valid(instance, idx))
     }
-    fn validate<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+    ) -> Result<(), ValidationError<'i>> {
         let first_valid_idx = self.get_first_valid(instance);
         if let Some(idx) = first_valid_idx {
             if self.are_others_valid(instance, idx) {
-                return error(ValidationError::one_of_multiple_valid(
+                return Err(ValidationError::one_of_multiple_valid(
                     self.location.clone(),
                     location.into(),
                     instance,
                 ));
             }
-            no_error()
+            Ok(())
         } else {
-            error(ValidationError::one_of_not_valid(
+            Err(ValidationError::one_of_not_valid(
                 self.location.clone(),
                 location.into(),
                 instance,
