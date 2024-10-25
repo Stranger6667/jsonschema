@@ -7,7 +7,7 @@ use serde_json::{Map, Number, Value};
 use std::{
     borrow::Cow,
     error,
-    fmt::{self, Formatter},
+    fmt::{self, Formatter, Write},
     io,
     iter::{empty, once},
     str::Utf8Error,
@@ -776,7 +776,6 @@ impl From<Utf8Error> for ValidationError<'_> {
 /// Textual representation of various validation errors.
 impl fmt::Display for ValidationError<'_> {
     #[allow(clippy::too_many_lines)] // The function is long but it does formatting only
-    #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.kind {
             ValidationErrorKind::Schema => f.write_str("Schema error"),
@@ -788,51 +787,44 @@ impl fmt::Display for ValidationError<'_> {
                 write!(f, r#"{} is not a "{}""#, self.instance, format)
             }
             ValidationErrorKind::AdditionalItems { limit } => {
-                // It's safe to unwrap here as ValidationErrorKind::AdditionalItems is reported only in
-                // case of arrays with more items than expected
-                let extras: Vec<&Value> = self
-                    .instance
-                    .as_array()
-                    .expect("Always valid")
-                    .iter()
-                    .skip(*limit)
-                    .collect();
-                let verb = {
-                    if extras.len() == 1 {
-                        "was"
-                    } else {
-                        "were"
-                    }
-                };
-                write!(
-                    f,
-                    "Additional items are not allowed ({} {} unexpected)",
-                    extras
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<String>>()
-                        .join(", "),
-                    verb
-                )
+                f.write_str("Additional items are not allowed (")?;
+                let array = self.instance.as_array().expect("Always valid");
+                let mut iter = array.iter().skip(*limit);
+
+                if let Some(item) = iter.next() {
+                    write!(f, "{}", item)?;
+                }
+                for item in iter {
+                    f.write_str(", ")?;
+                    write!(f, "{}", item)?;
+                }
+
+                let items_count = array.len() - limit;
+                f.write_str(if items_count == 1 {
+                    " was unexpected)"
+                } else {
+                    " were unexpected)"
+                })
             }
             ValidationErrorKind::AdditionalProperties { unexpected } => {
-                let verb = {
-                    if unexpected.len() == 1 {
-                        "was"
-                    } else {
-                        "were"
-                    }
-                };
-                write!(
-                    f,
-                    "Additional properties are not allowed ({} {} unexpected)",
-                    unexpected
-                        .iter()
-                        .map(|x| format!("'{}'", x))
-                        .collect::<Vec<String>>()
-                        .join(", "),
-                    verb
-                )
+                f.write_str("Additional properties are not allowed (")?;
+                let mut iter = unexpected.iter();
+                if let Some(prop) = iter.next() {
+                    f.write_char('\'')?;
+                    write!(f, "{}", prop)?;
+                    f.write_char('\'')?;
+                }
+                for prop in iter {
+                    f.write_str(", ")?;
+                    f.write_char('\'')?;
+                    write!(f, "{}", prop)?;
+                    f.write_char('\'')?;
+                }
+                f.write_str(if unexpected.len() == 1 {
+                    " was unexpected)"
+                } else {
+                    " were unexpected)"
+                })
             }
             ValidationErrorKind::AnyOf => write!(
                 f,
@@ -956,42 +948,44 @@ impl fmt::Display for ValidationError<'_> {
                 write!(f, "{} is not a multiple of {}", self.instance, multiple_of)
             }
             ValidationErrorKind::UnevaluatedItems { unexpected } => {
-                let verb = {
-                    if unexpected.len() == 1 {
-                        "was"
-                    } else {
-                        "were"
-                    }
-                };
-                write!(
-                    f,
-                    "Unevaluated items are not allowed ({} {} unexpected)",
-                    unexpected
-                        .iter()
-                        .map(|x| format!("'{}'", x))
-                        .collect::<Vec<String>>()
-                        .join(", "),
-                    verb
-                )
+                f.write_str("Unevaluated items are not allowed (")?;
+                let mut iter = unexpected.iter();
+                if let Some(item) = iter.next() {
+                    f.write_char('\'')?;
+                    write!(f, "{}", item)?;
+                    f.write_char('\'')?;
+                }
+                for item in iter {
+                    f.write_str(", ")?;
+                    f.write_char('\'')?;
+                    write!(f, "{}", item)?;
+                    f.write_char('\'')?;
+                }
+                f.write_str(if unexpected.len() == 1 {
+                    " was unexpected)"
+                } else {
+                    " were unexpected)"
+                })
             }
             ValidationErrorKind::UnevaluatedProperties { unexpected } => {
-                let verb = {
-                    if unexpected.len() == 1 {
-                        "was"
-                    } else {
-                        "were"
-                    }
-                };
-                write!(
-                    f,
-                    "Unevaluated properties are not allowed ({} {} unexpected)",
-                    unexpected
-                        .iter()
-                        .map(|x| format!("'{}'", x))
-                        .collect::<Vec<String>>()
-                        .join(", "),
-                    verb
-                )
+                f.write_str("Unevaluated properties are not allowed (")?;
+                let mut iter = unexpected.iter();
+                if let Some(prop) = iter.next() {
+                    f.write_char('\'')?;
+                    write!(f, "{}", prop)?;
+                    f.write_char('\'')?;
+                }
+                for prop in iter {
+                    f.write_str(", ")?;
+                    f.write_char('\'')?;
+                    write!(f, "{}", prop)?;
+                    f.write_char('\'')?;
+                }
+                f.write_str(if unexpected.len() == 1 {
+                    " was unexpected)"
+                } else {
+                    " were unexpected)"
+                })
             }
             ValidationErrorKind::UniqueItems => {
                 write!(f, "{} has non-unique elements", self.instance)
@@ -1001,16 +995,22 @@ impl fmt::Display for ValidationError<'_> {
             } => write!(f, r#"{} is not of type "{}""#, self.instance, type_),
             ValidationErrorKind::Type {
                 kind: TypeKind::Multiple(types),
-            } => write!(
-                f,
-                "{} is not of types {}",
-                self.instance,
-                types
-                    .into_iter()
-                    .map(|t| format!(r#""{}""#, t))
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
+            } => {
+                write!(f, "{} is not of types ", self.instance)?;
+                let mut iter = types.into_iter();
+                if let Some(t) = iter.next() {
+                    f.write_char('"')?;
+                    write!(f, "{}", t)?;
+                    f.write_char('"')?;
+                }
+                for t in iter {
+                    f.write_str(", ")?;
+                    f.write_char('"')?;
+                    write!(f, "{}", t)?;
+                    f.write_char('"')?;
+                }
+                Ok(())
+            }
             ValidationErrorKind::Custom { message } => f.write_str(message),
         }
     }

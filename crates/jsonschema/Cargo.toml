@@ -59,3 +59,8 @@ name = "jsonschema"
 [[bench]]
 harness = false
 name = "keywords"
+
+[[bench]]
+harness = false
+name = "errors"
+

@@ -147,3 +147,20 @@ pub fn run_keyword_benchmarks(bench: &mut BenchFunc) {
         }
     }
 }
+
+#[derive(serde::Deserialize)]
+pub struct ErrorBenchmark {
+    pub name: String,
+    pub schema: Value,
+    pub instance: Value,
+}
+
+static ERROR_CASES: &[u8] = include_bytes!("../data/errors.json");
+static ERROR_BENCHMARKS: LazyLock<Vec<ErrorBenchmark>> =
+    LazyLock::new(|| serde_json::from_slice(ERROR_CASES).expect("Invalid JSON"));
+
+pub fn run_error_formatting_benchmarks(bench_fn: &mut dyn FnMut(&str, &Value, &Value)) {
+    for case in ERROR_BENCHMARKS.iter() {
+        bench_fn(&case.name, &case.schema, &case.instance);
+    }
+}

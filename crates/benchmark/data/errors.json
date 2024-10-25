@@ -1,0 +1,71 @@
+[
+  {
+    "name": "additional_properties",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "foo": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "instance": {
+      "foo": "bar",
+      "extra1": "value1",
+      "extra2": "value2",
+      "extra3": "value3"
+    }
+  },
+  {
+    "name": "type_multiple",
+    "schema": {
+      "type": [
+        "string",
+        "number",
+        "boolean",
+        "null",
+        "array"
+      ]
+    },
+    "instance": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "unevaluated_properties",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "foo": {
+          "type": "string"
+        }
+      },
+      "unevaluatedProperties": false
+    },
+    "instance": {
+      "foo": "bar",
+      "extra1": "value1",
+      "extra2": "value2"
+    }
+  },
+  {
+    "name": "unevaluated_items",
+    "schema": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "integer"
+        }
+      ],
+      "unevaluatedItems": false
+    },
+    "instance": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  }
+]

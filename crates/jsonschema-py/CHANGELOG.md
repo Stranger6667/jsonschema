@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Optimize error formatting in some cases.
+
 ## [0.25.1] - 2024-10-25
 
 ### Changed
