@@ -61,7 +61,7 @@ def test_invalid_type(func):
 
 
 def test_repr():
-    assert repr(validator_for({"minimum": 5})) == '<Draft202012Validator: {"minimum":5}>'
+    assert repr(validator_for({"minimum": 5})) == "<Draft202012Validator>"
 
 
 @pytest.mark.parametrize(
@@ -364,3 +364,8 @@ def test_ignore_unknown_formats(cls, ignore_unknown_formats, should_raise):
     else:
         validator = cls(unknown_format_schema, ignore_unknown_formats=ignore_unknown_formats)
         assert validator.is_valid("any string")
+
+
+def test_unicode_pattern():
+    validator = Draft202012Validator({"pattern": "aaaaaaaèaaéaaaaéè"})
+    assert not validator.is_valid("a")

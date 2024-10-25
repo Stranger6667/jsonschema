@@ -357,18 +357,6 @@ fn iter_errors(
     }
 }
 
-const SCHEMA_LENGTH_LIMIT: usize = 32;
-
-fn get_schema_repr(schema: &serde_json::Value) -> String {
-    // It could be more efficient, without converting the whole Value to a string
-    let mut repr = schema.to_string();
-    if repr.len() > SCHEMA_LENGTH_LIMIT {
-        repr.truncate(SCHEMA_LENGTH_LIMIT);
-        repr.push_str("...}");
-    }
-    repr
-}
-
 fn handle_format_checked_panic(err: Box<dyn Any + Send>) -> PyErr {
     LAST_FORMAT_ERROR.with(|last| {
         if let Some(err) = last.borrow_mut().take() {
@@ -383,7 +371,6 @@ fn handle_format_checked_panic(err: Box<dyn Any + Send>) -> PyErr {
 #[pyclass(module = "jsonschema_rs", subclass)]
 struct Validator {
     validator: jsonschema::Validator,
-    repr: String,
 }
 
 /// validator_for(schema, formats=None, validate_formats=None, ignore_unknown_formats=True)
@@ -434,10 +421,7 @@ fn validator_for_impl(
     };
     let options = make_options(draft, formats, validate_formats, ignore_unknown_formats)?;
     match options.build(&schema) {
-        Ok(validator) => Ok(Validator {
-            validator,
-            repr: get_schema_repr(&schema),
-        }),
+        Ok(validator) => Ok(Validator { validator }),
         Err(error) => Err(into_py_err(py, error)?),
     }
 }
@@ -506,16 +490,15 @@ impl Validator {
     ) -> PyResult<ValidationErrorIter> {
         iter_on_error(py, &self.validator, instance)
     }
-    fn __repr__(&self) -> String {
-        let draft = match self.validator.draft() {
-            Draft::Draft4 => "Draft4",
-            Draft::Draft6 => "Draft6",
-            Draft::Draft7 => "Draft7",
-            Draft::Draft201909 => "Draft201909",
-            Draft::Draft202012 => "Draft202012",
+    fn __repr__(&self) -> &'static str {
+        match self.validator.draft() {
+            Draft::Draft4 => "<Draft4Validator>",
+            Draft::Draft6 => "<Draft6Validator>",
+            Draft::Draft7 => "<Draft7Validator>",
+            Draft::Draft201909 => "<Draft201909Validator>",
+            Draft::Draft202012 => "<Draft202012Validator>",
             _ => "Unknown",
-        };
-        format!("<{draft}Validator: {}>", self.repr)
+        }
     }
 }
 

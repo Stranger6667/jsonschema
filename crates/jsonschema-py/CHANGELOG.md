@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Schema representation inside `__repr__`.
+
+### Fixed
+
+- Panic on initializing a validator. [#618](https://github.com/Stranger6667/jsonschema-rs/issues/618)
+
 ## [0.25.0] - 2024-10-24
 
 **Important:** This release removes deprecated old APIs. See the [Migration Guide](MIGRATION.md) for details on transitioning to the new API.
