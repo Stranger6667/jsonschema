@@ -5,6 +5,8 @@
 ### Performance
 
 - Optimize error formatting in some cases.
+- Speedup Python -> Rust data serialization
+- Significant improvement for the `validate` function.
 
 ## [0.25.1] - 2024-10-25
 

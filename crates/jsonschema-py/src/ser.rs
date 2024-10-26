@@ -14,11 +14,11 @@ use serde::{
 };
 
 use crate::{ffi, types};
-use std::ffi::CStr;
+use std::ffi::{c_char, CStr};
 
 pub const RECURSION_LIMIT: u8 = 255;
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum ObjectType {
     Str,
     Int,
@@ -29,7 +29,7 @@ pub enum ObjectType {
     Dict,
     Tuple,
     Enum,
-    Unknown(String),
+    Unknown(*const c_char),
 }
 
 pub(crate) struct SerializePyObject {
@@ -126,7 +126,8 @@ pub fn get_object_type(object_type: *mut pyo3::ffi::PyTypeObject) -> ObjectType 
     } else if is_dict_subclass(object_type) {
         ObjectType::Dict
     } else {
-        ObjectType::Unknown(get_type_name(object_type).to_string())
+        let type_name_ptr = unsafe { (*object_type).tp_name };
+        ObjectType::Unknown(type_name_ptr)
     }
 }
 
@@ -252,7 +253,7 @@ impl Serialize for SerializePyObject {
                         #[allow(clippy::arithmetic_side_effects)]
                         sequence.serialize_element(&SerializePyObject::with_obtype(
                             elem,
-                            ob_type.clone(),
+                            ob_type,
                             self.recursion_depth + 1,
                         ))?;
                     }
@@ -280,7 +281,7 @@ impl Serialize for SerializePyObject {
                         #[allow(clippy::arithmetic_side_effects)]
                         sequence.serialize_element(&SerializePyObject::with_obtype(
                             elem,
-                            ob_type.clone(),
+                            ob_type,
                             self.recursion_depth + 1,
                         ))?;
                     }
@@ -292,9 +293,9 @@ impl Serialize for SerializePyObject {
                 #[allow(clippy::arithmetic_side_effects)]
                 SerializePyObject::new(value, self.recursion_depth + 1).serialize(serializer)
             }
-            ObjectType::Unknown(ref type_name) => Err(ser::Error::custom(format!(
+            ObjectType::Unknown(type_name_ptr) => Err(ser::Error::custom(format!(
                 "Unsupported type: '{}'",
-                type_name
+                unsafe { CStr::from_ptr(type_name_ptr).to_string_lossy() }
             ))),
         }
     }
