@@ -264,10 +264,8 @@ impl Registry {
         } else {
             Err(Error::unretrievable(
                 uri.as_str(),
-                Some(
-                    "Retrieving external resources is not supported once the registry is populated"
-                        .into(),
-                ),
+                "Retrieving external resources is not supported once the registry is populated"
+                    .into(),
             ))
         }
     }
@@ -412,7 +410,7 @@ fn process_resources(
             if !resources.contains_key(&fragmentless) {
                 let retrieved = retriever
                     .retrieve(&fragmentless.borrow())
-                    .map_err(|err| Error::unretrievable(fragmentless.as_str(), Some(err)))?;
+                    .map_err(|err| Error::unretrievable(fragmentless.as_str(), err))?;
                 let resource = Arc::new(Resource::from_contents_and_specification(
                     retrieved,
                     default_draft,

@@ -12,7 +12,7 @@ pub enum Error {
     /// A resource is not present in a registry and retrieving it failed.
     Unretrievable {
         uri: String,
-        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+        source: Box<dyn std::error::Error + Send + Sync>,
     },
     /// A JSON Pointer leads to a part of a document that does not exist.
     PointerToNowhere { pointer: String },
@@ -75,7 +75,7 @@ impl Error {
 
     pub(crate) fn unretrievable(
         uri: impl Into<String>,
-        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+        source: Box<dyn std::error::Error + Send + Sync>,
     ) -> Error {
         Error::Unretrievable {
             uri: uri.into(),
@@ -116,11 +116,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Unretrievable { uri, source } => {
-                f.write_fmt(format_args!("Resource '{uri}' is not present in a registry and retrieving it failed"))?;
-                if let Some(err) = source {
-                    f.write_fmt(format_args!(": {err}"))?;
-                }
-                Ok(())
+                f.write_fmt(format_args!("Resource '{uri}' is not present in a registry and retrieving it failed: {source}"))
             },
             Error::PointerToNowhere { pointer } => {
                 f.write_fmt(format_args!("Pointer '{pointer}' does not exist"))
@@ -148,13 +144,7 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::Unretrievable { source, .. } => {
-                if let Some(source) = source {
-                    Some(&**source)
-                } else {
-                    None
-                }
-            }
+            Error::Unretrievable { source, .. } => Some(&**source),
             Error::InvalidUri(error) => Some(error),
             Error::InvalidPercentEncoding { source, .. } => Some(source),
             Error::InvalidArrayIndex { source, .. } => Some(source),

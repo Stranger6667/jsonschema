@@ -43,17 +43,17 @@ fn validate_instances(
         Ok(validator) => {
             for instance in instances {
                 let instance_json = read_json(instance)??;
-                let errors = validator.iter_errors(&instance_json).collect::<Vec<_>>();
+                let mut errors = validator.iter_errors(&instance_json);
                 let filename = instance.to_string_lossy();
-                if errors.is_empty() {
-                    println!("{filename} - VALID");
-                } else {
+                if let Some(first) = errors.next() {
                     success = false;
-
                     println!("{filename} - INVALID. Errors:");
-                    for (i, e) in errors.iter().enumerate() {
-                        println!("{}. {}", i + 1, e);
+                    println!("1. {first}");
+                    for (i, error) in errors.enumerate() {
+                        println!("{}. {error}", i + 2);
                     }
+                } else {
+                    println!("{filename} - VALID");
                 }
             }
         }
