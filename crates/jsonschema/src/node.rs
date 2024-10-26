@@ -334,7 +334,12 @@ impl Validate for SchemaNode {
                 kvs.validators[0].1.is_valid(instance)
             }
             NodeValidators::Keyword(kvs) => {
-                kvs.validators.iter().all(|(_, v)| v.is_valid(instance))
+                for (_, v) in &kvs.validators {
+                    if !v.is_valid(instance) {
+                        return false;
+                    }
+                }
+                true
             }
             NodeValidators::Array { validators } => validators.iter().all(|v| v.is_valid(instance)),
             NodeValidators::Boolean { validator: Some(_) } => false,
