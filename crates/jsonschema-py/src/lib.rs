@@ -1,6 +1,7 @@
 use std::{
     any::Any,
     cell::RefCell,
+    io::Write,
     panic::{self, AssertUnwindSafe},
 };
 
@@ -80,7 +81,7 @@ impl ValidationErrorIter {
 fn into_py_err(py: Python<'_>, error: jsonschema::ValidationError<'_>) -> PyResult<PyErr> {
     let pyerror_type = PyType::new_bound::<ValidationError>(py);
     let message = error.to_string();
-    let verbose_message = to_error_message(&error);
+    let verbose_message = to_error_message(&error, message.clone());
     let into_path = |segment: &str| {
         if let Ok(idx) = segment.parse::<usize>() {
             idx.into_py(py)
@@ -124,8 +125,7 @@ fn get_draft(draft: u8) -> PyResult<Draft> {
         DRAFT201909 => Ok(Draft::Draft201909),
         DRAFT202012 => Ok(Draft::Draft202012),
         _ => Err(exceptions::PyValueError::new_err(format!(
-            "Unknown draft: {}",
-            draft
+            "Unknown draft: {draft}"
         ))),
     }
 }
@@ -216,8 +216,11 @@ fn raise_on_error(
     error.map_or_else(|| Ok(()), |err| Err(into_py_err(py, err)?))
 }
 
-fn to_error_message(error: &jsonschema::ValidationError<'_>) -> String {
-    let mut message = error.to_string();
+fn is_ascii_number(s: &str) -> bool {
+    !s.is_empty() && s.as_bytes().iter().all(|&b| b.is_ascii_digit())
+}
+
+fn to_error_message(error: &jsonschema::ValidationError<'_>, mut message: String) -> String {
     // It roughly doubles
     message.reserve(message.len());
     message.push('\n');
@@ -225,7 +228,7 @@ fn to_error_message(error: &jsonschema::ValidationError<'_>) -> String {
     message.push_str("Failed validating");
 
     let push_segment = |m: &mut String, segment: &str| {
-        if segment.parse::<usize>().is_ok() {
+        if is_ascii_number(segment) {
             m.push_str(segment);
         } else {
             m.push('"');
@@ -257,8 +260,24 @@ fn to_error_message(error: &jsonschema::ValidationError<'_>) -> String {
     }
     message.push(':');
     message.push_str("\n    ");
-    message.push_str(&error.instance.to_string());
+    let mut writer = StringWriter(&mut message);
+    serde_json::to_writer(&mut writer, &error.instance).expect("Failed to serialize JSON");
     message
+}
+
+struct StringWriter<'a>(&'a mut String);
+
+impl<'a> Write for StringWriter<'a> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        // SAFETY: `serde_json` always produces valid UTF-8
+        self.0
+            .push_str(unsafe { std::str::from_utf8_unchecked(buf) });
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 /// is_valid(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True)

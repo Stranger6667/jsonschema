@@ -4,14 +4,15 @@
 
 ### Performance
 
-- Speedup Python -> Rust data serialization
+- Speedup Python -> Rust data serialization.
+- Speedup building error messages.
 
 ## [0.26.0] - 2024-10-26
 
 ### Performance
 
 - Optimize error formatting in some cases.
-- Speedup Python -> Rust data serialization
+- Speedup Python -> Rust data serialization.
 - Significant improvement for the `validate` function.
 
 ## [0.25.1] - 2024-10-25
