@@ -218,6 +218,8 @@ fn raise_on_error(
 
 fn to_error_message(error: &jsonschema::ValidationError<'_>) -> String {
     let mut message = error.to_string();
+    // It roughly doubles
+    message.reserve(message.len());
     message.push('\n');
     message.push('\n');
     message.push_str("Failed validating");

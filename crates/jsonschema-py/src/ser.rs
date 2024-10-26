@@ -3,7 +3,7 @@ use pyo3::{
     ffi::{
         PyDictObject, PyFloat_AS_DOUBLE, PyList_GET_ITEM, PyList_GET_SIZE, PyLong_AsLongLong,
         PyObject_GetAttr, PyTuple_GET_ITEM, PyTuple_GET_SIZE, PyUnicode_AsUTF8AndSize, Py_DECREF,
-        Py_TYPE,
+        Py_TPFLAGS_DICT_SUBCLASS, Py_TYPE,
     },
     prelude::*,
     types::PyAny,
@@ -14,7 +14,7 @@ use serde::{
 };
 
 use crate::{ffi, types};
-use std::ffi::{c_char, CStr};
+use std::ffi::CStr;
 
 pub const RECURSION_LIMIT: u8 = 255;
 
@@ -29,7 +29,7 @@ pub enum ObjectType {
     Dict,
     Tuple,
     Enum,
-    Unknown(*const c_char),
+    Unknown,
 }
 
 pub(crate) struct SerializePyObject {
@@ -69,15 +69,7 @@ fn is_enum_subclass(object_type: *mut pyo3::ffi::PyTypeObject) -> bool {
 
 #[inline]
 fn is_dict_subclass(object_type: *mut pyo3::ffi::PyTypeObject) -> bool {
-    // traverse the object's inheritance chain to check if it's a dict subclass
-    let mut current_type = object_type;
-    while !current_type.is_null() {
-        if current_type == unsafe { types::DICT_TYPE } {
-            return true;
-        }
-        current_type = unsafe { (*current_type).tp_base }
-    }
-    false
+    unsafe { (*object_type).tp_flags & Py_TPFLAGS_DICT_SUBCLASS != 0 }
 }
 
 fn get_object_type_from_object(object: *mut pyo3::ffi::PyObject) -> ObjectType {
@@ -105,29 +97,29 @@ fn check_type_is_str<E: ser::Error>(object: *mut pyo3::ffi::PyObject) -> Result<
 
 #[inline]
 pub fn get_object_type(object_type: *mut pyo3::ffi::PyTypeObject) -> ObjectType {
-    if object_type == unsafe { types::STR_TYPE } {
+    // Dict & str are the most popular in real-life JSON structures
+    if object_type == unsafe { types::DICT_TYPE } {
+        ObjectType::Dict
+    } else if object_type == unsafe { types::STR_TYPE } {
         ObjectType::Str
-    } else if object_type == unsafe { types::FLOAT_TYPE } {
-        ObjectType::Float
-    } else if object_type == unsafe { types::BOOL_TYPE } {
-        ObjectType::Bool
-    } else if object_type == unsafe { types::INT_TYPE } {
-        ObjectType::Int
-    } else if object_type == unsafe { types::NONE_TYPE } {
-        ObjectType::None
     } else if object_type == unsafe { types::LIST_TYPE } {
         ObjectType::List
-    } else if object_type == unsafe { types::TUPLE_TYPE } {
-        ObjectType::Tuple
-    } else if object_type == unsafe { types::DICT_TYPE } {
-        ObjectType::Dict
-    } else if is_enum_subclass(object_type) {
-        ObjectType::Enum
+    } else if object_type == unsafe { types::INT_TYPE } {
+        ObjectType::Int
+    } else if object_type == unsafe { types::BOOL_TYPE } {
+        ObjectType::Bool
+    } else if object_type == unsafe { types::FLOAT_TYPE } {
+        ObjectType::Float
+    } else if object_type == unsafe { types::NONE_TYPE } {
+        ObjectType::None
     } else if is_dict_subclass(object_type) {
         ObjectType::Dict
+    } else if object_type == unsafe { types::TUPLE_TYPE } {
+        ObjectType::Tuple
+    } else if is_enum_subclass(object_type) {
+        ObjectType::Enum
     } else {
-        let type_name_ptr = unsafe { (*object_type).tp_name };
-        ObjectType::Unknown(type_name_ptr)
+        ObjectType::Unknown
     }
 }
 
@@ -152,6 +144,15 @@ macro_rules! bail_on_integer_conversion_error {
                     "Internal Error: Failed to convert exception to string",
                 ))
             };
+        }
+    };
+}
+
+macro_rules! tri {
+    ($expr:expr) => {
+        match $expr {
+            Ok(val) => val,
+            Err(err) => return Err(err),
         }
     };
 }
@@ -204,9 +205,9 @@ impl Serialize for SerializePyObject {
                 }
                 let length = unsafe { (*self.object.cast::<PyDictObject>()).ma_used } as usize;
                 if length == 0 {
-                    serializer.serialize_map(Some(0))?.end()
+                    tri!(serializer.serialize_map(Some(0))).end()
                 } else {
-                    let mut map = serializer.serialize_map(Some(length))?;
+                    let mut map = tri!(serializer.serialize_map(Some(length)));
                     let mut pos = 0_isize;
                     let mut str_size: pyo3::ffi::Py_ssize_t = 0;
                     let mut key: *mut pyo3::ffi::PyObject = std::ptr::null_mut();
@@ -215,7 +216,7 @@ impl Serialize for SerializePyObject {
                         unsafe {
                             pyo3::ffi::PyDict_Next(self.object, &mut pos, &mut key, &mut value);
                         }
-                        check_type_is_str(key)?;
+                        tri!(check_type_is_str(key));
                         let ptr = unsafe { PyUnicode_AsUTF8AndSize(key, &mut str_size) };
                         let slice = unsafe {
                             std::str::from_utf8_unchecked(std::slice::from_raw_parts(
@@ -223,11 +224,10 @@ impl Serialize for SerializePyObject {
                                 str_size as usize,
                             ))
                         };
-                        #[allow(clippy::arithmetic_side_effects)]
-                        map.serialize_entry(
+                        tri!(map.serialize_entry(
                             slice,
                             &SerializePyObject::new(value, self.recursion_depth + 1),
-                        )?;
+                        ));
                     }
                     map.end()
                 }
@@ -238,11 +238,11 @@ impl Serialize for SerializePyObject {
                 }
                 let length = unsafe { PyList_GET_SIZE(self.object) as usize };
                 if length == 0 {
-                    serializer.serialize_seq(Some(0))?.end()
+                    tri!(serializer.serialize_seq(Some(0))).end()
                 } else {
                     let mut type_ptr = std::ptr::null_mut();
                     let mut ob_type = ObjectType::Str;
-                    let mut sequence = serializer.serialize_seq(Some(length))?;
+                    let mut sequence = tri!(serializer.serialize_seq(Some(length)));
                     for i in 0..length {
                         let elem = unsafe { PyList_GET_ITEM(self.object, i as isize) };
                         let current_ob_type = unsafe { Py_TYPE(elem) };
@@ -250,12 +250,11 @@ impl Serialize for SerializePyObject {
                             type_ptr = current_ob_type;
                             ob_type = get_object_type(current_ob_type);
                         }
-                        #[allow(clippy::arithmetic_side_effects)]
-                        sequence.serialize_element(&SerializePyObject::with_obtype(
+                        tri!(sequence.serialize_element(&SerializePyObject::with_obtype(
                             elem,
                             ob_type,
                             self.recursion_depth + 1,
-                        ))?;
+                        )));
                     }
                     sequence.end()
                 }
@@ -266,11 +265,11 @@ impl Serialize for SerializePyObject {
                 }
                 let length = unsafe { PyTuple_GET_SIZE(self.object) as usize };
                 if length == 0 {
-                    serializer.serialize_seq(Some(0))?.end()
+                    tri!(serializer.serialize_seq(Some(0))).end()
                 } else {
                     let mut type_ptr = std::ptr::null_mut();
                     let mut ob_type = ObjectType::Str;
-                    let mut sequence = serializer.serialize_seq(Some(length))?;
+                    let mut sequence = tri!(serializer.serialize_seq(Some(length)));
                     for i in 0..length {
                         let elem = unsafe { PyTuple_GET_ITEM(self.object, i as isize) };
                         let current_ob_type = unsafe { Py_TYPE(elem) };
@@ -278,12 +277,11 @@ impl Serialize for SerializePyObject {
                             type_ptr = current_ob_type;
                             ob_type = get_object_type(current_ob_type);
                         }
-                        #[allow(clippy::arithmetic_side_effects)]
-                        sequence.serialize_element(&SerializePyObject::with_obtype(
+                        tri!(sequence.serialize_element(&SerializePyObject::with_obtype(
                             elem,
                             ob_type,
                             self.recursion_depth + 1,
-                        ))?;
+                        )));
                     }
                     sequence.end()
                 }
@@ -293,10 +291,13 @@ impl Serialize for SerializePyObject {
                 #[allow(clippy::arithmetic_side_effects)]
                 SerializePyObject::new(value, self.recursion_depth + 1).serialize(serializer)
             }
-            ObjectType::Unknown(type_name_ptr) => Err(ser::Error::custom(format!(
-                "Unsupported type: '{}'",
-                unsafe { CStr::from_ptr(type_name_ptr).to_string_lossy() }
-            ))),
+            ObjectType::Unknown => {
+                let object_type = unsafe { Py_TYPE(self.object) };
+                Err(ser::Error::custom(format!(
+                    "Unsupported type: '{}'",
+                    unsafe { CStr::from_ptr((*object_type).tp_name).to_string_lossy() }
+                )))
+            }
         }
     }
 }

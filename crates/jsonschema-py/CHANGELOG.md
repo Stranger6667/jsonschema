@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Speedup Python -> Rust data serialization
+
 ## [0.26.0] - 2024-10-26
 
 ### Performance
