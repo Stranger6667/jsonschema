@@ -33,7 +33,7 @@ enum NodeValidators {
     /// `SchemaNode` with a single `BooleanValidator` as it's `validators`.
     Boolean { validator: Option<BoxedValidator> },
     /// The result of compiling a schema which is composed of keywords (almost all schemas)
-    Keyword(Box<KeywordValidators>),
+    Keyword(KeywordValidators),
     /// The result of compiling a schema which is "array valued", e.g the "dependencies" keyword of
     /// draft 7 which can take values which are an array of other property names
     Array { validators: Vec<BoxedValidator> },
@@ -75,10 +75,10 @@ impl SchemaNode {
         SchemaNode {
             location: ctx.location().clone(),
             absolute_path: ctx.base_uri(),
-            validators: NodeValidators::Keyword(Box::new(KeywordValidators {
+            validators: NodeValidators::Keyword(KeywordValidators {
                 unmatched_keywords,
                 validators,
-            })),
+            }),
         }
     }
 
@@ -161,41 +161,6 @@ impl SchemaNode {
             self.absolute_path.clone(),
             annotations,
         )
-    }
-
-    /// Here we return a `NodeValidatorsErrIter` to avoid allocating in some situations. This isn't
-    /// always possible but for a lot of common cases (e.g nodes with a single child) we can do it.
-    /// This is wrapped in a `Box` by `SchemaNode::validate`
-    pub(crate) fn err_iter<'a>(
-        &self,
-        instance: &'a Value,
-        location: &LazyLocation,
-    ) -> NodeValidatorsErrIter<'a> {
-        match &self.validators {
-            NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
-                NodeValidatorsErrIter::Single(kvs.validators[0].1.iter_errors(instance, location))
-            }
-            NodeValidators::Keyword(kvs) => NodeValidatorsErrIter::Multiple(
-                kvs.validators
-                    .iter()
-                    .flat_map(|(_, v)| v.iter_errors(instance, location))
-                    .collect::<Vec<_>>()
-                    .into_iter(),
-            ),
-            NodeValidators::Boolean {
-                validator: Some(v), ..
-            } => NodeValidatorsErrIter::Single(v.iter_errors(instance, location)),
-            NodeValidators::Boolean {
-                validator: None, ..
-            } => NodeValidatorsErrIter::NoErrs,
-            NodeValidators::Array { validators } => NodeValidatorsErrIter::Multiple(
-                validators
-                    .iter()
-                    .flat_map(move |v| v.iter_errors(instance, location))
-                    .collect::<Vec<_>>()
-                    .into_iter(),
-            ),
-        }
     }
 
     /// Helper function to apply an iterator of `(Into<PathChunk>, Validate)` to a value. This is
@@ -293,7 +258,31 @@ impl SchemaNode {
 
 impl Validate for SchemaNode {
     fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
-        Box::new(self.err_iter(instance, location))
+        match &self.validators {
+            NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
+                kvs.validators[0].1.iter_errors(instance, location)
+            }
+            NodeValidators::Keyword(kvs) => Box::new(
+                kvs.validators
+                    .iter()
+                    .flat_map(|(_, v)| v.iter_errors(instance, location))
+                    .collect::<Vec<_>>()
+                    .into_iter(),
+            ),
+            NodeValidators::Boolean {
+                validator: Some(v), ..
+            } => v.iter_errors(instance, location),
+            NodeValidators::Boolean {
+                validator: None, ..
+            } => Box::new(std::iter::empty()),
+            NodeValidators::Array { validators } => Box::new(
+                validators
+                    .iter()
+                    .flat_map(move |v| v.iter_errors(instance, location))
+                    .collect::<Vec<_>>()
+                    .into_iter(),
+            ),
+        }
     }
 
     fn validate<'i>(
@@ -366,7 +355,7 @@ impl Validate for SchemaNode {
                 let KeywordValidators {
                     ref unmatched_keywords,
                     ref validators,
-                } = **kvals;
+                } = *kvals;
                 let annotations: Option<Annotations<'a>> =
                     unmatched_keywords.as_ref().map(Annotations::from);
                 self.apply_subschemas(
@@ -420,24 +409,6 @@ impl<'a> ExactSizeIterator for NodeValidatorsIter<'a> {
             Self::BooleanValidators(..) => 1,
             Self::KeywordValidators(v) => v.len(),
             Self::ArrayValidators(v) => v.len(),
-        }
-    }
-}
-
-pub(crate) enum NodeValidatorsErrIter<'a> {
-    NoErrs,
-    Single(ErrorIterator<'a>),
-    Multiple(std::vec::IntoIter<ValidationError<'a>>),
-}
-
-impl<'a> Iterator for NodeValidatorsErrIter<'a> {
-    type Item = ValidationError<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::NoErrs => None,
-            Self::Single(i) => i.next(),
-            Self::Multiple(ms) => ms.next(),
         }
     }
 }
