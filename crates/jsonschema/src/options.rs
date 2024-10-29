@@ -55,28 +55,28 @@ impl ValidationOptions {
     pub(crate) fn draft(&self) -> Draft {
         self.draft.unwrap_or_default()
     }
-    pub(crate) fn draft_for(&self, contents: &Value) -> Draft {
+    pub(crate) fn draft_for(&self, contents: &Value) -> Result<Draft, ValidationError<'static>> {
         // Preference:
         //  - Explicitly set
         //  - Autodetected
         //  - Default
         if let Some(draft) = self.draft {
-            draft
+            Ok(draft)
         } else {
             let default = Draft::default();
             match default.detect(contents) {
-                Ok(draft) => draft,
+                Ok(draft) => Ok(draft),
                 Err(referencing::Error::UnknownSpecification { specification }) => {
                     // Try to retrieve the specification and detect its draft
                     if let Ok(Ok(retrieved)) = uri::from_str(&specification)
                         .map(|uri| self.retriever.retrieve(&uri.borrow()))
                     {
-                        default.detect(&retrieved).unwrap_or_default()
+                        Ok(default.detect(&retrieved)?)
                     } else {
-                        default
+                        Err(referencing::Error::UnknownSpecification { specification }.into())
                     }
                 }
-                _ => default,
+                Err(error) => Err(error.into()),
             }
         }
     }

@@ -1335,6 +1335,19 @@ mod tests {
         assert!(validate_fn(&schema, &invalid_instance).is_err());
     }
 
+    #[test]
+    fn test_invalid_schema_keyword() {
+        let schema = json!({
+            // Note `https`, not `http`
+            "$schema": "https://json-schema.org/draft-07/schema",
+        });
+        let error = crate::validator_for(&schema).expect_err("Should fail");
+        assert_eq!(
+            error.to_string(),
+            "Unknown specification: https://json-schema.org/draft-07/schema"
+        );
+    }
+
     #[test_case(Draft::Draft4)]
     #[test_case(Draft::Draft6)]
     #[test_case(Draft::Draft7)]

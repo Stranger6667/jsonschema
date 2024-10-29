@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Return "Unknown specification" error on `https`-prefixed `$schema` for Draft 4, 5, 6. [#629](https://github.com/Stranger6667/jsonschema/issues/629)
+
 ### Performance
 
 - Speedup Python -> Rust data serialization.

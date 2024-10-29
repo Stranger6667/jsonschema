@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Return "Unknown specification" error on `https`-prefixed `$schema` for Draft 4, 5, 6. [#629](https://github.com/Stranger6667/jsonschema/issues/629)
+
 ## [0.26.0] - 2024-10-26
 
 **Important:** This release contains breaking changes. See the [Migration Guide](MIGRATION.md) for details on transitioning to the new API.

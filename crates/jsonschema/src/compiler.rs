@@ -285,7 +285,7 @@ pub(crate) fn build_validator(
     mut config: ValidationOptions,
     schema: &Value,
 ) -> Result<Validator, ValidationError<'static>> {
-    let draft = config.draft_for(schema);
+    let draft = config.draft_for(schema)?;
     let resource_ref = draft.create_resource_ref(schema);
     let resource = draft.create_resource(schema.clone());
     let base_uri = resource.id().unwrap_or(DEFAULT_ROOT_URL).to_string();

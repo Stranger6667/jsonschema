@@ -155,6 +155,13 @@ def test_invalid_value(method):
         getattr(schema, method)(object())
 
 
+def test_invalid_schema_keyword():
+    # Note `https`, not `http`
+    schema = {"$schema": "https://json-schema.org/draft-07/schema"}
+    with pytest.raises(ValidationError, match="Unknown specification: https://json-schema.org/draft-07/schema"):
+        validator_for(schema)
+
+
 def test_error_message():
     schema = {"properties": {"foo": {"type": "integer"}}}
     instance = {"foo": None}
