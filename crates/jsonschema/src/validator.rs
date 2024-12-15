@@ -193,7 +193,7 @@ impl Validator {
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         Self::options().build(schema)
     }
-    /// Run validation against `instance` and return an iterator over [`ValidationError`] in the error case.
+    /// Validate `instance` against `schema` and return the first error if any.
     #[inline]
     pub fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         self.root.validate(instance, &LazyLocation::new())

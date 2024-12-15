@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Documentation
+
+- Fix documentation for `validate`
+
 ## [0.26.1] - 2024-10-29
 
 ### Fixed
