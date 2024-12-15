@@ -402,7 +402,7 @@ impl<'a> Iterator for NodeValidatorsIter<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for NodeValidatorsIter<'a> {
+impl ExactSizeIterator for NodeValidatorsIter<'_> {
     fn len(&self) -> usize {
         match self {
             Self::NoValidator => 0,

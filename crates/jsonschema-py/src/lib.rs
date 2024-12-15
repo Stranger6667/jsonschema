@@ -267,7 +267,7 @@ fn to_error_message(error: &jsonschema::ValidationError<'_>, mut message: String
 
 struct StringWriter<'a>(&'a mut String);
 
-impl<'a> Write for StringWriter<'a> {
+impl Write for StringWriter<'_> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         // SAFETY: `serde_json` always produces valid UTF-8
         self.0

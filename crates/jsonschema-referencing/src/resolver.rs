@@ -16,14 +16,14 @@ pub struct Resolver<'r> {
     scopes: List<Uri<String>>,
 }
 
-impl<'r> PartialEq for Resolver<'r> {
+impl PartialEq for Resolver<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.base_uri == other.base_uri
     }
 }
-impl<'r> Eq for Resolver<'r> {}
+impl Eq for Resolver<'_> {}
 
-impl<'r> fmt::Debug for Resolver<'r> {
+impl fmt::Debug for Resolver<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Resolver")
             .field("base_uri", &self.base_uri.as_str())

@@ -12,7 +12,7 @@ pub enum LocationSegment<'a> {
     Index(usize),
 }
 
-impl<'a> fmt::Display for LocationSegment<'a> {
+impl fmt::Display for LocationSegment<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LocationSegment::Property(property) => f.write_str(property),
@@ -37,7 +37,7 @@ impl Default for LazyLocation<'_, '_> {
     }
 }
 
-impl<'a, 'b> LazyLocation<'a, 'b> {
+impl<'a> LazyLocation<'a, '_> {
     /// Create a root node of a JSON pointer.
     pub const fn new() -> Self {
         LazyLocation {

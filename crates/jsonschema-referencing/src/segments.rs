@@ -37,7 +37,7 @@ impl<'a> From<Cow<'a, str>> for Segment<'a> {
     }
 }
 
-impl<'a> From<usize> for Segment<'a> {
+impl From<usize> for Segment<'_> {
     fn from(value: usize) -> Self {
         Segment::Index(value)
     }

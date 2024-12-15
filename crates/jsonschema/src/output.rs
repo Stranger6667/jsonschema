@@ -30,7 +30,7 @@ pub struct Output<'a, 'b> {
     instance: &'b serde_json::Value,
 }
 
-impl<'a, 'b> Output<'a, 'b> {
+impl<'a> Output<'a, '_> {
     pub(crate) const fn new<'c, 'd>(
         schema: &'c Validator,
         root_node: &'c SchemaNode,
@@ -117,7 +117,7 @@ pub enum BasicOutput<'a> {
     Invalid(VecDeque<OutputUnit<ErrorDescription>>),
 }
 
-impl<'a> BasicOutput<'a> {
+impl BasicOutput<'_> {
     /// A shortcut to check whether the output represents passed validation.
     #[must_use]
     pub const fn is_valid(&self) -> bool {
@@ -136,7 +136,7 @@ impl<'a> From<OutputUnit<Annotations<'a>>> for BasicOutput<'a> {
     }
 }
 
-impl<'a> AddAssign for BasicOutput<'a> {
+impl AddAssign for BasicOutput<'_> {
     fn add_assign(&mut self, rhs: Self) {
         match (&mut *self, rhs) {
             (BasicOutput::Valid(ref mut anns), BasicOutput::Valid(anns_rhs)) => {
@@ -153,7 +153,7 @@ impl<'a> AddAssign for BasicOutput<'a> {
     }
 }
 
-impl<'a> Sum for BasicOutput<'a> {
+impl Sum for BasicOutput<'_> {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
         let result = BasicOutput::Valid(VecDeque::new());
         iter.fold(result, |mut acc, elem| {
@@ -163,7 +163,7 @@ impl<'a> Sum for BasicOutput<'a> {
     }
 }
 
-impl<'a> Default for BasicOutput<'a> {
+impl Default for BasicOutput<'_> {
     fn default() -> Self {
         BasicOutput::Valid(VecDeque::new())
     }
@@ -306,7 +306,7 @@ impl<'a> From<&'a serde_json::Value> for Annotations<'a> {
     }
 }
 
-impl<'a> From<serde_json::Value> for Annotations<'a> {
+impl From<serde_json::Value> for Annotations<'_> {
     fn from(v: serde_json::Value) -> Self {
         Annotations(AnnotationsInner::Value(Box::new(v)))
     }
@@ -342,7 +342,7 @@ impl<'a> From<&'a str> for ErrorDescription {
     }
 }
 
-impl<'a> serde::Serialize for BasicOutput<'a> {
+impl serde::Serialize for BasicOutput<'_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -362,7 +362,7 @@ impl<'a> serde::Serialize for BasicOutput<'a> {
     }
 }
 
-impl<'a> serde::Serialize for AnnotationsInner<'a> {
+impl serde::Serialize for AnnotationsInner<'_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -375,7 +375,7 @@ impl<'a> serde::Serialize for AnnotationsInner<'a> {
     }
 }
 
-impl<'a> serde::Serialize for OutputUnit<Annotations<'a>> {
+impl serde::Serialize for OutputUnit<Annotations<'_>> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,

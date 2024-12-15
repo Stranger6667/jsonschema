@@ -720,12 +720,12 @@ impl Validate for CustomFormatValidator {
         if self.is_valid(instance) {
             Ok(())
         } else {
-            return Err(ValidationError::format(
+            Err(ValidationError::format(
                 self.location.clone(),
                 location.into(),
                 instance,
                 self.format_name.clone(),
-            ));
+            ))
         }
     }
 
@@ -797,12 +797,12 @@ pub(crate) fn compile<'a>(
                 if ctx.are_unknown_formats_ignored() {
                     None
                 } else {
-                    return Some(Err(ValidationError::format(
+                    Some(Err(ValidationError::format(
                         Location::new(),
                         ctx.location().clone(),
                         schema,
                         "unknown format",
-                    )));
+                    )))
                 }
             }
         }

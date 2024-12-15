@@ -130,9 +130,10 @@ impl<'a> Context<'a> {
         !matches!(self.draft, Draft::Draft4)
     }
     pub(crate) fn validates_formats_by_default(&self) -> bool {
-        self.config
-            .validate_formats()
-            .unwrap_or_else(|| matches!(self.draft, Draft::Draft4 | Draft::Draft6 | Draft::Draft7))
+        self.config.validate_formats().unwrap_or(matches!(
+            self.draft,
+            Draft::Draft4 | Draft::Draft6 | Draft::Draft7
+        ))
     }
     pub(crate) fn are_unknown_formats_ignored(&self) -> bool {
         self.config.are_unknown_formats_ignored()
