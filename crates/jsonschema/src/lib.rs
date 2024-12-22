@@ -478,7 +478,7 @@ pub(crate) mod properties;
 mod retriever;
 mod validator;
 
-pub use error::{ErrorIterator, ValidationError};
+pub use error::{ErrorIterator, MaskedValidationError, ValidationError};
 pub use keywords::custom::Keyword;
 pub use options::ValidationOptions;
 pub use output::BasicOutput;

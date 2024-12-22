@@ -1,4 +1,40 @@
-//! Error types
+//! # Error Handling
+//!
+//! ## Masking Sensitive Data
+//!
+//! When working with sensitive data, you might want to hide actual values from error messages.
+//! The `ValidationError` type provides methods to mask instance values while preserving the error context:
+//!
+//! ```rust
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! use serde_json::json;
+//!
+//! let schema = json!({"maxLength": 5});
+//! let instance = json!("sensitive data");
+//! let validator = jsonschema::validator_for(&schema)?;
+//!
+//! if let Err(error) = validator.validate(&instance) {
+//!     // Use default masking (replaces values with "value")
+//!     println!("Masked error: {}", error.masked());
+//!     // Or provide custom placeholder
+//!     println!("Custom masked: {}", error.masked_with("[REDACTED]"));
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! The masked error messages will replace instance values with placeholders while maintaining
+//! schema-related information like property names, limits, and types.
+//!
+//! Original error:
+//! ```text
+//! "sensitive data" is longer than 5 characters
+//! ```
+//!
+//! Masked error:
+//! ```text
+//! value is longer than 5 characters
+//! ```
 use crate::{
     paths::Location,
     primitive_type::{PrimitiveType, PrimitiveTypesBitMap},
@@ -140,6 +176,22 @@ pub enum TypeKind {
 
 /// Shortcuts for creation of specific error kinds.
 impl<'a> ValidationError<'a> {
+    /// Returns a wrapper that masks instance values in error messages.
+    /// Uses "value" as a default placeholder.
+    pub fn masked<'b>(&'b self) -> MaskedValidationError<'a, 'b, 'static> {
+        self.masked_with("value")
+    }
+
+    /// Returns a wrapper that masks instance values in error messages with a custom placeholder.
+    pub fn masked_with<'b, 'c>(
+        &'b self,
+        placeholder: impl Into<Cow<'c, str>>,
+    ) -> MaskedValidationError<'a, 'b, 'c> {
+        MaskedValidationError {
+            error: self,
+            placeholder: placeholder.into(),
+        }
+    }
     pub(crate) fn into_owned(self) -> ValidationError<'static> {
         ValidationError {
             instance_path: self.instance_path.clone(),
@@ -708,6 +760,30 @@ impl From<FromUtf8Error> for ValidationError<'_> {
     }
 }
 
+fn write_quoted_list(f: &mut Formatter<'_>, items: &[impl fmt::Display]) -> fmt::Result {
+    let mut iter = items.iter();
+    if let Some(item) = iter.next() {
+        f.write_char('\'')?;
+        write!(f, "{}", item)?;
+        f.write_char('\'')?;
+    }
+    for item in iter {
+        f.write_str(", ")?;
+        f.write_char('\'')?;
+        write!(f, "{}", item)?;
+        f.write_char('\'')?;
+    }
+    Ok(())
+}
+
+fn write_unexpected_suffix(f: &mut Formatter<'_>, len: usize) -> fmt::Result {
+    f.write_str(if len == 1 {
+        " was unexpected)"
+    } else {
+        " were unexpected)"
+    })
+}
+
 /// Textual representation of various validation errors.
 impl fmt::Display for ValidationError<'_> {
     #[allow(clippy::too_many_lines)] // The function is long but it does formatting only
@@ -731,32 +807,12 @@ impl fmt::Display for ValidationError<'_> {
                     write!(f, "{}", item)?;
                 }
 
-                let items_count = array.len() - limit;
-                f.write_str(if items_count == 1 {
-                    " was unexpected)"
-                } else {
-                    " were unexpected)"
-                })
+                write_unexpected_suffix(f, array.len() - limit)
             }
             ValidationErrorKind::AdditionalProperties { unexpected } => {
                 f.write_str("Additional properties are not allowed (")?;
-                let mut iter = unexpected.iter();
-                if let Some(prop) = iter.next() {
-                    f.write_char('\'')?;
-                    write!(f, "{}", prop)?;
-                    f.write_char('\'')?;
-                }
-                for prop in iter {
-                    f.write_str(", ")?;
-                    f.write_char('\'')?;
-                    write!(f, "{}", prop)?;
-                    f.write_char('\'')?;
-                }
-                f.write_str(if unexpected.len() == 1 {
-                    " was unexpected)"
-                } else {
-                    " were unexpected)"
-                })
+                write_quoted_list(f, unexpected)?;
+                write_unexpected_suffix(f, unexpected.len())
             }
             ValidationErrorKind::AnyOf => write!(
                 f,
@@ -877,43 +933,13 @@ impl fmt::Display for ValidationError<'_> {
             }
             ValidationErrorKind::UnevaluatedItems { unexpected } => {
                 f.write_str("Unevaluated items are not allowed (")?;
-                let mut iter = unexpected.iter();
-                if let Some(item) = iter.next() {
-                    f.write_char('\'')?;
-                    write!(f, "{}", item)?;
-                    f.write_char('\'')?;
-                }
-                for item in iter {
-                    f.write_str(", ")?;
-                    f.write_char('\'')?;
-                    write!(f, "{}", item)?;
-                    f.write_char('\'')?;
-                }
-                f.write_str(if unexpected.len() == 1 {
-                    " was unexpected)"
-                } else {
-                    " were unexpected)"
-                })
+                write_quoted_list(f, unexpected)?;
+                write_unexpected_suffix(f, unexpected.len())
             }
             ValidationErrorKind::UnevaluatedProperties { unexpected } => {
                 f.write_str("Unevaluated properties are not allowed (")?;
-                let mut iter = unexpected.iter();
-                if let Some(prop) = iter.next() {
-                    f.write_char('\'')?;
-                    write!(f, "{}", prop)?;
-                    f.write_char('\'')?;
-                }
-                for prop in iter {
-                    f.write_str(", ")?;
-                    f.write_char('\'')?;
-                    write!(f, "{}", prop)?;
-                    f.write_char('\'')?;
-                }
-                f.write_str(if unexpected.len() == 1 {
-                    " was unexpected)"
-                } else {
-                    " were unexpected)"
-                })
+                write_quoted_list(f, unexpected)?;
+                write_unexpected_suffix(f, unexpected.len())
             }
             ValidationErrorKind::UniqueItems => {
                 write!(f, "{} has non-unique elements", self.instance)
@@ -925,6 +951,195 @@ impl fmt::Display for ValidationError<'_> {
                 kind: TypeKind::Multiple(types),
             } => {
                 write!(f, "{} is not of types ", self.instance)?;
+                let mut iter = types.into_iter();
+                if let Some(t) = iter.next() {
+                    f.write_char('"')?;
+                    write!(f, "{}", t)?;
+                    f.write_char('"')?;
+                }
+                for t in iter {
+                    f.write_str(", ")?;
+                    f.write_char('"')?;
+                    write!(f, "{}", t)?;
+                    f.write_char('"')?;
+                }
+                Ok(())
+            }
+            ValidationErrorKind::Custom { message } => f.write_str(message),
+        }
+    }
+}
+
+/// A wrapper that provides a masked display of validation errors.
+pub struct MaskedValidationError<'a, 'b, 'c> {
+    error: &'b ValidationError<'a>,
+    placeholder: Cow<'c, str>,
+}
+
+impl fmt::Display for MaskedValidationError<'_, '_, '_> {
+    #[allow(clippy::too_many_lines)]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.error.kind {
+            ValidationErrorKind::Referencing(error) => error.fmt(f),
+            ValidationErrorKind::BacktrackLimitExceeded { error } => error.fmt(f),
+            ValidationErrorKind::Format { format } => {
+                write!(f, r#"{} is not a "{format}""#, self.placeholder)
+            }
+            ValidationErrorKind::AdditionalItems { limit } => {
+                write!(f, "Additional items are not allowed ({limit} items)")
+            }
+            ValidationErrorKind::AdditionalProperties { unexpected } => {
+                f.write_str("Additional properties are not allowed (")?;
+                write_quoted_list(f, unexpected)?;
+                write_unexpected_suffix(f, unexpected.len())
+            }
+            ValidationErrorKind::AnyOf => write!(
+                f,
+                "{} is not valid under any of the schemas listed in the 'anyOf' keyword",
+                self.placeholder
+            ),
+            ValidationErrorKind::OneOfNotValid => write!(
+                f,
+                "{} is not valid under any of the schemas listed in the 'oneOf' keyword",
+                self.placeholder
+            ),
+            ValidationErrorKind::Contains => write!(
+                f,
+                "None of {} are valid under the given schema",
+                self.placeholder
+            ),
+            ValidationErrorKind::Constant { expected_value } => {
+                write!(f, "{} was expected", expected_value)
+            }
+            ValidationErrorKind::ContentEncoding { content_encoding } => {
+                write!(
+                    f,
+                    r#"{} is not compliant with "{}" content encoding"#,
+                    self.placeholder, content_encoding
+                )
+            }
+            ValidationErrorKind::ContentMediaType { content_media_type } => {
+                write!(
+                    f,
+                    r#"{} is not compliant with "{}" media type"#,
+                    self.placeholder, content_media_type
+                )
+            }
+            ValidationErrorKind::FromUtf8 { error } => error.fmt(f),
+            ValidationErrorKind::Enum { options } => {
+                write!(f, "{} is not one of {}", self.placeholder, options)
+            }
+            ValidationErrorKind::ExclusiveMaximum { limit } => write!(
+                f,
+                "{} is greater than or equal to the maximum of {}",
+                self.placeholder, limit
+            ),
+            ValidationErrorKind::ExclusiveMinimum { limit } => write!(
+                f,
+                "{} is less than or equal to the minimum of {}",
+                self.placeholder, limit
+            ),
+            ValidationErrorKind::FalseSchema => {
+                write!(f, "False schema does not allow {}", self.placeholder)
+            }
+            ValidationErrorKind::Maximum { limit } => write!(
+                f,
+                "{} is greater than the maximum of {}",
+                self.placeholder, limit
+            ),
+            ValidationErrorKind::Minimum { limit } => {
+                write!(
+                    f,
+                    "{} is less than the minimum of {}",
+                    self.placeholder, limit
+                )
+            }
+            ValidationErrorKind::MaxLength { limit } => write!(
+                f,
+                "{} is longer than {} character{}",
+                self.placeholder,
+                limit,
+                if *limit == 1 { "" } else { "s" }
+            ),
+            ValidationErrorKind::MinLength { limit } => write!(
+                f,
+                "{} is shorter than {} character{}",
+                self.placeholder,
+                limit,
+                if *limit == 1 { "" } else { "s" }
+            ),
+            ValidationErrorKind::MaxItems { limit } => write!(
+                f,
+                "{} has more than {} item{}",
+                self.placeholder,
+                limit,
+                if *limit == 1 { "" } else { "s" }
+            ),
+            ValidationErrorKind::MinItems { limit } => write!(
+                f,
+                "{} has less than {} item{}",
+                self.placeholder,
+                limit,
+                if *limit == 1 { "" } else { "s" }
+            ),
+            ValidationErrorKind::MaxProperties { limit } => write!(
+                f,
+                "{} has more than {} propert{}",
+                self.placeholder,
+                limit,
+                if *limit == 1 { "y" } else { "ies" }
+            ),
+            ValidationErrorKind::MinProperties { limit } => write!(
+                f,
+                "{} has less than {} propert{}",
+                self.placeholder,
+                limit,
+                if *limit == 1 { "y" } else { "ies" }
+            ),
+            ValidationErrorKind::Not { schema } => {
+                write!(f, "{} is not allowed for {}", schema, self.placeholder)
+            }
+            ValidationErrorKind::OneOfMultipleValid => write!(
+                f,
+                "{} is valid under more than one of the schemas listed in the 'oneOf' keyword",
+                self.placeholder
+            ),
+            ValidationErrorKind::Pattern { pattern } => {
+                write!(f, r#"{} does not match "{}""#, self.placeholder, pattern)
+            }
+            ValidationErrorKind::PropertyNames { error } => error.fmt(f),
+            ValidationErrorKind::Required { property } => {
+                write!(f, "{} is a required property", property)
+            }
+            ValidationErrorKind::MultipleOf { multiple_of } => {
+                write!(
+                    f,
+                    "{} is not a multiple of {}",
+                    self.placeholder, multiple_of
+                )
+            }
+            ValidationErrorKind::UnevaluatedItems { unexpected } => {
+                write!(
+                    f,
+                    "Unevaluated items are not allowed ({} items)",
+                    unexpected.len()
+                )
+            }
+            ValidationErrorKind::UnevaluatedProperties { unexpected } => {
+                f.write_str("Unevaluated properties are not allowed (")?;
+                write_quoted_list(f, unexpected)?;
+                write_unexpected_suffix(f, unexpected.len())
+            }
+            ValidationErrorKind::UniqueItems => {
+                write!(f, "{} has non-unique elements", self.placeholder)
+            }
+            ValidationErrorKind::Type {
+                kind: TypeKind::Single(type_),
+            } => write!(f, r#"{} is not of type "{}""#, self.placeholder, type_),
+            ValidationErrorKind::Type {
+                kind: TypeKind::Multiple(types),
+            } => {
+                write!(f, "{} is not of types ", self.placeholder)?;
                 let mut iter = types.into_iter();
                 if let Some(t) = iter.next() {
                     f.write_char('"')?;
@@ -1089,5 +1304,81 @@ mod tests {
 
         assert!(result.next().is_none());
         assert_eq!(error.instance_path.as_str(), expected);
+    }
+
+    #[test_case(
+        json!("2023-13-45"), 
+        ValidationErrorKind::Format { format: "date".to_string() },
+        "value is not a \"date\""
+    )]
+    #[test_case(
+        json!("sensitive data"),
+        ValidationErrorKind::MaxLength { limit: 5 },
+        "value is longer than 5 characters"
+    )]
+    #[test_case(
+        json!({"secret": "data", "key": "value"}),
+        ValidationErrorKind::AdditionalProperties {
+            unexpected: vec!["secret".to_string(), "key".to_string()] 
+        },
+        "Additional properties are not allowed ('secret', 'key' were unexpected)"
+    )]
+    #[test_case(
+        json!(123),
+        ValidationErrorKind::Minimum { limit: json!(456) },
+        "value is less than the minimum of 456"
+    )]
+    #[test_case(
+        json!("secret_key_123"),
+        ValidationErrorKind::Pattern { pattern: "^[A-Z0-9]{32}$".to_string() },
+        "value does not match \"^[A-Z0-9]{32}$\""
+    )]
+    #[test_case(
+        json!([1, 2, 2, 3]),
+        ValidationErrorKind::UniqueItems,
+        "value has non-unique elements"
+    )]
+    #[test_case(
+        json!(123),
+        ValidationErrorKind::Type { kind: TypeKind::Single(PrimitiveType::String) },
+        "value is not of type \"string\""
+    )]
+    fn test_masked_error_messages(instance: Value, kind: ValidationErrorKind, expected: &str) {
+        let error = ValidationError {
+            instance: Cow::Owned(instance),
+            kind,
+            instance_path: Location::new(),
+            schema_path: Location::new(),
+        };
+        assert_eq!(error.masked().to_string(), expected);
+    }
+
+    #[test_case(
+        json!("sensitive data"),
+        ValidationErrorKind::MaxLength { limit: 5 },
+        "[REDACTED]",
+        "[REDACTED] is longer than 5 characters"
+    )]
+    #[test_case(
+        json!({"password": "secret123"}),
+        ValidationErrorKind::Type {
+            kind: TypeKind::Single(PrimitiveType::String)
+        },
+        "***",
+        "*** is not of type \"string\""
+    )]
+    fn test_custom_masked_error_messages(
+        instance: Value,
+        kind: ValidationErrorKind,
+        placeholder: &str,
+        expected: &str,
+    ) {
+        let error = ValidationError {
+            instance: Cow::Owned(instance),
+            kind,
+            instance_path: Location::new(),
+            schema_path: Location::new(),
+        };
+        assert_eq!(error.masked_with(placeholder).to_string(), expected);
     }
 }

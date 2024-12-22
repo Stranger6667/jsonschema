@@ -80,10 +80,18 @@ impl ValidationErrorIter {
     }
 }
 
-fn into_py_err(py: Python<'_>, error: jsonschema::ValidationError<'_>) -> PyResult<PyErr> {
+fn into_py_err(
+    py: Python<'_>,
+    error: jsonschema::ValidationError<'_>,
+    mask: Option<&str>,
+) -> PyResult<PyErr> {
     let pyerror_type = PyType::new::<ValidationError>(py);
-    let message = error.to_string();
-    let verbose_message = to_error_message(&error, message.clone());
+    let message = if let Some(mask) = mask {
+        error.masked_with(mask).to_string()
+    } else {
+        error.to_string()
+    };
+    let verbose_message = to_error_message(&error, message.clone(), mask);
     let into_path = |segment: &str| {
         if let Ok(idx) = segment.parse::<usize>() {
             idx.into_pyobject(py).and_then(PyObject::try_from)
@@ -219,13 +227,14 @@ fn iter_on_error(
     py: Python<'_>,
     validator: &jsonschema::Validator,
     instance: &Bound<'_, PyAny>,
+    mask: Option<&str>,
 ) -> PyResult<ValidationErrorIter> {
     let instance = ser::to_value(instance)?;
     let mut pyerrors = vec![];
 
     panic::catch_unwind(AssertUnwindSafe(|| {
         for error in validator.iter_errors(&instance) {
-            pyerrors.push(into_py_err(py, error)?);
+            pyerrors.push(into_py_err(py, error, mask)?);
         }
         PyResult::Ok(())
     }))
@@ -239,19 +248,24 @@ fn raise_on_error(
     py: Python<'_>,
     validator: &jsonschema::Validator,
     instance: &Bound<'_, PyAny>,
+    mask: Option<&str>,
 ) -> PyResult<()> {
     let instance = ser::to_value(instance)?;
     let error = panic::catch_unwind(AssertUnwindSafe(|| validator.validate(&instance)))
         .map_err(handle_format_checked_panic)?
         .err();
-    error.map_or_else(|| Ok(()), |err| Err(into_py_err(py, err)?))
+    error.map_or_else(|| Ok(()), |err| Err(into_py_err(py, err, mask)?))
 }
 
 fn is_ascii_number(s: &str) -> bool {
     !s.is_empty() && s.as_bytes().iter().all(|&b| b.is_ascii_digit())
 }
 
-fn to_error_message(error: &jsonschema::ValidationError<'_>, mut message: String) -> String {
+fn to_error_message(
+    error: &jsonschema::ValidationError<'_>,
+    mut message: String,
+    mask: Option<&str>,
+) -> String {
     // It roughly doubles
     message.reserve(message.len());
     message.push('\n');
@@ -291,8 +305,12 @@ fn to_error_message(error: &jsonschema::ValidationError<'_>, mut message: String
     }
     message.push(':');
     message.push_str("\n    ");
-    let mut writer = StringWriter(&mut message);
-    serde_json::to_writer(&mut writer, &error.instance).expect("Failed to serialize JSON");
+    if let Some(mask) = mask {
+        message.push_str(mask);
+    } else {
+        let mut writer = StringWriter(&mut message);
+        serde_json::to_writer(&mut writer, &error.instance).expect("Failed to serialize JSON");
+    }
     message
 }
 
@@ -311,7 +329,7 @@ impl Write for StringWriter<'_> {
     }
 }
 
-/// is_valid(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None)
+/// is_valid(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, mask=None)
 ///
 /// A shortcut for validating the input instance against the schema.
 ///
@@ -322,7 +340,7 @@ impl Write for StringWriter<'_> {
 /// instead.
 #[pyfunction]
 #[allow(unused_variables, clippy::too_many_arguments)]
-#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
+#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, mask=None))]
 fn is_valid(
     py: Python<'_>,
     schema: &Bound<'_, PyAny>,
@@ -332,6 +350,7 @@ fn is_valid(
     validate_formats: Option<bool>,
     ignore_unknown_formats: Option<bool>,
     retriever: Option<&Bound<'_, PyAny>>,
+    mask: Option<String>,
 ) -> PyResult<bool> {
     let options = make_options(
         draft,
@@ -347,11 +366,11 @@ fn is_valid(
             panic::catch_unwind(AssertUnwindSafe(|| Ok(validator.is_valid(&instance))))
                 .map_err(handle_format_checked_panic)?
         }
-        Err(error) => Err(into_py_err(py, error)?),
+        Err(error) => Err(into_py_err(py, error, mask.as_deref())?),
     }
 }
 
-/// validate(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None)
+/// validate(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, mask=None)
 ///
 /// Validate the input instance and raise `ValidationError` in the error case
 ///
@@ -364,7 +383,7 @@ fn is_valid(
 /// instead.
 #[pyfunction]
 #[allow(unused_variables, clippy::too_many_arguments)]
-#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
+#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, mask=None))]
 fn validate(
     py: Python<'_>,
     schema: &Bound<'_, PyAny>,
@@ -374,6 +393,7 @@ fn validate(
     validate_formats: Option<bool>,
     ignore_unknown_formats: Option<bool>,
     retriever: Option<&Bound<'_, PyAny>>,
+    mask: Option<String>,
 ) -> PyResult<()> {
     let options = make_options(
         draft,
@@ -384,12 +404,12 @@ fn validate(
     )?;
     let schema = ser::to_value(schema)?;
     match options.build(&schema) {
-        Ok(validator) => raise_on_error(py, &validator, instance),
-        Err(error) => Err(into_py_err(py, error)?),
+        Ok(validator) => raise_on_error(py, &validator, instance, mask.as_deref()),
+        Err(error) => Err(into_py_err(py, error, mask.as_deref())?),
     }
 }
 
-/// iter_errors(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None)
+/// iter_errors(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, mask=None)
 ///
 /// Iterate the validation errors of the input instance
 ///
@@ -401,7 +421,7 @@ fn validate(
 /// instead.
 #[pyfunction]
 #[allow(unused_variables, clippy::too_many_arguments)]
-#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
+#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, mask=None))]
 fn iter_errors(
     py: Python<'_>,
     schema: &Bound<'_, PyAny>,
@@ -411,6 +431,7 @@ fn iter_errors(
     validate_formats: Option<bool>,
     ignore_unknown_formats: Option<bool>,
     retriever: Option<&Bound<'_, PyAny>>,
+    mask: Option<String>,
 ) -> PyResult<ValidationErrorIter> {
     let options = make_options(
         draft,
@@ -421,8 +442,8 @@ fn iter_errors(
     )?;
     let schema = ser::to_value(schema)?;
     match options.build(&schema) {
-        Ok(validator) => iter_on_error(py, &validator, instance),
-        Err(error) => Err(into_py_err(py, error)?),
+        Ok(validator) => iter_on_error(py, &validator, instance, mask.as_deref()),
+        Err(error) => Err(into_py_err(py, error, mask.as_deref())?),
     }
 }
 
@@ -440,9 +461,10 @@ fn handle_format_checked_panic(err: Box<dyn Any + Send>) -> PyErr {
 #[pyclass(module = "jsonschema_rs", subclass)]
 struct Validator {
     validator: jsonschema::Validator,
+    mask: Option<String>,
 }
 
-/// validator_for(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None)
+/// validator_for(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, mask=None)
 ///
 /// Create a validator for the input schema with automatic draft detection and default options.
 ///
@@ -451,7 +473,7 @@ struct Validator {
 ///     False
 ///
 #[pyfunction]
-#[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
+#[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, mask=None))]
 fn validator_for(
     py: Python<'_>,
     schema: &Bound<'_, PyAny>,
@@ -459,6 +481,7 @@ fn validator_for(
     validate_formats: Option<bool>,
     ignore_unknown_formats: Option<bool>,
     retriever: Option<&Bound<'_, PyAny>>,
+    mask: Option<String>,
 ) -> PyResult<Validator> {
     validator_for_impl(
         py,
@@ -468,9 +491,11 @@ fn validator_for(
         validate_formats,
         ignore_unknown_formats,
         retriever,
+        mask,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validator_for_impl(
     py: Python<'_>,
     schema: &Bound<'_, PyAny>,
@@ -479,6 +504,7 @@ fn validator_for_impl(
     validate_formats: Option<bool>,
     ignore_unknown_formats: Option<bool>,
     retriever: Option<&Bound<'_, PyAny>>,
+    mask: Option<String>,
 ) -> PyResult<Validator> {
     let obj_ptr = schema.as_ptr();
     let object_type = unsafe { pyo3::ffi::Py_TYPE(obj_ptr) };
@@ -499,15 +525,15 @@ fn validator_for_impl(
         retriever,
     )?;
     match options.build(&schema) {
-        Ok(validator) => Ok(Validator { validator }),
-        Err(error) => Err(into_py_err(py, error)?),
+        Ok(validator) => Ok(Validator { validator, mask }),
+        Err(error) => Err(into_py_err(py, error, mask.as_deref())?),
     }
 }
 
 #[pymethods]
 impl Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, mask=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
@@ -515,6 +541,7 @@ impl Validator {
         validate_formats: Option<bool>,
         ignore_unknown_formats: Option<bool>,
         retriever: Option<&Bound<'_, PyAny>>,
+        mask: Option<String>,
     ) -> PyResult<Self> {
         validator_for(
             py,
@@ -523,6 +550,7 @@ impl Validator {
             validate_formats,
             ignore_unknown_formats,
             retriever,
+            mask,
         )
     }
     /// is_valid(instance)
@@ -552,7 +580,7 @@ impl Validator {
     /// If the input instance is invalid, only the first occurred error is raised.
     #[pyo3(text_signature = "(instance)")]
     fn validate(&self, py: Python<'_>, instance: &Bound<'_, PyAny>) -> PyResult<()> {
-        raise_on_error(py, &self.validator, instance)
+        raise_on_error(py, &self.validator, instance, self.mask.as_deref())
     }
     /// iter_errors(instance)
     ///
@@ -568,7 +596,7 @@ impl Validator {
         py: Python<'_>,
         instance: &Bound<'_, PyAny>,
     ) -> PyResult<ValidationErrorIter> {
-        iter_on_error(py, &self.validator, instance)
+        iter_on_error(py, &self.validator, instance, self.mask.as_deref())
     }
     fn __repr__(&self) -> &'static str {
         match self.validator.draft() {
@@ -582,7 +610,7 @@ impl Validator {
     }
 }
 
-/// Draft4Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None)
+/// Draft4Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, mask=None)
 ///
 /// A JSON Schema Draft 4 validator.
 ///
@@ -596,7 +624,7 @@ struct Draft4Validator {}
 #[pymethods]
 impl Draft4Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, mask=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
@@ -604,6 +632,7 @@ impl Draft4Validator {
         validate_formats: Option<bool>,
         ignore_unknown_formats: Option<bool>,
         retriever: Option<&Bound<'_, PyAny>>,
+        mask: Option<String>,
     ) -> PyResult<(Self, Validator)> {
         Ok((
             Draft4Validator {},
@@ -615,12 +644,13 @@ impl Draft4Validator {
                 validate_formats,
                 ignore_unknown_formats,
                 retriever,
+                mask,
             )?,
         ))
     }
 }
 
-/// Draft6Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None)
+/// Draft6Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, mask=None)
 ///
 /// A JSON Schema Draft 6 validator.
 ///
@@ -634,7 +664,7 @@ struct Draft6Validator {}
 #[pymethods]
 impl Draft6Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, mask=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
@@ -642,6 +672,7 @@ impl Draft6Validator {
         validate_formats: Option<bool>,
         ignore_unknown_formats: Option<bool>,
         retriever: Option<&Bound<'_, PyAny>>,
+        mask: Option<String>,
     ) -> PyResult<(Self, Validator)> {
         Ok((
             Draft6Validator {},
@@ -653,12 +684,13 @@ impl Draft6Validator {
                 validate_formats,
                 ignore_unknown_formats,
                 retriever,
+                mask,
             )?,
         ))
     }
 }
 
-/// Draft7Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None)
+/// Draft7Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, mask=None)
 ///
 /// A JSON Schema Draft 7 validator.
 ///
@@ -672,7 +704,7 @@ struct Draft7Validator {}
 #[pymethods]
 impl Draft7Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, mask=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
@@ -680,6 +712,7 @@ impl Draft7Validator {
         validate_formats: Option<bool>,
         ignore_unknown_formats: Option<bool>,
         retriever: Option<&Bound<'_, PyAny>>,
+        mask: Option<String>,
     ) -> PyResult<(Self, Validator)> {
         Ok((
             Draft7Validator {},
@@ -691,6 +724,7 @@ impl Draft7Validator {
                 validate_formats,
                 ignore_unknown_formats,
                 retriever,
+                mask,
             )?,
         ))
     }
@@ -710,7 +744,7 @@ struct Draft201909Validator {}
 #[pymethods]
 impl Draft201909Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, mask=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
@@ -718,6 +752,7 @@ impl Draft201909Validator {
         validate_formats: Option<bool>,
         ignore_unknown_formats: Option<bool>,
         retriever: Option<&Bound<'_, PyAny>>,
+        mask: Option<String>,
     ) -> PyResult<(Self, Validator)> {
         Ok((
             Draft201909Validator {},
@@ -729,12 +764,13 @@ impl Draft201909Validator {
                 validate_formats,
                 ignore_unknown_formats,
                 retriever,
+                mask,
             )?,
         ))
     }
 }
 
-/// Draft202012Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None)
+/// Draft202012Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, mask=None)
 ///
 /// A JSON Schema Draft 2020-12 validator.
 ///
@@ -748,7 +784,7 @@ struct Draft202012Validator {}
 #[pymethods]
 impl Draft202012Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, mask=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
@@ -756,6 +792,7 @@ impl Draft202012Validator {
         validate_formats: Option<bool>,
         ignore_unknown_formats: Option<bool>,
         retriever: Option<&Bound<'_, PyAny>>,
+        mask: Option<String>,
     ) -> PyResult<(Self, Validator)> {
         Ok((
             Draft202012Validator {},
@@ -767,6 +804,7 @@ impl Draft202012Validator {
                 validate_formats,
                 ignore_unknown_formats,
                 retriever,
+                mask,
             )?,
         ))
     }

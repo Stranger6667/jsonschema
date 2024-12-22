@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `masked()` and `masked_with()` methods to `ValidationError` to support hiding sensitive data in error messages. [#434](https://github.com/Stranger6667/jsonschema/issues/434)
+
 ### Changed
 
 - Improved error message for unknown formats.

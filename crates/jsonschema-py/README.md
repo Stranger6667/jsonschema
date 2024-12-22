@@ -197,6 +197,39 @@ validator.is_valid({
 })  # False
 ```
 
+## Error Message Masking
+
+When working with sensitive data, you might want to hide actual values from error messages.
+You can mask instance values in error messages by providing a placeholder:
+
+```python
+import jsonschema_rs
+
+schema = {
+    "type": "object",
+    "properties": {
+        "password": {"type": "string", "minLength": 8},
+        "api_key": {"type": "string", "pattern": "^[A-Z0-9]{32}$"}
+    }
+}
+
+# Use default masking (replaces values with "[REDACTED]")
+validator = jsonschema_rs.validator_for(schema, mask="[REDACTED]")
+
+try:
+    validator.validate({
+        "password": "123",
+        "api_key": "secret_key_123"
+    })
+except jsonschema_rs.ValidationError as exc:
+    assert str(exc) == '''[REDACTED] does not match "^[A-Z0-9]{32}$"
+
+Failed validating "pattern" in schema["properties"]["api_key"]
+
+On instance["api_key"]:
+    [REDACTED]'''
+```
+
 ## Performance
 
 `jsonschema-rs` is designed for high performance, outperforming other Python JSON Schema validators in most scenarios:
