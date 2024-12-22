@@ -5,6 +5,7 @@
 ### Changed
 
 - Improved error message for unknown formats.
+- Bump MSRV to `1.71.1`.
 
 ## [0.26.2] - 2024-12-16
 
