@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Custom retrievers for external references. [#372](https://github.com/Stranger6667/jsonschema/issues/372)
+
 ### Changed
 
 - Improved error message for unknown formats.

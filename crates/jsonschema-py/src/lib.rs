@@ -5,7 +5,7 @@ use std::{
     panic::{self, AssertUnwindSafe},
 };
 
-use jsonschema::Draft;
+use jsonschema::{Draft, Retrieve, Uri};
 use pyo3::{
     exceptions::{self, PyValueError},
     ffi::PyUnicode_AsUTF8AndSize,
@@ -13,6 +13,8 @@ use pyo3::{
     types::{PyAny, PyDict, PyList, PyString, PyType},
     wrap_pyfunction,
 };
+use ser::to_value;
+use serde_json::Value;
 #[macro_use]
 extern crate pyo3_built;
 
@@ -133,6 +135,7 @@ fn make_options(
     formats: Option<&Bound<'_, PyDict>>,
     validate_formats: Option<bool>,
     ignore_unknown_formats: Option<bool>,
+    retriever: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<jsonschema::ValidationOptions> {
     let mut options = jsonschema::options();
     if let Some(raw_draft_version) = draft {
@@ -174,6 +177,40 @@ fn make_options(
                 },
             );
         }
+    }
+    if let Some(retriever) = retriever {
+        if !retriever.is_callable() {
+            return Err(exceptions::PyValueError::new_err(
+                "External resource retriever must be a callable",
+            ));
+        }
+        let retriever: Py<PyAny> = retriever.clone().unbind();
+
+        let call_py_retriever = move |value: &str| {
+            Python::with_gil(|py| {
+                let value = PyString::new(py, value);
+                retriever
+                    .call(py, (value,), None)
+                    .and_then(|value| to_value(value.bind(py)))
+            })
+        };
+
+        struct Retriever<T> {
+            func: T,
+        }
+
+        impl<T: Send + Sync + Fn(&str) -> PyResult<Value>> Retrieve for Retriever<T> {
+            fn retrieve(
+                &self,
+                uri: &Uri<&str>,
+            ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+                Ok((self.func)(uri.as_str())?)
+            }
+        }
+
+        options.with_retriever(Retriever {
+            func: call_py_retriever,
+        });
     }
     Ok(options)
 }
@@ -274,7 +311,7 @@ impl Write for StringWriter<'_> {
     }
 }
 
-/// is_valid(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True)
+/// is_valid(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None)
 ///
 /// A shortcut for validating the input instance against the schema.
 ///
@@ -285,7 +322,7 @@ impl Write for StringWriter<'_> {
 /// instead.
 #[pyfunction]
 #[allow(unused_variables, clippy::too_many_arguments)]
-#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true))]
+#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
 fn is_valid(
     py: Python<'_>,
     schema: &Bound<'_, PyAny>,
@@ -294,8 +331,15 @@ fn is_valid(
     formats: Option<&Bound<'_, PyDict>>,
     validate_formats: Option<bool>,
     ignore_unknown_formats: Option<bool>,
+    retriever: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<bool> {
-    let options = make_options(draft, formats, validate_formats, ignore_unknown_formats)?;
+    let options = make_options(
+        draft,
+        formats,
+        validate_formats,
+        ignore_unknown_formats,
+        retriever,
+    )?;
     let schema = ser::to_value(schema)?;
     match options.build(&schema) {
         Ok(validator) => {
@@ -307,7 +351,7 @@ fn is_valid(
     }
 }
 
-/// validate(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True)
+/// validate(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None)
 ///
 /// Validate the input instance and raise `ValidationError` in the error case
 ///
@@ -320,7 +364,7 @@ fn is_valid(
 /// instead.
 #[pyfunction]
 #[allow(unused_variables, clippy::too_many_arguments)]
-#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true))]
+#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
 fn validate(
     py: Python<'_>,
     schema: &Bound<'_, PyAny>,
@@ -329,8 +373,15 @@ fn validate(
     formats: Option<&Bound<'_, PyDict>>,
     validate_formats: Option<bool>,
     ignore_unknown_formats: Option<bool>,
+    retriever: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<()> {
-    let options = make_options(draft, formats, validate_formats, ignore_unknown_formats)?;
+    let options = make_options(
+        draft,
+        formats,
+        validate_formats,
+        ignore_unknown_formats,
+        retriever,
+    )?;
     let schema = ser::to_value(schema)?;
     match options.build(&schema) {
         Ok(validator) => raise_on_error(py, &validator, instance),
@@ -338,7 +389,7 @@ fn validate(
     }
 }
 
-/// iter_errors(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True)
+/// iter_errors(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None)
 ///
 /// Iterate the validation errors of the input instance
 ///
@@ -350,7 +401,7 @@ fn validate(
 /// instead.
 #[pyfunction]
 #[allow(unused_variables, clippy::too_many_arguments)]
-#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true))]
+#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
 fn iter_errors(
     py: Python<'_>,
     schema: &Bound<'_, PyAny>,
@@ -359,8 +410,15 @@ fn iter_errors(
     formats: Option<&Bound<'_, PyDict>>,
     validate_formats: Option<bool>,
     ignore_unknown_formats: Option<bool>,
+    retriever: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<ValidationErrorIter> {
-    let options = make_options(draft, formats, validate_formats, ignore_unknown_formats)?;
+    let options = make_options(
+        draft,
+        formats,
+        validate_formats,
+        ignore_unknown_formats,
+        retriever,
+    )?;
     let schema = ser::to_value(schema)?;
     match options.build(&schema) {
         Ok(validator) => iter_on_error(py, &validator, instance),
@@ -384,7 +442,7 @@ struct Validator {
     validator: jsonschema::Validator,
 }
 
-/// validator_for(schema, formats=None, validate_formats=None, ignore_unknown_formats=True)
+/// validator_for(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None)
 ///
 /// Create a validator for the input schema with automatic draft detection and default options.
 ///
@@ -393,13 +451,14 @@ struct Validator {
 ///     False
 ///
 #[pyfunction]
-#[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true))]
+#[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
 fn validator_for(
     py: Python<'_>,
     schema: &Bound<'_, PyAny>,
     formats: Option<&Bound<'_, PyDict>>,
     validate_formats: Option<bool>,
     ignore_unknown_formats: Option<bool>,
+    retriever: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<Validator> {
     validator_for_impl(
         py,
@@ -408,6 +467,7 @@ fn validator_for(
         formats,
         validate_formats,
         ignore_unknown_formats,
+        retriever,
     )
 }
 
@@ -418,6 +478,7 @@ fn validator_for_impl(
     formats: Option<&Bound<'_, PyDict>>,
     validate_formats: Option<bool>,
     ignore_unknown_formats: Option<bool>,
+    retriever: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<Validator> {
     let obj_ptr = schema.as_ptr();
     let object_type = unsafe { pyo3::ffi::Py_TYPE(obj_ptr) };
@@ -430,7 +491,13 @@ fn validator_for_impl(
     } else {
         ser::to_value(schema)?
     };
-    let options = make_options(draft, formats, validate_formats, ignore_unknown_formats)?;
+    let options = make_options(
+        draft,
+        formats,
+        validate_formats,
+        ignore_unknown_formats,
+        retriever,
+    )?;
     match options.build(&schema) {
         Ok(validator) => Ok(Validator { validator }),
         Err(error) => Err(into_py_err(py, error)?),
@@ -440,13 +507,14 @@ fn validator_for_impl(
 #[pymethods]
 impl Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
         formats: Option<&Bound<'_, PyDict>>,
         validate_formats: Option<bool>,
         ignore_unknown_formats: Option<bool>,
+        retriever: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         validator_for(
             py,
@@ -454,6 +522,7 @@ impl Validator {
             formats,
             validate_formats,
             ignore_unknown_formats,
+            retriever,
         )
     }
     /// is_valid(instance)
@@ -513,7 +582,7 @@ impl Validator {
     }
 }
 
-/// Draft4Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True)
+/// Draft4Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None)
 ///
 /// A JSON Schema Draft 4 validator.
 ///
@@ -527,13 +596,14 @@ struct Draft4Validator {}
 #[pymethods]
 impl Draft4Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
         formats: Option<&Bound<'_, PyDict>>,
         validate_formats: Option<bool>,
         ignore_unknown_formats: Option<bool>,
+        retriever: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<(Self, Validator)> {
         Ok((
             Draft4Validator {},
@@ -544,12 +614,13 @@ impl Draft4Validator {
                 formats,
                 validate_formats,
                 ignore_unknown_formats,
+                retriever,
             )?,
         ))
     }
 }
 
-/// Draft6Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True)
+/// Draft6Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None)
 ///
 /// A JSON Schema Draft 6 validator.
 ///
@@ -563,13 +634,14 @@ struct Draft6Validator {}
 #[pymethods]
 impl Draft6Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
         formats: Option<&Bound<'_, PyDict>>,
         validate_formats: Option<bool>,
         ignore_unknown_formats: Option<bool>,
+        retriever: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<(Self, Validator)> {
         Ok((
             Draft6Validator {},
@@ -580,12 +652,13 @@ impl Draft6Validator {
                 formats,
                 validate_formats,
                 ignore_unknown_formats,
+                retriever,
             )?,
         ))
     }
 }
 
-/// Draft7Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True)
+/// Draft7Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None)
 ///
 /// A JSON Schema Draft 7 validator.
 ///
@@ -599,13 +672,14 @@ struct Draft7Validator {}
 #[pymethods]
 impl Draft7Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
         formats: Option<&Bound<'_, PyDict>>,
         validate_formats: Option<bool>,
         ignore_unknown_formats: Option<bool>,
+        retriever: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<(Self, Validator)> {
         Ok((
             Draft7Validator {},
@@ -616,12 +690,13 @@ impl Draft7Validator {
                 formats,
                 validate_formats,
                 ignore_unknown_formats,
+                retriever,
             )?,
         ))
     }
 }
 
-/// Draft201909Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True)
+/// Draft201909Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None)
 ///
 /// A JSON Schema Draft 2019-09 validator.
 ///
@@ -635,13 +710,14 @@ struct Draft201909Validator {}
 #[pymethods]
 impl Draft201909Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
         formats: Option<&Bound<'_, PyDict>>,
         validate_formats: Option<bool>,
         ignore_unknown_formats: Option<bool>,
+        retriever: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<(Self, Validator)> {
         Ok((
             Draft201909Validator {},
@@ -652,12 +728,13 @@ impl Draft201909Validator {
                 formats,
                 validate_formats,
                 ignore_unknown_formats,
+                retriever,
             )?,
         ))
     }
 }
 
-/// Draft202012Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True)
+/// Draft202012Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None)
 ///
 /// A JSON Schema Draft 2020-12 validator.
 ///
@@ -671,13 +748,14 @@ struct Draft202012Validator {}
 #[pymethods]
 impl Draft202012Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
         formats: Option<&Bound<'_, PyDict>>,
         validate_formats: Option<bool>,
         ignore_unknown_formats: Option<bool>,
+        retriever: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<(Self, Validator)> {
         Ok((
             Draft202012Validator {},
@@ -688,6 +766,7 @@ impl Draft202012Validator {
                 formats,
                 validate_formats,
                 ignore_unknown_formats,
+                retriever,
             )?,
         ))
     }

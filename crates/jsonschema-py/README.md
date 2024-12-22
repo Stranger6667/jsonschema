@@ -157,6 +157,45 @@ On instance:
     "unknown"'''
 ```
 
+## External References
+
+By default, `jsonschema-rs` resolves HTTP references and file references from the local file system. You can implement a custom retriever to handle external references. Here's an example that uses a static map of schemas:
+
+```python
+import jsonschema_rs
+
+def retrieve(uri: str):
+    schemas = {
+        "https://example.com/person.json": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "integer"}
+            },
+            "required": ["name", "age"]
+        }
+    }
+    if uri not in schemas:
+        raise KeyError(f"Schema not found: {uri}")
+    return schemas[uri]
+
+schema = {
+    "$ref": "https://example.com/person.json"
+}
+
+validator = jsonschema_rs.validator_for(schema, retriever=retrieve)
+
+# This is valid
+validator.is_valid({
+    "name": "Alice",
+    "age": 30
+})
+
+# This is invalid (missing "age")
+validator.is_valid({
+    "name": "Bob"
+})  # False
+
 ## Performance
 
 `jsonschema-rs` is designed for high performance, outperforming other Python JSON Schema validators in most scenarios:
