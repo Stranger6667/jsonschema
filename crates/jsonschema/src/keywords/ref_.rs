@@ -465,6 +465,7 @@ mod tests {
                     "/types" => Ok(json!({
                         "$id": "/types",
                         "foo": {
+                            "$id": "#/foo",
                             "$ref": "#/bar"
                         },
                         "bar": {
