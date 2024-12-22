@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Improved error message for unknown formats.
+
 ## [0.26.1] - 2024-10-29
 
 ### Fixed

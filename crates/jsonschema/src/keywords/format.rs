@@ -793,15 +793,15 @@ pub(crate) fn compile<'a>(
             "uri-reference" if draft >= Draft::Draft6 => Some(UriReferenceValidator::compile(ctx)),
             "uri-template" if draft >= Draft::Draft6 => Some(UriTemplateValidator::compile(ctx)),
             "uuid" if draft >= Draft::Draft201909 => Some(UuidValidator::compile(ctx)),
-            _ => {
+            name => {
                 if ctx.are_unknown_formats_ignored() {
                     None
                 } else {
-                    Some(Err(ValidationError::format(
-                        Location::new(),
+                    Some(Err(ValidationError::custom(
+                        Location::new().join("format"),
                         ctx.location().clone(),
                         schema,
-                        "unknown format",
+                        format!("Unknown format: '{name}'. Adjust configuration to ignore unrecognized formats"),
                     )))
                 }
             }
@@ -822,7 +822,7 @@ mod tests {
     use serde_json::json;
     use test_case::test_case;
 
-    use crate::{error::ValidationErrorKind, tests_util};
+    use crate::tests_util;
 
     use super::*;
 
@@ -906,16 +906,16 @@ mod tests {
     #[test]
     fn unknown_formats_should_not_be_ignored() {
         let schema = json!({ "format": "custom", "type": "string"});
-        let validation_error = crate::options()
+        let error = crate::options()
             .should_validate_formats(true)
             .should_ignore_unknown_formats(false)
             .build(&schema)
             .expect_err("the validation error should be returned");
 
-        assert!(
-            matches!(validation_error.kind, ValidationErrorKind::Format { format } if format == "unknown format")
+        assert_eq!(
+            error.to_string(),
+            "Unknown format: 'custom'. Adjust configuration to ignore unrecognized formats"
         );
-        assert_eq!("\"custom\"", validation_error.instance.to_string())
     }
 
     #[test_case("2023-01-01", true; "valid regular date")]
