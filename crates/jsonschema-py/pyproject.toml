@@ -4,6 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "jsonschema_rs"
+dynamic = ["version"]
 description = "A high-performance JSON Schema validator for Python"
 keywords = ["jsonschema", "validation", "rust"]
 authors = [
