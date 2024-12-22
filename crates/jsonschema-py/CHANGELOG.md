@@ -5,6 +5,7 @@
 ### Changed
 
 - Improved error message for unknown formats.
+- Update `pyo3` to `0.23`.
 
 ## [0.26.1] - 2024-10-29
 

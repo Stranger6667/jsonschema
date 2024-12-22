@@ -79,39 +79,33 @@ impl ValidationErrorIter {
 }
 
 fn into_py_err(py: Python<'_>, error: jsonschema::ValidationError<'_>) -> PyResult<PyErr> {
-    let pyerror_type = PyType::new_bound::<ValidationError>(py);
+    let pyerror_type = PyType::new::<ValidationError>(py);
     let message = error.to_string();
     let verbose_message = to_error_message(&error, message.clone());
     let into_path = |segment: &str| {
         if let Ok(idx) = segment.parse::<usize>() {
-            idx.into_py(py)
+            idx.into_pyobject(py).and_then(PyObject::try_from)
         } else {
-            segment.into_py(py)
+            segment.into_pyobject(py).and_then(PyObject::try_from)
         }
     };
-    let schema_path = PyList::new_bound(
-        py,
-        error
-            .schema_path
-            .as_str()
-            .split('/')
-            .skip(1)
-            .map(into_path)
-            .collect::<Vec<_>>(),
-    )
-    .unbind();
-    let instance_path = PyList::new_bound(
-        py,
-        error
-            .instance_path
-            .as_str()
-            .split('/')
-            .skip(1)
-            .map(into_path)
-            .collect::<Vec<_>>(),
-    )
-    .unbind();
-    Ok(PyErr::from_type_bound(
+    let elements = error
+        .schema_path
+        .as_str()
+        .split('/')
+        .skip(1)
+        .map(into_path)
+        .collect::<Result<Vec<_>, _>>()?;
+    let schema_path = PyList::new(py, elements)?.unbind();
+    let elements = error
+        .instance_path
+        .as_str()
+        .split('/')
+        .skip(1)
+        .map(into_path)
+        .collect::<Result<Vec<_>, _>>()?;
+    let instance_path = PyList::new(py, elements)?.unbind();
+    Ok(PyErr::from_type(
         pyerror_type,
         (message, verbose_message, schema_path, instance_path),
     ))
@@ -161,8 +155,8 @@ fn make_options(
             let callback: Py<PyAny> = callback.clone().unbind();
             let call_py_callback = move |value: &str| {
                 Python::with_gil(|py| {
-                    let value = PyString::new_bound(py, value);
-                    callback.call_bound(py, (value,), None)?.is_truthy(py)
+                    let value = PyString::new(py, value);
+                    callback.call(py, (value,), None)?.is_truthy(py)
                 })
             };
             options.with_format(
@@ -719,7 +713,7 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<Draft7Validator>()?;
     module.add_class::<Draft201909Validator>()?;
     module.add_class::<Draft202012Validator>()?;
-    module.add("ValidationError", py.get_type_bound::<ValidationError>())?;
+    module.add("ValidationError", py.get_type::<ValidationError>())?;
     module.add("Draft4", DRAFT4)?;
     module.add("Draft6", DRAFT6)?;
     module.add("Draft7", DRAFT7)?;
@@ -727,6 +721,7 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("Draft202012", DRAFT202012)?;
 
     // Add build metadata to ease triaging incoming issues
+    #[allow(deprecated)]
     module.add("__build__", pyo3_built::pyo3_built!(py, build))?;
 
     Ok(())
