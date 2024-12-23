@@ -39,6 +39,10 @@ struct ValidationError {
     schema_path: Py<PyList>,
     #[pyo3(get)]
     instance_path: Py<PyList>,
+    #[pyo3(get)]
+    kind: ValidationErrorKind,
+    #[pyo3(get)]
+    instance: PyObject,
 }
 
 #[pymethods]
@@ -49,12 +53,16 @@ impl ValidationError {
         long_message: String,
         schema_path: Py<PyList>,
         instance_path: Py<PyList>,
+        kind: ValidationErrorKind,
+        instance: PyObject,
     ) -> Self {
         ValidationError {
             message,
             verbose_message: long_message,
             schema_path,
             instance_path,
+            kind,
+            instance,
         }
     }
     fn __str__(&self) -> String {
@@ -62,6 +70,134 @@ impl ValidationError {
     }
     fn __repr__(&self) -> String {
         format!("<ValidationError: '{}'>", self.message)
+    }
+}
+
+#[pyclass(eq, eq_int)]
+#[derive(Debug, PartialEq, Clone)]
+enum ValidationErrorKind {
+    AdditionalItems,
+    AdditionalProperties,
+    AnyOf,
+    BacktrackLimitExceeded,
+    Constant,
+    Contains,
+    ContentEncoding,
+    ContentMediaType,
+    Custom,
+    Enum,
+    ExclusiveMaximum,
+    ExclusiveMinimum,
+    FalseSchema,
+    Format,
+    FromUtf8,
+    MaxItems,
+    Maximum,
+    MaxLength,
+    MaxProperties,
+    MinItems,
+    Minimum,
+    MinLength,
+    MinProperties,
+    MultipleOf,
+    Not,
+    OneOfMultipleValid,
+    OneOfNotValid,
+    Pattern,
+    PropertyNames,
+    Required,
+    Type,
+    UnevaluatedItems,
+    UnevaluatedProperties,
+    UniqueItems,
+    Referencing,
+}
+
+impl From<jsonschema::error::ValidationErrorKind> for ValidationErrorKind {
+    fn from(kind: jsonschema::error::ValidationErrorKind) -> Self {
+        match kind {
+            jsonschema::error::ValidationErrorKind::AdditionalItems { .. } => {
+                ValidationErrorKind::AdditionalItems
+            }
+            jsonschema::error::ValidationErrorKind::AdditionalProperties { .. } => {
+                ValidationErrorKind::AdditionalProperties
+            }
+            jsonschema::error::ValidationErrorKind::AnyOf => ValidationErrorKind::AnyOf,
+            jsonschema::error::ValidationErrorKind::BacktrackLimitExceeded { .. } => {
+                ValidationErrorKind::BacktrackLimitExceeded
+            }
+            jsonschema::error::ValidationErrorKind::Constant { .. } => {
+                ValidationErrorKind::Constant
+            }
+            jsonschema::error::ValidationErrorKind::Contains => ValidationErrorKind::Contains,
+            jsonschema::error::ValidationErrorKind::ContentEncoding { .. } => {
+                ValidationErrorKind::ContentEncoding
+            }
+            jsonschema::error::ValidationErrorKind::ContentMediaType { .. } => {
+                ValidationErrorKind::ContentMediaType
+            }
+            jsonschema::error::ValidationErrorKind::Custom { .. } => ValidationErrorKind::Custom,
+            jsonschema::error::ValidationErrorKind::Enum { .. } => ValidationErrorKind::Enum,
+            jsonschema::error::ValidationErrorKind::ExclusiveMaximum { .. } => {
+                ValidationErrorKind::ExclusiveMaximum
+            }
+            jsonschema::error::ValidationErrorKind::ExclusiveMinimum { .. } => {
+                ValidationErrorKind::ExclusiveMinimum
+            }
+            jsonschema::error::ValidationErrorKind::FalseSchema => ValidationErrorKind::FalseSchema,
+            jsonschema::error::ValidationErrorKind::Format { .. } => ValidationErrorKind::Format,
+            jsonschema::error::ValidationErrorKind::FromUtf8 { .. } => {
+                ValidationErrorKind::FromUtf8
+            }
+            jsonschema::error::ValidationErrorKind::MaxItems { .. } => {
+                ValidationErrorKind::MaxItems
+            }
+            jsonschema::error::ValidationErrorKind::Maximum { .. } => ValidationErrorKind::Maximum,
+            jsonschema::error::ValidationErrorKind::MaxLength { .. } => {
+                ValidationErrorKind::MaxLength
+            }
+            jsonschema::error::ValidationErrorKind::MaxProperties { .. } => {
+                ValidationErrorKind::MaxProperties
+            }
+            jsonschema::error::ValidationErrorKind::MinItems { .. } => {
+                ValidationErrorKind::MinItems
+            }
+            jsonschema::error::ValidationErrorKind::Minimum { .. } => ValidationErrorKind::Minimum,
+            jsonschema::error::ValidationErrorKind::MinLength { .. } => {
+                ValidationErrorKind::MinLength
+            }
+            jsonschema::error::ValidationErrorKind::MinProperties { .. } => {
+                ValidationErrorKind::MinProperties
+            }
+            jsonschema::error::ValidationErrorKind::MultipleOf { .. } => {
+                ValidationErrorKind::MultipleOf
+            }
+            jsonschema::error::ValidationErrorKind::Not { .. } => ValidationErrorKind::Not,
+            jsonschema::error::ValidationErrorKind::OneOfMultipleValid => {
+                ValidationErrorKind::OneOfMultipleValid
+            }
+            jsonschema::error::ValidationErrorKind::OneOfNotValid => {
+                ValidationErrorKind::OneOfNotValid
+            }
+            jsonschema::error::ValidationErrorKind::Pattern { .. } => ValidationErrorKind::Pattern,
+            jsonschema::error::ValidationErrorKind::PropertyNames { .. } => {
+                ValidationErrorKind::PropertyNames
+            }
+            jsonschema::error::ValidationErrorKind::Required { .. } => {
+                ValidationErrorKind::Required
+            }
+            jsonschema::error::ValidationErrorKind::Type { .. } => ValidationErrorKind::Type,
+            jsonschema::error::ValidationErrorKind::UnevaluatedItems { .. } => {
+                ValidationErrorKind::UnevaluatedItems
+            }
+            jsonschema::error::ValidationErrorKind::UnevaluatedProperties { .. } => {
+                ValidationErrorKind::UnevaluatedProperties
+            }
+            jsonschema::error::ValidationErrorKind::UniqueItems => ValidationErrorKind::UniqueItems,
+            jsonschema::error::ValidationErrorKind::Referencing(_) => {
+                ValidationErrorKind::Referencing
+            }
+        }
     }
 }
 
@@ -115,9 +251,18 @@ fn into_py_err(
         .map(into_path)
         .collect::<Result<Vec<_>, _>>()?;
     let instance_path = PyList::new(py, elements)?.unbind();
+    let kind: ValidationErrorKind = error.kind.into();
+    let instance = pythonize::pythonize(py, error.instance.as_ref())?.unbind();
     Ok(PyErr::from_type(
         pyerror_type,
-        (message, verbose_message, schema_path, instance_path),
+        (
+            message,
+            verbose_message,
+            schema_path,
+            instance_path,
+            kind,
+            instance,
+        ),
     ))
 }
 
@@ -831,6 +976,7 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<Draft201909Validator>()?;
     module.add_class::<Draft202012Validator>()?;
     module.add("ValidationError", py.get_type::<ValidationError>())?;
+    module.add("ValidationErrorKind", py.get_type::<ValidationErrorKind>())?;
     module.add("Draft4", DRAFT4)?;
     module.add("Draft6", DRAFT6)?;
     module.add("Draft7", DRAFT7)?;

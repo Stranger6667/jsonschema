@@ -32,10 +32,14 @@ def iter_errors(
     ignore_unknown_formats: bool = True,
 ) -> Iterator[ValidationError]: ...
 
+class ValidationErrorKind: ...
+
 class ValidationError(ValueError):
     message: str
     schema_path: list[str | int]
     instance_path: list[str | int]
+    kind: ValidationErrorKind
+    instance: list | dict | str | int | float | bool | None
 
 Draft4: int
 Draft6: int

@@ -6,6 +6,7 @@
 
 - Custom retrievers for external references. [#372](https://github.com/Stranger6667/jsonschema/issues/372)
 - Added the `mask` argument to validators for hiding sensitive data in error messages. [#434](https://github.com/Stranger6667/jsonschema/issues/434)
+- Added `ValidationError.kind` and `ValidationError.instance` attributes. [#650](https://github.com/Stranger6667/jsonschema/issues/650)
 
 ### Changed
 

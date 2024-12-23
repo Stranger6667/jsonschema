@@ -11,6 +11,7 @@ from hypothesis import strategies as st
 
 from jsonschema_rs import (
     ValidationError,
+    ValidationErrorKind,
     is_valid,
     iter_errors,
     validate,
@@ -73,8 +74,10 @@ def test_repr():
     ),
 )
 def test_validate(func):
-    with pytest.raises(ValidationError, match="2 is less than the minimum of 5"):
+    with pytest.raises(ValidationError, match="2 is less than the minimum of 5") as exc:
         func(2)
+    assert exc.value.kind == ValidationErrorKind.Minimum
+    assert exc.value.instance == 2
 
 
 def test_from_str_error():
@@ -132,6 +135,8 @@ def test_paths():
     assert exc.value.schema_path == ["prefixItems", 0, "type"]
     assert exc.value.instance_path == [0]
     assert exc.value.message == '1 is not of type "string"'
+    assert exc.value.kind == ValidationErrorKind.Type
+    assert exc.value.instance == 1
 
 
 @given(minimum=st.integers().map(abs))
@@ -178,6 +183,24 @@ Failed validating "type" in schema["properties"]["foo"]
 On instance["foo"]:
     null"""
         )
+        assert exc.kind == ValidationErrorKind.Type
+        assert exc.instance is None
+
+
+def test_error_instance():
+    instance = {"a": [42]}
+    try:
+        validate({"type": "array"}, instance)
+        pytest.fail("Validation error should happen")
+    except ValidationError as exc:
+        assert exc.kind == ValidationErrorKind.Type
+        assert exc.instance == instance
+    try:
+        validate({"properties": {"a": {"type": "object"}}}, instance)
+        pytest.fail("Validation error should happen")
+    except ValidationError as exc:
+        assert exc.kind == ValidationErrorKind.Type
+        assert exc.instance == instance["a"]
 
 
 SCHEMA = {"properties": {"foo": {"type": "integer"}, "bar": {"type": "string"}}}
