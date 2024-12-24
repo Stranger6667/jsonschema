@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Implement `ExactSizeIterator` for `PrimitiveTypesBitMapIterator`.
+
 ## [0.27.0] - 2024-12-23
 
 ### Added

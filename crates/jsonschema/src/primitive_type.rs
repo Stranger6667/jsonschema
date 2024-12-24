@@ -154,7 +154,13 @@ impl Iterator for PrimitiveTypesBitMapIterator {
             Some(bit_map_representation_primitive_type(least_significant_bit))
         }
     }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let count = self.bit_map.inner.count_ones() as usize;
+        (count, Some(count))
+    }
 }
+
+impl ExactSizeIterator for PrimitiveTypesBitMapIterator {}
 
 #[cfg(test)]
 mod tests {

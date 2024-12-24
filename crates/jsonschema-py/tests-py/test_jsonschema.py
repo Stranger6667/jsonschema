@@ -76,7 +76,7 @@ def test_repr():
 def test_validate(func):
     with pytest.raises(ValidationError, match="2 is less than the minimum of 5") as exc:
         func(2)
-    assert exc.value.kind == ValidationErrorKind.Minimum
+    assert isinstance(exc.value.kind, ValidationErrorKind.Minimum)
     assert exc.value.instance == 2
 
 
@@ -135,8 +135,47 @@ def test_paths():
     assert exc.value.schema_path == ["prefixItems", 0, "type"]
     assert exc.value.instance_path == [0]
     assert exc.value.message == '1 is not of type "string"'
-    assert exc.value.kind == ValidationErrorKind.Type
+    assert isinstance(exc.value.kind, ValidationErrorKind.Type)
     assert exc.value.instance == 1
+
+
+@pytest.mark.parametrize(
+    ["schema", "instance", "kind", "attrs"],
+    [
+        ({"maxItems": 1}, [1, 2], ValidationErrorKind.MaxItems, {"limit": 1}),
+        ({"anyOf": [{"type": "string"}, {"type": "number"}]}, True, ValidationErrorKind.AnyOf, {}),
+        ({"const": "test"}, "wrong", ValidationErrorKind.Constant, {"expected_value": "test"}),
+        ({"contains": {"type": "string"}}, [1, 2, 3], ValidationErrorKind.Contains, {}),
+        ({"enum": [1, 2, 3]}, 4, ValidationErrorKind.Enum, {"options": [1, 2, 3]}),
+        ({"exclusiveMaximum": 5}, 5, ValidationErrorKind.ExclusiveMaximum, {"limit": 5}),
+        ({"exclusiveMinimum": 5}, 5, ValidationErrorKind.ExclusiveMinimum, {"limit": 5}),
+        (False, "anything", ValidationErrorKind.FalseSchema, {}),
+        ({"format": "email"}, "not-an-email", ValidationErrorKind.Format, {"format": "email"}),
+        ({"maximum": 5}, 6, ValidationErrorKind.Maximum, {"limit": 5}),
+        ({"maxLength": 5}, "too long string", ValidationErrorKind.MaxLength, {"limit": 5}),
+        ({"maxProperties": 1}, {"a": 1, "b": 2}, ValidationErrorKind.MaxProperties, {"limit": 1}),
+        ({"minItems": 2}, [1], ValidationErrorKind.MinItems, {"limit": 2}),
+        ({"minimum": 5}, 4, ValidationErrorKind.Minimum, {"limit": 5}),
+        ({"minLength": 5}, "foo", ValidationErrorKind.MinLength, {"limit": 5}),
+        ({"minProperties": 2}, {"a": 1}, ValidationErrorKind.MinProperties, {"limit": 2}),
+        ({"multipleOf": 2}, 3, ValidationErrorKind.MultipleOf, {"multiple_of": 2.0}),
+        ({"not": {"type": "string"}}, "string", ValidationErrorKind.Not, {"schema": {"type": "string"}}),
+        ({"oneOf": [{"type": "string"}, {"type": "string"}]}, "1", ValidationErrorKind.OneOfMultipleValid, {}),
+        ({"pattern": "^test$"}, "wrong", ValidationErrorKind.Pattern, {"pattern": "^test$"}),
+        ({"required": ["missing"]}, {}, ValidationErrorKind.Required, {"property": "missing"}),
+        ({"type": "string"}, 1, ValidationErrorKind.Type, {"types": ["string"]}),
+        ({"uniqueItems": True}, [1, 1], ValidationErrorKind.UniqueItems, {}),
+    ],
+)
+def test_validation_error_kinds(schema, instance, kind, attrs):
+    with pytest.raises(ValidationError) as exc:
+        validate(schema, instance, validate_formats=True)
+
+    assert isinstance(exc.value.kind, kind)
+
+    for attr, expected_value in attrs.items():
+        assert hasattr(exc.value.kind, attr)
+        assert getattr(exc.value.kind, attr) == expected_value
 
 
 @given(minimum=st.integers().map(abs))
@@ -183,7 +222,7 @@ Failed validating "type" in schema["properties"]["foo"]
 On instance["foo"]:
     null"""
         )
-        assert exc.kind == ValidationErrorKind.Type
+        assert isinstance(exc.kind, ValidationErrorKind.Type)
         assert exc.instance is None
 
 
@@ -193,13 +232,13 @@ def test_error_instance():
         validate({"type": "array"}, instance)
         pytest.fail("Validation error should happen")
     except ValidationError as exc:
-        assert exc.kind == ValidationErrorKind.Type
+        assert isinstance(exc.kind, ValidationErrorKind.Type)
         assert exc.instance == instance
     try:
         validate({"properties": {"a": {"type": "object"}}}, instance)
         pytest.fail("Validation error should happen")
     except ValidationError as exc:
-        assert exc.kind == ValidationErrorKind.Type
+        assert isinstance(exc.kind, ValidationErrorKind.Type)
         assert exc.instance == instance["a"]
 
 

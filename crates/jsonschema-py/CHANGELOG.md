@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- Extend `ValidationErrorKind` with error-specific context data.
+- Missing type annotations for `retriever` & `mask` arguments.
+
 ## [0.27.0] - 2024-12-23
 
 ### Added

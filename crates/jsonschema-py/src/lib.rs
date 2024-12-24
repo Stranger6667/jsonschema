@@ -40,7 +40,7 @@ struct ValidationError {
     #[pyo3(get)]
     instance_path: Py<PyList>,
     #[pyo3(get)]
-    kind: ValidationErrorKind,
+    kind: Py<ValidationErrorKind>,
     #[pyo3(get)]
     instance: PyObject,
 }
@@ -53,7 +53,7 @@ impl ValidationError {
         long_message: String,
         schema_path: Py<PyList>,
         instance_path: Py<PyList>,
-        kind: ValidationErrorKind,
+        kind: Py<ValidationErrorKind>,
         instance: PyObject,
     ) -> Self {
         ValidationError {
@@ -73,131 +73,235 @@ impl ValidationError {
     }
 }
 
-#[pyclass(eq, eq_int)]
-#[derive(Debug, PartialEq, Clone)]
-enum ValidationErrorKind {
-    AdditionalItems,
-    AdditionalProperties,
-    AnyOf,
-    BacktrackLimitExceeded,
-    Constant,
-    Contains,
-    ContentEncoding,
-    ContentMediaType,
-    Custom,
-    Enum,
-    ExclusiveMaximum,
-    ExclusiveMinimum,
-    FalseSchema,
-    Format,
-    FromUtf8,
-    MaxItems,
-    Maximum,
-    MaxLength,
-    MaxProperties,
-    MinItems,
-    Minimum,
-    MinLength,
-    MinProperties,
-    MultipleOf,
-    Not,
-    OneOfMultipleValid,
-    OneOfNotValid,
-    Pattern,
-    PropertyNames,
-    Required,
-    Type,
-    UnevaluatedItems,
-    UnevaluatedProperties,
-    UniqueItems,
-    Referencing,
+/// Errors that can occur during reference resolution and resource handling.
+#[pyclass(extends=exceptions::PyException, module="jsonschema_rs")]
+#[derive(Debug, Clone, PartialEq)]
+struct ReferencingError {
+    message: String,
 }
 
-impl From<jsonschema::error::ValidationErrorKind> for ValidationErrorKind {
-    fn from(kind: jsonschema::error::ValidationErrorKind) -> Self {
-        match kind {
-            jsonschema::error::ValidationErrorKind::AdditionalItems { .. } => {
-                ValidationErrorKind::AdditionalItems
+#[pymethods]
+impl ReferencingError {
+    #[new]
+    fn new(message: String) -> Self {
+        ReferencingError { message }
+    }
+    fn __str__(&self) -> String {
+        self.message.clone()
+    }
+    fn __repr__(&self) -> String {
+        format!("<ReferencingError: '{}'>", self.message)
+    }
+}
+
+/// Type of validation failure with its contextual data.
+#[pyclass]
+#[derive(Debug)]
+enum ValidationErrorKind {
+    AdditionalItems { limit: usize },
+    AdditionalProperties { unexpected: Py<PyList> },
+    AnyOf {},
+    BacktrackLimitExceeded { error: String },
+    Constant { expected_value: PyObject },
+    Contains {},
+    ContentEncoding { content_encoding: String },
+    ContentMediaType { content_media_type: String },
+    Custom { message: String },
+    Enum { options: PyObject },
+    ExclusiveMaximum { limit: PyObject },
+    ExclusiveMinimum { limit: PyObject },
+    FalseSchema {},
+    Format { format: String },
+    FromUtf8 { error: String },
+    MaxItems { limit: u64 },
+    Maximum { limit: PyObject },
+    MaxLength { limit: u64 },
+    MaxProperties { limit: u64 },
+    MinItems { limit: u64 },
+    Minimum { limit: PyObject },
+    MinLength { limit: u64 },
+    MinProperties { limit: u64 },
+    MultipleOf { multiple_of: f64 },
+    Not { schema: PyObject },
+    OneOfMultipleValid {},
+    OneOfNotValid {},
+    Pattern { pattern: String },
+    PropertyNames { error: Py<ValidationError> },
+    Required { property: PyObject },
+    Type { types: Py<PyList> },
+    UnevaluatedItems { unexpected: Py<PyList> },
+    UnevaluatedProperties { unexpected: Py<PyList> },
+    UniqueItems {},
+    Referencing { error: Py<ReferencingError> },
+}
+
+impl ValidationErrorKind {
+    fn try_new(
+        py: Python<'_>,
+        kind: jsonschema::error::ValidationErrorKind,
+        mask: Option<&str>,
+    ) -> PyResult<Self> {
+        Ok(match kind {
+            jsonschema::error::ValidationErrorKind::AdditionalItems { limit } => {
+                ValidationErrorKind::AdditionalItems { limit }
             }
-            jsonschema::error::ValidationErrorKind::AdditionalProperties { .. } => {
-                ValidationErrorKind::AdditionalProperties
+            jsonschema::error::ValidationErrorKind::AdditionalProperties { unexpected } => {
+                ValidationErrorKind::AdditionalProperties {
+                    unexpected: PyList::new(py, unexpected)?.unbind(),
+                }
             }
-            jsonschema::error::ValidationErrorKind::AnyOf => ValidationErrorKind::AnyOf,
-            jsonschema::error::ValidationErrorKind::BacktrackLimitExceeded { .. } => {
-                ValidationErrorKind::BacktrackLimitExceeded
+            jsonschema::error::ValidationErrorKind::AnyOf => ValidationErrorKind::AnyOf {},
+            jsonschema::error::ValidationErrorKind::BacktrackLimitExceeded { error } => {
+                ValidationErrorKind::BacktrackLimitExceeded {
+                    error: error.to_string(),
+                }
             }
-            jsonschema::error::ValidationErrorKind::Constant { .. } => {
-                ValidationErrorKind::Constant
+            jsonschema::error::ValidationErrorKind::Constant { expected_value } => {
+                ValidationErrorKind::Constant {
+                    expected_value: pythonize::pythonize(py, &expected_value)?.unbind(),
+                }
             }
-            jsonschema::error::ValidationErrorKind::Contains => ValidationErrorKind::Contains,
-            jsonschema::error::ValidationErrorKind::ContentEncoding { .. } => {
-                ValidationErrorKind::ContentEncoding
+            jsonschema::error::ValidationErrorKind::Contains => ValidationErrorKind::Contains {},
+            jsonschema::error::ValidationErrorKind::ContentEncoding { content_encoding } => {
+                ValidationErrorKind::ContentEncoding { content_encoding }
             }
-            jsonschema::error::ValidationErrorKind::ContentMediaType { .. } => {
-                ValidationErrorKind::ContentMediaType
+            jsonschema::error::ValidationErrorKind::ContentMediaType { content_media_type } => {
+                ValidationErrorKind::ContentMediaType { content_media_type }
             }
-            jsonschema::error::ValidationErrorKind::Custom { .. } => ValidationErrorKind::Custom,
-            jsonschema::error::ValidationErrorKind::Enum { .. } => ValidationErrorKind::Enum,
-            jsonschema::error::ValidationErrorKind::ExclusiveMaximum { .. } => {
-                ValidationErrorKind::ExclusiveMaximum
+            jsonschema::error::ValidationErrorKind::Custom { message } => {
+                ValidationErrorKind::Custom { message }
             }
-            jsonschema::error::ValidationErrorKind::ExclusiveMinimum { .. } => {
-                ValidationErrorKind::ExclusiveMinimum
+            jsonschema::error::ValidationErrorKind::Enum { options } => ValidationErrorKind::Enum {
+                options: pythonize::pythonize(py, &options)?.unbind(),
+            },
+            jsonschema::error::ValidationErrorKind::ExclusiveMaximum { limit } => {
+                ValidationErrorKind::ExclusiveMaximum {
+                    limit: pythonize::pythonize(py, &limit)?.unbind(),
+                }
             }
-            jsonschema::error::ValidationErrorKind::FalseSchema => ValidationErrorKind::FalseSchema,
-            jsonschema::error::ValidationErrorKind::Format { .. } => ValidationErrorKind::Format,
-            jsonschema::error::ValidationErrorKind::FromUtf8 { .. } => {
-                ValidationErrorKind::FromUtf8
+            jsonschema::error::ValidationErrorKind::ExclusiveMinimum { limit } => {
+                ValidationErrorKind::ExclusiveMinimum {
+                    limit: pythonize::pythonize(py, &limit)?.unbind(),
+                }
             }
-            jsonschema::error::ValidationErrorKind::MaxItems { .. } => {
-                ValidationErrorKind::MaxItems
+            jsonschema::error::ValidationErrorKind::FalseSchema => {
+                ValidationErrorKind::FalseSchema {}
             }
-            jsonschema::error::ValidationErrorKind::Maximum { .. } => ValidationErrorKind::Maximum,
-            jsonschema::error::ValidationErrorKind::MaxLength { .. } => {
-                ValidationErrorKind::MaxLength
+            jsonschema::error::ValidationErrorKind::Format { format } => {
+                ValidationErrorKind::Format { format }
             }
-            jsonschema::error::ValidationErrorKind::MaxProperties { .. } => {
-                ValidationErrorKind::MaxProperties
+            jsonschema::error::ValidationErrorKind::FromUtf8 { error } => {
+                ValidationErrorKind::FromUtf8 {
+                    error: error.to_string(),
+                }
             }
-            jsonschema::error::ValidationErrorKind::MinItems { .. } => {
-                ValidationErrorKind::MinItems
+            jsonschema::error::ValidationErrorKind::MaxItems { limit } => {
+                ValidationErrorKind::MaxItems { limit }
             }
-            jsonschema::error::ValidationErrorKind::Minimum { .. } => ValidationErrorKind::Minimum,
-            jsonschema::error::ValidationErrorKind::MinLength { .. } => {
-                ValidationErrorKind::MinLength
+            jsonschema::error::ValidationErrorKind::Maximum { limit } => {
+                ValidationErrorKind::Maximum {
+                    limit: pythonize::pythonize(py, &limit)?.unbind(),
+                }
             }
-            jsonschema::error::ValidationErrorKind::MinProperties { .. } => {
-                ValidationErrorKind::MinProperties
+            jsonschema::error::ValidationErrorKind::MaxLength { limit } => {
+                ValidationErrorKind::MaxLength { limit }
             }
-            jsonschema::error::ValidationErrorKind::MultipleOf { .. } => {
-                ValidationErrorKind::MultipleOf
+            jsonschema::error::ValidationErrorKind::MaxProperties { limit } => {
+                ValidationErrorKind::MaxProperties { limit }
             }
-            jsonschema::error::ValidationErrorKind::Not { .. } => ValidationErrorKind::Not,
+            jsonschema::error::ValidationErrorKind::MinItems { limit } => {
+                ValidationErrorKind::MinItems { limit }
+            }
+            jsonschema::error::ValidationErrorKind::Minimum { limit } => {
+                ValidationErrorKind::Minimum {
+                    limit: pythonize::pythonize(py, &limit)?.unbind(),
+                }
+            }
+            jsonschema::error::ValidationErrorKind::MinLength { limit } => {
+                ValidationErrorKind::MinLength { limit }
+            }
+            jsonschema::error::ValidationErrorKind::MinProperties { limit } => {
+                ValidationErrorKind::MinProperties { limit }
+            }
+            jsonschema::error::ValidationErrorKind::MultipleOf { multiple_of } => {
+                ValidationErrorKind::MultipleOf { multiple_of }
+            }
+            jsonschema::error::ValidationErrorKind::Not { schema } => ValidationErrorKind::Not {
+                schema: pythonize::pythonize(py, &schema)?.unbind(),
+            },
             jsonschema::error::ValidationErrorKind::OneOfMultipleValid => {
-                ValidationErrorKind::OneOfMultipleValid
+                ValidationErrorKind::OneOfMultipleValid {}
             }
             jsonschema::error::ValidationErrorKind::OneOfNotValid => {
-                ValidationErrorKind::OneOfNotValid
+                ValidationErrorKind::OneOfNotValid {}
             }
-            jsonschema::error::ValidationErrorKind::Pattern { .. } => ValidationErrorKind::Pattern,
-            jsonschema::error::ValidationErrorKind::PropertyNames { .. } => {
-                ValidationErrorKind::PropertyNames
+            jsonschema::error::ValidationErrorKind::Pattern { pattern } => {
+                ValidationErrorKind::Pattern { pattern }
             }
-            jsonschema::error::ValidationErrorKind::Required { .. } => {
-                ValidationErrorKind::Required
+            jsonschema::error::ValidationErrorKind::PropertyNames { error } => {
+                ValidationErrorKind::PropertyNames {
+                    error: {
+                        let (message, verbose_message, schema_path, instance_path, kind, instance) =
+                            into_validation_error_args(py, *error, mask)?;
+                        Py::new(
+                            py,
+                            ValidationError {
+                                message,
+                                verbose_message,
+                                schema_path,
+                                instance_path,
+                                kind: Py::new(py, kind)?,
+                                instance,
+                            },
+                        )?
+                    },
+                }
             }
-            jsonschema::error::ValidationErrorKind::Type { .. } => ValidationErrorKind::Type,
-            jsonschema::error::ValidationErrorKind::UnevaluatedItems { .. } => {
-                ValidationErrorKind::UnevaluatedItems
+            jsonschema::error::ValidationErrorKind::Required { property } => {
+                ValidationErrorKind::Required {
+                    property: pythonize::pythonize(py, &property)?.unbind(),
+                }
             }
-            jsonschema::error::ValidationErrorKind::UnevaluatedProperties { .. } => {
-                ValidationErrorKind::UnevaluatedProperties
+            jsonschema::error::ValidationErrorKind::Type { kind } => ValidationErrorKind::Type {
+                types: {
+                    match kind {
+                        jsonschema::error::TypeKind::Single(primitive_type) => {
+                            PyList::new(py, [primitive_type.to_string()].iter())?.unbind()
+                        }
+                        jsonschema::error::TypeKind::Multiple(primitive_types_bit_map) => {
+                            PyList::new(
+                                py,
+                                primitive_types_bit_map.into_iter().map(|ty| ty.to_string()),
+                            )?
+                            .unbind()
+                        }
+                    }
+                },
+            },
+            jsonschema::error::ValidationErrorKind::UnevaluatedItems { unexpected } => {
+                ValidationErrorKind::UnevaluatedItems {
+                    unexpected: PyList::new(py, unexpected)?.unbind(),
+                }
             }
-            jsonschema::error::ValidationErrorKind::UniqueItems => ValidationErrorKind::UniqueItems,
-            jsonschema::error::ValidationErrorKind::Referencing(_) => {
-                ValidationErrorKind::Referencing
+            jsonschema::error::ValidationErrorKind::UnevaluatedProperties { unexpected } => {
+                ValidationErrorKind::UnevaluatedProperties {
+                    unexpected: PyList::new(py, unexpected)?.unbind(),
+                }
             }
-        }
+            jsonschema::error::ValidationErrorKind::UniqueItems => {
+                ValidationErrorKind::UniqueItems {}
+            }
+            jsonschema::error::ValidationErrorKind::Referencing(error) => {
+                ValidationErrorKind::Referencing {
+                    error: Py::new(
+                        py,
+                        ReferencingError {
+                            message: error.to_string(),
+                        },
+                    )?,
+                }
+            }
+        })
     }
 }
 
@@ -216,12 +320,19 @@ impl ValidationErrorIter {
     }
 }
 
-fn into_py_err(
+#[allow(clippy::type_complexity)]
+fn into_validation_error_args(
     py: Python<'_>,
     error: jsonschema::ValidationError<'_>,
     mask: Option<&str>,
-) -> PyResult<PyErr> {
-    let pyerror_type = PyType::new::<ValidationError>(py);
+) -> PyResult<(
+    String,
+    String,
+    Py<PyList>,
+    Py<PyList>,
+    ValidationErrorKind,
+    PyObject,
+)> {
     let message = if let Some(mask) = mask {
         error.masked_with(mask).to_string()
     } else {
@@ -251,8 +362,25 @@ fn into_py_err(
         .map(into_path)
         .collect::<Result<Vec<_>, _>>()?;
     let instance_path = PyList::new(py, elements)?.unbind();
-    let kind: ValidationErrorKind = error.kind.into();
+    let kind = ValidationErrorKind::try_new(py, error.kind, mask)?;
     let instance = pythonize::pythonize(py, error.instance.as_ref())?.unbind();
+    Ok((
+        message,
+        verbose_message,
+        schema_path,
+        instance_path,
+        kind,
+        instance,
+    ))
+}
+fn into_py_err(
+    py: Python<'_>,
+    error: jsonschema::ValidationError<'_>,
+    mask: Option<&str>,
+) -> PyResult<PyErr> {
+    let (message, verbose_message, schema_path, instance_path, kind, instance) =
+        into_validation_error_args(py, error, mask)?;
+    let pyerror_type = PyType::new::<ValidationError>(py);
     Ok(PyErr::from_type(
         pyerror_type,
         (
@@ -976,6 +1104,7 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<Draft201909Validator>()?;
     module.add_class::<Draft202012Validator>()?;
     module.add("ValidationError", py.get_type::<ValidationError>())?;
+    module.add("ReferencingError", py.get_type::<ReferencingError>())?;
     module.add("ValidationErrorKind", py.get_type::<ValidationErrorKind>())?;
     module.add("Draft4", DRAFT4)?;
     module.add("Draft6", DRAFT6)?;

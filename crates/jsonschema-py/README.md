@@ -197,7 +197,32 @@ validator.is_valid({
 })  # False
 ```
 
-## Error Message Masking
+## Error Handling
+
+`jsonschema-rs` provides detailed validation errors through the `ValidationError` class, which includes both basic error information and specific details about what caused the validation to fail:
+
+```python
+import jsonschema_rs
+
+schema = {"type": "string", "maxLength": 5}
+
+try:
+    jsonschema_rs.validate(schema, "too long")
+except jsonschema_rs.ValidationError as error:
+    # Basic error information
+    print(error.message)       # '"too long" is longer than 5 characters'
+    print(error.instance_path) # Location in the instance that failed
+    print(error.schema_path)   # Location in the schema that failed
+
+    # Detailed error information via `kind`
+    if isinstance(error.kind, jsonschema_rs.ValidationErrorKind.MaxLength):
+        assert error.kind.limit == 5
+        print(f"Exceeded maximum length of {error.kind.limit}")
+```
+
+For a complete list of all error kinds and their attributes, see the [type definitions file](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-py/python/jsonschema_rs/__init__.pyi)
+
+### Error Message Masking
 
 When working with sensitive data, you might want to hide actual values from error messages.
 You can mask instance values in error messages by providing a placeholder:
