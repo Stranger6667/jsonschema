@@ -221,6 +221,44 @@ impl fmt::Display for Location {
     }
 }
 
+impl<'a> IntoIterator for &'a Location {
+    type Item = LocationSegment<'a>;
+    type IntoIter = std::vec::IntoIter<LocationSegment<'a>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.as_str()
+            .split('/')
+            .filter(|p| !p.is_empty())
+            .map(|p| {
+                p.parse::<usize>()
+                    .map_or(LocationSegment::Property(p), LocationSegment::Index)
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+}
+
+impl<'a> FromIterator<LocationSegment<'a>> for Location {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = LocationSegment<'a>>,
+    {
+        fn inner<'a, 'b, 'c, I>(path_iter: &mut I, location: &'b LazyLocation<'b, 'a>) -> Location
+        where
+            I: Iterator<Item = LocationSegment<'c>>,
+        {
+            let Some(path) = path_iter.next() else {
+                return location.into();
+            };
+            let location = location.push(path);
+            inner(path_iter, &location)
+        }
+
+        let loc = LazyLocation::default();
+        inner(&mut iter.into_iter(), &loc)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
