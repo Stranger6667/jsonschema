@@ -17,7 +17,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - run: cargo install cargo-codspeed
+      - run: cargo install cargo-codspeed --force
 
       - run: cargo codspeed build -p jsonschema -p referencing jsonschema registry anchor pointer subresources
 

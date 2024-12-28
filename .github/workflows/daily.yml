@@ -30,7 +30,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-corpus-${{ matrix.target }}-
 
-      - run: cargo install cargo-fuzz
+      - run: cargo install cargo-fuzz --force
 
       - run: |
           mkdir -p fuzz/corpus/${{ matrix.target }}

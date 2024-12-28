@@ -5,7 +5,7 @@ use std::{
     panic::{self, AssertUnwindSafe},
 };
 
-use jsonschema::{Draft, Retrieve, Uri};
+use jsonschema::{paths::LocationSegment, Draft, Retrieve, Uri};
 use pyo3::{
     exceptions::{self, PyValueError},
     ffi::PyUnicode_AsUTF8AndSize,
@@ -339,26 +339,21 @@ fn into_validation_error_args(
         error.to_string()
     };
     let verbose_message = to_error_message(&error, message.clone(), mask);
-    let into_path = |segment: &str| {
-        if let Ok(idx) = segment.parse::<usize>() {
-            idx.into_pyobject(py).and_then(PyObject::try_from)
-        } else {
-            segment.into_pyobject(py).and_then(PyObject::try_from)
+    let into_path = |segment: LocationSegment<'_>| match segment {
+        LocationSegment::Property(property) => {
+            property.into_pyobject(py).and_then(PyObject::try_from)
         }
+        LocationSegment::Index(idx) => idx.into_pyobject(py).and_then(PyObject::try_from),
     };
     let elements = error
         .schema_path
-        .as_str()
-        .split('/')
-        .skip(1)
+        .into_iter()
         .map(into_path)
         .collect::<Result<Vec<_>, _>>()?;
     let schema_path = PyList::new(py, elements)?.unbind();
     let elements = error
         .instance_path
-        .as_str()
-        .split('/')
-        .skip(1)
+        .into_iter()
         .map(into_path)
         .collect::<Result<Vec<_>, _>>()?;
     let instance_path = PyList::new(py, elements)?.unbind();

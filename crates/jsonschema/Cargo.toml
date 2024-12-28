@@ -64,3 +64,6 @@ name = "keywords"
 harness = false
 name = "errors"
 
+[[bench]]
+harness = false
+name = "location"

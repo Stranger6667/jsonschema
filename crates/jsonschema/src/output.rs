@@ -18,8 +18,9 @@ use serde::ser::SerializeMap;
 
 use crate::{node::SchemaNode, paths::LazyLocation, Validator};
 
-/// The output format resulting from the application of a schema. This can be
-/// converted into various representations based on the definitions in
+/// The output format resulting from the application of a schema.
+///
+/// This can be converted into various representations based on the definitions in
 /// <https://json-schema.org/draft/2020-12/json-schema-core.html#rfc.section.12.2>
 ///
 /// Currently only the "flag" and "basic" output formats are supported
@@ -190,9 +191,9 @@ impl<'a> FromIterator<BasicOutput<'a>> for PartialApplication<'a> {
     }
 }
 
-/// An output unit is a reference to a place in a schema and a place in an
-/// instance along with some value associated to that place. For annotations the
-/// value will be an [`Annotations`] and for errors it will be an
+/// A reference to a place in a schema and a place in an instance along with some value associated to that place.
+///
+/// For annotations the value will be an [`Annotations`] and for errors it will be an
 /// [`ErrorDescription`]. See the documentation for [`Output::basic`] for a
 /// detailed example.
 #[derive(Debug, Clone, PartialEq, Eq)]

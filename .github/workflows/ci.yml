@@ -273,7 +273,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - run: cargo install cargo-fuzz
+      - run: cargo install cargo-fuzz --force
 
       - run: cargo +nightly fuzz run --release ${{ matrix.target }} fuzz/seeds -- -dict=fuzz/dict -max_total_time=60
 
