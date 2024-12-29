@@ -192,7 +192,8 @@ impl<'a> ValidationError<'a> {
             placeholder: placeholder.into(),
         }
     }
-    pub(crate) fn into_owned(self) -> ValidationError<'static> {
+    /// Converts the `ValidationError` into an owned version with `'static` lifetime.
+    pub fn to_owned(self) -> ValidationError<'static> {
         ValidationError {
             instance_path: self.instance_path.clone(),
             instance: Cow::Owned(self.instance.into_owned()),
@@ -636,7 +637,7 @@ impl<'a> ValidationError<'a> {
             instance_path,
             instance: Cow::Borrowed(instance),
             kind: ValidationErrorKind::PropertyNames {
-                error: Box::new(error.into_owned()),
+                error: Box::new(error.to_owned()),
             },
             schema_path: location,
         }

@@ -68,7 +68,7 @@ impl RefValidator {
                     location,
                 );
                 let inner = match compiler::compile_with(&ctx, resource_ref)
-                    .map_err(|err| err.into_owned())
+                    .map_err(|err| err.to_owned())
                 {
                     Ok(inner) => inner,
                     Err(error) => return Some(Err(error)),

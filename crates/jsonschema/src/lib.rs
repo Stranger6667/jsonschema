@@ -1244,7 +1244,7 @@ pub(crate) mod tests_util {
         let err = validator
             .validate(instance)
             .expect_err("Should be an error")
-            .into_owned();
+            .to_owned();
         err
     }
 

@@ -6,6 +6,7 @@
 
 - Implement `IntoIterator` for `Location` to iterate over `LocationSegment`.
 - Implement `FromIter` for `Location` to build a `Location` from an iterator of `LocationSegment`.
+- `ValidationError::to_owned` method for converting errors into owned versions.
 
 ## [0.27.1] - 2024-12-24
 

@@ -38,7 +38,7 @@ impl Validate for PropertyNamesObjectValidator {
                                 error.schema_path.clone(),
                                 location.into(),
                                 instance,
-                                error.into_owned(),
+                                error.to_owned(),
                             )
                         })
                         .collect();
@@ -77,7 +77,7 @@ impl Validate for PropertyNamesObjectValidator {
                             error.schema_path.clone(),
                             location.into(),
                             instance,
-                            error.into_owned(),
+                            error.to_owned(),
                         ))
                     }
                 }
