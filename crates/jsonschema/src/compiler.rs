@@ -14,7 +14,6 @@ use crate::{
     ValidationError, Validator,
 };
 use ahash::{AHashMap, AHashSet};
-use once_cell::sync::Lazy;
 use referencing::{
     uri, Draft, List, Registry, Resolved, Resolver, Resource, ResourceRef, Uri, Vocabulary,
     VocabularySet, SPECIFICATIONS,
@@ -243,45 +242,6 @@ impl<'a> Context<'a> {
     }
 }
 
-const EXPECT_MESSAGE: &str = "Invalid meta-schema";
-static META_SCHEMA_VALIDATORS: Lazy<AHashMap<Draft, Validator>> = Lazy::new(|| {
-    let mut validators = AHashMap::with_capacity(5);
-    let mut options = crate::options();
-    options.without_schema_validation();
-    validators.insert(
-        Draft::Draft4,
-        options
-            .build(&referencing::meta::DRAFT4)
-            .expect(EXPECT_MESSAGE),
-    );
-    validators.insert(
-        Draft::Draft6,
-        options
-            .build(&referencing::meta::DRAFT6)
-            .expect(EXPECT_MESSAGE),
-    );
-    validators.insert(
-        Draft::Draft7,
-        options
-            .build(&referencing::meta::DRAFT7)
-            .expect(EXPECT_MESSAGE),
-    );
-    validators.insert(
-        Draft::Draft201909,
-        options
-            .build(&referencing::meta::DRAFT201909)
-            .expect(EXPECT_MESSAGE),
-    );
-    validators.insert(
-        Draft::Draft202012,
-        options
-            .without_schema_validation()
-            .build(&referencing::meta::DRAFT202012)
-            .expect(EXPECT_MESSAGE),
-    );
-    validators
-});
-
 pub(crate) fn build_validator(
     mut config: ValidationOptions,
     schema: &Value,
@@ -322,10 +282,17 @@ pub(crate) fn build_validator(
 
     // Validate the schema itself
     if config.validate_schema {
-        if let Err(error) = META_SCHEMA_VALIDATORS
-            .get(&draft)
-            .expect("Existing draft")
-            .validate(schema)
+        if let Err(error) = {
+            match draft {
+                Draft::Draft4 => &crate::draft4::meta::VALIDATOR,
+                Draft::Draft6 => &crate::draft6::meta::VALIDATOR,
+                Draft::Draft7 => &crate::draft7::meta::VALIDATOR,
+                Draft::Draft201909 => &crate::draft201909::meta::VALIDATOR,
+                Draft::Draft202012 => &crate::draft202012::meta::VALIDATOR,
+                _ => unreachable!("Unknown draft"),
+            }
+        }
+        .validate(schema)
         {
             return Err(error.to_owned());
         }

@@ -4,6 +4,7 @@
 //! - 🔧 Custom keywords and format validators
 //! - 🌐 Remote reference fetching (network/file)
 //! - 🎨 `Basic` output style as per JSON Schema spec
+//! - ✨ Meta-schema validation for schema documents
 //! - 🚀 WebAssembly support
 //!
 //! ## Supported drafts
@@ -55,6 +56,35 @@
 //! # }
 //! ```
 //!
+//! # Meta-Schema Validation
+//!
+//! The crate provides functionality to validate JSON Schema documents themselves against their meta-schemas.
+//! This ensures your schema documents are valid according to the JSON Schema specification.
+//!
+//! ```rust
+//! use serde_json::json;
+//!
+//! let schema = json!({
+//!     "type": "object",
+//!     "properties": {
+//!         "name": {"type": "string"},
+//!         "age": {"type": "integer", "minimum": 0}
+//!     }
+//! });
+//!
+//! // Validate schema with automatic draft detection
+//! assert!(jsonschema::meta::is_valid(&schema));
+//! assert!(jsonschema::meta::validate(&schema).is_ok());
+//!
+//! // Invalid schema example
+//! let invalid_schema = json!({
+//!     "type": "invalid_type",  // must be one of the valid JSON Schema types
+//!     "minimum": "not_a_number"
+//! });
+//! assert!(!jsonschema::meta::is_valid(&invalid_schema));
+//! assert!(jsonschema::meta::validate(&invalid_schema).is_err());
+//! ```
+//!
 //! # Configuration
 //!
 //! `jsonschema` provides several ways to configure and use JSON Schema validation.
@@ -74,6 +104,7 @@
 //! - An `is_valid` function for validation with a boolean result
 //! - An `validate` function for getting the first validation error
 //! - An `options` function to create a draft-specific configuration builder
+//! - A `meta` module for draft-specific meta-schema validation
 //!
 //! Here's how you can explicitly use a specific draft version:
 //!
@@ -82,10 +113,13 @@
 //! use serde_json::json;
 //!
 //! let schema = json!({"type": "string"});
-//! let validator = jsonschema::draft7::new(&schema)?;
 //!
+//! // Instance validation
+//! let validator = jsonschema::draft7::new(&schema)?;
 //! assert!(validator.is_valid(&json!("Hello")));
-//! assert!(validator.validate(&json!("Hello")).is_ok());
+//!
+//! // Meta-schema validation
+//! assert!(jsonschema::draft7::meta::is_valid(&schema));
 //! # Ok(())
 //! # }
 //! ```
@@ -607,6 +641,117 @@ pub fn options() -> ValidationOptions {
     Validator::options()
 }
 
+/// Functionality for validating JSON Schema documents against their meta-schemas.
+pub mod meta {
+    use crate::{error::ValidationError, Draft};
+    use serde_json::Value;
+
+    use crate::Validator;
+
+    pub(crate) mod validators {
+        use crate::Validator;
+        use once_cell::sync::Lazy;
+
+        pub static DRAFT4_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
+            crate::options()
+                .without_schema_validation()
+                .build(&referencing::meta::DRAFT4)
+                .expect("Draft 4 meta-schema should be valid")
+        });
+
+        pub static DRAFT6_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
+            crate::options()
+                .without_schema_validation()
+                .build(&referencing::meta::DRAFT6)
+                .expect("Draft 6 meta-schema should be valid")
+        });
+
+        pub static DRAFT7_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
+            crate::options()
+                .without_schema_validation()
+                .build(&referencing::meta::DRAFT7)
+                .expect("Draft 7 meta-schema should be valid")
+        });
+
+        pub static DRAFT201909_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
+            crate::options()
+                .without_schema_validation()
+                .build(&referencing::meta::DRAFT201909)
+                .expect("Draft 2019-09 meta-schema should be valid")
+        });
+
+        pub static DRAFT202012_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
+            crate::options()
+                .without_schema_validation()
+                .build(&referencing::meta::DRAFT202012)
+                .expect("Draft 2020-12 meta-schema should be valid")
+        });
+    }
+
+    /// Validate a JSON Schema document against its meta-schema and get a `true` if the schema is valid
+    /// and `false` otherwise. Draft version is detected automatically.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use serde_json::json;
+    ///
+    /// let schema = json!({
+    ///     "type": "string",
+    ///     "maxLength": 5
+    /// });
+    /// assert!(jsonschema::meta::is_valid(&schema));
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the meta-schema can't be detected.
+    pub fn is_valid(schema: &Value) -> bool {
+        meta_validator_for(schema).is_valid(schema)
+    }
+    /// Validate a JSON Schema document against its meta-schema and return the first error if any.
+    /// Draft version is detected automatically.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use serde_json::json;
+    ///
+    /// let schema = json!({
+    ///     "type": "string",
+    ///     "maxLength": 5
+    /// });
+    /// assert!(jsonschema::meta::validate(&schema).is_ok());
+    ///
+    /// // Invalid schema
+    /// let invalid_schema = json!({
+    ///     "type": "invalid_type"
+    /// });
+    /// assert!(jsonschema::meta::validate(&invalid_schema).is_err());
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the meta-schema can't be detected.
+    pub fn validate(schema: &Value) -> Result<(), ValidationError> {
+        meta_validator_for(schema).validate(schema)
+    }
+
+    fn meta_validator_for(schema: &Value) -> &'static Validator {
+        match Draft::default()
+            .detect(schema)
+            .expect("Failed to detect meta schema")
+        {
+            Draft::Draft4 => &validators::DRAFT4_META_VALIDATOR,
+            Draft::Draft6 => &validators::DRAFT6_META_VALIDATOR,
+            Draft::Draft7 => &validators::DRAFT7_META_VALIDATOR,
+            Draft::Draft201909 => &validators::DRAFT201909_META_VALIDATOR,
+            Draft::Draft202012 => &validators::DRAFT202012_META_VALIDATOR,
+            _ => unreachable!("Unknown draft"),
+        }
+    }
+}
+
 /// Functionality specific to JSON Schema Draft 4.
 ///
 /// [![Draft 4](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft4.json)](https://bowtie.report/#/implementations/rust-jsonschema)
@@ -709,6 +854,58 @@ pub mod draft4 {
         let mut options = crate::options();
         options.with_draft(Draft::Draft4);
         options
+    }
+
+    /// Functionality for validating JSON Schema Draft 4 documents.
+    pub mod meta {
+        use crate::ValidationError;
+        use serde_json::Value;
+
+        pub use crate::meta::validators::DRAFT4_META_VALIDATOR as VALIDATOR;
+
+        /// Validate a JSON Schema document against Draft 4 meta-schema and get a `true` if the schema is valid
+        /// and `false` otherwise.
+        ///
+        /// # Examples
+        ///
+        /// ```rust
+        /// use serde_json::json;
+        ///
+        /// let schema = json!({
+        ///     "type": "string",
+        ///     "maxLength": 5
+        /// });
+        /// assert!(jsonschema::draft4::meta::is_valid(&schema));
+        /// ```
+        #[must_use]
+        #[inline]
+        pub fn is_valid(schema: &Value) -> bool {
+            VALIDATOR.is_valid(schema)
+        }
+
+        /// Validate a JSON Schema document against Draft 4 meta-schema and return the first error if any.
+        ///
+        /// # Examples
+        ///
+        /// ```rust
+        /// use serde_json::json;
+        ///
+        /// let schema = json!({
+        ///     "type": "string",
+        ///     "maxLength": 5
+        /// });
+        /// assert!(jsonschema::draft4::meta::validate(&schema).is_ok());
+        ///
+        /// // Invalid schema
+        /// let invalid_schema = json!({
+        ///     "type": "invalid_type"
+        /// });
+        /// assert!(jsonschema::draft4::meta::validate(&invalid_schema).is_err());
+        /// ```
+        #[inline]
+        pub fn validate(schema: &Value) -> Result<(), ValidationError> {
+            VALIDATOR.validate(schema)
+        }
     }
 }
 
@@ -815,6 +1012,58 @@ pub mod draft6 {
         options.with_draft(Draft::Draft6);
         options
     }
+
+    /// Functionality for validating JSON Schema Draft 6 documents.
+    pub mod meta {
+        use crate::ValidationError;
+        use serde_json::Value;
+
+        pub use crate::meta::validators::DRAFT6_META_VALIDATOR as VALIDATOR;
+
+        /// Validate a JSON Schema document against Draft 6 meta-schema and get a `true` if the schema is valid
+        /// and `false` otherwise.
+        ///
+        /// # Examples
+        ///
+        /// ```rust
+        /// use serde_json::json;
+        ///
+        /// let schema = json!({
+        ///     "type": "string",
+        ///     "maxLength": 5
+        /// });
+        /// assert!(jsonschema::draft6::meta::is_valid(&schema));
+        /// ```
+        #[must_use]
+        #[inline]
+        pub fn is_valid(schema: &Value) -> bool {
+            VALIDATOR.is_valid(schema)
+        }
+
+        /// Validate a JSON Schema document against Draft 6 meta-schema and return the first error if any.
+        ///
+        /// # Examples
+        ///
+        /// ```rust
+        /// use serde_json::json;
+        ///
+        /// let schema = json!({
+        ///     "type": "string",
+        ///     "maxLength": 5
+        /// });
+        /// assert!(jsonschema::draft6::meta::validate(&schema).is_ok());
+        ///
+        /// // Invalid schema
+        /// let invalid_schema = json!({
+        ///     "type": "invalid_type"
+        /// });
+        /// assert!(jsonschema::draft6::meta::validate(&invalid_schema).is_err());
+        /// ```
+        #[inline]
+        pub fn validate(schema: &Value) -> Result<(), ValidationError> {
+            VALIDATOR.validate(schema)
+        }
+    }
 }
 
 /// Functionality specific to JSON Schema Draft 7.
@@ -920,6 +1169,58 @@ pub mod draft7 {
         options.with_draft(Draft::Draft7);
         options
     }
+
+    /// Functionality for validating JSON Schema Draft 7 documents.
+    pub mod meta {
+        use crate::ValidationError;
+        use serde_json::Value;
+
+        pub use crate::meta::validators::DRAFT7_META_VALIDATOR as VALIDATOR;
+
+        /// Validate a JSON Schema document against Draft 7 meta-schema and get a `true` if the schema is valid
+        /// and `false` otherwise.
+        ///
+        /// # Examples
+        ///
+        /// ```rust
+        /// use serde_json::json;
+        ///
+        /// let schema = json!({
+        ///     "type": "string",
+        ///     "maxLength": 5
+        /// });
+        /// assert!(jsonschema::draft7::meta::is_valid(&schema));
+        /// ```
+        #[must_use]
+        #[inline]
+        pub fn is_valid(schema: &Value) -> bool {
+            VALIDATOR.is_valid(schema)
+        }
+
+        /// Validate a JSON Schema document against Draft 7 meta-schema and return the first error if any.
+        ///
+        /// # Examples
+        ///
+        /// ```rust
+        /// use serde_json::json;
+        ///
+        /// let schema = json!({
+        ///     "type": "string",
+        ///     "maxLength": 5
+        /// });
+        /// assert!(jsonschema::draft7::meta::validate(&schema).is_ok());
+        ///
+        /// // Invalid schema
+        /// let invalid_schema = json!({
+        ///     "type": "invalid_type"
+        /// });
+        /// assert!(jsonschema::draft7::meta::validate(&invalid_schema).is_err());
+        /// ```
+        #[inline]
+        pub fn validate(schema: &Value) -> Result<(), ValidationError> {
+            VALIDATOR.validate(schema)
+        }
+    }
 }
 
 /// Functionality specific to JSON Schema Draft 2019-09.
@@ -1024,6 +1325,57 @@ pub mod draft201909 {
         let mut options = crate::options();
         options.with_draft(Draft::Draft201909);
         options
+    }
+
+    /// Functionality for validating JSON Schema Draft 2019-09 documents.
+    pub mod meta {
+        use crate::ValidationError;
+        use serde_json::Value;
+
+        pub use crate::meta::validators::DRAFT201909_META_VALIDATOR as VALIDATOR;
+        /// Validate a JSON Schema document against Draft 2019-09 meta-schema and get a `true` if the schema is valid
+        /// and `false` otherwise.
+        ///
+        /// # Examples
+        ///
+        /// ```rust
+        /// use serde_json::json;
+        ///
+        /// let schema = json!({
+        ///     "type": "string",
+        ///     "maxLength": 5
+        /// });
+        /// assert!(jsonschema::draft201909::meta::is_valid(&schema));
+        /// ```
+        #[must_use]
+        #[inline]
+        pub fn is_valid(schema: &Value) -> bool {
+            VALIDATOR.is_valid(schema)
+        }
+
+        /// Validate a JSON Schema document against Draft 2019-09 meta-schema and return the first error if any.
+        ///
+        /// # Examples
+        ///
+        /// ```rust
+        /// use serde_json::json;
+        ///
+        /// let schema = json!({
+        ///     "type": "string",
+        ///     "maxLength": 5
+        /// });
+        /// assert!(jsonschema::draft201909::meta::validate(&schema).is_ok());
+        ///
+        /// // Invalid schema
+        /// let invalid_schema = json!({
+        ///     "type": "invalid_type"
+        /// });
+        /// assert!(jsonschema::draft201909::meta::validate(&invalid_schema).is_err());
+        /// ```
+        #[inline]
+        pub fn validate(schema: &Value) -> Result<(), ValidationError> {
+            VALIDATOR.validate(schema)
+        }
     }
 }
 
@@ -1132,6 +1484,58 @@ pub mod draft202012 {
         let mut options = crate::options();
         options.with_draft(Draft::Draft202012);
         options
+    }
+
+    /// Functionality for validating JSON Schema Draft 2020-12 documents.
+    pub mod meta {
+        use crate::ValidationError;
+        use serde_json::Value;
+
+        pub use crate::meta::validators::DRAFT202012_META_VALIDATOR as VALIDATOR;
+
+        /// Validate a JSON Schema document against Draft 2020-12 meta-schema and get a `true` if the schema is valid
+        /// and `false` otherwise.
+        ///
+        /// # Examples
+        ///
+        /// ```rust
+        /// use serde_json::json;
+        ///
+        /// let schema = json!({
+        ///     "type": "string",
+        ///     "maxLength": 5
+        /// });
+        /// assert!(jsonschema::draft202012::meta::is_valid(&schema));
+        /// ```
+        #[must_use]
+        #[inline]
+        pub fn is_valid(schema: &Value) -> bool {
+            VALIDATOR.is_valid(schema)
+        }
+
+        /// Validate a JSON Schema document against Draft 2020-12 meta-schema and return the first error if any.
+        ///
+        /// # Examples
+        ///
+        /// ```rust
+        /// use serde_json::json;
+        ///
+        /// let schema = json!({
+        ///     "type": "string",
+        ///     "maxLength": 5
+        /// });
+        /// assert!(jsonschema::draft202012::meta::validate(&schema).is_ok());
+        ///
+        /// // Invalid schema
+        /// let invalid_schema = json!({
+        ///     "type": "invalid_type"
+        /// });
+        /// assert!(jsonschema::draft202012::meta::validate(&invalid_schema).is_err());
+        /// ```
+        #[inline]
+        pub fn validate(schema: &Value) -> Result<(), ValidationError> {
+            VALIDATOR.validate(schema)
+        }
     }
 }
 
@@ -1333,6 +1737,96 @@ mod tests {
 
         assert!(validate_fn(&schema, &valid_instance).is_ok());
         assert!(validate_fn(&schema, &invalid_instance).is_err());
+    }
+
+    #[test_case(crate::meta::validate, crate::meta::is_valid ; "autodetect")]
+    #[test_case(crate::draft4::meta::validate, crate::draft4::meta::is_valid ; "draft4")]
+    #[test_case(crate::draft6::meta::validate, crate::draft6::meta::is_valid ; "draft6")]
+    #[test_case(crate::draft7::meta::validate, crate::draft7::meta::is_valid ; "draft7")]
+    #[test_case(crate::draft201909::meta::validate, crate::draft201909::meta::is_valid ; "draft201909")]
+    #[test_case(crate::draft202012::meta::validate, crate::draft202012::meta::is_valid ; "draft202012")]
+    fn test_meta_validation(
+        validate_fn: fn(&serde_json::Value) -> Result<(), ValidationError>,
+        is_valid_fn: fn(&serde_json::Value) -> bool,
+    ) {
+        let valid = json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "integer", "minimum": 0}
+            },
+            "required": ["name"]
+        });
+
+        let invalid = json!({
+            "type": "invalid_type",
+            "minimum": "not_a_number",
+            "required": true  // should be an array
+        });
+
+        assert!(validate_fn(&valid).is_ok());
+        assert!(validate_fn(&invalid).is_err());
+        assert!(is_valid_fn(&valid));
+        assert!(!is_valid_fn(&invalid));
+    }
+
+    #[test]
+    fn test_exclusive_minimum_across_drafts() {
+        // In Draft 4, exclusiveMinimum is a boolean modifier for minimum
+        let draft4_schema = json!({
+            "$schema": "http://json-schema.org/draft-04/schema#",
+            "minimum": 5,
+            "exclusiveMinimum": true
+        });
+        assert!(crate::meta::is_valid(&draft4_schema));
+        assert!(crate::meta::validate(&draft4_schema).is_ok());
+
+        // This is invalid in Draft 4 (exclusiveMinimum must be boolean)
+        let invalid_draft4 = json!({
+            "$schema": "http://json-schema.org/draft-04/schema#",
+            "exclusiveMinimum": 5
+        });
+        assert!(!crate::meta::is_valid(&invalid_draft4));
+        assert!(crate::meta::validate(&invalid_draft4).is_err());
+
+        // In Draft 6 and later, exclusiveMinimum is a numeric value
+        let drafts = [
+            "http://json-schema.org/draft-06/schema#",
+            "http://json-schema.org/draft-07/schema#",
+            "https://json-schema.org/draft/2019-09/schema",
+            "https://json-schema.org/draft/2020-12/schema",
+        ];
+
+        for uri in drafts {
+            // Valid in Draft 6+ (numeric exclusiveMinimum)
+            let valid_schema = json!({
+                "$schema": uri,
+                "exclusiveMinimum": 5
+            });
+            assert!(
+                crate::meta::is_valid(&valid_schema),
+                "Schema should be valid for {uri}"
+            );
+            assert!(
+                crate::meta::validate(&valid_schema).is_ok(),
+                "Schema validation should succeed for {uri}",
+            );
+
+            // Invalid in Draft 6+ (can't use boolean with minimum)
+            let invalid_schema = json!({
+                "$schema": uri,
+                "minimum": 5,
+                "exclusiveMinimum": true
+            });
+            assert!(
+                !crate::meta::is_valid(&invalid_schema),
+                "Schema should be invalid for {uri}",
+            );
+            assert!(
+                crate::meta::validate(&invalid_schema).is_err(),
+                "Schema validation should fail for {uri}",
+            );
+        }
     }
 
     #[test]

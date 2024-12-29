@@ -54,6 +54,7 @@ See more usage examples in the [documentation](https://docs.rs/jsonschema).
 - 🔧 Custom keywords and format validators
 - 🌐 Remote reference fetching (network/file)
 - 🎨 `Basic` output style as per JSON Schema spec
+- ✨ Meta-schema validation for schema documents
 - 🔗 Bindings for [Python](https://github.com/Stranger6667/jsonschema/tree/master/crates/jsonschema-py)
 - 🚀 WebAssembly support
 - 💻 Command Line Interface

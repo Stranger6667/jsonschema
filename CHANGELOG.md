@@ -7,6 +7,7 @@
 - Implement `IntoIterator` for `Location` to iterate over `LocationSegment`.
 - Implement `FromIter` for `Location` to build a `Location` from an iterator of `LocationSegment`.
 - `ValidationError::to_owned` method for converting errors into owned versions.
+- Meta-schema validation support. [#442](https://github.com/Stranger6667/jsonschema/issues/442)
 
 ## [0.27.1] - 2024-12-24
 

@@ -44,6 +44,7 @@ assert validator.is_valid(instance)
 - 📚 Full support for popular JSON Schema drafts
 - 🌐 Remote reference fetching (network/file)
 - 🔧 Custom format validators
+- ✨ Meta-schema validation for schema documents
 
 ### Supported drafts
 
@@ -155,6 +156,38 @@ Failed validating "format" in schema
 
 On instance:
     "unknown"'''
+```
+
+## Meta-Schema Validation
+
+JSON Schema documents can be validated against their meta-schemas to ensure they are valid schemas. `jsonschema-rs` provides this functionality through the `meta` module:
+
+```python
+import jsonschema_rs
+
+# Valid schema
+schema = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "age": {"type": "integer", "minimum": 0}
+    },
+    "required": ["name"]
+}
+
+# Validate schema (draft is auto-detected)
+assert jsonschema_rs.meta.is_valid(schema)
+jsonschema_rs.meta.validate(schema)  # No error raised
+
+# Invalid schema
+invalid_schema = {
+    "minimum": "not_a_number"  # "minimum" must be a number
+}
+
+try:
+    jsonschema_rs.meta.validate(invalid_schema)
+except jsonschema_rs.ValidationError as exc:
+    assert 'is not of type "number"' in str(exc)
 ```
 
 ## External References

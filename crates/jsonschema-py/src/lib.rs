@@ -1083,6 +1083,45 @@ mod build {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
 
+/// Meta-schema validation
+mod meta {
+    use pyo3::prelude::*;
+    /// is_valid(schema)
+    ///
+    /// Validate a JSON Schema document against its meta-schema. Draft version is detected automatically.
+    ///
+    ///     >>> jsonschema_rs.meta.is_valid({"type": "string"})
+    ///     True
+    ///     >>> jsonschema_rs.meta.is_valid({"type": "invalid_type"})
+    ///     False
+    ///
+    #[pyfunction]
+    #[pyo3(signature = (schema))]
+    pub(crate) fn is_valid(schema: &Bound<'_, PyAny>) -> PyResult<bool> {
+        let schema = crate::ser::to_value(schema)?;
+        Ok(jsonschema::meta::is_valid(&schema))
+    }
+
+    /// validate(schema)
+    ///
+    /// Validate a JSON Schema document against its meta-schema and raise ValidationError if invalid.
+    /// Draft version is detected automatically.
+    ///
+    ///     >>> jsonschema_rs.meta.validate({"type": "string"})
+    ///     >>> jsonschema_rs.meta.validate({"type": "invalid_type"})
+    ///     ...
+    ///
+    #[pyfunction]
+    #[pyo3(signature = (schema))]
+    pub(crate) fn validate(py: Python<'_>, schema: &Bound<'_, PyAny>) -> PyResult<()> {
+        let schema = crate::ser::to_value(schema)?;
+        match jsonschema::meta::validate(&schema) {
+            Ok(()) => Ok(()),
+            Err(error) => Err(crate::into_py_err(py, error, None)?),
+        }
+    }
+}
+
 /// JSON Schema validation for Python written in Rust.
 #[pymodule]
 fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -1106,6 +1145,11 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("Draft7", DRAFT7)?;
     module.add("Draft201909", DRAFT201909)?;
     module.add("Draft202012", DRAFT202012)?;
+
+    let meta = PyModule::new(py, "meta")?;
+    meta.add_function(wrap_pyfunction!(meta::is_valid, &meta)?)?;
+    meta.add_function(wrap_pyfunction!(meta::validate, &meta)?)?;
+    module.add_submodule(&meta)?;
 
     // Add build metadata to ease triaging incoming issues
     #[allow(deprecated)]
