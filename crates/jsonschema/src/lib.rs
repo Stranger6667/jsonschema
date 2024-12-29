@@ -643,7 +643,7 @@ pub fn options() -> ValidationOptions {
 
 /// Functionality for validating JSON Schema documents against their meta-schemas.
 pub mod meta {
-    use crate::{error::ValidationError, Draft};
+    use crate::{error::ValidationError, Draft, ReferencingError};
     use serde_json::Value;
 
     use crate::Validator;
@@ -738,17 +738,84 @@ pub mod meta {
     }
 
     fn meta_validator_for(schema: &Value) -> &'static Validator {
-        match Draft::default()
-            .detect(schema)
-            .expect("Failed to detect meta schema")
-        {
+        try_meta_validator_for(schema).expect("Failed to detect meta schema")
+    }
+
+    /// Try to validate a JSON Schema document against its meta-schema.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(true)` if the schema is valid
+    /// - `Ok(false)` if the schema is invalid
+    /// - `Err(ReferencingError)` if the meta-schema can't be detected
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use serde_json::json;
+    ///
+    /// let schema = json!({
+    ///     "type": "string",
+    ///     "maxLength": 5
+    /// });
+    /// assert!(jsonschema::meta::try_is_valid(&schema).expect("Unknown draft"));
+    ///
+    /// // Invalid $schema URI
+    /// let undetectable_schema = json!({
+    ///     "$schema": "invalid-uri",
+    ///     "type": "string"
+    /// });
+    /// assert!(jsonschema::meta::try_is_valid(&undetectable_schema).is_err());
+    /// ```
+    pub fn try_is_valid(schema: &Value) -> Result<bool, ReferencingError> {
+        Ok(try_meta_validator_for(schema)?.is_valid(schema))
+    }
+
+    /// Try to validate a JSON Schema document against its meta-schema.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Ok(()))` if the schema is valid
+    /// - `Ok(Err(ValidationError))` if the schema is invalid
+    /// - `Err(ReferencingError)` if the meta-schema can't be detected
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use serde_json::json;
+    ///
+    /// let schema = json!({
+    ///     "type": "string",
+    ///     "maxLength": 5
+    /// });
+    /// assert!(jsonschema::meta::try_validate(&schema).expect("Invalid schema").is_ok());
+    ///
+    /// // Invalid schema
+    /// let invalid_schema = json!({
+    ///     "type": "invalid_type"
+    /// });
+    /// assert!(jsonschema::meta::try_validate(&invalid_schema).expect("Invalid schema").is_err());
+    ///
+    /// // Invalid $schema URI
+    /// let undetectable_schema = json!({
+    ///     "$schema": "invalid-uri",
+    ///     "type": "string"
+    /// });
+    /// assert!(jsonschema::meta::try_validate(&undetectable_schema).is_err());
+    /// ```
+    pub fn try_validate(schema: &Value) -> Result<Result<(), ValidationError>, ReferencingError> {
+        Ok(try_meta_validator_for(schema)?.validate(schema))
+    }
+
+    fn try_meta_validator_for(schema: &Value) -> Result<&'static Validator, ReferencingError> {
+        Ok(match Draft::default().detect(schema)? {
             Draft::Draft4 => &validators::DRAFT4_META_VALIDATOR,
             Draft::Draft6 => &validators::DRAFT6_META_VALIDATOR,
             Draft::Draft7 => &validators::DRAFT7_META_VALIDATOR,
             Draft::Draft201909 => &validators::DRAFT201909_META_VALIDATOR,
             Draft::Draft202012 => &validators::DRAFT202012_META_VALIDATOR,
             _ => unreachable!("Unknown draft"),
-        }
+        })
     }
 }
 
@@ -1827,6 +1894,74 @@ mod tests {
                 "Schema validation should fail for {uri}",
             );
         }
+    }
+
+    #[test_case(
+        "http://json-schema.org/draft-04/schema#",
+        true,
+        5,
+        true ; "draft4 valid"
+    )]
+    #[test_case(
+        "http://json-schema.org/draft-04/schema#",
+        5,
+        true,
+        false ; "draft4 invalid"
+    )]
+    #[test_case(
+        "http://json-schema.org/draft-06/schema#",
+        5,
+        true,
+        false ; "draft6 invalid"
+    )]
+    #[test_case(
+        "http://json-schema.org/draft-07/schema#",
+        5,
+        true,
+        false ; "draft7 invalid"
+    )]
+    #[test_case(
+        "https://json-schema.org/draft/2019-09/schema",
+        5,
+        true,
+        false ; "draft2019-09 invalid"
+    )]
+    #[test_case(
+        "https://json-schema.org/draft/2020-12/schema",
+        5,
+        true,
+        false ; "draft2020-12 invalid"
+    )]
+    fn test_exclusive_minimum_detection(
+        schema_uri: &str,
+        exclusive_minimum: impl Into<serde_json::Value>,
+        minimum: impl Into<serde_json::Value>,
+        expected: bool,
+    ) {
+        let schema = json!({
+            "$schema": schema_uri,
+            "minimum": minimum.into(),
+            "exclusiveMinimum": exclusive_minimum.into()
+        });
+
+        let is_valid_result = crate::meta::try_is_valid(&schema);
+        assert!(is_valid_result.is_ok());
+        assert_eq!(is_valid_result.expect("Unknown draft"), expected);
+
+        let validate_result = crate::meta::try_validate(&schema);
+        assert!(validate_result.is_ok());
+        assert_eq!(validate_result.expect("Unknown draft").is_ok(), expected);
+    }
+
+    #[test]
+    fn test_invalid_schema_uri() {
+        let schema = json!({
+            "$schema": "invalid-uri",
+            "type": "string"
+        });
+
+        assert!(crate::meta::try_is_valid(&schema).is_err());
+        assert!(crate::meta::try_validate(&schema).is_err());
     }
 
     #[test]

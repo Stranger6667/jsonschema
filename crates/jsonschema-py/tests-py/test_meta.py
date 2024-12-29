@@ -1,5 +1,5 @@
 import pytest
-from jsonschema_rs import meta, ValidationError
+from jsonschema_rs import meta, ValidationError, ReferencingError
 
 
 @pytest.mark.parametrize(
@@ -30,6 +30,14 @@ def test_invalid_schemas(schema, expected):
     assert not meta.is_valid(schema)
     with pytest.raises(ValidationError, match=expected):
         meta.validate(schema)
+
+
+def test_referencing_error():
+    schema = {"$schema": "invalid-uri", "type": "string"}
+    with pytest.raises(ReferencingError, match="Unknown specification: invalid-uri"):
+        meta.validate(schema)
+    with pytest.raises(ReferencingError, match="Unknown specification: invalid-uri"):
+        meta.is_valid(schema)
 
 
 def test_validation_error_details():

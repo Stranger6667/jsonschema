@@ -1085,7 +1085,9 @@ mod build {
 
 /// Meta-schema validation
 mod meta {
+    use super::ReferencingError;
     use pyo3::prelude::*;
+
     /// is_valid(schema)
     ///
     /// Validate a JSON Schema document against its meta-schema. Draft version is detected automatically.
@@ -1099,7 +1101,10 @@ mod meta {
     #[pyo3(signature = (schema))]
     pub(crate) fn is_valid(schema: &Bound<'_, PyAny>) -> PyResult<bool> {
         let schema = crate::ser::to_value(schema)?;
-        Ok(jsonschema::meta::is_valid(&schema))
+        match jsonschema::meta::try_is_valid(&schema) {
+            Ok(valid) => Ok(valid),
+            Err(err) => Err(PyErr::new::<ReferencingError, _>(err.to_string())),
+        }
     }
 
     /// validate(schema)
@@ -1110,14 +1115,21 @@ mod meta {
     ///     >>> jsonschema_rs.meta.validate({"type": "string"})
     ///     >>> jsonschema_rs.meta.validate({"type": "invalid_type"})
     ///     ...
+    ///     >>> jsonschema_rs.meta.validate({"$schema": "invalid-uri"})
+    ///     Traceback (most recent call last):
+    ///         ...
+    ///     jsonschema_rs.ReferencingError: Unknown specification: invalid-uri
     ///
     #[pyfunction]
     #[pyo3(signature = (schema))]
     pub(crate) fn validate(py: Python<'_>, schema: &Bound<'_, PyAny>) -> PyResult<()> {
         let schema = crate::ser::to_value(schema)?;
-        match jsonschema::meta::validate(&schema) {
-            Ok(()) => Ok(()),
-            Err(error) => Err(crate::into_py_err(py, error, None)?),
+        match jsonschema::meta::try_validate(&schema) {
+            Ok(validation_result) => match validation_result {
+                Ok(()) => Ok(()),
+                Err(error) => Err(crate::into_py_err(py, error, None)?),
+            },
+            Err(err) => Err(PyErr::new::<ReferencingError, _>(err.to_string())),
         }
     }
 }
