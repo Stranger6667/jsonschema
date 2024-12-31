@@ -254,7 +254,8 @@ pub(crate) fn compile_recursive_ref<'a>(
 #[cfg(test)]
 mod tests {
     use crate::tests_util;
-    use referencing::{Draft, Retrieve, Uri};
+    use ahash::HashMap;
+    use referencing::{Retrieve, Uri};
     use serde_json::{json, Value};
     use test_case::test_case;
 
@@ -465,6 +466,7 @@ mod tests {
                     "/types" => Ok(json!({
                         "$id": "/types",
                         "foo": {
+                            "$id": "#/foo",
                             "$ref": "#/bar"
                         },
                         "bar": {
@@ -476,17 +478,128 @@ mod tests {
             }
         }
 
-        let validator = match crate::options()
-            .with_draft(Draft::Draft201909)
-            .with_retriever(MyRetrieve)
-            .build(&schema)
-        {
+        let validator = match crate::options().with_retriever(MyRetrieve).build(&schema) {
             Ok(validator) => validator,
             Err(error) => panic!("{error}"),
         };
 
         assert!(validator.is_valid(&json!(2)));
         assert!(!validator.is_valid(&json!("")));
+    }
+
+    struct TestRetrieve {
+        storage: HashMap<String, Value>,
+    }
+
+    impl Retrieve for TestRetrieve {
+        fn retrieve(
+            &self,
+            uri: &Uri<&str>,
+        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+            self.storage
+                .get(uri.path().as_str())
+                .cloned()
+                .ok_or_else(|| "Document not found".into())
+        }
+    }
+
+    #[test_case(
+        json!({"$ref": "/doc#/definitions/foo"}),
+        json!({
+            "$id": "/doc",
+            "definitions": {
+                "foo": {"type": "integer"}
+            }
+        }),
+        None
+        ; "basic_fragment"
+    )]
+    #[test_case(
+        json!({"$ref": "/doc1#/definitions/foo"}),
+        json!({
+            "$id": "/doc1",
+            "definitions": {
+                "foo": {"$ref": "#/definitions/bar"},
+                "bar": {"type": "integer"}
+            }
+        }),
+        None
+        ; "intermediate_reference"
+    )]
+    #[test_case(
+        json!({"$ref": "/doc2#/refs/first"}),
+        json!({
+            "$id": "/doc2",
+            "refs": {
+                "first": {"$ref": "/doc3#/refs/second"}
+            }
+        }),
+        Some(json!({
+            "/doc3": {
+                "$id": "/doc3",
+                "refs": {
+                    "second": {"type": "integer"}
+                }
+            }
+        }))
+        ; "multiple_documents"
+    )]
+    #[test_case(
+        json!({"$ref": "/doc4#/defs/foo"}),
+        json!({
+            "$id": "/doc4",
+            "defs": {
+                "foo": {
+                    "$id": "#/defs/foo",
+                    "$ref": "#/defs/bar"
+                },
+                "bar": {"type": "integer"}
+            }
+        }),
+        None
+        ; "id_and_fragment"
+    )]
+    #[test_case(
+        json!({"$ref": "/doc5#/outer"}),
+        json!({
+            "$id": "/doc5",
+            "outer": {
+                "$ref": "#/middle",
+            },
+            "middle": {
+                "$id": "#/middle",
+                "$ref": "#/inner"
+            },
+            "inner": {"type": "integer"}
+        }),
+        None
+        ; "nested_references"
+    )]
+    fn test_fragment_resolution(schema: Value, root: Value, extra: Option<Value>) {
+        let mut storage = HashMap::default();
+
+        let doc_path = schema["$ref"]
+            .as_str()
+            .and_then(|r| r.split('#').next())
+            .expect("Invalid $ref");
+
+        storage.insert(doc_path.to_string(), root);
+
+        if let Some(extra) = extra {
+            for (path, document) in extra.as_object().unwrap() {
+                storage.insert(path.clone(), document.clone());
+            }
+        }
+
+        let retriever = TestRetrieve { storage };
+
+        let validator = crate::options()
+            .with_retriever(retriever)
+            .build(&schema)
+            .expect("Invalid schema");
+
+        assert!(validator.is_valid(&json!(42)));
+        assert!(!validator.is_valid(&json!("string")));
     }
 
     #[test]

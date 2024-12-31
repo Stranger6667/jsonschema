@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Handle fragment references within `$id`-anchored subschemas. [#640](https://github.com/Stranger6667/jsonschema/issues/640)
+
 ## [0.28.0] - 2024-12-29
 
 ### Added

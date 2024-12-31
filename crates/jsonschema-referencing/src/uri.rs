@@ -13,6 +13,9 @@ pub use fluent_uri::encoding::encoder::Path;
 ///
 /// Returns an error if base has not schema or there is a fragment.
 pub fn resolve_against(base: &Uri<&str>, uri: &str) -> Result<Uri<String>, Error> {
+    if uri.starts_with('#') && base.as_str().ends_with(uri) {
+        return Ok(base.to_owned());
+    }
     Ok(UriRef::parse(uri)
         .map_err(|error| Error::uri_reference_parsing_error(uri, error))?
         .resolve_against(base)
