@@ -138,7 +138,7 @@ impl<'a> ResourceRef<'a> {
     }
 }
 
-fn unescape_segment(mut segment: &str) -> Cow<str> {
+pub(crate) fn unescape_segment(mut segment: &str) -> Cow<str> {
     // Naively, checking for `~` and then replacing implies two passes
     // over the input buffer. First, search in the first `contains('~')` call
     // and then replacing `~1` & `~0` at once in a single pass.

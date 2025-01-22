@@ -13,7 +13,9 @@ use serde_json::Value;
 use crate::{
     anchors::{AnchorKey, AnchorKeyRef},
     list::List,
-    meta, uri,
+    meta,
+    resource::unescape_segment,
+    uri,
     vocabularies::{self, VocabularySet},
     Anchor, DefaultRetriever, Draft, Error, Resolver, Resource, Retrieve,
 };
@@ -420,7 +422,7 @@ fn process_resources(
                     // The original `$ref` could have a fragment that points to a place that won't
                     // be discovered via the regular sub-resources discovery. Therefore we need to
                     // explicitly check it
-                    if let Some(resolved) = resource.contents().pointer(fragment.as_str()) {
+                    if let Some(resolved) = pointer(resource.contents(), fragment.as_str()) {
                         queue.push_back((
                             uri,
                             Arc::new(Resource::from_contents_and_specification(
@@ -464,7 +466,7 @@ fn collect_external_resources(
                 if reference == "#" {
                     continue;
                 }
-                if let Some(referenced) = contents.pointer(reference.trim_start_matches('#')) {
+                if let Some(referenced) = pointer(contents, reference.trim_start_matches('#')) {
                     collect_external_resources(base, referenced, collected, seen)?;
                 }
                 continue;
@@ -489,6 +491,31 @@ fn collect_external_resources(
     Ok(())
 }
 
+// A slightly faster version of pointer resolution based on `Value::pointer` from `serde_json`.
+fn pointer<'a>(document: &'a Value, pointer: &str) -> Option<&'a Value> {
+    if pointer.is_empty() {
+        return Some(document);
+    }
+    if !pointer.starts_with('/') {
+        return None;
+    }
+    pointer.split('/').skip(1).map(unescape_segment).try_fold(
+        document,
+        |target, token| match target {
+            Value::Object(map) => map.get(&*token),
+            Value::Array(list) => parse_index(&token).and_then(|x| list.get(x)),
+            _ => None,
+        },
+    )
+}
+
+// Taken from `serde_json`.
+fn parse_index(s: &str) -> Option<usize> {
+    if s.starts_with('+') || (s.starts_with('0') && s.len() != 1) {
+        return None;
+    }
+    s.parse().ok()
+}
 #[cfg(test)]
 mod tests {
     use std::error::Error as _;
