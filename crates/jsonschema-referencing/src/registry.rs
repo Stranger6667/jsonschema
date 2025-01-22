@@ -461,14 +461,8 @@ fn collect_external_resources(
             {
                 continue;
             }
-            // Handle local references separately as they may have nested references to external resources
-            if reference.starts_with('#') {
-                if reference == "#" {
-                    continue;
-                }
-                if let Some(referenced) = pointer(contents, reference.trim_start_matches('#')) {
-                    collect_external_resources(base, referenced, collected, seen)?;
-                }
+
+            if reference == "#" {
                 continue;
             }
 
@@ -478,6 +472,14 @@ fn collect_external_resources(
             if !seen.insert(hash) {
                 // Reference has already been seen
                 return Ok(());
+            }
+
+            // Handle local references separately as they may have nested references to external resources
+            if reference.starts_with('#') {
+                if let Some(referenced) = pointer(contents, reference.trim_start_matches('#')) {
+                    collect_external_resources(base, referenced, collected, seen)?;
+                }
+                continue;
             }
 
             let resolved = if base.has_fragment() {
