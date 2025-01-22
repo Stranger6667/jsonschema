@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Resolving external references that nested inside local references. [#671](https://github.com/Stranger6667/jsonschema/issues/671)
+
 ## [0.28.1] - 2024-12-31
 
 ### Fixed

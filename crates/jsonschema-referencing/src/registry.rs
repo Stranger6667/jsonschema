@@ -444,21 +444,32 @@ fn collect_external_resources(
     collected: &mut AHashSet<Uri<String>>,
     seen: &mut AHashSet<u64>,
 ) -> Result<(), Error> {
+    // URN schemes are not supported for external resolution
     if base.scheme().as_str() == "urn" {
         return Ok(());
     }
     for key in ["$ref", "$schema"] {
         if let Some(reference) = contents.get(key).and_then(Value::as_str) {
-            if reference.starts_with('#')
-                || reference.starts_with("https://json-schema.org/draft/2020-12/")
+            // Skip well-known schema references
+            if reference.starts_with("https://json-schema.org/draft/2020-12/")
                 || reference.starts_with("https://json-schema.org/draft/2019-09/")
                 || reference.starts_with("http://json-schema.org/draft-07/")
                 || reference.starts_with("http://json-schema.org/draft-06/")
                 || reference.starts_with("http://json-schema.org/draft-04/")
             {
-                // Not an external resource
-                return Ok(());
+                continue;
             }
+            // Handle local references separately as they may have nested references to external resources
+            if reference.starts_with('#') {
+                if reference == "#" {
+                    continue;
+                }
+                if let Some(referenced) = contents.pointer(reference.trim_start_matches('#')) {
+                    collect_external_resources(base, referenced, collected, seen)?;
+                }
+                continue;
+            }
+
             let mut hasher = AHasher::default();
             (base.as_str(), reference).hash(&mut hasher);
             let hash = hasher.finish();
@@ -466,6 +477,7 @@ fn collect_external_resources(
                 // Reference has already been seen
                 return Ok(());
             }
+
             let resolved = if reference.contains('#') && base.has_fragment() {
                 uri::resolve_against(&uri::DEFAULT_ROOT_URI.borrow(), reference)?
             } else {

@@ -607,4 +607,48 @@ mod tests {
         let validator = crate::validator_for(&json!({"$ref": "#"})).expect("Invalid schema");
         assert!(validator.is_valid(&json!(42)));
     }
+
+    #[test]
+    fn test_nested_external_reference() {
+        let schema = json!({
+            "$id": "foo://schema_1.json",
+            "$ref": "#/$defs/a/b",
+            "$defs": {
+                "a": {
+                    "b": {
+                        "description": "nested schema with external ref",
+                        "$ref": "foo://schema_2.json"
+                    }
+                }
+            }
+        });
+
+        struct NestedRetrieve;
+
+        impl Retrieve for NestedRetrieve {
+            fn retrieve(
+                &self,
+                uri: &Uri<&str>,
+            ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+                match uri.as_str() {
+                    "foo://schema_2.json" => Ok(json!({
+                        "$id": "foo://schema_2.json",
+                        "type": "string"
+                    })),
+                    _ => panic!("Unexpected URI: {}", uri.path()),
+                }
+            }
+        }
+
+        let validator = match crate::options()
+            .with_retriever(NestedRetrieve)
+            .build(&schema)
+        {
+            Ok(validator) => validator,
+            Err(error) => panic!("Failed to build validator: {}", error),
+        };
+
+        assert!(validator.is_valid(&json!("test")));
+        assert!(!validator.is_valid(&json!(42)));
+    }
 }
