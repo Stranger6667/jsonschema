@@ -5,6 +5,7 @@
 ### Fixed
 
 - Resolving external references that nested inside local references. [#671](https://github.com/Stranger6667/jsonschema/issues/671)
+- Resolving relative references with fragments against base URIs that also contain fragments. [#666](https://github.com/Stranger6667/jsonschema/issues/666)
 
 ### Performance
 

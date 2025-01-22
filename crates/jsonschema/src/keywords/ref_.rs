@@ -651,4 +651,50 @@ mod tests {
         assert!(validator.is_valid(&json!("test")));
         assert!(!validator.is_valid(&json!(42)));
     }
+
+    #[test]
+    fn test_relative_reference_with_fragment() {
+        let schema = json!({
+            "$id": "file:///tmp/schemas/root.json",
+            "$ref": "one.json#/$defs/obj"
+        });
+
+        struct FragmentRetrieve;
+
+        impl Retrieve for FragmentRetrieve {
+            fn retrieve(
+                &self,
+                uri: &Uri<&str>,
+            ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+                match uri.path().as_str() {
+                    "/tmp/schemas/one.json" => Ok(json!({
+                        "$defs": {
+                            "obj": {
+                                "$ref": "other.json#/$defs/obj"
+                            }
+                        }
+                    })),
+                    "/tmp/schemas/other.json" => Ok(json!({
+                        "$defs": {
+                            "obj": {
+                                "type": "number"
+                            }
+                        }
+                    })),
+                    _ => panic!("Unexpected URI: {}", uri.path()),
+                }
+            }
+        }
+
+        let validator = match crate::options()
+            .with_retriever(FragmentRetrieve)
+            .build(&schema)
+        {
+            Ok(validator) => validator,
+            Err(error) => panic!("Failed to build validator: {}", error),
+        };
+
+        assert!(validator.is_valid(&json!(42)));
+        assert!(!validator.is_valid(&json!("string")));
+    }
 }

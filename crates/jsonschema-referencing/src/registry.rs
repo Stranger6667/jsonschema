@@ -480,11 +480,26 @@ fn collect_external_resources(
                 return Ok(());
             }
 
-            let resolved = if reference.contains('#') && base.has_fragment() {
-                uri::resolve_against(&uri::DEFAULT_ROOT_URI.borrow(), reference)?
+            let resolved = if base.has_fragment() {
+                let mut base_without_fragment = base.clone();
+                base_without_fragment.set_fragment(None);
+
+                let (path, fragment) = match reference.split_once('#') {
+                    Some((path, fragment)) => (path, Some(fragment)),
+                    None => (reference, None),
+                };
+
+                let mut resolved = uri::resolve_against(&base_without_fragment.borrow(), path)?;
+                // Add the fragment back if present
+                if let Some(fragment) = fragment {
+                    resolved =
+                        resolved.with_fragment(Some(uri::EncodedString::new_or_panic(fragment)));
+                }
+                resolved
             } else {
                 uri::resolve_against(&base.borrow(), reference)?
             };
+
             collected.insert(resolved);
         }
     }
@@ -820,32 +835,6 @@ mod tests {
         let _registry = RegistryOptions::default()
             .try_new("", Draft::default().create_resource(json!({})))
             .expect("Invalid resources");
-    }
-
-    #[test]
-    fn test_registry_with_base_uri_fragment() {
-        let input_resources = vec![
-            (
-                "http://example.com/schema#base",
-                Draft::default().create_resource(json!({
-                    "type": "object",
-                    "properties": {
-                        "prop": { "$ref": "other.json" }
-                    }
-                })),
-            ),
-            (
-                "http://example.com/other.json",
-                Draft::default().create_resource(json!({ "type": "string" })),
-            ),
-        ];
-
-        let result = Registry::try_from_resources(input_resources.into_iter());
-        let error = result.expect_err("Should fail");
-        assert_eq!(error.to_string(), "Failed to resolve 'other.json' against 'http://example.com/schema#base': base URI/IRI with fragment");
-        let source_error = error.source().expect("Should have a source");
-        let inner_source = source_error.source().expect("Should have a source");
-        assert_eq!(inner_source.to_string(), "base URI/IRI with fragment");
     }
 
     #[test]
