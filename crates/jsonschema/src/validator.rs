@@ -382,7 +382,7 @@ mod tests {
             path: Location,
         ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
             const EXPECTED: &str = "ascii-keys";
-            if schema.as_str().map_or(true, |key| key != EXPECTED) {
+            if schema.as_str() != Some(EXPECTED) {
                 Err(ValidationError::constant_string(
                     Location::new(),
                     path,
@@ -505,7 +505,7 @@ mod tests {
             };
             let with_currency_format = parent
                 .get("format")
-                .map_or(false, |format| format == "currency");
+                .is_some_and(|format| format == "currency");
             Ok(Box::new(CustomMinimumValidator {
                 limit,
                 limit_val: schema.clone(),

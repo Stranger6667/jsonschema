@@ -32,7 +32,7 @@ pub(crate) fn load_suite(
 
     for entry in WalkDir::new(&full_path).into_iter().filter_map(Result::ok) {
         let path = entry.path();
-        if path.is_file() && path.extension().map_or(false, |ext| ext == "json") {
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {
             let relative_path = path.strip_prefix(&full_path)?;
             let file = File::open(path)?;
             let reader = BufReader::new(file);

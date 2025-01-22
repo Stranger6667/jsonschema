@@ -99,7 +99,7 @@ impl<'a> Ecma262Translator<'a> {
                 );
             }
         }
-        self.offset += replacement.as_bytes().len() - (end.offset - start.offset);
+        self.offset += replacement.len() - (end.offset - start.offset);
         self.has_changes = true;
     }
 

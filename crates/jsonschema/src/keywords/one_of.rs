@@ -66,7 +66,7 @@ impl OneOfValidator {
 impl Validate for OneOfValidator {
     fn is_valid(&self, instance: &Value) -> bool {
         let first_valid_idx = self.get_first_valid(instance);
-        first_valid_idx.map_or(false, |idx| !self.are_others_valid(instance, idx))
+        first_valid_idx.is_some_and(|idx| !self.are_others_valid(instance, idx))
     }
     fn validate<'i>(
         &self,

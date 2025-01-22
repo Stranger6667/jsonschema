@@ -452,7 +452,7 @@ fn is_valid_idn_hostname(hostname: &str) -> bool {
             '\u{0375}'
                 if !chars
                     .peek()
-                    .map_or(false, |next| ('\u{0370}'..='\u{03FF}').contains(next)) =>
+                    .is_some_and(|next| ('\u{0370}'..='\u{03FF}').contains(next)) =>
             {
                 return false
             }
