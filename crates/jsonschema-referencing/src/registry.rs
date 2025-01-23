@@ -348,6 +348,7 @@ fn process_resources(
     let mut queue = VecDeque::with_capacity(32);
     let mut seen = AHashSet::new();
     let mut external = AHashSet::new();
+    let mut scratch = String::new();
 
     // Populate the resources & queue from the input
     for (uri, resource) in pairs {
@@ -377,7 +378,13 @@ fn process_resources(
             }
 
             // Collect references to external resources in this resource
-            collect_external_resources(&base, resource.contents(), &mut external, &mut seen)?;
+            collect_external_resources(
+                &base,
+                resource.contents(),
+                &mut external,
+                &mut seen,
+                &mut scratch,
+            )?;
 
             // Process subresources
             for subresource in resource.subresources() {
@@ -390,6 +397,7 @@ fn process_resources(
                         subresource.contents(),
                         &mut external,
                         &mut seen,
+                        &mut scratch,
                     )?;
                 } else {
                     collect_external_resources(
@@ -397,6 +405,7 @@ fn process_resources(
                         subresource.contents(),
                         &mut external,
                         &mut seen,
+                        &mut scratch,
                     )?;
                 };
                 queue.push_back((base.clone(), subresource));
@@ -445,6 +454,7 @@ fn collect_external_resources(
     contents: &Value,
     collected: &mut AHashSet<Uri<String>>,
     seen: &mut AHashSet<u64>,
+    scratch: &mut String,
 ) -> Result<(), Error> {
     // URN schemes are not supported for external resolution
     if base.scheme().as_str() == "urn" {
@@ -477,7 +487,7 @@ fn collect_external_resources(
             // Handle local references separately as they may have nested references to external resources
             if reference.starts_with('#') {
                 if let Some(referenced) = pointer(contents, reference.trim_start_matches('#')) {
-                    collect_external_resources(base, referenced, collected, seen)?;
+                    collect_external_resources(base, referenced, collected, seen, scratch)?;
                 }
                 continue;
             }
@@ -494,8 +504,16 @@ fn collect_external_resources(
                 let mut resolved = uri::resolve_against(&base_without_fragment.borrow(), path)?;
                 // Add the fragment back if present
                 if let Some(fragment) = fragment {
-                    resolved =
-                        resolved.with_fragment(Some(uri::EncodedString::new_or_panic(fragment)));
+                    // It is cheaper to check if it is properly encoded than allocate given that
+                    // the majority of inputs do not need to be additionally encoded
+                    if let Some(encoded) = uri::EncodedString::new(fragment) {
+                        resolved = resolved.with_fragment(Some(encoded));
+                    } else {
+                        uri::encode_to(fragment, scratch);
+                        resolved =
+                            resolved.with_fragment(Some(uri::EncodedString::new_or_panic(scratch)));
+                        scratch.clear();
+                    }
                 }
                 resolved
             } else {
@@ -953,5 +971,12 @@ mod tests {
             .lookup("http://example.com/schema2")
             .expect("Lookup failed");
         assert_eq!(resolved.contents(), &json!({"type": "object"}));
+    }
+
+    #[test]
+    fn test_invalid_reference() {
+        // Found via fuzzing
+        let resource = Draft::Draft202012.create_resource(json!({"$schema": "$##"}));
+        let _ = Registry::try_new("http://#/", resource);
     }
 }

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Panic when schema registry base URI contains an unencoded fragment.
+
+### Performance
+
+- Fewer JSON pointer lookups.
+
 ## [0.28.2] - 2025-01-22
 
 ### Fixed
