@@ -6,6 +6,7 @@ keywords = ["jsonschema", "validation"]
 categories = ["web-programming"]
 readme = "../../README.md"
 license.workspace = true
+license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 edition.workspace = true

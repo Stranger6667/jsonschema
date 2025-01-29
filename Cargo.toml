@@ -8,6 +8,7 @@ edition = "2021"
 authors = ["Dmitry Dygalo <dmitry@dygalo.dev>"]
 repository = "https://github.com/Stranger6667/jsonschema"
 license = "MIT"
+license-file = "LICENSE"
 
 [profile.release]
 lto = "fat"
@@ -45,4 +46,3 @@ rest_pat_in_fully_bound_structs = "warn"
 [workspace.metadata.typos]
 files.extend-exclude = ["*.json"]
 default.extend-ignore-re = ["propert"]
-
