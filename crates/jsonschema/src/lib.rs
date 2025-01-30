@@ -477,6 +477,10 @@ pub mod primitive_type;
 pub(crate) mod properties;
 mod retriever;
 mod validator;
+mod vm;
+
+pub use vm::Instruction;
+pub use vm::VirtualMachine;
 
 pub use error::{ErrorIterator, ValidationError};
 pub use keywords::custom::Keyword;
