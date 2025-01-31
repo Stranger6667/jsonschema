@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::{segments::Segment, Error, Resolver, ResourceRef, Segments};
+use crate::{resource::InnerResourcePtr, segments::Segment, Error, Resolver, Segments};
 
 pub(crate) type SubresourceIterator<'a> = Box<dyn Iterator<Item = &'a Value> + 'a>;
 
@@ -35,7 +35,7 @@ pub(crate) fn subresources_of(contents: &Value) -> SubresourceIterator<'_> {
 pub(crate) fn maybe_in_subresource<'r>(
     segments: &Segments,
     resolver: &Resolver<'r>,
-    subresource: ResourceRef<'r>,
+    subresource: &InnerResourcePtr,
 ) -> Result<Resolver<'r>, Error> {
     const IN_VALUE: &[&str] = &[
         "additionalProperties",
@@ -72,14 +72,14 @@ pub(crate) fn maybe_in_subresource<'r>(
             }
         }
     }
-    resolver.in_subresource(subresource)
+    resolver.in_subresource_inner(subresource)
 }
 
 #[inline]
 pub(crate) fn maybe_in_subresource_with_items_and_dependencies<'r>(
     segments: &Segments,
     resolver: &Resolver<'r>,
-    subresource: ResourceRef<'r>,
+    subresource: &InnerResourcePtr,
     in_value: &[&str],
     in_child: &[&str],
 ) -> Result<Resolver<'r>, Error> {
@@ -87,7 +87,7 @@ pub(crate) fn maybe_in_subresource_with_items_and_dependencies<'r>(
     while let Some(segment) = iter.next() {
         if let Segment::Key(key) = segment {
             if (*key == "items" || *key == "dependencies") && subresource.contents().is_object() {
-                return resolver.in_subresource(subresource);
+                return resolver.in_subresource_inner(subresource);
             }
             if !in_value.contains(&key.as_ref())
                 && (!in_child.contains(&key.as_ref()) || iter.next().is_none())
@@ -96,7 +96,7 @@ pub(crate) fn maybe_in_subresource_with_items_and_dependencies<'r>(
             }
         }
     }
-    resolver.in_subresource(subresource)
+    resolver.in_subresource_inner(subresource)
 }
 
 #[cfg(test)]

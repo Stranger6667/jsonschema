@@ -4,7 +4,7 @@ use std::sync::Arc;
 use fluent_uri::Uri;
 use serde_json::Value;
 
-use crate::{list::List, Draft, Error, Registry, ResourceRef};
+use crate::{list::List, resource::JsonSchemaResource, Draft, Error, Registry, ResourceRef};
 
 /// A reference resolver.
 ///
@@ -84,11 +84,17 @@ impl<'r> Resolver<'r> {
             };
             let uri = self
                 .registry
-                .cached_resolve_against(&self.base_uri.borrow(), uri)?;
+                .resolve_against(&self.base_uri.borrow(), uri)?;
             (uri, fragment)
         };
 
-        let retrieved = self.registry.get_or_retrieve(&uri)?;
+        let Some(retrieved) = self.registry.resources.get(&*uri) else {
+            return Err(Error::unretrievable(
+                uri.as_str(),
+                "Retrieving external resources is not supported once the registry is populated"
+                    .into(),
+            ));
+        };
 
         if fragment.starts_with('/') {
             let resolver = self.evolve(uri);
@@ -156,11 +162,16 @@ impl<'r> Resolver<'r> {
     /// # Errors
     ///
     /// Returns an error if the resource id cannot be resolved against the base URI of this resolver.
-    pub fn in_subresource(&self, subresource: ResourceRef) -> Result<Self, Error> {
+    pub fn in_subresource(&self, subresource: ResourceRef<'_>) -> Result<Self, Error> {
+        self.in_subresource_inner(&subresource)
+    }
+
+    pub(crate) fn in_subresource_inner(
+        &self,
+        subresource: &impl JsonSchemaResource,
+    ) -> Result<Self, Error> {
         if let Some(id) = subresource.id() {
-            let base_uri = self
-                .registry
-                .cached_resolve_against(&self.base_uri.borrow(), id)?;
+            let base_uri = self.registry.resolve_against(&self.base_uri.borrow(), id)?;
             Ok(Resolver {
                 registry: self.registry,
                 base_uri,
@@ -197,7 +208,7 @@ impl<'r> Resolver<'r> {
     ///
     /// If the reference is invalid.
     pub fn resolve_against(&self, base: &Uri<&str>, uri: &str) -> Result<Arc<Uri<String>>, Error> {
-        self.registry.cached_resolve_against(base, uri)
+        self.registry.resolve_against(base, uri)
     }
 }
 

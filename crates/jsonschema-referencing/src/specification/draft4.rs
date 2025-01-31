@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::{Error, Resolver, ResourceRef, Segments};
+use crate::{resource::InnerResourcePtr, Error, Resolver, Segments};
 
 use super::subresources::{self, SubresourceIterator};
 
@@ -37,7 +37,7 @@ pub(crate) fn subresources_of(contents: &Value) -> SubresourceIterator<'_> {
 pub(crate) fn maybe_in_subresource<'r>(
     segments: &Segments,
     resolver: &Resolver<'r>,
-    subresource: ResourceRef<'r>,
+    subresource: &InnerResourcePtr,
 ) -> Result<Resolver<'r>, Error> {
     const IN_VALUE: &[&str] = &["additionalItems", "additionalProperties", "not"];
     const IN_CHILD: &[&str] = &[

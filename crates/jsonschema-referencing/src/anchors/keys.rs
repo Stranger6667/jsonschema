@@ -12,18 +12,21 @@
 use std::{
     borrow::Borrow,
     hash::{Hash, Hasher},
+    sync::Arc,
 };
 
 use fluent_uri::Uri;
 
+use super::AnchorName;
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) struct AnchorKey {
-    uri: Uri<String>,
-    name: String,
+    uri: Arc<Uri<String>>,
+    name: AnchorName,
 }
 
 impl AnchorKey {
-    pub(crate) fn new(uri: Uri<String>, name: String) -> Self {
+    pub(crate) fn new(uri: Arc<Uri<String>>, name: AnchorName) -> Self {
         Self { uri, name }
     }
 }
@@ -50,7 +53,7 @@ pub(crate) trait BorrowDyn {
 
 impl BorrowDyn for AnchorKey {
     fn borrowed_key(&self) -> AnchorKeyRef {
-        AnchorKeyRef::new(&self.uri, &self.name)
+        AnchorKeyRef::new(&self.uri, self.name.as_str())
     }
 }
 

@@ -2,7 +2,9 @@
 //!
 //! An implementation-agnostic JSON reference resolution library for Rust.
 mod anchors;
+mod cache;
 mod error;
+mod hasher;
 mod list;
 pub mod meta;
 mod registry;

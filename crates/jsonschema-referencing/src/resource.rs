@@ -1,10 +1,20 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::atomic::AtomicPtr};
 
 use serde_json::Value;
 
 use crate::{Anchor, Draft, Error, Resolved, Resolver, Segments};
 
-/// A document with a concrete interpretation under a JSON Schema specification.
+pub(crate) trait JsonSchemaResource {
+    fn contents(&self) -> &Value;
+    fn draft(&self) -> Draft;
+    fn id(&self) -> Option<&str> {
+        self.draft()
+            .id_of(self.contents())
+            .map(|id| id.trim_end_matches('#'))
+    }
+}
+
+/// An owned document with a concrete interpretation under a JSON Schema specification.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resource {
     contents: Value,
@@ -14,6 +24,9 @@ pub struct Resource {
 impl Resource {
     pub(crate) fn new(contents: Value, draft: Draft) -> Self {
         Self { contents, draft }
+    }
+    pub(crate) fn into_inner(self) -> (Draft, Value) {
+        (self.draft, self.contents)
     }
     /// Resource contents.
     #[must_use]
@@ -43,25 +56,113 @@ impl Resource {
     /// Resource identifier.
     #[must_use]
     pub fn id(&self) -> Option<&str> {
-        self.as_ref().id()
+        self.draft
+            .id_of(&self.contents)
+            .map(|id| id.trim_end_matches('#'))
+    }
+    #[must_use]
+    pub fn as_ref(&self) -> ResourceRef<'_> {
+        ResourceRef {
+            contents: &self.contents,
+            draft: self.draft,
+        }
+    }
+}
+
+/// A borrowed document with a concrete interpretation under a JSON Schema specification.
+#[derive(Debug, Clone, Copy)]
+pub struct ResourceRef<'a> {
+    contents: &'a Value,
+    draft: Draft,
+}
+
+impl<'a> ResourceRef<'a> {
+    #[must_use]
+    pub fn new(contents: &'a Value, draft: Draft) -> Self {
+        Self { contents, draft }
+    }
+    #[must_use]
+    pub fn contents(&self) -> &'a Value {
+        self.contents
+    }
+    #[must_use]
+    pub fn draft(&self) -> Draft {
+        self.draft
+    }
+}
+
+impl JsonSchemaResource for ResourceRef<'_> {
+    fn contents(&self) -> &Value {
+        self.contents
     }
 
-    pub(crate) fn subresources(&self) -> Box<dyn Iterator<Item = Result<Resource, Error>> + '_> {
-        Box::new(self.draft.subresources_of(&self.contents).map(|contents| {
-            Resource::from_contents_and_specification(contents.clone(), self.draft)
-        }))
+    fn draft(&self) -> Draft {
+        self.draft
+    }
+}
+
+/// A pointer to a pinned resource.
+pub(crate) struct InnerResourcePtr {
+    contents: AtomicPtr<Value>,
+    draft: Draft,
+}
+
+impl Clone for InnerResourcePtr {
+    fn clone(&self) -> Self {
+        Self {
+            contents: AtomicPtr::new(self.contents.load(std::sync::atomic::Ordering::Relaxed)),
+            draft: self.draft,
+        }
+    }
+}
+
+impl std::fmt::Debug for InnerResourcePtr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InnerResourcePtr")
+            .field("contents", self.contents())
+            .field("draft", &self.draft)
+            .finish()
+    }
+}
+
+impl InnerResourcePtr {
+    pub(crate) fn new(contents: *const Value, draft: Draft) -> Self {
+        Self {
+            contents: AtomicPtr::new(contents.cast_mut()),
+            draft,
+        }
+    }
+
+    pub(crate) fn contents(&self) -> &Value {
+        // SAFETY: The pointer is valid as long as the registry exists
+        unsafe { &*self.contents.load(std::sync::atomic::Ordering::Relaxed) }
+    }
+
+    pub(crate) fn draft(&self) -> Draft {
+        self.draft
     }
 
     pub(crate) fn anchors(&self) -> impl Iterator<Item = Anchor> + '_ {
-        self.draft.anchors(&self.contents)
+        self.draft().anchors(self.contents())
     }
+
+    pub(crate) fn subresources(
+        &self,
+    ) -> Box<dyn Iterator<Item = Result<InnerResourcePtr, Error>> + '_> {
+        Box::new(
+            self.draft
+                .subresources_of(self.contents())
+                .map(|contents| Ok(InnerResourcePtr::new(contents, self.draft))),
+        )
+    }
+
     pub(crate) fn pointer<'r>(
         &'r self,
         pointer: &str,
         mut resolver: Resolver<'r>,
     ) -> Result<Resolved<'r>, Error> {
         // INVARIANT: Pointer always starts with `/`
-        let mut contents = &self.contents;
+        let mut contents = self.contents();
         let mut segments = Segments::new();
         let original_pointer = pointer;
         let pointer = percent_encoding::percent_decode_str(&pointer[1..])
@@ -88,10 +189,10 @@ impl Resource {
                 segments.push(segment);
             }
             let last = &resolver;
-            let new_resolver = self.draft.maybe_in_subresource(
+            let new_resolver = self.draft().maybe_in_subresource(
                 &segments,
                 &resolver,
-                self.draft.create_resource_ref(contents),
+                &InnerResourcePtr::new(contents, self.draft()),
             )?;
             if new_resolver != *last {
                 segments = Segments::new();
@@ -100,40 +201,14 @@ impl Resource {
         }
         Ok(Resolved::new(contents, resolver, self.draft()))
     }
-    /// Give a reference to the underlying contents together with draft.
-    #[must_use]
-    pub fn as_ref(&self) -> ResourceRef<'_> {
-        ResourceRef::new(&self.contents, self.draft)
-    }
 }
 
-/// A reference to a document with a concrete interpretation under a JSON Schema specification.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct ResourceRef<'a> {
-    contents: &'a Value,
-    draft: Draft,
-}
+impl JsonSchemaResource for InnerResourcePtr {
+    fn contents(&self) -> &Value {
+        self.contents()
+    }
 
-impl<'a> ResourceRef<'a> {
-    /// Create a new resource reference.
-    #[must_use]
-    pub(crate) fn new(contents: &'a Value, draft: Draft) -> Self {
-        ResourceRef { contents, draft }
-    }
-    /// Resource identifier.
-    #[must_use]
-    pub fn id(&self) -> Option<&'a str> {
-        self.draft
-            .id_of(self.contents)
-            .map(|id| id.trim_end_matches('#'))
-    }
-    /// Resource contents.
-    #[must_use]
-    pub fn contents(&self) -> &'a Value {
-        self.contents
-    }
-    #[must_use]
-    pub fn draft(&self) -> Draft {
+    fn draft(&self) -> Draft {
         self.draft
     }
 }
@@ -187,9 +262,9 @@ pub(crate) fn unescape_segment(mut segment: &str) -> Cow<str> {
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
+    use std::{error::Error, sync::Arc};
 
-    use crate::{Draft, Registry};
+    use crate::{resource::InnerResourcePtr, Draft, Registry};
 
     use super::unescape_segment;
     use serde_json::json;
@@ -254,7 +329,23 @@ mod tests {
             .expect("Invalid base URI");
 
         let resolved = resolver.lookup("#").expect("Lookup failed");
-        assert_eq!(resolved.contents(), &schema.contents);
+        assert_eq!(resolved.contents(), schema.contents());
+    }
+
+    #[test]
+    fn test_inner_resource_ptr_debug() {
+        let value = Arc::pin(json!({
+            "foo": "bar",
+            "number": 42
+        }));
+
+        let ptr = InnerResourcePtr::new(std::ptr::addr_of!(*value), Draft::Draft202012);
+
+        let expected = format!(
+            "InnerResourcePtr {{ contents: {:?}, draft: Draft202012 }}",
+            *value
+        );
+        assert_eq!(format!("{ptr:?}"), expected);
     }
 
     #[test]

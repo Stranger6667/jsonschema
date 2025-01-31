@@ -69,7 +69,7 @@ impl<'a> Context<'a> {
     /// Create a context for this schema.
     pub(crate) fn in_subresource(
         &'a self,
-        resource: ResourceRef,
+        resource: ResourceRef<'_>,
     ) -> Result<Context<'a>, referencing::Error> {
         let resolver = self.resolver.in_subresource(resource)?;
         Ok(Context {

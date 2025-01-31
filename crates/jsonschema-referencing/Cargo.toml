@@ -13,6 +13,7 @@ license.workspace = true
 ahash.workspace = true
 fluent-uri = { version = "0.3.2", features = ["serde"] }
 once_cell = "1.20.1"
+parking_lot = "0.12.3"
 percent-encoding = "2.3.1"
 serde_json.workspace = true
 

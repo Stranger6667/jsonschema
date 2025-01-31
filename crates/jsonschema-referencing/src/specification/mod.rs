@@ -9,6 +9,7 @@ mod subresources;
 
 use crate::{
     anchors,
+    resource::InnerResourcePtr,
     vocabularies::{VocabularySet, DRAFT_2019_09_VOCABULARIES, DRAFT_2020_12_VOCABULARIES},
     Anchor, Error, Resolver, Resource, ResourceRef, Segments,
 };
@@ -94,7 +95,7 @@ impl Draft {
         self,
         segments: &Segments,
         resolver: &Resolver<'r>,
-        subresource: ResourceRef<'r>,
+        subresource: &InnerResourcePtr,
     ) -> Result<Resolver<'r>, Error> {
         match self {
             Draft::Draft4 => draft4::maybe_in_subresource(segments, resolver, subresource),

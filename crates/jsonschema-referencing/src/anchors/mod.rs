@@ -1,33 +1,80 @@
-use std::sync::Arc;
+use std::{
+    hash::Hash,
+    sync::atomic::{AtomicPtr, Ordering},
+};
 
 use serde_json::Value;
 
 mod keys;
 
-use crate::{Draft, Error, Resolved, Resolver, Resource};
+use crate::{resource::InnerResourcePtr, Draft, Error, Resolved, Resolver};
 pub(crate) use keys::{AnchorKey, AnchorKeyRef};
 
+#[derive(Debug)]
+pub(crate) struct AnchorName {
+    ptr: AtomicPtr<u8>,
+    len: usize,
+}
+
+impl AnchorName {
+    fn new(s: &str) -> Self {
+        Self {
+            ptr: AtomicPtr::new(s.as_ptr().cast_mut()),
+            len: s.len(),
+        }
+    }
+
+    fn as_str(&self) -> &str {
+        unsafe {
+            std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                self.ptr.load(Ordering::Relaxed),
+                self.len,
+            ))
+        }
+    }
+}
+
+impl Clone for AnchorName {
+    fn clone(&self) -> Self {
+        Self {
+            ptr: AtomicPtr::new(self.ptr.load(Ordering::Relaxed)),
+            len: self.len,
+        }
+    }
+}
+
+impl Hash for AnchorName {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_str().hash(state);
+    }
+}
+
+impl PartialEq for AnchorName {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl Eq for AnchorName {}
+
 /// An anchor within a resource.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(crate) enum Anchor {
     Default {
-        draft: Draft,
-        name: String,
-        resource: Arc<Resource>,
+        name: AnchorName,
+        resource: InnerResourcePtr,
     },
-    /// Dynamic anchors from Draft 2020-12.
     Dynamic {
-        draft: Draft,
-        name: String,
-        resource: Arc<Resource>,
+        name: AnchorName,
+        resource: InnerResourcePtr,
     },
 }
 
 impl Anchor {
     /// Anchor's name.
-    pub(crate) fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> AnchorName {
         match self {
-            Anchor::Default { name, .. } | Anchor::Dynamic { name, .. } => name,
+            Anchor::Default { name, .. } | Anchor::Dynamic { name, .. } => name.clone(),
         }
     }
     /// Get the resource for this anchor.
@@ -38,10 +85,10 @@ impl Anchor {
                 resolver,
                 resource.draft(),
             )),
-            Anchor::Dynamic { name, resource, .. } => {
+            Anchor::Dynamic { name, resource } => {
                 let mut last = resource;
                 for uri in &resolver.dynamic_scope() {
-                    match resolver.registry.anchor(uri, name) {
+                    match resolver.registry.anchor(uri, name.as_str()) {
                         Ok(anchor) => {
                             if let Anchor::Dynamic { resource, .. } = anchor {
                                 last = resource;
@@ -53,7 +100,7 @@ impl Anchor {
                 }
                 Ok(Resolved::new(
                     last.contents(),
-                    resolver.in_subresource((**last).as_ref())?,
+                    resolver.in_subresource_inner(last)?,
                     last.draft(),
                 ))
             }
@@ -68,18 +115,16 @@ pub(crate) fn anchor(draft: Draft, contents: &Value) -> Box<dyn Iterator<Item = 
                 .get("$anchor")
                 .and_then(Value::as_str)
                 .map(|name| Anchor::Default {
-                    draft,
-                    name: name.to_string(),
-                    resource: Arc::new(draft.create_resource(contents.clone())),
+                    name: AnchorName::new(name),
+                    resource: InnerResourcePtr::new(contents, draft),
                 });
 
         let dynamic_anchor = schema
             .get("$dynamicAnchor")
             .and_then(Value::as_str)
             .map(|name| Anchor::Dynamic {
-                draft,
-                name: name.to_string(),
-                resource: Arc::new(draft.create_resource(contents.clone())),
+                name: AnchorName::new(name),
+                resource: InnerResourcePtr::new(contents, draft),
             });
 
         default_anchor.into_iter().chain(dynamic_anchor)
@@ -90,11 +135,11 @@ pub(crate) fn anchor_2019(draft: Draft, contents: &Value) -> Box<dyn Iterator<It
     Box::new(
         contents
             .as_object()
-            .and_then(|schema| schema.get("$anchor").and_then(Value::as_str))
+            .and_then(|schema| schema.get("$anchor"))
+            .and_then(Value::as_str)
             .map(move |name| Anchor::Default {
-                draft,
-                name: name.to_string(),
-                resource: Arc::new(draft.create_resource(contents.clone())),
+                name: AnchorName::new(name),
+                resource: InnerResourcePtr::new(contents, draft),
             })
             .into_iter(),
     )
@@ -107,12 +152,12 @@ pub(crate) fn legacy_anchor_in_dollar_id(
     Box::new(
         contents
             .as_object()
-            .and_then(|schema| schema.get("$id").and_then(Value::as_str))
+            .and_then(|schema| schema.get("$id"))
+            .and_then(Value::as_str)
             .and_then(|id| id.strip_prefix('#'))
             .map(move |id| Anchor::Default {
-                draft,
-                name: id.to_string(),
-                resource: Arc::new(draft.create_resource(contents.clone())),
+                name: AnchorName::new(id),
+                resource: InnerResourcePtr::new(contents, draft),
             })
             .into_iter(),
     )
@@ -125,12 +170,12 @@ pub(crate) fn legacy_anchor_in_id<'a>(
     Box::new(
         contents
             .as_object()
-            .and_then(|schema| schema.get("id").and_then(Value::as_str))
+            .and_then(|schema| schema.get("id"))
+            .and_then(Value::as_str)
             .and_then(|id| id.strip_prefix('#'))
             .map(move |id| Anchor::Default {
-                draft,
-                name: id.to_string(),
-                resource: Arc::new(draft.create_resource(contents.clone())),
+                name: AnchorName::new(id),
+                resource: InnerResourcePtr::new(contents, draft),
             })
             .into_iter(),
     )
