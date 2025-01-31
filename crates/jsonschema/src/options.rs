@@ -26,6 +26,7 @@ pub struct ValidationOptions {
     pub(crate) retriever: Arc<dyn Retrieve>,
     /// Additional resources that should be addressable during validation.
     pub(crate) resources: AHashMap<String, Resource>,
+    pub(crate) registry: Option<referencing::Registry>,
     formats: AHashMap<String, Arc<dyn Format>>,
     validate_formats: Option<bool>,
     pub(crate) validate_schema: bool,
@@ -41,6 +42,7 @@ impl Default for ValidationOptions {
             content_encoding_checks_and_converters: AHashMap::default(),
             retriever: Arc::new(DefaultRetriever),
             resources: AHashMap::default(),
+            registry: None,
             formats: AHashMap::default(),
             validate_formats: None,
             validate_schema: true,
@@ -311,6 +313,38 @@ impl ValidationOptions {
         }
         self
     }
+
+    /// Use external schema resources from the registry, making them accessible via references
+    /// during validation.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use serde_json::json;
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// use jsonschema::{Registry, Resource};
+    ///
+    /// let registry = Registry::try_new(
+    ///     "urn:name-schema",
+    ///     Resource::from_contents(json!({"type": "string"}))?
+    /// )?;
+    /// let schema = json!({
+    ///     "properties": {
+    ///         "name": { "$ref": "urn:name-schema" }
+    ///     }
+    /// });
+    /// let validator = jsonschema::options()
+    ///     .with_registry(registry)
+    ///     .build(&schema)?;
+    /// assert!(validator.is_valid(&json!({ "name": "Valid String" })));
+    /// assert!(!validator.is_valid(&json!({ "name": 123 })));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn with_registry(&mut self, registry: referencing::Registry) -> &mut Self {
+        self.registry = Some(registry);
+        self
+    }
     /// Register a custom format validator.
     ///
     /// # Example
@@ -467,6 +501,7 @@ impl fmt::Debug for ValidationOptions {
 
 #[cfg(test)]
 mod tests {
+    use referencing::{Registry, Resource};
     use serde_json::json;
 
     fn custom(s: &str) -> bool {
@@ -483,5 +518,25 @@ mod tests {
             .expect("Valid schema");
         assert!(!validator.is_valid(&json!("foo")));
         assert!(validator.is_valid(&json!("foo42!")));
+    }
+
+    #[test]
+    fn with_registry() {
+        let registry = Registry::try_new(
+            "urn:name-schema",
+            Resource::from_contents(json!({"type": "string"})).expect("Invalid resource"),
+        )
+        .expect("Invalid URI");
+        let schema = json!({
+            "properties": {
+                "name": { "$ref": "urn:name-schema" }
+            }
+        });
+        let validator = crate::options()
+            .with_registry(registry)
+            .build(&schema)
+            .expect("Invalid schema");
+        assert!(validator.is_valid(&json!({ "name": "Valid String" })));
+        assert!(!validator.is_valid(&json!({ "name": 123 })));
     }
 }

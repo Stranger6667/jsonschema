@@ -252,19 +252,22 @@ pub(crate) fn build_validator(
     let base_uri = resource_ref.id().unwrap_or(DEFAULT_ROOT_URL);
 
     // Build a registry & resolver needed for validator compilation
-    let registry = Arc::new(
-        Registry::options()
-            .draft(draft)
-            .retriever(Arc::clone(&config.retriever))
-            .try_from_resources(
-                once((Cow::Borrowed(base_uri), resource)).chain(
-                    config
-                        .resources
-                        .drain()
-                        .map(|(uri, resource)| (Cow::Owned(uri), resource)),
-                ),
-            )?,
+    let pairs = once((Cow::Borrowed(base_uri), resource)).chain(
+        config
+            .resources
+            .drain()
+            .map(|(uri, resource)| (Cow::Owned(uri), resource)),
     );
+    let registry = if let Some(registry) = config.registry.take() {
+        Arc::new(registry.try_with_resources_and_retriever(pairs, &*config.retriever, draft)?)
+    } else {
+        Arc::new(
+            Registry::options()
+                .draft(draft)
+                .retriever(Arc::clone(&config.retriever))
+                .try_from_resources(pairs)?,
+        )
+    };
     let vocabularies = registry.find_vocabularies(draft, schema);
     let resolver = Rc::new(registry.try_resolver(base_uri)?);
 

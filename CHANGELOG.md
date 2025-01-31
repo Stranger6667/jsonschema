@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- Re-export `referencing::Registry` as `jsonschema::Registry`.
+- `ValidationOptions::with_registry` that allows for providing a predefined `referencing::Registry`. [#682](https://github.com/Stranger6667/jsonschema/issues/682)
+
 ### Performance
 
 - Significantly improved validator compilation speed by using pointer-based references to schema fragments instead of cloning them during traversal.
