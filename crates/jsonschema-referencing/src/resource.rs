@@ -1,4 +1,7 @@
-use std::{borrow::Cow, sync::atomic::AtomicPtr};
+use std::{
+    borrow::Cow,
+    sync::atomic::{AtomicPtr, Ordering},
+};
 
 use serde_json::Value;
 
@@ -110,7 +113,7 @@ pub(crate) struct InnerResourcePtr {
 impl Clone for InnerResourcePtr {
     fn clone(&self) -> Self {
         Self {
-            contents: AtomicPtr::new(self.contents.load(std::sync::atomic::Ordering::Relaxed)),
+            contents: AtomicPtr::new(self.contents.load(Ordering::Relaxed)),
             draft: self.draft,
         }
     }
@@ -135,7 +138,7 @@ impl InnerResourcePtr {
 
     pub(crate) fn contents(&self) -> &Value {
         // SAFETY: The pointer is valid as long as the registry exists
-        unsafe { &*self.contents.load(std::sync::atomic::Ordering::Relaxed) }
+        unsafe { &*self.contents.load(Ordering::Relaxed) }
     }
 
     pub(crate) fn draft(&self) -> Draft {

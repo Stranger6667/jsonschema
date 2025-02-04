@@ -16,7 +16,7 @@ use crate::{
 use ahash::{AHashMap, AHashSet};
 use referencing::{
     uri, Draft, List, Registry, Resolved, Resolver, Resource, ResourceRef, Uri, Vocabulary,
-    VocabularySet, SPECIFICATIONS,
+    VocabularySet,
 };
 use serde_json::Value;
 use std::{cell::RefCell, rc::Rc, sync::Arc};
@@ -258,15 +258,16 @@ pub(crate) fn build_validator(
         resources.push((uri, resource));
     }
 
-    // Get retriever for external resources
     let retriever = Arc::clone(&config.retriever);
 
+    let registry = Arc::new(
+        Registry::options()
+            .draft(draft)
+            .retriever(retriever)
+            .try_from_resources(resources.into_iter())?,
+    );
+
     // Build a registry & resolver needed for validator compilation
-    let registry = Arc::new(SPECIFICATIONS.clone().try_with_resources_and_retriever(
-        resources.into_iter(),
-        &*retriever,
-        draft,
-    )?);
     let vocabularies = registry.find_vocabularies(draft, schema);
     let resolver = Rc::new(registry.try_resolver(&base_uri)?);
 

@@ -86,7 +86,7 @@ impl Clone for Registry {
 
 /// Configuration options for creating a [`Registry`].
 pub struct RegistryOptions {
-    retriever: Box<dyn Retrieve>,
+    retriever: Arc<dyn Retrieve>,
     draft: Draft,
 }
 
@@ -95,13 +95,13 @@ impl RegistryOptions {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            retriever: Box::new(DefaultRetriever),
+            retriever: Arc::new(DefaultRetriever),
             draft: Draft::default(),
         }
     }
     /// Set a custom retriever for the [`Registry`].
     #[must_use]
-    pub fn retriever(mut self, retriever: Box<dyn Retrieve>) -> Self {
+    pub fn retriever(mut self, retriever: Arc<dyn Retrieve>) -> Self {
         self.retriever = retriever;
         self
     }
@@ -595,7 +595,7 @@ fn parse_index(s: &str) -> Option<usize> {
 }
 #[cfg(test)]
 mod tests {
-    use std::error::Error as _;
+    use std::{error::Error as _, sync::Arc};
 
     use ahash::AHashMap;
     use fluent_uri::Uri;
@@ -867,7 +867,7 @@ mod tests {
             });
 
         let registry = Registry::options()
-            .retriever(Box::new(retriever))
+            .retriever(Arc::new(retriever))
             .try_from_resources(input_pairs)
             .expect("Invalid resources");
         // Verify that all expected URIs are resolved and present in resources

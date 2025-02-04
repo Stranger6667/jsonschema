@@ -18,56 +18,56 @@ schema!(pub DRAFT6, "../metaschemas/draft6.json");
 schema!(pub DRAFT7, "../metaschemas/draft7.json");
 schema!(pub DRAFT201909, "../metaschemas/draft2019-09/schema.json");
 schema!(
-    DRAFT201909_APPLICATOR,
+    pub DRAFT201909_APPLICATOR,
     "../metaschemas/draft2019-09/meta/applicator.json"
 );
 schema!(
-    DRAFT201909_CONTENT,
+    pub DRAFT201909_CONTENT,
     "../metaschemas/draft2019-09/meta/content.json"
 );
 schema!(
-    DRAFT201909_CORE,
+    pub DRAFT201909_CORE,
     "../metaschemas/draft2019-09/meta/core.json"
 );
 schema!(
-    DRAFT201909_FORMAT,
+    pub DRAFT201909_FORMAT,
     "../metaschemas/draft2019-09/meta/format.json"
 );
 schema!(
-    DRAFT201909_META_DATA,
+    pub DRAFT201909_META_DATA,
     "../metaschemas/draft2019-09/meta/meta-data.json"
 );
 schema!(
-    DRAFT201909_VALIDATION,
+    pub DRAFT201909_VALIDATION,
     "../metaschemas/draft2019-09/meta/validation.json"
 );
 schema!(pub DRAFT202012, "../metaschemas/draft2020-12/schema.json");
 schema!(
-    DRAFT202012_CORE,
+    pub DRAFT202012_CORE,
     "../metaschemas/draft2020-12/meta/core.json"
 );
 schema!(
-    DRAFT202012_APPLICATOR,
+    pub DRAFT202012_APPLICATOR,
     "../metaschemas/draft2020-12/meta/applicator.json"
 );
 schema!(
-    DRAFT202012_UNEVALUATED,
+    pub DRAFT202012_UNEVALUATED,
     "../metaschemas/draft2020-12/meta/unevaluated.json"
 );
 schema!(
-    DRAFT202012_VALIDATION,
+    pub DRAFT202012_VALIDATION,
     "../metaschemas/draft2020-12/meta/validation.json"
 );
 schema!(
-    DRAFT202012_META_DATA,
+    pub DRAFT202012_META_DATA,
     "../metaschemas/draft2020-12/meta/meta-data.json"
 );
 schema!(
-    DRAFT202012_FORMAT_ANNOTATION,
+    pub DRAFT202012_FORMAT_ANNOTATION,
     "../metaschemas/draft2020-12/meta/format-annotation.json"
 );
 schema!(
-    DRAFT202012_CONTENT,
+    pub DRAFT202012_CONTENT,
     "../metaschemas/draft2020-12/meta/content.json"
 );
 pub(crate) static META_SCHEMAS: Lazy<[(&'static str, &Value); 18]> = Lazy::new(|| {
