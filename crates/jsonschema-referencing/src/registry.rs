@@ -41,7 +41,6 @@ pub static SPECIFICATIONS: Lazy<Registry> = Lazy::new(|| {
     let mut resources = ResourceMap::with_capacity(18);
     let mut anchors = AHashMap::with_capacity(8);
     let mut resolution_cache = UriCache::with_capacity(35);
-    // TODO: Drop resolution cache
     process_meta_schemas(
         pairs,
         &mut documents,
@@ -402,7 +401,6 @@ fn process_resources(
     let mut external = AHashSet::new();
     let mut scratch = String::new();
     let mut refers_metaschemas = false;
-    // TODO: Implement `Registry::combine`
 
     // SAFETY: Deduplicate input URIs keeping the last occurrence to prevent creation
     // of resources pointing to values that could be dropped by later insertions
@@ -414,7 +412,6 @@ fn process_resources(
         .collect();
     input_pairs.dedup_by(|(lhs, _), (rhs, _)| lhs == rhs);
 
-    // Store documents and create initial InnerResourcePtrs
     for (uri, resource) in input_pairs {
         let key = Arc::new(uri);
         match documents.entry(Arc::clone(&key)) {

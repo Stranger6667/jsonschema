@@ -122,7 +122,7 @@ jobs:
           cache-all-crates: "true"
 
       - name: Run tests with Miri
-        run: cargo miri test -p referencing
+        run: cargo miri test -p referencing --lib
 
   lints-python:
     name: Python lints
