@@ -105,6 +105,25 @@ jobs:
           files: lcov.info
           fail_ci_if_error: true
 
+  miri:
+    name: Test with Miri
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: "true"
+
+      - name: Run tests with Miri
+        run: cargo miri test -p referencing
+
   lints-python:
     name: Python lints
     runs-on: ubuntu-22.04

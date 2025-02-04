@@ -92,6 +92,10 @@ impl<'a> ResourceRef<'a> {
     pub fn draft(&self) -> Draft {
         self.draft
     }
+    #[must_use]
+    pub fn id(&self) -> Option<&str> {
+        JsonSchemaResource::id(self)
+    }
 }
 
 impl JsonSchemaResource for ResourceRef<'_> {

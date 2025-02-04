@@ -32,3 +32,5 @@ test-py-no-rebuild *FLAGS:
 bench-py *FLAGS:
   uvx --with="crates/jsonschema-py[bench]" --refresh pytest crates/jsonschema-py/benches/bench.py --benchmark-columns=min {{FLAGS}}
 
+miri:
+  cargo +nightly miri test -p referencing

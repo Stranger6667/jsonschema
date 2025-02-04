@@ -315,13 +315,10 @@ impl Registry {
         }
     }
 
-    pub(crate) fn resolve_against(
-        &self,
-        base: &Uri<&str>,
-        uri: &str,
-    ) -> Result<Arc<Uri<String>>, Error> {
+    pub fn resolve_against(&self, base: &Uri<&str>, uri: &str) -> Result<Arc<Uri<String>>, Error> {
         self.resolution_cache.resolve_against(base, uri)
     }
+
     #[must_use]
     pub fn find_vocabularies(&self, draft: Draft, contents: &Value) -> VocabularySet {
         match draft.detect(contents) {
