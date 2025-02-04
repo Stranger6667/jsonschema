@@ -651,7 +651,6 @@ pub mod meta {
     pub(crate) mod validators {
         use crate::Validator;
         use once_cell::sync::Lazy;
-        use referencing::Resource;
 
         pub static DRAFT4_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
             crate::options()
@@ -677,47 +676,6 @@ pub mod meta {
         pub static DRAFT201909_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
             crate::options()
                 .without_schema_validation()
-                .with_resources(
-                    [
-                        (
-                            "https://json-schema.org/draft/2019-09/meta/applicator",
-                            Resource::from_contents(
-                                referencing::meta::DRAFT201909_APPLICATOR.clone(),
-                            )
-                            .expect("Invalid resource"),
-                        ),
-                        (
-                            "https://json-schema.org/draft/2019-09/meta/content",
-                            Resource::from_contents(referencing::meta::DRAFT201909_CONTENT.clone())
-                                .expect("Invalid resource"),
-                        ),
-                        (
-                            "https://json-schema.org/draft/2019-09/meta/core",
-                            Resource::from_contents(referencing::meta::DRAFT201909_CORE.clone())
-                                .expect("Invalid resource"),
-                        ),
-                        (
-                            "https://json-schema.org/draft/2019-09/meta/format",
-                            Resource::from_contents(referencing::meta::DRAFT201909_FORMAT.clone())
-                                .expect("Invalid resource"),
-                        ),
-                        (
-                            "https://json-schema.org/draft/2019-09/meta/meta-data",
-                            Resource::from_contents(
-                                referencing::meta::DRAFT201909_META_DATA.clone(),
-                            )
-                            .expect("Invalid resource"),
-                        ),
-                        (
-                            "https://json-schema.org/draft/2019-09/meta/validation",
-                            Resource::from_contents(
-                                referencing::meta::DRAFT201909_VALIDATION.clone(),
-                            )
-                            .expect("Invalid resource"),
-                        ),
-                    ]
-                    .into_iter(),
-                )
                 .build(&referencing::meta::DRAFT201909)
                 .expect("Draft 2019-09 meta-schema should be valid")
         });
@@ -725,56 +683,6 @@ pub mod meta {
         pub static DRAFT202012_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
             crate::options()
                 .without_schema_validation()
-                .with_resources(
-                    [
-                        (
-                            "https://json-schema.org/draft/2020-12/meta/core",
-                            Resource::from_contents(referencing::meta::DRAFT202012_CORE.clone())
-                                .expect("Invalid resource"),
-                        ),
-                        (
-                            "https://json-schema.org/draft/2020-12/meta/applicator",
-                            Resource::from_contents(
-                                referencing::meta::DRAFT202012_APPLICATOR.clone(),
-                            )
-                            .expect("Invalid resource"),
-                        ),
-                        (
-                            "https://json-schema.org/draft/2020-12/meta/unevaluated",
-                            Resource::from_contents(
-                                referencing::meta::DRAFT202012_UNEVALUATED.clone(),
-                            )
-                            .expect("Invalid resource"),
-                        ),
-                        (
-                            "https://json-schema.org/draft/2020-12/meta/validation",
-                            Resource::from_contents(
-                                referencing::meta::DRAFT202012_VALIDATION.clone(),
-                            )
-                            .expect("Invalid resource"),
-                        ),
-                        (
-                            "https://json-schema.org/draft/2020-12/meta/meta-data",
-                            Resource::from_contents(
-                                referencing::meta::DRAFT202012_META_DATA.clone(),
-                            )
-                            .expect("Invalid resource"),
-                        ),
-                        (
-                            "https://json-schema.org/draft/2020-12/meta/format-annotation",
-                            Resource::from_contents(
-                                referencing::meta::DRAFT202012_FORMAT_ANNOTATION.clone(),
-                            )
-                            .expect("Invalid resource"),
-                        ),
-                        (
-                            "https://json-schema.org/draft/2020-12/meta/content",
-                            Resource::from_contents(referencing::meta::DRAFT202012_CONTENT.clone())
-                                .expect("Invalid resource"),
-                        ),
-                    ]
-                    .into_iter(),
-                )
                 .build(&referencing::meta::DRAFT202012)
                 .expect("Draft 2020-12 meta-schema should be valid")
         });

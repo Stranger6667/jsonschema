@@ -1,11 +1,13 @@
+use std::sync::Arc;
+
 use once_cell::sync::Lazy;
 use serde_json::Value;
 
 macro_rules! schema {
     ($vis:vis $name:ident, $path:expr) => {
-        $vis static $name: once_cell::sync::Lazy<serde_json::Value> =
+        $vis static $name: once_cell::sync::Lazy<Arc<serde_json::Value>> =
             once_cell::sync::Lazy::new(|| {
-                serde_json::from_slice(include_bytes!($path)).expect("Invalid schema")
+                Arc::new(serde_json::from_slice(include_bytes!($path)).expect("Invalid schema"))
             });
     };
     ($name:ident, $path:expr) => {
@@ -65,6 +67,10 @@ schema!(
 schema!(
     pub DRAFT202012_FORMAT_ANNOTATION,
     "../metaschemas/draft2020-12/meta/format-annotation.json"
+);
+schema!(
+    pub DRAFT202012_FORMAT_ASSERTION,
+    "../metaschemas/draft2020-12/meta/format-assertion.json"
 );
 schema!(
     pub DRAFT202012_CONTENT,

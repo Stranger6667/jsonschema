@@ -217,7 +217,7 @@ impl<'a> Context<'a> {
             return Ok(None);
         };
         let resource = self.draft().create_resource(resolved.contents().clone());
-        let mut base_uri = resolved.resolver().base_uri().to_owned();
+        let mut base_uri = resolved.resolver().base_uri();
         let scopes = resolved.resolver().dynamic_scope();
         if let Some(id) = resource.id() {
             base_uri = Arc::new(uri::resolve_against(&base_uri.borrow(), id)?);

@@ -449,12 +449,66 @@ fn process_resources(
             let mut fragmentless = uri.clone();
             fragmentless.set_fragment(None);
             if !resources.contains_key(&fragmentless) {
-                let retrieved = retriever
-                    .retrieve(&fragmentless.borrow())
-                    .map_err(|err| Error::unretrievable(fragmentless.as_str(), err))?;
+                let boxed = match fragmentless.as_str() {
+                    "https://json-schema.org/draft/2020-12/schema" => {
+                        Pin::new(Arc::clone(&meta::DRAFT202012))
+                    }
+                    "https://json-schema.org/draft/2020-12/meta/applicator" => {
+                        Pin::new(Arc::clone(&meta::DRAFT202012_APPLICATOR))
+                    }
+                    "https://json-schema.org/draft/2020-12/meta/core" => {
+                        Pin::new(Arc::clone(&meta::DRAFT202012_CORE))
+                    }
+                    "https://json-schema.org/draft/2020-12/meta/validation" => {
+                        Pin::new(Arc::clone(&meta::DRAFT202012_VALIDATION))
+                    }
+                    "https://json-schema.org/draft/2020-12/meta/unevaluated" => {
+                        Pin::new(Arc::clone(&meta::DRAFT202012_UNEVALUATED))
+                    }
+                    "https://json-schema.org/draft/2020-12/meta/format-annotation" => {
+                        Pin::new(Arc::clone(&meta::DRAFT202012_FORMAT_ANNOTATION))
+                    }
+                    "https://json-schema.org/draft/2020-12/meta/format-assertion" => {
+                        Pin::new(Arc::clone(&meta::DRAFT202012_FORMAT_ASSERTION))
+                    }
+                    "https://json-schema.org/draft/2020-12/meta/content" => {
+                        Pin::new(Arc::clone(&meta::DRAFT202012_CONTENT))
+                    }
+                    "https://json-schema.org/draft/2020-12/meta/meta-data" => {
+                        Pin::new(Arc::clone(&meta::DRAFT202012_META_DATA))
+                    }
+                    "https://json-schema.org/draft/2019-09/schema" => {
+                        Pin::new(Arc::clone(&meta::DRAFT201909))
+                    }
+                    "https://json-schema.org/draft/2019-09/meta/applicator" => {
+                        Pin::new(Arc::clone(&meta::DRAFT201909_APPLICATOR))
+                    }
+                    "https://json-schema.org/draft/2019-09/meta/core" => {
+                        Pin::new(Arc::clone(&meta::DRAFT201909_CORE))
+                    }
+                    "https://json-schema.org/draft/2019-09/meta/content" => {
+                        Pin::new(Arc::clone(&meta::DRAFT201909_CONTENT))
+                    }
+                    "https://json-schema.org/draft/2019-09/meta/validation" => {
+                        Pin::new(Arc::clone(&meta::DRAFT201909_VALIDATION))
+                    }
+                    "https://json-schema.org/draft/2019-09/meta/format" => {
+                        Pin::new(Arc::clone(&meta::DRAFT201909_FORMAT))
+                    }
+                    "https://json-schema.org/draft/2019-09/meta/meta-data" => {
+                        Pin::new(Arc::clone(&meta::DRAFT201909_META_DATA))
+                    }
+                    "http://json-schema.org/draft-07/schema" => Pin::new(Arc::clone(&meta::DRAFT7)),
+                    "http://json-schema.org/draft-06/schema" => Pin::new(Arc::clone(&meta::DRAFT6)),
+                    "http://json-schema.org/draft-04/schema" => Pin::new(Arc::clone(&meta::DRAFT4)),
+                    _ => Arc::pin(
+                        retriever
+                            .retrieve(&fragmentless.borrow())
+                            .map_err(|err| Error::unretrievable(fragmentless.as_str(), err))?,
+                    ),
+                };
 
-                let draft = default_draft.detect(&retrieved)?;
-                let boxed = Arc::pin(retrieved);
+                let draft = default_draft.detect(&boxed)?;
                 let contents = std::ptr::addr_of!(*boxed);
                 let resource = InnerResourcePtr::new(contents, draft);
                 let key = Arc::new(fragmentless);
@@ -469,7 +523,7 @@ fn process_resources(
                         let draft = default_draft.detect(resolved)?;
                         let contents = std::ptr::addr_of!(*resolved);
                         let resource = InnerResourcePtr::new(contents, draft);
-                        queue.push_back((Arc::new(uri), resource));
+                        queue.push_back((Arc::clone(&key), resource));
                     }
                 }
 
@@ -495,16 +549,6 @@ fn collect_external_resources(
     }
     for key in ["$ref", "$schema"] {
         if let Some(reference) = contents.get(key).and_then(Value::as_str) {
-            // Skip well-known schema references
-            if reference.starts_with("https://json-schema.org/draft/2020-12/")
-                || reference.starts_with("https://json-schema.org/draft/2019-09/")
-                || reference.starts_with("http://json-schema.org/draft-07/")
-                || reference.starts_with("http://json-schema.org/draft-06/")
-                || reference.starts_with("http://json-schema.org/draft-04/")
-            {
-                continue;
-            }
-
             if reference == "#" {
                 continue;
             }
