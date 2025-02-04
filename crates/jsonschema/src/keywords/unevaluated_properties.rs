@@ -1,4 +1,7 @@
-use std::{rc::Rc, sync::Arc};
+use std::{
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 
 use ahash::AHashSet;
 use fancy_regex::Regex;
@@ -185,6 +188,7 @@ impl<T: PropertiesFilter> LazyReference<T> {
                 self.vocabularies.clone(),
                 self.draft,
                 self.location.clone(),
+                Arc::new(Mutex::new(AHashSet::new())),
             );
 
             Box::new(
