@@ -22,11 +22,14 @@ fn bench_subresources(c: &mut Criterion) {
         let schema = benchmark::read_json(data);
 
         group.bench_with_input(BenchmarkId::new("try_new", name), &schema, |b, schema| {
-            b.iter(|| {
-                let resource = draft.create_resource(schema.clone());
-                let _registry = Registry::try_new("http://example.com/schema.json", resource)
-                    .expect("Invalid registry input");
-            });
+            b.iter_batched(
+                || draft.create_resource(schema.clone()),
+                |resource| {
+                    Registry::try_new("http://example.com/schema.json", resource)
+                        .expect("Invalid registry input")
+                },
+                criterion::BatchSize::SmallInput,
+            );
         });
     }
     let drafts = [
@@ -44,12 +47,18 @@ fn bench_subresources(c: &mut Criterion) {
             BenchmarkId::new("try_with_resource", name),
             &schema,
             |b, schema| {
-                b.iter(|| {
-                    let resource = draft.create_resource(schema.clone());
-                    let _registry = SPECIFICATIONS
-                        .clone()
-                        .try_with_resource("http://example.com/schema.json", resource);
-                });
+                b.iter_batched(
+                    || {
+                        (
+                            draft.create_resource(schema.clone()),
+                            SPECIFICATIONS.clone(),
+                        )
+                    },
+                    |(resource, registry)| {
+                        registry.try_with_resource("http://example.com/schema.json", resource)
+                    },
+                    criterion::BatchSize::SmallInput,
+                );
             },
         );
     }

@@ -19,7 +19,7 @@ fn benchmark_into_iterator(c: &mut Criterion) {
         c.bench_with_input(
             BenchmarkId::new("IntoIterator", parameter),
             &input,
-            |b, i| b.iter(|| black_box(i).into_iter().collect::<Vec<_>>()),
+            |b, i| b.iter_with_large_drop(|| black_box(i).into_iter().collect::<Vec<_>>()),
         );
     }
 }
@@ -39,7 +39,13 @@ fn benchmark_from_iterator(c: &mut Criterion) {
         c.bench_with_input(
             BenchmarkId::new("FromIterator", parameter),
             &input,
-            |b, i| b.iter(|| Location::from_iter(black_box(i.clone().into_iter()))),
+            |b, i| {
+                b.iter_batched(
+                    || i.clone().into_iter(),
+                    |i| Location::from_iter(black_box(i)),
+                    criterion::BatchSize::SmallInput,
+                )
+            },
         );
     }
 }

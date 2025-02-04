@@ -5,12 +5,15 @@ use valico::json_schema;
 
 fn bench_build(c: &mut Criterion, name: &str, schema: &Value) {
     c.bench_function(&format!("valico/{}/build", name), |b| {
-        b.iter(|| {
-            let mut scope = json_schema::Scope::new();
-            scope
-                .compile_and_return(schema.clone(), false)
-                .expect("Valid schema");
-        })
+        b.iter_batched(
+            || (json_schema::Scope::new(), schema.clone()),
+            |(mut scope, schema)| {
+                scope
+                    .compile_and_return(schema, false)
+                    .expect("Valid schema");
+            },
+            criterion::BatchSize::SmallInput,
+        )
     });
 }
 
