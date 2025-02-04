@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+/// An immutable singly-linked list.
 pub struct List<T> {
     head: Option<Arc<Node<T>>>,
 }
@@ -29,10 +30,12 @@ impl<T> List<T> {
     pub(crate) fn new() -> Self {
         Self { head: None }
     }
+    /// Returns true if the list contains no elements.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.head.is_none()
     }
+    /// Creates a new list with the given value at the front, sharing the rest of the nodes.
     #[must_use]
     pub fn push_front(&self, value: Arc<T>) -> Self {
         List {
@@ -42,6 +45,7 @@ impl<T> List<T> {
             })),
         }
     }
+    /// Returns an iterator over references to the list elements.
     #[must_use]
     pub fn iter(&self) -> Iter<'_, T> {
         Iter {
@@ -56,6 +60,7 @@ pub(crate) struct Node<T> {
     next: Option<Arc<Node<T>>>,
 }
 
+/// Iterator over references to elements in a `List`.
 #[derive(Debug)]
 pub struct Iter<'a, T> {
     current: Option<&'a Arc<Node<T>>>,

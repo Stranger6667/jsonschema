@@ -27,6 +27,7 @@ use crate::{
 type DocumentStore = AHashMap<Arc<Uri<String>>, Pin<Arc<Value>>>;
 type ResourceMap = AHashMap<Arc<Uri<String>>, InnerResourcePtr>;
 
+/// Pre-loaded registry containing all JSON Schema meta-schemas and their vocabularies
 pub static SPECIFICATIONS: Lazy<Registry> = Lazy::new(|| {
     let pairs = meta::META_SCHEMAS.into_iter().map(|(uri, schema)| {
         (
@@ -314,11 +315,15 @@ impl Registry {
             Err(Error::no_such_anchor(name.to_string()))
         }
     }
-
+    /// Resolves a reference URI against a base URI using registry's cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if base has not schema or there is a fragment.
     pub fn resolve_against(&self, base: &Uri<&str>, uri: &str) -> Result<Arc<Uri<String>>, Error> {
         self.resolution_cache.resolve_against(base, uri)
     }
-
+    /// Returns vocabulary set configured for given draft and contents.
     #[must_use]
     pub fn find_vocabularies(&self, draft: Draft, contents: &Value) -> VocabularySet {
         match draft.detect(contents) {

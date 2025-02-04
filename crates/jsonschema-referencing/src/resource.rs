@@ -140,6 +140,7 @@ impl InnerResourcePtr {
         }
     }
 
+    #[allow(unsafe_code)]
     pub(crate) fn contents(&self) -> &Value {
         // SAFETY: The pointer is valid as long as the registry exists
         unsafe { &*self.contents.load(Ordering::Relaxed) }

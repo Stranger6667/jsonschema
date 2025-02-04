@@ -6,6 +6,8 @@ use ahash::AHashSet;
 use fluent_uri::Uri;
 use serde_json::Value;
 
+/// A JSON Schema vocabulary identifier, representing standard vocabularies (Core, Applicator, etc.)
+/// or custom ones via URI.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Vocabulary {
     Core,
@@ -51,6 +53,7 @@ impl FromStr for Vocabulary {
     }
 }
 
+/// A set of enabled JSON Schema vocabularies.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct VocabularySet {
     known: u8,

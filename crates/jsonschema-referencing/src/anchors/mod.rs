@@ -24,7 +24,9 @@ impl AnchorName {
         }
     }
 
+    #[allow(unsafe_code)]
     fn as_str(&self) -> &str {
+        // SAFETY: The pointer is valid as long as the registry exists
         unsafe {
             std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                 self.ptr.load(Ordering::Relaxed),

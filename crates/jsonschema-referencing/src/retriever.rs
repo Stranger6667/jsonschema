@@ -20,6 +20,7 @@ pub trait Retrieve: Send + Sync {
     fn retrieve(&self, uri: &Uri<&str>) -> Result<Value, Box<dyn std::error::Error + Send + Sync>>;
 }
 
+/// A retriever that always fails, used as a default when external resource fetching is not needed.
 #[derive(Debug, Clone)]
 struct DefaultRetrieverError;
 
