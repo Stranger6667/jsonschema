@@ -40,14 +40,13 @@ pub static SPECIFICATIONS: Lazy<Registry> = Lazy::new(|| {
     let mut resources = ResourceMap::with_capacity(18);
     let mut anchors = AHashMap::with_capacity(8);
     let mut resolution_cache = UriCache::with_capacity(35);
-    process_resources(
+    // TODO: Drop resolution cache
+    process_meta_schemas(
         pairs,
-        &DefaultRetriever,
         &mut documents,
         &mut resources,
         &mut anchors,
         &mut resolution_cache,
-        Draft::default(),
     )
     .expect("Failed to process meta schemas");
     Registry {
@@ -343,6 +342,50 @@ impl Registry {
     }
 }
 
+fn process_meta_schemas(
+    pairs: impl Iterator<Item = (impl AsRef<str>, Resource)>,
+    documents: &mut DocumentStore,
+    resources: &mut ResourceMap,
+    anchors: &mut AHashMap<AnchorKey, Anchor>,
+    resolution_cache: &mut UriCache,
+) -> Result<(), Error> {
+    let mut queue = VecDeque::with_capacity(32);
+
+    for (uri, resource) in pairs {
+        let uri = uri::from_str(uri.as_ref().trim_end_matches('#'))?;
+        let key = Arc::new(uri);
+        let (draft, contents) = resource.into_inner();
+        let boxed = Arc::pin(contents);
+        let contents = std::ptr::addr_of!(*boxed);
+        let resource = InnerResourcePtr::new(contents, draft);
+        documents.insert(Arc::clone(&key), boxed);
+        resources.insert(Arc::clone(&key), resource.clone());
+        queue.push_back((key, resource));
+    }
+
+    // Process current queue and collect references to external resources
+    while let Some((mut base, resource)) = queue.pop_front() {
+        if let Some(id) = resource.id() {
+            base = resolution_cache.resolve_against(&base.borrow(), id)?;
+        }
+
+        // Look for anchors
+        for anchor in resource.anchors() {
+            anchors.insert(AnchorKey::new(base.clone(), anchor.name()), anchor);
+        }
+
+        // Process subresources
+        for subresource in resource.subresources() {
+            let subresource = subresource?;
+            queue.push_back((base.clone(), subresource));
+        }
+        if resource.id().is_some() {
+            resources.insert(base, resource.clone());
+        }
+    }
+    Ok(())
+}
+
 fn process_resources(
     pairs: impl Iterator<Item = (impl AsRef<str>, Resource)>,
     retriever: &dyn Retrieve,
@@ -356,6 +399,7 @@ fn process_resources(
     let mut seen = HashSet::with_hasher(BuildNoHashHasher::default());
     let mut external = AHashSet::new();
     let mut scratch = String::new();
+    let mut refers_metaschemas = false;
     // TODO: Implement `Registry::combine`
 
     // SAFETY: Deduplicate input URIs keeping the last occurrence to prevent creation
@@ -412,6 +456,7 @@ fn process_resources(
                 &mut seen,
                 resolution_cache,
                 &mut scratch,
+                &mut refers_metaschemas,
             )?;
 
             // Process subresources
@@ -426,6 +471,7 @@ fn process_resources(
                         &mut seen,
                         resolution_cache,
                         &mut scratch,
+                        &mut refers_metaschemas,
                     )?;
                 } else {
                     collect_external_resources(
@@ -435,6 +481,7 @@ fn process_resources(
                         &mut seen,
                         resolution_cache,
                         &mut scratch,
+                        &mut refers_metaschemas,
                     )?;
                 };
 
@@ -449,66 +496,12 @@ fn process_resources(
             let mut fragmentless = uri.clone();
             fragmentless.set_fragment(None);
             if !resources.contains_key(&fragmentless) {
-                let boxed = match fragmentless.as_str() {
-                    "https://json-schema.org/draft/2020-12/schema" => {
-                        Pin::new(Arc::clone(&meta::DRAFT202012))
-                    }
-                    "https://json-schema.org/draft/2020-12/meta/applicator" => {
-                        Pin::new(Arc::clone(&meta::DRAFT202012_APPLICATOR))
-                    }
-                    "https://json-schema.org/draft/2020-12/meta/core" => {
-                        Pin::new(Arc::clone(&meta::DRAFT202012_CORE))
-                    }
-                    "https://json-schema.org/draft/2020-12/meta/validation" => {
-                        Pin::new(Arc::clone(&meta::DRAFT202012_VALIDATION))
-                    }
-                    "https://json-schema.org/draft/2020-12/meta/unevaluated" => {
-                        Pin::new(Arc::clone(&meta::DRAFT202012_UNEVALUATED))
-                    }
-                    "https://json-schema.org/draft/2020-12/meta/format-annotation" => {
-                        Pin::new(Arc::clone(&meta::DRAFT202012_FORMAT_ANNOTATION))
-                    }
-                    "https://json-schema.org/draft/2020-12/meta/format-assertion" => {
-                        Pin::new(Arc::clone(&meta::DRAFT202012_FORMAT_ASSERTION))
-                    }
-                    "https://json-schema.org/draft/2020-12/meta/content" => {
-                        Pin::new(Arc::clone(&meta::DRAFT202012_CONTENT))
-                    }
-                    "https://json-schema.org/draft/2020-12/meta/meta-data" => {
-                        Pin::new(Arc::clone(&meta::DRAFT202012_META_DATA))
-                    }
-                    "https://json-schema.org/draft/2019-09/schema" => {
-                        Pin::new(Arc::clone(&meta::DRAFT201909))
-                    }
-                    "https://json-schema.org/draft/2019-09/meta/applicator" => {
-                        Pin::new(Arc::clone(&meta::DRAFT201909_APPLICATOR))
-                    }
-                    "https://json-schema.org/draft/2019-09/meta/core" => {
-                        Pin::new(Arc::clone(&meta::DRAFT201909_CORE))
-                    }
-                    "https://json-schema.org/draft/2019-09/meta/content" => {
-                        Pin::new(Arc::clone(&meta::DRAFT201909_CONTENT))
-                    }
-                    "https://json-schema.org/draft/2019-09/meta/validation" => {
-                        Pin::new(Arc::clone(&meta::DRAFT201909_VALIDATION))
-                    }
-                    "https://json-schema.org/draft/2019-09/meta/format" => {
-                        Pin::new(Arc::clone(&meta::DRAFT201909_FORMAT))
-                    }
-                    "https://json-schema.org/draft/2019-09/meta/meta-data" => {
-                        Pin::new(Arc::clone(&meta::DRAFT201909_META_DATA))
-                    }
-                    "http://json-schema.org/draft-07/schema" => Pin::new(Arc::clone(&meta::DRAFT7)),
-                    "http://json-schema.org/draft-06/schema" => Pin::new(Arc::clone(&meta::DRAFT6)),
-                    "http://json-schema.org/draft-04/schema" => Pin::new(Arc::clone(&meta::DRAFT4)),
-                    _ => Arc::pin(
-                        retriever
-                            .retrieve(&fragmentless.borrow())
-                            .map_err(|err| Error::unretrievable(fragmentless.as_str(), err))?,
-                    ),
-                };
+                let retrieved = retriever
+                    .retrieve(&fragmentless.borrow())
+                    .map_err(|err| Error::unretrievable(fragmentless.as_str(), err))?;
 
-                let draft = default_draft.detect(&boxed)?;
+                let draft = default_draft.detect(&retrieved)?;
+                let boxed = Arc::pin(retrieved);
                 let contents = std::ptr::addr_of!(*boxed);
                 let resource = InnerResourcePtr::new(contents, draft);
                 let key = Arc::new(fragmentless);
@@ -532,6 +525,15 @@ fn process_resources(
         }
     }
 
+    if refers_metaschemas {
+        for (key, resource) in &SPECIFICATIONS.resources {
+            resources.insert(Arc::clone(key), resource.clone());
+        }
+        for (key, anchor) in &SPECIFICATIONS.anchors {
+            anchors.insert(key.clone(), anchor.clone());
+        }
+    }
+
     Ok(())
 }
 
@@ -542,6 +544,7 @@ fn collect_external_resources(
     seen: &mut HashSet<u64, BuildNoHashHasher>,
     resolution_cache: &mut UriCache,
     scratch: &mut String,
+    refers_metaschemas: &mut bool,
 ) -> Result<(), Error> {
     // URN schemes are not supported for external resolution
     if base.scheme().as_str() == "urn" {
@@ -549,6 +552,19 @@ fn collect_external_resources(
     }
     for key in ["$ref", "$schema"] {
         if let Some(reference) = contents.get(key).and_then(Value::as_str) {
+            // Skip well-known schema references
+            if reference.starts_with("https://json-schema.org/draft/2020-12/")
+                || reference.starts_with("https://json-schema.org/draft/2019-09/")
+                || reference.starts_with("http://json-schema.org/draft-07/")
+                || reference.starts_with("http://json-schema.org/draft-06/")
+                || reference.starts_with("http://json-schema.org/draft-04/")
+                || base.as_str() == "https://json-schema.org/draft/2020-12/schema"
+                || base.as_str() == "https://json-schema.org/draft/2019-09/schema"
+            {
+                *refers_metaschemas = true;
+                continue;
+            }
+
             if reference == "#" {
                 continue;
             }
@@ -571,6 +587,7 @@ fn collect_external_resources(
                         seen,
                         resolution_cache,
                         scratch,
+                        refers_metaschemas,
                     )?;
                 }
                 continue;
@@ -637,6 +654,7 @@ fn parse_index(s: &str) -> Option<usize> {
     }
     s.parse().ok()
 }
+
 #[cfg(test)]
 mod tests {
     use std::{error::Error as _, sync::Arc};
