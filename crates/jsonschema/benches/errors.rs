@@ -9,7 +9,7 @@ fn bench_error_formatting(c: &mut Criterion, name: &str, schema: &Value, instanc
     c.bench_with_input(
         BenchmarkId::new("error_formatting", name),
         &error,
-        |b, error| b.iter(|| error.to_string()),
+        |b, error| b.iter_with_large_drop(|| error.to_string()),
     );
 }
 

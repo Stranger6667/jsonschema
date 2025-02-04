@@ -42,9 +42,7 @@ fn bench_pointers(c: &mut Criterion) {
             let resolver = registry
                 .try_resolver("http://example.com/schema.json")
                 .expect("Invalid base URI");
-            b.iter(|| {
-                let _resolved = resolver.lookup(black_box(pointer));
-            });
+            b.iter_with_large_drop(|| resolver.lookup(black_box(pointer)));
         },
     );
 

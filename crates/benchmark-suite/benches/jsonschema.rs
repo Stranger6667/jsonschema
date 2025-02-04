@@ -4,7 +4,7 @@ use serde_json::Value;
 
 fn bench_build(c: &mut Criterion, name: &str, schema: &Value) {
     c.bench_function(&format!("jsonschema/{}/build", name), |b| {
-        b.iter(|| jsonschema::validator_for(schema).expect("Valid schema"))
+        b.iter_with_large_drop(|| jsonschema::validator_for(schema).expect("Valid schema"))
     });
 }
 

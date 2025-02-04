@@ -27,9 +27,7 @@ fn bench_anchor_lookup(c: &mut Criterion) {
             let resolver = registry
                 .try_resolver("http://example.com/")
                 .expect("Invalid base URI");
-            b.iter(|| {
-                let _resolved = resolver.lookup(black_box("#foo"));
-            });
+            b.iter_with_large_drop(|| resolver.lookup(black_box("#foo")));
         },
     );
 
