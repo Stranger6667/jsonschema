@@ -7,8 +7,8 @@ use crate::{resource::InnerResourcePtr, segments::Segment, Error, Resolver, Segm
 
 type ObjectIter<'a> = FlatMap<
     serde_json::map::Iter<'a>,
-    SubIterBranch<'a>,
-    fn((&'a std::string::String, &'a Value)) -> SubIterBranch<'a>,
+    SubresourceIteratorInner<'a>,
+    fn((&'a std::string::String, &'a Value)) -> SubresourceIteratorInner<'a>,
 >;
 
 /// A simple iterator that either wraps an iterator producing &Value or is empty.
@@ -27,7 +27,7 @@ impl<'a> Iterator for SubresourceIterator<'a> {
     }
 }
 
-pub(crate) enum SubIterBranch<'a> {
+pub(crate) enum SubresourceIteratorInner<'a> {
     Once(&'a Value),
     Array(slice::Iter<'a, Value>),
     Object(serde_json::map::Values<'a>),
@@ -35,20 +35,21 @@ pub(crate) enum SubIterBranch<'a> {
     Empty,
 }
 
-impl<'a> Iterator for SubIterBranch<'a> {
+impl<'a> Iterator for SubresourceIteratorInner<'a> {
     type Item = &'a Value;
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            SubIterBranch::Once(_) => {
-                let SubIterBranch::Once(value) = std::mem::replace(self, SubIterBranch::Empty)
+            SubresourceIteratorInner::Once(_) => {
+                let SubresourceIteratorInner::Once(value) =
+                    std::mem::replace(self, SubresourceIteratorInner::Empty)
                 else {
                     unreachable!()
                 };
                 Some(value)
             }
-            SubIterBranch::Array(iter) => iter.next(),
-            SubIterBranch::Object(iter) => iter.next(),
-            SubIterBranch::FilteredObject(iter) => {
+            SubresourceIteratorInner::Array(iter) => iter.next(),
+            SubresourceIteratorInner::Object(iter) => iter.next(),
+            SubresourceIteratorInner::FilteredObject(iter) => {
                 for next in iter.by_ref() {
                     if !next.is_object() {
                         continue;
@@ -57,12 +58,14 @@ impl<'a> Iterator for SubIterBranch<'a> {
                 }
                 None
             }
-            SubIterBranch::Empty => None,
+            SubresourceIteratorInner::Empty => None,
         }
     }
 }
 
-fn object_iter<'a>((key, value): (&'a String, &'a Value)) -> SubIterBranch<'a> {
+pub(crate) fn object_iter<'a>(
+    (key, value): (&'a String, &'a Value),
+) -> SubresourceIteratorInner<'a> {
     match key.as_str() {
         "additionalProperties"
         | "contains"
@@ -74,29 +77,22 @@ fn object_iter<'a>((key, value): (&'a String, &'a Value)) -> SubIterBranch<'a> {
         | "propertyNames"
         | "then"
         | "unevaluatedItems"
-        | "unevaluatedProperties" => SubIterBranch::Once(value),
+        | "unevaluatedProperties" => SubresourceIteratorInner::Once(value),
         "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
             if let Some(arr) = value.as_array() {
-                SubIterBranch::Array(arr.iter())
+                SubresourceIteratorInner::Array(arr.iter())
             } else {
-                SubIterBranch::Empty
+                SubresourceIteratorInner::Empty
             }
         }
         "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties" => {
             if let Some(obj) = value.as_object() {
-                SubIterBranch::Object(obj.values())
+                SubresourceIteratorInner::Object(obj.values())
             } else {
-                SubIterBranch::Empty
+                SubresourceIteratorInner::Empty
             }
         }
-        _ => SubIterBranch::Empty,
-    }
-}
-
-pub(crate) fn subresources_of(contents: &Value) -> SubresourceIterator<'_> {
-    match contents.as_object() {
-        Some(schema) => SubresourceIterator::Object(schema.iter().flat_map(object_iter)),
-        None => SubresourceIterator::Empty,
+        _ => SubresourceIteratorInner::Empty,
     }
 }
 
@@ -171,10 +167,17 @@ pub(crate) fn maybe_in_subresource_with_items_and_dependencies<'r>(
 mod tests {
     use crate::Draft;
 
-    use super::subresources_of;
+    use super::{object_iter, SubresourceIterator};
     use ahash::HashSet;
-    use serde_json::json;
+    use serde_json::{json, Value};
     use test_case::test_case;
+
+    pub(crate) fn subresources_of(contents: &Value) -> SubresourceIterator<'_> {
+        match contents.as_object() {
+            Some(schema) => SubresourceIterator::Object(schema.iter().flat_map(object_iter)),
+            None => SubresourceIterator::Empty,
+        }
+    }
 
     #[test_case(&json!(true), &[] ; "boolean schema")]
     #[test_case(&json!(false), &[] ; "boolean schema false")]

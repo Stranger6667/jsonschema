@@ -2,46 +2,41 @@ use serde_json::Value;
 
 use crate::{resource::InnerResourcePtr, Error, Resolver, Segments};
 
-use super::subresources::{self, SubIterBranch, SubresourceIterator};
+use super::subresources::{self, SubresourceIteratorInner};
 
-fn object_iter<'a>((key, value): (&'a String, &'a Value)) -> SubIterBranch<'a> {
+pub(crate) fn object_iter<'a>(
+    (key, value): (&'a String, &'a Value),
+) -> SubresourceIteratorInner<'a> {
     match key.as_str() {
         "additionalItems" | "additionalProperties" | "contains" | "not" | "propertyNames" => {
-            SubIterBranch::Once(value)
+            SubresourceIteratorInner::Once(value)
         }
         "allOf" | "anyOf" | "oneOf" => {
             if let Some(arr) = value.as_array() {
-                SubIterBranch::Array(arr.iter())
+                SubresourceIteratorInner::Array(arr.iter())
             } else {
-                SubIterBranch::Empty
+                SubresourceIteratorInner::Empty
             }
         }
         "definitions" | "patternProperties" | "properties" => {
             if let Some(obj) = value.as_object() {
-                SubIterBranch::Object(obj.values())
+                SubresourceIteratorInner::Object(obj.values())
             } else {
-                SubIterBranch::Empty
+                SubresourceIteratorInner::Empty
             }
         }
         "items" => match value {
-            Value::Array(arr) => SubIterBranch::Array(arr.iter()),
-            _ => SubIterBranch::Once(value),
+            Value::Array(arr) => SubresourceIteratorInner::Array(arr.iter()),
+            _ => SubresourceIteratorInner::Once(value),
         },
         "dependencies" => {
             if let Some(obj) = value.as_object() {
-                SubIterBranch::FilteredObject(obj.values())
+                SubresourceIteratorInner::FilteredObject(obj.values())
             } else {
-                SubIterBranch::Empty
+                SubresourceIteratorInner::Empty
             }
         }
-        _ => SubIterBranch::Empty,
-    }
-}
-
-pub(crate) fn subresources_of(contents: &Value) -> SubresourceIterator<'_> {
-    match contents.as_object() {
-        Some(schema) => SubresourceIterator::Object(schema.iter().flat_map(object_iter)),
-        None => SubresourceIterator::Empty,
+        _ => SubresourceIteratorInner::Empty,
     }
 }
 

@@ -461,29 +461,6 @@ fn process_resources(
             // Process subresources
             for contents in resource.draft().subresources_of(resource.contents()) {
                 let subresource = InnerResourcePtr::new(contents, resource.draft());
-                if let Some(sub_id) = subresource.id() {
-                    let base = resolution_cache.resolve_against(&base.borrow(), sub_id)?;
-                    collect_external_resources(
-                        &base,
-                        subresource.contents(),
-                        &mut external,
-                        &mut seen,
-                        resolution_cache,
-                        &mut scratch,
-                        &mut refers_metaschemas,
-                    )?;
-                } else {
-                    collect_external_resources(
-                        &base,
-                        subresource.contents(),
-                        &mut external,
-                        &mut seen,
-                        resolution_cache,
-                        &mut scratch,
-                        &mut refers_metaschemas,
-                    )?;
-                };
-
                 queue.push_back((base.clone(), subresource));
             }
             if resource.id().is_some() {
@@ -525,9 +502,11 @@ fn process_resources(
     }
 
     if refers_metaschemas {
+        resources.reserve(SPECIFICATIONS.resources.len());
         for (key, resource) in &SPECIFICATIONS.resources {
             resources.insert(Arc::clone(key), resource.clone());
         }
+        anchors.reserve(SPECIFICATIONS.anchors.len());
         for (key, anchor) in &SPECIFICATIONS.anchors {
             anchors.insert(key.clone(), anchor.clone());
         }
@@ -552,13 +531,9 @@ fn collect_external_resources(
     for key in ["$ref", "$schema"] {
         if let Some(reference) = contents.get(key).and_then(Value::as_str) {
             // Skip well-known schema references
-            if reference.starts_with("https://json-schema.org/draft/2020-12/")
-                || reference.starts_with("https://json-schema.org/draft/2019-09/")
-                || reference.starts_with("http://json-schema.org/draft-07/")
-                || reference.starts_with("http://json-schema.org/draft-06/")
-                || reference.starts_with("http://json-schema.org/draft-04/")
-                || base.as_str() == "https://json-schema.org/draft/2020-12/schema"
-                || base.as_str() == "https://json-schema.org/draft/2019-09/schema"
+            if reference.starts_with("https://json-schema.org/draft/")
+                || reference.starts_with("http://json-schema.org/draft-")
+                || base.as_str().starts_with("https://json-schema.org/draft/")
             {
                 *refers_metaschemas = true;
                 continue;
