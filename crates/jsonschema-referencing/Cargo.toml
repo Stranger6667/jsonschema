@@ -8,7 +8,6 @@ edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
-license-file.workspace = true
 
 [dependencies]
 ahash.workspace = true

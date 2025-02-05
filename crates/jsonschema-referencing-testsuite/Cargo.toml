@@ -6,7 +6,6 @@ edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
-license-file.workspace = true
 
 [dependencies]
 referencing_codegen = { package = "jsonschema-referencing-testsuite-codegen", path = "../jsonschema-referencing-testsuite-codegen/" }

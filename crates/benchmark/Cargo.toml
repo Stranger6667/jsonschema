@@ -4,7 +4,6 @@ version = "0.1.0"
 rust-version = "1.80"
 readme = "README.md"
 license.workspace = true
-license-file.workspace = true
 repository.workspace = true
 edition.workspace = true
 authors.workspace = true

@@ -8,7 +8,6 @@ edition = "2021"
 authors = ["Dmitry Dygalo <dmitry@dygalo.dev>"]
 repository = "https://github.com/Stranger6667/jsonschema"
 license = "MIT"
-license-file = "LICENSE"
 
 [profile.release]
 lto = "fat"
