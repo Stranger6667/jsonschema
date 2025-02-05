@@ -438,7 +438,9 @@ fn process_resources(
 
         // Process current queue and collect references to external resources
         while let Some((mut base, resource)) = queue.pop_front() {
+            let mut has_id = false;
             if let Some(id) = resource.id() {
+                has_id = true;
                 base = resolution_cache.resolve_against(&base.borrow(), id)?;
             }
 
@@ -463,7 +465,7 @@ fn process_resources(
                 let subresource = InnerResourcePtr::new(contents, resource.draft());
                 queue.push_back((base.clone(), subresource));
             }
-            if resource.id().is_some() {
+            if has_id {
                 resources.insert(base, resource.clone());
             }
         }
