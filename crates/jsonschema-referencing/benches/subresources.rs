@@ -32,8 +32,10 @@ fn bench_subresources(c: &mut Criterion) {
             BenchmarkId::new("subresources_of", name),
             &schema,
             |b, schema| {
-                b.iter_with_large_drop(|| {
-                    draft.subresources_of(black_box(schema)).collect::<Vec<_>>()
+                b.iter(|| {
+                    for sub in draft.subresources_of(black_box(schema)) {
+                        let _ = sub;
+                    }
                 });
             },
         );
