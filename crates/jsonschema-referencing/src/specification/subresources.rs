@@ -1,34 +1,102 @@
+use core::slice;
+use std::iter::FlatMap;
+
 use serde_json::Value;
 
 use crate::{resource::InnerResourcePtr, segments::Segment, Error, Resolver, Segments};
 
-pub(crate) type SubresourceIterator<'a> = Box<dyn Iterator<Item = &'a Value> + 'a>;
+type ObjectIter<'a> = FlatMap<
+    serde_json::map::Iter<'a>,
+    SubIterBranch<'a>,
+    fn((&'a std::string::String, &'a Value)) -> SubIterBranch<'a>,
+>;
+
+/// A simple iterator that either wraps an iterator producing &Value or is empty.
+pub(crate) enum SubresourceIterator<'a> {
+    Object(ObjectIter<'a>),
+    Empty,
+}
+
+impl<'a> Iterator for SubresourceIterator<'a> {
+    type Item = &'a Value;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            SubresourceIterator::Object(iter) => iter.next(),
+            SubresourceIterator::Empty => None,
+        }
+    }
+}
+
+pub(crate) enum SubIterBranch<'a> {
+    Once(&'a Value),
+    Array(slice::Iter<'a, Value>),
+    Object(serde_json::map::Values<'a>),
+    FilteredObject(serde_json::map::Values<'a>),
+    Empty,
+}
+
+impl<'a> Iterator for SubIterBranch<'a> {
+    type Item = &'a Value;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            SubIterBranch::Once(_) => {
+                let SubIterBranch::Once(value) = std::mem::replace(self, SubIterBranch::Empty)
+                else {
+                    unreachable!()
+                };
+                Some(value)
+            }
+            SubIterBranch::Array(iter) => iter.next(),
+            SubIterBranch::Object(iter) => iter.next(),
+            SubIterBranch::FilteredObject(iter) => {
+                for next in iter.by_ref() {
+                    if !next.is_object() {
+                        continue;
+                    }
+                    return Some(next);
+                }
+                None
+            }
+            SubIterBranch::Empty => None,
+        }
+    }
+}
+
+fn object_iter<'a>((key, value): (&'a String, &'a Value)) -> SubIterBranch<'a> {
+    match key.as_str() {
+        "additionalProperties"
+        | "contains"
+        | "contentSchema"
+        | "else"
+        | "if"
+        | "items"
+        | "not"
+        | "propertyNames"
+        | "then"
+        | "unevaluatedItems"
+        | "unevaluatedProperties" => SubIterBranch::Once(value),
+        "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
+            if let Some(arr) = value.as_array() {
+                SubIterBranch::Array(arr.iter())
+            } else {
+                SubIterBranch::Empty
+            }
+        }
+        "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties" => {
+            if let Some(obj) = value.as_object() {
+                SubIterBranch::Object(obj.values())
+            } else {
+                SubIterBranch::Empty
+            }
+        }
+        _ => SubIterBranch::Empty,
+    }
+}
 
 pub(crate) fn subresources_of(contents: &Value) -> SubresourceIterator<'_> {
     match contents.as_object() {
-        Some(schema) => Box::new(schema.iter().flat_map(|(key, value)| match key.as_str() {
-            "additionalProperties"
-            | "contains"
-            | "contentSchema"
-            | "else"
-            | "if"
-            | "items"
-            | "not"
-            | "propertyNames"
-            | "then"
-            | "unevaluatedItems"
-            | "unevaluatedProperties" => {
-                Box::new(std::iter::once(value)) as SubresourceIterator<'_>
-            }
-            "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
-                Box::new(value.as_array().into_iter().flatten())
-            }
-            "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties" => {
-                Box::new(value.as_object().into_iter().flat_map(|o| o.values()))
-            }
-            _ => Box::new(std::iter::empty()),
-        })),
-        None => Box::new(std::iter::empty()),
+        Some(schema) => SubresourceIterator::Object(schema.iter().flat_map(object_iter)),
+        None => SubresourceIterator::Empty,
     }
 }
 

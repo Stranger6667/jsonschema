@@ -70,11 +70,7 @@ impl Draft {
             Draft::Draft201909 | Draft::Draft202012 => ids::dollar_id(contents),
         }
     }
-    #[must_use]
-    pub fn subresources_of<'a>(
-        self,
-        contents: &'a Value,
-    ) -> Box<dyn Iterator<Item = &'a Value> + 'a> {
+    pub fn subresources_of(self, contents: &Value) -> impl Iterator<Item = &Value> {
         match self {
             Draft::Draft4 => draft4::subresources_of(contents),
             Draft::Draft6 => draft6::subresources_of(contents),
