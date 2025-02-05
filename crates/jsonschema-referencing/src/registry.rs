@@ -368,6 +368,7 @@ fn process_meta_schemas(
     while let Some((mut base, resource)) = queue.pop_front() {
         if let Some(id) = resource.id() {
             base = resolution_cache.resolve_against(&base.borrow(), id)?;
+            resources.insert(base.clone(), resource.clone());
         }
 
         // Look for anchors
@@ -379,9 +380,6 @@ fn process_meta_schemas(
         for contents in resource.draft().subresources_of(resource.contents()) {
             let subresource = InnerResourcePtr::new(contents, resource.draft());
             queue.push_back((base.clone(), subresource));
-        }
-        if resource.id().is_some() {
-            resources.insert(base, resource.clone());
         }
     }
     Ok(())
@@ -438,10 +436,9 @@ fn process_resources(
 
         // Process current queue and collect references to external resources
         while let Some((mut base, resource)) = queue.pop_front() {
-            let mut has_id = false;
             if let Some(id) = resource.id() {
-                has_id = true;
                 base = resolution_cache.resolve_against(&base.borrow(), id)?;
+                resources.insert(base.clone(), resource.clone());
             }
 
             // Look for anchors
@@ -464,9 +461,6 @@ fn process_resources(
             for contents in resource.draft().subresources_of(resource.contents()) {
                 let subresource = InnerResourcePtr::new(contents, resource.draft());
                 queue.push_back((base.clone(), subresource));
-            }
-            if has_id {
-                resources.insert(base, resource.clone());
             }
         }
         // Retrieve external resources
