@@ -530,95 +530,93 @@ fn collect_external_resources(
     }
 
     macro_rules! on_reference {
-        ($reference:expr) => {
+        ($reference:expr, $key:literal) => {
             // Skip well-known schema references
             if $reference.starts_with("https://json-schema.org/draft/")
                 || $reference.starts_with("http://json-schema.org/draft-")
                 || base.as_str().starts_with("https://json-schema.org/draft/")
             {
-                *refers_metaschemas = true;
-                continue;
-            }
-
-            if $reference == "#" {
-                continue;
-            }
-
-            let mut hasher = AHasher::default();
-            (base.as_str(), $reference).hash(&mut hasher);
-            let hash = hasher.finish();
-            if !seen.insert(hash) {
-                // Reference has already been seen
-                return Ok(());
-            }
-
-            // Handle local references separately as they may have nested references to external resources
-            if $reference.starts_with('#') {
-                if let Some(referenced) =
-                    pointer(contents, $reference.trim_start_matches('#'))
-                {
-                    collect_external_resources(
-                        base,
-                        referenced,
-                        collected,
-                        seen,
-                        resolution_cache,
-                        scratch,
-                        refers_metaschemas,
-                    )?;
+                if $key == "$ref" {
+                    *refers_metaschemas = true;
                 }
-                continue;
-            }
-
-            let resolved = if base.has_fragment() {
-                let mut base_without_fragment = base.clone();
-                base_without_fragment.set_fragment(None);
-
-                let (path, fragment) = match $reference.split_once('#') {
-                    Some((path, fragment)) => (path, Some(fragment)),
-                    None => ($reference, None),
-                };
-
-                let mut resolved = (*resolution_cache
-                    .resolve_against(&base_without_fragment.borrow(), path)?)
-                .clone();
-                // Add the fragment back if present
-                if let Some(fragment) = fragment {
-                    // It is cheaper to check if it is properly encoded than allocate given that
-                    // the majority of inputs do not need to be additionally encoded
-                    if let Some(encoded) = uri::EncodedString::new(fragment) {
-                        resolved = resolved.with_fragment(Some(encoded));
+            } else if $reference != "#" {
+                let mut hasher = AHasher::default();
+                (base.as_str(), $reference).hash(&mut hasher);
+                let hash = hasher.finish();
+                if seen.insert(hash) {
+                    // Handle local references separately as they may have nested references to external resources
+                    if $reference.starts_with('#') {
+                        if let Some(referenced) =
+                            pointer(contents, $reference.trim_start_matches('#'))
+                        {
+                            collect_external_resources(
+                                base,
+                                referenced,
+                                collected,
+                                seen,
+                                resolution_cache,
+                                scratch,
+                                refers_metaschemas,
+                            )?;
+                        }
                     } else {
-                        uri::encode_to(fragment, scratch);
-                        resolved = resolved.with_fragment(Some(
-                            uri::EncodedString::new_or_panic(scratch),
-                        ));
-                        scratch.clear();
+                        let resolved = if base.has_fragment() {
+                            let mut base_without_fragment = base.clone();
+                            base_without_fragment.set_fragment(None);
+
+                            let (path, fragment) = match $reference.split_once('#') {
+                                Some((path, fragment)) => (path, Some(fragment)),
+                                None => ($reference, None),
+                            };
+
+                            let mut resolved = (*resolution_cache
+                                .resolve_against(&base_without_fragment.borrow(), path)?)
+                            .clone();
+                            // Add the fragment back if present
+                            if let Some(fragment) = fragment {
+                                // It is cheaper to check if it is properly encoded than allocate given that
+                                // the majority of inputs do not need to be additionally encoded
+                                if let Some(encoded) = uri::EncodedString::new(fragment) {
+                                    resolved = resolved.with_fragment(Some(encoded));
+                                } else {
+                                    uri::encode_to(fragment, scratch);
+                                    resolved = resolved.with_fragment(Some(
+                                        uri::EncodedString::new_or_panic(scratch),
+                                    ));
+                                    scratch.clear();
+                                }
+                            }
+                            resolved
+                        } else {
+                            (*resolution_cache.resolve_against(&base.borrow(), $reference)?).clone()
+                        };
+
+                        collected.insert(resolved);
                     }
                 }
-                resolved
-            } else {
-                (*resolution_cache.resolve_against(&base.borrow(), $reference)?).clone()
-            };
-
-            collected.insert(resolved);
+            }
         };
     }
 
     if let Some(object) = contents.as_object() {
         if object.len() < 3 {
             for (key, value) in object {
-                if key == "$ref" || key == "$schema" {
+                if key == "$ref" {
                     if let Some(reference) = value.as_str() {
-                        on_reference!(reference);
+                        on_reference!(reference, "$ref");
+                    }
+                } else if key == "$schema" {
+                    if let Some(reference) = value.as_str() {
+                        on_reference!(reference, "$schema");
                     }
                 }
             }
         } else {
-            for key in ["$ref", "$schema"] {
-                if let Some(reference) = object.get(key).and_then(Value::as_str) {
-                    on_reference!(reference);
-                }
+            if let Some(reference) = object.get("$ref").and_then(Value::as_str) {
+                on_reference!(reference, "$ref");
+            }
+            if let Some(reference) = object.get("$schema").and_then(Value::as_str) {
+                on_reference!(reference, "$schema");
             }
         }
     }
