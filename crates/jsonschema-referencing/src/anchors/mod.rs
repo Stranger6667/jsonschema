@@ -110,77 +110,100 @@ impl Anchor {
     }
 }
 
-pub(crate) fn anchor(draft: Draft, contents: &Value) -> Box<dyn Iterator<Item = Anchor> + '_> {
-    Box::new(contents.as_object().into_iter().flat_map(move |schema| {
-        let default_anchor =
-            schema
-                .get("$anchor")
-                .and_then(Value::as_str)
-                .map(|name| Anchor::Default {
-                    name: AnchorName::new(name),
-                    resource: InnerResourcePtr::new(contents, draft),
-                });
+pub(crate) enum AnchorIter {
+    Empty,
+    One(Anchor),
+    Two(Anchor, Anchor),
+}
 
-        let dynamic_anchor = schema
-            .get("$dynamicAnchor")
+impl Iterator for AnchorIter {
+    type Item = Anchor;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match std::mem::replace(self, AnchorIter::Empty) {
+            AnchorIter::Empty => None,
+            AnchorIter::One(anchor) => Some(anchor),
+            AnchorIter::Two(first, second) => {
+                *self = AnchorIter::One(second);
+                Some(first)
+            }
+        }
+    }
+}
+
+pub(crate) fn anchor(draft: Draft, contents: &Value) -> AnchorIter {
+    let Some(schema) = contents.as_object() else {
+        return AnchorIter::Empty;
+    };
+
+    // First check for top-level anchors
+    let default_anchor =
+        schema
+            .get("$anchor")
             .and_then(Value::as_str)
-            .map(|name| Anchor::Dynamic {
+            .map(|name| Anchor::Default {
                 name: AnchorName::new(name),
                 resource: InnerResourcePtr::new(contents, draft),
             });
 
-        default_anchor.into_iter().chain(dynamic_anchor)
-    }))
+    let dynamic_anchor = schema
+        .get("$dynamicAnchor")
+        .and_then(Value::as_str)
+        .map(|name| Anchor::Dynamic {
+            name: AnchorName::new(name),
+            resource: InnerResourcePtr::new(contents, draft),
+        });
+
+    match (default_anchor, dynamic_anchor) {
+        (Some(default), Some(dynamic)) => AnchorIter::Two(default, dynamic),
+        (Some(default), None) => AnchorIter::One(default),
+        (None, Some(dynamic)) => AnchorIter::One(dynamic),
+        (None, None) => AnchorIter::Empty,
+    }
 }
 
-pub(crate) fn anchor_2019(draft: Draft, contents: &Value) -> Box<dyn Iterator<Item = Anchor>> {
-    Box::new(
-        contents
-            .as_object()
-            .and_then(|schema| schema.get("$anchor"))
-            .and_then(Value::as_str)
-            .map(move |name| Anchor::Default {
-                name: AnchorName::new(name),
-                resource: InnerResourcePtr::new(contents, draft),
-            })
-            .into_iter(),
-    )
+pub(crate) fn anchor_2019(draft: Draft, contents: &Value) -> AnchorIter {
+    match contents
+        .as_object()
+        .and_then(|schema| schema.get("$anchor"))
+        .and_then(Value::as_str)
+    {
+        Some(name) => AnchorIter::One(Anchor::Default {
+            name: AnchorName::new(name),
+            resource: InnerResourcePtr::new(contents, draft),
+        }),
+        None => AnchorIter::Empty,
+    }
 }
 
-pub(crate) fn legacy_anchor_in_dollar_id(
-    draft: Draft,
-    contents: &Value,
-) -> Box<dyn Iterator<Item = Anchor>> {
-    Box::new(
-        contents
-            .as_object()
-            .and_then(|schema| schema.get("$id"))
-            .and_then(Value::as_str)
-            .and_then(|id| id.strip_prefix('#'))
-            .map(move |id| Anchor::Default {
-                name: AnchorName::new(id),
-                resource: InnerResourcePtr::new(contents, draft),
-            })
-            .into_iter(),
-    )
+pub(crate) fn legacy_anchor_in_dollar_id(draft: Draft, contents: &Value) -> AnchorIter {
+    match contents
+        .as_object()
+        .and_then(|schema| schema.get("$id"))
+        .and_then(Value::as_str)
+        .and_then(|id| id.strip_prefix('#'))
+    {
+        Some(id) => AnchorIter::One(Anchor::Default {
+            name: AnchorName::new(id),
+            resource: InnerResourcePtr::new(contents, draft),
+        }),
+        None => AnchorIter::Empty,
+    }
 }
 
-pub(crate) fn legacy_anchor_in_id<'a>(
-    draft: Draft,
-    contents: &'a Value,
-) -> Box<dyn Iterator<Item = Anchor> + 'a> {
-    Box::new(
-        contents
-            .as_object()
-            .and_then(|schema| schema.get("id"))
-            .and_then(Value::as_str)
-            .and_then(|id| id.strip_prefix('#'))
-            .map(move |id| Anchor::Default {
-                name: AnchorName::new(id),
-                resource: InnerResourcePtr::new(contents, draft),
-            })
-            .into_iter(),
-    )
+pub(crate) fn legacy_anchor_in_id(draft: Draft, contents: &Value) -> AnchorIter {
+    match contents
+        .as_object()
+        .and_then(|schema| schema.get("id"))
+        .and_then(Value::as_str)
+        .and_then(|id| id.strip_prefix('#'))
+    {
+        Some(id) => AnchorIter::One(Anchor::Default {
+            name: AnchorName::new(id),
+            resource: InnerResourcePtr::new(contents, draft),
+        }),
+        None => AnchorIter::Empty,
+    }
 }
 
 #[cfg(test)]

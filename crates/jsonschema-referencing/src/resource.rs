@@ -146,22 +146,13 @@ impl InnerResourcePtr {
         unsafe { &*self.contents.load(Ordering::Relaxed) }
     }
 
+    #[inline]
     pub(crate) fn draft(&self) -> Draft {
         self.draft
     }
 
     pub(crate) fn anchors(&self) -> impl Iterator<Item = Anchor> + '_ {
         self.draft().anchors(self.contents())
-    }
-
-    pub(crate) fn subresources(
-        &self,
-    ) -> Box<dyn Iterator<Item = Result<InnerResourcePtr, Error>> + '_> {
-        Box::new(
-            self.draft
-                .subresources_of(self.contents())
-                .map(|contents| Ok(InnerResourcePtr::new(contents, self.draft))),
-        )
     }
 
     pub(crate) fn pointer<'r>(

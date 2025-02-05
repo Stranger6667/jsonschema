@@ -376,8 +376,8 @@ fn process_meta_schemas(
         }
 
         // Process subresources
-        for subresource in resource.subresources() {
-            let subresource = subresource?;
+        for contents in resource.draft().subresources_of(resource.contents()) {
+            let subresource = InnerResourcePtr::new(contents, resource.draft());
             queue.push_back((base.clone(), subresource));
         }
         if resource.id().is_some() {
@@ -459,8 +459,8 @@ fn process_resources(
             )?;
 
             // Process subresources
-            for subresource in resource.subresources() {
-                let subresource = subresource?;
+            for contents in resource.draft().subresources_of(resource.contents()) {
+                let subresource = InnerResourcePtr::new(contents, resource.draft());
                 if let Some(sub_id) = subresource.id() {
                     let base = resolution_cache.resolve_against(&base.borrow(), sub_id)?;
                     collect_external_resources(

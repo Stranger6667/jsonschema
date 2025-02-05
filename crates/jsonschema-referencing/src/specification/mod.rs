@@ -83,7 +83,7 @@ impl Draft {
             Draft::Draft202012 => subresources::subresources_of(contents),
         }
     }
-    pub(crate) fn anchors<'a>(self, contents: &'a Value) -> Box<dyn Iterator<Item = Anchor> + 'a> {
+    pub(crate) fn anchors(self, contents: &Value) -> impl Iterator<Item = Anchor> {
         match self {
             Draft::Draft4 => anchors::legacy_anchor_in_id(self, contents),
             Draft::Draft6 | Draft::Draft7 => anchors::legacy_anchor_in_dollar_id(self, contents),
