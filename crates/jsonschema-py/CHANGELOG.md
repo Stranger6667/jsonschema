@@ -5,6 +5,8 @@
 ### Performance
 
 - Significantly improved validator compilation speed by using pointer-based references to schema fragments instead of cloning them during traversal.
+- Faster anchors & sub-resources lookups during validator compilation.
+- Faster pointer resolution.
 
 ## [0.28.3] - 2025-01-24
 

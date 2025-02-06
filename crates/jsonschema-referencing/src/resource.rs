@@ -194,7 +194,7 @@ impl InnerResourcePtr {
                 &InnerResourcePtr::new(contents, self.draft()),
             )?;
             if new_resolver != *last {
-                segments = Segments::new();
+                segments.clear();
             }
             resolver = new_resolver;
         }
