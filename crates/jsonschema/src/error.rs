@@ -195,7 +195,7 @@ impl<'a> ValidationError<'a> {
     /// Converts the `ValidationError` into an owned version with `'static` lifetime.
     pub fn to_owned(self) -> ValidationError<'static> {
         ValidationError {
-            instance_path: self.instance_path.clone(),
+            instance_path: self.instance_path,
             instance: Cow::Owned(self.instance.into_owned()),
             kind: self.kind,
             schema_path: self.schema_path,
