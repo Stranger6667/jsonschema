@@ -32,19 +32,26 @@ fn bench_pointers(c: &mut Criterion) {
     let registry = Registry::try_new("http://example.com/schema.json", resource)
         .expect("Invalid registry input");
 
+    let cases = [
+        ("single", "#/properties"),
+        ("double", "#/properties/level_0"),
+        ("long", "#/properties/level_0/level_1/level_2/level_3/level_4/level_5/level_6/level_7/level_8/level_9/level_10/level_11/level_12/level_13/level_14/array/1"),
+    ];
+
     let mut group = c.benchmark_group("JSON Pointer");
 
-    let pointer = "#/properties/level_0/level_1/level_2/level_3/level_4/level_5/level_6/level_7/level_8/level_9/level_10/level_11/level_12/level_13/level_14/array/1";
-    group.bench_with_input(
-        BenchmarkId::new("pointer", "long"),
-        &registry,
-        |b, registry| {
-            let resolver = registry
-                .try_resolver("http://example.com/schema.json")
-                .expect("Invalid base URI");
-            b.iter_with_large_drop(|| resolver.lookup(black_box(pointer)));
-        },
-    );
+    for (name, pointer) in cases {
+        group.bench_with_input(
+            BenchmarkId::new("pointer", name),
+            &registry,
+            |b, registry| {
+                let resolver = registry
+                    .try_resolver("http://example.com/schema.json")
+                    .expect("Invalid base URI");
+                b.iter_with_large_drop(|| resolver.lookup(black_box(pointer)));
+            },
+        );
+    }
 
     group.finish();
 }
