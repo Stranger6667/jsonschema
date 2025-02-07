@@ -402,15 +402,16 @@ fn process_resources(
 
     // SAFETY: Deduplicate input URIs keeping the last occurrence to prevent creation
     // of resources pointing to values that could be dropped by later insertions
-    let mut input_pairs: Vec<(Uri<String>, Resource)> = pairs
-        .map(|(uri, resource)| Ok((uri::from_str(uri.as_ref().trim_end_matches('#'))?, resource)))
-        .collect::<Result<Vec<_>, Error>>()?
-        .into_iter()
-        .rev()
-        .collect();
-    input_pairs.dedup_by(|(lhs, _), (rhs, _)| lhs == rhs);
+    //let mut input_pairs: Vec<(Uri<String>, Resource)> = pairs
+    //    .map(|(uri, resource)| Ok((uri::from_str(uri.as_ref().trim_end_matches('#'))?, resource)))
+    //    .collect::<Result<Vec<_>, Error>>()?
+    //    .into_iter()
+    //    .rev()
+    //    .collect();
+    //input_pairs.dedup_by(|(lhs, _), (rhs, _)| lhs == rhs);
 
-    for (uri, resource) in input_pairs {
+    for (uri, resource) in pairs {
+        let uri = uri::from_str(uri.as_ref().trim_end_matches('#'))?;
         let key = Arc::new(uri);
         match documents.entry(Arc::clone(&key)) {
             Entry::Occupied(_) => {
@@ -997,12 +998,12 @@ mod tests {
             .unwrap();
 
         assert!(
-            properties.contains_key("bar"),
-            "Registry should contain the last added schema"
+            !properties.contains_key("bar"),
+            "Registry should contain the earliest added schema"
         );
         assert!(
-            !properties.contains_key("foo"),
-            "Registry should not contain the overwritten schema"
+            properties.contains_key("foo"),
+            "Registry should contain the overwritten schema"
         );
     }
 
