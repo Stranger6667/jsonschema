@@ -516,7 +516,9 @@ pub use error::{ErrorIterator, MaskedValidationError, ValidationError};
 pub use keywords::custom::Keyword;
 pub use options::ValidationOptions;
 pub use output::BasicOutput;
-pub use referencing::{Draft, Error as ReferencingError, Registry, Resource, Retrieve, Uri};
+pub use referencing::{
+    Draft, Error as ReferencingError, Registry, RegistryOptions, Resource, Retrieve, Uri,
+};
 pub use validator::Validator;
 
 use serde_json::Value;

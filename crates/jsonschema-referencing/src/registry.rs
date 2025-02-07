@@ -65,7 +65,6 @@ pub static SPECIFICATIONS: Lazy<Registry> = Lazy::new(|| {
 /// discoverable and retrievable via their own IDs.
 #[derive(Debug)]
 pub struct Registry {
-    // Pinned storage for primary documents
     documents: DocumentStore,
     pub(crate) resources: ResourceMap,
     anchors: AHashMap<AnchorKey, Anchor>,
@@ -399,16 +398,6 @@ fn process_resources(
     let mut external = AHashSet::new();
     let mut scratch = String::new();
     let mut refers_metaschemas = false;
-
-    // SAFETY: Deduplicate input URIs keeping the last occurrence to prevent creation
-    // of resources pointing to values that could be dropped by later insertions
-    //let mut input_pairs: Vec<(Uri<String>, Resource)> = pairs
-    //    .map(|(uri, resource)| Ok((uri::from_str(uri.as_ref().trim_end_matches('#'))?, resource)))
-    //    .collect::<Result<Vec<_>, Error>>()?
-    //    .into_iter()
-    //    .rev()
-    //    .collect();
-    //input_pairs.dedup_by(|(lhs, _), (rhs, _)| lhs == rhs);
 
     for (uri, resource) in pairs {
         let uri = uri::from_str(uri.as_ref().trim_end_matches('#'))?;

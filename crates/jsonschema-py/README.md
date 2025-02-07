@@ -230,6 +230,61 @@ validator.is_valid({
 })  # False
 ```
 
+## Schema Registry
+
+For applications that frequently use the same schemas, you can create a registry to store and reference them efficiently:
+
+```python
+import jsonschema_rs
+
+# Create a registry with schemas
+registry = jsonschema_rs.Registry([
+    ("https://example.com/address.json", {
+        "type": "object",
+        "properties": {
+            "street": {"type": "string"},
+            "city": {"type": "string"}
+        }
+    }),
+    ("https://example.com/person.json", {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "address": {"$ref": "https://example.com/address.json"}
+        }
+    })
+])
+
+# Use the registry with any validator
+validator = jsonschema_rs.validator_for(
+    {"$ref": "https://example.com/person.json"},
+    registry=registry
+)
+
+# Validate instances
+assert validator.is_valid({
+    "name": "John",
+    "address": {"street": "Main St", "city": "Boston"}
+})
+```
+
+The registry can be configured with a draft version and a retriever for external references:
+
+```python
+import jsonschema_rs
+
+registry = jsonschema_rs.Registry(
+    resources=[
+        (
+            "https://example.com/address.json",
+            {}
+        )
+    ],  # Your schemas
+    draft=jsonschema_rs.Draft202012,  # Optional
+    retriever=lambda uri: {}  # Optional
+)
+```
+
 ## Error Handling
 
 `jsonschema-rs` provides detailed validation errors through the `ValidationError` class, which includes both basic error information and specific details about what caused the validation to fail:

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `Registry` class for schema reuse and reference resolution.
+
 ### Performance
 
 - Significantly improved validator compilation speed by using pointer-based references to schema fragments instead of cloning them during traversal.
