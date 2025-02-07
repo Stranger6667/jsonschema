@@ -2,8 +2,39 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- All builder methods on `ValidationOptions` now take ownership of `self` instead of `&mut self`.
+  This change enables better support for non-blocking retrieval of external resources during the process of building a validator.
+  Update your code to chain the builder methods instead of reusing the options instance:
+
+  ```rust
+  // Before (0.28.x)
+  let mut options = jsonschema::options();
+  options.with_draft(Draft::Draft202012);
+  options.with_format("custom", my_format);
+  let validator = options.build(&schema)?;
+
+  // After (0.29.0)
+  let validator = jsonschema::options()
+      .with_draft(Draft::Draft202012)
+      .with_format("custom", my_format)
+      .build(&schema)?;
+
+- The `Retrieve` trait's `retrieve` method now accepts URI references as `&Uri<String>` instead of `&Uri<&str>`.
+  This aligns with the async version and simplifies internal URI handling. The behavior and available methods remain the same, this is purely a type-level change.
+
+  ```rust
+  // Before
+  fn retrieve(&self, uri: &Uri<&str>) -> Result<Value, Box<dyn std::error::Error + Send + Sync>>
+
+  // After
+  fn retrieve(&self, uri: &Uri<String>) -> Result<Value, Box<dyn std::error::Error + Send + Sync>>
+  ```
+
 ### Added
 
+- Support non-blocking retrieval for external resources during schema resolution via the new `resolve-async` feature. [#385](https://github.com/Stranger6667/jsonschema/issues/385)
 - Re-export `referencing::Registry` as `jsonschema::Registry`.
 - `ValidationOptions::with_registry` that allows for providing a predefined `referencing::Registry`. [#682](https://github.com/Stranger6667/jsonschema/issues/682)
 

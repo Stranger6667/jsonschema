@@ -419,13 +419,13 @@ fn make_options(
 ) -> PyResult<jsonschema::ValidationOptions> {
     let mut options = jsonschema::options();
     if let Some(raw_draft_version) = draft {
-        options.with_draft(get_draft(raw_draft_version)?);
+        options = options.with_draft(get_draft(raw_draft_version)?);
     }
     if let Some(yes) = validate_formats {
-        options.should_validate_formats(yes);
+        options = options.should_validate_formats(yes);
     }
     if let Some(yes) = ignore_unknown_formats {
-        options.should_ignore_unknown_formats(yes);
+        options = options.should_ignore_unknown_formats(yes);
     }
     if let Some(formats) = formats {
         for (name, callback) in formats.iter() {
@@ -442,9 +442,10 @@ fn make_options(
                     callback.call(py, (value,), None)?.is_truthy(py)
                 })
             };
-            options.with_format(
-                name.to_string(),
-                move |value: &str| match call_py_callback(value) {
+            options =
+                options.with_format(name.to_string(), move |value: &str| match call_py_callback(
+                    value,
+                ) {
                     Ok(r) => r,
                     Err(e) => {
                         LAST_FORMAT_ERROR.with(|last| {
@@ -454,16 +455,15 @@ fn make_options(
                         // Should be caught
                         panic!("Format checker failed")
                     }
-                },
-            );
+                });
         }
     }
     if let Some(retriever) = retriever {
         let func = into_retriever(retriever)?;
-        options.with_retriever(Retriever { func });
+        options = options.with_retriever(Retriever { func });
     }
     if let Some(registry) = registry {
-        options.with_registry(registry.inner.clone());
+        options = options.with_registry(registry.inner.clone());
     }
     Ok(options)
 }

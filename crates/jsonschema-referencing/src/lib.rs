@@ -27,3 +27,6 @@ pub use retriever::{DefaultRetriever, Retrieve};
 pub(crate) use segments::Segments;
 pub use specification::Draft;
 pub use vocabularies::{Vocabulary, VocabularySet};
+
+#[cfg(feature = "retrieve-async")]
+pub use retriever::AsyncRetrieve;

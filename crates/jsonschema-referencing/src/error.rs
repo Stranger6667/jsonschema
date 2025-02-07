@@ -153,6 +153,7 @@ impl std::error::Error for Error {
     }
 }
 
+/// Errors that can occur during URI handling.
 #[derive(Debug)]
 pub enum UriError {
     Parse {

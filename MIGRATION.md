@@ -1,5 +1,43 @@
 # Migration Guide
 
+## Upgrading from 0.28.x to 0.29.0
+
+The builder methods on `ValidationOptions` now take ownership of `self`. Change your code to use method chaining instead of reusing the options instance:
+
+```rust
+// Old (0.28.x)
+let mut options = jsonschema::options();
+options.with_draft(Draft::Draft202012);
+options.with_format("custom", |s| s.len() > 3);
+let validator = options.build(&schema)?;
+
+// New (0.29.0)
+let validator = jsonschema::options()
+    .with_draft(Draft::Draft202012)
+    .with_format("custom", |s| s.len() > 3)
+    .build(&schema)?;
+```
+
+If you implement the `Retrieve` trait, update the `uri` parameter type in the `retrieve` method:
+
+```rust
+// Old (0.28.x)
+impl Retrieve for MyRetriever {
+    fn retrieve(&self, uri: &Uri<&str>) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        // ...
+    }
+}
+
+// New (0.29.0)
+impl Retrieve for MyRetriever {
+    fn retrieve(&self, uri: &Uri<String>) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        // ...
+    }
+}
+```
+
+This is a type-level change only; the behavior and available methods remain the same.
+
 ## Upgrading from 0.25.x to 0.26.0
 
 The `Validator::validate` method now returns `Result<(), ValidationError<'i>>` instead of an error iterator. If you need to iterate over all validation errors, use the new `Validator::iter_errors` method.

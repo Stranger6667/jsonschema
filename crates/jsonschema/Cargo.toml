@@ -16,6 +16,7 @@ default = ["resolve-http", "resolve-file"]
 
 resolve-http = ["reqwest"]
 resolve-file = []
+resolve-async = ["referencing/retrieve-async", "reqwest/default", "dep:async-trait", "dep:tokio"]
 
 [dependencies]
 ahash.workspace = true
@@ -41,12 +42,16 @@ serde.workspace = true
 serde_json.workspace = true
 uuid-simd = "0.8"
 
+tokio = { version = "1.0", features = ["fs", "rt"], optional = true }
+async-trait = { version = "0.1.86", optional = true }
+
 [dev-dependencies]
 benchmark = { path = "../benchmark/" }
 codspeed-criterion-compat = { version = "2.7", default-features = false }
 criterion = { version = "0.5", default-features = false }
 testsuite = { package = "jsonschema-testsuite", path = "../jsonschema-testsuite" }
 test-case = "3"
+tokio = { version = "1", features = ["macros", "rt"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 mockito = "1.5"

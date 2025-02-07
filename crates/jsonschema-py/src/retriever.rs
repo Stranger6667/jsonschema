@@ -10,7 +10,10 @@ pub(crate) struct Retriever<T: Fn(&str) -> PyResult<Value>> {
 }
 
 impl<T: Send + Sync + Fn(&str) -> PyResult<Value>> Retrieve for Retriever<T> {
-    fn retrieve(&self, uri: &Uri<&str>) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+    fn retrieve(
+        &self,
+        uri: &Uri<String>,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         Ok((self.func)(uri.as_str())?)
     }
 }

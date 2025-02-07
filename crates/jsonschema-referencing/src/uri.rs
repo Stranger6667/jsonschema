@@ -1,3 +1,4 @@
+//! URI handling utilities for JSON Schema references.
 use fluent_uri::{
     encoding::{encoder::Fragment, EStr, Encoder},
     Uri, UriRef,

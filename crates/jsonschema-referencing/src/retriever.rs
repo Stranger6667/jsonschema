@@ -16,11 +16,16 @@ pub trait Retrieve: Send + Sync {
     ///
     /// # Errors
     ///
-    /// If the resource couldn't be retrieved or an error occurred.
-    fn retrieve(&self, uri: &Uri<&str>) -> Result<Value, Box<dyn std::error::Error + Send + Sync>>;
+    /// This method can fail for various reasons:
+    /// - Resource not found
+    /// - Network errors (for remote resources)
+    /// - Permission errors
+    fn retrieve(
+        &self,
+        uri: &Uri<String>,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>>;
 }
 
-/// A retriever that always fails, used as a default when external resource fetching is not needed.
 #[derive(Debug, Clone)]
 struct DefaultRetrieverError;
 
@@ -32,11 +37,46 @@ impl fmt::Display for DefaultRetrieverError {
 
 impl std::error::Error for DefaultRetrieverError {}
 
+/// A retriever that always fails, used as a default when external resource fetching is not needed.
 #[derive(Debug, PartialEq, Eq)]
 pub struct DefaultRetriever;
 
 impl Retrieve for DefaultRetriever {
-    fn retrieve(&self, _: &Uri<&str>) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+    fn retrieve(&self, _: &Uri<String>) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        Err(Box::new(DefaultRetrieverError))
+    }
+}
+
+#[cfg(feature = "retrieve-async")]
+#[async_trait::async_trait]
+pub trait AsyncRetrieve: Send + Sync {
+    /// Asynchronously retrieve a resource from the given URI.
+    ///
+    /// This is the non-blocking equivalent of [`Retrieve::retrieve`].
+    ///
+    /// # Arguments
+    ///
+    /// * `uri` - The URI of the resource to retrieve.
+    ///
+    /// # Errors
+    ///
+    /// This method can fail for various reasons:
+    /// - Resource not found
+    /// - Network errors (for remote resources)
+    /// - Permission errors
+    async fn retrieve(
+        &self,
+        uri: &Uri<String>,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>>;
+}
+
+#[cfg(feature = "retrieve-async")]
+#[async_trait::async_trait]
+impl AsyncRetrieve for DefaultRetriever {
+    async fn retrieve(
+        &self,
+        _: &Uri<String>,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         Err(Box::new(DefaultRetrieverError))
     }
 }

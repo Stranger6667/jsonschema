@@ -17,13 +17,13 @@ use std::{fmt, sync::Arc};
 
 /// Configuration options for JSON Schema validation.
 #[derive(Clone)]
-pub struct ValidationOptions {
+pub struct ValidationOptions<R = Arc<dyn Retrieve>> {
     pub(crate) draft: Option<Draft>,
     content_media_type_checks: AHashMap<&'static str, Option<ContentMediaTypeCheckType>>,
     content_encoding_checks_and_converters:
         AHashMap<&'static str, Option<(ContentEncodingCheckType, ContentEncodingConverterType)>>,
     /// Retriever for external resources
-    pub(crate) retriever: Arc<dyn Retrieve>,
+    pub(crate) retriever: R,
     /// Additional resources that should be addressable during validation.
     pub(crate) resources: AHashMap<String, Resource>,
     pub(crate) registry: Option<referencing::Registry>,
@@ -34,7 +34,7 @@ pub struct ValidationOptions {
     keywords: AHashMap<String, Arc<dyn KeywordFactory>>,
 }
 
-impl Default for ValidationOptions {
+impl Default for ValidationOptions<Arc<dyn Retrieve>> {
     fn default() -> Self {
         ValidationOptions {
             draft: None,
@@ -52,53 +52,29 @@ impl Default for ValidationOptions {
     }
 }
 
-impl ValidationOptions {
+#[cfg(feature = "resolve-async")]
+impl Default for ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
+    fn default() -> Self {
+        ValidationOptions {
+            draft: None,
+            content_media_type_checks: AHashMap::default(),
+            content_encoding_checks_and_converters: AHashMap::default(),
+            retriever: Arc::new(DefaultRetriever),
+            resources: AHashMap::default(),
+            registry: None,
+            formats: AHashMap::default(),
+            validate_formats: None,
+            validate_schema: true,
+            ignore_unknown_formats: true,
+            keywords: AHashMap::default(),
+        }
+    }
+}
+
+impl<R> ValidationOptions<R> {
     /// Return the draft version, or the default if not set.
     pub(crate) fn draft(&self) -> Draft {
         self.draft.unwrap_or_default()
-    }
-    pub(crate) fn draft_for(&self, contents: &Value) -> Result<Draft, ValidationError<'static>> {
-        // Preference:
-        //  - Explicitly set
-        //  - Autodetected
-        //  - Default
-        if let Some(draft) = self.draft {
-            Ok(draft)
-        } else {
-            let default = Draft::default();
-            match default.detect(contents) {
-                Ok(draft) => Ok(draft),
-                Err(referencing::Error::UnknownSpecification { specification }) => {
-                    // Try to retrieve the specification and detect its draft
-                    if let Ok(Ok(retrieved)) = uri::from_str(&specification)
-                        .map(|uri| self.retriever.retrieve(&uri.borrow()))
-                    {
-                        Ok(default.detect(&retrieved)?)
-                    } else {
-                        Err(referencing::Error::UnknownSpecification { specification }.into())
-                    }
-                }
-                Err(error) => Err(error.into()),
-            }
-        }
-    }
-    /// Build a JSON Schema validator using the current options.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use serde_json::json;
-    ///
-    /// let schema = json!({"type": "string"});
-    /// let validator = jsonschema::options()
-    ///     .build(&schema)
-    ///     .expect("A valid schema");
-    ///
-    /// assert!(validator.is_valid(&json!("Hello")));
-    /// assert!(!validator.is_valid(&json!(42)));
-    /// ```
-    pub fn build(&self, schema: &Value) -> Result<Validator, ValidationError<'static>> {
-        compiler::build_validator(self.clone(), schema)
     }
     /// Sets the JSON Schema draft version.
     ///
@@ -109,7 +85,7 @@ impl ValidationOptions {
     ///     .with_draft(Draft::Draft4);
     /// ```
     #[inline]
-    pub fn with_draft(&mut self, draft: Draft) -> &mut Self {
+    pub fn with_draft(mut self, draft: Draft) -> Self {
         self.draft = Some(draft);
         self
     }
@@ -137,21 +113,16 @@ impl ValidationOptions {
     ///     .with_content_media_type("application/custom", check_custom_media_type);
     /// ```
     pub fn with_content_media_type(
-        &mut self,
+        mut self,
         media_type: &'static str,
         media_type_check: ContentMediaTypeCheckType,
-    ) -> &mut Self {
+    ) -> Self {
         self.content_media_type_checks
             .insert(media_type, Some(media_type_check));
         self
     }
-    /// Set a retriever to fetch external resources.
-    pub fn with_retriever(&mut self, retriever: impl Retrieve + 'static) -> &mut Self {
-        self.retriever = Arc::new(retriever);
-        self
-    }
     /// Remove support for a specific content media type validation.
-    pub fn without_content_media_type_support(&mut self, media_type: &'static str) -> &mut Self {
+    pub fn without_content_media_type_support(mut self, media_type: &'static str) -> Self {
         self.content_media_type_checks.insert(media_type, None);
         self
     }
@@ -226,11 +197,11 @@ impl ValidationOptions {
     ///     .with_content_encoding("custom", check, convert);
     /// ```
     pub fn with_content_encoding(
-        &mut self,
+        mut self,
         encoding: &'static str,
         check: ContentEncodingCheckType,
         converter: ContentEncodingConverterType,
-    ) -> &mut Self {
+    ) -> Self {
         self.content_encoding_checks_and_converters
             .insert(encoding, Some((check, converter)));
         self
@@ -243,10 +214,7 @@ impl ValidationOptions {
     /// let options = jsonschema::options()
     ///     .without_content_encoding_support("base64");
     /// ```
-    pub fn without_content_encoding_support(
-        &mut self,
-        content_encoding: &'static str,
-    ) -> &mut Self {
+    pub fn without_content_encoding_support(mut self, content_encoding: &'static str) -> Self {
         self.content_encoding_checks_and_converters
             .insert(content_encoding, None);
         self
@@ -272,7 +240,7 @@ impl ValidationOptions {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn with_resource(&mut self, uri: impl Into<String>, resource: Resource) -> &mut Self {
+    pub fn with_resource(mut self, uri: impl Into<String>, resource: Resource) -> Self {
         self.resources.insert(uri.into(), resource);
         self
     }
@@ -305,9 +273,9 @@ impl ValidationOptions {
     /// # }
     /// ```
     pub fn with_resources(
-        &mut self,
+        mut self,
         pairs: impl Iterator<Item = (impl Into<String>, Resource)>,
-    ) -> &mut Self {
+    ) -> Self {
         for (uri, resource) in pairs {
             self.resources.insert(uri.into(), resource);
         }
@@ -341,7 +309,7 @@ impl ValidationOptions {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn with_registry(&mut self, registry: referencing::Registry) -> &mut Self {
+    pub fn with_registry(mut self, registry: referencing::Registry) -> Self {
         self.registry = Some(registry);
         self
     }
@@ -366,7 +334,7 @@ impl ValidationOptions {
     /// assert!(validator.is_valid(&json!("foo42!")));
     /// # }
     /// ```
-    pub fn with_format<N, F>(&mut self, name: N, format: F) -> &mut Self
+    pub fn with_format<N, F>(mut self, name: N, format: F) -> Self
     where
         N: Into<String>,
         F: Fn(&str) -> bool + Send + Sync + 'static,
@@ -382,7 +350,7 @@ impl ValidationOptions {
     /// Used internally to prevent infinite recursion when validating meta-schemas.
     /// **Note**: Manually-crafted `ValidationError`s may still occur during compilation.
     #[inline]
-    pub(crate) fn without_schema_validation(&mut self) -> &mut Self {
+    pub(crate) fn without_schema_validation(mut self) -> Self {
         self.validate_schema = false;
         self
     }
@@ -391,7 +359,7 @@ impl ValidationOptions {
     /// Default behavior depends on the draft version. This method overrides
     /// the default, enabling or disabling format validation regardless of draft.
     #[inline]
-    pub fn should_validate_formats(&mut self, yes: bool) -> &mut Self {
+    pub fn should_validate_formats(mut self, yes: bool) -> Self {
         self.validate_formats = Some(yes);
         self
     }
@@ -402,7 +370,7 @@ impl ValidationOptions {
     ///
     /// By default, unknown formats are silently ignored. Set to `false` to report
     /// unrecognized formats as validation errors.
-    pub fn should_ignore_unknown_formats(&mut self, yes: bool) -> &mut Self {
+    pub fn should_ignore_unknown_formats(mut self, yes: bool) -> Self {
         self.ignore_unknown_formats = yes;
         self
     }
@@ -465,7 +433,7 @@ impl ValidationOptions {
     ///
     /// assert!(validator.is_valid(&json!({ "a": "b"})));
     /// ```
-    pub fn with_keyword<N, F>(&mut self, name: N, factory: F) -> &mut Self
+    pub fn with_keyword<N, F>(mut self, name: N, factory: F) -> Self
     where
         N: Into<String>,
         F: for<'a> Fn(
@@ -483,6 +451,128 @@ impl ValidationOptions {
 
     pub(crate) fn get_keyword_factory(&self, name: &str) -> Option<&Arc<dyn KeywordFactory>> {
         self.keywords.get(name)
+    }
+}
+
+impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
+    /// Build a JSON Schema validator using the current options.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use serde_json::json;
+    ///
+    /// let schema = json!({"type": "string"});
+    /// let validator = jsonschema::options()
+    ///     .build(&schema)
+    ///     .expect("A valid schema");
+    ///
+    /// assert!(validator.is_valid(&json!("Hello")));
+    /// assert!(!validator.is_valid(&json!(42)));
+    /// ```
+    pub fn build(&self, schema: &Value) -> Result<Validator, ValidationError<'static>> {
+        compiler::build_validator(self.clone(), schema)
+    }
+    pub(crate) fn draft_for(&self, contents: &Value) -> Result<Draft, ValidationError<'static>> {
+        // Preference:
+        //  - Explicitly set
+        //  - Autodetected
+        //  - Default
+        if let Some(draft) = self.draft {
+            Ok(draft)
+        } else {
+            let default = Draft::default();
+            match default.detect(contents) {
+                Ok(draft) => Ok(draft),
+                Err(referencing::Error::UnknownSpecification { specification }) => {
+                    // Try to retrieve the specification and detect its draft
+                    if let Ok(Ok(retrieved)) =
+                        uri::from_str(&specification).map(|uri| self.retriever.retrieve(&uri))
+                    {
+                        Ok(default.detect(&retrieved)?)
+                    } else {
+                        Err(referencing::Error::UnknownSpecification { specification }.into())
+                    }
+                }
+                Err(error) => Err(error.into()),
+            }
+        }
+    }
+    /// Set a retriever to fetch external resources.
+    pub fn with_retriever(mut self, retriever: impl Retrieve + 'static) -> Self {
+        self.retriever = Arc::new(retriever);
+        self
+    }
+}
+
+#[cfg(feature = "resolve-async")]
+impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
+    pub async fn build(&self, schema: &Value) -> Result<Validator, ValidationError<'static>> {
+        compiler::build_validator_async(self.clone(), schema).await
+    }
+    pub fn with_retriever(
+        self,
+        retriever: impl referencing::AsyncRetrieve + 'static,
+    ) -> ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
+        ValidationOptions {
+            draft: self.draft,
+            retriever: Arc::new(retriever),
+            content_media_type_checks: self.content_media_type_checks,
+            content_encoding_checks_and_converters: self.content_encoding_checks_and_converters,
+            resources: self.resources,
+            registry: self.registry,
+            formats: self.formats,
+            validate_formats: self.validate_formats,
+            validate_schema: self.validate_schema,
+            ignore_unknown_formats: self.ignore_unknown_formats,
+            keywords: self.keywords,
+        }
+    }
+    pub(crate) async fn draft_for(
+        &self,
+        contents: &Value,
+    ) -> Result<Draft, ValidationError<'static>> {
+        // Preference:
+        //  - Explicitly set
+        //  - Autodetected
+        //  - Default
+        if let Some(draft) = self.draft {
+            Ok(draft)
+        } else {
+            let default = Draft::default();
+            match default.detect(contents) {
+                Ok(draft) => Ok(draft),
+                Err(referencing::Error::UnknownSpecification { specification }) => {
+                    // Try to retrieve the specification and detect its draft
+                    if let Ok(uri) = uri::from_str(&specification) {
+                        if let Ok(retrieved) = self.retriever.retrieve(&uri).await {
+                            return Ok(default.detect(&retrieved)?);
+                        }
+                    }
+                    Err(referencing::Error::UnknownSpecification { specification }.into())
+                }
+                Err(error) => Err(error.into()),
+            }
+        }
+    }
+    /// Set a retriever to fetch external resources.
+    pub(crate) fn with_blocking_retriever(
+        self,
+        retriever: impl Retrieve + 'static,
+    ) -> ValidationOptions<Arc<dyn Retrieve>> {
+        ValidationOptions {
+            draft: self.draft,
+            retriever: Arc::new(retriever),
+            content_media_type_checks: self.content_media_type_checks,
+            content_encoding_checks_and_converters: self.content_encoding_checks_and_converters,
+            resources: self.resources,
+            registry: self.registry,
+            formats: self.formats,
+            validate_formats: self.validate_formats,
+            validate_schema: self.validate_schema,
+            ignore_unknown_formats: self.ignore_unknown_formats,
+            keywords: self.keywords,
+        }
     }
 }
 

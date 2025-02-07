@@ -454,7 +454,7 @@ mod tests {
         impl Retrieve for MyRetrieve {
             fn retrieve(
                 &self,
-                uri: &Uri<&str>,
+                uri: &Uri<String>,
             ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
                 match uri.path().as_str() {
                     "/indirection" => Ok(json!({
@@ -494,7 +494,7 @@ mod tests {
     impl Retrieve for TestRetrieve {
         fn retrieve(
             &self,
-            uri: &Uri<&str>,
+            uri: &Uri<String>,
         ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
             self.storage
                 .get(uri.path().as_str())
@@ -628,7 +628,7 @@ mod tests {
         impl Retrieve for NestedRetrieve {
             fn retrieve(
                 &self,
-                uri: &Uri<&str>,
+                uri: &Uri<String>,
             ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
                 match uri.as_str() {
                     "foo://schema_2.json" => Ok(json!({
@@ -664,7 +664,7 @@ mod tests {
         impl Retrieve for FragmentRetrieve {
             fn retrieve(
                 &self,
-                uri: &Uri<&str>,
+                uri: &Uri<String>,
             ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
                 match uri.path().as_str() {
                     "/tmp/schemas/one.json" => Ok(json!({

@@ -2,7 +2,7 @@
 //!
 //! - 📚 Support for popular JSON Schema drafts
 //! - 🔧 Custom keywords and format validators
-//! - 🌐 Remote reference fetching (network/file)
+//! - 🌐 Blocking & non-blocking remote reference fetching (network/file)
 //! - 🎨 `Basic` output style as per JSON Schema spec
 //! - ✨ Meta-schema validation for schema documents
 //! - 🚀 WebAssembly support
@@ -20,6 +20,8 @@
 //! # Validation
 //!
 //! The `jsonschema` crate offers two main approaches to validation: one-off validation and reusable validators.
+//! When external references are involved, the validator can be constructed using either blocking or non-blocking I/O.
+//!
 //!
 //! For simple use cases where you need to validate an instance against a schema once, use [`is_valid`] or [`validate`] functions:
 //!
@@ -34,14 +36,24 @@
 //! ```
 //!
 //! For better performance, especially when validating multiple instances against the same schema, build a validator once and reuse it:
+//! If your schema contains external references, you can choose between blocking and non-blocking construction:
 //!
 //! ```rust
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use serde_json::json;
 //!
 //! let schema = json!({"type": "string"});
+//! // Blocking construction - will fetch external references synchronously
 //! let validator = jsonschema::validator_for(&schema)?;
+//! // Non-blocking construction - will fetch external references asynchronously
+//! # #[cfg(feature = "resolve-async")]
+//! # async fn async_example() -> Result<(), Box<dyn std::error::Error>> {
+//! # let schema = json!({"type": "string"});
+//! let validator = jsonschema::async_validator_for(&schema).await?;
+//! # Ok(())
+//! # }
 //!
+//!  // Once constructed, validation is always synchronous as it works with in-memory data
 //! assert!(validator.is_valid(&json!("Hello, world!")));
 //! assert!(!validator.is_valid(&json!(42)));
 //! assert!(validator.validate(&json!(42)).is_err());
@@ -196,6 +208,27 @@
 //! # External References
 //!
 //! By default, `jsonschema` resolves HTTP references using `reqwest` and file references from the local file system.
+//! Both blocking and non-blocking retrieval is supported during validator construction. Note that the validation
+//! itself is always synchronous as it operates on in-memory data only.
+//!
+//! ```rust
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! use serde_json::json;
+//!
+//! let schema = json!({"$schema": "http://json-schema.org/draft-07/schema#", "type": "string"});
+//!
+//! // Building a validator with blocking retrieval (default)
+//! let validator = jsonschema::validator_for(&schema)?;
+//!
+//! // Building a validator with non-blocking retrieval (requires `resolve-async` feature)
+//! # #[cfg(feature = "resolve-async")]
+//! let validator = jsonschema::async_validator_for(&schema).await?;
+//!
+//! // Validation is always synchronous
+//! assert!(validator.is_valid(&json!("Hello")));
+//! # Ok(())
+//! # }
+//! ```
 //!
 //! To enable HTTPS support, add the `rustls-tls` feature to `reqwest` in your `Cargo.toml`:
 //!
@@ -207,9 +240,12 @@
 //!
 //! - Disable HTTP resolving: `default-features = false, features = ["resolve-file"]`
 //! - Disable file resolving: `default-features = false, features = ["resolve-http"]`
-//! - Disable both: `default-features = false`
+//! - Enable async resolution: `features = ["resolve-async"]`
+//! - Disable all resolving: `default-features = false`
 //!
-//! You can implement a custom retriever to handle external references. Here's an example that uses a static map of schemas:
+//! ## Custom retrievers
+//!
+//! You can implement custom retrievers for both blocking and non-blocking retrieval:
 //!
 //! ```rust
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -225,7 +261,7 @@
 //!
 //!    fn retrieve(
 //!        &self,
-//!        uri: &Uri<&str>,
+//!        uri: &Uri<String>,
 //!    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
 //!         self.schemas
 //!             .get(uri.as_str())
@@ -268,6 +304,40 @@
 //! #    Ok(())
 //! # }
 //! ```
+//!
+//! And non-blocking version with the `resolve-async` feature enabled:
+//!
+//! ```rust
+//! # #[cfg(feature = "resolve-async")]
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! use jsonschema::{AsyncRetrieve, Registry, Resource, Uri};
+//! use serde_json::{Value, json};
+//!
+//! struct HttpRetriever;
+//!
+//! #[async_trait::async_trait]
+//! impl AsyncRetrieve for HttpRetriever {
+//!     async fn retrieve(
+//!         &self,
+//!         uri: &Uri<String>,
+//!     ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+//!         reqwest::get(uri.as_str())
+//!             .await?
+//!             .json()
+//!             .await
+//!             .map_err(Into::into)
+//!     }
+//! }
+//!
+//! // Then use it to build a validator
+//! let validator = jsonschema::async_options()
+//!     .with_retriever(HttpRetriever)
+//!     .build(&json!({"$ref": "https://example.com/user.json"}))
+//!     .await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
 //! # Output Styles
 //!
 //! `jsonschema` supports the `basic` output style as defined in JSON Schema Draft 2019-09.
@@ -521,6 +591,9 @@ pub use referencing::{
 };
 pub use validator::Validator;
 
+#[cfg(feature = "resolve-async")]
+pub use referencing::AsyncRetrieve;
+
 use serde_json::Value;
 
 #[cfg(all(
@@ -595,6 +668,35 @@ pub fn validator_for(schema: &Value) -> Result<Validator, ValidationError<'stati
     Validator::new(schema)
 }
 
+/// Create a validator for the input schema with automatic draft detection and default options,
+/// using non-blocking retrieval for external references.
+///
+/// This is the async counterpart to [`validator_for`]. Note that only the construction is
+/// asynchronous - validation itself is always synchronous.
+///
+/// # Examples
+///
+/// ```rust
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// use serde_json::json;
+///
+/// let schema = json!({
+///     "type": "object",
+///     "properties": {
+///         "user": { "$ref": "https://example.com/user.json" }
+///     }
+/// });
+///
+/// let validator = jsonschema::async_validator_for(&schema).await?;
+/// assert!(validator.is_valid(&json!({"user": {"name": "Alice"}})));
+/// # Ok(())
+/// # }
+/// ```
+#[cfg(feature = "resolve-async")]
+pub async fn async_validator_for(schema: &Value) -> Result<Validator, ValidationError<'static>> {
+    Validator::async_new(schema).await
+}
+
 /// Create a builder for configuring JSON Schema validation options.
 ///
 /// This function returns a [`ValidationOptions`] struct, which allows you to set various
@@ -641,6 +743,68 @@ pub fn validator_for(schema: &Value) -> Result<Validator, ValidationError<'stati
 /// See [`ValidationOptions`] for all available configuration options.
 pub fn options() -> ValidationOptions {
     Validator::options()
+}
+
+/// Create a builder for configuring JSON Schema validation options.
+///
+/// This function returns a [`ValidationOptions`] struct which allows you to set various options for JSON Schema validation.
+/// External references will be retrieved using non-blocking I/O.
+///
+/// # Examples
+///
+/// Basic usage with external references:
+///
+/// ```rust
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// use serde_json::json;
+///
+/// let schema = json!({
+///     "$ref": "https://example.com/user.json"
+/// });
+///
+/// let validator = jsonschema::async_options()
+///     .build(&schema)
+///     .await?;
+///
+/// assert!(validator.is_valid(&json!({"name": "Alice"})));
+/// # Ok(())
+/// # }
+/// ```
+///
+/// Advanced configuration:
+///
+/// ```rust
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// use serde_json::{Value, json};
+/// use jsonschema::{Draft, AsyncRetrieve, Uri};
+///
+/// // Custom async retriever
+/// struct MyRetriever;
+///
+/// #[async_trait::async_trait]
+/// impl AsyncRetrieve for MyRetriever {
+///     async fn retrieve(&self, uri: &Uri<String>) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+///         // Custom retrieval logic
+///         Ok(json!({}))
+///     }
+/// }
+///
+/// let schema = json!({
+///     "$ref": "https://example.com/user.json"
+/// });
+/// let validator = jsonschema::async_options()
+///     .with_draft(Draft::Draft202012)
+///     .with_retriever(MyRetriever)
+///     .build(&schema)
+///     .await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// See [`ValidationOptions`] for all available configuration options.
+#[cfg(feature = "resolve-async")]
+pub fn async_options() -> ValidationOptions<std::sync::Arc<dyn AsyncRetrieve>> {
+    Validator::async_options()
 }
 
 /// Functionality for validating JSON Schema documents against their meta-schemas.
@@ -920,9 +1084,7 @@ pub mod draft4 {
     /// See [`ValidationOptions`] for all available configuration options.
     #[must_use]
     pub fn options() -> ValidationOptions {
-        let mut options = crate::options();
-        options.with_draft(Draft::Draft4);
-        options
+        crate::options().with_draft(Draft::Draft4)
     }
 
     /// Functionality for validating JSON Schema Draft 4 documents.
@@ -1077,9 +1239,7 @@ pub mod draft6 {
     /// See [`ValidationOptions`] for all available configuration options.
     #[must_use]
     pub fn options() -> ValidationOptions {
-        let mut options = crate::options();
-        options.with_draft(Draft::Draft6);
-        options
+        crate::options().with_draft(Draft::Draft6)
     }
 
     /// Functionality for validating JSON Schema Draft 6 documents.
@@ -1234,9 +1394,7 @@ pub mod draft7 {
     /// See [`ValidationOptions`] for all available configuration options.
     #[must_use]
     pub fn options() -> ValidationOptions {
-        let mut options = crate::options();
-        options.with_draft(Draft::Draft7);
-        options
+        crate::options().with_draft(Draft::Draft7)
     }
 
     /// Functionality for validating JSON Schema Draft 7 documents.
@@ -1391,9 +1549,7 @@ pub mod draft201909 {
     /// See [`ValidationOptions`] for all available configuration options.
     #[must_use]
     pub fn options() -> ValidationOptions {
-        let mut options = crate::options();
-        options.with_draft(Draft::Draft201909);
-        options
+        crate::options().with_draft(Draft::Draft201909)
     }
 
     /// Functionality for validating JSON Schema Draft 2019-09 documents.
@@ -1550,9 +1706,7 @@ pub mod draft202012 {
     /// See [`ValidationOptions`] for all available configuration options.
     #[must_use]
     pub fn options() -> ValidationOptions {
-        let mut options = crate::options();
-        options.with_draft(Draft::Draft202012);
-        options
+        crate::options().with_draft(Draft::Draft202012)
     }
 
     /// Functionality for validating JSON Schema Draft 2020-12 documents.
@@ -1969,13 +2123,13 @@ mod tests {
     #[test]
     fn test_invalid_schema_keyword() {
         let schema = json!({
-            // Note `https`, not `http`
-            "$schema": "https://json-schema.org/draft-07/schema",
+            // Note `htt`, not `http`
+            "$schema": "htt://json-schema.org/draft-07/schema",
         });
         let error = crate::validator_for(&schema).expect_err("Should fail");
         assert_eq!(
             error.to_string(),
-            "Unknown specification: https://json-schema.org/draft-07/schema"
+            "Unknown specification: htt://json-schema.org/draft-07/schema"
         );
     }
 
@@ -2005,5 +2159,203 @@ mod tests {
             Ok(())
         }
         let _ = foo();
+    }
+}
+
+#[cfg(all(test, feature = "resolve-async"))]
+mod async_tests {
+    use referencing::Resource;
+    use std::collections::HashMap;
+
+    use serde_json::json;
+
+    use crate::{AsyncRetrieve, Draft, Uri};
+
+    /// Mock async retriever for testing
+    struct TestRetriever {
+        schemas: HashMap<String, serde_json::Value>,
+    }
+
+    impl TestRetriever {
+        fn new() -> Self {
+            let mut schemas = HashMap::new();
+            schemas.insert(
+                "https://example.com/user.json".to_string(),
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "age": {"type": "integer", "minimum": 0}
+                    },
+                    "required": ["name"]
+                }),
+            );
+            Self { schemas }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl AsyncRetrieve for TestRetriever {
+        async fn retrieve(
+            &self,
+            uri: &Uri<String>,
+        ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+            self.schemas
+                .get(uri.as_str())
+                .cloned()
+                .ok_or_else(|| "Schema not found".into())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_async_validator_for() {
+        let schema = json!({
+            "$ref": "https://example.com/user.json"
+        });
+
+        let validator = crate::async_options()
+            .with_retriever(TestRetriever::new())
+            .build(&schema)
+            .await
+            .unwrap();
+
+        // Valid instance
+        assert!(validator.is_valid(&json!({
+            "name": "John Doe",
+            "age": 30
+        })));
+
+        // Invalid instances
+        assert!(!validator.is_valid(&json!({
+            "age": -5
+        })));
+        assert!(!validator.is_valid(&json!({
+            "name": 123,
+            "age": 30
+        })));
+    }
+
+    #[tokio::test]
+    async fn test_async_options_with_draft() {
+        let schema = json!({
+            "$ref": "https://example.com/user.json"
+        });
+
+        let validator = crate::async_options()
+            .with_draft(Draft::Draft202012)
+            .with_retriever(TestRetriever::new())
+            .build(&schema)
+            .await
+            .unwrap();
+
+        assert!(validator.is_valid(&json!({
+            "name": "John Doe",
+            "age": 30
+        })));
+    }
+
+    #[tokio::test]
+    async fn test_async_retrieval_failure() {
+        let schema = json!({
+            "$ref": "https://example.com/nonexistent.json"
+        });
+
+        let result = crate::async_options()
+            .with_retriever(TestRetriever::new())
+            .build(&schema)
+            .await;
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Schema not found"));
+    }
+
+    #[tokio::test]
+    async fn test_async_nested_references() {
+        let mut retriever = TestRetriever::new();
+        retriever.schemas.insert(
+            "https://example.com/nested.json".to_string(),
+            json!({
+                "type": "object",
+                "properties": {
+                    "user": { "$ref": "https://example.com/user.json" }
+                }
+            }),
+        );
+
+        let schema = json!({
+            "$ref": "https://example.com/nested.json"
+        });
+
+        let validator = crate::async_options()
+            .with_retriever(retriever)
+            .build(&schema)
+            .await
+            .unwrap();
+
+        // Valid nested structure
+        assert!(validator.is_valid(&json!({
+            "user": {
+                "name": "John Doe",
+                "age": 30
+            }
+        })));
+
+        // Invalid nested structure
+        assert!(!validator.is_valid(&json!({
+            "user": {
+                "age": -5
+            }
+        })));
+    }
+
+    #[tokio::test]
+    async fn test_async_with_registry() {
+        use crate::Registry;
+
+        // Create a registry with initial schemas
+        let registry = Registry::options()
+            .async_retriever(TestRetriever::new())
+            .build([(
+                "https://example.com/user.json",
+                Resource::from_contents(json!({
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "age": {"type": "integer", "minimum": 0}
+                    },
+                    "required": ["name"]
+                }))
+                .unwrap(),
+            )])
+            .await
+            .unwrap();
+
+        // Create a validator using the pre-populated registry
+        let validator = crate::async_options()
+            .with_registry(registry)
+            .build(&json!({
+                "$ref": "https://example.com/user.json"
+            }))
+            .await
+            .unwrap();
+
+        // Verify that validation works with the registry
+        assert!(validator.is_valid(&json!({
+            "name": "John Doe",
+            "age": 30
+        })));
+        assert!(!validator.is_valid(&json!({
+            "age": -5
+        })));
+    }
+
+    #[tokio::test]
+    async fn test_async_validator_for_basic() {
+        let schema = json!({"type": "integer"});
+
+        let validator = crate::async_validator_for(&schema).await.unwrap();
+
+        assert!(validator.is_valid(&json!(42)));
+        assert!(!validator.is_valid(&json!("abc")));
     }
 }

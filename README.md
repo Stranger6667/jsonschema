@@ -52,7 +52,7 @@ See more usage examples in the [documentation](https://docs.rs/jsonschema).
 
 - 📚 Full support for popular JSON Schema drafts
 - 🔧 Custom keywords and format validators
-- 🌐 Remote reference fetching (network/file)
+- 🌐 Blocking & non-blocking remote reference fetching (network/file)
 - 🎨 `Basic` output style as per JSON Schema spec
 - ✨ Meta-schema validation for schema documents
 - 🔗 Bindings for [Python](https://github.com/Stranger6667/jsonschema/tree/master/crates/jsonschema-py)

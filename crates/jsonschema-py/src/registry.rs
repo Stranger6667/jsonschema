@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use jsonschema::Resource;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
@@ -29,7 +27,7 @@ impl Registry {
 
         if let Some(retriever) = retriever {
             let func = into_retriever(retriever)?;
-            options = options.retriever(Arc::new(Retriever { func }));
+            options = options.retriever(Retriever { func });
         }
 
         let pairs = resources.try_iter()?.map(|item| {
@@ -45,7 +43,7 @@ impl Registry {
         let pairs: Result<Vec<_>, PyErr> = pairs.collect();
 
         let registry = options
-            .try_from_resources(pairs?.into_iter())
+            .build(pairs?)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         Ok(Registry { inner: registry })

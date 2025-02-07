@@ -252,12 +252,8 @@ pub(crate) fn build_validator(
     let base_uri = resource_ref.id().unwrap_or(DEFAULT_ROOT_URL);
 
     // Build a registry & resolver needed for validator compilation
-    let pairs = once((Cow::Borrowed(base_uri), resource)).chain(
-        config
-            .resources
-            .drain()
-            .map(|(uri, resource)| (Cow::Owned(uri), resource)),
-    );
+    let pairs = collect_resource_pairs(base_uri, resource, &mut config.resources);
+
     let registry = if let Some(registry) = config.registry.take() {
         Arc::new(registry.try_with_resources_and_retriever(pairs, &*config.retriever, draft)?)
     } else {
@@ -265,7 +261,7 @@ pub(crate) fn build_validator(
             Registry::options()
                 .draft(draft)
                 .retriever(Arc::clone(&config.retriever))
-                .try_from_resources(pairs)?,
+                .build(pairs)?,
         )
     };
     let vocabularies = registry.find_vocabularies(draft, schema);
@@ -283,25 +279,92 @@ pub(crate) fn build_validator(
 
     // Validate the schema itself
     if config.validate_schema {
-        if let Err(error) = {
-            match draft {
-                Draft::Draft4 => &crate::draft4::meta::VALIDATOR,
-                Draft::Draft6 => &crate::draft6::meta::VALIDATOR,
-                Draft::Draft7 => &crate::draft7::meta::VALIDATOR,
-                Draft::Draft201909 => &crate::draft201909::meta::VALIDATOR,
-                Draft::Draft202012 => &crate::draft202012::meta::VALIDATOR,
-                _ => unreachable!("Unknown draft"),
-            }
-        }
-        .validate(schema)
-        {
-            return Err(error.to_owned());
-        }
+        validate_schema(draft, schema)?;
     }
 
     // Finally, compile the validator
     let root = compile(&ctx, resource_ref).map_err(|err| err.to_owned())?;
     Ok(Validator { root, config })
+}
+
+#[cfg(feature = "resolve-async")]
+pub(crate) async fn build_validator_async(
+    mut config: ValidationOptions<Arc<dyn referencing::AsyncRetrieve>>,
+    schema: &Value,
+) -> Result<Validator, ValidationError<'static>> {
+    let draft = config.draft_for(schema).await?;
+    let resource_ref = draft.create_resource_ref(schema);
+    let resource = draft.create_resource(schema.clone());
+    let base_uri = resource_ref.id().unwrap_or(DEFAULT_ROOT_URL);
+
+    let pairs = collect_resource_pairs(base_uri, resource, &mut config.resources);
+
+    let registry = if let Some(registry) = config.registry.take() {
+        Arc::new(
+            registry
+                .try_with_resources_and_retriever_async(pairs, &*config.retriever, draft)
+                .await?,
+        )
+    } else {
+        Arc::new(
+            Registry::options()
+                .async_retriever(Arc::clone(&config.retriever))
+                .draft(draft)
+                .build(pairs)
+                .await?,
+        )
+    };
+
+    let vocabularies = registry.find_vocabularies(draft, schema);
+    let resolver = Rc::new(registry.try_resolver(base_uri)?);
+    // HACK: As we store the config and it has a type parameter we need to apply a small hack here.
+    //       `ValidationOptions` struct has a default type parameter as `Arc<dyn Retrieve>` and to
+    //       avoid propagating types everywhere in `Context`, it is easier to just replace the
+    //       retriever to one that implements `Retrieve`, as it is not used anymore anyway.
+    //       In the future it might be better to avoid storing the context anyway.
+    let config = Arc::new(config.with_blocking_retriever(crate::retriever::DefaultRetriever));
+    let ctx = Context::new(
+        Arc::clone(&config),
+        Arc::clone(&registry),
+        resolver,
+        vocabularies,
+        draft,
+        Location::new(),
+    );
+
+    if config.validate_schema {
+        validate_schema(draft, schema)?;
+    }
+
+    let root = compile(&ctx, resource_ref).map_err(|err| err.to_owned())?;
+    Ok(Validator { root, config })
+}
+
+fn collect_resource_pairs<'a>(
+    base_uri: &'a str,
+    resource: Resource,
+    resources: &'a mut AHashMap<String, Resource>,
+) -> impl IntoIterator<Item = (Cow<'a, str>, Resource)> {
+    once((Cow::Borrowed(base_uri), resource)).chain(
+        resources
+            .drain()
+            .map(|(uri, resource)| (Cow::Owned(uri), resource)),
+    )
+}
+
+fn validate_schema(draft: Draft, schema: &Value) -> Result<(), ValidationError<'static>> {
+    let validator = match draft {
+        Draft::Draft4 => &crate::draft4::meta::VALIDATOR,
+        Draft::Draft6 => &crate::draft6::meta::VALIDATOR,
+        Draft::Draft7 => &crate::draft7::meta::VALIDATOR,
+        Draft::Draft201909 => &crate::draft201909::meta::VALIDATOR,
+        Draft::Draft202012 => &crate::draft202012::meta::VALIDATOR,
+        _ => unreachable!("Unknown draft"),
+    };
+    if let Err(error) = validator.validate(schema) {
+        return Err(error.to_owned());
+    }
+    Ok(())
 }
 
 /// Compile a JSON Schema instance to a tree of nodes.

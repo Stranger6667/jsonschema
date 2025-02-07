@@ -189,9 +189,43 @@ impl Validator {
     pub fn options() -> ValidationOptions {
         ValidationOptions::default()
     }
+    /// Create a default [`ValidationOptions`] configured for async validation.
+    ///
+    /// Use this to set the draft version and other validation parameters when working
+    /// with schemas that require async reference resolution.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use serde_json::json;
+    /// # use jsonschema::Draft;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let schema = json!({
+    ///     "$ref": "https://example.com/schema.json"
+    /// });
+    ///
+    /// let validator = jsonschema::async_options()
+    ///     .with_draft(Draft::Draft202012)
+    ///     .build(&schema)
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// For sync validation, use [`options`] instead.
+    #[cfg(feature = "resolve-async")]
+    #[must_use]
+    pub fn async_options() -> ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
+        ValidationOptions::default()
+    }
     /// Create a validator using the default options.
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         Self::options().build(schema)
+    }
+    /// Create a validator using the default async options.
+    #[cfg(feature = "resolve-async")]
+    pub async fn async_new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
+        Self::async_options().build(schema).await
     }
     /// Validate `instance` against `schema` and return the first error if any.
     #[inline]

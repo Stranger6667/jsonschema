@@ -243,14 +243,11 @@ mod tests {
             },
         }));
 
-        let registry = Registry::try_from_resources(
-            [
-                ("http://example.com".to_string(), root.clone()),
-                ("http://example.com/foo/".to_string(), true_resource),
-                ("http://example.com/foo/bar".to_string(), root.clone()),
-            ]
-            .into_iter(),
-        )
+        let registry = Registry::try_from_resources([
+            ("http://example.com".to_string(), root.clone()),
+            ("http://example.com/foo/".to_string(), true_resource),
+            ("http://example.com/foo/bar".to_string(), root.clone()),
+        ])
         .expect("Invalid resources");
         let resolver = registry
             .try_resolver("http://example.com")
@@ -287,14 +284,11 @@ mod tests {
             },
         }));
 
-        let registry = Registry::try_from_resources(
-            [
-                ("http://example.com".to_string(), two.clone()),
-                ("http://example.com/foo/".to_string(), one),
-                ("http://example.com/foo/bar".to_string(), two.clone()),
-            ]
-            .into_iter(),
-        )
+        let registry = Registry::try_from_resources([
+            ("http://example.com".to_string(), two.clone()),
+            ("http://example.com/foo/".to_string(), one),
+            ("http://example.com/foo/bar".to_string(), two.clone()),
+        ])
         .expect("Invalid resources");
         let resolver = registry
             .try_resolver("http://example.com")
@@ -397,14 +391,11 @@ mod tests {
             },
         }));
 
-        let registry = Registry::try_from_resources(
-            vec![
-                ("http://example.com".to_string(), root.clone()),
-                ("http://example.com/foo/".to_string(), true_resource),
-                ("http://example.com/foo/bar".to_string(), root.clone()),
-            ]
-            .into_iter(),
-        )
+        let registry = Registry::try_from_resources(vec![
+            ("http://example.com".to_string(), root.clone()),
+            ("http://example.com/foo/".to_string(), true_resource),
+            ("http://example.com/foo/bar".to_string(), root.clone()),
+        ])
         .expect("Invalid resources");
 
         let resolver = registry
@@ -442,14 +433,11 @@ mod tests {
         }));
         let three = Draft::Draft201909.create_resource(json!({"$recursiveAnchor": false}));
 
-        let registry = Registry::try_from_resources(
-            vec![
-                ("http://example.com".to_string(), three),
-                ("http://example.com/foo/".to_string(), two.clone()),
-                ("http://example.com/foo/bar".to_string(), one),
-            ]
-            .into_iter(),
-        )
+        let registry = Registry::try_from_resources(vec![
+            ("http://example.com".to_string(), three),
+            ("http://example.com/foo/".to_string(), two.clone()),
+            ("http://example.com/foo/bar".to_string(), one),
+        ])
         .expect("Invalid resources");
 
         let resolver = registry

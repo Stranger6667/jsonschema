@@ -22,19 +22,19 @@ mod tests {
         let mut options = jsonschema::options();
         match test.draft {
             "draft4" => {
-                options.with_draft(Draft::Draft4);
+                options = options.with_draft(Draft::Draft4);
             }
             "draft6" => {
-                options.with_draft(Draft::Draft6);
+                options = options.with_draft(Draft::Draft6);
             }
             "draft7" => {
-                options.with_draft(Draft::Draft7);
+                options = options.with_draft(Draft::Draft7);
             }
             "draft2019-09" | "draft2020-12" => {}
             _ => panic!("Unsupported draft"),
         };
         if test.is_optional {
-            options.should_validate_formats(true);
+            options = options.should_validate_formats(true);
         }
         let validator = options
             .build(&test.schema)

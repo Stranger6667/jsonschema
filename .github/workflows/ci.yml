@@ -51,7 +51,7 @@ jobs:
           cache-all-crates: "true"
           key: ${{ matrix.os }}
 
-      - run: cargo test --no-fail-fast
+      - run: cargo test --no-fail-fast --all-features
 
   test-wasm:
     name: Test on WASM
