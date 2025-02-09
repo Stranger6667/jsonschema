@@ -15,16 +15,20 @@ use crate::{
 };
 use ahash::{AHashMap, AHashSet};
 use referencing::{
-    Draft, List, Registry, Resolved, Resolver, Resource, ResourceRef, Uri, Vocabulary,
-    VocabularySet,
+    Draft, List, Registry, Resolved, Resolver, ResourceRef, Uri, Vocabulary, VocabularySet,
 };
 use serde_json::Value;
-use std::{borrow::Cow, cell::RefCell, iter::once, rc::Rc, sync::Arc};
+use std::{
+    borrow::Cow,
+    iter::once,
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 
 const DEFAULT_SCHEME: &str = "json-schema";
 pub(crate) const DEFAULT_ROOT_URL: &str = "json-schema:///";
 type BaseUri = Uri<String>;
-type ResolverComponents = (Arc<BaseUri>, List<BaseUri>, Resource);
+type ResolverComponents<'a> = (Arc<BaseUri>, List<BaseUri>, Resolved<'a>);
 
 /// Container for information required to build a tree.
 ///
@@ -37,7 +41,7 @@ pub(crate) struct Context<'a> {
     vocabularies: VocabularySet,
     location: Location,
     pub(crate) draft: Draft,
-    seen: Rc<RefCell<AHashSet<Arc<Uri<String>>>>>,
+    seen: Arc<Mutex<AHashSet<Arc<Uri<String>>>>>,
 }
 
 impl<'a> Context<'a> {
@@ -48,6 +52,7 @@ impl<'a> Context<'a> {
         vocabularies: VocabularySet,
         draft: Draft,
         location: Location,
+        seen: Arc<Mutex<AHashSet<Arc<Uri<String>>>>>,
     ) -> Self {
         Context {
             config,
@@ -56,7 +61,7 @@ impl<'a> Context<'a> {
             location,
             vocabularies,
             draft,
-            seen: Rc::new(RefCell::new(AHashSet::new())),
+            seen,
         }
     }
     pub(crate) fn draft(&self) -> Draft {
@@ -79,7 +84,7 @@ impl<'a> Context<'a> {
             vocabularies: self.vocabularies.clone(),
             draft: resource.draft(),
             location: self.location.clone(),
-            seen: Rc::clone(&self.seen),
+            seen: Arc::clone(&self.seen),
         })
     }
     pub(crate) fn as_resource_ref<'r>(&'a self, contents: &'r Value) -> ResourceRef<'r> {
@@ -99,7 +104,7 @@ impl<'a> Context<'a> {
             vocabularies: self.vocabularies.clone(),
             location,
             draft: self.draft,
-            seen: Rc::clone(&self.seen),
+            seen: Arc::clone(&self.seen),
         }
     }
 
@@ -110,7 +115,9 @@ impl<'a> Context<'a> {
     pub(crate) fn scopes(&self) -> List<Uri<String>> {
         self.resolver.dynamic_scope()
     }
-
+    pub(crate) fn full_base_uri(&self) -> Arc<Uri<String>> {
+        self.resolver.base_uri()
+    }
     pub(crate) fn base_uri(&self) -> Option<Uri<String>> {
         let base_uri = self.resolver.base_uri();
         if base_uri.scheme().as_str() == DEFAULT_SCHEME {
@@ -151,7 +158,7 @@ impl<'a> Context<'a> {
             draft,
             vocabularies,
             location,
-            seen: Rc::clone(&self.seen),
+            seen: Arc::clone(&self.seen),
         }
     }
     pub(crate) fn get_content_media_type_check(
@@ -186,13 +193,13 @@ impl<'a> Context<'a> {
         let uri = self
             .resolver
             .resolve_against(&self.resolver.base_uri().borrow(), reference)?;
-        Ok(self.seen.borrow().contains(&*uri))
+        Ok(self.seen.lock().unwrap().contains(&*uri))
     }
     pub(crate) fn mark_seen(&self, reference: &str) -> Result<(), referencing::Error> {
         let uri = self
             .resolver
             .resolve_against(&self.resolver.base_uri().borrow(), reference)?;
-        self.seen.borrow_mut().insert(uri);
+        self.seen.lock().unwrap().insert(uri);
         Ok(())
     }
 
@@ -204,25 +211,23 @@ impl<'a> Context<'a> {
     pub(crate) fn lookup_maybe_recursive(
         &self,
         reference: &str,
-        is_recursive: bool,
+        maybe_recursive: bool,
     ) -> Result<Option<ResolverComponents>, ValidationError<'static>> {
         let resolved = if self.is_circular_reference(reference)? {
             // Otherwise we need to manually check whether this location has already been explored
             self.resolver.lookup(reference)?
         } else {
             // This is potentially recursive, but it is unknown yet
-            if !is_recursive {
+            if !maybe_recursive {
                 self.mark_seen(reference)?;
             }
             return Ok(None);
         };
-        let resource = self.draft().create_resource(resolved.contents().clone());
-        let mut base_uri = resolved.resolver().base_uri();
-        let scopes = resolved.resolver().dynamic_scope();
-        if let Some(id) = resource.id() {
-            base_uri = self.registry.resolve_against(&base_uri.borrow(), id)?;
-        };
-        Ok(Some((base_uri, scopes, resource)))
+        Ok(Some((
+            self.resolver.base_uri(),
+            self.resolver.dynamic_scope(),
+            resolved,
+        )))
     }
 
     pub(crate) fn location(&self) -> &Location {
@@ -239,6 +244,10 @@ impl<'a> Context<'a> {
         } else {
             self.vocabularies.contains(vocabulary)
         }
+    }
+
+    pub(crate) fn seen(&self) -> Arc<Mutex<AHashSet<Arc<Uri<String>>>>> {
+        Arc::clone(&self.seen)
     }
 }
 
@@ -275,6 +284,7 @@ pub(crate) fn build_validator(
         vocabularies,
         draft,
         Location::new(),
+        Arc::new(Mutex::new(AHashSet::new())),
     );
 
     // Validate the schema itself

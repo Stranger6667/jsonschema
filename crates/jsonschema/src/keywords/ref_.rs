@@ -1,4 +1,7 @@
-use std::{rc::Rc, sync::Arc};
+use std::{
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 
 use crate::{
     compiler,
@@ -10,8 +13,9 @@ use crate::{
     validator::{PartialApplication, Validate},
     ValidationError, ValidationOptions,
 };
+use ahash::AHashSet;
 use once_cell::sync::OnceCell;
-use referencing::{Draft, List, Registry, Resource, Uri, VocabularySet};
+use referencing::{Draft, List, Registry, Uri, VocabularySet};
 use serde_json::{Map, Value};
 
 pub(crate) enum RefValidator {
@@ -24,19 +28,19 @@ impl RefValidator {
     pub(crate) fn compile<'a>(
         ctx: &compiler::Context,
         reference: &str,
-        is_recursive: bool,
+        maybe_recursive: bool,
         keyword: &str,
     ) -> Option<CompilationResult<'a>> {
         let location = ctx.location().join(keyword);
         Some(
-            if let Some((base_uri, scopes, resource)) = {
-                match ctx.lookup_maybe_recursive(reference, is_recursive) {
+            if let Some((base_uri, scopes, resolved)) = {
+                match ctx.lookup_maybe_recursive(reference, maybe_recursive) {
                     Ok(resolved) => resolved,
                     Err(error) => return Some(Err(error)),
                 }
             } {
                 // NOTE: A better approach would be to compare the absolute locations
-                if let Value::Object(contents) = resource.contents() {
+                if let Value::Object(contents) = resolved.contents() {
                     if let Some(Some(resolved)) = contents.get(keyword).map(Value::as_str) {
                         if resolved == reference {
                             return None;
@@ -44,11 +48,14 @@ impl RefValidator {
                     }
                 }
                 Ok(Box::new(RefValidator::Lazy(LazyRefValidator {
-                    resource,
+                    reference: Reference::Default {
+                        reference: reference.to_string(),
+                    },
                     config: Arc::clone(ctx.config()),
                     registry: Arc::clone(&ctx.registry),
                     base_uri,
                     scopes,
+                    seen: ctx.seen(),
                     location,
                     vocabularies: ctx.vocabularies().clone(),
                     draft: ctx.draft(),
@@ -79,6 +86,11 @@ impl RefValidator {
     }
 }
 
+enum Reference {
+    Default { reference: String },
+    Recursive,
+}
+
 /// Lazily evaluated validator used for recursive references.
 ///
 /// The validator tree nodes can't be arbitrary looked up in the current
@@ -87,11 +99,12 @@ impl RefValidator {
 /// representation for the validation tree may allow building cycles easier and
 /// lazy evaluation won't be needed.
 pub(crate) struct LazyRefValidator {
-    resource: Resource,
+    reference: Reference,
     config: Arc<ValidationOptions>,
     registry: Arc<Registry>,
     scopes: List<Uri<String>>,
     base_uri: Arc<Uri<String>>,
+    seen: Arc<Mutex<AHashSet<Arc<Uri<String>>>>>,
     vocabularies: VocabularySet,
     location: Location,
     draft: Draft,
@@ -101,20 +114,15 @@ pub(crate) struct LazyRefValidator {
 impl LazyRefValidator {
     #[inline]
     pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
-        let scopes = ctx.scopes();
-        let resolved = ctx.lookup_recursive_reference()?;
-        let resource = ctx.draft().create_resource(resolved.contents().clone());
-        let resolver = resolved.resolver();
-        let mut base_uri = resolver.base_uri();
-        if let Some(id) = resource.id() {
-            base_uri = resolver.resolve_against(&base_uri.borrow(), id)?;
-        };
+        // Verify that the reference is resolvable
+        ctx.lookup_recursive_reference()?;
         Ok(Box::new(LazyRefValidator {
-            resource,
+            reference: Reference::Recursive,
             config: Arc::clone(ctx.config()),
             registry: Arc::clone(&ctx.registry),
-            base_uri,
-            scopes,
+            base_uri: ctx.full_base_uri(),
+            scopes: ctx.scopes(),
+            seen: ctx.seen(),
             vocabularies: ctx.vocabularies().clone(),
             location: ctx.location().join("$recursiveRef"),
             draft: ctx.draft(),
@@ -123,21 +131,58 @@ impl LazyRefValidator {
     }
     fn lazy_compile(&self) -> &SchemaNode {
         self.inner.get_or_init(|| {
-            let resolver = self
-                .registry
-                .resolver_from_raw_parts(self.base_uri.clone(), self.scopes.clone());
-
-            let ctx = compiler::Context::new(
-                Arc::clone(&self.config),
-                Arc::clone(&self.registry),
-                Rc::new(resolver),
-                self.vocabularies.clone(),
-                self.draft,
-                self.location.clone(),
-            );
             // INVARIANT: This schema was already used during compilation before detecting a
             // reference cycle that lead to building this validator.
-            compiler::compile(&ctx, self.resource.as_ref()).expect("Invalid schema")
+            match &self.reference {
+                Reference::Default { reference } => {
+                    let resolver = self
+                        .registry
+                        .resolver_from_raw_parts(self.base_uri.clone(), self.scopes.clone());
+                    let resolved = resolver.lookup(reference).unwrap();
+                    let resource = self.draft.create_resource_ref(resolved.contents());
+                    let mut base_uri = resolved.resolver().base_uri();
+                    let scopes = resolved.resolver().dynamic_scope();
+                    if let Some(id) = resource.id() {
+                        base_uri = self
+                            .registry
+                            .resolve_against(&base_uri.borrow(), id)
+                            .unwrap();
+                    };
+
+                    let resolver = self.registry.resolver_from_raw_parts(base_uri, scopes);
+
+                    let ctx = compiler::Context::new(
+                        Arc::clone(&self.config),
+                        Arc::clone(&self.registry),
+                        Rc::new(resolver),
+                        self.vocabularies.clone(),
+                        self.draft,
+                        self.location.clone(),
+                        self.seen.clone(),
+                    );
+
+                    compiler::compile(&ctx, resource).expect("Invalid schema")
+                }
+                Reference::Recursive => {
+                    let resolver = self
+                        .registry
+                        .resolver_from_raw_parts(self.base_uri.clone(), self.scopes.clone());
+                    let resolved = resolver
+                        .lookup_recursive_ref()
+                        .expect("Failed to resolve a recursive reference");
+                    let ctx = compiler::Context::new(
+                        Arc::clone(&self.config),
+                        Arc::clone(&self.registry),
+                        Rc::new(resolver),
+                        self.vocabularies.clone(),
+                        self.draft,
+                        self.location.clone(),
+                        self.seen.clone(),
+                    );
+                    let resource = ctx.draft().create_resource_ref(resolved.contents());
+                    compiler::compile(&ctx, resource).expect("Invalid schema")
+                }
+            }
         })
     }
 }
