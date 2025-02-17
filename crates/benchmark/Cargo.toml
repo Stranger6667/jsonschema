@@ -12,4 +12,4 @@ publish = false
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-strum = { version = "0.26.3", features = ["derive"] }
+strum = { version = "0.27.1", features = ["derive"] }
