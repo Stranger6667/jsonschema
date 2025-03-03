@@ -148,7 +148,7 @@ jobs:
         if: matrix.target == 'x86_64'
         run: |
           pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
-      - uses: uraimo/run-on-arch-action@v2
+      - uses: uraimo/run-on-arch-action@v3
         if: matrix.target == 'aarch64'
         name: Install built wheel on ARM architecture
         with:
