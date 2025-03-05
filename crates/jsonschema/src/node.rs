@@ -5,7 +5,7 @@ use crate::{
     output::{Annotations, BasicOutput, ErrorDescription, OutputUnit},
     paths::{LazyLocation, Location, LocationSegment},
     validator::{PartialApplication, Validate},
-    ValidationError,
+    vm, ValidationError,
 };
 use ahash::AHashMap;
 use referencing::{uri, Uri};
@@ -18,6 +18,8 @@ pub(crate) struct SchemaNode {
     validators: NodeValidators,
     location: Location,
     absolute_path: Option<Uri<String>>,
+    instructions: Vec<vm::Instruction>,
+    metadata: Vec<vm::NodeMetadata>,
 }
 
 enum NodeValidators {
@@ -60,10 +62,13 @@ struct KeywordValidators {
 
 impl SchemaNode {
     pub(crate) fn from_boolean(ctx: &Context<'_>, validator: Option<BoxedValidator>) -> SchemaNode {
+        let (instructions, metadata) = ctx.take_vm_data();
         SchemaNode {
             location: ctx.location().clone(),
             absolute_path: ctx.base_uri(),
             validators: NodeValidators::Boolean { validator },
+            instructions,
+            metadata,
         }
     }
 
@@ -72,6 +77,7 @@ impl SchemaNode {
         validators: Vec<(Keyword, BoxedValidator)>,
         unmatched_keywords: Option<AHashMap<String, Value>>,
     ) -> SchemaNode {
+        let (instructions, metadata) = ctx.take_vm_data();
         SchemaNode {
             location: ctx.location().clone(),
             absolute_path: ctx.base_uri(),
@@ -79,14 +85,19 @@ impl SchemaNode {
                 unmatched_keywords,
                 validators,
             }),
+            instructions,
+            metadata,
         }
     }
 
     pub(crate) fn from_array(ctx: &Context<'_>, validators: Vec<BoxedValidator>) -> SchemaNode {
+        let (instructions, metadata) = ctx.take_vm_data();
         SchemaNode {
             location: ctx.location().clone(),
             absolute_path: ctx.base_uri(),
             validators: NodeValidators::Array { validators },
+            instructions,
+            metadata,
         }
     }
 
@@ -314,26 +325,29 @@ impl Validate for SchemaNode {
     }
 
     fn is_valid(&self, instance: &Value) -> bool {
-        match &self.validators {
-            // If we only have one validator then calling it's `is_valid` directly does
-            // actually save the 20 or so instructions required to call the `slice::Iter::all`
-            // implementation. Validators at the leaf of a tree are all single node validators so
-            // this optimization can have significant cumulative benefits
-            NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
-                kvs.validators[0].1.is_valid(instance)
-            }
-            NodeValidators::Keyword(kvs) => {
-                for (_, v) in &kvs.validators {
-                    if !v.is_valid(instance) {
-                        return false;
-                    }
+        vm::execute(&self.instructions, instance)
+            && match &self.validators {
+                // If we only have one validator then calling it's `is_valid` directly does
+                // actually save the 20 or so instructions required to call the `slice::Iter::all`
+                // implementation. Validators at the leaf of a tree are all single node validators so
+                // this optimization can have significant cumulative benefits
+                NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
+                    kvs.validators[0].1.is_valid(instance)
                 }
-                true
+                NodeValidators::Keyword(kvs) => {
+                    for (_, v) in &kvs.validators {
+                        if !v.is_valid(instance) {
+                            return false;
+                        }
+                    }
+                    true
+                }
+                NodeValidators::Array { validators } => {
+                    validators.iter().all(|v| v.is_valid(instance))
+                }
+                NodeValidators::Boolean { validator: Some(_) } => false,
+                NodeValidators::Boolean { validator: None } => true,
             }
-            NodeValidators::Array { validators } => validators.iter().all(|v| v.is_valid(instance)),
-            NodeValidators::Boolean { validator: Some(_) } => false,
-            NodeValidators::Boolean { validator: None } => true,
-        }
     }
 
     fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {

@@ -43,7 +43,7 @@ use core::fmt;
 use referencing::{Draft, Vocabulary};
 use serde_json::{Map, Value};
 
-use crate::{compiler, error, validator::Validate};
+use crate::{compiler, error, validator::Validate, vm::instructions::maximum::Maximum};
 
 pub(crate) type CompilationResult<'a> = Result<BoxedValidator, error::ValidationError<'a>>;
 pub(crate) type BoxedValidator = Box<dyn Validate + Send + Sync>;
@@ -296,7 +296,7 @@ pub(crate) fn get_for_draft<'a>(
         (Draft::Draft6 | Draft::Draft7 | Draft::Draft201909 | Draft::Draft202012, "maximum")
             if ctx.has_vocabulary(&Vocabulary::Validation) =>
         {
-            Some((BuiltinKeyword::Maximum.into(), maximum::compile))
+            Some((BuiltinKeyword::Maximum.into(), Maximum::<u64>::compile))
         }
         (Draft::Draft6 | Draft::Draft7 | Draft::Draft201909 | Draft::Draft202012, "minimum")
             if ctx.has_vocabulary(&Vocabulary::Validation) =>

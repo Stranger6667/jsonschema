@@ -11,7 +11,7 @@ use crate::{
     options::ValidationOptions,
     paths::{Location, LocationSegment},
     primitive_type::{PrimitiveType, PrimitiveTypesBitMap},
-    ValidationError, Validator,
+    vm, ValidationError, Validator,
 };
 use ahash::{AHashMap, AHashSet};
 use referencing::{
@@ -38,6 +38,8 @@ pub(crate) struct Context<'a> {
     location: Location,
     pub(crate) draft: Draft,
     seen: Rc<RefCell<AHashSet<Arc<Uri<String>>>>>,
+    instructions: Rc<RefCell<Vec<vm::Instruction>>>,
+    metadata: Rc<RefCell<Vec<vm::NodeMetadata>>>,
 }
 
 impl<'a> Context<'a> {
@@ -57,6 +59,8 @@ impl<'a> Context<'a> {
             vocabularies,
             draft,
             seen: Rc::new(RefCell::new(AHashSet::new())),
+            instructions: Rc::new(RefCell::new(Vec::new())),
+            metadata: Rc::new(RefCell::new(Vec::new())),
         }
     }
     pub(crate) fn draft(&self) -> Draft {
@@ -64,6 +68,22 @@ impl<'a> Context<'a> {
     }
     pub(crate) fn config(&self) -> &Arc<ValidationOptions> {
         &self.config
+    }
+
+    pub(crate) fn push_instruction(
+        &self,
+        instruction: vm::Instruction,
+        metadata: vm::NodeMetadata,
+    ) {
+        self.instructions.borrow_mut().push(instruction);
+        self.metadata.borrow_mut().push(metadata);
+    }
+
+    pub(crate) fn take_vm_data(&self) -> (Vec<vm::Instruction>, Vec<vm::NodeMetadata>) {
+        (
+            std::mem::take(&mut self.instructions.borrow_mut()),
+            std::mem::take(&mut self.metadata.borrow_mut()),
+        )
     }
 
     /// Create a context for this schema.
@@ -80,6 +100,8 @@ impl<'a> Context<'a> {
             draft: resource.draft(),
             location: self.location.clone(),
             seen: Rc::clone(&self.seen),
+            instructions: Rc::new(RefCell::new(Vec::new())),
+            metadata: Rc::new(RefCell::new(Vec::new())),
         })
     }
     pub(crate) fn as_resource_ref<'r>(&'a self, contents: &'r Value) -> ResourceRef<'r> {
@@ -100,6 +122,8 @@ impl<'a> Context<'a> {
             location,
             draft: self.draft,
             seen: Rc::clone(&self.seen),
+            instructions: Rc::new(RefCell::new(Vec::new())),
+            metadata: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
@@ -152,6 +176,8 @@ impl<'a> Context<'a> {
             vocabularies,
             location,
             seen: Rc::clone(&self.seen),
+            instructions: Rc::new(RefCell::new(Vec::new())),
+            metadata: Rc::new(RefCell::new(Vec::new())),
         }
     }
     pub(crate) fn get_content_media_type_check(
