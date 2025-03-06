@@ -568,6 +568,7 @@
 //! See the [External References](#external-references) section for implementation details.
 
 pub(crate) mod compiler;
+pub(crate) mod compilerv2;
 mod content_encoding;
 mod content_media_type;
 mod ecma;
@@ -581,6 +582,9 @@ pub mod primitive_type;
 pub(crate) mod properties;
 mod retriever;
 mod validator;
+pub(crate) mod vm;
+
+pub use vm::{SchemaEvaluationVM, ValidatorV2};
 
 pub use error::{ErrorIterator, MaskedValidationError, ValidationError};
 pub use keywords::custom::Keyword;
