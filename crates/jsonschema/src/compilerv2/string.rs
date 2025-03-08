@@ -4,7 +4,7 @@ use super::SchemaCompiler;
 
 #[derive(Debug, Clone)]
 pub(crate) struct MinLength {
-    limit: usize,
+    pub(super) limit: usize,
 }
 
 impl MinLength {
@@ -18,7 +18,7 @@ impl MinLength {
 
 #[derive(Debug, Clone)]
 pub(crate) struct MaxLength {
-    limit: usize,
+    pub(super) limit: usize,
 }
 
 impl MaxLength {
@@ -46,7 +46,11 @@ impl MinMaxLength {
     }
 }
 
-pub(super) fn compile(compiler: &mut SchemaCompiler, obj: &Map<String, Value>) {
+pub(super) fn compile(
+    compiler: &mut SchemaCompiler,
+    obj: &Map<String, Value>,
+    jumps: &mut Vec<usize>,
+) {
     let min_length = obj.get("minLength").and_then(Value::as_number);
     let max_length = obj.get("maxLength").and_then(Value::as_number);
 
@@ -54,6 +58,7 @@ pub(super) fn compile(compiler: &mut SchemaCompiler, obj: &Map<String, Value>) {
         (Some(min), Some(max)) => match (min.as_u64(), max.as_u64()) {
             (Some(min), Some(max)) => {
                 compiler.emit(MinMaxLength::new(min as usize, max as usize));
+                jumps.push(compiler.emit_jump_if_invalid());
             }
             _ => todo!(),
         },
@@ -61,11 +66,13 @@ pub(super) fn compile(compiler: &mut SchemaCompiler, obj: &Map<String, Value>) {
             if !compiler.compile_integer(min, MinLength::new) {
                 todo!("Non-integer minLength");
             }
+            jumps.push(compiler.emit_jump_if_invalid());
         }
         (None, Some(max)) => {
             if !compiler.compile_integer(max, MaxLength::new) {
                 todo!("Non-integer maxLength");
             }
+            jumps.push(compiler.emit_jump_if_invalid());
         }
         _ => {}
     }

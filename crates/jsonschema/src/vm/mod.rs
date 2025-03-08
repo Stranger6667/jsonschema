@@ -1,14 +1,15 @@
 use std::slice::Iter;
 
+use smallvec::SmallVec;
+
 use serde_json::{map::Values, Value};
 
-use crate::compilerv2::{EvaluationScope, Instruction, SchemaCompiler};
+use crate::compilerv2::{is_unique, Instruction, OneOfStack, SchemaCompiler};
 
 pub struct SchemaEvaluationVM<'a> {
-    values: Vec<&'a Value>,
-    arrays: Vec<Iter<'a, Value>>,
+    values: SmallVec<[&'a Value; 8]>,
+    arrays: SmallVec<[Iter<'a, Value>; 4]>,
     object_values: Vec<Values<'a>>,
-    scopes: EvaluationScopes,
 }
 
 impl Default for SchemaEvaluationVM<'_> {
@@ -17,124 +18,68 @@ impl Default for SchemaEvaluationVM<'_> {
     }
 }
 
-struct EvaluationScopes {
-    scopes: Vec<EvaluationScope>,
-    is_valid_at_root: bool,
-}
-
-impl EvaluationScopes {
-    fn new() -> Self {
-        Self {
-            scopes: Vec::new(),
-            is_valid_at_root: true,
-        }
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        self.scopes.clear();
-        self.is_valid_at_root = true;
-    }
-
-    fn update_top(&mut self, is_valid: bool) {
-        match (is_valid, self.scopes.as_mut_slice()) {
-            // Valid result transitions
-            (true, [.., scope @ EvaluationScope::OrSearching]) => {
-                *scope = EvaluationScope::OrSatisfied
-            }
-            (true, [.., scope @ EvaluationScope::XorEmpty]) => *scope = EvaluationScope::XorSingle,
-            (true, [.., scope @ EvaluationScope::XorSingle]) => {
-                *scope = EvaluationScope::XorMultiple
-            }
-
-            // Invalid result transitions
-            (false, [.., scope @ EvaluationScope::AndValid]) => {
-                *scope = EvaluationScope::AndInvalid
-            }
-
-            // Empty stack case - update root
-            (false, []) => {
-                self.is_valid_at_root = false; // AND with false = false
-            }
-
-            // All other cases don't change state
-            _ => {}
-        }
-    }
-
-    #[inline(always)]
-    fn pop(&mut self) -> EvaluationScope {
-        self.scopes.pop().expect("Scope stack underflow")
-    }
-
-    #[inline(always)]
-    fn push(&mut self, scope: EvaluationScope) {
-        self.scopes.push(scope);
-    }
-
-    #[inline(always)]
-    fn is_valid(&self) -> bool {
-        self.is_valid_at_root
-    }
-}
-
 impl<'a> SchemaEvaluationVM<'a> {
     pub fn new() -> Self {
         Self {
-            values: Vec::new(),
-            arrays: Vec::new(),
+            values: SmallVec::new(),
+            arrays: SmallVec::new(),
             object_values: Vec::new(),
-            scopes: EvaluationScopes::new(),
         }
     }
 
     #[inline(always)]
-    fn reset(&mut self, instance: &'a Value) {
+    fn reset(&mut self) {
         self.values.clear();
-        self.values.push(instance);
         self.object_values.clear();
         self.arrays.clear();
-        self.arrays.push([].iter());
-        self.scopes.clear();
     }
 
     fn is_valid(&mut self, instructions: &[Instruction], instance: &'a Value) -> bool {
-        self.reset(instance);
-
-        dbg!(instructions);
-        dbg!(instructions.len());
-        dbg!(std::mem::size_of::<Instruction>());
+        self.reset();
+        //
+        //dbg!(instructions);
+        //dbg!(instructions.len());
+        //dbg!(std::mem::size_of::<Instruction>());
 
         let mut ip = 0;
         let mut top = instance;
-
-        let mut top_array = &mut self.arrays[0];
+        let mut top_array = [].iter();
+        let mut last_result = true;
+        let mut one_of_stack = OneOfStack::new();
 
         macro_rules! execute {
             ($variant:ident, $keyword:expr) => {{
                 if let Value::$variant(value) = top {
-                    self.scopes.update_top($keyword.execute(value));
+                    last_result = $keyword.execute(value);
                 }
             }};
             ($keyword:expr) => {{
-                self.scopes.update_top($keyword.execute(top));
+                last_result = $keyword.execute(top);
             }};
         }
 
+        //let mut cnt = 0;
         while ip < instructions.len() {
+            //cnt += 1;
+            //println!("{:?}", &instructions[ip]);
+            //println!("Stack depth: {}", self.object_values.len());
             match &instructions[ip] {
-                Instruction::TypeNull => self.scopes.update_top(top.is_null()),
-                Instruction::TypeBoolean => self.scopes.update_top(top.is_boolean()),
-                Instruction::TypeString => self.scopes.update_top(top.is_string()),
-                Instruction::TypeNumber => self.scopes.update_top(top.is_number()),
-                Instruction::TypeInteger => self.scopes.update_top(if let Value::Number(n) = top {
-                    n.is_i64() || n.is_u64()
-                } else {
-                    false
-                }),
-                Instruction::TypeArray => self.scopes.update_top(top.is_array()),
-                Instruction::TypeObject => self.scopes.update_top(top.is_object()),
+                Instruction::TypeNull => last_result = matches!(top, Value::Null),
+                Instruction::TypeBoolean => last_result = matches!(top, Value::Bool(_)),
+                Instruction::TypeString => last_result = matches!(top, Value::String(_)),
+                Instruction::TypeNumber => last_result = matches!(top, Value::Number(_)),
+                Instruction::TypeInteger => {
+                    last_result = if let Value::Number(n) = top {
+                        n.is_i64() || n.is_u64()
+                    } else {
+                        false
+                    }
+                }
+                Instruction::TypeArray => last_result = matches!(top, Value::Array(_)),
+                Instruction::TypeObject => last_result = matches!(top, Value::Object(_)),
                 Instruction::TypeSet(inner) => execute!(inner),
+                Instruction::Enum(inner) => execute!(inner),
+                Instruction::EnumSingle(inner) => execute!(inner),
                 Instruction::MaxLength(inner) => execute!(String, inner),
                 Instruction::MinLength(inner) => execute!(String, inner),
                 Instruction::MinMaxLength(inner) => execute!(String, inner),
@@ -150,19 +95,30 @@ impl<'a> SchemaEvaluationVM<'a> {
                 Instruction::ExclusiveMinimumU64(inner) => execute!(Number, inner),
                 Instruction::ExclusiveMinimumI64(inner) => execute!(Number, inner),
                 Instruction::ExclusiveMinimumF64(inner) => execute!(Number, inner),
+                Instruction::MultipleOfInteger(inner) => execute!(Number, inner),
+                Instruction::MultipleOfFloat(inner) => execute!(Number, inner),
                 Instruction::MinProperties(inner) => execute!(Object, inner),
                 Instruction::MaxProperties(inner) => execute!(Object, inner),
                 Instruction::Required(inner) => execute!(Object, inner),
                 Instruction::MinItems(inner) => execute!(Array, inner),
                 Instruction::MaxItems(inner) => execute!(Array, inner),
+                Instruction::UniqueItems => {
+                    if let Value::Array(items) = top {
+                        last_result = is_unique(items);
+                    }
+                }
                 Instruction::PushProperty {
                     name,
                     skip_if_missing,
+                    required,
                 } => {
                     if let Value::Object(obj) = top {
                         if let Some(value) = obj.get(name.as_ref()) {
-                            self.values.push(value);
+                            self.values.push(top);
                             top = value;
+                        } else if *required {
+                            last_result = false;
+                            ip += skip_if_missing;
                         } else {
                             ip += skip_if_missing;
                         }
@@ -171,24 +127,16 @@ impl<'a> SchemaEvaluationVM<'a> {
                     }
                 }
                 Instruction::PopValue => {
-                    self.values.pop().expect("Value stack underflow");
-                    top = self.values[self.values.len() - 1];
-                }
-                Instruction::JumpBackward(offset) => {
-                    self.values.pop().expect("Value stack underflow");
-                    top = self.values[self.values.len() - 1];
-                    ip -= offset;
+                    top = self.values.pop().expect("Value stack underflow");
                 }
                 Instruction::ArrayIter(offset) => {
                     if let Value::Array(values) = top {
                         let mut values = values.iter();
                         if let Some(first) = values.next() {
+                            self.values.push(top);
+                            self.arrays.push(top_array);
                             top = first;
-                            self.arrays.push(values);
-                            self.values.push(first);
-                            let last_idx = self.arrays.len() - 1;
-                            top_array = &mut self.arrays[last_idx];
-                            ip += 1;
+                            top_array = values;
                         } else {
                             ip += offset;
                         }
@@ -198,23 +146,21 @@ impl<'a> SchemaEvaluationVM<'a> {
                 }
                 Instruction::ArrayIterNext(offset) => {
                     if let Some(next) = top_array.next() {
-                        self.values.push(next);
+                        ip -= offset;
                         top = next;
+                        continue;
                     } else {
-                        self.arrays.pop();
-                        let last_idx = self.arrays.len() - 1;
-                        top_array = &mut self.arrays[last_idx];
-                        ip += offset;
+                        top = self.values.pop().expect("Value stack underflow");
+                        top_array = self.arrays.pop().unwrap();
                     }
                 }
                 Instruction::ObjectValuesIter(offset) => {
                     if let Value::Object(object) = top {
                         let mut values = object.values();
                         if let Some(first) = values.next() {
+                            self.values.push(top);
                             top = first;
-                            self.object_values.push(object.values());
-                            self.values.push(first);
-                            ip += 1;
+                            self.object_values.push(values);
                         } else {
                             ip += offset;
                         }
@@ -224,36 +170,61 @@ impl<'a> SchemaEvaluationVM<'a> {
                 }
                 Instruction::ObjectValuesIterNext(offset) => {
                     if let Some(next) = self.object_values.last_mut().unwrap().next() {
-                        self.values.push(next);
+                        ip -= offset;
                         top = next;
+                        continue;
                     } else {
+                        top = self.values.pop().expect("Value stack underflow");
                         self.object_values.pop();
+                    }
+                }
+                Instruction::True => {
+                    last_result = true;
+                }
+                Instruction::False => {
+                    last_result = false;
+                }
+                Instruction::JumpIfValid(offset) => {
+                    if last_result {
+                        ip += offset;
+                    } else {
+                        ip += 1;
+                        continue;
+                    }
+                }
+                Instruction::JumpIfInvalid(offset) => {
+                    if last_result {
+                        ip += 1;
+                        continue;
+                    } else {
                         ip += offset;
                     }
                 }
-                Instruction::PushScope(scope) => {
-                    self.scopes.push(*scope);
+                Instruction::PushOneOf => {
+                    one_of_stack.push();
                 }
-                Instruction::PopScope => {
-                    let scope = self.scopes.pop();
-                    let result = matches!(
-                        scope,
-                        EvaluationScope::AndValid
-                            | EvaluationScope::OrSatisfied
-                            | EvaluationScope::XorSingle
-                    );
-                    self.scopes.update_top(result);
+                Instruction::SetOneValid => {
+                    if last_result {
+                        one_of_stack.mark_valid();
+                    }
                 }
-                Instruction::True => {
-                    self.scopes.update_top(true);
+                Instruction::JumpIfSecondValid(offset) => {
+                    if last_result {
+                        if !one_of_stack.mark_valid() {
+                            one_of_stack.pop();
+                            last_result = false;
+                            ip += offset;
+                        }
+                    }
                 }
-                Instruction::False => {
-                    self.scopes.update_top(false);
+                Instruction::PopOneOf => {
+                    last_result = one_of_stack.pop();
                 }
             }
             ip += 1;
         }
-        self.scopes.is_valid()
+        //dbg!(cnt);
+        last_result
     }
 }
 
@@ -284,7 +255,7 @@ impl ValidatorV2 {
         // TODO: Create a VM / clone stored one
         // TODO: Rename method `reset`
         let mut vm = SchemaEvaluationVM::new();
-        vm.reset(instance);
+        vm.reset();
         ErrorIterator {
             instructions: &self.instructions,
             vm,
@@ -400,6 +371,16 @@ mod tests {
     fn test_citm() {
         let schema = serde_json::from_slice(benchmark::CITM_SCHEMA).expect("Invalid JSON");
         let instance = serde_json::from_slice(benchmark::CITM).expect("Invalid JSON");
+        let validator_v1 = crate::validator_for(&schema).unwrap();
+        let validator_v2 = ValidatorV2::new(&schema);
+        assert!(validator_v1.is_valid(&instance));
+        assert!(validator_v2.is_valid(&instance));
+    }
+
+    #[test]
+    fn test_geojson() {
+        let schema = serde_json::from_slice(benchmark::GEOJSON).expect("Invalid JSON");
+        let instance = serde_json::from_slice(benchmark::CANADA).expect("Invalid JSON");
         let validator_v1 = crate::validator_for(&schema).unwrap();
         let validator_v2 = ValidatorV2::new(&schema);
         assert!(validator_v1.is_valid(&instance));

@@ -5,31 +5,20 @@ mod numeric;
 mod object;
 mod string;
 
-use any::TypeSet;
+use core::fmt;
+
+use any::{Enum, EnumSingle, TypeSet};
 use array::{MaxItems, MinItems};
-use numeric::{ExclusiveMaximum, ExclusiveMinimum, Maximum, Minimum};
+use numeric::{
+    ExclusiveMaximum, ExclusiveMinimum, Maximum, Minimum, MultipleOfFloat, MultipleOfInteger,
+};
 use object::{MaxProperties, MinProperties, Required};
 use serde_json::{Number, Value};
 use string::{MaxLength, MinLength, MinMaxLength};
 
-#[derive(Debug, Copy, Clone)]
-#[repr(u8)]
-pub(crate) enum EvaluationScope {
-    // And (allOf) states
-    AndValid = 0,   // All conditions true so far
-    AndInvalid = 1, // At least one condition false
+pub(crate) use array::is_unique;
+pub(crate) use combinators::OneOfStack;
 
-    // Or (anyOf) states
-    OrSearching = 2, // Still looking for a valid branch
-    OrSatisfied = 3, // At least one valid branch found
-
-    // Xor (oneOf) states
-    XorEmpty = 4,    // No valid branch found yet
-    XorSingle = 5,   // Exactly one valid branch found
-    XorMultiple = 6, // More than one valid branch found
-}
-
-#[derive(Debug)]
 pub(crate) enum Instruction {
     True,
     False,
@@ -42,6 +31,8 @@ pub(crate) enum Instruction {
     TypeInteger,
     TypeArray,
     TypeObject,
+    Enum(Enum),
+    EnumSingle(EnumSingle),
 
     MaximumU64(Maximum<u64>),
     MaximumI64(Maximum<i64>),
@@ -55,6 +46,8 @@ pub(crate) enum Instruction {
     ExclusiveMinimumU64(ExclusiveMinimum<u64>),
     ExclusiveMinimumI64(ExclusiveMinimum<i64>),
     ExclusiveMinimumF64(ExclusiveMinimum<f64>),
+    MultipleOfInteger(MultipleOfInteger),
+    MultipleOfFloat(MultipleOfFloat),
 
     MaxLength(MaxLength),
     MinLength(MinLength),
@@ -66,8 +59,7 @@ pub(crate) enum Instruction {
 
     MinItems(MinItems),
     MaxItems(MaxItems),
-
-    JumpBackward(usize),
+    UniqueItems,
 
     ArrayIter(usize),
     ArrayIterNext(usize),
@@ -78,11 +70,93 @@ pub(crate) enum Instruction {
     PushProperty {
         name: Box<str>,
         skip_if_missing: usize,
+        required: bool,
     },
     PopValue,
 
-    PushScope(EvaluationScope),
-    PopScope,
+    JumpIfValid(usize),
+    JumpIfSecondValid(usize),
+    JumpIfInvalid(usize),
+
+    PushOneOf,
+    SetOneValid,
+    PopOneOf,
+}
+
+impl fmt::Debug for Instruction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Instruction::True => write!(f, "TRUE"),
+            Instruction::False => write!(f, "FALSE"),
+
+            Instruction::TypeSet(ts) => write!(f, "TYPE_SET {:?}", ts),
+            Instruction::TypeNull => write!(f, "TYPE_NULL"),
+            Instruction::TypeBoolean => write!(f, "TYPE_BOOLEAN"),
+            Instruction::TypeString => write!(f, "TYPE_STRING"),
+            Instruction::TypeNumber => write!(f, "TYPE_NUMBER"),
+            Instruction::TypeInteger => write!(f, "TYPE_INTEGER"),
+            Instruction::TypeArray => write!(f, "TYPE_ARRAY"),
+            Instruction::TypeObject => write!(f, "TYPE_OBJECT"),
+            Instruction::Enum(e) => write!(f, "ENUM {:?}", e),
+            Instruction::EnumSingle(es) => write!(f, "ENUM_SINGLE {:?}", es),
+
+            Instruction::MaximumU64(m) => write!(f, "MAXIMUM_U64 {:?}", m.limit),
+            Instruction::MaximumI64(m) => write!(f, "MAXIMUM_I64 {:?}", m.limit),
+            Instruction::MaximumF64(m) => write!(f, "MAXIMUM_F64 {:?}", m.limit),
+            Instruction::MinimumU64(m) => write!(f, "MINIMUM_U64 {:?}", m.limit),
+            Instruction::MinimumI64(m) => write!(f, "MINIMUM_I64 {:?}", m.limit),
+            Instruction::MinimumF64(m) => write!(f, "MINIMUM_F64 {:?}", m.limit),
+            Instruction::ExclusiveMaximumU64(m) => write!(f, "EXCLUSIVE_MAXIMUM_U64 {:?}", m.limit),
+            Instruction::ExclusiveMaximumI64(m) => write!(f, "EXCLUSIVE_MAXIMUM_I64 {:?}", m.limit),
+            Instruction::ExclusiveMaximumF64(m) => write!(f, "EXCLUSIVE_MAXIMUM_F64 {:?}", m.limit),
+            Instruction::ExclusiveMinimumU64(m) => write!(f, "EXCLUSIVE_MINIMUM_U64 {:?}", m.limit),
+            Instruction::ExclusiveMinimumI64(m) => write!(f, "EXCLUSIVE_MINIMUM_I64 {:?}", m.limit),
+            Instruction::ExclusiveMinimumF64(m) => write!(f, "EXCLUSIVE_MINIMUM_F64 {:?}", m.limit),
+            Instruction::MultipleOfInteger(m) => {
+                write!(f, "MULTIPLE_OF_INTEGER {:?}", m.multiple_of)
+            }
+            Instruction::MultipleOfFloat(m) => write!(f, "MULTIPLE_OF_FLOAT {:?}", m.multiple_of),
+
+            Instruction::MaxLength(m) => write!(f, "MAX_LENGTH {:?}", m.limit),
+            Instruction::MinLength(m) => write!(f, "MIN_LENGTH {:?}", m.limit),
+            Instruction::MinMaxLength(m) => write!(f, "MIN_MAX_LENGTH {:?}", m),
+
+            Instruction::MinProperties(m) => write!(f, "MIN_PROPERTIES {:?}", m.limit),
+            Instruction::MaxProperties(m) => write!(f, "MAX_PROPERTIES {:?}", m.limit),
+            Instruction::Required(r) => write!(f, "REQUIRED {:?}", r.required),
+
+            Instruction::MinItems(m) => write!(f, "MIN_ITEMS {:?}", m),
+            Instruction::MaxItems(m) => write!(f, "MAX_ITEMS {:?}", m),
+            Instruction::UniqueItems => write!(f, "UNIQUE_ITEMS"),
+
+            Instruction::ArrayIter(idx) => write!(f, "ARRAY_ITER {}", idx),
+            Instruction::ArrayIterNext(idx) => write!(f, "ARRAY_ITER_NEXT {}", idx),
+
+            Instruction::ObjectValuesIter(idx) => write!(f, "OBJECT_VALUES_ITER {}", idx),
+            Instruction::ObjectValuesIterNext(idx) => write!(f, "OBJECT_VALUES_ITER_NEXT {}", idx),
+
+            Instruction::PushProperty {
+                name,
+                skip_if_missing,
+                required,
+            } => {
+                write!(
+                    f,
+                    "PUSH_PROPERTY name={} skip_if_missing={} required={}",
+                    name, skip_if_missing, required
+                )
+            }
+            Instruction::PopValue => write!(f, "POP_VALUE"),
+
+            Instruction::JumpIfValid(addr) => write!(f, "JUMP_IF_VALID {}", addr),
+            Instruction::JumpIfSecondValid(addr) => write!(f, "JUMP_IF_SECOND_VALID {}", addr),
+            Instruction::JumpIfInvalid(addr) => write!(f, "JUMP_IF_INVALID {}", addr),
+
+            Instruction::PushOneOf => write!(f, "PUSH_ONE_OF"),
+            Instruction::SetOneValid => write!(f, "SET_ONE_VALID"),
+            Instruction::PopOneOf => write!(f, "POP_ONE_OF"),
+        }
+    }
 }
 
 macro_rules! impl_conversions {
@@ -99,6 +173,8 @@ macro_rules! impl_conversions {
 
 impl_conversions!(
     TypeSet => TypeSet,
+    Enum => Enum,
+    EnumSingle => EnumSingle,
 
     Minimum<u64> => MinimumU64,
     Minimum<i64> => MinimumI64,
@@ -112,6 +188,8 @@ impl_conversions!(
     ExclusiveMaximum<u64> => ExclusiveMaximumU64,
     ExclusiveMaximum<i64> => ExclusiveMaximumI64,
     ExclusiveMaximum<f64> => ExclusiveMaximumF64,
+    MultipleOfInteger => MultipleOfInteger,
+    MultipleOfFloat => MultipleOfFloat,
 
     MinLength => MinLength,
     MaxLength => MaxLength,
@@ -131,7 +209,7 @@ pub(crate) struct SchemaCompiler {
 
 macro_rules! emit_jump {
     ($compiler:expr, $variant:ident) => {{
-        let idx = $compiler.instructions.len();
+        let idx = $compiler.current_location();
         $compiler.instructions.push(Instruction::$variant(0));
         idx
     }};
@@ -139,7 +217,7 @@ macro_rules! emit_jump {
 
 macro_rules! patch_jump {
     ($compiler:expr, $idx:expr, $variant:ident) => {{
-        let current_idx = $compiler.instructions.len();
+        let current_idx = $compiler.current_location();
         if let Instruction::$variant(ref mut offset) = $compiler.instructions[$idx] {
             *offset = current_idx - $idx - 1;
         } else {
@@ -172,46 +250,104 @@ impl SchemaCompiler {
         }
     }
 
+    fn current_location(&self) -> usize {
+        self.instructions.len()
+    }
+
     fn emit(&mut self, instruction: impl Into<Instruction>) {
         self.instructions.push(instruction.into());
     }
 
-    pub(crate) fn emit_jump_backward(&mut self, target_idx: usize) {
-        let current_idx = self.instructions.len();
-        self.emit(Instruction::JumpBackward(current_idx - target_idx));
+    pub(crate) fn emit_array_iter_next(&mut self, target_idx: usize) {
+        self.emit(Instruction::ArrayIterNext(
+            self.current_location() - target_idx - 1,
+        ));
+    }
+
+    pub(crate) fn emit_object_values_iter_next(&mut self, target_idx: usize) {
+        self.emit(Instruction::ObjectValuesIterNext(
+            self.current_location() - target_idx - 1,
+        ));
+    }
+
+    pub(crate) fn emit_true(&mut self) {
+        self.emit(Instruction::True)
+    }
+
+    pub(crate) fn emit_false(&mut self) {
+        self.emit(Instruction::False)
+    }
+
+    pub(crate) fn emit_push_one_of(&mut self) {
+        self.emit(Instruction::PushOneOf)
+    }
+
+    pub(crate) fn emit_pop_one_of(&mut self) {
+        self.emit(Instruction::PopOneOf)
+    }
+
+    pub(crate) fn emit_set_one_valid(&mut self) {
+        self.emit(Instruction::SetOneValid)
+    }
+
+    pub(crate) fn emit_unique_items(&mut self) {
+        self.emit(Instruction::UniqueItems)
     }
 
     define_jumps!(
+        emit_jump_if_valid, patch_jump_if_valid => JumpIfValid,
+        emit_jump_if_second_valid, patch_jump_if_second_valid => JumpIfSecondValid,
+        emit_jump_if_invalid, patch_jump_if_invalid => JumpIfInvalid,
         emit_array_iter, patch_array_iter => ArrayIter,
-        emit_array_iter_next, patch_array_iter_next => ArrayIterNext,
         emit_object_values_iter, patch_object_values_iter => ObjectValuesIter,
-        emit_object_values_iter_next, patch_object_values_iter_next => ObjectValuesIterNext,
     );
 
     pub(crate) fn compile(schema: &Value) -> Vec<Instruction> {
         let mut compiler = Self::new();
-        compiler.compile_impl(schema);
+        compiler.compile_schema(schema);
         compiler.instructions
     }
 
-    pub(crate) fn compile_impl(&mut self, schema: &Value) {
+    pub(crate) fn compile_schema(&mut self, schema: &Value) {
         match schema {
-            Value::Bool(true) => {
-                self.emit(Instruction::True);
-            }
-            Value::Bool(false) => {
-                self.emit(Instruction::False);
-            }
+            Value::Bool(true) => self.emit_true(),
+            Value::Bool(false) => self.emit_false(),
             Value::Object(obj) => {
                 if obj.is_empty() {
-                    self.emit(Instruction::True);
+                    self.emit_true();
                 } else {
-                    combinators::compile(self, obj);
-                    any::compile(self, obj);
-                    string::compile(self, obj);
-                    numeric::compile(self, obj);
-                    array::compile(self, obj);
-                    object::compile(self, obj);
+                    let mut jumps = vec![];
+                    combinators::compile(self, obj, &mut jumps);
+                    any::compile(self, obj, &mut jumps);
+                    string::compile(self, obj, &mut jumps);
+                    numeric::compile(self, obj, &mut jumps);
+                    array::compile(self, obj, &mut jumps);
+                    object::compile(self, obj, &mut jumps);
+                    match jumps.as_slice() {
+                        [_] if matches!(
+                            self.instructions.last(),
+                            Some(Instruction::JumpIfInvalid(_))
+                        ) =>
+                        {
+                            self.instructions.pop();
+                        }
+                        [jumps @ .., _]
+                            if matches!(
+                                self.instructions.last(),
+                                Some(Instruction::JumpIfInvalid(_))
+                            ) =>
+                        {
+                            self.instructions.pop();
+                            for jump in jumps {
+                                self.patch_jump_if_invalid(*jump);
+                            }
+                        }
+                        jumps => {
+                            for jump in jumps {
+                                self.patch_jump_if_invalid(*jump);
+                            }
+                        }
+                    }
                 }
             }
             _ => panic!("Invalid schema: expected object or boolean"),
