@@ -3,14 +3,15 @@ use crate::{
     error::{no_error, ErrorIterator},
     keywords::CompilationResult,
     node::SchemaNode,
-    paths::LazyLocation,
+    paths::{LazyLocation, Location},
     validator::{PartialApplication, Validate},
-    ValidationError,
+    TracingCallback, TracingContext, ValidationError,
 };
 use serde_json::{Map, Value};
 
 pub(crate) struct ItemsArrayValidator {
     items: Vec<SchemaNode>,
+    location: Location,
 }
 impl ItemsArrayValidator {
     #[inline]
@@ -25,7 +26,10 @@ impl ItemsArrayValidator {
             let validators = compiler::compile(&ictx, ictx.as_resource_ref(item))?;
             items.push(validators)
         }
-        Ok(Box::new(ItemsArrayValidator { items }))
+        Ok(Box::new(ItemsArrayValidator {
+            items,
+            location: kctx.location().clone(),
+        }))
     }
 }
 impl Validate for ItemsArrayValidator {
@@ -66,6 +70,26 @@ impl Validate for ItemsArrayValidator {
             }
         }
         Ok(())
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: TracingCallback<'_>,
+    ) -> bool {
+        if let Value::Array(items) = instance {
+            let mut is_valid = true;
+            for (idx, (item, node)) in items.iter().zip(self.items.iter()).enumerate() {
+                is_valid &= node.trace(item, &instance_path.push(idx), callback);
+            }
+            TracingContext::new(instance_path, self.schema_path(), is_valid).call(callback);
+            is_valid
+        } else {
+            true
+        }
     }
 }
 

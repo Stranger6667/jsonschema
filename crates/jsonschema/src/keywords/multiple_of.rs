@@ -48,6 +48,12 @@ impl Validate for MultipleOfFloatValidator {
         }
         Ok(())
     }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Number(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct MultipleOfIntegerValidator {
@@ -88,6 +94,12 @@ impl Validate for MultipleOfIntegerValidator {
             ));
         }
         Ok(())
+    }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Number(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 

@@ -580,6 +580,7 @@ pub mod output;
 pub mod paths;
 pub(crate) mod properties;
 mod retriever;
+mod tracing;
 pub mod types;
 mod validator;
 
@@ -595,6 +596,7 @@ pub use output::BasicOutput;
 pub use referencing::{
     Draft, Error as ReferencingError, Registry, RegistryOptions, Resource, Retrieve, Uri,
 };
+pub use tracing::{NodeEvaluationResult, TracingCallback, TracingContext};
 pub use types::{JsonType, JsonTypeSet, JsonTypeSetIterator};
 pub use validator::Validator;
 

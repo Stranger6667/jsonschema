@@ -68,6 +68,12 @@ impl Validate for MultipleTypesValidator {
             ))
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct IntegerTypeValidator {
@@ -104,6 +110,12 @@ impl Validate for IntegerTypeValidator {
                 JsonType::Integer,
             ))
         }
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 

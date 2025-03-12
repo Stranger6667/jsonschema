@@ -5,7 +5,7 @@ use crate::{
     output::{Annotations, BasicOutput, ErrorDescription, OutputUnit},
     paths::{LazyLocation, Location, LocationSegment},
     validator::{PartialApplication, Validate},
-    ValidationError,
+    TracingCallback, ValidationError,
 };
 use ahash::AHashMap;
 use referencing::{uri, Uri};
@@ -365,6 +365,38 @@ impl Validate for SchemaNode {
                     annotations,
                 )
             }
+        }
+    }
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+    ) -> bool {
+        match &self.validators {
+            NodeValidators::Array { ref validators } => {
+                let mut is_valid = true;
+                // Walk through all sub-schemas & avoid short circuiting
+                for validator in validators {
+                    is_valid &= validator.trace(instance, location, callback);
+                }
+                is_valid
+            }
+            NodeValidators::Keyword(ref kvals) => {
+                let mut is_valid = true;
+                // Walk through all sub-schemas & avoid short circuiting
+                for (_, validator) in &kvals.validators {
+                    is_valid &= validator.trace(instance, location, callback);
+                }
+                is_valid
+            }
+            NodeValidators::Boolean { validator: Some(_) } => false,
+            NodeValidators::Boolean { validator: None } => true,
         }
     }
 }

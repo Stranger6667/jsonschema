@@ -57,6 +57,12 @@ macro_rules! define_numeric_keywords {
                         true
                     }
                 }
+                fn matches_type(&self, instance: &Value) -> bool {
+                    matches!(instance, Value::Number(_))
+                }
+                fn schema_path(&self) -> &Location {
+                    &self.location
+                }
             }
         )*
     };
