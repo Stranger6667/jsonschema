@@ -580,6 +580,7 @@ pub mod paths;
 pub mod primitive_type;
 pub(crate) mod properties;
 mod retriever;
+mod tracing;
 mod validator;
 
 pub use error::{ErrorIterator, MaskedValidationError, ValidationError};
@@ -589,6 +590,7 @@ pub use output::BasicOutput;
 pub use referencing::{
     Draft, Error as ReferencingError, Registry, RegistryOptions, Resource, Retrieve, Uri,
 };
+pub use tracing::{NodeEvaluationResult, TracingCallback, TracingContext};
 pub use validator::Validator;
 
 #[cfg(feature = "resolve-async")]
