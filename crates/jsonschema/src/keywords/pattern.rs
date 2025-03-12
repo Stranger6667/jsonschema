@@ -144,6 +144,12 @@ impl Validate for PatternValidator {
         }
         true
     }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 #[inline]

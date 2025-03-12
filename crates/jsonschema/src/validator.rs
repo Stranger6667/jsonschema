@@ -5,11 +5,11 @@ use crate::{
     error::{error, no_error, ErrorIterator},
     node::SchemaNode,
     output::{Annotations, ErrorDescription, Output, OutputUnit},
-    paths::LazyLocation,
-    Draft, ValidationError, ValidationOptions,
+    paths::{LazyLocation, Location},
+    Draft, TracingCallback, TracingContext, ValidationError, ValidationOptions,
 };
 use serde_json::Value;
-use std::{collections::VecDeque, sync::Arc};
+use std::{any, collections::VecDeque, sync::Arc};
 
 /// The Validate trait represents a predicate over some JSON value. Some validators are very simple
 /// predicates such as "a value which is a string", whereas others may be much more complex,
@@ -96,6 +96,27 @@ pub(crate) trait Validate: Send + Sync {
         } else {
             PartialApplication::invalid_empty(errors)
         }
+    }
+    fn schema_path(&self) -> &Location {
+        todo!("{}", any::type_name_of_val(self))
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        todo!("{}", any::type_name_of_val(self))
+    }
+    fn trace(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+    ) -> bool {
+        let result = self.is_valid(instance);
+        let rv = if self.matches_type(instance) {
+            Some(result)
+        } else {
+            None
+        };
+        TracingContext::new(location, self.schema_path(), rv).call(callback);
+        result
     }
 }
 
@@ -231,6 +252,12 @@ impl Validator {
     #[inline]
     pub fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         self.root.validate(instance, &LazyLocation::new())
+    }
+    pub fn trace(&self, instance: &Value, callback: TracingCallback<'_>) -> bool {
+        let location = LazyLocation::new();
+        let is_valid = self.root.trace(instance, &location, callback);
+        TracingContext::new(&location, &Location::default(), is_valid).call(callback);
+        is_valid
     }
     /// Run validation against `instance` and return an iterator over [`ValidationError`] in the error case.
     #[inline]

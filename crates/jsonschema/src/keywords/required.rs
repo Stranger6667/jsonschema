@@ -85,6 +85,12 @@ impl Validate for RequiredValidator {
         }
         no_error()
     }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct SingleItemRequiredValidator {
@@ -126,6 +132,12 @@ impl Validate for SingleItemRequiredValidator {
         } else {
             true
         }
+    }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
