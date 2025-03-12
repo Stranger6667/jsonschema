@@ -29,6 +29,16 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # (dd): These packages bumped their MSRV with a patch release.
+      #       As per my understanding cargo will be able to automatically
+      #       resolve the proper version with the resolver v3 which is MSRV-aware.
+      #       With the current MSRV it is not possible to force the resolver to find
+      #       proper versions, hence they are pinned manually here. The end users
+      #       will be able to do the same on their side (which is a bad UX though),
+      #       but apparently there is nothing can be done on the `jsonschema` side
+      #       beside bumping MSRV to 1.85 and upgrading to the new resolver.
+      - run: cargo update -p litemap@0.7.5 --precise 0.7.4
+      - run: cargo update -p zerofrom@0.1.6 --precise 0.1.5
       - run: cargo build -p jsonschema
 
   test-stable:

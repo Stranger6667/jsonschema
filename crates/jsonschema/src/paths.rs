@@ -136,8 +136,17 @@ impl From<usize> for LocationSegment<'_> {
 }
 
 /// A cheap to clone JSON pointer that represents location with a JSON value.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Location(Arc<String>);
+
+impl serde::Serialize for Location {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
 
 impl Location {
     /// Create a new, empty `Location`.

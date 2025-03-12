@@ -1,4 +1,6 @@
-use codspeed_criterion_compat::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use codspeed_criterion_compat::{
+    criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion,
+};
 use referencing::{Draft, Registry, SPECIFICATIONS};
 
 static DRAFT4: &[u8] = include_bytes!("../../benchmark/data/subresources/draft4.json");
@@ -28,7 +30,7 @@ fn bench_subresources(c: &mut Criterion) {
                     Registry::try_new("http://example.com/schema.json", resource)
                         .expect("Invalid registry input")
                 },
-                criterion::BatchSize::SmallInput,
+                BatchSize::SmallInput,
             );
         });
     }
@@ -57,7 +59,7 @@ fn bench_subresources(c: &mut Criterion) {
                     |(resource, registry)| {
                         registry.try_with_resource("http://example.com/schema.json", resource)
                     },
-                    criterion::BatchSize::SmallInput,
+                    BatchSize::SmallInput,
                 );
             },
         );

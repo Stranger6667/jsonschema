@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `Hash`, `PartialOrd`, `Ord` and `serde::Serialize` for `Location`.
+
 ## [0.29.0] - 2025-02-08
 
 ### Breaking Changes
