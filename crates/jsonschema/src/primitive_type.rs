@@ -160,8 +160,6 @@ impl Iterator for PrimitiveTypesBitMapIterator {
     }
 }
 
-impl ExactSizeIterator for PrimitiveTypesBitMapIterator {}
-
 #[cfg(test)]
 mod tests {
     use super::*;

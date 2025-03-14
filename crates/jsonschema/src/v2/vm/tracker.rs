@@ -12,6 +12,10 @@ impl EvaluationTracker {
         }
     }
 
+    pub(super) fn reset(&mut self) {
+        self.instructions.clear();
+    }
+
     pub(super) fn track(&mut self, instruction: &Instruction) {
         self.instructions.push(*instruction);
     }

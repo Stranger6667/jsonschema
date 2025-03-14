@@ -7,10 +7,38 @@ pub(super) type InstructionIdx = u32;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Instruction {
     TypeInteger {
-        prefetch_info: numeric::PrefetchInfo,
-        value0: usize,
-        value1: usize,
+        prefetch: numeric::PrefetchInfo,
+        data: numeric::InlineData2x,
     },
+    MinimumU64 {
+        prefetch: numeric::PrefetchInfo,
+        inner: numeric::Minimum<u64>,
+        data: numeric::InlineData1x,
+    },
+}
+
+impl Instruction {
+    pub(crate) fn type_integer(
+        prefetch: numeric::PrefetchInfo,
+        data: numeric::InlineData2x,
+    ) -> Self {
+        Instruction::TypeInteger { prefetch, data }
+    }
+    pub(crate) fn minimum(
+        prefetch: numeric::PrefetchInfo,
+        value: numeric::NumericValue,
+        data: numeric::InlineData1x,
+    ) -> Self {
+        match value {
+            numeric::NumericValue::U64(limit) => Instruction::MinimumU64 {
+                prefetch,
+                inner: numeric::Minimum::new(limit),
+                data,
+            },
+            numeric::NumericValue::I64(i) => todo!(),
+            numeric::NumericValue::F64(f) => todo!(),
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]

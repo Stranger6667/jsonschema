@@ -37,6 +37,8 @@ impl<'a> SchemaEvaluationVM<'a> {
     #[inline(always)]
     fn reset(&mut self) {
         self.values.clear();
+        #[cfg(feature = "internal-debug")]
+        self.tracker.reset();
     }
 
     pub fn is_valid(&mut self, program: &Program, instance: &'a Value) -> bool {
@@ -54,6 +56,12 @@ impl<'a> SchemaEvaluationVM<'a> {
             match instr {
                 Instruction::TypeInteger { .. } => {
                     last = types::is_integer(top);
+                    pc += 1;
+                }
+                Instruction::MinimumU64 { inner, .. } => {
+                    if let Value::Number(value) = top {
+                        last = inner.is_valid(value)
+                    }
                     pc += 1;
                 }
             }
@@ -89,6 +97,20 @@ impl<'a> SchemaEvaluationVM<'a> {
                                 .get_location(pc)
                                 .expect("Instruction not found"),
                         })
+                    }
+                    pc += 1;
+                }
+                Instruction::MinimumU64 { inner, .. } => {
+                    if let Value::Number(value) = top {
+                        if !inner.is_valid(value) {
+                            last = Err(ValidationError {
+                                instance: Cow::Borrowed(top),
+                                kind: ValidationErrorKind::Minimum,
+                                schema_path: instructions
+                                    .get_location(pc)
+                                    .expect("Instruction not found"),
+                            })
+                        }
                     }
                     pc += 1;
                 }
@@ -139,6 +161,23 @@ impl<'a> Iterator for ErrorIterator<'a, '_> {
                             kind: ValidationErrorKind::Type,
                             schema_path,
                         });
+                    }
+                }
+                Instruction::MinimumU64 { inner, .. } => {
+                    if let Value::Number(value) = self.top {
+                        if inner.is_valid(value) {
+                            self.pc += 1;
+                        } else {
+                            let schema_path = instructions
+                                .get_location(self.pc)
+                                .expect("Instruction not found");
+                            self.pc += 1;
+                            return Some(ValidationError {
+                                instance: Cow::Borrowed(self.top),
+                                kind: ValidationErrorKind::Minimum,
+                                schema_path,
+                            });
+                        }
                     }
                 }
             }

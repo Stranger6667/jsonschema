@@ -15,4 +15,5 @@ pub struct ValidationError<'a> {
 #[derive(Debug)]
 pub enum ValidationErrorKind {
     Type,
+    Minimum,
 }

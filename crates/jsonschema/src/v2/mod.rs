@@ -44,9 +44,20 @@ mod tests {
         json!(42),
         json!("abc"),
         &[
-            Instruction::TypeInteger { prefetch_info: PrefetchInfo::new(), value0: 0, value1: 0}
+            Instruction::type_integer(PrefetchInfo::new(), [0, 0]),
         ],
         &["/type"],
+        &[]
+    )]
+    #[test_case(
+        json!({"type": "integer", "minimum": 5}),
+        json!(42),
+        json!(3),
+        &[
+            Instruction::type_integer(PrefetchInfo::from_unchecked(0b100000000000000), [5, 0]),
+            Instruction::minimum(PrefetchInfo::from_unchecked(0b100000000000000), 5u64.into(), 0),
+        ],
+        &["/type", "/minimum"],
         &[]
     )]
     fn test_compilation(
