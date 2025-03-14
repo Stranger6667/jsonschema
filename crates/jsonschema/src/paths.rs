@@ -268,6 +268,12 @@ impl<'a> FromIterator<LocationSegment<'a>> for Location {
     }
 }
 
+impl PartialEq<&str> for Location {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

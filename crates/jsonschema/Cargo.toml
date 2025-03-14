@@ -17,6 +17,7 @@ default = ["resolve-http", "resolve-file"]
 resolve-http = ["reqwest"]
 resolve-file = []
 resolve-async = ["referencing/retrieve-async", "reqwest/default", "dep:async-trait", "dep:tokio"]
+internal-debug = []
 
 [dependencies]
 ahash.workspace = true
@@ -44,6 +45,7 @@ uuid-simd = "0.8"
 
 tokio = { version = "1.0", features = ["fs", "rt"], optional = true }
 async-trait = { version = "0.1.86", optional = true }
+smallvec = { version = "1.14.0", features = ["union"] }
 
 [dev-dependencies]
 benchmark = { path = "../benchmark/" }

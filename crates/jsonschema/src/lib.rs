@@ -580,7 +580,10 @@ pub mod paths;
 pub mod primitive_type;
 pub(crate) mod properties;
 mod retriever;
+mod v2;
 mod validator;
+
+pub use v2::ValidatorV2;
 
 pub use error::{ErrorIterator, MaskedValidationError, ValidationError};
 pub use keywords::custom::Keyword;
