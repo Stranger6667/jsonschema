@@ -35,9 +35,21 @@
 //! Should the order of keywords matter? The last keyword may avoid any prefetching, so it should be the most popular one (`minimum`)
 use serde_json::Value;
 
-use super::{CompilationContext, PrefetchInfo};
+use super::codegen::CodeGenerator;
 
-pub(super) fn compile(ctx: &mut CompilationContext, schema: &Value) {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PrefetchInfo(u16);
+
+impl PrefetchInfo {
+    pub(crate) fn new() -> PrefetchInfo {
+        PrefetchInfo(0)
+    }
+    fn is_empty(&self) -> bool {
+        self.0 == 0
+    }
+}
+
+pub(super) fn compile(codegen: &mut CodeGenerator, schema: &Value) {
     // TODO: `type` is needed elsewhere, avoid multiple lookups
     match (
         schema.get("type"),
@@ -58,7 +70,7 @@ pub(super) fn compile(ctx: &mut CompilationContext, schema: &Value) {
             dbg!(42);
         }
         (Some(Value::String(ty)), None, None, None, None, None) if ty == "integer" => {
-            ctx.emit_integer_type(PrefetchInfo::new());
+            codegen.emit_integer_type(PrefetchInfo::new());
         }
         _ => {}
     }

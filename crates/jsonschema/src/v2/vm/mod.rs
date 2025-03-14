@@ -4,9 +4,11 @@ use std::borrow::Cow;
 
 use serde_json::Value;
 use smallvec::SmallVec;
+#[cfg(feature = "internal-debug")]
+mod tracker;
 
 use super::{
-    compiler::{Instruction, Program},
+    compiler::{instructions::Instruction, Program},
     error::{ValidationError, ValidationErrorKind},
 };
 
@@ -14,7 +16,7 @@ use super::{
 pub(crate) struct SchemaEvaluationVM<'a> {
     values: SmallVec<[&'a Value; 8]>,
     #[cfg(feature = "internal-debug")]
-    tracer: EvaluationTracer,
+    tracker: tracker::EvaluationTracker,
 }
 
 impl Default for SchemaEvaluationVM<'_> {
@@ -28,18 +30,8 @@ impl<'a> SchemaEvaluationVM<'a> {
         Self {
             values: SmallVec::new(),
             #[cfg(feature = "internal-debug")]
-            tracer: EvaluationTracer::new(),
+            tracker: tracker::EvaluationTracker::new(),
         }
-    }
-
-    #[cfg(feature = "internal-debug")]
-    fn record_instruction(&mut self, instruction: &Instruction) {
-        self.tracer.push(instruction.clone());
-    }
-
-    #[cfg(feature = "internal-debug")]
-    fn report_debug_info(&self) {
-        println!("Total Iterations: {}", self.tracer.instructions.len());
     }
 
     #[inline(always)]
@@ -50,30 +42,25 @@ impl<'a> SchemaEvaluationVM<'a> {
     pub fn is_valid(&mut self, program: &Program, instance: &'a Value) -> bool {
         self.reset();
 
-        let mut ip = 0;
+        let mut pc = 0;
         let mut top = instance;
-        let mut last_result = true;
+        let mut last = true;
 
         let instructions = &program.instructions;
 
-        while ip < instructions.len() {
-            let instruction = &instructions[ip];
+        while let Some(instr) = instructions.get(pc) {
             #[cfg(feature = "internal-debug")]
-            self.record_instruction(instruction);
-            match instruction {
-                Instruction::TypeInteger {
-                    prefetch_info,
-                    value0,
-                    value1,
-                } => {
-                    last_result = types::is_integer(top);
-                    ip += 1;
+            self.tracker.track(instr);
+            match instr {
+                Instruction::TypeInteger { .. } => {
+                    last = types::is_integer(top);
+                    pc += 1;
                 }
             }
         }
         #[cfg(feature = "internal-debug")]
-        self.report_debug_info();
-        last_result
+        self.tracker.report();
+        last
     }
 
     pub fn validate(
@@ -83,51 +70,48 @@ impl<'a> SchemaEvaluationVM<'a> {
     ) -> Result<(), ValidationError<'a>> {
         self.reset();
 
-        let mut ip = 0;
+        let mut pc = 0;
         let mut top = instance;
         let mut last = Ok(());
 
         let instructions = &program.instructions;
-        let locations = &program.locations;
 
-        while ip < instructions.len() {
-            let instruction = &instructions[ip];
+        while let Some(instr) = instructions.get(pc) {
             #[cfg(feature = "internal-debug")]
-            self.record_instruction(instruction);
-            match instruction {
-                Instruction::TypeInteger {
-                    prefetch_info,
-                    value0,
-                    value1,
-                } => {
+            self.tracker.track(instr);
+            match instr {
+                Instruction::TypeInteger { .. } => {
                     if !types::is_integer(top) {
                         last = Err(ValidationError {
                             instance: Cow::Borrowed(top),
                             kind: ValidationErrorKind::Type,
-                            schema_path: locations[ip].clone(),
+                            schema_path: instructions
+                                .get_location(pc)
+                                .expect("Instruction not found"),
                         })
                     }
-                    ip += 1;
+                    pc += 1;
                 }
             }
         }
         #[cfg(feature = "internal-debug")]
-        self.report_debug_info();
+        self.tracker.report();
         last
     }
 }
 
-#[derive(Debug, Clone)]
+#[cfg_attr(feature = "internal-debug", derive(Debug))]
+#[derive(Clone)]
 pub struct ErrorIterator<'a, 'b> {
-    ip: usize,
+    pc: u32,
     top: &'a Value,
     program: &'b Program,
 }
 
 impl<'a, 'b> ErrorIterator<'a, 'b> {
-    pub fn new(instance: &'a Value, program: &'b Program) -> Self {
+    pub(crate) fn new(instance: &'a Value, program: &'b Program) -> Self {
         Self {
-            ip: 0,
+            pc: 0,
             top: instance,
             program,
         }
@@ -139,42 +123,26 @@ impl<'a> Iterator for ErrorIterator<'a, '_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let instructions = &self.program.instructions;
-        let locations = &self.program.locations;
 
-        while self.ip < instructions.len() {
-            let instruction = &instructions[self.ip];
-            match instruction {
-                Instruction::TypeInteger {
-                    prefetch_info,
-                    value0,
-                    value1,
-                } => {
-                    let ip = self.ip;
-                    self.ip += 1;
-                    if !types::is_integer(self.top) {
+        while let Some(instr) = instructions.get(self.pc) {
+            match instr {
+                Instruction::TypeInteger { .. } => {
+                    if types::is_integer(self.top) {
+                        self.pc += 1;
+                    } else {
+                        let schema_path = instructions
+                            .get_location(self.pc)
+                            .expect("Instruction not found");
+                        self.pc += 1;
                         return Some(ValidationError {
                             instance: Cow::Borrowed(self.top),
                             kind: ValidationErrorKind::Type,
-                            schema_path: locations[ip].clone(),
+                            schema_path,
                         });
                     }
                 }
             }
         }
         None
-    }
-}
-
-#[cfg(feature = "internal-debug")]
-struct EvaluationTracer {
-    instructions: Vec<Instruction>,
-}
-
-#[cfg(feature = "internal-debug")]
-impl EvaluationTracer {
-    fn new() -> EvaluationTracer {
-        EvaluationTracer {
-            instructions: Vec::new(),
-        }
     }
 }

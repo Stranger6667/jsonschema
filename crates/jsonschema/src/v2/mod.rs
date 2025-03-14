@@ -1,11 +1,10 @@
-use compiler::Program;
+use compiler::program::Program;
 use error::ValidationError;
 use serde_json::Value;
 use vm::ErrorIterator;
 
 mod compiler;
 mod error;
-mod instructions;
 mod vm;
 
 pub struct ValidatorV2 {
@@ -33,10 +32,11 @@ impl ValidatorV2 {
 
 #[cfg(test)]
 mod tests {
-    use super::compiler::*;
-    use super::vm::*;
-    use serde_json::json;
-    use serde_json::Value;
+    use super::{
+        compiler::{instructions::*, numeric::*, Program},
+        vm::*,
+    };
+    use serde_json::{json, Value};
     use test_case::test_case;
 
     #[test_case(
@@ -58,8 +58,8 @@ mod tests {
         constants: &[Value],
     ) {
         let program = Program::compile(&schema);
-        assert_eq!(program.instructions, instructions);
-        assert_eq!(program.locations, locations);
+        assert_eq!(program.instructions.instructions, instructions);
+        assert_eq!(program.instructions.locations, locations);
         assert_eq!(program.constants, constants);
         let mut vm = SchemaEvaluationVM::new();
         assert!(vm.is_valid(&program, &valid));
