@@ -27,6 +27,15 @@ impl<'a> ValidationErrorV2<'a> {
             }),
         }
     }
+    pub fn bool(instance: &'a Value, schema_path: Location) -> Self {
+        Self {
+            repr: Box::new(ErrorRepr {
+                instance: Cow::Borrowed(instance),
+                kind: ValidationErrorKind::Bool,
+                schema_path,
+            }),
+        }
+    }
     pub fn minimum(instance: &'a Value, schema_path: Location) -> Self {
         Self {
             repr: Box::new(ErrorRepr {
@@ -59,6 +68,7 @@ impl<'a> ValidationErrorV2<'a> {
 #[derive(Debug)]
 pub enum ValidationErrorKind {
     Type,
+    Bool,
     Minimum,
     Maximum,
     ExclusiveMinimum,

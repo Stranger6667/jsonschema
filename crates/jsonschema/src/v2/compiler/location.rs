@@ -13,9 +13,12 @@ impl LocationContext {
             top: Location::new(),
         }
     }
+    pub(crate) fn top(&self) -> Location {
+        self.top.clone()
+    }
     /// Push a new location.
-    pub(crate) fn push(&mut self, key: &str) {
-        let mut new = self.top.join(key);
+    pub(crate) fn push<'a>(&mut self, segment: impl Into<LocationSegment<'a>>) {
+        let mut new = self.top.join(segment.into());
         std::mem::swap(&mut self.top, &mut new);
         self.stack.push(new);
     }

@@ -35,7 +35,7 @@ impl ValidatorV2 {
 #[cfg(test)]
 mod tests {
     use super::{
-        compiler::{instructions::*, numeric::*, Program},
+        compiler::{instructions::*, Program},
         vm::*,
     };
     use serde_json::{json, Value};
@@ -46,7 +46,7 @@ mod tests {
         json!(42),
         json!("abc"),
         &[
-            Instruction::type_integer(PrefetchInfo::new(), [0, 0]),
+            Instruction::TypeInteger,
         ],
         &["/type"],
         &[];
@@ -57,7 +57,7 @@ mod tests {
         json!(42),
         json!(3),
         &[
-            Instruction::minimum(PrefetchInfo::from_unchecked(0b100000000000000), 5u64.into(), 0),
+            Instruction::minimum(5u64.into()),
         ],
         &["/minimum"],
         &[];
@@ -68,7 +68,7 @@ mod tests {
         json!(3),
         json!(7),
         &[
-            Instruction::maximum(PrefetchInfo::from_unchecked(0b000100000000000), 5u64.into(), 0),
+            Instruction::maximum(5u64.into()),
         ],
         &["/maximum"],
         &[];
@@ -79,8 +79,8 @@ mod tests {
         json!(6),
         json!(3),
         &[
-            Instruction::type_integer(PrefetchInfo::from_unchecked(0b100000000000000), [5, 0]),
-            Instruction::minimum(PrefetchInfo::from_unchecked(0b100000000000000), 5u64.into(), 0),
+            Instruction::TypeInteger,
+            Instruction::minimum(5u64.into()),
         ],
         &["/type", "/minimum"],
         &[];
@@ -91,8 +91,8 @@ mod tests {
         json!(3),
         json!(7),
         &[
-            Instruction::type_integer(PrefetchInfo::from_unchecked(0b000100000000000), [5, 0]),
-            Instruction::maximum(PrefetchInfo::from_unchecked(0b000100000000000), 5u64.into(), 0),
+            Instruction::TypeInteger,
+            Instruction::maximum(5u64.into()),
         ],
         &["/type", "/maximum"],
         &[];
@@ -103,8 +103,8 @@ mod tests {
         json!(10),
         json!(7),
         &[
-            Instruction::type_integer(PrefetchInfo::from_unchecked(0b000000000000100), [5, 0]),
-            Instruction::multiple_of(PrefetchInfo::from_unchecked(0b000000000000100), 5.0.into(), 0),
+            Instruction::TypeInteger,
+            Instruction::multiple_of(5.0.into()),
         ],
         &["/type", "/multipleOf"],
         &[];
@@ -115,8 +115,8 @@ mod tests {
         json!(7),
         json!(12),
         &[
-            Instruction::minimum(PrefetchInfo::from_unchecked(0b100100000000000), 5u64.into(), 10),
-            Instruction::maximum(PrefetchInfo::from_unchecked(0b100100000000000), 10u64.into(), 0),
+            Instruction::minimum(5u64.into()),
+            Instruction::maximum(10u64.into()),
         ],
         &["/minimum", "/maximum"],
         &[];
@@ -127,13 +127,40 @@ mod tests {
         json!(7),
         json!(12),
         &[
-            Instruction::type_integer(PrefetchInfo::from_unchecked(0b100100000000000), [5, 10]),
-            Instruction::minimum(PrefetchInfo::from_unchecked(0b100100000000000), 5u64.into(), 10),
-            Instruction::maximum(PrefetchInfo::from_unchecked(0b100100000000000), 10u64.into(), 0),
+            Instruction::TypeInteger,
+            Instruction::minimum(5u64.into()),
+            Instruction::maximum(10u64.into()),
         ],
         &["/type", "/minimum", "/maximum"],
         &[];
         "integer type + minimum + maximum"
+    )]
+    #[test_case(
+        json!({"allOf": [{"minimum": 1}, {"maximum": 10}]}),
+        json!(7),
+        json!(12),
+        &[
+            Instruction::minimum(1u64.into()),
+            Instruction::JumpIfFalseOrPop(4),
+            Instruction::maximum(10u64.into()),
+            Instruction::JumpIfFalseOrPop(4),
+        ],
+        &["/allOf/0/minimum", "", "/allOf/1/maximum", ""],
+        &[];
+        "allOf + minimum + maximum"
+    )]
+    #[test_case(
+        json!({"anyOf": [{"anyOf": [{"maximum": 10}]}]}),
+        json!(7),
+        json!(12),
+        &[
+            Instruction::maximum(10u64.into()),
+            Instruction::JumpIfTrueOrPop(2),
+            Instruction::JumpIfTrueOrPop(3),
+        ],
+        &["/anyOf/0/anyOf/0/maximum", "", ""],
+        &[];
+        "nested anyOf"
     )]
     fn test_compilation(
         schema: Value,
@@ -152,7 +179,6 @@ mod tests {
         assert!(!vm.is_valid(&program, &invalid));
         assert!(vm.validate(&program, &valid).is_ok());
         assert!(vm.validate(&program, &invalid).is_err());
-
         assert!(ErrorIteratorV2::new(&valid, &program).next().is_none());
         assert!(ErrorIteratorV2::new(&invalid, &program).next().is_some());
     }

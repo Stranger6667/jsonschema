@@ -1,4 +1,5 @@
 use super::super::compiler::instructions::Instruction;
+use std::fmt::Write;
 
 #[derive(Debug, Clone)]
 pub(super) struct EvaluationTracker {
@@ -21,6 +22,19 @@ impl EvaluationTracker {
     }
 
     pub(super) fn report(&self) {
-        println!("Total Iterations: {}", self.instructions.len());
+        struct Adapter<'a>(usize, &'a Instruction);
+
+        impl core::fmt::Debug for Adapter<'_> {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_fmt(format_args!("{:>05} | {:?}", self.0, self.1))
+            }
+        }
+
+        let mut buf = String::from("Instructions:\n");
+        for (idx, instr) in self.instructions.iter().enumerate() {
+            writeln!(buf, "{:?}", &Adapter(idx, instr)).unwrap();
+        }
+        write!(buf, "Total Iterations: {}", self.instructions.len()).unwrap();
+        println!("{buf}");
     }
 }

@@ -1,4 +1,5 @@
 pub(super) mod codegen;
+pub(super) mod combinators;
 pub(super) mod instructions;
 pub(super) mod location;
 pub(super) mod numeric;
