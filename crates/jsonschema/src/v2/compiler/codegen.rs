@@ -7,6 +7,7 @@ use super::{
     numeric,
     types::{self, JsonType, JsonTypeSet},
 };
+use referencing::Registry;
 use serde_json::Value;
 
 pub(super) type Constants = Vec<Value>;
@@ -16,7 +17,14 @@ pub(crate) struct CodeGenerator {
     pub(super) instructions: Instructions,
     locations: LocationContext,
     pending_scopes: Vec<PendingScope>,
+    registry: Registry,
     constants: Vec<Value>,
+}
+
+pub(super) enum Scope {
+    And,
+    Or,
+    Xor,
 }
 
 enum PendingScope {
@@ -39,10 +47,11 @@ macro_rules! define_emit_fn {
 }
 
 impl CodeGenerator {
-    pub(super) fn new() -> Self {
+    pub(super) fn new(registry: Registry) -> Self {
         Self {
             instructions: Instructions::new(),
             locations: LocationContext::new(),
+            registry,
             pending_scopes: Vec::new(),
             constants: Vec::new(),
         }
@@ -63,11 +72,11 @@ impl CodeGenerator {
             Value::Bool(false) => self.emit_false(),
             Value::Object(obj) if obj.is_empty() => self.emit_true(),
             Value::Object(_) => {
-                self.start_and_scope();
+                self.start_scope(Scope::And);
                 types::compile(self, schema);
                 combinators::compile(self, schema);
                 numeric::compile(self, schema);
-                self.end_and_scope();
+                self.end_scope();
             }
             _ => todo!(),
         }
@@ -79,78 +88,53 @@ impl CodeGenerator {
         self.locations.pop();
     }
 
-    pub(super) fn start_and_scope(&mut self) {
-        self.pending_scopes
-            .push(PendingScope::And { jumps: Vec::new() });
+    pub(super) fn start_scope(&mut self, scope: Scope) {
+        let pending = match scope {
+            Scope::And => PendingScope::And { jumps: Vec::new() },
+            Scope::Or => PendingScope::Or { jumps: Vec::new() },
+            Scope::Xor => PendingScope::Xor { jumps: Vec::new() },
+        };
+        self.pending_scopes.push(pending);
     }
-    pub(super) fn end_and_scope(&mut self) {
-        let end = self.next_instruction();
-        if let Some(PendingScope::And { jumps }) = self.pending_scopes.pop() {
-            for instr in jumps {
-                match self.instructions.get_mut(instr) {
-                    Some(&mut Instruction::JumpIfFalseOrPop(ref mut target)) => {
-                        *target = end;
-                    }
-                    _ => unreachable!(),
-                }
+    pub(super) fn short_circuit(&mut self) {
+        match self.pending_scopes.last_mut().expect("Missing scope") {
+            PendingScope::And { jumps } => {
+                jumps.push(self.instructions.add(Instruction::JumpIfFalseOrPop(!0)));
+            }
+            PendingScope::Or { jumps } => {
+                jumps.push(self.instructions.add(Instruction::JumpIfTrueOrPop(!0)));
+            }
+            PendingScope::Xor { jumps } => {
+                jumps.push(self.instructions.add(Instruction::JumpIfTrueTrueOrPop(!0)));
             }
         }
     }
-    pub(super) fn start_or_scope(&mut self) {
-        self.pending_scopes
-            .push(PendingScope::Or { jumps: Vec::new() });
-    }
-    pub(super) fn end_or_scope(&mut self) {
+    pub(super) fn end_scope(&mut self) {
         let end = self.next_instruction();
-        if let Some(PendingScope::Or { jumps }) = self.pending_scopes.pop() {
-            for instr in jumps {
-                match self.instructions.get_mut(instr) {
-                    Some(&mut Instruction::JumpIfTrueOrPop(ref mut target)) => {
-                        *target = end;
+
+        macro_rules! update_jumps {
+            ($jumps:expr, $variant:ident) => {
+                for instr in $jumps {
+                    match self.instructions.get_mut(instr) {
+                        Some(Instruction::$variant(ref mut target)) => {
+                            *target = end;
+                        }
+                        _ => unreachable!(),
                     }
-                    _ => unreachable!(),
                 }
+            };
+        }
+
+        match self.pending_scopes.pop().expect("Missing scope") {
+            PendingScope::And { jumps } => {
+                update_jumps!(jumps, JumpIfFalseOrPop)
             }
-        }
-    }
-    pub(super) fn start_xor_scope(&mut self) {
-        self.pending_scopes
-            .push(PendingScope::Xor { jumps: Vec::new() });
-        self.emit_push_one_of();
-    }
-    pub(super) fn end_xor_scope(&mut self) {
-        let end = self.next_instruction();
-        if let Some(PendingScope::Xor { jumps }) = self.pending_scopes.pop() {
-            for instr in jumps {
-                match self.instructions.get_mut(instr) {
-                    Some(&mut Instruction::JumpIfTrueTrueOrPop(ref mut target)) => {
-                        *target = end;
-                    }
-                    _ => unreachable!(),
-                }
+            PendingScope::Or { jumps } => {
+                update_jumps!(jumps, JumpIfTrueOrPop)
             }
-        }
-        self.emit_pop_one_of();
-    }
-    pub(super) fn short_circuit_and(&mut self) {
-        if let Some(&mut PendingScope::And { ref mut jumps }) = self.pending_scopes.last_mut() {
-            jumps.push(self.instructions.add(Instruction::JumpIfFalseOrPop(!0)));
-        } else {
-            unreachable!();
-        }
-    }
-    pub(super) fn short_circuit_or(&mut self) {
-        if let Some(&mut PendingScope::Or { ref mut jumps }) = self.pending_scopes.last_mut() {
-            jumps.push(self.instructions.add(Instruction::JumpIfTrueOrPop(!0)));
-        } else {
-            unreachable!();
-        }
-    }
-    pub(super) fn short_circuit_xor(&mut self) {
-        if let Some(&mut PendingScope::Xor { ref mut jumps }) = self.pending_scopes.last_mut() {
-            jumps.push(self.instructions.add(Instruction::JumpIfTrueTrueOrPop(!0)));
-        } else {
-            unreachable!();
+            PendingScope::Xor { jumps } => {
+                update_jumps!(jumps, JumpIfTrueTrueOrPop)
+            }
         }
     }
     pub(super) fn emit_push_one_of(&mut self) {

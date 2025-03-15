@@ -162,6 +162,25 @@ mod tests {
         &[];
         "nested anyOf"
     )]
+    #[test_case(
+        json!({
+            "$ref": "#/defs/bar",
+            "defs": {
+                "bar": {"$ref": "#/defs/foo"},
+                "foo": {"type": "integer"}
+            }
+        }),
+        json!(7),
+        json!(false),
+        &[
+            Instruction::maximum(10u64.into()),
+            Instruction::JumpIfTrueOrPop(2),
+            Instruction::JumpIfTrueOrPop(3),
+        ],
+        &["/anyOf/0/anyOf/0/maximum", "", ""],
+        &[];
+        "nested ref"
+    )]
     fn test_compilation(
         schema: Value,
         valid: Value,

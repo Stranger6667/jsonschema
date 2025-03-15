@@ -1,36 +1,37 @@
 use serde_json::Value;
 
-use super::codegen::CodeGenerator;
+use super::codegen::{CodeGenerator, Scope};
 
 pub(super) fn compile(codegen: &mut CodeGenerator, schema: &Value) {
     if let Some(Value::Array(subschemas)) = schema.get("allOf") {
-        codegen.start_and_scope();
+        codegen.start_scope(Scope::And);
         codegen.enter_location("allOf");
         for (idx, subschema) in subschemas.iter().enumerate() {
             codegen.enter_location(idx);
             codegen.compile_schema(subschema);
-            codegen.short_circuit_and();
+            codegen.short_circuit();
             codegen.exit_location();
         }
-        codegen.end_and_scope();
-        codegen.short_circuit_and();
+        codegen.end_scope();
+        codegen.short_circuit();
         codegen.exit_location();
     }
     if let Some(Value::Array(subschemas)) = schema.get("anyOf") {
-        codegen.start_or_scope();
+        codegen.start_scope(Scope::Or);
         codegen.enter_location("anyOf");
         for (idx, subschema) in subschemas.iter().enumerate() {
             codegen.enter_location(idx);
             codegen.compile_schema(subschema);
-            codegen.short_circuit_or();
+            codegen.short_circuit();
             codegen.exit_location();
         }
-        codegen.end_or_scope();
-        codegen.short_circuit_and();
+        codegen.end_scope();
+        codegen.short_circuit();
         codegen.exit_location();
     }
     if let Some(Value::Array(subschemas)) = schema.get("oneOf") {
-        codegen.start_xor_scope();
+        codegen.start_scope(Scope::Xor);
+        codegen.emit_push_one_of();
         codegen.enter_location("oneOf");
         match subschemas.as_slice() {
             [subschema, rest @ ..] => {
@@ -41,14 +42,15 @@ pub(super) fn compile(codegen: &mut CodeGenerator, schema: &Value) {
                 for (idx, subschema) in rest.iter().enumerate() {
                     codegen.enter_location(idx + 1);
                     codegen.compile_schema(subschema);
-                    codegen.short_circuit_xor();
+                    codegen.short_circuit();
                     codegen.exit_location();
                 }
             }
             [] => unreachable!(),
         };
-        codegen.end_xor_scope();
-        codegen.short_circuit_and();
+        codegen.end_scope();
+        codegen.emit_pop_one_of();
+        codegen.short_circuit();
         codegen.exit_location();
     }
 }
