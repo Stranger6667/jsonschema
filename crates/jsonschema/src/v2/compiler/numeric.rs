@@ -1,11 +1,7 @@
 use num_cmp::NumCmp;
 use serde_json::{Number, Value};
 
-use super::{
-    super::ext::numeric,
-    codegen::CodeGenerator,
-    types::{JsonType, JsonTypeSet},
-};
+use super::{super::ext::numeric, codegen::CodeGenerator};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum NumericValue {
@@ -54,15 +50,7 @@ fn parse_number(val: &Number) -> NumericValue {
     }
 }
 
-pub(super) fn compile(codegen: &mut CodeGenerator, types: JsonTypeSet, schema: &Value) {
-    if types.is_numeric_only() {
-        if types.contains(JsonType::Number) {
-            codegen.emit_number_type();
-        } else {
-            codegen.emit_integer_type();
-        }
-    }
-
+pub(super) fn compile(codegen: &mut CodeGenerator, schema: &Value) {
     macro_rules! emit_numeric {
         ($( $keyword:expr => $emit_fn:ident ),* $(,)?) => {
             $(

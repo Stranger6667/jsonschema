@@ -57,6 +57,12 @@ impl<'a> SchemaEvaluationVM<'a> {
                 pc += 1;
             }};
         }
+        macro_rules! is_type {
+            ($variant:ident) => {{
+                last = matches!(top, Value::$variant(_));
+                pc += 1;
+            }};
+        }
 
         while let Some(instr) = instructions.get(pc) {
             #[cfg(feature = "internal-debug")]
@@ -65,12 +71,21 @@ impl<'a> SchemaEvaluationVM<'a> {
                 instructions.get_location(pc).expect("Invalid location"),
             );
             match instr {
+                Instruction::TypeNull => {
+                    last = matches!(top, Value::Null);
+                    pc += 1;
+                }
+                Instruction::TypeBoolean => is_type!(Bool),
+                Instruction::TypeNumber => is_type!(Number),
                 Instruction::TypeInteger => {
                     last = numeric::is_integer(top);
                     pc += 1;
                 }
-                Instruction::TypeNumber => {
-                    last = matches!(top, Value::Number(_));
+                Instruction::TypeString => is_type!(String),
+                Instruction::TypeObject => is_type!(Object),
+                Instruction::TypeArray => is_type!(Array),
+                Instruction::TypeSet(types) => {
+                    last = types.contains(top);
                     pc += 1;
                 }
                 Instruction::MinimumU64(inner) => {
@@ -228,9 +243,31 @@ impl<'a> Iterator for ErrorIteratorV2<'a, '_> {
                 }
             }};
         }
+        macro_rules! is_type {
+            ($variant:ident) => {{
+                if matches!(self.top, Value::$variant(_)) {
+                    self.pc += 1;
+                } else {
+                    let schema_path = self.current_location();
+                    self.pc += 1;
+                    return Some(ValidationErrorV2::ty(self.top, schema_path));
+                }
+            }};
+        }
 
         while let Some(instr) = instructions.get(self.pc) {
             match instr {
+                Instruction::TypeNull => {
+                    if matches!(self.top, Value::Null) {
+                        self.pc += 1;
+                    } else {
+                        let schema_path = self.current_location();
+                        self.pc += 1;
+                        return Some(ValidationErrorV2::ty(self.top, schema_path));
+                    }
+                }
+                Instruction::TypeBoolean => is_type!(Bool),
+                Instruction::TypeNumber => is_type!(Number),
                 Instruction::TypeInteger => {
                     if numeric::is_integer(self.top) {
                         self.pc += 1;
@@ -240,8 +277,11 @@ impl<'a> Iterator for ErrorIteratorV2<'a, '_> {
                         return Some(ValidationErrorV2::ty(self.top, schema_path));
                     }
                 }
-                Instruction::TypeNumber => {
-                    if matches!(self.top, Value::Number(_)) {
+                Instruction::TypeString => is_type!(String),
+                Instruction::TypeObject => is_type!(Object),
+                Instruction::TypeArray => is_type!(Array),
+                Instruction::TypeSet(types) => {
+                    if types.contains(self.top) {
                         self.pc += 1;
                     } else {
                         let schema_path = self.current_location();

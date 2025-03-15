@@ -1,13 +1,20 @@
 use crate::paths::Location;
 
-use super::numeric;
+use super::{numeric, types::JsonTypeSet};
 
 pub(super) type InstructionIdx = u32;
 
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Instruction {
+    TypeNull,
+    TypeBoolean,
     TypeNumber,
     TypeInteger,
+    TypeString,
+    TypeObject,
+    TypeArray,
+    TypeSet(JsonTypeSet),
+
     MinimumU64(numeric::Minimum<u64>),
     MinimumI64(numeric::Minimum<i64>),
     MinimumF64(numeric::Minimum<f64>),
@@ -38,8 +45,14 @@ pub(crate) enum Instruction {
 impl core::fmt::Debug for Instruction {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Instruction::TypeNull => f.write_str("TYPE_NULL"),
+            Instruction::TypeBoolean => f.write_str("TYPE_BOOLEAN"),
             Instruction::TypeNumber => f.write_str("TYPE_NUMBER"),
             Instruction::TypeInteger => f.write_str("TYPE_INTEGER"),
+            Instruction::TypeString => f.write_str("TYPE_STRING"),
+            Instruction::TypeObject => f.write_str("TYPE_OBJECT"),
+            Instruction::TypeArray => f.write_str("TYPE_ARRAY"),
+            Instruction::TypeSet(types) => write!(f, "TYPE_SET {types:?}"),
             Instruction::MinimumU64(minimum) => write!(f, "MINIMUM_U64 {}", minimum.limit),
             Instruction::MinimumI64(minimum) => write!(f, "MINIMUM_I64 {}", minimum.limit),
             Instruction::MinimumF64(minimum) => write!(f, "MINIMUM_F64 {}", minimum.limit),
@@ -168,20 +181,38 @@ impl Instructions {
     }
 }
 
-#[cfg(feature = "internal-debug")]
 impl core::fmt::Debug for Instructions {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        struct Adapter<'a>(usize, &'a Instruction);
+        let max_loc_len = self
+            .locations
+            .iter()
+            .map(|loc| loc.len())
+            .max()
+            .unwrap_or(0);
+
+        struct Adapter<'a>(usize, usize, &'a Location, &'a Instruction);
 
         impl core::fmt::Debug for Adapter<'_> {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                f.write_fmt(format_args!("{:>05} | {:?}", self.0, self.1))
+                f.write_fmt(format_args!(
+                    "{:>05} | {:width$} | {:?}",
+                    self.0,
+                    self.2.as_str(),
+                    self.3,
+                    width = self.1
+                ))
             }
         }
 
         let mut list = f.debug_list();
-        for (idx, instr) in self.instructions.iter().enumerate() {
-            list.entry(&Adapter(idx, instr));
+
+        for (idx, (loc, instr)) in self
+            .locations
+            .iter()
+            .zip(self.instructions.iter())
+            .enumerate()
+        {
+            list.entry(&Adapter(idx, max_loc_len, loc, instr));
         }
         list.finish()
     }

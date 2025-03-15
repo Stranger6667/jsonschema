@@ -5,7 +5,7 @@ use super::{
     instructions::{Instruction, Instructions},
     location::LocationContext,
     numeric,
-    types::JsonTypeSet,
+    types::{self, JsonType, JsonTypeSet},
 };
 use serde_json::Value;
 
@@ -63,13 +63,11 @@ impl CodeGenerator {
             Value::Bool(false) => self.emit_false(),
             Value::Object(obj) if obj.is_empty() => self.emit_true(),
             Value::Object(_) => {
-                let types = if let Some(types) = schema.get("type") {
-                    JsonTypeSet::from_value(types)
-                } else {
-                    JsonTypeSet::new()
-                };
+                self.start_and_scope();
+                types::compile(self, schema);
                 combinators::compile(self, schema);
-                numeric::compile(self, types, schema);
+                numeric::compile(self, schema);
+                self.end_and_scope();
             }
             _ => todo!(),
         }
@@ -80,12 +78,12 @@ impl CodeGenerator {
     pub(super) fn exit_location(&mut self) {
         self.locations.pop();
     }
-    pub(super) fn start_all_of(&mut self) {
+
+    pub(super) fn start_and_scope(&mut self) {
         self.pending_scopes
             .push(PendingScope::And { jumps: Vec::new() });
-        self.enter_location("allOf");
     }
-    pub(super) fn end_all_of(&mut self) {
+    pub(super) fn end_and_scope(&mut self) {
         let end = self.next_instruction();
         if let Some(PendingScope::And { jumps }) = self.pending_scopes.pop() {
             for instr in jumps {
@@ -97,14 +95,12 @@ impl CodeGenerator {
                 }
             }
         }
-        self.exit_location();
     }
-    pub(super) fn start_any_of(&mut self) {
+    pub(super) fn start_or_scope(&mut self) {
         self.pending_scopes
             .push(PendingScope::Or { jumps: Vec::new() });
-        self.enter_location("anyOf");
     }
-    pub(super) fn end_any_of(&mut self) {
+    pub(super) fn end_or_scope(&mut self) {
         let end = self.next_instruction();
         if let Some(PendingScope::Or { jumps }) = self.pending_scopes.pop() {
             for instr in jumps {
@@ -116,15 +112,13 @@ impl CodeGenerator {
                 }
             }
         }
-        self.exit_location();
     }
-    pub(super) fn start_one_of(&mut self) {
+    pub(super) fn start_xor_scope(&mut self) {
         self.pending_scopes
             .push(PendingScope::Xor { jumps: Vec::new() });
-        self.enter_location("oneOf");
         self.emit_push_one_of();
     }
-    pub(super) fn end_one_of(&mut self) {
+    pub(super) fn end_xor_scope(&mut self) {
         let end = self.next_instruction();
         if let Some(PendingScope::Xor { jumps }) = self.pending_scopes.pop() {
             for instr in jumps {
@@ -137,23 +131,22 @@ impl CodeGenerator {
             }
         }
         self.emit_pop_one_of();
-        self.exit_location();
     }
-    pub(super) fn short_circuit_all_of(&mut self) {
+    pub(super) fn short_circuit_and(&mut self) {
         if let Some(&mut PendingScope::And { ref mut jumps }) = self.pending_scopes.last_mut() {
             jumps.push(self.instructions.add(Instruction::JumpIfFalseOrPop(!0)));
         } else {
             unreachable!();
         }
     }
-    pub(super) fn short_circuit_any_of(&mut self) {
+    pub(super) fn short_circuit_or(&mut self) {
         if let Some(&mut PendingScope::Or { ref mut jumps }) = self.pending_scopes.last_mut() {
             jumps.push(self.instructions.add(Instruction::JumpIfTrueOrPop(!0)));
         } else {
             unreachable!();
         }
     }
-    pub(super) fn short_circuit_one_of(&mut self) {
+    pub(super) fn short_circuit_xor(&mut self) {
         if let Some(&mut PendingScope::Xor { ref mut jumps }) = self.pending_scopes.last_mut() {
             jumps.push(self.instructions.add(Instruction::JumpIfTrueTrueOrPop(!0)));
         } else {
@@ -177,13 +170,22 @@ impl CodeGenerator {
         self.instructions
             .add_with_location(Instruction::False, self.locations.top());
     }
-    pub(super) fn emit_number_type(&mut self) {
+    pub(super) fn emit_type(&mut self, ty: JsonType) {
+        let instr = match ty {
+            JsonType::Array => Instruction::TypeArray,
+            JsonType::Boolean => Instruction::TypeBoolean,
+            JsonType::Integer => Instruction::TypeInteger,
+            JsonType::Null => Instruction::TypeNull,
+            JsonType::Number => Instruction::TypeNumber,
+            JsonType::Object => Instruction::TypeObject,
+            JsonType::String => Instruction::TypeString,
+        };
         self.instructions
-            .add_with_location(Instruction::TypeNumber, self.locations.join("type"));
+            .add_with_location(instr, self.locations.join("type"));
     }
-    pub(super) fn emit_integer_type(&mut self) {
+    pub(super) fn emit_types(&mut self, types: JsonTypeSet) {
         self.instructions
-            .add_with_location(Instruction::TypeInteger, self.locations.join("type"));
+            .add_with_location(Instruction::TypeSet(types), self.locations.join("type"));
     }
 
     define_emit_fn!(

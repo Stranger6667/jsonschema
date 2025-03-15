@@ -1,5 +1,4 @@
-use crate::paths::Location;
-use crate::v2::compiler::instructions::Instruction;
+use crate::{paths::Location, v2::compiler::instructions::Instruction};
 use std::fmt::Write;
 
 #[derive(Debug, Clone)]
