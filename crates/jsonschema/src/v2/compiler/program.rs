@@ -4,7 +4,7 @@ use super::{codegen::CodeGenerator, instructions::Instructions};
 
 #[cfg_attr(feature = "internal-debug", derive(Debug))]
 #[derive(Clone)]
-pub(crate) struct Program {
+pub struct Program {
     pub(crate) instructions: Instructions,
     pub(crate) constants: Vec<Value>,
 }

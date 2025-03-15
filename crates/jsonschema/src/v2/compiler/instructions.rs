@@ -4,8 +4,12 @@ use super::numeric;
 
 pub(super) type InstructionIdx = u32;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Instruction {
+    TypeNumber {
+        prefetch: numeric::PrefetchInfo,
+        data: numeric::InlineData2x,
+    },
     TypeInteger {
         prefetch: numeric::PrefetchInfo,
         data: numeric::InlineData2x,
@@ -15,33 +19,146 @@ pub(crate) enum Instruction {
         inner: numeric::Minimum<u64>,
         data: numeric::InlineData1x,
     },
+    MinimumI64 {
+        prefetch: numeric::PrefetchInfo,
+        inner: numeric::Minimum<i64>,
+        data: numeric::InlineData1x,
+    },
+    MinimumF64 {
+        prefetch: numeric::PrefetchInfo,
+        inner: numeric::Minimum<f64>,
+        data: numeric::InlineData1x,
+    },
+    MaximumU64 {
+        prefetch: numeric::PrefetchInfo,
+        inner: numeric::Maximum<u64>,
+        data: numeric::InlineData1x,
+    },
+    MaximumI64 {
+        prefetch: numeric::PrefetchInfo,
+        inner: numeric::Maximum<i64>,
+        data: numeric::InlineData1x,
+    },
+    MaximumF64 {
+        prefetch: numeric::PrefetchInfo,
+        inner: numeric::Maximum<f64>,
+        data: numeric::InlineData1x,
+    },
+    ExclusiveMinimumU64 {
+        prefetch: numeric::PrefetchInfo,
+        inner: numeric::ExclusiveMinimum<u64>,
+        data: numeric::InlineData1x,
+    },
+    ExclusiveMinimumI64 {
+        prefetch: numeric::PrefetchInfo,
+        inner: numeric::ExclusiveMinimum<i64>,
+        data: numeric::InlineData1x,
+    },
+    ExclusiveMinimumF64 {
+        prefetch: numeric::PrefetchInfo,
+        inner: numeric::ExclusiveMinimum<f64>,
+        data: numeric::InlineData1x,
+    },
+    ExclusiveMaximumU64 {
+        prefetch: numeric::PrefetchInfo,
+        inner: numeric::ExclusiveMaximum<u64>,
+        data: numeric::InlineData1x,
+    },
+    ExclusiveMaximumI64 {
+        prefetch: numeric::PrefetchInfo,
+        inner: numeric::ExclusiveMaximum<i64>,
+        data: numeric::InlineData1x,
+    },
+    ExclusiveMaximumF64 {
+        prefetch: numeric::PrefetchInfo,
+        inner: numeric::ExclusiveMaximum<f64>,
+        data: numeric::InlineData1x,
+    },
+    MultipleOfFloat {
+        prefetch: numeric::PrefetchInfo,
+        inner: numeric::MultipleOfFloat,
+        data: numeric::InlineData1x,
+    },
+    MultipleOfInteger {
+        prefetch: numeric::PrefetchInfo,
+        inner: numeric::MultipleOfInteger,
+        data: numeric::InlineData1x,
+    },
+}
+
+macro_rules! define_min_max {
+    ($($fn_name:ident => ($struct_name:ident, $instr_u64:ident, $instr_i64:ident, $instr_f64:ident)),* $(,)?) => {
+        $(
+            pub(crate) fn $fn_name(
+                prefetch: numeric::PrefetchInfo,
+                value: numeric::NumericValue,
+                data: numeric::InlineData1x,
+            ) -> Self {
+                match value {
+                    numeric::NumericValue::U64(limit) => Instruction::$instr_u64 {
+                        prefetch,
+                        inner: numeric::$struct_name::new(limit),
+                        data,
+                    },
+                    numeric::NumericValue::I64(limit) => Instruction::$instr_i64 {
+                        prefetch,
+                        inner: numeric::$struct_name::new(limit),
+                        data,
+                    },
+                    numeric::NumericValue::F64(limit) => Instruction::$instr_f64 {
+                        prefetch,
+                        inner: numeric::$struct_name::new(limit),
+                        data,
+                    },
+                }
+            }
+        )*
+    };
 }
 
 impl Instruction {
+    pub(crate) fn type_number(
+        prefetch: numeric::PrefetchInfo,
+        data: numeric::InlineData2x,
+    ) -> Self {
+        Instruction::TypeNumber { prefetch, data }
+    }
     pub(crate) fn type_integer(
         prefetch: numeric::PrefetchInfo,
         data: numeric::InlineData2x,
     ) -> Self {
         Instruction::TypeInteger { prefetch, data }
     }
-    pub(crate) fn minimum(
+
+    define_min_max!(
+        minimum => (Minimum, MinimumU64, MinimumI64, MinimumF64),
+        maximum => (Maximum, MaximumU64, MaximumI64, MaximumF64),
+        exclusive_minimum => (ExclusiveMinimum, ExclusiveMinimumU64, ExclusiveMinimumI64, ExclusiveMinimumF64),
+        exclusive_maximum => (ExclusiveMaximum, ExclusiveMaximumU64, ExclusiveMaximumI64, ExclusiveMaximumF64),
+    );
+    pub(crate) fn multiple_of(
         prefetch: numeric::PrefetchInfo,
         value: numeric::NumericValue,
         data: numeric::InlineData1x,
     ) -> Self {
-        match value {
-            numeric::NumericValue::U64(limit) => Instruction::MinimumU64 {
+        let value = value.as_f64();
+        if value.fract() == 0. {
+            Instruction::MultipleOfInteger {
                 prefetch,
-                inner: numeric::Minimum::new(limit),
+                inner: numeric::MultipleOfInteger::new(value),
                 data,
-            },
-            numeric::NumericValue::I64(i) => todo!(),
-            numeric::NumericValue::F64(f) => todo!(),
+            }
+        } else {
+            Instruction::MultipleOfFloat {
+                prefetch,
+                inner: numeric::MultipleOfFloat::new(value),
+                data,
+            }
         }
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq)]
 pub(crate) struct Instructions {
     pub(crate) instructions: Vec<Instruction>,
     pub(crate) locations: Vec<Location>,

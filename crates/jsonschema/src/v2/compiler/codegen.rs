@@ -7,9 +7,27 @@ pub(super) type Constants = Vec<Value>;
 
 /// Provides a way to generate a program for the VM.
 pub(crate) struct CodeGenerator {
-    instructions: Instructions,
+    pub(super) instructions: Instructions,
     locations: LocationContext,
     constants: Vec<Value>,
+}
+
+macro_rules! define_emit_fn {
+    ($( $fn_name:ident => $instr_name:ident, $location:literal ),* $(,)?) => {
+        $(
+            pub(super) fn $fn_name(
+                &mut self,
+                prefetch: numeric::PrefetchInfo,
+                value: numeric::NumericValue,
+                data: numeric::InlineData1x,
+            ) {
+                self.instructions.add_with_location(
+                    Instruction::$instr_name(prefetch, value, data),
+                    self.locations.join($location),
+                );
+            }
+        )*
+    };
 }
 
 impl CodeGenerator {
@@ -34,6 +52,16 @@ impl CodeGenerator {
         numeric::compile(self, types, schema);
     }
 
+    pub(super) fn emit_number_type(
+        &mut self,
+        prefetch: numeric::PrefetchInfo,
+        data: numeric::InlineData2x,
+    ) {
+        self.instructions.add_with_location(
+            Instruction::type_number(prefetch, data),
+            self.locations.join("type"),
+        );
+    }
     pub(super) fn emit_integer_type(
         &mut self,
         prefetch: numeric::PrefetchInfo,
@@ -45,15 +73,11 @@ impl CodeGenerator {
         );
     }
 
-    pub(super) fn emit_minimum(
-        &mut self,
-        prefetch: numeric::PrefetchInfo,
-        value: numeric::NumericValue,
-        data: numeric::InlineData1x,
-    ) {
-        self.instructions.add_with_location(
-            Instruction::minimum(prefetch, value, data),
-            self.locations.join("minimum"),
-        );
-    }
+    define_emit_fn!(
+        emit_minimum => minimum, "minimum",
+        emit_maximum => maximum, "maximum",
+        emit_exclusive_minimum => exclusive_minimum, "exclusiveMinimum",
+        emit_exclusive_maximum => exclusive_maximum, "exclusiveMaximum",
+        emit_multiple_of => multiple_of, "multipleOf",
+    );
 }

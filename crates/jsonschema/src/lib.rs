@@ -583,7 +583,7 @@ mod retriever;
 mod v2;
 mod validator;
 
-pub use v2::ValidatorV2;
+pub use v2::{ErrorIteratorV2, SchemaEvaluationVM, ValidationErrorV2, ValidatorV2};
 
 pub use error::{ErrorIterator, MaskedValidationError, ValidationError};
 pub use keywords::custom::Keyword;

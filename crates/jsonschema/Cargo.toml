@@ -46,6 +46,7 @@ uuid-simd = "0.8"
 tokio = { version = "1.0", features = ["fs", "rt"], optional = true }
 async-trait = { version = "0.1.86", optional = true }
 smallvec = { version = "1.14.0", features = ["union"] }
+num-traits = "0.2.19"
 
 [dev-dependencies]
 benchmark = { path = "../benchmark/" }
@@ -62,6 +63,10 @@ tempfile = "3.13.0"
 [[bench]]
 harness = false
 name = "jsonschema"
+
+[[bench]]
+harness = false
+name = "v2"
 
 [[bench]]
 harness = false
