@@ -60,7 +60,10 @@ impl<'a> SchemaEvaluationVM<'a> {
 
         while let Some(instr) = instructions.get(pc) {
             #[cfg(feature = "internal-debug")]
-            self.tracker.track(instr);
+            self.tracker.track(
+                instr,
+                instructions.get_location(pc).expect("Invalid location"),
+            );
             match instr {
                 Instruction::TypeInteger => {
                     last = numeric::is_integer(top);

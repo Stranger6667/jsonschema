@@ -174,6 +174,9 @@ impl Location {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
     /// Get a byte slice representing the location.
     pub fn as_bytes(&self) -> &[u8] {
         self.0.as_bytes()
