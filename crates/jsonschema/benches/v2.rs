@@ -28,6 +28,21 @@ fn get_test_cases() -> Vec<(
     ]
 }
 
+#[inline(never)]
+fn is_valid_integer_range(value: &serde_json::Value) -> bool {
+    if let serde_json::Value::Number(number) = value {
+        if let Some(v) = number.as_u64() {
+            v >= 10 && v <= 100
+        } else if let Some(v) = value.as_i64() {
+            v >= 10 && v <= 100
+        } else {
+            false
+        }
+    } else {
+        false
+    }
+}
+
 enum ValidationMethod {
     IsValid,
     Validate,

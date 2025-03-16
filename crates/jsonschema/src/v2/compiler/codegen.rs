@@ -9,7 +9,6 @@ use super::{
     subroutines::{SubroutineId, Subroutines},
     types::{self, JsonType, JsonTypeSet},
 };
-use referencing::{Registry, Resolver};
 use serde_json::Value;
 
 pub(super) type Constants = Vec<Value>;
@@ -68,16 +67,16 @@ impl CodeGenerator {
         self.instructions.len() as u32
     }
 
-    pub(super) fn compile_schema(&mut self, ctx: CompilationContext<'_>, schema: &Value) {
+    pub(super) fn compile_schema(&mut self, ctx: &mut CompilationContext<'_>, schema: &Value) {
         match schema {
             Value::Bool(true) => self.emit_true(),
             Value::Bool(false) => self.emit_false(),
             Value::Object(obj) if obj.is_empty() => self.emit_true(),
             Value::Object(_) => {
                 self.start_scope(Scope::And);
-                refs::compile(self, ctx.clone(), schema);
+                refs::compile(self, ctx, schema);
                 types::compile(self, schema);
-                combinators::compile(self, ctx.clone(), schema);
+                combinators::compile(self, ctx, schema);
                 numeric::compile(self, schema);
                 self.end_scope();
             }
@@ -185,7 +184,7 @@ impl CodeGenerator {
 
     pub(crate) fn compile_subroutine(
         &mut self,
-        ctx: CompilationContext<'_>,
+        ctx: &mut CompilationContext<'_>,
         reference: &str,
     ) -> SubroutineId {
         let id = self.subroutines.get_next_id(reference);
@@ -200,7 +199,6 @@ impl CodeGenerator {
 
         id
     }
-
     pub(crate) fn emit_call(&mut self, id: SubroutineId) {
         self.instructions.add(Instruction::Call(id));
     }

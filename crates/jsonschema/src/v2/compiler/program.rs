@@ -25,9 +25,9 @@ impl Program {
             .unwrap();
 
         let resolver = registry.try_resolver(base_uri).unwrap();
-        let ctx = CompilationContext::new(resolver);
+        let mut ctx = CompilationContext::new(resolver);
         let mut codegen = CodeGenerator::new();
-        codegen.compile_schema(ctx, schema);
+        codegen.compile_schema(&mut ctx, schema);
         let (instructions, constants) = codegen.finish();
         Program {
             instructions,

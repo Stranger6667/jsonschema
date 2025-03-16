@@ -2,7 +2,11 @@ use serde_json::Value;
 
 use super::{codegen::CodeGenerator, context::CompilationContext};
 
-pub(super) fn compile(codegen: &mut CodeGenerator, ctx: CompilationContext<'_>, schema: &Value) {
+pub(super) fn compile(
+    codegen: &mut CodeGenerator,
+    ctx: &mut CompilationContext<'_>,
+    schema: &Value,
+) {
     if let Some(Value::String(reference)) = schema.get("$ref") {
         // TODO:
         //   - Base URI is also needed to detect compiled ones
