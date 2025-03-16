@@ -180,6 +180,9 @@ impl<'a> SchemaEvaluationVM<'a> {
                 Instruction::Call(target) => {
                     todo!()
                 }
+                Instruction::Return => {
+                    todo!()
+                }
             }
         }
         #[cfg(feature = "internal-debug")]
@@ -383,6 +386,9 @@ impl<'a> Iterator for ErrorIteratorV2<'a, '_> {
                     self.pc += 1;
                 }
                 Instruction::Call(target) => {
+                    todo!()
+                }
+                Instruction::Return => {
                     todo!()
                 }
             }

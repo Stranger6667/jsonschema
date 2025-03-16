@@ -1,14 +1,17 @@
 use serde_json::Value;
 
-use super::codegen::{CodeGenerator, Scope};
+use super::{
+    codegen::{CodeGenerator, Scope},
+    context::CompilationContext,
+};
 
-pub(super) fn compile(codegen: &mut CodeGenerator, schema: &Value) {
+pub(super) fn compile(codegen: &mut CodeGenerator, ctx: CompilationContext<'_>, schema: &Value) {
     if let Some(Value::Array(subschemas)) = schema.get("allOf") {
         codegen.start_scope(Scope::And);
         codegen.enter_location("allOf");
         for (idx, subschema) in subschemas.iter().enumerate() {
             codegen.enter_location(idx);
-            codegen.compile_schema(subschema);
+            codegen.compile_schema(ctx.clone(), subschema);
             codegen.short_circuit();
             codegen.exit_location();
         }
@@ -21,7 +24,7 @@ pub(super) fn compile(codegen: &mut CodeGenerator, schema: &Value) {
         codegen.enter_location("anyOf");
         for (idx, subschema) in subschemas.iter().enumerate() {
             codegen.enter_location(idx);
-            codegen.compile_schema(subschema);
+            codegen.compile_schema(ctx.clone(), subschema);
             codegen.short_circuit();
             codegen.exit_location();
         }
@@ -36,12 +39,12 @@ pub(super) fn compile(codegen: &mut CodeGenerator, schema: &Value) {
         match subschemas.as_slice() {
             [subschema, rest @ ..] => {
                 codegen.enter_location(0);
-                codegen.compile_schema(subschema);
+                codegen.compile_schema(ctx.clone(), subschema);
                 codegen.emit_set_one_valid();
                 codegen.exit_location();
                 for (idx, subschema) in rest.iter().enumerate() {
                     codegen.enter_location(idx + 1);
-                    codegen.compile_schema(subschema);
+                    codegen.compile_schema(ctx.clone(), subschema);
                     codegen.short_circuit();
                     codegen.exit_location();
                 }

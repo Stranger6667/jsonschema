@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::compiler::DEFAULT_ROOT_URL;
 
-use super::{codegen::CodeGenerator, instructions::Instructions};
+use super::{codegen::CodeGenerator, context::CompilationContext, instructions::Instructions};
 
 #[cfg_attr(feature = "internal-debug", derive(Debug))]
 #[derive(Clone)]
@@ -24,8 +24,10 @@ impl Program {
             .build([(base_uri, resource)])
             .unwrap();
 
-        let mut codegen = CodeGenerator::new(&registry, base_uri);
-        codegen.compile_schema(schema);
+        let resolver = registry.try_resolver(base_uri).unwrap();
+        let ctx = CompilationContext::new(resolver);
+        let mut codegen = CodeGenerator::new();
+        codegen.compile_schema(ctx, schema);
         let (instructions, constants) = codegen.finish();
         Program {
             instructions,

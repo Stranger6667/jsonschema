@@ -2,6 +2,7 @@ use crate::paths::LocationSegment;
 
 use super::{
     combinators,
+    context::CompilationContext,
     instructions::{Instruction, Instructions},
     location::LocationContext,
     numeric, refs,
@@ -14,13 +15,11 @@ use serde_json::Value;
 pub(super) type Constants = Vec<Value>;
 
 /// Provides a way to generate a program for the VM.
-pub(crate) struct CodeGenerator<'r> {
+pub(crate) struct CodeGenerator {
     pub(super) instructions: Instructions,
     locations: LocationContext,
     pending_scopes: Vec<PendingScope>,
     pub(super) subroutines: Subroutines,
-    pub(super) registry: &'r Registry,
-    resolvers: Vec<Resolver<'r>>,
     constants: Vec<Value>,
 }
 
@@ -49,15 +48,12 @@ macro_rules! define_emit_fn {
     };
 }
 
-impl<'r> CodeGenerator<'r> {
-    pub(super) fn new(registry: &'r Registry, base_uri: &str) -> Self {
-        let resolver = registry.try_resolver(base_uri).unwrap();
+impl CodeGenerator {
+    pub(super) fn new() -> Self {
         Self {
             instructions: Instructions::new(),
             locations: LocationContext::new(),
             subroutines: Subroutines::new(),
-            registry,
-            resolvers: vec![resolver],
             pending_scopes: Vec::new(),
             constants: Vec::new(),
         }
@@ -72,16 +68,16 @@ impl<'r> CodeGenerator<'r> {
         self.instructions.len() as u32
     }
 
-    pub(super) fn compile_schema(&mut self, schema: &Value) {
+    pub(super) fn compile_schema(&mut self, ctx: CompilationContext<'_>, schema: &Value) {
         match schema {
             Value::Bool(true) => self.emit_true(),
             Value::Bool(false) => self.emit_false(),
             Value::Object(obj) if obj.is_empty() => self.emit_true(),
             Value::Object(_) => {
                 self.start_scope(Scope::And);
-                refs::compile(self, schema);
+                refs::compile(self, ctx.clone(), schema);
                 types::compile(self, schema);
-                combinators::compile(self, schema);
+                combinators::compile(self, ctx.clone(), schema);
                 numeric::compile(self, schema);
                 self.end_scope();
             }
@@ -187,19 +183,28 @@ impl<'r> CodeGenerator<'r> {
         emit_multiple_of => multiple_of, "multipleOf",
     );
 
-    pub(crate) fn resolver(&self) -> &Resolver<'_> {
-        self.resolvers.last().expect("Missing resolver")
-    }
-
-    pub(crate) fn compile_subroutine(&mut self, reference: &str) -> SubroutineId {
-        let id = self.subroutines.get_next_id();
-        let resolved = self.resolver().lookup(reference).unwrap();
+    pub(crate) fn compile_subroutine(
+        &mut self,
+        ctx: CompilationContext<'_>,
+        reference: &str,
+    ) -> SubroutineId {
+        let id = self.subroutines.get_next_id(reference);
+        let resolved = ctx.resolver().lookup(reference).unwrap();
         dbg!(&resolved);
-        //codegen.subroutines.set_in_progress(id);
+        // TODO: Should it be a different resolver in that context?
+        self.subroutines.set_in_progress(id);
+        // TODO: it should be compiled into a different instance of `Instructions`
+        // TODO: Where to emit RETURN?
+        self.compile_schema(ctx, resolved.contents());
+        self.subroutines.unset_in_progress(id);
+
         id
     }
 
     pub(crate) fn emit_call(&mut self, id: SubroutineId) {
         self.instructions.add(Instruction::Call(id));
+    }
+    pub(crate) fn emit_return(&mut self) {
+        self.instructions.add(Instruction::Return);
     }
 }

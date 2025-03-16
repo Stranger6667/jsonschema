@@ -32,8 +32,10 @@ impl Subroutines {
         assert!(self.in_progress.remove(&id));
     }
 
-    pub(crate) fn get_next_id(&self) -> u32 {
-        self.map.len() as SubroutineId
+    pub(crate) fn get_next_id(&mut self, reference: &str) -> u32 {
+        let id = self.map.len() as SubroutineId;
+        self.map.insert(reference.to_string(), id);
+        id
     }
 }
 
