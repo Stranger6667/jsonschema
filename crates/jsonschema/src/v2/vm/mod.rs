@@ -177,6 +177,9 @@ impl<'a> SchemaEvaluationVM<'a> {
                     last = one_of_stack.pop();
                     pc += 1;
                 }
+                Instruction::Call(target) => {
+                    todo!()
+                }
             }
         }
         #[cfg(feature = "internal-debug")]
@@ -378,6 +381,9 @@ impl<'a> Iterator for ErrorIteratorV2<'a, '_> {
                         todo!()
                     }
                     self.pc += 1;
+                }
+                Instruction::Call(target) => {
+                    todo!()
                 }
             }
         }

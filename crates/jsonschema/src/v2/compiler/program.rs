@@ -24,7 +24,7 @@ impl Program {
             .build([(base_uri, resource)])
             .unwrap();
 
-        let mut codegen = CodeGenerator::new(registry);
+        let mut codegen = CodeGenerator::new(&registry, base_uri);
         codegen.compile_schema(schema);
         let (instructions, constants) = codegen.finish();
         Program {

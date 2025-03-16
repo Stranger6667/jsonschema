@@ -40,6 +40,8 @@ pub(crate) enum Instruction {
     PushOneOf,
     SetOneValid,
     PopOneOf,
+
+    Call(u32),
 }
 
 impl core::fmt::Debug for Instruction {
@@ -93,6 +95,7 @@ impl core::fmt::Debug for Instruction {
             Instruction::PushOneOf => f.write_str("PUSH_ONE_OF"),
             Instruction::SetOneValid => f.write_str("SET_ONE_VALID"),
             Instruction::PopOneOf => f.write_str("POP_ONE_OF"),
+            Instruction::Call(pc) => write!(f, "CALL {pc}"),
         }
     }
 }

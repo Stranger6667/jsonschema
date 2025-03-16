@@ -4,20 +4,23 @@ use super::{
     combinators,
     instructions::{Instruction, Instructions},
     location::LocationContext,
-    numeric,
+    numeric, refs,
+    subroutines::{SubroutineId, Subroutines},
     types::{self, JsonType, JsonTypeSet},
 };
-use referencing::Registry;
+use referencing::{Registry, Resolver};
 use serde_json::Value;
 
 pub(super) type Constants = Vec<Value>;
 
 /// Provides a way to generate a program for the VM.
-pub(crate) struct CodeGenerator {
+pub(crate) struct CodeGenerator<'r> {
     pub(super) instructions: Instructions,
     locations: LocationContext,
     pending_scopes: Vec<PendingScope>,
-    registry: Registry,
+    pub(super) subroutines: Subroutines,
+    pub(super) registry: &'r Registry,
+    resolvers: Vec<Resolver<'r>>,
     constants: Vec<Value>,
 }
 
@@ -46,12 +49,15 @@ macro_rules! define_emit_fn {
     };
 }
 
-impl CodeGenerator {
-    pub(super) fn new(registry: Registry) -> Self {
+impl<'r> CodeGenerator<'r> {
+    pub(super) fn new(registry: &'r Registry, base_uri: &str) -> Self {
+        let resolver = registry.try_resolver(base_uri).unwrap();
         Self {
             instructions: Instructions::new(),
             locations: LocationContext::new(),
+            subroutines: Subroutines::new(),
             registry,
+            resolvers: vec![resolver],
             pending_scopes: Vec::new(),
             constants: Vec::new(),
         }
@@ -73,6 +79,7 @@ impl CodeGenerator {
             Value::Object(obj) if obj.is_empty() => self.emit_true(),
             Value::Object(_) => {
                 self.start_scope(Scope::And);
+                refs::compile(self, schema);
                 types::compile(self, schema);
                 combinators::compile(self, schema);
                 numeric::compile(self, schema);
@@ -179,4 +186,20 @@ impl CodeGenerator {
         emit_exclusive_maximum => exclusive_maximum, "exclusiveMaximum",
         emit_multiple_of => multiple_of, "multipleOf",
     );
+
+    pub(crate) fn resolver(&self) -> &Resolver<'_> {
+        self.resolvers.last().expect("Missing resolver")
+    }
+
+    pub(crate) fn compile_subroutine(&mut self, reference: &str) -> SubroutineId {
+        let id = self.subroutines.get_next_id();
+        let resolved = self.resolver().lookup(reference).unwrap();
+        dbg!(&resolved);
+        //codegen.subroutines.set_in_progress(id);
+        id
+    }
+
+    pub(crate) fn emit_call(&mut self, id: SubroutineId) {
+        self.instructions.add(Instruction::Call(id));
+    }
 }

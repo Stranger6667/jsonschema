@@ -5,6 +5,7 @@ pub(super) mod location;
 pub(super) mod numeric;
 pub(super) mod program;
 pub(super) mod refs;
+pub(super) mod subroutines;
 pub(super) mod types;
 
 pub(super) use program::Program;
