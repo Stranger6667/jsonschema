@@ -15,3 +15,9 @@ pub struct Block {
     id: BlockId,
     nodes: Vec<Node>,
 }
+
+impl Block {
+    pub(crate) fn new(id: BlockId) -> Self {
+        Self { id, nodes: vec![] }
+    }
+}

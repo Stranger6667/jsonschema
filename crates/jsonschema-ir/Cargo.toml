@@ -8,8 +8,10 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-string-interner = "0.19.0"
+ahash.workspace = true
 serde_json = { version = "1", optional = true }
+string-interner = "0.19.0"
+strumbra = "0.5.2"
 
 [dev-dependencies]
 serde_json = "1"

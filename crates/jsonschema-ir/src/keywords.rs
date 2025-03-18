@@ -4,15 +4,18 @@ use string_interner::symbol::SymbolU32;
 
 use crate::{
     blocks::BlockId,
-    metadata::{vocabulary::VocabularyId, Size},
-    schema::SchemaId,
+    metadata::{
+        vocabulary::VocabularyId, ConstantId, DependentRequiredId, DependentSchemasId, EnumId,
+        FormatId, NumberId, PatternPropertiesId, PropertiesId, RequiredId, Size,
+    },
 };
 
 // TODO: Add sizes for immediate child + full subtrees? to jump over them
+// TODO: Note why `$defs` is not here
 pub enum Keyword {
     /// Defines a JSON Schema dialect.
     Schema {
-        id: SchemaId,
+        id: SymbolU32,
     },
     /// Identifies vocabularies available for use in schemas described by that meta-schema.
     Vocabulary {
@@ -20,7 +23,7 @@ pub enum Keyword {
     },
     /// Identifies a schema resource.
     Id {
-        id: SchemaId,
+        id: SymbolU32,
     },
     /// A reference to a statically identified schema.
     Ref {
@@ -35,10 +38,6 @@ pub enum Keyword {
     },
     DynamicAnchor {
         value: SymbolU32,
-    },
-    /// Location for re-usable schemas.
-    Defs {
-        range: Range<SchemaId>,
     },
     OneOf {
         range: Range<BlockId>,
@@ -63,7 +62,7 @@ pub enum Keyword {
     },
     /// Subschemas that are evaluated if the instance is an object and contains a certain property.
     DependentSchemas {
-        // TODO: range of name -> BlockId
+        id: DependentSchemasId,
     },
     /// Validation succeeds if each element of the instance validates against the schema at the same position, if any.
     PrefixItems {
@@ -73,8 +72,12 @@ pub enum Keyword {
         block: BlockId,
     },
     Contains,
-    Properties(PropertiesId),
-    PatternProperties(PatternPropertiesId),
+    Properties {
+        id: PropertiesId,
+    },
+    PatternProperties {
+        id: PatternPropertiesId,
+    },
     AdditionalProperties,
     PropertyNames {
         block: BlockId,
@@ -85,14 +88,28 @@ pub enum Keyword {
     False,
     // TODO: Specify types
     Type,
-    Enum(EnumId),
-    Const(ConstantId),
-    // Specify values
-    MultipleOf,
-    Maximum,
-    ExclusiveMaximum,
-    Minimum,
-    ExclusiveMinimum,
+    Enum {
+        id: EnumId,
+    },
+    Const {
+        id: ConstantId,
+    },
+    // TODO: Specify values
+    MultipleOf {
+        id: NumberId,
+    },
+    Maximum {
+        id: NumberId,
+    },
+    ExclusiveMaximum {
+        id: NumberId,
+    },
+    Minimum {
+        id: NumberId,
+    },
+    ExclusiveMinimum {
+        id: NumberId,
+    },
     MinLength {
         size: Size,
     },
@@ -122,14 +139,18 @@ pub enum Keyword {
         size: Size,
     },
     Required {
-        range: Range<StringId>,
+        id: RequiredId,
     },
     /// Conditionally requires that certain properties must be present if a given property is
     /// present in an object.
-    DependentRequired,
-    Format(FormatId),
+    DependentRequired {
+        id: DependentRequiredId,
+    },
+    Format {
+        id: FormatId,
+    },
 }
 
 const _: () = const {
-    assert!(std::mem::size_of::<Keyword>() == 12);
+    assert!(std::mem::size_of::<Keyword>() == 16);
 };

@@ -1,30 +1,9 @@
-use std::collections::HashMap;
-use string_interner::{backend::BucketBackend, symbol::SymbolU32, StringInterner};
-
-use crate::{blocks::Block, metadata::location::Locations};
-
-pub type Size = u32;
-pub struct SchemaId(u32);
-// Id in sizes constants - indirection to support bug numbers
-pub struct SizeId(u32);
-pub struct PropertiesId(u32);
-pub struct PatternPropertiesId(u32);
-pub struct EnumId(u32);
-pub struct ConstantId(u32);
-pub struct ReferenceId(SymbolU32);
-pub struct AnchorId(u32);
-pub struct FormatId(u32);
+use crate::{blocks::Block, metadata::Metadata};
 
 pub struct Schema {
     root: Block,
     nested: Vec<Block>,
-    constants: Constants,
-    locations: Locations,
-}
-
-struct Vocabulary {
-    name: String,
-    enabled: bool,
+    metadata: Metadata,
 }
 
 // TODO:

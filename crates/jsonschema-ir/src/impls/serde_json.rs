@@ -1,9 +1,6 @@
 use serde_json::Value;
 
-use crate::{
-    schema::{Block, BlockId},
-    IntoJsonSchema, ParseError, Schema,
-};
+use crate::{blocks::Block, BlockId, IntoJsonSchema, ParseError, Schema};
 
 impl<'a> IntoJsonSchema for &'a Value {
     fn parse(&self) -> Result<Schema, ParseError> {
@@ -24,29 +21,16 @@ impl ParserContext {
     fn new() -> Self {
         Self { blocks: 0 }
     }
-    fn reserve_block(&mut self) -> BlockId {
+    fn new_block(&mut self) -> Block {
         let current = self.blocks;
         self.blocks += 1;
-        BlockId(current)
+        let id = BlockId::new(current);
+        Block::new(id)
     }
 }
 
-fn parse_impl(value: &Value) {
-    Block
-}
+fn parse_impl(value: &Value) {}
 
-//pub struct Schema {
-//    root: Block,
-//    nested: Vec<Block>,
-//    constants: Constants,
-//    paths: Paths,
-//}
-//
-//struct Location(Arc<String>);
-//
-//pub struct Paths {
-//    items: Vec<Location>,
-//}
 #[cfg(test)]
 mod tests {
     use serde_json::{json, Value};
