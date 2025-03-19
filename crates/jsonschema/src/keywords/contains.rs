@@ -3,7 +3,7 @@ use crate::{
     error::ValidationError,
     keywords::CompilationResult,
     node::SchemaNode,
-    paths::LazyLocation,
+    paths::{LazyLocation, Location},
     validator::{PartialApplication, Validate},
     Draft,
 };
@@ -85,6 +85,13 @@ impl Validate for ContainsValidator {
             result
         }
     }
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
 }
 
 /// `minContains` validation. Used only if there is no `maxContains` present.
@@ -163,6 +170,13 @@ impl Validate for MinContainsValidator {
         } else {
             true
         }
+    }
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
     }
 }
 
@@ -246,6 +260,13 @@ impl Validate for MaxContainsValidator {
         } else {
             true
         }
+    }
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
     }
 }
 
@@ -332,6 +353,13 @@ impl Validate for MinMaxContainsValidator {
         } else {
             true
         }
+    }
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
     }
 }
 

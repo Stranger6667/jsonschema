@@ -71,6 +71,9 @@ impl Validate for ItemsArrayValidator {
         }
         Ok(())
     }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
     fn schema_path(&self) -> &Location {
         &self.location
     }
@@ -83,11 +86,15 @@ impl Validate for ItemsArrayValidator {
         if let Value::Array(items) = instance {
             let mut is_valid = true;
             for (idx, (item, node)) in items.iter().zip(self.items.iter()).enumerate() {
-                is_valid &= node.trace(item, &instance_path.push(idx), callback);
+                let schema_is_valid = node.trace(item, &instance_path.push(idx), callback);
+                TracingContext::new(instance_path, node.schema_path(), schema_is_valid)
+                    .call(callback);
+                is_valid &= schema_is_valid;
             }
             TracingContext::new(instance_path, self.schema_path(), is_valid).call(callback);
             is_valid
         } else {
+            TracingContext::new(instance_path, self.schema_path(), None).call(callback);
             true
         }
     }
@@ -159,6 +166,31 @@ impl Validate for ItemsObjectValidator {
             output
         } else {
             PartialApplication::valid_empty()
+        }
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: TracingCallback<'_>,
+    ) -> bool {
+        if let Value::Array(items) = instance {
+            let mut is_valid = true;
+            for (idx, item) in items.iter().enumerate() {
+                is_valid &= self.node.trace(item, &instance_path.push(idx), callback);
+            }
+            TracingContext::new(instance_path, self.schema_path(), is_valid).call(callback);
+            is_valid
+        } else {
+            TracingContext::new(instance_path, self.schema_path(), None).call(callback);
+            true
         }
     }
 }
@@ -244,6 +276,32 @@ impl Validate for ItemsObjectSkipPrefixValidator {
             output
         } else {
             PartialApplication::valid_empty()
+        }
+    }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: TracingCallback<'_>,
+    ) -> bool {
+        if let Value::Array(items) = instance {
+            let mut is_valid = true;
+            for (idx, item) in items.iter().skip(self.skip_prefix).enumerate() {
+                is_valid &=
+                    self.node
+                        .trace(item, &instance_path.push(idx + self.skip_prefix), callback);
+            }
+            TracingContext::new(instance_path, self.schema_path(), is_valid).call(callback);
+            is_valid
+        } else {
+            TracingContext::new(instance_path, self.schema_path(), None).call(callback);
+            true
         }
     }
 }

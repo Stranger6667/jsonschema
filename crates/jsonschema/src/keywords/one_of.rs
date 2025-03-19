@@ -111,6 +111,12 @@ impl Validate for OneOfValidator {
             unreachable!("compilation should fail for oneOf with no subschemas")
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 #[inline]

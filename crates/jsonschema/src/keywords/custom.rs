@@ -7,11 +7,12 @@ use serde_json::{Map, Value};
 
 pub(crate) struct CustomKeyword {
     inner: Box<dyn Keyword>,
+    location: Location,
 }
 
 impl CustomKeyword {
-    pub(crate) fn new(inner: Box<dyn Keyword>) -> Self {
-        Self { inner }
+    pub(crate) fn new(inner: Box<dyn Keyword>, location: Location) -> Self {
+        Self { inner, location }
     }
 }
 
@@ -26,6 +27,12 @@ impl Validate for CustomKeyword {
 
     fn is_valid(&self, instance: &Value) -> bool {
         self.inner.is_valid(instance)
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
     }
 }
 

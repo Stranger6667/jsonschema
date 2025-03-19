@@ -431,7 +431,8 @@ pub(crate) fn compile_with<'a>(
                 // Check if this keyword is overridden, then check the standard definitions
                 if let Some(factory) = ctx.get_keyword_factory(keyword) {
                     let path = ctx.location().join(keyword);
-                    let validator = CustomKeyword::new(factory.init(schema, value, path)?);
+                    let validator =
+                        CustomKeyword::new(factory.init(schema, value, path.clone())?, path);
                     let validator: BoxedValidator = Box::new(validator);
                     validators.push((Keyword::custom(keyword), validator));
                 } else if let Some((keyword, validator)) = keywords::get_for_draft(ctx, keyword)

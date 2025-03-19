@@ -159,6 +159,12 @@ impl Validate for LazyRefValidator {
     fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
         self.lazy_compile().apply(instance, location)
     }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
 }
 
 impl Validate for RefValidator {
@@ -189,6 +195,16 @@ impl Validate for RefValidator {
             RefValidator::Default { inner } => inner.apply(instance, location),
             RefValidator::Lazy(lazy) => lazy.apply(instance, location),
         }
+    }
+    fn schema_path(&self) -> &Location {
+        match self {
+            RefValidator::Default { inner } => inner.location(),
+            RefValidator::Lazy(lazy) => &lazy.location,
+        }
+    }
+
+    fn matches_type(&self, _: &Value) -> bool {
+        true
     }
 }
 

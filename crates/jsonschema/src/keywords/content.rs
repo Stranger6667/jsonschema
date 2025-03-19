@@ -63,6 +63,13 @@ impl Validate for ContentMediaTypeValidator {
             Ok(())
         }
     }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
 }
 
 /// Validator for `contentEncoding` keyword.
@@ -115,6 +122,13 @@ impl Validate for ContentEncodingValidator {
         } else {
             Ok(())
         }
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
     }
 }
 
@@ -189,6 +203,13 @@ impl Validate for ContentMediaTypeAndEncodingValidator {
         } else {
             Ok(())
         }
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
     }
 }
 

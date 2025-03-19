@@ -399,6 +399,10 @@ impl Validate for SchemaNode {
             NodeValidators::Boolean { validator: None } => true,
         }
     }
+
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
 }
 
 enum NodeValidatorsIter<'a> {

@@ -98,6 +98,12 @@ impl Validate for PropertyNamesObjectValidator {
             PartialApplication::valid_empty()
         }
     }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
 }
 
 pub(crate) struct PropertyNamesBooleanValidator {
@@ -136,6 +142,12 @@ impl Validate for PropertyNamesBooleanValidator {
                 instance,
             ))
         }
+    }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 

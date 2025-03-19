@@ -5,6 +5,7 @@ use crate::{
     paths::{LazyLocation, Location},
     types::JsonType,
     validator::{PartialApplication, Validate},
+    TracingCallback, TracingContext,
 };
 use serde_json::{Map, Value};
 
@@ -90,6 +91,27 @@ impl Validate for AnyOfValidator {
         } else {
             successes.into_iter().collect()
         }
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: TracingCallback<'_>,
+    ) -> bool {
+        let mut is_valid = true;
+        for node in &self.schemas {
+            let schema_is_valid = node.trace(instance, instance_path, callback);
+            TracingContext::new(instance_path, node.schema_path(), schema_is_valid).call(callback);
+            is_valid |= schema_is_valid;
+        }
+        TracingContext::new(instance_path, self.schema_path(), is_valid).call(callback);
+        is_valid
     }
 }
 

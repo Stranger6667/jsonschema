@@ -12,6 +12,7 @@ use super::CompilationResult;
 
 pub(crate) struct PrefixItemsValidator {
     schemas: Vec<SchemaNode>,
+    location: Location,
 }
 
 impl PrefixItemsValidator {
@@ -27,7 +28,10 @@ impl PrefixItemsValidator {
             let validators = compiler::compile(&ctx, ctx.as_resource_ref(item))?;
             schemas.push(validators)
         }
-        Ok(Box::new(PrefixItemsValidator { schemas }))
+        Ok(Box::new(PrefixItemsValidator {
+            schemas,
+            location: ctx.location().clone(),
+        }))
     }
 }
 
@@ -99,6 +103,14 @@ impl Validate for PrefixItemsValidator {
             }
         }
         PartialApplication::valid_empty()
+    }
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
     }
 }
 

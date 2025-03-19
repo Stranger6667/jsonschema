@@ -9,7 +9,7 @@ use crate::{
     Draft, TracingCallback, TracingContext, ValidationError, ValidationOptions,
 };
 use serde_json::Value;
-use std::{any, collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, sync::Arc};
 
 /// The Validate trait represents a predicate over some JSON value. Some validators are very simple
 /// predicates such as "a value which is a string", whereas others may be much more complex,
@@ -97,12 +97,8 @@ pub(crate) trait Validate: Send + Sync {
             PartialApplication::invalid_empty(errors)
         }
     }
-    fn schema_path(&self) -> &Location {
-        todo!("{}", any::type_name_of_val(self))
-    }
-    fn matches_type(&self, _: &Value) -> bool {
-        todo!("{}", any::type_name_of_val(self))
-    }
+    fn schema_path(&self) -> &Location;
+    fn matches_type(&self, _: &Value) -> bool;
     fn trace(
         &self,
         instance: &Value,

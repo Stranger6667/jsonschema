@@ -129,6 +129,12 @@ impl Validate for UniqueItemsValidator {
             ))
         }
     }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 #[inline]

@@ -140,6 +140,12 @@ impl Validate for AdditionalPropertiesValidator {
             PartialApplication::valid_empty()
         }
     }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
 }
 
 /// # Schema example
@@ -188,6 +194,12 @@ impl Validate for AdditionalPropertiesFalseValidator {
             }
         }
         Ok(())
+    }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
@@ -324,6 +336,13 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
             PartialApplication::valid_empty()
         }
     }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 impl<M: PropertiesValidatorsMap> core::fmt::Display
@@ -454,6 +473,12 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyValida
         } else {
             PartialApplication::valid_empty()
         }
+    }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        self.node.location()
     }
 }
 
@@ -606,6 +631,12 @@ impl Validate for AdditionalPropertiesWithPatternsValidator {
         } else {
             PartialApplication::valid_empty()
         }
+    }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        self.node.location()
     }
 }
 
@@ -765,6 +796,12 @@ impl Validate for AdditionalPropertiesWithPatternsFalseValidator {
         } else {
             PartialApplication::valid_empty()
         }
+    }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
@@ -971,6 +1008,12 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesWithPatternsNo
         } else {
             PartialApplication::valid_empty()
         }
+    }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        self.node.location()
     }
 }
 
@@ -1190,6 +1233,12 @@ impl<M: PropertiesValidatorsMap> Validate
         } else {
             PartialApplication::valid_empty()
         }
+    }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 

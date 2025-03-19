@@ -98,6 +98,14 @@ impl<F: PropertiesFilter> Validate for UnevaluatedPropertiesValidator<F> {
         }
         true
     }
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
 }
 
 struct Draft2019PropertiesFilter {
