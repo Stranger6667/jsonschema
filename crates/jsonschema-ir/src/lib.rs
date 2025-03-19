@@ -13,7 +13,7 @@ pub use error::ParseError;
 pub use keywords::Keyword;
 pub use parse::IntoJsonSchema;
 pub use schema::Schema;
-pub use value::JsonValue;
+pub use value::{JsonValue, Number};
 
 pub fn parse<I>(input: I) -> Result<Schema, ParseError>
 where
