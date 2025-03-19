@@ -13,6 +13,7 @@ use serde_json::{Map, Value};
 
 pub(crate) struct PatternPropertiesValidator {
     patterns: Vec<(Regex, SchemaNode)>,
+    location: Location,
 }
 
 impl PatternPropertiesValidator {
@@ -40,7 +41,10 @@ impl PatternPropertiesValidator {
                 compiler::compile(&pctx, pctx.as_resource_ref(subschema))?,
             ));
         }
-        Ok(Box::new(PatternPropertiesValidator { patterns }))
+        Ok(Box::new(PatternPropertiesValidator {
+            patterns,
+            location: ctx.location().clone(),
+        }))
     }
 }
 
@@ -114,6 +118,12 @@ impl Validate for PatternPropertiesValidator {
         } else {
             PartialApplication::valid_empty()
         }
+    }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
@@ -210,6 +220,12 @@ impl Validate for SingleValuePatternPropertiesValidator {
         } else {
             PartialApplication::valid_empty()
         }
+    }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        self.node.location()
     }
 }
 

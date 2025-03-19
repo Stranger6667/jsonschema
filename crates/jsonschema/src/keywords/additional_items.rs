@@ -66,6 +66,13 @@ impl Validate for AdditionalItemsObjectValidator {
         }
         Ok(())
     }
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
 }
 
 pub(crate) struct AdditionalItemsBooleanValidator {
@@ -107,6 +114,13 @@ impl Validate for AdditionalItemsBooleanValidator {
             }
         }
         Ok(())
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
     }
 }
 

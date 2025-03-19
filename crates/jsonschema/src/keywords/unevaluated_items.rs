@@ -88,6 +88,13 @@ impl<F: ItemsFilter> Validate for UnevaluatedItemsValidator<F> {
         }
         Ok(())
     }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
 }
 
 struct Draft2019ItemsFilter {

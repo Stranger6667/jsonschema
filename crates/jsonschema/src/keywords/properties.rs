@@ -139,10 +139,10 @@ impl Validate for PropertiesValidator {
                 }
             }
             let rv = if at_least_one { Some(is_valid) } else { None };
-            let ctx = TracingContext::new(instance_path, self.schema_path(), rv);
-            callback(ctx);
+            TracingContext::new(instance_path, self.schema_path(), rv).call(callback);
             is_valid
         } else {
+            TracingContext::new(instance_path, self.schema_path(), None).call(callback);
             true
         }
     }

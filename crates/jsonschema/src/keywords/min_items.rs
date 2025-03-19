@@ -65,6 +65,13 @@ impl Validate for MinItemsValidator {
         }
         Ok(())
     }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
 }
 
 #[inline]

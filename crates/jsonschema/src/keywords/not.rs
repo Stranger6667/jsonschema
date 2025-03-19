@@ -1,6 +1,10 @@
 use crate::{
-    compiler, error::ValidationError, keywords::CompilationResult, node::SchemaNode,
-    paths::LazyLocation, validator::Validate,
+    compiler,
+    error::ValidationError,
+    keywords::CompilationResult,
+    node::SchemaNode,
+    paths::{LazyLocation, Location},
+    validator::Validate,
 };
 use serde_json::{Map, Value};
 
@@ -41,6 +45,12 @@ impl Validate for NotValidator {
                 self.original.clone(),
             ))
         }
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        self.node.location()
     }
 }
 
