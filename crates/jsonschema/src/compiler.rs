@@ -33,7 +33,7 @@ type ResolverComponents = (Arc<BaseUri>, List<BaseUri>, Resource);
 pub(crate) struct Context<'a> {
     config: Arc<ValidationOptions>,
     pub(crate) registry: Arc<Registry>,
-    resolver: Rc<Resolver<'a>>,
+    pub(crate) resolver: Rc<Resolver<'a>>,
     vocabularies: VocabularySet,
     location: Location,
     pub(crate) draft: Draft,

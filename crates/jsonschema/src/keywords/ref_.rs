@@ -8,7 +8,7 @@ use crate::{
     paths::{LazyLocation, Location},
     types::JsonType,
     validator::{PartialApplication, Validate},
-    ValidationError, ValidationOptions,
+    TracingCallback, TracingContext, ValidationError, ValidationOptions,
 };
 use once_cell::sync::OnceCell;
 use referencing::{Draft, List, Registry, Resource, Uri, VocabularySet};
@@ -165,6 +165,14 @@ impl Validate for LazyRefValidator {
     fn matches_type(&self, _: &Value) -> bool {
         true
     }
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: TracingCallback<'_>,
+    ) -> bool {
+        self.lazy_compile().trace(instance, instance_path, callback)
+    }
 }
 
 impl Validate for RefValidator {
@@ -205,6 +213,26 @@ impl Validate for RefValidator {
 
     fn matches_type(&self, _: &Value) -> bool {
         true
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: TracingCallback<'_>,
+    ) -> bool {
+        match self {
+            RefValidator::Default { inner } => {
+                let is_valid = inner.trace(instance, instance_path, callback);
+                TracingContext::new(instance_path, self.schema_path(), is_valid).call(callback);
+                is_valid
+            }
+            RefValidator::Lazy(lazy) => {
+                let is_valid = lazy.trace(instance, instance_path, callback);
+                TracingContext::new(instance_path, self.schema_path(), is_valid).call(callback);
+                is_valid
+            }
+        }
     }
 }
 
