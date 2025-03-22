@@ -9,6 +9,7 @@ license.workspace = true
 
 [dependencies]
 ahash.workspace = true
+itoa = "1.0.15"
 serde_json = { version = "1", optional = true }
 string-interner = "0.19.0"
 
@@ -20,11 +21,8 @@ test-case = "3.3.1"
 
 [features]
 default = []
+arbitrary_precision = []
 serde_json = ["dep:serde_json"]
 
 [lints]
 workspace = true
-
-[[bench]]
-harness = false
-name = "value"

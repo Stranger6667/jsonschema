@@ -10,6 +10,7 @@ pub enum JsonValue {
     Number(Number),
     String(Box<str>),
     Array(Box<[JsonValue]>),
+    // Sorted key / value pairs
     Object(Box<[(Box<str>, JsonValue)]>),
 }
 

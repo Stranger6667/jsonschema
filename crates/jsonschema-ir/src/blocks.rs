@@ -1,3 +1,5 @@
+use core::slice;
+
 use crate::nodes::Node;
 
 /// Unique identificator of a JSON Schema within `Schema`.
@@ -11,13 +13,24 @@ impl BlockId {
 }
 
 /// A single JSON Schema instance without concrete metadata.
-pub struct Block {
+pub struct SubSchema {
     id: BlockId,
     nodes: Vec<Node>,
 }
 
-impl Block {
-    pub(crate) fn new(id: BlockId) -> Self {
-        Self { id, nodes: vec![] }
+impl SubSchema {
+    pub(crate) fn new(id: BlockId) -> SubSchema {
+        Self {
+            id,
+            nodes: Vec::new(),
+        }
+    }
+
+    pub(crate) fn push(&mut self, node: Node) {
+        self.nodes.push(node);
+    }
+
+    pub(crate) fn nodes(&self) -> slice::Iter<'_, Node> {
+        self.nodes.iter()
     }
 }

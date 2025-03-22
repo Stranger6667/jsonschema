@@ -99,16 +99,16 @@ pub enum Keyword {
         id: NumberId,
     },
     Maximum {
-        id: NumberId,
+        limit: NumberId,
     },
     ExclusiveMaximum {
-        id: NumberId,
+        limit: NumberId,
     },
     Minimum {
-        id: NumberId,
+        limit: NumberId,
     },
     ExclusiveMinimum {
-        id: NumberId,
+        limit: NumberId,
     },
     MinLength {
         size: Size,
@@ -151,6 +151,60 @@ pub enum Keyword {
     },
 }
 
+impl Keyword {
+    pub(crate) fn name(&self) -> &'static str {
+        match self {
+            Keyword::Schema { .. } => "$schema",
+            Keyword::Vocabulary { .. } => "$vocabulary",
+            Keyword::Id { .. } => "$id",
+            Keyword::Ref { .. } => "$ref",
+            Keyword::Anchor { .. } => "$anchor",
+            Keyword::DynamicRef { .. } => "$dynamicRef",
+            Keyword::DynamicAnchor { .. } => "$dynamicAnchor",
+            Keyword::OneOf { .. } => "oneOf",
+            Keyword::AnyOf { .. } => "anyOf",
+            Keyword::AllOf { .. } => "allOf",
+            Keyword::Not { .. } => "not",
+            Keyword::If { .. } => "if",
+            Keyword::Then { .. } => "then",
+            Keyword::Else { .. } => "else",
+            Keyword::DependentSchemas { .. } => "dependentSchemas",
+            Keyword::PrefixItems { .. } => "prefixItems",
+            Keyword::Items { .. } => "items",
+            Keyword::Contains => "contains",
+            Keyword::Properties { .. } => "properties",
+            Keyword::PatternProperties { .. } => "patternProperties",
+            Keyword::AdditionalProperties => "additionalProperties",
+            Keyword::PropertyNames { .. } => "propertyNames",
+            Keyword::UnevaluatedItems => "unevaluatedItems",
+            Keyword::UnevaluatedProperties => "unevaluatedProperties",
+            Keyword::True => todo!(),
+            Keyword::False => todo!(),
+            Keyword::Type => "type",
+            Keyword::Enum { .. } => "enum",
+            Keyword::Const { .. } => "const",
+            Keyword::MultipleOf { .. } => "multipleOf",
+            Keyword::Maximum { .. } => "maximum",
+            Keyword::ExclusiveMaximum { .. } => "exclusiveMaximum",
+            Keyword::Minimum { .. } => "minimum",
+            Keyword::ExclusiveMinimum { .. } => "exclusiveMinimum",
+            Keyword::MinLength { .. } => "minLength",
+            Keyword::Maxlength { .. } => "maxLength",
+            Keyword::Pattern { .. } => "pattern",
+            Keyword::MaxItems { .. } => "maxItems",
+            Keyword::MinItems { .. } => "minItems",
+            Keyword::UniqueItems => "uniqueItems",
+            Keyword::MaxContains { .. } => "maxContains",
+            Keyword::MinContains { .. } => "minContains",
+            Keyword::MaxProperties { .. } => "maxProperties",
+            Keyword::MinProperties { .. } => "minProperties",
+            Keyword::Required { .. } => "required",
+            Keyword::DependentRequired { .. } => "dependentRequired",
+            Keyword::Format { .. } => "format",
+        }
+    }
+}
+
 const _: () = const {
-    assert!(std::mem::size_of::<Keyword>() == 16);
+    assert!(std::mem::size_of::<Keyword>() == 24);
 };

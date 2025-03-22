@@ -9,9 +9,9 @@ impl From<Value> for JsonValue {
             Value::Bool(b) => JsonValue::Bool(b),
             Value::Number(num) => {
                 if let Some(u) = num.as_u64() {
-                    JsonValue::Number(Number::Positive(u))
+                    JsonValue::Number(Number::PositiveInteger(u))
                 } else if let Some(i) = num.as_i64() {
-                    JsonValue::Number(Number::Negative(i))
+                    JsonValue::Number(Number::NegativeInteger(i))
                 } else if let Some(f) = num.as_f64() {
                     JsonValue::Number(Number::Float(f))
                 } else {
@@ -86,8 +86,8 @@ fn eq(lhs: &Value, rhs: &JsonValue) -> bool {
 #[inline]
 fn compare_number(lhs: &serde_json::Number, rhs: &Number) -> bool {
     match rhs {
-        Number::Positive(u) => lhs.as_u64().map_or(false, |v| v == *u),
-        Number::Negative(i) => lhs.as_i64().map_or(false, |v| v == *i),
+        Number::PositiveInteger(u) => lhs.as_u64().map_or(false, |v| v == *u),
+        Number::NegativeInteger(i) => lhs.as_i64().map_or(false, |v| v == *i),
         Number::Float(f) => lhs.as_f64().map_or(false, |v| v == *f),
     }
 }
@@ -101,8 +101,8 @@ mod tests {
 
     #[test_case(json!(null), JsonValue::Null; "null")]
     #[test_case(json!(true), JsonValue::Bool(true); "bool")]
-    #[test_case(json!(42u64), JsonValue::Number(Number::Positive(42)); "positive number")]
-    #[test_case(json!(-42), JsonValue::Number(Number::Negative(-42)); "negative number")]
+    #[test_case(json!(42u64), JsonValue::Number(Number::PositiveInteger(42)); "positive number")]
+    #[test_case(json!(-42), JsonValue::Number(Number::NegativeInteger(-42)); "negative number")]
     #[test_case(json!(3.14), JsonValue::Number(Number::Float(3.14)); "float number")]
     #[test_case(
         json!("hello"),
@@ -112,9 +112,9 @@ mod tests {
     #[test_case(
         json!([1, 2, 3]),
         JsonValue::Array(Box::new([
-            JsonValue::Number(Number::Positive(1)),
-            JsonValue::Number(Number::Positive(2)),
-            JsonValue::Number(Number::Positive(3)),
+            JsonValue::Number(Number::PositiveInteger(1)),
+            JsonValue::Number(Number::PositiveInteger(2)),
+            JsonValue::Number(Number::PositiveInteger(3)),
         ]));
         "array"
     )]
@@ -125,7 +125,7 @@ mod tests {
             "c": true
         }),
         JsonValue::Object(vec![
-            ("a".into(), JsonValue::Number(Number::Positive(1))),
+            ("a".into(), JsonValue::Number(Number::PositiveInteger(1))),
             ("b".into(), JsonValue::String("test".into())),
             ("c".into(), JsonValue::Bool(true))
         ].into());
@@ -137,8 +137,8 @@ mod tests {
 
     #[test_case(json!(null), JsonValue::Null; "null equals")]
     #[test_case(json!(true), JsonValue::Bool(true); "bool equals")]
-    #[test_case(json!(42), JsonValue::Number(Number::Positive(42)); "positive number equals")]
-    #[test_case(json!(-42), JsonValue::Number(Number::Negative(-42)); "negative number equals")]
+    #[test_case(json!(42), JsonValue::Number(Number::PositiveInteger(42)); "positive number equals")]
+    #[test_case(json!(-42), JsonValue::Number(Number::NegativeInteger(-42)); "negative number equals")]
     #[test_case(json!(3.14), JsonValue::Number(Number::Float(3.14)); "float number equals")]
     #[test_case(
         json!("hello"),
@@ -148,9 +148,9 @@ mod tests {
     #[test_case(
         json!([1, 2, 3]),
         JsonValue::Array(Box::new([
-            JsonValue::Number(Number::Positive(1)),
-            JsonValue::Number(Number::Positive(2)),
-            JsonValue::Number(Number::Positive(3)),
+            JsonValue::Number(Number::PositiveInteger(1)),
+            JsonValue::Number(Number::PositiveInteger(2)),
+            JsonValue::Number(Number::PositiveInteger(3)),
         ]));
         "array equals"
     )]
@@ -161,7 +161,7 @@ mod tests {
             "c": true
         }),
         JsonValue::Object(vec![
-            ("a".into(), JsonValue::Number(Number::Positive(1))),
+            ("a".into(), JsonValue::Number(Number::PositiveInteger(1))),
             ("b".into(), JsonValue::String("test".into())),
             ("c".into(), JsonValue::Bool(true))
         ].into());
@@ -174,22 +174,22 @@ mod tests {
 
     #[test_case(json!(null), JsonValue::Bool(true); "null != bool")]
     #[test_case(json!(true), JsonValue::Bool(false); "bool not equal")]
-    #[test_case(json!(42), JsonValue::Number(Number::Negative(-42)); "positive vs negative number not equal")]
+    #[test_case(json!(42), JsonValue::Number(Number::NegativeInteger(-42)); "positive vs negative number not equal")]
     #[test_case(json!(3.14), JsonValue::Number(Number::Float(2.71)); "different floats not equal")]
     #[test_case(json!("hello"), JsonValue::String("world".into()); "different strings not equal")]
     #[test_case(
         json!([1, 2, 3]),
         JsonValue::Array(Box::new([
-            JsonValue::Number(Number::Positive(1)),
-            JsonValue::Number(Number::Positive(2)),
-            JsonValue::Number(Number::Positive(4))
+            JsonValue::Number(Number::PositiveInteger(1)),
+            JsonValue::Number(Number::PositiveInteger(2)),
+            JsonValue::Number(Number::PositiveInteger(4))
         ]));
         "different arrays not equal"
     )]
     #[test_case(
         json!({"a": 1}),
         JsonValue::Object(vec![
-            ("a".into(), JsonValue::Number(Number::Positive(2)))
+            ("a".into(), JsonValue::Number(Number::PositiveInteger(2)))
         ].into());
         "different object not equal"
     )]

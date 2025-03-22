@@ -1,5 +1,5 @@
 use crate::{error::ParseError, schema::Schema};
 
-pub trait IntoJsonSchema {
-    fn parse(&self) -> Result<Schema, ParseError>;
+pub trait ToJsonSchema {
+    fn to_json_schema(&self) -> Result<Schema, ParseError>;
 }
