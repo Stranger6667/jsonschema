@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Added Registry to type declarations.
+
 ## [0.29.1] - 2025-02-08
 
 ### Packaging
@@ -404,7 +408,7 @@
 
 ### Added
 
-- `JSONSchema.from_str` method that accepts a string to construct a compiled schema. 
+- `JSONSchema.from_str` method that accepts a string to construct a compiled schema.
   Useful if you have a schema as string, because you don't have to call `json.loads` on your side - parsing will happen on the Rust side.
 
 ### Fixed

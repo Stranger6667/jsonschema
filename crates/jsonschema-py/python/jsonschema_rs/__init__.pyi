@@ -18,6 +18,7 @@ def is_valid(
     validate_formats: bool | None = None,
     ignore_unknown_formats: bool = True,
     retriever: RetrieverProtocol | None = None,
+    registry: Registry | None = None,
     mask: str | None = None,
 ) -> bool: ...
 def validate(
@@ -29,6 +30,7 @@ def validate(
     validate_formats: bool | None = None,
     ignore_unknown_formats: bool = True,
     retriever: RetrieverProtocol | None = None,
+    registry: Registry | None = None,
     mask: str | None = None,
 ) -> None: ...
 def iter_errors(
@@ -166,6 +168,7 @@ class Draft4Validator:
         validate_formats: bool | None = None,
         ignore_unknown_formats: bool = True,
         retriever: RetrieverProtocol | None = None,
+        registry: Registry | None= None,
         mask: str | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
@@ -180,6 +183,7 @@ class Draft6Validator:
         validate_formats: bool | None = None,
         ignore_unknown_formats: bool = True,
         retriever: RetrieverProtocol | None = None,
+        registry: Registry | None = None,
         mask: str | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
@@ -194,6 +198,7 @@ class Draft7Validator:
         validate_formats: bool | None = None,
         ignore_unknown_formats: bool = True,
         retriever: RetrieverProtocol | None = None,
+        registry: Registry | None = None,
         mask: str | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
@@ -208,6 +213,7 @@ class Draft201909Validator:
         validate_formats: bool | None = None,
         ignore_unknown_formats: bool = True,
         retriever: RetrieverProtocol | None = None,
+        registry: Registry | None = None,
         mask: str | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
@@ -222,6 +228,7 @@ class Draft202012Validator:
         validate_formats: bool | None = None,
         ignore_unknown_formats: bool = True,
         retriever: RetrieverProtocol | None = None,
+        registry: Registry | None = None,
         mask: str | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
@@ -234,5 +241,14 @@ def validator_for(
     validate_formats: bool | None = None,
     ignore_unknown_formats: bool = True,
     retriever: RetrieverProtocol | None = None,
+    registry: Registry | None = None,
     mask: str | None = None,
 ) -> Draft4Validator | Draft6Validator | Draft7Validator | Draft201909Validator | Draft202012Validator: ...
+
+class Registry:
+    def __init__(
+        self,
+        resources: list[tuple[str, JSONType]],
+        draft:  int | None = None,
+        retriever: RetrieverProtocol | None = None,
+    ) -> None: ...
