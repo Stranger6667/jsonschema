@@ -140,8 +140,6 @@ impl Validate for SingleValueAllOfValidator {
         callback: TracingCallback<'_>,
     ) -> bool {
         let is_valid = self.node.trace(instance, instance_path, callback);
-        // Callback on the 0th schema (as it is a single-item variant)
-        TracingContext::new(instance_path, &self.schema_path().join(0), is_valid).call(callback);
         TracingContext::new(instance_path, self.schema_path(), is_valid).call(callback);
         is_valid
     }
