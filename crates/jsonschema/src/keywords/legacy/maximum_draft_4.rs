@@ -1,14 +1,12 @@
 use crate::{
     compiler,
-    keywords::{minmax, CompilationResult},
-    TracingCallback, TracingContext,
-};
-use crate::{
     error::ValidationError,
     ext::numeric,
+    keywords::{minmax, CompilationResult},
     paths::{LazyLocation, Location},
     types::JsonType,
     validator::Validate,
+    TracingCallback, TracingContext,
 };
 use serde_json::{Map, Value};
 
