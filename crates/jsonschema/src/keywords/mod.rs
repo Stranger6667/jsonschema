@@ -53,7 +53,7 @@ type CompileFunc<'a> =
 
 #[derive(Debug, Clone)]
 pub(crate) enum Keyword {
-    Buildin(BuiltinKeyword),
+    Builtin(BuiltinKeyword),
     Custom(Box<str>),
 }
 
@@ -156,7 +156,7 @@ impl Keyword {
     }
     pub(crate) fn as_str(&self) -> &str {
         match self {
-            Self::Buildin(d) => d.as_str(),
+            Self::Builtin(d) => d.as_str(),
             Self::Custom(s) => s,
         }
     }
@@ -164,7 +164,7 @@ impl Keyword {
 
 impl From<BuiltinKeyword> for Keyword {
     fn from(value: BuiltinKeyword) -> Self {
-        Keyword::Buildin(value)
+        Keyword::Builtin(value)
     }
 }
 

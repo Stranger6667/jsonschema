@@ -108,7 +108,7 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
 impl<'a> From<&'a Keyword> for LocationSegment<'a> {
     fn from(value: &'a Keyword) -> Self {
         match value {
-            Keyword::Buildin(k) => LocationSegment::Property(k.as_str()),
+            Keyword::Builtin(k) => LocationSegment::Property(k.as_str()),
             Keyword::Custom(s) => LocationSegment::Property(s),
         }
     }
@@ -153,7 +153,7 @@ impl Location {
     pub fn new() -> Self {
         Self(Arc::new(String::new()))
     }
-    pub(crate) fn join<'a>(&self, segment: impl Into<LocationSegment<'a>>) -> Self {
+    pub fn join<'a>(&self, segment: impl Into<LocationSegment<'a>>) -> Self {
         let parent = self.0.as_str();
         match segment.into() {
             LocationSegment::Property(property) => {

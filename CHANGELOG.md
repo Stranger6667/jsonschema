@@ -5,6 +5,7 @@
 ### Added
 
 - `Hash`, `PartialOrd`, `Ord` and `serde::Serialize` for `Location`.
+- Make `Location::join` public.
 
 ## [0.29.0] - 2025-02-08
 
