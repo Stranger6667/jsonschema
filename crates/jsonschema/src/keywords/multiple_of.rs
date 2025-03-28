@@ -1,12 +1,12 @@
 use crate::{
     compiler,
     error::ValidationError,
+    ext::numeric,
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
     primitive_type::PrimitiveType,
     validator::Validate,
 };
-use fraction::{BigFraction, BigUint};
 use serde_json::{Map, Value};
 
 pub(crate) struct MultipleOfFloatValidator {
@@ -27,19 +27,7 @@ impl MultipleOfFloatValidator {
 impl Validate for MultipleOfFloatValidator {
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::Number(item) = instance {
-            let item = item.as_f64().expect("Always valid");
-            let remainder = (item / self.multiple_of) % 1.;
-            if remainder.is_nan() {
-                // Involves heap allocations via the underlying `BigUint` type
-                let fraction = BigFraction::from(item) / BigFraction::from(self.multiple_of);
-                if let Some(denom) = fraction.denom() {
-                    denom == &BigUint::from(1_u8)
-                } else {
-                    true
-                }
-            } else {
-                remainder < f64::EPSILON
-            }
+            numeric::is_multiple_of_float(item, self.multiple_of)
         } else {
             true
         }
@@ -80,10 +68,7 @@ impl MultipleOfIntegerValidator {
 impl Validate for MultipleOfIntegerValidator {
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::Number(item) = instance {
-            let item = item.as_f64().expect("Always valid");
-            // As the divisor has its fractional part as zero, then any value with a non-zero
-            // fractional part can't be a multiple of this divisor, therefore it is short-circuited
-            item.fract() == 0. && (item % self.multiple_of) == 0.
+            numeric::is_multiple_of_integer(item, self.multiple_of)
         } else {
             true
         }

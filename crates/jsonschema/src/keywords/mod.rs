@@ -9,8 +9,6 @@ pub(crate) mod content;
 pub(crate) mod custom;
 pub(crate) mod dependencies;
 pub(crate) mod enum_;
-pub(crate) mod exclusive_maximum;
-pub(crate) mod exclusive_minimum;
 pub(crate) mod format;
 pub(crate) mod helpers;
 pub(crate) mod if_;
@@ -19,11 +17,10 @@ pub(crate) mod legacy;
 pub(crate) mod max_items;
 pub(crate) mod max_length;
 pub(crate) mod max_properties;
-pub(crate) mod maximum;
 pub(crate) mod min_items;
 pub(crate) mod min_length;
 pub(crate) mod min_properties;
-pub(crate) mod minimum;
+pub(crate) mod minmax;
 pub(crate) mod multiple_of;
 pub(crate) mod not;
 pub(crate) mod one_of;
@@ -284,24 +281,24 @@ pub(crate) fn get_for_draft<'a>(
             "exclusiveMaximum",
         ) if ctx.has_vocabulary(&Vocabulary::Validation) => Some((
             BuiltinKeyword::ExclusiveMaximum.into(),
-            exclusive_maximum::compile,
+            minmax::compile_exclusive_maximum,
         )),
         (
             Draft::Draft6 | Draft::Draft7 | Draft::Draft201909 | Draft::Draft202012,
             "exclusiveMinimum",
         ) if ctx.has_vocabulary(&Vocabulary::Validation) => Some((
             BuiltinKeyword::ExclusiveMinimum.into(),
-            exclusive_minimum::compile,
+            minmax::compile_exclusive_minimum,
         )),
         (Draft::Draft6 | Draft::Draft7 | Draft::Draft201909 | Draft::Draft202012, "maximum")
             if ctx.has_vocabulary(&Vocabulary::Validation) =>
         {
-            Some((BuiltinKeyword::Maximum.into(), maximum::compile))
+            Some((BuiltinKeyword::Maximum.into(), minmax::compile_maximum))
         }
         (Draft::Draft6 | Draft::Draft7 | Draft::Draft201909 | Draft::Draft202012, "minimum")
             if ctx.has_vocabulary(&Vocabulary::Validation) =>
         {
-            Some((BuiltinKeyword::Minimum.into(), minimum::compile))
+            Some((BuiltinKeyword::Minimum.into(), minmax::compile_minimum))
         }
         (
             Draft::Draft6 | Draft::Draft7 | Draft::Draft201909 | Draft::Draft202012,

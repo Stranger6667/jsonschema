@@ -1,6 +1,6 @@
 use crate::{
     compiler,
-    keywords::{exclusive_maximum, maximum, CompilationResult},
+    keywords::{minmax, CompilationResult},
 };
 use serde_json::{Map, Value};
 
@@ -11,8 +11,8 @@ pub(crate) fn compile<'a>(
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
     if let Some(Value::Bool(true)) = parent.get("exclusiveMaximum") {
-        exclusive_maximum::compile(ctx, parent, schema)
+        minmax::compile_exclusive_maximum(ctx, parent, schema)
     } else {
-        maximum::compile(ctx, parent, schema)
+        minmax::compile_maximum(ctx, parent, schema)
     }
 }
