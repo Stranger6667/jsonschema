@@ -4,7 +4,7 @@ use crate::{
     keywords::{required, unique_items, CompilationResult},
     node::SchemaNode,
     paths::{LazyLocation, Location},
-    primitive_type::PrimitiveType,
+    types::JsonType,
     validator::Validate,
 };
 use serde_json::{Map, Value};
@@ -41,7 +41,7 @@ impl DependenciesValidator {
                 Location::new(),
                 ctx.location().clone(),
                 schema,
-                PrimitiveType::Object,
+                JsonType::Object,
             ))
         }
     }
@@ -124,7 +124,7 @@ impl DependentRequiredValidator {
                         Location::new(),
                         ictx.location().clone(),
                         subschema,
-                        PrimitiveType::Array,
+                        JsonType::Array,
                     ));
                 }
             }
@@ -134,7 +134,7 @@ impl DependentRequiredValidator {
                 Location::new(),
                 ctx.location().clone(),
                 schema,
-                PrimitiveType::Object,
+                JsonType::Object,
             ))
         }
     }
@@ -202,7 +202,7 @@ impl DependentSchemasValidator {
                 Location::new(),
                 ctx.location().clone(),
                 schema,
-                PrimitiveType::Object,
+                JsonType::Object,
             ))
         }
     }

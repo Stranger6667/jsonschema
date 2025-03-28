@@ -1,7 +1,7 @@
 use num_cmp::NumCmp;
 use serde_json::{Map, Value};
 
-use crate::{compiler, paths::Location, primitive_type::PrimitiveType, ValidationError};
+use crate::{compiler, paths::Location, types::JsonType, ValidationError};
 
 macro_rules! num_cmp {
     ($left:expr, $right:expr) => {
@@ -87,7 +87,7 @@ pub(crate) fn map_get_u64<'a>(
                 Location::new(),
                 ctx.location().clone(),
                 value,
-                PrimitiveType::Integer,
+                JsonType::Integer,
             )))
         }
     }
@@ -101,12 +101,7 @@ pub(crate) fn fail_on_non_positive_integer(
     if value.is_i64() {
         ValidationError::minimum(Location::new(), instance_path, value, 0.into())
     } else {
-        ValidationError::single_type_error(
-            Location::new(),
-            instance_path,
-            value,
-            PrimitiveType::Integer,
-        )
+        ValidationError::single_type_error(Location::new(), instance_path, value, JsonType::Integer)
     }
 }
 

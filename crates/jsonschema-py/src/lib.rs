@@ -268,15 +268,11 @@ impl ValidationErrorKind {
             jsonschema::error::ValidationErrorKind::Type { kind } => ValidationErrorKind::Type {
                 types: {
                     match kind {
-                        jsonschema::error::TypeKind::Single(primitive_type) => {
-                            PyList::new(py, [primitive_type.to_string()].iter())?.unbind()
+                        jsonschema::error::TypeKind::Single(ty) => {
+                            PyList::new(py, [ty.to_string()].iter())?.unbind()
                         }
-                        jsonschema::error::TypeKind::Multiple(primitive_types_bit_map) => {
-                            PyList::new(
-                                py,
-                                primitive_types_bit_map.into_iter().map(|ty| ty.to_string()),
-                            )?
-                            .unbind()
+                        jsonschema::error::TypeKind::Multiple(types) => {
+                            PyList::new(py, types.iter().map(|ty| ty.to_string()))?.unbind()
                         }
                     }
                 },

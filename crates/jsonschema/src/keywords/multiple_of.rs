@@ -4,7 +4,7 @@ use crate::{
     ext::numeric,
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
-    primitive_type::PrimitiveType,
+    types::JsonType,
     validator::Validate,
 };
 use serde_json::{Map, Value};
@@ -110,7 +110,7 @@ pub(crate) fn compile<'a>(
             Location::new(),
             ctx.location().clone(),
             schema,
-            PrimitiveType::Number,
+            JsonType::Number,
         )))
     }
 }

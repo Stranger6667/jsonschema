@@ -6,7 +6,7 @@ use crate::{
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location},
-    primitive_type::PrimitiveType,
+    types::JsonType,
     validator::{PartialApplication, Validate},
     ValidationError, ValidationOptions,
 };
@@ -197,7 +197,7 @@ fn invalid_reference<'a>(ctx: &compiler::Context, schema: &'a Value) -> Validati
         Location::new(),
         ctx.location().clone(),
         schema,
-        PrimitiveType::String,
+        JsonType::String,
     )
 }
 

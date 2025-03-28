@@ -3,7 +3,7 @@ use crate::{
     error::ValidationError,
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
-    primitive_type::PrimitiveType,
+    types::JsonType,
     validator::Validate,
 };
 use ahash::AHashMap;
@@ -101,7 +101,7 @@ impl PatternValidator {
                 Location::new(),
                 ctx.location().clone(),
                 pattern,
-                PrimitiveType::String,
+                JsonType::String,
             )),
         }
     }

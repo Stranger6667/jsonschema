@@ -5,7 +5,7 @@ use crate::{
     node::SchemaNode,
     output::BasicOutput,
     paths::{LazyLocation, Location},
-    primitive_type::PrimitiveType,
+    types::JsonType,
     validator::{PartialApplication, Validate},
 };
 use fancy_regex::Regex;
@@ -237,7 +237,7 @@ pub(crate) fn compile<'a>(
                     Location::new(),
                     ctx.location().clone(),
                     schema,
-                    PrimitiveType::Object,
+                    JsonType::Object,
                 )))
             }
         }

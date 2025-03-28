@@ -3,7 +3,7 @@ use crate::{
     error::ValidationError,
     keywords::{helpers, CompilationResult},
     paths::{LazyLocation, Location},
-    primitive_type::{PrimitiveType, PrimitiveTypesBitMap},
+    types::{JsonType, JsonTypeSet},
     validator::Validate,
 };
 use serde_json::{Map, Value};
@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 pub(crate) struct EnumValidator {
     options: Value,
     // Types that occur in items
-    types: PrimitiveTypesBitMap,
+    types: JsonTypeSet,
     items: Vec<Value>,
     location: Location,
 }
@@ -24,9 +24,9 @@ impl EnumValidator {
         items: &'a [Value],
         location: Location,
     ) -> CompilationResult<'a> {
-        let mut types = PrimitiveTypesBitMap::new();
+        let mut types = JsonTypeSet::new();
         for item in items {
-            types |= PrimitiveType::from(item);
+            types = types.insert(JsonType::from(item));
         }
         Ok(Box::new(EnumValidator {
             options: schema.clone(),
@@ -59,7 +59,7 @@ impl Validate for EnumValidator {
         // If the input value type is not in the types present among the enum options, then there
         // is no reason to compare it against all items - we know that
         // there are no items with such type at all
-        if self.types.contains_type(PrimitiveType::from(instance)) {
+        if self.types.contains_value_type(instance) {
             self.items.iter().any(|item| helpers::equal(instance, item))
         } else {
             false
@@ -131,7 +131,7 @@ pub(crate) fn compile<'a>(
             Location::new(),
             ctx.location().clone(),
             schema,
-            PrimitiveType::Array,
+            JsonType::Array,
         )))
     }
 }

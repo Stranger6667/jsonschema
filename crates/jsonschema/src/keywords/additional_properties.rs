@@ -13,8 +13,8 @@ use crate::{
     node::SchemaNode,
     output::{Annotations, BasicOutput, OutputUnit},
     paths::{LazyLocation, Location},
-    primitive_type::PrimitiveType,
     properties::*,
+    types::JsonType,
     validator::{PartialApplication, Validate},
 };
 use referencing::Uri;
@@ -1254,7 +1254,7 @@ pub(crate) fn compile<'a>(
                 Location::new(),
                 ctx.location().clone(),
                 schema,
-                PrimitiveType::Object,
+                JsonType::Object,
             )))
         }
     } else {

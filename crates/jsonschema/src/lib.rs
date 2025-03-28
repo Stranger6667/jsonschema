@@ -578,10 +578,15 @@ mod node;
 mod options;
 pub mod output;
 pub mod paths;
-pub mod primitive_type;
 pub(crate) mod properties;
 mod retriever;
+pub mod types;
 mod validator;
+
+#[deprecated(since = "0.29.2", note = "Use `jsonschema::types` instead.")]
+pub mod primitive_type {
+    pub use super::types::*;
+}
 
 pub use error::{ErrorIterator, MaskedValidationError, ValidationError};
 pub use keywords::custom::Keyword;
@@ -590,6 +595,7 @@ pub use output::BasicOutput;
 pub use referencing::{
     Draft, Error as ReferencingError, Registry, RegistryOptions, Resource, Retrieve, Uri,
 };
+pub use types::{JsonType, JsonTypeSet, JsonTypeSetIterator};
 pub use validator::Validator;
 
 #[cfg(feature = "resolve-async")]

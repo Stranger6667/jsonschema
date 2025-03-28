@@ -4,7 +4,7 @@ use crate::{
     keywords::{boolean::FalseValidator, CompilationResult},
     node::SchemaNode,
     paths::{LazyLocation, Location},
-    primitive_type::{PrimitiveType, PrimitiveTypesBitMap},
+    types::{JsonType, JsonTypeSet},
     validator::Validate,
 };
 use serde_json::{Map, Value};
@@ -147,10 +147,10 @@ pub(crate) fn compile<'a>(
                 Location::new(),
                 ctx.location().clone(),
                 schema,
-                PrimitiveTypesBitMap::new()
-                    .add_type(PrimitiveType::Object)
-                    .add_type(PrimitiveType::Array)
-                    .add_type(PrimitiveType::Boolean),
+                JsonTypeSet::new()
+                    .insert(JsonType::Object)
+                    .insert(JsonType::Array)
+                    .insert(JsonType::Boolean),
             ))),
         }
     } else {

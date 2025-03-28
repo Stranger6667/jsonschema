@@ -37,7 +37,7 @@
 //! ```
 use crate::{
     paths::Location,
-    primitive_type::{PrimitiveType, PrimitiveTypesBitMap},
+    types::{JsonType, JsonTypeSet},
 };
 use serde_json::{Map, Number, Value};
 use std::{
@@ -170,8 +170,8 @@ pub enum ValidationErrorKind {
 #[derive(Debug)]
 #[allow(missing_docs)]
 pub enum TypeKind {
-    Single(PrimitiveType),
-    Multiple(PrimitiveTypesBitMap),
+    Single(JsonType),
+    Multiple(JsonTypeSet),
 }
 
 /// Shortcuts for creation of specific error kinds.
@@ -660,7 +660,7 @@ impl<'a> ValidationError<'a> {
         location: Location,
         instance_path: Location,
         instance: &'a Value,
-        type_name: PrimitiveType,
+        type_name: JsonType,
     ) -> ValidationError<'a> {
         ValidationError {
             instance_path,
@@ -675,7 +675,7 @@ impl<'a> ValidationError<'a> {
         location: Location,
         instance_path: Location,
         instance: &'a Value,
-        types: PrimitiveTypesBitMap,
+        types: JsonTypeSet,
     ) -> ValidationError<'a> {
         ValidationError {
             instance_path,
@@ -952,7 +952,7 @@ impl fmt::Display for ValidationError<'_> {
                 kind: TypeKind::Multiple(types),
             } => {
                 write!(f, "{} is not of types ", self.instance)?;
-                let mut iter = types.into_iter();
+                let mut iter = types.iter();
                 if let Some(t) = iter.next() {
                     f.write_char('"')?;
                     write!(f, "{}", t)?;
@@ -1141,7 +1141,7 @@ impl fmt::Display for MaskedValidationError<'_, '_, '_> {
                 kind: TypeKind::Multiple(types),
             } => {
                 write!(f, "{} is not of types ", self.placeholder)?;
-                let mut iter = types.into_iter();
+                let mut iter = types.iter();
                 if let Some(t) = iter.next() {
                     f.write_char('"')?;
                     write!(f, "{}", t)?;
@@ -1173,7 +1173,7 @@ mod tests {
             Location::new(),
             Location::new(),
             &instance,
-            PrimitiveType::String,
+            JsonType::String,
         );
         assert_eq!(err.to_string(), r#"42 is not of type "string""#)
     }
@@ -1181,11 +1181,14 @@ mod tests {
     #[test]
     fn multiple_types_error() {
         let instance = json!(42);
+        let types = JsonTypeSet::new()
+            .insert(JsonType::String)
+            .insert(JsonType::Number);
         let err = ValidationError::multiple_type_error(
             Location::new(),
             Location::new(),
             &instance,
-            vec![PrimitiveType::String, PrimitiveType::Number].into(),
+            types,
         );
         assert_eq!(err.to_string(), r#"42 is not of types "number", "string""#)
     }
@@ -1341,7 +1344,7 @@ mod tests {
     )]
     #[test_case(
         json!(123),
-        ValidationErrorKind::Type { kind: TypeKind::Single(PrimitiveType::String) },
+        ValidationErrorKind::Type { kind: TypeKind::Single(JsonType::String) },
         "value is not of type \"string\""
     )]
     fn test_masked_error_messages(instance: Value, kind: ValidationErrorKind, expected: &str) {
@@ -1363,7 +1366,7 @@ mod tests {
     #[test_case(
         json!({"password": "secret123"}),
         ValidationErrorKind::Type {
-            kind: TypeKind::Single(PrimitiveType::String)
+            kind: TypeKind::Single(JsonType::String)
         },
         "***",
         "*** is not of type \"string\""

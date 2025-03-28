@@ -16,7 +16,7 @@ use crate::{
     error::ValidationError,
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
-    primitive_type::PrimitiveType,
+    types::JsonType,
     validator::Validate,
     Draft,
 };
@@ -811,7 +811,7 @@ pub(crate) fn compile<'a>(
             Location::new(),
             ctx.location().clone(),
             schema,
-            PrimitiveType::String,
+            JsonType::String,
         )))
     }
 }

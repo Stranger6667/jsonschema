@@ -6,7 +6,7 @@ use crate::{
     error::ValidationError,
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
-    primitive_type::PrimitiveType,
+    types::JsonType,
     validator::Validate,
 };
 use serde_json::{Map, Value};
@@ -217,7 +217,7 @@ pub(crate) fn compile_media_type<'a>(
                         Location::new(),
                         ctx.location().clone(),
                         content_encoding,
-                        PrimitiveType::String,
+                        JsonType::String,
                     ))),
                 }
             } else {
@@ -232,7 +232,7 @@ pub(crate) fn compile_media_type<'a>(
             Location::new(),
             ctx.location().clone(),
             subschema,
-            PrimitiveType::String,
+            JsonType::String,
         ))),
     }
 }
@@ -261,7 +261,7 @@ pub(crate) fn compile_content_encoding<'a>(
             Location::new(),
             ctx.location().clone(),
             subschema,
-            PrimitiveType::String,
+            JsonType::String,
         ))),
     }
 }

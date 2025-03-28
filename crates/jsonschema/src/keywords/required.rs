@@ -3,7 +3,7 @@ use crate::{
     error::{no_error, ErrorIterator, ValidationError},
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
-    primitive_type::PrimitiveType,
+    types::JsonType,
     validator::Validate,
 };
 use serde_json::{Map, Value};
@@ -25,7 +25,7 @@ impl RequiredValidator {
                         Location::new(),
                         location,
                         item,
-                        PrimitiveType::String,
+                        JsonType::String,
                     ))
                 }
             }
@@ -153,7 +153,7 @@ pub(crate) fn compile_with_path(schema: &Value, location: Location) -> Option<Co
                         Location::new(),
                         location,
                         item,
-                        PrimitiveType::String,
+                        JsonType::String,
                     )))
                 }
             } else {
@@ -164,7 +164,7 @@ pub(crate) fn compile_with_path(schema: &Value, location: Location) -> Option<Co
             Location::new(),
             location,
             schema,
-            PrimitiveType::Array,
+            JsonType::Array,
         ))),
     }
 }

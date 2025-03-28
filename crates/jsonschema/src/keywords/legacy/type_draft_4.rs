@@ -3,26 +3,26 @@ use crate::{
     error::ValidationError,
     keywords::{type_, CompilationResult},
     paths::{LazyLocation, Location},
-    primitive_type::{PrimitiveType, PrimitiveTypesBitMap},
+    types::{JsonType, JsonTypeSet},
     validator::Validate,
 };
 use serde_json::{json, Map, Number, Value};
-use std::convert::TryFrom;
+use std::str::FromStr;
 
 pub(crate) struct MultipleTypesValidator {
-    types: PrimitiveTypesBitMap,
+    types: JsonTypeSet,
     location: Location,
 }
 
 impl MultipleTypesValidator {
     #[inline]
     pub(crate) fn compile(items: &[Value], location: Location) -> CompilationResult {
-        let mut types = PrimitiveTypesBitMap::new();
+        let mut types = JsonTypeSet::new();
         for item in items {
             match item {
                 Value::String(string) => {
-                    if let Ok(primitive_type) = PrimitiveType::try_from(string.as_str()) {
-                        types |= primitive_type;
+                    if let Ok(ty) = JsonType::from_str(string.as_str()) {
+                        types = types.insert(ty);
                     } else {
                         return Err(ValidationError::enumeration(
                             Location::new(),
@@ -39,7 +39,7 @@ impl MultipleTypesValidator {
                         Location::new(),
                         location,
                         item,
-                        PrimitiveType::String,
+                        JsonType::String,
                     ))
                 }
             }
@@ -50,17 +50,7 @@ impl MultipleTypesValidator {
 
 impl Validate for MultipleTypesValidator {
     fn is_valid(&self, instance: &Value) -> bool {
-        match instance {
-            Value::Array(_) => self.types.contains_type(PrimitiveType::Array),
-            Value::Bool(_) => self.types.contains_type(PrimitiveType::Boolean),
-            Value::Null => self.types.contains_type(PrimitiveType::Null),
-            Value::Number(num) => {
-                self.types.contains_type(PrimitiveType::Number)
-                    || (self.types.contains_type(PrimitiveType::Integer) && is_integer(num))
-            }
-            Value::Object(_) => self.types.contains_type(PrimitiveType::Object),
-            Value::String(_) => self.types.contains_type(PrimitiveType::String),
-        }
+        self.types.contains_value_type(instance)
     }
     fn validate<'i>(
         &self,
@@ -111,7 +101,7 @@ impl Validate for IntegerTypeValidator {
                 self.location.clone(),
                 location.into(),
                 instance,
-                PrimitiveType::Integer,
+                JsonType::Integer,
             ))
         }
     }
@@ -140,7 +130,7 @@ pub(crate) fn compile<'a>(
                         Location::new(),
                         location,
                         item,
-                        PrimitiveType::String,
+                        JsonType::String,
                     )))
                 }
             } else {
@@ -151,9 +141,9 @@ pub(crate) fn compile<'a>(
             Location::new(),
             ctx.location().clone(),
             schema,
-            PrimitiveTypesBitMap::new()
-                .add_type(PrimitiveType::String)
-                .add_type(PrimitiveType::Array),
+            JsonTypeSet::new()
+                .insert(JsonType::String)
+                .insert(JsonType::Array),
         ))),
     }
 }
@@ -163,14 +153,14 @@ fn compile_single_type<'a>(
     location: Location,
     instance: &'a Value,
 ) -> CompilationResult<'a> {
-    match PrimitiveType::try_from(item) {
-        Ok(PrimitiveType::Array) => type_::ArrayTypeValidator::compile(location),
-        Ok(PrimitiveType::Boolean) => type_::BooleanTypeValidator::compile(location),
-        Ok(PrimitiveType::Integer) => IntegerTypeValidator::compile(location),
-        Ok(PrimitiveType::Null) => type_::NullTypeValidator::compile(location),
-        Ok(PrimitiveType::Number) => type_::NumberTypeValidator::compile(location),
-        Ok(PrimitiveType::Object) => type_::ObjectTypeValidator::compile(location),
-        Ok(PrimitiveType::String) => type_::StringTypeValidator::compile(location),
+    match JsonType::from_str(item) {
+        Ok(JsonType::Array) => type_::ArrayTypeValidator::compile(location),
+        Ok(JsonType::Boolean) => type_::BooleanTypeValidator::compile(location),
+        Ok(JsonType::Integer) => IntegerTypeValidator::compile(location),
+        Ok(JsonType::Null) => type_::NullTypeValidator::compile(location),
+        Ok(JsonType::Number) => type_::NumberTypeValidator::compile(location),
+        Ok(JsonType::Object) => type_::ObjectTypeValidator::compile(location),
+        Ok(JsonType::String) => type_::StringTypeValidator::compile(location),
         Err(()) => Err(ValidationError::custom(
             Location::new(),
             location,

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `JsonType` and `JsonTypeSet`.
+
+### Deprecated
+
+- `PrimitiveType` and `PrimitiveTypesBitMap`.
+
 ## [0.29.1] - 2025-03-27
 
 ### Added

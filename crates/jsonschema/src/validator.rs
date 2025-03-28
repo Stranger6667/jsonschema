@@ -309,7 +309,7 @@ mod tests {
         error::ValidationError,
         keywords::custom::Keyword,
         paths::{LazyLocation, Location},
-        primitive_type::PrimitiveType,
+        types::JsonType,
         Validator,
     };
     use fancy_regex::Regex;
@@ -534,7 +534,7 @@ mod tests {
                     Location::new(),
                     location,
                     schema,
-                    PrimitiveType::Number,
+                    JsonType::Number,
                 ));
             };
             let with_currency_format = parent

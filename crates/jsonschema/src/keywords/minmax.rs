@@ -4,7 +4,7 @@ use crate::{
     ext::numeric,
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
-    primitive_type::PrimitiveType,
+    types::JsonType,
     validator::Validate,
 };
 use num_cmp::NumCmp;
@@ -88,7 +88,7 @@ fn number_type_error<'a>(ctx: &compiler::Context, schema: &'a Value) -> Compilat
         Location::new(),
         ctx.location().clone(),
         schema,
-        PrimitiveType::Number,
+        JsonType::Number,
     ))
 }
 

@@ -5,7 +5,7 @@ use crate::{
     node::SchemaNode,
     output::BasicOutput,
     paths::{LazyLocation, Location},
-    primitive_type::PrimitiveType,
+    types::JsonType,
     validator::{PartialApplication, Validate},
 };
 use serde_json::{Map, Value};
@@ -35,7 +35,7 @@ impl OneOfValidator {
                 Location::new(),
                 ctx.location().clone(),
                 schema,
-                PrimitiveType::Array,
+                JsonType::Array,
             ))
         }
     }

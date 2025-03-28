@@ -1,5 +1,20 @@
 # Migration Guide
 
+
+## Upgrading from 0.29.x to 0.30.0
+
+`PrimitiveType` was replaced by `JsonType`, and `PrimitiveTypesBitMap` with `JsonTypeSet`.
+
+```rust
+// Old (0.29.x)
+use jsonschema::primitive_types::PrimitiveType;
+use jsonschema::primitive_types::PrimitiveTypesBitMap;
+
+// New (0.30.0)
+use jsonschema::JsonType;
+use jsonschema::JsonTypeSet;
+```
+
 ## Upgrading from 0.28.x to 0.29.0
 
 The builder methods on `ValidationOptions` now take ownership of `self`. Change your code to use method chaining instead of reusing the options instance:

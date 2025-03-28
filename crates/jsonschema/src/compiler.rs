@@ -10,7 +10,7 @@ use crate::{
     node::SchemaNode,
     options::ValidationOptions,
     paths::{Location, LocationSegment},
-    primitive_type::{PrimitiveType, PrimitiveTypesBitMap},
+    types::{JsonType, JsonTypeSet},
     ValidationError, Validator,
 };
 use ahash::{AHashMap, AHashSet};
@@ -454,9 +454,9 @@ pub(crate) fn compile_with<'a>(
             Location::new(),
             location,
             resource.contents(),
-            PrimitiveTypesBitMap::new()
-                .add_type(PrimitiveType::Boolean)
-                .add_type(PrimitiveType::Object),
+            JsonTypeSet::new()
+                .insert(JsonType::Boolean)
+                .insert(JsonType::Object),
         )),
     }
 }
