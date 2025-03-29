@@ -212,7 +212,9 @@ impl JsonSchemaResource for InnerResourcePtr {
     }
 }
 
-pub(crate) fn unescape_segment(mut segment: &str) -> Cow<str> {
+/// Unescape JSON Pointer path segments by converting `~1` to `/` and `~0` to `~`.
+#[must_use]
+pub fn unescape_segment(mut segment: &str) -> Cow<str> {
     // Naively, checking for `~` and then replacing implies two passes
     // over the input buffer. First, search in the first `contains('~')` call
     // and then replacing `~1` & `~0` at once in a single pass.

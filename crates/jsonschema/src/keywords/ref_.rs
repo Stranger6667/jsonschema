@@ -697,4 +697,11 @@ mod tests {
         assert!(validator.is_valid(&json!(42)));
         assert!(!validator.is_valid(&json!("string")));
     }
+
+    #[test]
+    fn test_missing_file() {
+        let schema = json!({"$ref": "./virtualNetwork.json"});
+        let error = crate::validator_for(&schema).expect_err("Should fail");
+        assert_eq!(error.to_string(), "Resource './virtualNetwork.json' is not present in a registry and retrieving it failed: No base URI is available");
+    }
 }

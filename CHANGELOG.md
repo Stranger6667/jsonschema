@@ -6,6 +6,10 @@
 
 - `JsonType` and `JsonTypeSet`.
 
+### Changed
+
+- Better error messages for relative `$ref` without base URI.
+
 ### Deprecated
 
 - `PrimitiveType` and `PrimitiveTypesBitMap`.

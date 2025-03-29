@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Better error messages for relative `$ref` without base URI.
+
 ### Fixed
 
 - Added Registry to type declarations.

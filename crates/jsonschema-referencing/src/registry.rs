@@ -594,7 +594,7 @@ fn process_meta_schemas(
 struct ProcessingState {
     queue: VecDeque<(Arc<Uri<String>>, InnerResourcePtr)>,
     seen: HashSet<u64, BuildNoHashHasher>,
-    external: AHashSet<Uri<String>>,
+    external: AHashSet<(String, Uri<String>)>,
     scratch: String,
     refers_metaschemas: bool,
 }
@@ -742,13 +742,23 @@ fn process_resources(
         process_queue(&mut state, resources, anchors, resolution_cache)?;
 
         // Retrieve external resources
-        for uri in state.external.drain() {
+        for (original, uri) in state.external.drain() {
             let mut fragmentless = uri.clone();
             fragmentless.set_fragment(None);
             if !resources.contains_key(&fragmentless) {
-                let retrieved = retriever
-                    .retrieve(&fragmentless)
-                    .map_err(|err| Error::unretrievable(fragmentless.as_str(), err))?;
+                let retrieved = match retriever.retrieve(&fragmentless) {
+                    Ok(retrieved) => retrieved,
+                    Err(error) => {
+                        return if uri.scheme().as_str() == "json-schema" {
+                            Err(Error::unretrievable(
+                                original,
+                                "No base URI is available".into(),
+                            ))
+                        } else {
+                            Err(Error::unretrievable(fragmentless.as_str(), error))
+                        }
+                    }
+                };
 
                 let (key, resource) =
                     create_resource(retrieved, fragmentless, default_draft, documents, resources)?;
@@ -789,13 +799,13 @@ async fn process_resources_async(
             let data = state
                 .external
                 .drain()
-                .filter_map(|uri| {
+                .filter_map(|(original, uri)| {
                     let mut fragmentless = uri.clone();
                     fragmentless.set_fragment(None);
                     if resources.contains_key(&fragmentless) {
                         None
                     } else {
-                        Some((uri, fragmentless))
+                        Some((original, uri, fragmentless))
                     }
                 })
                 .collect::<Vec<_>>();
@@ -803,13 +813,24 @@ async fn process_resources_async(
             let results = {
                 let futures = data
                     .iter()
-                    .map(|(_, fragmentless)| retriever.retrieve(fragmentless));
+                    .map(|(_, _, fragmentless)| retriever.retrieve(fragmentless));
                 futures::future::join_all(futures).await
             };
 
-            for ((uri, fragmentless), result) in data.iter().zip(results) {
-                let retrieved =
-                    result.map_err(|err| Error::unretrievable(fragmentless.as_str(), err))?;
+            for ((original, uri, fragmentless), result) in data.iter().zip(results) {
+                let retrieved = match result {
+                    Ok(retrieved) => retrieved,
+                    Err(error) => {
+                        return if uri.scheme().as_str() == "json-schema" {
+                            Err(Error::unretrievable(
+                                original,
+                                "No base URI is available".into(),
+                            ))
+                        } else {
+                            Err(Error::unretrievable(fragmentless.as_str(), error))
+                        }
+                    }
+                };
 
                 let (key, resource) = create_resource(
                     retrieved,
@@ -834,7 +855,7 @@ async fn process_resources_async(
 fn collect_external_resources(
     base: &Uri<String>,
     contents: &Value,
-    collected: &mut AHashSet<Uri<String>>,
+    collected: &mut AHashSet<(String, Uri<String>)>,
     seen: &mut HashSet<u64, BuildNoHashHasher>,
     resolution_cache: &mut UriCache,
     scratch: &mut String,
@@ -907,7 +928,7 @@ fn collect_external_resources(
                             (*resolution_cache.resolve_against(&base.borrow(), $reference)?).clone()
                         };
 
-                        collected.insert(resolved);
+                        collected.insert(($reference.to_string(), resolved));
                     }
                 }
             }
@@ -939,8 +960,10 @@ fn collect_external_resources(
     Ok(())
 }
 
-// A slightly faster version of pointer resolution based on `Value::pointer` from `serde_json`.
-fn pointer<'a>(document: &'a Value, pointer: &str) -> Option<&'a Value> {
+/// Look up a value by a JSON Pointer.
+///
+/// **NOTE**: A slightly faster version of pointer resolution based on `Value::pointer` from `serde_json`.
+pub fn pointer<'a>(document: &'a Value, pointer: &str) -> Option<&'a Value> {
     if pointer.is_empty() {
         return Some(document);
     }
@@ -958,7 +981,8 @@ fn pointer<'a>(document: &'a Value, pointer: &str) -> Option<&'a Value> {
 }
 
 // Taken from `serde_json`.
-fn parse_index(s: &str) -> Option<usize> {
+#[must_use]
+pub fn parse_index(s: &str) -> Option<usize> {
     if s.starts_with('+') || (s.starts_with('0') && s.len() != 1) {
         return None;
     }
@@ -976,7 +1000,13 @@ mod tests {
 
     use crate::{uri::from_str, Draft, Registry, Resource, Retrieve};
 
-    use super::{RegistryOptions, SPECIFICATIONS};
+    use super::{pointer, RegistryOptions, SPECIFICATIONS};
+
+    #[test]
+    fn test_empty_pointer() {
+        let document = json!({});
+        assert_eq!(pointer(&document, ""), Some(&document));
+    }
 
     #[test]
     fn test_invalid_uri_on_registry_creation() {
@@ -1016,6 +1046,13 @@ mod tests {
             result.unwrap_err().to_string(),
             "Resource 'http://example.com/non_existent_schema' is not present in a registry and retrieving it failed: Retrieving external resources is not supported once the registry is populated"
         );
+    }
+
+    #[test]
+    fn test_relative_uri_without_base() {
+        let schema = Draft::Draft202012.create_resource(json!({"$ref": "./virtualNetwork.json"}));
+        let error = Registry::try_new("json-schema:///", schema).expect_err("Should fail");
+        assert_eq!(error.to_string(), "Resource './virtualNetwork.json' is not present in a registry and retrieving it failed: No base URI is available");
     }
 
     struct TestRetriever {
