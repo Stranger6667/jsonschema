@@ -5,7 +5,10 @@ use crate::{
         DEFAULT_CONTENT_ENCODING_CHECKS_AND_CONVERTERS,
     },
     content_media_type::{ContentMediaTypeCheckType, DEFAULT_CONTENT_MEDIA_TYPE_CHECKS},
-    keywords::{custom::KeywordFactory, format::Format},
+    keywords::{
+        custom::KeywordFactory,
+        format::{Format, StringFormat, ValueFormat},
+    },
     paths::Location,
     retriever::DefaultRetriever,
     Keyword, ValidationError, Validator,
@@ -339,7 +342,35 @@ impl<R> ValidationOptions<R> {
         N: Into<String>,
         F: Fn(&str) -> bool + Send + Sync + 'static,
     {
-        self.formats.insert(name.into(), Arc::new(format));
+        self.formats
+            .insert(name.into(), Arc::new(StringFormat(format)));
+        self
+    }
+    /// # Example
+    ///
+    /// ```rust
+    /// # use serde_json::{json, Value};
+    /// fn my_format(s: &Value) -> bool {
+    ///    matches!(s, Value::Number(_))
+    /// }
+    /// # fn foo() {
+    /// let schema = json!({"type": "string", "format": "custom"});
+    /// let validator = jsonschema::options()
+    ///     .with_format_value("custom", my_format)
+    ///     .build(&schema)
+    ///     .expect("Valid schema");
+    ///
+    /// assert!(!validator.is_valid(&json!("foo")));
+    /// assert!(validator.is_valid(&json!(42)));
+    /// # }
+    /// ```
+    pub fn with_format_value<N, F>(mut self, name: N, format: F) -> Self
+    where
+        N: Into<String>,
+        F: Fn(&Value) -> bool + Send + Sync + 'static,
+    {
+        self.formats
+            .insert(name.into(), Arc::new(ValueFormat(format)));
         self
     }
     pub(crate) fn get_format(&self, format: &str) -> Option<(&String, &Arc<dyn Format>)> {
