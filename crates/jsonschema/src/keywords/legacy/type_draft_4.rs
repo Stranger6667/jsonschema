@@ -17,7 +17,7 @@ pub(crate) struct MultipleTypesValidator {
 impl MultipleTypesValidator {
     #[inline]
     pub(crate) fn compile(items: &[Value], location: Location) -> CompilationResult {
-        let mut types = JsonTypeSet::new();
+        let mut types = JsonTypeSet::empty();
         for item in items {
             match item {
                 Value::String(string) => {
@@ -141,7 +141,7 @@ pub(crate) fn compile<'a>(
             Location::new(),
             ctx.location().clone(),
             schema,
-            JsonTypeSet::new()
+            JsonTypeSet::empty()
                 .insert(JsonType::String)
                 .insert(JsonType::Array),
         ))),

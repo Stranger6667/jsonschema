@@ -81,15 +81,27 @@ pub struct JsonTypeSet(u8);
 
 impl Default for JsonTypeSet {
     fn default() -> Self {
-        Self::new()
+        Self::empty()
     }
 }
 
 impl JsonTypeSet {
     /// Create an empty set of types.
     #[inline]
-    pub const fn new() -> Self {
+    pub const fn empty() -> Self {
         Self(0)
+    }
+    /// Create a set with all possible JSON types.
+    #[inline]
+    pub const fn all() -> Self {
+        JsonTypeSet::empty()
+            .insert(JsonType::Null)
+            .insert(JsonType::Boolean)
+            .insert(JsonType::Integer)
+            .insert(JsonType::Number)
+            .insert(JsonType::String)
+            .insert(JsonType::Array)
+            .insert(JsonType::Object)
     }
     /// Add a type to this set and return the modified set.
     #[inline]
@@ -224,7 +236,7 @@ mod tests {
 
     #[test]
     fn test_insert_types() {
-        let mut set = JsonTypeSet::new();
+        let mut set = JsonTypeSet::empty();
         set = set.insert(JsonType::String);
         assert!(set.contains(JsonType::String));
         assert!(!set.contains(JsonType::Number));
@@ -235,15 +247,15 @@ mod tests {
         assert!(!set.contains(JsonType::Array));
     }
 
-    #[test_case(&json!(null), JsonTypeSet::new().insert(JsonType::Null) => true ; "null type")]
-    #[test_case(&json!(true), JsonTypeSet::new().insert(JsonType::Boolean) => true ; "boolean type")]
-    #[test_case(&json!("test"), JsonTypeSet::new().insert(JsonType::String) => true ; "string type")]
-    #[test_case(&json!([1,2]), JsonTypeSet::new().insert(JsonType::Array) => true ; "array type")]
-    #[test_case(&json!({"a": 1}), JsonTypeSet::new().insert(JsonType::Object) => true ; "object type")]
-    #[test_case(&json!(42), JsonTypeSet::new().insert(JsonType::Number) => true ; "number matches number")]
-    #[test_case(&json!(42), JsonTypeSet::new().insert(JsonType::Integer) => true ; "int matches integer")]
-    #[test_case(&json!(1.23), JsonTypeSet::new().insert(JsonType::Number) => true ; "float matches number")]
-    #[test_case(&json!(1.23), JsonTypeSet::new().insert(JsonType::Integer) => false ; "float doesn't match integer")]
+    #[test_case(&json!(null), JsonTypeSet::empty().insert(JsonType::Null) => true ; "null type")]
+    #[test_case(&json!(true), JsonTypeSet::empty().insert(JsonType::Boolean) => true ; "boolean type")]
+    #[test_case(&json!("test"), JsonTypeSet::empty().insert(JsonType::String) => true ; "string type")]
+    #[test_case(&json!([1,2]), JsonTypeSet::empty().insert(JsonType::Array) => true ; "array type")]
+    #[test_case(&json!({"a": 1}), JsonTypeSet::empty().insert(JsonType::Object) => true ; "object type")]
+    #[test_case(&json!(42), JsonTypeSet::empty().insert(JsonType::Number) => true ; "number matches number")]
+    #[test_case(&json!(42), JsonTypeSet::empty().insert(JsonType::Integer) => true ; "int matches integer")]
+    #[test_case(&json!(1.23), JsonTypeSet::empty().insert(JsonType::Number) => true ; "float matches number")]
+    #[test_case(&json!(1.23), JsonTypeSet::empty().insert(JsonType::Integer) => false ; "float doesn't match integer")]
     fn test_contains_value_type(value: &Value, set: JsonTypeSet) -> bool {
         set.contains_value_type(value)
     }
@@ -252,13 +264,13 @@ mod tests {
     fn test_debug_format() {
         assert_eq!(format!("{:?}", JsonTypeSet::default()), "()");
         assert_eq!(
-            format!("{:?}", JsonTypeSet::new().insert(JsonType::String)),
+            format!("{:?}", JsonTypeSet::empty().insert(JsonType::String)),
             "(string)"
         );
         assert_eq!(
             format!(
                 "{:?}",
-                JsonTypeSet::new()
+                JsonTypeSet::empty()
                     .insert(JsonType::String)
                     .insert(JsonType::Number)
             ),
@@ -268,7 +280,7 @@ mod tests {
 
     #[test]
     fn test_empty_iterator() {
-        let set = JsonTypeSet::new();
+        let set = JsonTypeSet::empty();
         let mut iter = set.iter();
         assert_eq!(iter.next(), None);
         assert_eq!(iter.size_hint(), (0, Some(0)));
@@ -276,7 +288,7 @@ mod tests {
 
     #[test]
     fn test_single_type_iterator() {
-        let set = JsonTypeSet::new().insert(JsonType::String);
+        let set = JsonTypeSet::empty().insert(JsonType::String);
         let mut iter = set.iter();
         assert_eq!(iter.size_hint(), (1, Some(1)));
         assert_eq!(iter.next(), Some(JsonType::String));
@@ -287,7 +299,7 @@ mod tests {
 
     #[test]
     fn test_multiple_types_iterator() {
-        let set = JsonTypeSet::new()
+        let set = JsonTypeSet::empty()
             .insert(JsonType::String)
             .insert(JsonType::Number)
             .insert(JsonType::Boolean);
@@ -303,14 +315,7 @@ mod tests {
 
     #[test]
     fn test_all_types_iterator() {
-        let set = JsonTypeSet::new()
-            .insert(JsonType::Array)
-            .insert(JsonType::Boolean)
-            .insert(JsonType::Integer)
-            .insert(JsonType::Null)
-            .insert(JsonType::Number)
-            .insert(JsonType::Object)
-            .insert(JsonType::String);
+        let set = JsonTypeSet::all();
 
         let types: Vec<JsonType> = set.iter().collect();
         assert_eq!(types.len(), 7);

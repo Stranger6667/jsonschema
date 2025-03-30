@@ -147,7 +147,7 @@ pub(crate) fn compile<'a>(
                 Location::new(),
                 ctx.location().clone(),
                 schema,
-                JsonTypeSet::new()
+                JsonTypeSet::empty()
                     .insert(JsonType::Object)
                     .insert(JsonType::Array)
                     .insert(JsonType::Boolean),

@@ -454,7 +454,7 @@ pub(crate) fn compile_with<'a>(
             Location::new(),
             location,
             resource.contents(),
-            JsonTypeSet::new()
+            JsonTypeSet::empty()
                 .insert(JsonType::Boolean)
                 .insert(JsonType::Object),
         )),

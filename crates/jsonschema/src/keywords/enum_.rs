@@ -25,7 +25,7 @@ impl EnumValidator {
         items: &'a [Value],
         location: Location,
     ) -> CompilationResult<'a> {
-        let mut types = JsonTypeSet::new();
+        let mut types = JsonTypeSet::empty();
         for item in items {
             types = types.insert(JsonType::from(item));
         }
