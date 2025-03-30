@@ -745,13 +745,13 @@ impl Validate for CustomFormatValidator {
     }
 
     fn matches_type(&self, instance: &Value) -> bool {
-        matches!(instance, Value::String(_))
+        self.check.matches_type(instance)
     }
 }
 
 pub(crate) trait Format: Send + Sync + 'static {
-    //type Input;
     fn is_valid(&self, value: &Value) -> bool;
+    fn matches_type(&self, instance: &Value) -> bool;
 }
 
 pub(crate) struct StringFormat<F>(pub F);
@@ -760,7 +760,6 @@ impl<F> Format for StringFormat<F>
 where
     F: Fn(&str) -> bool + Send + Sync + 'static,
 {
-    //type Input = Value;
     #[inline]
     fn is_valid(&self, value: &Value) -> bool {
         if let Some(s) = value.as_str() {
@@ -768,6 +767,9 @@ where
         } else {
             false
         }
+    }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
     }
 }
 
@@ -780,6 +782,9 @@ where
     #[inline]
     fn is_valid(&self, value: &Value) -> bool {
         (self.0)(value)
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
     }
 }
 
