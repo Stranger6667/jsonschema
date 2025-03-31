@@ -16,6 +16,7 @@ use crate::{
     properties::*,
     types::JsonType,
     validator::{PartialApplication, Validate},
+    TracingCallback, TracingContext,
 };
 use referencing::Uri;
 use serde_json::{Map, Value};
@@ -146,6 +147,29 @@ impl Validate for AdditionalPropertiesValidator {
     fn schema_path(&self) -> &Location {
         self.node.location()
     }
+    fn trace(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let mut is_valid = true;
+            for (name, value) in item.iter() {
+                is_valid &= self.node.trace(value, &location.push(name), callback);
+            }
+            let rv = if !item.is_empty() {
+                Some(is_valid)
+            } else {
+                None
+            };
+            TracingContext::new(location, self.schema_path(), rv).call(callback);
+            is_valid
+        } else {
+            TracingContext::new(location, self.schema_path(), None).call(callback);
+            true
+        }
+    }
 }
 
 /// # Schema example
@@ -223,7 +247,8 @@ impl Validate for AdditionalPropertiesFalseValidator {
 /// ```
 pub(crate) struct AdditionalPropertiesNotEmptyFalseValidator<M: PropertiesValidatorsMap> {
     properties: M,
-    location: Location,
+    properties_location: Location,
+    additional_properties_location: Location,
 }
 impl AdditionalPropertiesNotEmptyFalseValidator<SmallValidatorsMap> {
     #[inline]
@@ -233,7 +258,8 @@ impl AdditionalPropertiesNotEmptyFalseValidator<SmallValidatorsMap> {
     ) -> CompilationResult<'a> {
         Ok(Box::new(AdditionalPropertiesNotEmptyFalseValidator {
             properties: compile_small_map(ctx, map)?,
-            location: ctx.location().join("additionalProperties"),
+            properties_location: ctx.location().join("properties"),
+            additional_properties_location: ctx.location().join("additionalProperties"),
         }))
     }
 }
@@ -245,7 +271,8 @@ impl AdditionalPropertiesNotEmptyFalseValidator<BigValidatorsMap> {
     ) -> CompilationResult<'a> {
         Ok(Box::new(AdditionalPropertiesNotEmptyFalseValidator {
             properties: compile_big_map(ctx, map)?,
-            location: ctx.location().join("additionalProperties"),
+            properties_location: ctx.location().join("properties"),
+            additional_properties_location: ctx.location().join("additionalProperties"),
         }))
     }
 }
@@ -265,7 +292,7 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
             }
             if !unexpected.is_empty() {
                 errors.push(ValidationError::additional_properties(
-                    self.location.clone(),
+                    self.additional_properties_location.clone(),
                     location.into(),
                     instance,
                     unexpected,
@@ -296,7 +323,7 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
                     node.validate(value, &location.push(name))?;
                 } else {
                     return Err(ValidationError::additional_properties(
-                        self.location.clone(),
+                        self.additional_properties_location.clone(),
                         location.into(),
                         instance,
                         vec![property.clone()],
@@ -323,7 +350,7 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
             if !unexpected.is_empty() {
                 result.mark_errored(
                     ValidationError::additional_properties(
-                        self.location.clone(),
+                        self.additional_properties_location.clone(),
                         location.into(),
                         instance,
                         unexpected,
@@ -341,7 +368,54 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
         matches!(instance, Value::Object(_))
     }
     fn schema_path(&self) -> &Location {
-        &self.location
+        &self.additional_properties_location
+    }
+    fn trace(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let mut properties_result: Option<bool> = None;
+            let mut has_unexpected_properties = false;
+
+            // Check each property in the instance
+            for (property, value) in item {
+                let property_path = location.push(property);
+                if let Some(node) = self.properties.get_validator(property) {
+                    // Validate the property first
+                    let schema_is_valid = node.trace(value, &property_path, callback);
+
+                    // Report validation for this property
+                    TracingContext::new(&property_path, node.schema_path(), schema_is_valid)
+                        .call(callback);
+
+                    // Accumulate validation result
+                    properties_result =
+                        Some(properties_result.map_or(schema_is_valid, |c| c && schema_is_valid));
+                } else {
+                    has_unexpected_properties = true;
+                }
+            }
+
+            // Report `properties` result
+            TracingContext::new(location, &self.properties_location, properties_result)
+                .call(callback);
+
+            // Report `additionalProperties` result
+            let additional_props_valid = !has_unexpected_properties;
+            TracingContext::new(
+                location,
+                &self.additional_properties_location,
+                additional_props_valid,
+            )
+            .call(callback);
+            properties_result.unwrap_or(true) && additional_props_valid
+        } else {
+            TracingContext::new(location, self.schema_path(), None).call(callback);
+            true
+        }
     }
 }
 
@@ -375,6 +449,7 @@ impl<M: PropertiesValidatorsMap> core::fmt::Display
 pub(crate) struct AdditionalPropertiesNotEmptyValidator<M: PropertiesValidatorsMap> {
     node: SchemaNode,
     properties: M,
+    properties_location: Location,
 }
 impl AdditionalPropertiesNotEmptyValidator<SmallValidatorsMap> {
     #[inline]
@@ -386,6 +461,7 @@ impl AdditionalPropertiesNotEmptyValidator<SmallValidatorsMap> {
         let kctx = ctx.new_at_location("additionalProperties");
         Ok(Box::new(AdditionalPropertiesNotEmptyValidator {
             properties: compile_small_map(ctx, map)?,
+            properties_location: ctx.location().join("properties"),
             node: compiler::compile(&kctx, kctx.as_resource_ref(schema))?,
         }))
     }
@@ -400,6 +476,7 @@ impl AdditionalPropertiesNotEmptyValidator<BigValidatorsMap> {
         let kctx = ctx.new_at_location("additionalProperties");
         Ok(Box::new(AdditionalPropertiesNotEmptyValidator {
             properties: compile_big_map(ctx, map)?,
+            properties_location: ctx.location().join("properties"),
             node: compiler::compile(&kctx, kctx.as_resource_ref(schema))?,
         }))
     }
@@ -479,6 +556,56 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyValida
     }
     fn schema_path(&self) -> &Location {
         self.node.location()
+    }
+    fn trace(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let mut properties_result: Option<bool> = None;
+            let mut additional_props_result: Option<bool> = None;
+
+            // Check each property in the instance
+            for (property, value) in item {
+                let property_path = location.push(property);
+                if let Some(node) = self.properties.get_validator(property) {
+                    // Validate the property first
+                    let schema_is_valid = node.trace(value, &property_path, callback);
+
+                    // Report validation for this property
+                    TracingContext::new(&property_path, node.schema_path(), schema_is_valid)
+                        .call(callback);
+
+                    // Accumulate validation result for properties
+                    properties_result =
+                        Some(properties_result.map_or(schema_is_valid, |c| c && schema_is_valid));
+                } else {
+                    // Validate additional property using the schema node
+                    let schema_is_valid = self.node.trace(value, &property_path, callback);
+
+                    // Accumulate validation result for additional properties
+                    additional_props_result = Some(
+                        additional_props_result.map_or(schema_is_valid, |c| c && schema_is_valid),
+                    );
+                }
+            }
+
+            // Report `properties` result
+            TracingContext::new(location, &self.properties_location, properties_result)
+                .call(callback);
+
+            // Report `additionalProperties` result
+            TracingContext::new(location, self.node.schema_path(), additional_props_result)
+                .call(callback);
+
+            // Overall validation is successful if both properties and additional properties are valid
+            properties_result.unwrap_or(true) && additional_props_result.unwrap_or(true)
+        } else {
+            TracingContext::new(location, self.schema_path(), None).call(callback);
+            true
+        }
     }
 }
 
@@ -637,6 +764,67 @@ impl Validate for AdditionalPropertiesWithPatternsValidator {
     }
     fn schema_path(&self) -> &Location {
         self.node.location()
+    }
+    fn trace(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let mut pattern_props_results: Option<bool> = None;
+            let mut additional_props_results: Option<bool> = None;
+
+            // Check each property in the instance
+            for (property, value) in item {
+                let property_path = location.push(property);
+                let mut has_pattern_match = false;
+
+                // Check if property matches any patterns
+                for (re, node) in self.patterns.iter() {
+                    if re.is_match(property).unwrap_or(false) {
+                        has_pattern_match = true;
+
+                        // Validate against pattern schema - this internally reports individual validations
+                        let schema_is_valid = node.trace(value, &property_path, callback);
+
+                        // Report validation for this pattern
+                        TracingContext::new(&property_path, node.schema_path(), schema_is_valid)
+                            .call(callback);
+
+                        // Accumulate results for pattern properties
+                        pattern_props_results = Some(
+                            pattern_props_results
+                                .map_or(schema_is_valid, |prev| prev && schema_is_valid),
+                        );
+                    }
+                }
+
+                // If no pattern matched, use additionalProperties validator
+                if !has_pattern_match {
+                    // Validate `additionalProperties` - this internally reports individual validations
+                    let schema_is_valid = self.node.trace(value, &property_path, callback);
+
+                    additional_props_results = Some(
+                        additional_props_results
+                            .map_or(schema_is_valid, |prev| prev && schema_is_valid),
+                    );
+                }
+            }
+
+            // Report `patternProperties`
+            TracingContext::new(location, &self.pattern_keyword_path, pattern_props_results)
+                .call(callback);
+
+            // Report `additionalProperties`
+            TracingContext::new(location, self.node.schema_path(), additional_props_results)
+                .call(callback);
+
+            pattern_props_results.unwrap_or(true) && additional_props_results.unwrap_or(true)
+        } else {
+            TracingContext::new(location, self.schema_path(), None).call(callback);
+            true
+        }
     }
 }
 
@@ -803,6 +991,63 @@ impl Validate for AdditionalPropertiesWithPatternsFalseValidator {
     fn schema_path(&self) -> &Location {
         &self.location
     }
+    fn trace(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let mut pattern_props_results: Option<bool> = None;
+            let mut has_unexpected_properties = false;
+
+            // Check each property in the instance
+            for (property, value) in item {
+                let property_path = location.push(property);
+                let mut has_pattern_match = false;
+
+                // Check if property matches any patterns
+                for (re, node) in self.patterns.iter() {
+                    if re.is_match(property).unwrap_or(false) {
+                        has_pattern_match = true;
+
+                        // Validate against pattern schema
+                        let schema_is_valid = node.trace(value, &property_path, callback);
+
+                        // Report validation for this specific pattern match
+                        TracingContext::new(&property_path, node.schema_path(), schema_is_valid)
+                            .call(callback);
+
+                        // Accumulate results for pattern properties
+                        pattern_props_results = Some(
+                            pattern_props_results
+                                .map_or(schema_is_valid, |prev| prev && schema_is_valid),
+                        );
+                    }
+                }
+
+                // If no pattern matched, the property is unexpected (invalid since additionalProperties is false)
+                if !has_pattern_match {
+                    has_unexpected_properties = true;
+                }
+            }
+
+            // Report `patternProperties`
+            TracingContext::new(location, &self.pattern_keyword_path, pattern_props_results)
+                .call(callback);
+
+            // Report `additionalProperties`
+            let additional_props_valid = !has_unexpected_properties;
+            TracingContext::new(location, &self.location, Some(additional_props_valid))
+                .call(callback);
+
+            pattern_props_results.unwrap_or(true) && additional_props_valid
+        } else {
+            // For non-objects, this validator doesn't apply
+            TracingContext::new(location, self.schema_path(), None).call(callback);
+            true
+        }
+    }
 }
 
 /// # Schema example
@@ -835,6 +1080,8 @@ pub(crate) struct AdditionalPropertiesWithPatternsNotEmptyValidator<M: Propertie
     node: SchemaNode,
     properties: M,
     patterns: PatternedValidators,
+    pattern_properties_location: Location,
+    properties_location: Location,
 }
 impl AdditionalPropertiesWithPatternsNotEmptyValidator<SmallValidatorsMap> {
     #[inline]
@@ -850,6 +1097,8 @@ impl AdditionalPropertiesWithPatternsNotEmptyValidator<SmallValidatorsMap> {
                 node: compiler::compile(&kctx, kctx.as_resource_ref(schema))?,
                 properties: compile_small_map(ctx, map)?,
                 patterns,
+                pattern_properties_location: ctx.location().join("patternProperties"),
+                properties_location: ctx.location().join("properties"),
             },
         ))
     }
@@ -868,6 +1117,8 @@ impl AdditionalPropertiesWithPatternsNotEmptyValidator<BigValidatorsMap> {
                 node: compiler::compile(&kctx, kctx.as_resource_ref(schema))?,
                 properties: compile_big_map(ctx, map)?,
                 patterns,
+                pattern_properties_location: ctx.location().join("patternProperties"),
+                properties_location: ctx.location().join("properties"),
             },
         ))
     }
@@ -1015,6 +1266,109 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesWithPatternsNo
     fn schema_path(&self) -> &Location {
         self.node.location()
     }
+    fn trace(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let mut properties_result: Option<bool> = None;
+            let mut pattern_props_result: Option<bool> = None;
+            let mut additional_props_result: Option<bool> = None;
+
+            // Check each property in the instance
+            for (property, value) in item {
+                let property_path = location.push(property);
+
+                // First check if it's a defined property
+                if let Some(node) = self.properties.get_validator(property) {
+                    // Validate property against its schema
+                    let prop_valid = node.trace(value, &property_path, callback);
+                    TracingContext::new(&property_path, node.schema_path(), prop_valid)
+                        .call(callback);
+
+                    // Accumulate properties validation result
+                    properties_result =
+                        Some(properties_result.map_or(prop_valid, |prev| prev && prop_valid));
+
+                    // Properties can also match pattern properties
+                    for (re, pattern_node) in self.patterns.iter() {
+                        if re.is_match(property).unwrap_or(false) {
+                            // Validate against pattern schema
+                            let pattern_valid = pattern_node.trace(value, &property_path, callback);
+                            TracingContext::new(
+                                &property_path,
+                                pattern_node.schema_path(),
+                                pattern_valid,
+                            )
+                            .call(callback);
+
+                            // Accumulate pattern properties result
+                            pattern_props_result = Some(
+                                pattern_props_result
+                                    .map_or(pattern_valid, |prev| prev && pattern_valid),
+                            );
+                        }
+                    }
+                } else {
+                    // Not in properties, check patterns
+                    let mut pattern_matched = false;
+                    for (re, node) in self.patterns.iter() {
+                        if re.is_match(property).unwrap_or(false) {
+                            pattern_matched = true;
+
+                            // Validate against pattern schema
+                            let pattern_valid = node.trace(value, &property_path, callback);
+                            TracingContext::new(&property_path, node.schema_path(), pattern_valid)
+                                .call(callback);
+
+                            // Accumulate pattern properties result
+                            pattern_props_result = Some(
+                                pattern_props_result
+                                    .map_or(pattern_valid, |prev| prev && pattern_valid),
+                            );
+                        }
+                    }
+
+                    // If no pattern matched, it's an additional property
+                    if !pattern_matched {
+                        // Validate against additionalProperties schema
+                        let additional_valid = self.node.trace(value, &property_path, callback);
+
+                        // Accumulate additional properties result
+                        additional_props_result = Some(
+                            additional_props_result
+                                .map_or(additional_valid, |prev| prev && additional_valid),
+                        );
+                    }
+                }
+            }
+
+            // Report `properties`
+            TracingContext::new(location, &self.properties_location, properties_result)
+                .call(callback);
+            // Report `patternProperties`
+            TracingContext::new(
+                location,
+                &self.pattern_properties_location,
+                pattern_props_result,
+            )
+            .call(callback);
+            // Report `additionalProperties`
+            TracingContext::new(location, self.node.schema_path(), additional_props_result)
+                .call(callback);
+
+            // Overall validation success requires all components to be valid
+            properties_result.unwrap_or(true)
+                && pattern_props_result.unwrap_or(true)
+                && additional_props_result.unwrap_or(true)
+        } else {
+            // For non-objects, this validator doesn't apply
+            TracingContext::new(location, self.schema_path(), None).call(callback);
+            true
+        }
+    }
 }
 
 /// # Schema example
@@ -1047,6 +1401,8 @@ pub(crate) struct AdditionalPropertiesWithPatternsNotEmptyFalseValidator<M: Prop
     properties: M,
     patterns: PatternedValidators,
     location: Location,
+    properties_location: Location,
+    pattern_properties_location: Location,
 }
 impl AdditionalPropertiesWithPatternsNotEmptyFalseValidator<SmallValidatorsMap> {
     #[inline]
@@ -1060,6 +1416,8 @@ impl AdditionalPropertiesWithPatternsNotEmptyFalseValidator<SmallValidatorsMap> 
                 properties: compile_small_map(ctx, map)?,
                 patterns,
                 location: ctx.location().join("additionalProperties"),
+                properties_location: ctx.location().join("properties"),
+                pattern_properties_location: ctx.location().join("patternProperties"),
             },
         ))
     }
@@ -1076,6 +1434,8 @@ impl AdditionalPropertiesWithPatternsNotEmptyFalseValidator<BigValidatorsMap> {
                 properties: compile_big_map(ctx, map)?,
                 patterns,
                 location: ctx.location().join("additionalProperties"),
+                properties_location: ctx.location().join("properties"),
+                pattern_properties_location: ctx.location().join("patternProperties"),
             },
         ))
     }
@@ -1239,6 +1599,110 @@ impl<M: PropertiesValidatorsMap> Validate
     }
     fn schema_path(&self) -> &Location {
         &self.location
+    }
+    fn trace(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let mut properties_result: Option<bool> = None;
+            let mut pattern_props_result: Option<bool> = None;
+            let mut has_unexpected_properties = false;
+
+            // Check each property in the instance
+            for (property, value) in item {
+                let property_path = location.push(property);
+                let mut is_known_or_pattern = false;
+
+                // First check if it's a defined property
+                if let Some(node) = self.properties.get_validator(property) {
+                    is_known_or_pattern = true;
+
+                    // Validate property against its schema
+                    let prop_valid = node.trace(value, &property_path, callback);
+                    TracingContext::new(&property_path, node.schema_path(), prop_valid)
+                        .call(callback);
+
+                    // Accumulate properties validation result
+                    properties_result =
+                        Some(properties_result.map_or(prop_valid, |prev| prev && prop_valid));
+
+                    // Properties can also match pattern properties
+                    for (re, pattern_node) in self.patterns.iter() {
+                        if re.is_match(property).unwrap_or(false) {
+                            // Validate against pattern schema
+                            let pattern_valid = pattern_node.trace(value, &property_path, callback);
+                            TracingContext::new(
+                                &property_path,
+                                pattern_node.schema_path(),
+                                pattern_valid,
+                            )
+                            .call(callback);
+
+                            // Accumulate pattern properties result
+                            pattern_props_result = Some(
+                                pattern_props_result
+                                    .map_or(pattern_valid, |prev| prev && pattern_valid),
+                            );
+                        }
+                    }
+                } else {
+                    // Not in properties, check patterns
+                    for (re, node) in self.patterns.iter() {
+                        if re.is_match(property).unwrap_or(false) {
+                            is_known_or_pattern = true;
+
+                            // Validate against pattern schema
+                            let pattern_valid = node.trace(value, &property_path, callback);
+                            TracingContext::new(&property_path, node.schema_path(), pattern_valid)
+                                .call(callback);
+
+                            // Accumulate pattern properties result
+                            pattern_props_result = Some(
+                                pattern_props_result
+                                    .map_or(pattern_valid, |prev| prev && pattern_valid),
+                            );
+                        }
+                    }
+                }
+
+                // If property is neither in properties nor matches any pattern, it's unexpected
+                if !is_known_or_pattern {
+                    has_unexpected_properties = true;
+                }
+            }
+
+            // Report `properties`
+            TracingContext::new(location, &self.properties_location, properties_result)
+                .call(callback);
+
+            // Report `patternProperties`
+            TracingContext::new(
+                location,
+                &self.pattern_properties_location,
+                pattern_props_result,
+            )
+            .call(callback);
+
+            // Report `additionalProperties` - always false if unexpected properties found
+            let additional_props_valid = !has_unexpected_properties;
+            TracingContext::new(location, &self.location, Some(additional_props_valid))
+                .call(callback);
+
+            // Overall validation succeeds only if:
+            // 1. All properties match their schemas
+            // 2. All pattern properties match their schemas
+            // 3. No additional properties exist
+            properties_result.unwrap_or(true)
+                && pattern_props_result.unwrap_or(true)
+                && additional_props_valid
+        } else {
+            // For non-objects, this validator doesn't apply
+            TracingContext::new(location, self.schema_path(), None).call(callback);
+            true
+        }
     }
 }
 
