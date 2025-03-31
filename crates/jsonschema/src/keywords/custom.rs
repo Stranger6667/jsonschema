@@ -1,7 +1,7 @@
 use crate::{
     paths::{LazyLocation, Location},
     validator::Validate,
-    ValidationError,
+    TracingCallback, TracingContext, ValidationError,
 };
 use serde_json::{Map, Value};
 
@@ -34,6 +34,26 @@ impl Validate for CustomKeyword {
     fn matches_type(&self, _: &Value) -> bool {
         true
     }
+    fn trace(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+    ) -> bool {
+        let result = self.is_valid(instance);
+        let rv = if self.matches_type(instance) {
+            Some(result)
+        } else {
+            None
+        };
+        TracingContext::new(location, self.schema_path(), rv).call(callback);
+        if self.inner.is_informational() {
+            // Keyword does not affect validation results
+            true
+        } else {
+            result
+        }
+    }
 }
 
 /// Trait that allows implementing custom validation for keywords.
@@ -53,6 +73,9 @@ pub trait Keyword: Send + Sync {
     ///
     /// Could be potentilly faster than [`Keyword::validate`] method.
     fn is_valid(&self, instance: &Value) -> bool;
+    fn is_informational(&self) -> bool {
+        false
+    }
 }
 
 pub(crate) trait KeywordFactory: Send + Sync {
