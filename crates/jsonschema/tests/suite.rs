@@ -59,6 +59,14 @@ mod tests {
                 pretty_json(&test.data),
             );
             assert!(
+                validator.trace(&test.data, &mut |_| {}),
+                "Test case should be valid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                test.case,
+                test.description,
+                pretty_json(&test.schema),
+                pretty_json(&test.data),
+            );
+            assert!(
                 validator.validate(&test.data).is_ok(),
                 "Test case should be valid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
                 test.case,
@@ -101,6 +109,14 @@ mod tests {
             }
             assert!(
                 !validator.is_valid(&test.data),
+                "Test case should be invalid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                test.case,
+                test.description,
+                pretty_json(&test.schema),
+                pretty_json(&test.data),
+            );
+            assert!(
+                !validator.trace(&test.data, &mut |_| {}),
                 "Test case should be invalid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
                 test.case,
                 test.description,

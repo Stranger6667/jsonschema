@@ -104,7 +104,7 @@ impl Validate for AnyOfValidator {
         instance_path: &LazyLocation,
         callback: TracingCallback<'_>,
     ) -> bool {
-        let mut is_valid = true;
+        let mut is_valid = false;
         for node in &self.schemas {
             let schema_is_valid = node.trace(instance, instance_path, callback);
             TracingContext::new(instance_path, node.schema_path(), schema_is_valid).call(callback);
