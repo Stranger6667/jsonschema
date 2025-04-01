@@ -127,6 +127,7 @@ Additional configuration options are available for fine-tuning the validation pr
 
 - `validate_formats`: Override the draft-specific default behavior for format validation.
 - `ignore_unknown_formats`: Control whether unrecognized formats should be reported as errors.
+- `base_uri` - a base URI for all relative `$ref` in the schema.
 
 Example usage of these options:
 

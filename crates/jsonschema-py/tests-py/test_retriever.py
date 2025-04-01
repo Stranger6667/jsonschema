@@ -1,5 +1,8 @@
+import json
+
 import pytest
-from jsonschema_rs import validator_for, ValidationError
+
+from jsonschema_rs import ValidationError, validator_for
 
 
 def test_basic_retriever():
@@ -75,3 +78,23 @@ def test_circular_references():
     validator = validator_for(schema, retriever=retrieve)
 
     assert validator.is_valid({"name": "Alice", "friend": {"name": "Bob", "friend": {"name": "Charlie"}}})
+
+
+def test_base_uri_resolution(tmp_path):
+    b_schema = {"type": "object", "properties": {"age": {"type": "number"}}, "required": ["age"]}
+    b_file = tmp_path / "b.json"
+    b_file.write_text(json.dumps(b_schema))
+
+    a_schema = {"$schema": "https://json-schema.org/draft/2020-12/schema", "$ref": "./b.json", "type": "object"}
+    a_file = tmp_path / "a.json"
+    a_file.write_text(json.dumps(a_schema))
+
+    valid = {"age": 30}
+    invalid = {"age": "thirty"}
+
+    base_uri = tmp_path.absolute().as_uri() + "/"
+
+    validator = validator_for(a_schema, base_uri=base_uri)
+
+    assert validator.is_valid(valid)
+    assert not validator.is_valid(invalid)

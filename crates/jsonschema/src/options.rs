@@ -22,6 +22,7 @@ pub struct ValidationOptions<R = Arc<dyn Retrieve>> {
     content_media_type_checks: AHashMap<&'static str, Option<ContentMediaTypeCheckType>>,
     content_encoding_checks_and_converters:
         AHashMap<&'static str, Option<(ContentEncodingCheckType, ContentEncodingConverterType)>>,
+    pub(crate) base_uri: Option<String>,
     /// Retriever for external resources
     pub(crate) retriever: R,
     /// Additional resources that should be addressable during validation.
@@ -40,6 +41,7 @@ impl Default for ValidationOptions<Arc<dyn Retrieve>> {
             draft: None,
             content_media_type_checks: AHashMap::default(),
             content_encoding_checks_and_converters: AHashMap::default(),
+            base_uri: None,
             retriever: Arc::new(DefaultRetriever),
             resources: AHashMap::default(),
             registry: None,
@@ -59,6 +61,7 @@ impl Default for ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             draft: None,
             content_media_type_checks: AHashMap::default(),
             content_encoding_checks_and_converters: AHashMap::default(),
+            base_uri: None,
             retriever: Arc::new(DefaultRetriever),
             resources: AHashMap::default(),
             registry: None,
@@ -219,6 +222,34 @@ impl<R> ValidationOptions<R> {
             .insert(content_encoding, None);
         self
     }
+    /// Establish an anchor for resolving relative schema references during validation.
+    ///
+    /// Relative URIs found within the schema will be interpreted against this base.
+    /// This is especially useful when validating schemas loaded from sources without an inherent base URL.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use serde_json::json;
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///
+    /// let validator = jsonschema::options()
+    /// // Define a base URI for resolving relative references.
+    ///     .with_base_uri("https://example.com/schemas/")
+    ///     .build(&json!({
+    ///         "$id": "relative-schema.json",
+    ///         "type": "object"
+    ///     }))?;
+    ///
+    /// // Relative URIs in the schema will now resolve against "https://example.com/schemas/".
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline]
+    pub fn with_base_uri(mut self, base_uri: impl Into<String>) -> Self {
+        self.base_uri = Some(base_uri.into());
+        self
+    }
     /// Add a custom schema, allowing it to be referenced by the specified URI during validation.
     ///
     /// This enables the use of additional in-memory schemas alongside the main schema being validated.
@@ -281,7 +312,6 @@ impl<R> ValidationOptions<R> {
         }
         self
     }
-
     /// Use external schema resources from the registry, making them accessible via references
     /// during validation.
     ///
@@ -519,6 +549,7 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             retriever: Arc::new(retriever),
             content_media_type_checks: self.content_media_type_checks,
             content_encoding_checks_and_converters: self.content_encoding_checks_and_converters,
+            base_uri: None,
             resources: self.resources,
             registry: self.registry,
             formats: self.formats,
@@ -565,6 +596,7 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             retriever: Arc::new(retriever),
             content_media_type_checks: self.content_media_type_checks,
             content_encoding_checks_and_converters: self.content_encoding_checks_and_converters,
+            base_uri: None,
             resources: self.resources,
             registry: self.registry,
             formats: self.formats,

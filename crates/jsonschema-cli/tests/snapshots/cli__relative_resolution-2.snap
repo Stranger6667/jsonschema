@@ -1,0 +1,6 @@
+---
+source: crates/jsonschema-cli/tests/cli.rs
+expression: sanitized
+---
+{FILE_1} - INVALID. Errors:
+1. 42 is not of type "string"

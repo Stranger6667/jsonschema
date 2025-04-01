@@ -20,6 +20,7 @@ def is_valid(
     retriever: RetrieverProtocol | None = None,
     registry: Registry | None = None,
     mask: str | None = None,
+    base_uri: str | None = None,
 ) -> bool: ...
 def validate(
     schema: _SchemaT,
@@ -32,6 +33,7 @@ def validate(
     retriever: RetrieverProtocol | None = None,
     registry: Registry | None = None,
     mask: str | None = None,
+    base_uri: str | None = None,
 ) -> None: ...
 def iter_errors(
     schema: _SchemaT,
@@ -43,6 +45,7 @@ def iter_errors(
     ignore_unknown_formats: bool = True,
     retriever: RetrieverProtocol | None = None,
     mask: str | None = None,
+    base_uri: str | None = None,
 ) -> Iterator[ValidationError]: ...
 
 class ReferencingError:
@@ -168,8 +171,9 @@ class Draft4Validator:
         validate_formats: bool | None = None,
         ignore_unknown_formats: bool = True,
         retriever: RetrieverProtocol | None = None,
-        registry: Registry | None= None,
+        registry: Registry | None = None,
         mask: str | None = None,
+        base_uri: str | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -185,6 +189,7 @@ class Draft6Validator:
         retriever: RetrieverProtocol | None = None,
         registry: Registry | None = None,
         mask: str | None = None,
+        base_uri: str | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -200,6 +205,7 @@ class Draft7Validator:
         retriever: RetrieverProtocol | None = None,
         registry: Registry | None = None,
         mask: str | None = None,
+        base_uri: str | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -215,6 +221,7 @@ class Draft201909Validator:
         retriever: RetrieverProtocol | None = None,
         registry: Registry | None = None,
         mask: str | None = None,
+        base_uri: str | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -230,6 +237,7 @@ class Draft202012Validator:
         retriever: RetrieverProtocol | None = None,
         registry: Registry | None = None,
         mask: str | None = None,
+        base_uri: str | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -243,12 +251,13 @@ def validator_for(
     retriever: RetrieverProtocol | None = None,
     registry: Registry | None = None,
     mask: str | None = None,
+    base_uri: str | None = None,
 ) -> Draft4Validator | Draft6Validator | Draft7Validator | Draft201909Validator | Draft202012Validator: ...
 
 class Registry:
     def __init__(
         self,
         resources: list[tuple[str, JSONType]],
-        draft:  int | None = None,
+        draft: int | None = None,
         retriever: RetrieverProtocol | None = None,
     ) -> None: ...

@@ -7,6 +7,7 @@ use std::{
 };
 
 use clap::Parser;
+use percent_encoding::{percent_encode, AsciiSet, CONTROLS};
 
 #[derive(Parser)]
 #[command(name = "jsonschema")]
@@ -32,6 +33,66 @@ fn read_json(
     Ok(serde_json::from_reader(reader))
 }
 
+fn path_to_uri(path: &std::path::Path) -> String {
+    const SEGMENT: &AsciiSet = &CONTROLS
+        .add(b' ')
+        .add(b'"')
+        .add(b'<')
+        .add(b'>')
+        .add(b'`')
+        .add(b'#')
+        .add(b'?')
+        .add(b'{')
+        .add(b'}')
+        .add(b'/')
+        .add(b'%');
+
+    let mut result = "file://".to_owned();
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        use std::os::unix::ffi::OsStrExt;
+
+        const CUSTOM_SEGMENT: &AsciiSet = &SEGMENT.add(b'\\');
+        for component in path.components().skip(1) {
+            result.push('/');
+            result.extend(percent_encode(
+                component.as_os_str().as_bytes(),
+                CUSTOM_SEGMENT,
+            ));
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::path::{Component, Prefix};
+        let mut components = path.components();
+
+        match components.next() {
+            Some(Component::Prefix(ref p)) => match p.kind() {
+                Prefix::Disk(letter) | Prefix::VerbatimDisk(letter) => {
+                    result.push('/');
+                    result.push(letter as char);
+                    result.push(':');
+                }
+                _ => panic!("Unexpected path"),
+            },
+            _ => panic!("Unexpected path"),
+        }
+
+        for component in components {
+            if component == Component::RootDir {
+                continue;
+            }
+
+            let component = component.as_os_str().to_str().expect("Unexpected path");
+
+            result.push('/');
+            result.extend(percent_encode(component.as_bytes(), SEGMENT));
+        }
+    }
+    result
+}
+
 fn validate_instances(
     instances: &[PathBuf],
     schema_path: &Path,
@@ -39,7 +100,12 @@ fn validate_instances(
     let mut success = true;
 
     let schema_json = read_json(schema_path)??;
-    match jsonschema::validator_for(&schema_json) {
+    let base_uri = path_to_uri(schema_path);
+    let base_uri = referencing::uri::from_str(&base_uri)?;
+    match jsonschema::options()
+        .with_base_uri(base_uri)
+        .build(&schema_json)
+    {
         Ok(validator) => {
             for instance in instances {
                 let instance_json = read_json(instance)??;

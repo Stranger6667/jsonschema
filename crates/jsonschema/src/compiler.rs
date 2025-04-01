@@ -15,14 +15,14 @@ use crate::{
 };
 use ahash::{AHashMap, AHashSet};
 use referencing::{
-    Draft, List, Registry, Resolved, Resolver, Resource, ResourceRef, Uri, Vocabulary,
+    uri, Draft, List, Registry, Resolved, Resolver, Resource, ResourceRef, Uri, Vocabulary,
     VocabularySet,
 };
 use serde_json::Value;
 use std::{borrow::Cow, cell::RefCell, iter::once, rc::Rc, sync::Arc};
 
 const DEFAULT_SCHEME: &str = "json-schema";
-pub(crate) const DEFAULT_ROOT_URL: &str = "json-schema:///";
+pub(crate) const DEFAULT_BASE_URI: &str = "json-schema:///";
 type BaseUri = Uri<String>;
 type ResolverComponents = (Arc<BaseUri>, List<BaseUri>, Resource);
 
@@ -249,10 +249,15 @@ pub(crate) fn build_validator(
     let draft = config.draft_for(schema)?;
     let resource_ref = draft.create_resource_ref(schema);
     let resource = draft.create_resource(schema.clone());
-    let base_uri = resource_ref.id().unwrap_or(DEFAULT_ROOT_URL);
+    let base_uri = if let Some(base_uri) = config.base_uri.as_ref() {
+        uri::from_str(base_uri)?
+    } else {
+        uri::from_str(resource_ref.id().unwrap_or(DEFAULT_BASE_URI))?
+    };
+    dbg!(&base_uri);
 
     // Build a registry & resolver needed for validator compilation
-    let pairs = collect_resource_pairs(base_uri, resource, &mut config.resources);
+    let pairs = collect_resource_pairs(base_uri.as_str(), resource, &mut config.resources);
 
     let registry = if let Some(registry) = config.registry.take() {
         Arc::new(registry.try_with_resources_and_retriever(pairs, &*config.retriever, draft)?)
@@ -265,7 +270,7 @@ pub(crate) fn build_validator(
         )
     };
     let vocabularies = registry.find_vocabularies(draft, schema);
-    let resolver = Rc::new(registry.try_resolver(base_uri)?);
+    let resolver = Rc::new(registry.resolver(base_uri));
 
     let config = Arc::new(config);
     let ctx = Context::new(
@@ -295,9 +300,13 @@ pub(crate) async fn build_validator_async(
     let draft = config.draft_for(schema).await?;
     let resource_ref = draft.create_resource_ref(schema);
     let resource = draft.create_resource(schema.clone());
-    let base_uri = resource_ref.id().unwrap_or(DEFAULT_ROOT_URL);
+    let base_uri = if let Some(base_uri) = config.base_uri.as_ref() {
+        uri::from_str(base_uri)?
+    } else {
+        uri::from_str(resource_ref.id().unwrap_or(DEFAULT_BASE_URI))?
+    };
 
-    let pairs = collect_resource_pairs(base_uri, resource, &mut config.resources);
+    let pairs = collect_resource_pairs(base_uri.as_str(), resource, &mut config.resources);
 
     let registry = if let Some(registry) = config.registry.take() {
         Arc::new(
@@ -316,7 +325,7 @@ pub(crate) async fn build_validator_async(
     };
 
     let vocabularies = registry.find_vocabularies(draft, schema);
-    let resolver = Rc::new(registry.try_resolver(base_uri)?);
+    let resolver = Rc::new(registry.resolver(base_uri));
     // HACK: As we store the config and it has a type parameter we need to apply a small hack here.
     //       `ValidationOptions` struct has a default type parameter as `Arc<dyn Retrieve>` and to
     //       avoid propagating types everywhere in `Context`, it is easier to just replace the

@@ -5,10 +5,15 @@
 ### Added
 
 - `JsonType` and `JsonTypeSet`.
+- `ValidationOptions::with_base_uri` that allows for specifying a base URI for all relative references in the schema.
 
 ### Changed
 
 - Better error messages for relative `$ref` without base URI.
+
+### Fixed
+
+- **CLI**: Inability to load relative file `$ref`. [#725](https://github.com/Stranger6667/jsonschema/issues/725)
 
 ### Deprecated
 

@@ -228,6 +228,55 @@ mod tests {
         #[cfg(target_arch = "wasm32")]
         assert!(error.contains("External references are not supported in WASM"));
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn create_temp_file(dir: &tempfile::TempDir, name: &str, content: &str) -> String {
+        let file_path = dir.path().join(name);
+        std::fs::write(&file_path, content).unwrap();
+        file_path.to_str().unwrap().to_string()
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_with_base_uri_resolution() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let b_schema = r#"
+        {
+            "type": "object",
+            "properties": {
+                "age": { "type": "number" }
+            },
+            "required": ["age"]
+        }
+        "#;
+        let _b_path = create_temp_file(&dir, "b.json", b_schema);
+
+        let a_schema = r#"
+        {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$ref": "./b.json",
+            "type": "object"
+        }
+        "#;
+        let a_path = create_temp_file(&dir, "a.json", a_schema);
+
+        let valid_instance = serde_json::json!({ "age": 30 });
+
+        let schema_str = std::fs::read_to_string(&a_path).unwrap();
+        let schema_json: serde_json::Value = serde_json::from_str(&schema_str).unwrap();
+
+        let base_uri = path_to_uri(dir.path());
+        let validator = crate::options()
+            .with_base_uri(format!("{base_uri}/"))
+            .build(&schema_json)
+            .expect("Schema compilation failed");
+
+        assert!(validator.is_valid(&valid_instance));
+
+        let invalid_instance = serde_json::json!({ "age": "thirty" });
+        assert!(!validator.is_valid(&invalid_instance));
+    }
 }
 
 #[cfg(all(test, feature = "resolve-async", not(target_arch = "wasm32")))]

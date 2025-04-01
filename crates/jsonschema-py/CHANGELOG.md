@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `base_uri` keyword argument that allows for specifying a base URI for all relative references in the schema.
+
 ### Changed
 
 - Better error messages for relative `$ref` without base URI.

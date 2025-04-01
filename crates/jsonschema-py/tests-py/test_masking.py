@@ -1,4 +1,5 @@
 import pytest
+
 import jsonschema_rs
 
 

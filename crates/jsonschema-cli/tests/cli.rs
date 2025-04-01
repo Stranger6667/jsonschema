@@ -129,3 +129,88 @@ fn test_no_instances() {
     assert!(output.status.success());
     assert_snapshot!(String::from_utf8_lossy(&output.stdout));
 }
+
+#[test]
+fn test_relative_resolution() {
+    let dir = tempdir().unwrap();
+
+    let a_schema = create_temp_file(
+        &dir,
+        "a.json",
+        r#"
+        {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$ref": "./b.json",
+            "type": "object"
+        }
+        "#,
+    );
+
+    let _b_schema = create_temp_file(
+        &dir,
+        "b.json",
+        r#"
+        {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+                "$schema": {
+                    "type": "string"
+                }
+            }
+        }
+        "#,
+    );
+
+    let valid_instance = create_temp_file(
+        &dir,
+        "instance.json",
+        r#"
+        {
+            "$schema": "a.json"
+        }
+        "#,
+    );
+
+    let mut cmd = cli();
+    cmd.arg(&a_schema).arg("--instance").arg(&valid_instance);
+    let output = cmd.output().unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    let sanitized = sanitize_output(
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        &[&valid_instance, &a_schema],
+    );
+    assert_snapshot!(sanitized);
+
+    let invalid_instance = create_temp_file(
+        &dir,
+        "instance.json",
+        r#"
+        {
+            "$schema": 42
+        }
+        "#,
+    );
+
+    let mut cmd = cli();
+    cmd.arg(&a_schema).arg("--instance").arg(&invalid_instance);
+    let output = cmd.output().unwrap();
+
+    assert!(
+        !output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    let sanitized = sanitize_output(
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        &[&valid_instance, &a_schema],
+    );
+    assert_snapshot!(sanitized);
+}
