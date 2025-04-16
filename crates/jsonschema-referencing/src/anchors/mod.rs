@@ -96,7 +96,7 @@ impl Anchor {
                                 last = resource;
                             }
                         }
-                        Err(Error::NoSuchAnchor { .. }) => continue,
+                        Err(Error::NoSuchAnchor { .. }) => {}
                         Err(err) => return Err(err),
                     }
                 }
