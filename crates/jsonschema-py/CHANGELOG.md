@@ -10,6 +10,7 @@
 ### Changed
 
 - Better error messages for relative `$ref` without base URI.
+- Update `pyo3` to `0.24`.
 
 ### Fixed
 
