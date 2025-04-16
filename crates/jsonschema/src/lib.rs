@@ -375,6 +375,62 @@
 //! # }
 //! ```
 //!
+//! # Regular Expression Configuration
+//!
+//! The `jsonschema` crate allows configuring the regular expression engine used for validating
+//! keywords like `pattern` or `patternProperties`.
+//!
+//! By default, the crate uses [`fancy-regex`](https://docs.rs/fancy-regex), which supports advanced
+//! regular expression features such as lookaround and backreferences.
+//!
+//! The primary motivation for switching to the `regex` engine is security and performance:
+//! it guarantees linear-time matching, preventing potential DoS attacks from malicious patterns
+//! in user-provided schemas while offering better performance with a smaller feature set.
+//!
+//! You can configure the engine at **runtime** using the [`PatternOptions`] API:
+//!
+//! ### Example: Configure `fancy-regex` with Backtracking Limit
+//!
+//! ```rust
+//! use serde_json::json;
+//! use jsonschema::PatternOptions;
+//!
+//! let schema = json!({
+//!     "type": "string",
+//!     "pattern": "^(a+)+$"
+//! });
+//!
+//! let validator = jsonschema::options()
+//!     .with_pattern_options(
+//!         PatternOptions::fancy_regex()
+//!             .backtrack_limit(10_000)
+//!     )
+//!     .build(&schema)
+//!     .expect("A valid schema");
+//! ```
+//!
+//! ### Example: Use the `regex` Engine Instead
+//!
+//! ```rust
+//! use serde_json::json;
+//! use jsonschema::PatternOptions;
+//!
+//! let schema = json!({
+//!     "type": "string",
+//!     "pattern": "^a+$"
+//! });
+//!
+//! let validator = jsonschema::options()
+//!     .with_pattern_options(PatternOptions::regex())
+//!     .build(&schema)
+//!     .expect("A valid schema");
+//! ```
+//!
+//! ### Notes
+//!
+//! - If neither engine is explicitly set, `fancy-regex` is used by default.
+//! - Regular expressions that rely on advanced features like `(?<=...)` (lookbehind) or backreferences (`\1`) will fail with the `regex` engine.
+//!
 //! # Custom Keywords
 //!
 //! `jsonschema` allows you to extend its functionality by implementing custom validation logic through custom keywords.
@@ -579,18 +635,19 @@ mod options;
 pub mod output;
 pub mod paths;
 pub(crate) mod properties;
+pub(crate) mod regex;
 mod retriever;
 pub mod types;
 mod validator;
 
-#[deprecated(since = "0.29.2", note = "Use `jsonschema::types` instead.")]
+#[deprecated(since = "0.30.0", note = "Use `jsonschema::types` instead.")]
 pub mod primitive_type {
     pub use super::types::*;
 }
 
 pub use error::{ErrorIterator, MaskedValidationError, ValidationError};
 pub use keywords::custom::Keyword;
-pub use options::ValidationOptions;
+pub use options::{FancyRegex, PatternOptions, Regex, ValidationOptions};
 pub use output::BasicOutput;
 pub use referencing::{
     Draft, Error as ReferencingError, Registry, RegistryOptions, Resource, Retrieve, Uri,

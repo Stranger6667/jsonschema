@@ -5,6 +5,7 @@
 ### Added
 
 - `base_uri` keyword argument that allows for specifying a base URI for all relative references in the schema.
+- Configuration options for the underlying regex engine used by `pattern` and `patternProperties` keywords.
 
 ### Changed
 
@@ -13,6 +14,10 @@
 ### Fixed
 
 - Added Registry to type declarations.
+
+### Removed
+
+- Internal cache for regular expressions.
 
 ## [0.29.1] - 2025-02-08
 

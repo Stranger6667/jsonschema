@@ -6,6 +6,7 @@
 
 - `JsonType` and `JsonTypeSet`.
 - `ValidationOptions::with_base_uri` that allows for specifying a base URI for all relative references in the schema.
+- Configuration options for the underlying regex engine used by `pattern` and `patternProperties` keywords.
 
 ### Changed
 
@@ -14,6 +15,10 @@
 ### Fixed
 
 - **CLI**: Inability to load relative file `$ref`. [#725](https://github.com/Stranger6667/jsonschema/issues/725)
+
+### Removed
+
+- Internal cache for regular expressions.
 
 ### Deprecated
 

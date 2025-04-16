@@ -13,7 +13,7 @@ use crate::{
 use ahash::AHashMap;
 use referencing::{uri, Draft, Resource, Retrieve};
 use serde_json::Value;
-use std::{fmt, sync::Arc};
+use std::{fmt, marker::PhantomData, sync::Arc};
 
 /// Configuration options for JSON Schema validation.
 #[derive(Clone)]
@@ -33,6 +33,7 @@ pub struct ValidationOptions<R = Arc<dyn Retrieve>> {
     pub(crate) validate_schema: bool,
     ignore_unknown_formats: bool,
     keywords: AHashMap<String, Arc<dyn KeywordFactory>>,
+    pattern_options: PatternEngineOptions,
 }
 
 impl Default for ValidationOptions<Arc<dyn Retrieve>> {
@@ -50,6 +51,7 @@ impl Default for ValidationOptions<Arc<dyn Retrieve>> {
             validate_schema: true,
             ignore_unknown_formats: true,
             keywords: AHashMap::default(),
+            pattern_options: PatternEngineOptions::default(),
         }
     }
 }
@@ -70,6 +72,7 @@ impl Default for ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             validate_schema: true,
             ignore_unknown_formats: true,
             keywords: AHashMap::default(),
+            pattern_options: PatternEngineOptions::default(),
         }
     }
 }
@@ -533,6 +536,38 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
         self.retriever = Arc::new(retriever);
         self
     }
+    /// Configure the regular expression engine used during validation for keywords like `pattern`
+    /// or `patternProperties`.
+    ///
+    /// The default engine is [fancy-regex](https://docs.rs/fancy-regex), which supports advanced
+    /// features (e.g., backreferences, look-around). Be aware that using these may lead to exponential
+    /// runtime due to backtracking. For simpler regexes without these features, [regex](https://docs.rs/regex)
+    /// provides linear time performance.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use serde_json::json;
+    /// use jsonschema::PatternOptions;
+    ///
+    /// let schema = json!({"type": "string"});
+    ///
+    /// // Set backtracking limit to 20000.
+    /// let validator = jsonschema::options()
+    ///     .with_pattern_options(
+    ///         PatternOptions::fancy_regex()
+    ///             .backtrack_limit(20000)
+    ///     )
+    ///     .build(&schema)
+    ///     .expect("A valid schema");
+    /// ```
+    pub fn with_pattern_options<E>(mut self, options: PatternOptions<E>) -> Self {
+        self.pattern_options = options.inner;
+        self
+    }
+    pub(crate) fn pattern_options(&self) -> PatternEngineOptions {
+        self.pattern_options
+    }
 }
 
 #[cfg(feature = "resolve-async")]
@@ -557,6 +592,7 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             validate_schema: self.validate_schema,
             ignore_unknown_formats: self.ignore_unknown_formats,
             keywords: self.keywords,
+            pattern_options: self.pattern_options,
         }
     }
     pub(crate) async fn draft_for(
@@ -604,6 +640,7 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             validate_schema: self.validate_schema,
             ignore_unknown_formats: self.ignore_unknown_formats,
             keywords: self.keywords,
+            pattern_options: self.pattern_options,
         }
     }
 }
@@ -621,8 +658,129 @@ impl fmt::Debug for ValidationOptions {
     }
 }
 
+/// Configuration for how regular expressions are handled in schema keywords like `pattern` and `patternProperties`.
+#[derive(Debug, Clone)]
+pub struct PatternOptions<E> {
+    inner: PatternEngineOptions,
+    _marker: PhantomData<E>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum PatternEngineOptions {
+    FancyRegex {
+        backtrack_limit: Option<usize>,
+        size_limit: Option<usize>,
+        dfa_size_limit: Option<usize>,
+    },
+    Regex {
+        size_limit: Option<usize>,
+        dfa_size_limit: Option<usize>,
+    },
+}
+
+/// Marker for using the `fancy-regex` engine that includes advanced features like lookarounds.
+pub struct FancyRegex;
+/// Marker for using the `regex` engine, that has fewer features than `fancy-regex` but guarantees
+/// linear time performance.
+pub struct Regex;
+
+impl PatternOptions<FancyRegex> {
+    /// Create a pattern configuration based on the `fancy-regex` engine.
+    pub fn fancy_regex() -> PatternOptions<FancyRegex> {
+        PatternOptions {
+            inner: PatternEngineOptions::FancyRegex {
+                backtrack_limit: None,
+                size_limit: None,
+                dfa_size_limit: None,
+            },
+            _marker: PhantomData,
+        }
+    }
+    /// Limit for how many times backtracking should be attempted for fancy regexes (where
+    /// backtracking is used). If this limit is exceeded, execution returns an error.
+    /// This is for preventing a regex with catastrophic backtracking to run for too long.
+    ///
+    /// Default is `1_000_000` (1 million).
+    pub fn backtrack_limit(mut self, limit: usize) -> Self {
+        if let PatternEngineOptions::FancyRegex {
+            ref mut backtrack_limit,
+            ..
+        } = self.inner
+        {
+            *backtrack_limit = Some(limit);
+        }
+        self
+    }
+    /// Set the approximate size limit, in bytes, of the compiled regex.
+    pub fn size_limit(mut self, limit: usize) -> Self {
+        if let PatternEngineOptions::FancyRegex {
+            ref mut size_limit, ..
+        } = self.inner
+        {
+            *size_limit = Some(limit);
+        }
+        self
+    }
+    /// Set the approximate capacity, in bytes, of the cache of transitions used by the lazy DFA.
+    pub fn dfa_size_limit(mut self, limit: usize) -> Self {
+        if let PatternEngineOptions::FancyRegex {
+            ref mut dfa_size_limit,
+            ..
+        } = self.inner
+        {
+            *dfa_size_limit = Some(limit);
+        }
+        self
+    }
+}
+
+impl PatternOptions<Regex> {
+    /// Create a pattern configuration based on the `regex` engine.
+    pub fn regex() -> PatternOptions<Regex> {
+        PatternOptions {
+            inner: PatternEngineOptions::Regex {
+                size_limit: None,
+                dfa_size_limit: None,
+            },
+            _marker: PhantomData,
+        }
+    }
+    /// Set the approximate size limit, in bytes, of the compiled regex.
+    pub fn size_limit(mut self, limit: usize) -> Self {
+        if let PatternEngineOptions::Regex {
+            ref mut size_limit, ..
+        } = self.inner
+        {
+            *size_limit = Some(limit);
+        }
+        self
+    }
+    /// Set the approximate capacity, in bytes, of the cache of transitions used by the lazy DFA.
+    pub fn dfa_size_limit(mut self, limit: usize) -> Self {
+        if let PatternEngineOptions::Regex {
+            ref mut dfa_size_limit,
+            ..
+        } = self.inner
+        {
+            *dfa_size_limit = Some(limit);
+        }
+        self
+    }
+}
+
+impl Default for PatternEngineOptions {
+    fn default() -> Self {
+        PatternEngineOptions::FancyRegex {
+            backtrack_limit: None,
+            size_limit: None,
+            dfa_size_limit: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
     use referencing::{Registry, Resource};
     use serde_json::json;
 
@@ -660,5 +818,44 @@ mod tests {
             .expect("Invalid schema");
         assert!(validator.is_valid(&json!({ "name": "Valid String" })));
         assert!(!validator.is_valid(&json!({ "name": 123 })));
+    }
+
+    #[test]
+    fn test_fancy_regex_options_builder() {
+        let options = PatternOptions::fancy_regex()
+            .backtrack_limit(1_000_000)
+            .size_limit(10_000)
+            .dfa_size_limit(5000);
+
+        if let PatternEngineOptions::FancyRegex {
+            backtrack_limit,
+            size_limit,
+            dfa_size_limit,
+        } = options.inner
+        {
+            assert_eq!(backtrack_limit, Some(1_000_000));
+            assert_eq!(size_limit, Some(10_000));
+            assert_eq!(dfa_size_limit, Some(5000));
+        } else {
+            panic!("Expected FancyRegex variant");
+        }
+    }
+
+    #[test]
+    fn test_regex_options_builder() {
+        let options = PatternOptions::regex()
+            .size_limit(20_000)
+            .dfa_size_limit(8000);
+
+        if let PatternEngineOptions::Regex {
+            size_limit,
+            dfa_size_limit,
+        } = options.inner
+        {
+            assert_eq!(size_limit, Some(20_000));
+            assert_eq!(dfa_size_limit, Some(8000));
+        } else {
+            panic!("Expected Regex variant");
+        }
     }
 }

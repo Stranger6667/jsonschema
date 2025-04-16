@@ -191,6 +191,53 @@ except jsonschema_rs.ValidationError as exc:
     assert 'is not of type "number"' in str(exc)
 ```
 
+## Regular Expression Configuration
+
+When validating schemas with regex patterns (in `pattern` or `patternProperties`), you can configure the underlying regex engine:
+
+```python
+import jsonschema_rs
+from jsonschema_rs import FancyRegexOptions, RegexOptions
+
+# Default fancy-regex engine with backtracking limits
+# (supports advanced features but needs protection against DoS)
+validator = jsonschema_rs.validator_for(
+    {"type": "string", "pattern": "^(a+)+$"},
+    pattern_options=FancyRegexOptions(backtrack_limit=10_000)
+)
+
+# Standard regex engine for guaranteed linear-time matching
+# (prevents regex DoS attacks but supports fewer features)
+validator = jsonschema_rs.validator_for(
+    {"type": "string", "pattern": "^a+$"},
+    pattern_options=RegexOptions()
+)
+
+# Both engines support memory usage configuration
+validator = jsonschema_rs.validator_for(
+    {"type": "string", "pattern": "^a+$"},
+    pattern_options=RegexOptions(
+        size_limit=1024 * 1024,   # Maximum compiled pattern size
+        dfa_size_limit=10240      # Maximum DFA cache size
+    )
+)
+```
+
+The available options:
+
+  - `FancyRegexOptions`: Default engine with lookaround and backreferences support
+
+    - `backtrack_limit`: Maximum backtracking steps
+    - `size_limit`: Maximum compiled regex size in bytes
+    - `dfa_size_limit`: Maximum DFA cache size in bytes
+
+  - `RegexOptions`: Safer engine with linear-time guarantee
+
+    - `size_limit`: Maximum compiled regex size in bytes
+    - `dfa_size_limit`: Maximum DFA cache size in bytes
+
+This configuration is crucial when working with untrusted schemas where attackers might craft malicious regex patterns.
+
 ## External References
 
 By default, `jsonschema-rs` resolves HTTP references and file references from the local file system. You can implement a custom retriever to handle external references. Here's an example that uses a static map of schemas:

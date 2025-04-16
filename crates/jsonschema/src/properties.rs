@@ -1,11 +1,17 @@
-use crate::{compiler, ecma, node::SchemaNode, paths::Location, validator::Validate as _};
+use crate::{
+    compiler, ecma,
+    node::SchemaNode,
+    paths::Location,
+    regex::{build_fancy_regex, build_regex},
+    validator::Validate as _,
+};
 use ahash::AHashMap;
-use fancy_regex::Regex;
 use serde_json::{Map, Value};
 
 use crate::ValidationError;
 
-pub(crate) type PatternedValidators = Vec<(Regex, SchemaNode)>;
+pub(crate) type FancyRegexValidators = Vec<(fancy_regex::Regex, SchemaNode)>;
+pub(crate) type RegexValidators = Vec<(regex::Regex, SchemaNode)>;
 
 /// A value that can look up property validators by name.
 pub(crate) trait PropertiesValidatorsMap: Send + Sync {
@@ -104,16 +110,47 @@ where
 
 /// Create a vector of pattern-validators pairs.
 #[inline]
-pub(crate) fn compile_patterns<'a>(
+pub(crate) fn compile_fancy_regex_patterns<'a>(
     ctx: &compiler::Context,
     obj: &'a Map<String, Value>,
-) -> Result<PatternedValidators, ValidationError<'a>> {
+    backtrack_limit: Option<usize>,
+    size_limit: Option<usize>,
+    dfa_size_limit: Option<usize>,
+) -> Result<FancyRegexValidators, ValidationError<'a>> {
     let kctx = ctx.new_at_location("patternProperties");
     let mut compiled_patterns = Vec::with_capacity(obj.len());
     for (pattern, subschema) in obj {
         let pctx = kctx.new_at_location(pattern.as_str());
-        if let Ok(Ok(compiled_pattern)) =
-            ecma::to_rust_regex(pattern).map(|pattern| Regex::new(&pattern))
+        if let Ok(Ok(compiled_pattern)) = ecma::to_rust_regex(pattern)
+            .map(|pattern| build_fancy_regex(&pattern, backtrack_limit, size_limit, dfa_size_limit))
+        {
+            let node = compiler::compile(&pctx, pctx.as_resource_ref(subschema))?;
+            compiled_patterns.push((compiled_pattern, node));
+        } else {
+            return Err(ValidationError::format(
+                Location::new(),
+                kctx.location().clone(),
+                subschema,
+                "regex",
+            ));
+        }
+    }
+    Ok(compiled_patterns)
+}
+
+#[inline]
+pub(crate) fn compile_regex_patterns<'a>(
+    ctx: &compiler::Context,
+    obj: &'a Map<String, Value>,
+    size_limit: Option<usize>,
+    dfa_size_limit: Option<usize>,
+) -> Result<RegexValidators, ValidationError<'a>> {
+    let kctx = ctx.new_at_location("patternProperties");
+    let mut compiled_patterns = Vec::with_capacity(obj.len());
+    for (pattern, subschema) in obj {
+        let pctx = kctx.new_at_location(pattern.as_str());
+        if let Ok(Ok(compiled_pattern)) = ecma::to_rust_regex(pattern)
+            .map(|pattern| build_regex(&pattern, size_limit, dfa_size_limit))
         {
             let node = compiler::compile(&pctx, pctx.as_resource_ref(subschema))?;
             compiled_patterns.push((compiled_pattern, node));

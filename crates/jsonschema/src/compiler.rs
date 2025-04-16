@@ -254,7 +254,6 @@ pub(crate) fn build_validator(
     } else {
         uri::from_str(resource_ref.id().unwrap_or(DEFAULT_BASE_URI))?
     };
-    dbg!(&base_uri);
 
     // Build a registry & resolver needed for validator compilation
     let pairs = collect_resource_pairs(base_uri.as_str(), resource, &mut config.resources);
