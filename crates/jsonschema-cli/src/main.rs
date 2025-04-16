@@ -47,6 +47,8 @@ fn path_to_uri(path: &std::path::Path) -> String {
         .add(b'/')
         .add(b'%');
 
+    let path = path.canonicalize().expect("Failed to canonicalise path");
+
     let mut result = "file://".to_owned();
 
     #[cfg(not(target_os = "windows"))]

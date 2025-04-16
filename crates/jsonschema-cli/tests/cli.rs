@@ -214,3 +214,69 @@ fn test_relative_resolution() {
     );
     assert_snapshot!(sanitized);
 }
+
+#[test]
+fn test_nested_ref_resolution_with_different_path_formats() {
+    let temp_dir = tempdir().unwrap();
+    let folder_a = temp_dir.path().join("folderA");
+    let folder_b = folder_a.join("folderB");
+
+    fs::create_dir_all(&folder_b).unwrap();
+
+    let schema_content = r#"{
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "name": {"$ref": "folderB/subschema.json#/definitions/name"}
+        }
+    }"#;
+
+    let subschema_content = r#"{
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "definitions": {
+            "name": {
+                "type": "string",
+                "minLength": 3
+            }
+        }
+    }"#;
+
+    let instance_content = r#"{"name": "John"}"#;
+
+    let schema_path = folder_a.join("schema.json");
+    let subschema_path = folder_b.join("subschema.json");
+    let instance_path = temp_dir.path().join("instance.json");
+
+    fs::write(&schema_path, schema_content).unwrap();
+    fs::write(&subschema_path, subschema_content).unwrap();
+    fs::write(&instance_path, instance_content).unwrap();
+
+    let mut cmd = cli();
+    cmd.arg(schema_path.to_str().unwrap())
+        .arg("--instance")
+        .arg(instance_path.to_str().unwrap());
+
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Validation with absolute path failed: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    let rel_schema_path = "folderA/schema.json";
+    let rel_instance_path = "instance.json";
+
+    let original_dir = std::env::current_dir().unwrap();
+    std::env::set_current_dir(temp_dir.path()).unwrap();
+
+    let mut cmd = cli();
+    cmd.arg(rel_schema_path)
+        .arg("--instance")
+        .arg(rel_instance_path);
+
+    let output = cmd.output().unwrap();
+
+    assert!(output.status.success());
+
+    std::env::set_current_dir(original_dir).unwrap();
+}
