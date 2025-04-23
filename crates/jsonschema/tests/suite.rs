@@ -1,6 +1,6 @@
 #[cfg(not(target_arch = "wasm32"))]
 mod tests {
-    use jsonschema::Draft;
+    use jsonschema::{Draft, PatternOptions};
     use std::fs;
     use testsuite::{suite, Test};
 
@@ -36,65 +36,117 @@ mod tests {
         if test.is_optional {
             options = options.should_validate_formats(true);
         }
-        let validator = options
-            .build(&test.schema)
-            .expect("Failed to build a schema");
 
-        if test.valid {
-            if let Some(first) = validator.iter_errors(&test.data).next() {
-                panic!(
+        enum RegexEngine {
+            Regex,
+            FancyRegex,
+        }
+
+        for engine in [RegexEngine::FancyRegex, RegexEngine::Regex] {
+            match engine {
+                RegexEngine::Regex => {
+                    options = options.with_pattern_options(PatternOptions::regex());
+                }
+                RegexEngine::FancyRegex => {
+                    options = options.with_pattern_options(PatternOptions::fancy_regex());
+                }
+            }
+            let validator = options
+                .build(&test.schema)
+                .expect("Failed to build a schema");
+
+            if test.valid {
+                if let Some(first) = validator.iter_errors(&test.data).next() {
+                    panic!(
                     "Test case should not have validation errors:\nGroup: {}\nTest case: {}\nSchema: {}\nInstance: {}\nError: {first:?}",
                     test.case,
                     test.description,
                     pretty_json(&test.schema),
                     pretty_json(&test.data),
                 );
-            }
-            assert!(
-                validator.is_valid(&test.data),
-                "Test case should be valid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
-                test.case,
-                test.description,
-                pretty_json(&test.schema),
-                pretty_json(&test.data),
-            );
-            assert!(
-                validator.trace(&test.data, &mut |_| {}),
-                "Test case should be valid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
-                test.case,
-                test.description,
-                pretty_json(&test.schema),
-                pretty_json(&test.data),
-            );
-            assert!(
-                validator.validate(&test.data).is_ok(),
-                "Test case should be valid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
-                test.case,
-                test.description,
-                pretty_json(&test.schema),
-                pretty_json(&test.data),
-            );
-            let output = validator.apply(&test.data).basic();
-            assert!(
-                output.is_valid(),
-                "Test case should be valid via basic output:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}\nError: {:?}",
-                test.case,
-                test.description,
-                pretty_json(&test.schema),
-                pretty_json(&test.data),
-                output
-            );
-        } else {
-            let errors = validator.iter_errors(&test.data).collect::<Vec<_>>();
-            assert!(
-                !errors.is_empty(),
-                "Test case should have validation errors:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
-                test.case,
-                test.description,
-                pretty_json(&test.schema),
-                pretty_json(&test.data),
-            );
-            for error in errors {
+                }
+                assert!(
+                    validator.is_valid(&test.data),
+                    "Test case should be valid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                );
+                assert!(
+                    validator.trace(&test.data, &mut |_| {}),
+                    "Test case should be valid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                );
+                assert!(
+                    validator.validate(&test.data).is_ok(),
+                    "Test case should be valid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                );
+                let output = validator.apply(&test.data).basic();
+                assert!(
+                    output.is_valid(),
+                    "Test case should be valid via basic output:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}\nError: {:?}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                    output
+                );
+            } else {
+                let errors = validator.iter_errors(&test.data).collect::<Vec<_>>();
+                assert!(
+                    !errors.is_empty(),
+                    "Test case should have validation errors:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                );
+                for error in errors {
+                    let pointer = error.instance_path.as_str();
+                    assert_eq!(
+                        test.data.pointer(pointer), Some(&*error.instance),
+                        "Expected error instance did not match actual error instance:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}\nExpected pointer: {:#?}\nActual pointer: {:#?}",
+                        test.case,
+                        test.description,
+                        pretty_json(&test.schema),
+                        pretty_json(&test.data),
+                        &*error.instance,
+                        &pointer,
+                    );
+                }
+                assert!(
+                    !validator.is_valid(&test.data),
+                    "Test case should be invalid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                );
+                assert!(
+                    !validator.trace(&test.data, &mut |_| {}),
+                    "Test case should be invalid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                );
+                let Some(error) = validator.validate(&test.data).err() else {
+                    panic!(
+                    "Test case should be invalid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                );
+                };
                 let pointer = error.instance_path.as_str();
                 assert_eq!(
                     test.data.pointer(pointer), Some(&*error.instance),
@@ -106,52 +158,16 @@ mod tests {
                     &*error.instance,
                     &pointer,
                 );
-            }
-            assert!(
-                !validator.is_valid(&test.data),
-                "Test case should be invalid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
-                test.case,
-                test.description,
-                pretty_json(&test.schema),
-                pretty_json(&test.data),
-            );
-            assert!(
-                !validator.trace(&test.data, &mut |_| {}),
-                "Test case should be invalid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
-                test.case,
-                test.description,
-                pretty_json(&test.schema),
-                pretty_json(&test.data),
-            );
-            let Some(error) = validator.validate(&test.data).err() else {
-                panic!(
-                    "Test case should be invalid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                let output = validator.apply(&test.data).basic();
+                assert!(
+                    !output.is_valid(),
+                    "Test case should be invalid via basic output:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
                     test.case,
                     test.description,
                     pretty_json(&test.schema),
                     pretty_json(&test.data),
                 );
-            };
-            let pointer = error.instance_path.as_str();
-            assert_eq!(
-                test.data.pointer(pointer), Some(&*error.instance),
-                "Expected error instance did not match actual error instance:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}\nExpected pointer: {:#?}\nActual pointer: {:#?}",
-                test.case,
-                test.description,
-                pretty_json(&test.schema),
-                pretty_json(&test.data),
-                &*error.instance,
-                &pointer,
-            );
-            let output = validator.apply(&test.data).basic();
-            assert!(
-                !output.is_valid(),
-                "Test case should be invalid via basic output:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
-                test.case,
-                test.description,
-                pretty_json(&test.schema),
-                pretty_json(&test.data),
-            );
+            }
         }
     }
 

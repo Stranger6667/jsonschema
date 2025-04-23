@@ -11,9 +11,11 @@ use crate::{
     error::{no_error, ErrorIterator, ValidationError},
     keywords::CompilationResult,
     node::SchemaNode,
+    options::PatternEngineOptions,
     output::{Annotations, BasicOutput, OutputUnit},
     paths::{LazyLocation, Location},
     properties::*,
+    regex::RegexEngine,
     types::JsonType,
     validator::{PartialApplication, Validate},
     TracingCallback, TracingContext,
@@ -419,14 +421,6 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
     }
 }
 
-impl<M: PropertiesValidatorsMap> core::fmt::Display
-    for AdditionalPropertiesNotEmptyFalseValidator<M>
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        "additionalProperties: false".fmt(f)
-    }
-}
-
 /// # Schema example
 ///
 /// ```json
@@ -551,6 +545,7 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyValida
             PartialApplication::valid_empty()
         }
     }
+
     fn matches_type(&self, instance: &Value) -> bool {
         matches!(instance, Value::Object(_))
     }
@@ -630,9 +625,9 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyValida
 ///     "bar": 8
 /// }
 /// ```
-pub(crate) struct AdditionalPropertiesWithPatternsValidator {
+pub(crate) struct AdditionalPropertiesWithPatternsValidator<R> {
     node: SchemaNode,
-    patterns: PatternedValidators,
+    patterns: Vec<(R, SchemaNode)>,
     /// We need this because `compiler::compile` uses the additionalProperties keyword to compile
     /// this validator. That means that the schema node which contains this validator has
     /// "additionalProperties" as it's path. However, we need to produce annotations which have the
@@ -640,23 +635,8 @@ pub(crate) struct AdditionalPropertiesWithPatternsValidator {
     pattern_keyword_path: Location,
     pattern_keyword_absolute_location: Option<Uri<String>>,
 }
-impl AdditionalPropertiesWithPatternsValidator {
-    #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
-        schema: &'a Value,
-        patterns: PatternedValidators,
-    ) -> CompilationResult<'a> {
-        let kctx = ctx.new_at_location("additionalProperties");
-        Ok(Box::new(AdditionalPropertiesWithPatternsValidator {
-            node: compiler::compile(&kctx, kctx.as_resource_ref(schema))?,
-            patterns,
-            pattern_keyword_path: ctx.location().join("patternProperties"),
-            pattern_keyword_absolute_location: ctx.new_at_location("patternProperties").base_uri(),
-        }))
-    }
-}
-impl Validate for AdditionalPropertiesWithPatternsValidator {
+
+impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsValidator<R> {
     fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
         if let Value::Object(item) = instance {
             let mut errors = vec![];
@@ -849,27 +829,14 @@ impl Validate for AdditionalPropertiesWithPatternsValidator {
 ///     "x-baz-x": 8,
 /// }
 /// ```
-pub(crate) struct AdditionalPropertiesWithPatternsFalseValidator {
-    patterns: PatternedValidators,
+pub(crate) struct AdditionalPropertiesWithPatternsFalseValidator<R> {
+    patterns: Vec<(R, SchemaNode)>,
     location: Location,
     pattern_keyword_path: Location,
     pattern_keyword_absolute_location: Option<Uri<String>>,
 }
-impl AdditionalPropertiesWithPatternsFalseValidator {
-    #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
-        patterns: PatternedValidators,
-    ) -> CompilationResult<'a> {
-        Ok(Box::new(AdditionalPropertiesWithPatternsFalseValidator {
-            patterns,
-            location: ctx.location().join("additionalProperties"),
-            pattern_keyword_path: ctx.location().join("patternProperties"),
-            pattern_keyword_absolute_location: ctx.new_at_location("patternProperties").base_uri(),
-        }))
-    }
-}
-impl Validate for AdditionalPropertiesWithPatternsFalseValidator {
+
+impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsFalseValidator<R> {
     fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
         if let Value::Object(item) = instance {
             let mut errors = vec![];
@@ -985,6 +952,7 @@ impl Validate for AdditionalPropertiesWithPatternsFalseValidator {
             PartialApplication::valid_empty()
         }
     }
+
     fn matches_type(&self, instance: &Value) -> bool {
         matches!(instance, Value::Object(_))
     }
@@ -1076,54 +1044,17 @@ impl Validate for AdditionalPropertiesWithPatternsFalseValidator {
 ///     "bar": 42
 /// }
 /// ```
-pub(crate) struct AdditionalPropertiesWithPatternsNotEmptyValidator<M: PropertiesValidatorsMap> {
+pub(crate) struct AdditionalPropertiesWithPatternsNotEmptyValidator<M: PropertiesValidatorsMap, R> {
     node: SchemaNode,
     properties: M,
-    patterns: PatternedValidators,
+    patterns: Vec<(R, SchemaNode)>,
     pattern_properties_location: Location,
     properties_location: Location,
 }
-impl AdditionalPropertiesWithPatternsNotEmptyValidator<SmallValidatorsMap> {
-    #[inline]
-    pub(crate) fn compile<'a>(
-        map: &'a Map<String, Value>,
-        ctx: &compiler::Context,
-        schema: &'a Value,
-        patterns: PatternedValidators,
-    ) -> CompilationResult<'a> {
-        let kctx = ctx.new_at_location("additionalProperties");
-        Ok(Box::new(
-            AdditionalPropertiesWithPatternsNotEmptyValidator {
-                node: compiler::compile(&kctx, kctx.as_resource_ref(schema))?,
-                properties: compile_small_map(ctx, map)?,
-                patterns,
-                pattern_properties_location: ctx.location().join("patternProperties"),
-                properties_location: ctx.location().join("properties"),
-            },
-        ))
-    }
-}
-impl AdditionalPropertiesWithPatternsNotEmptyValidator<BigValidatorsMap> {
-    #[inline]
-    pub(crate) fn compile<'a>(
-        map: &'a Map<String, Value>,
-        ctx: &compiler::Context,
-        schema: &'a Value,
-        patterns: PatternedValidators,
-    ) -> CompilationResult<'a> {
-        let kctx = ctx.new_at_location("additionalProperties");
-        Ok(Box::new(
-            AdditionalPropertiesWithPatternsNotEmptyValidator {
-                node: compiler::compile(&kctx, kctx.as_resource_ref(schema))?,
-                properties: compile_big_map(ctx, map)?,
-                patterns,
-                pattern_properties_location: ctx.location().join("patternProperties"),
-                properties_location: ctx.location().join("properties"),
-            },
-        ))
-    }
-}
-impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesWithPatternsNotEmptyValidator<M> {
+
+impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
+    for AdditionalPropertiesWithPatternsNotEmptyValidator<M, R>
+{
     fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
         if let Value::Object(item) = instance {
             let mut errors = vec![];
@@ -1396,53 +1327,19 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesWithPatternsNo
 ///     "x-baz-x": 8,
 /// }
 /// ```
-pub(crate) struct AdditionalPropertiesWithPatternsNotEmptyFalseValidator<M: PropertiesValidatorsMap>
-{
+pub(crate) struct AdditionalPropertiesWithPatternsNotEmptyFalseValidator<
+    M: PropertiesValidatorsMap,
+    R,
+> {
     properties: M,
-    patterns: PatternedValidators,
+    patterns: Vec<(R, SchemaNode)>,
     location: Location,
     properties_location: Location,
     pattern_properties_location: Location,
 }
-impl AdditionalPropertiesWithPatternsNotEmptyFalseValidator<SmallValidatorsMap> {
-    #[inline]
-    pub(crate) fn compile<'a>(
-        map: &'a Map<String, Value>,
-        ctx: &compiler::Context,
-        patterns: PatternedValidators,
-    ) -> CompilationResult<'a> {
-        Ok(Box::new(
-            AdditionalPropertiesWithPatternsNotEmptyFalseValidator::<SmallValidatorsMap> {
-                properties: compile_small_map(ctx, map)?,
-                patterns,
-                location: ctx.location().join("additionalProperties"),
-                properties_location: ctx.location().join("properties"),
-                pattern_properties_location: ctx.location().join("patternProperties"),
-            },
-        ))
-    }
-}
-impl AdditionalPropertiesWithPatternsNotEmptyFalseValidator<BigValidatorsMap> {
-    #[inline]
-    pub(crate) fn compile<'a>(
-        map: &'a Map<String, Value>,
-        ctx: &compiler::Context,
-        patterns: PatternedValidators,
-    ) -> CompilationResult<'a> {
-        Ok(Box::new(
-            AdditionalPropertiesWithPatternsNotEmptyFalseValidator {
-                properties: compile_big_map(ctx, map)?,
-                patterns,
-                location: ctx.location().join("additionalProperties"),
-                properties_location: ctx.location().join("properties"),
-                pattern_properties_location: ctx.location().join("patternProperties"),
-            },
-        ))
-    }
-}
 
-impl<M: PropertiesValidatorsMap> Validate
-    for AdditionalPropertiesWithPatternsNotEmptyFalseValidator<M>
+impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
+    for AdditionalPropertiesWithPatternsNotEmptyFalseValidator<M, R>
 {
     fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
         if let Value::Object(item) = instance {
@@ -1706,13 +1603,80 @@ impl<M: PropertiesValidatorsMap> Validate
     }
 }
 
-impl<M: PropertiesValidatorsMap> core::fmt::Display
-    for AdditionalPropertiesWithPatternsNotEmptyFalseValidator<M>
+macro_rules! try_compile {
+    ($expr:expr) => {
+        match $expr {
+            Ok(result) => result,
+            Err(error) => return Some(Err(error)),
+        }
+    };
+}
+
+fn compile_pattern_non_empty<'a, R>(
+    ctx: &compiler::Context,
+    map: &'a Map<String, Value>,
+    patterns: Vec<(R, SchemaNode)>,
+    schema: &'a Value,
+) -> Option<CompilationResult<'a>>
+where
+    R: RegexEngine + 'static,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        "additionalProperties: false".fmt(f)
+    let kctx = ctx.new_at_location("additionalProperties");
+    if map.len() < 40 {
+        Some(Ok(Box::new(
+            AdditionalPropertiesWithPatternsNotEmptyValidator::<SmallValidatorsMap, R> {
+                node: try_compile!(compiler::compile(&kctx, kctx.as_resource_ref(schema))),
+                properties: try_compile!(compile_small_map(ctx, map)),
+                pattern_properties_location: ctx.location().join("patternProperties"),
+                properties_location: ctx.location().join("properties"),
+                patterns,
+            },
+        )))
+    } else {
+        Some(Ok(Box::new(
+            AdditionalPropertiesWithPatternsNotEmptyValidator::<BigValidatorsMap, R> {
+                node: try_compile!(compiler::compile(&kctx, kctx.as_resource_ref(schema))),
+                properties: try_compile!(compile_big_map(ctx, map)),
+                pattern_properties_location: ctx.location().join("patternProperties"),
+                properties_location: ctx.location().join("properties"),
+                patterns,
+            },
+        )))
     }
 }
+
+fn compile_pattern_non_empty_false<'a, R>(
+    ctx: &compiler::Context,
+    map: &'a Map<String, Value>,
+    patterns: Vec<(R, SchemaNode)>,
+) -> Option<CompilationResult<'a>>
+where
+    R: RegexEngine + 'static,
+{
+    let kctx = ctx.new_at_location("additionalProperties");
+    if map.len() < 40 {
+        Some(Ok(Box::new(
+            AdditionalPropertiesWithPatternsNotEmptyFalseValidator::<SmallValidatorsMap, R> {
+                properties: try_compile!(compile_small_map(ctx, map)),
+                patterns,
+                location: kctx.location().clone(),
+                properties_location: ctx.location().join("properties"),
+                pattern_properties_location: ctx.location().join("patternProperties"),
+            },
+        )))
+    } else {
+        Some(Ok(Box::new(
+            AdditionalPropertiesWithPatternsNotEmptyFalseValidator::<BigValidatorsMap, R> {
+                properties: try_compile!(compile_big_map(ctx, map)),
+                patterns,
+                location: kctx.location().clone(),
+                properties_location: ctx.location().join("properties"),
+                pattern_properties_location: ctx.location().join("patternProperties"),
+            },
+        )))
+    }
+}
+
 #[inline]
 pub(crate) fn compile<'a>(
     ctx: &compiler::Context,
@@ -1723,42 +1687,153 @@ pub(crate) fn compile<'a>(
     if let Some(patterns) = parent.get("patternProperties") {
         if let Value::Object(obj) = patterns {
             // Compile all patterns & their validators to avoid doing work in the `patternProperties` validator
-            let compiled_patterns = match compile_patterns(ctx, obj) {
-                Ok(patterns) => patterns,
-                Err(error) => return Some(Err(error)),
-            };
-            match schema {
-                Value::Bool(true) => None, // "additionalProperties" are "true" by default
-                Value::Bool(false) => {
-                    if let Some(properties) = properties {
-                        compile_dynamic_prop_map_validator!(
-                            AdditionalPropertiesWithPatternsNotEmptyFalseValidator,
-                            properties,
-                            ctx,
-                            compiled_patterns,
-                        )
-                    } else {
-                        Some(AdditionalPropertiesWithPatternsFalseValidator::compile(
-                            ctx,
-                            compiled_patterns,
-                        ))
+            match ctx.config().pattern_options() {
+                PatternEngineOptions::FancyRegex {
+                    backtrack_limit,
+                    size_limit,
+                    dfa_size_limit,
+                } => {
+                    let patterns = match compile_fancy_regex_patterns(
+                        ctx,
+                        obj,
+                        backtrack_limit,
+                        size_limit,
+                        dfa_size_limit,
+                    ) {
+                        Ok(patterns) => patterns,
+                        Err(error) => return Some(Err(error)),
+                    };
+                    match schema {
+                        Value::Bool(true) => None, // "additionalProperties" are "true" by default
+                        Value::Bool(false) => {
+                            if let Some(properties) = properties {
+                                if let Value::Object(map) = properties {
+                                    compile_pattern_non_empty_false::<fancy_regex::Regex>(
+                                        ctx, map, patterns,
+                                    )
+                                } else {
+                                    Some(Err(ValidationError::custom(
+                                        Location::new(),
+                                        Location::new(),
+                                        properties,
+                                        "Unexpected type",
+                                    )))
+                                }
+                            } else {
+                                Some(Ok(Box::new(
+                                    AdditionalPropertiesWithPatternsFalseValidator {
+                                        patterns,
+                                        location: ctx.location().join("additionalProperties"),
+                                        pattern_keyword_path: ctx
+                                            .location()
+                                            .join("patternProperties"),
+                                        pattern_keyword_absolute_location: ctx
+                                            .new_at_location("patternProperties")
+                                            .base_uri(),
+                                    },
+                                )))
+                            }
+                        }
+                        _ => {
+                            if let Some(properties) = properties {
+                                if let Value::Object(map) = properties {
+                                    compile_pattern_non_empty::<fancy_regex::Regex>(
+                                        ctx, map, patterns, schema,
+                                    )
+                                } else {
+                                    Some(Err(ValidationError::custom(
+                                        Location::new(),
+                                        Location::new(),
+                                        properties,
+                                        "Unexpected type",
+                                    )))
+                                }
+                            } else {
+                                let kctx = ctx.new_at_location("additionalProperties");
+                                Some(Ok(Box::new(AdditionalPropertiesWithPatternsValidator {
+                                    node: try_compile!(compiler::compile(
+                                        &kctx,
+                                        kctx.as_resource_ref(schema),
+                                    )),
+                                    patterns,
+                                    pattern_keyword_path: ctx.location().join("patternProperties"),
+                                    pattern_keyword_absolute_location: ctx
+                                        .new_at_location("patternProperties")
+                                        .base_uri(),
+                                })))
+                            }
+                        }
                     }
                 }
-                _ => {
-                    if let Some(properties) = properties {
-                        compile_dynamic_prop_map_validator!(
-                            AdditionalPropertiesWithPatternsNotEmptyValidator,
-                            properties,
-                            ctx,
-                            schema,
-                            compiled_patterns,
-                        )
-                    } else {
-                        Some(AdditionalPropertiesWithPatternsValidator::compile(
-                            ctx,
-                            schema,
-                            compiled_patterns,
-                        ))
+                PatternEngineOptions::Regex {
+                    size_limit,
+                    dfa_size_limit,
+                } => {
+                    let patterns =
+                        match compile_regex_patterns(ctx, obj, size_limit, dfa_size_limit) {
+                            Ok(patterns) => patterns,
+                            Err(error) => return Some(Err(error)),
+                        };
+                    match schema {
+                        Value::Bool(true) => None, // "additionalProperties" are "true" by default
+                        Value::Bool(false) => {
+                            if let Some(properties) = properties {
+                                if let Value::Object(map) = properties {
+                                    compile_pattern_non_empty_false::<regex::Regex>(
+                                        ctx, map, patterns,
+                                    )
+                                } else {
+                                    Some(Err(ValidationError::custom(
+                                        Location::new(),
+                                        Location::new(),
+                                        properties,
+                                        "Unexpected type",
+                                    )))
+                                }
+                            } else {
+                                Some(Ok(Box::new(
+                                    AdditionalPropertiesWithPatternsFalseValidator {
+                                        patterns,
+                                        location: ctx.location().join("additionalProperties"),
+                                        pattern_keyword_path: ctx
+                                            .location()
+                                            .join("patternProperties"),
+                                        pattern_keyword_absolute_location: ctx
+                                            .new_at_location("patternProperties")
+                                            .base_uri(),
+                                    },
+                                )))
+                            }
+                        }
+                        _ => {
+                            if let Some(properties) = properties {
+                                if let Value::Object(map) = properties {
+                                    compile_pattern_non_empty::<regex::Regex>(
+                                        ctx, map, patterns, schema,
+                                    )
+                                } else {
+                                    Some(Err(ValidationError::custom(
+                                        Location::new(),
+                                        Location::new(),
+                                        properties,
+                                        "Unexpected type",
+                                    )))
+                                }
+                            } else {
+                                let kctx = ctx.new_at_location("additionalProperties");
+                                Some(Ok(Box::new(AdditionalPropertiesWithPatternsValidator {
+                                    node: try_compile!(compiler::compile(
+                                        &kctx,
+                                        kctx.as_resource_ref(schema),
+                                    )),
+                                    patterns,
+                                    pattern_keyword_path: ctx.location().join("patternProperties"),
+                                    pattern_keyword_absolute_location: ctx
+                                        .new_at_location("patternProperties")
+                                        .base_uri(),
+                                })))
+                            }
+                        }
                     }
                 }
             }

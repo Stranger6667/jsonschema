@@ -2,13 +2,25 @@
 
 ## [Unreleased]
 
+## [0.30.0] - 2025-04-16
+
 ### Added
 
 - `JsonType` and `JsonTypeSet`.
+- `ValidationOptions::with_base_uri` that allows for specifying a base URI for all relative references in the schema.
+- Configuration options for the underlying regex engine used by `pattern` and `patternProperties` keywords.
 
 ### Changed
 
 - Better error messages for relative `$ref` without base URI.
+
+### Fixed
+
+- **CLI**: Inability to load relative file `$ref`. [#725](https://github.com/Stranger6667/jsonschema/issues/725)
+
+### Removed
+
+- Internal cache for regular expressions.
 
 ### Deprecated
 
@@ -901,7 +913,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.29.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.30.0...HEAD
+[0.30.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.29.1...rust-v0.30.0
 [0.29.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.29.0...rust-v0.29.1
 [0.29.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.28.3...rust-v0.29.0
 [0.28.3]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.28.2...rust-v0.28.3

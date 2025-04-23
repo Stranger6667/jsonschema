@@ -2,126 +2,34 @@ use crate::{
     compiler, ecma,
     error::ValidationError,
     keywords::CompilationResult,
+    options::PatternEngineOptions,
     paths::{LazyLocation, Location},
+    regex::{build_fancy_regex, build_regex, RegexEngine, RegexError},
     types::JsonType,
     validator::Validate,
 };
-use ahash::AHashMap;
-use once_cell::sync::Lazy;
 use serde_json::{Map, Value};
 
-use std::{collections::VecDeque, sync::Mutex};
-
-static REGEX_CACHE: Lazy<Mutex<LruCache>> = Lazy::new(|| Mutex::new(LruCache::new(10)));
-
-struct LruCache {
-    map: AHashMap<String, fancy_regex::Regex>,
-    queue: VecDeque<String>,
-    capacity: usize,
-}
-
-impl LruCache {
-    fn new(capacity: usize) -> Self {
-        LruCache {
-            map: AHashMap::new(),
-            queue: VecDeque::new(),
-            capacity,
-        }
-    }
-
-    fn get(&mut self, key: &str) -> Option<&fancy_regex::Regex> {
-        if let Some(value) = self.map.get(key) {
-            let index = self.queue.iter().position(|x| x == key).unwrap();
-            let k = self.queue.remove(index).unwrap();
-            self.queue.push_back(k);
-            Some(value)
-        } else {
-            None
-        }
-    }
-
-    fn insert(&mut self, key: String, value: fancy_regex::Regex) -> Option<fancy_regex::Regex> {
-        if self.map.len() >= self.capacity && !self.map.contains_key(&key) {
-            if let Some(lru_key) = self.queue.pop_front() {
-                self.map.remove(&lru_key);
-            }
-        }
-
-        let old_value = self.map.insert(key.clone(), value);
-        if old_value.is_some() {
-            let index = self.queue.iter().position(|x| x == &key).unwrap();
-            self.queue.remove(index);
-        }
-        self.queue.push_back(key);
-        old_value
-    }
-}
-
-pub(crate) struct PatternValidator {
-    original: String,
-    pattern: fancy_regex::Regex,
+pub(crate) struct PatternValidator<R> {
+    regex: R,
     location: Location,
 }
 
-impl PatternValidator {
-    #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
-        pattern: &'a Value,
-    ) -> CompilationResult<'a> {
-        match pattern {
-            Value::String(item) => {
-                let mut cache = REGEX_CACHE.lock().expect("Lock is poisoned");
-                let pattern = if let Some(regex) = cache.get(item) {
-                    regex.clone()
-                } else {
-                    let regex = match ecma::to_rust_regex(item)
-                        .map(|pattern| fancy_regex::Regex::new(&pattern))
-                    {
-                        Ok(Ok(r)) => r,
-                        _ => {
-                            return Err(ValidationError::format(
-                                Location::new(),
-                                ctx.location().clone(),
-                                pattern,
-                                "regex",
-                            ))
-                        }
-                    };
-                    cache.insert(item.clone(), regex.clone());
-                    regex
-                };
-                Ok(Box::new(PatternValidator {
-                    original: item.clone(),
-                    pattern,
-                    location: ctx.location().join("pattern"),
-                }))
-            }
-            _ => Err(ValidationError::single_type_error(
-                Location::new(),
-                ctx.location().clone(),
-                pattern,
-                JsonType::String,
-            )),
-        }
-    }
-}
-
-impl Validate for PatternValidator {
+impl<R: RegexEngine> Validate for PatternValidator<R> {
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::String(item) = instance {
-            match self.pattern.is_match(item) {
+            match self.regex.is_match(item) {
                 Ok(is_match) => {
                     if !is_match {
                         return Err(ValidationError::pattern(
                             self.location.clone(),
                             location.into(),
                             instance,
-                            self.original.clone(),
+                            self.regex.pattern().to_string(),
                         ));
                     }
                 }
@@ -130,7 +38,8 @@ impl Validate for PatternValidator {
                         self.location.clone(),
                         location.into(),
                         instance,
-                        e,
+                        e.into_backtrack_error()
+                            .expect("Can only fail with the fancy-regex crate"),
                     ));
                 }
             }
@@ -140,7 +49,7 @@ impl Validate for PatternValidator {
 
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::String(item) = instance {
-            return self.pattern.is_match(item).unwrap_or(false);
+            return self.regex.is_match(item).unwrap_or(false);
         }
         true
     }
@@ -158,12 +67,57 @@ pub(crate) fn compile<'a>(
     _: &'a Map<String, Value>,
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
-    Some(PatternValidator::compile(ctx, schema))
+    match schema {
+        Value::String(item) => {
+            let Ok(pattern) = ecma::to_rust_regex(item) else {
+                return Some(Err(invalid_regex(ctx, schema)));
+            };
+            match ctx.config().pattern_options() {
+                PatternEngineOptions::FancyRegex {
+                    backtrack_limit,
+                    size_limit,
+                    dfa_size_limit,
+                } => {
+                    let Ok(regex) =
+                        build_fancy_regex(&pattern, backtrack_limit, size_limit, dfa_size_limit)
+                    else {
+                        return Some(Err(invalid_regex(ctx, schema)));
+                    };
+                    Some(Ok(Box::new(PatternValidator {
+                        regex,
+                        location: ctx.location().join("pattern"),
+                    })))
+                }
+                PatternEngineOptions::Regex {
+                    size_limit,
+                    dfa_size_limit,
+                } => {
+                    let Ok(regex) = build_regex(&pattern, size_limit, dfa_size_limit) else {
+                        return Some(Err(invalid_regex(ctx, schema)));
+                    };
+                    Some(Ok(Box::new(PatternValidator {
+                        regex,
+                        location: ctx.location().join("pattern"),
+                    })))
+                }
+            }
+        }
+        _ => Some(Err(ValidationError::single_type_error(
+            Location::new(),
+            ctx.location().clone(),
+            schema,
+            JsonType::String,
+        ))),
+    }
+}
+
+fn invalid_regex<'a>(ctx: &compiler::Context, schema: &'a Value) -> ValidationError<'a> {
+    ValidationError::format(Location::new(), ctx.location().clone(), schema, "regex")
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::tests_util;
+    use crate::{tests_util, PatternOptions};
     use serde_json::json;
     use test_case::test_case;
 
@@ -179,5 +133,36 @@ mod tests {
     #[test]
     fn location() {
         tests_util::assert_schema_location(&json!({"pattern": "^f"}), &json!("b"), "/pattern")
+    }
+
+    #[test]
+    fn test_fancy_regex_backtrack_limit_exceeded() {
+        let schema = json!({"pattern": "(?i)(a|b|ab)*(?=c)"});
+        let validator = crate::options()
+            .with_pattern_options(PatternOptions::fancy_regex().backtrack_limit(1))
+            .build(&schema)
+            .expect("Schema should be valid");
+
+        let instance = json!("abababababababababababababababababababababababababababab");
+
+        let error = validator.validate(&instance).expect_err("Should fail");
+        assert_eq!(
+            error.to_string(),
+            "Error executing regex: Max limit for backtracking count exceeded"
+        );
+    }
+
+    #[test]
+    fn test_regex_engine_validation() {
+        let schema = json!({"pattern": "^[a-z]+$"});
+        let validator = crate::options()
+            .with_pattern_options(PatternOptions::regex())
+            .build(&schema)
+            .expect("Schema should be valid");
+
+        let valid = json!("hello");
+        assert!(validator.is_valid(&valid));
+        let invalid = json!("Hello123");
+        assert!(!validator.is_valid(&invalid));
     }
 }

@@ -1,5 +1,6 @@
 import pytest
-from jsonschema_rs import meta, ValidationError, ReferencingError
+
+from jsonschema_rs import ReferencingError, ValidationError, meta
 
 
 @pytest.mark.parametrize(

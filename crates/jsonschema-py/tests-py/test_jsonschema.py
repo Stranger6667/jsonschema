@@ -10,17 +10,17 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from jsonschema_rs import (
+    Draft4Validator,
+    Draft6Validator,
+    Draft7Validator,
+    Draft201909Validator,
+    Draft202012Validator,
     ValidationError,
     ValidationErrorKind,
     is_valid,
     iter_errors,
     validate,
     validator_for,
-    Draft4Validator,
-    Draft6Validator,
-    Draft7Validator,
-    Draft201909Validator,
-    Draft202012Validator,
 )
 
 json = st.recursive(

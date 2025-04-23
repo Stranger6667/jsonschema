@@ -1,23 +1,23 @@
 import pytest
+
 from jsonschema_rs import (
-    Registry,
-    validator_for,
-    ValidationError,
-    Draft4Validator,
-    Draft6Validator,
-    Draft7Validator,
-    Draft201909Validator,
-    Draft202012Validator,
     Draft4,
+    Draft4Validator,
     Draft6,
+    Draft6Validator,
     Draft7,
+    Draft7Validator,
     Draft201909,
+    Draft201909Validator,
     Draft202012,
-    validate,
+    Draft202012Validator,
+    Registry,
+    ValidationError,
     is_valid,
     iter_errors,
+    validate,
+    validator_for,
 )
-
 
 BASIC_RESOURCES = [("https://example.com/string-schema", {"type": "string"})]
 NESTED_RESOURCES = [

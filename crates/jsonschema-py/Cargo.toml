@@ -1,6 +1,6 @@
 [package]
 name = "jsonschema-py"
-version = "0.29.1"
+version = "0.30.0"
 description = "A high-performance JSON Schema validator for Python"
 keywords = ["jsonschema", "validation"]
 categories = ["web-programming"]
@@ -17,12 +17,12 @@ crate-type = ["cdylib"]
 
 [build-dependencies]
 built = { version = "0.7.1", features = ["cargo-lock", "chrono"] }
-pyo3-build-config = { version = "0.23.1", features = ["resolve-config"] }
+pyo3-build-config = { version = "0.24.1", features = ["resolve-config"] }
 
 [dependencies]
 jsonschema = { path = "../jsonschema/" }
 serde.workspace = true
 serde_json.workspace = true
-pyo3 = { version = "0.23.3", features = ["extension-module"] }
-pythonize = "0.23"
+pyo3 = { version = "0.24.1", features = ["extension-module"] }
+pythonize = "0.24"
 pyo3-built = "0.6"

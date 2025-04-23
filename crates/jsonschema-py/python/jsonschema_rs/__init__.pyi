@@ -1,10 +1,20 @@
 from collections.abc import Iterator
-from typing import Any, Callable, Protocol, TypeAlias, TypeVar
+from typing import Any, Callable, Protocol, TypeAlias, TypeVar, Union
 
 _SchemaT = TypeVar("_SchemaT", bool, dict[str, Any])
 _FormatFunc = TypeVar("_FormatFunc", bound=Callable[[str], bool])
 JSONType: TypeAlias = dict[str, Any] | list | str | int | float | bool | None
 JSONPrimitive: TypeAlias = str | int | float | bool | None
+
+class FancyRegexOptions:
+    def __init__(
+        self, backtrack_limit: int | None = None, size_limit: int | None = None, dfa_size_limit: int | None = None
+    ) -> None: ...
+
+class RegexOptions:
+    def __init__(self, size_limit: int | None = None, dfa_size_limit: int | None = None) -> None: ...
+
+PatternOptionsType = Union[FancyRegexOptions, RegexOptions]
 
 class RetrieverProtocol(Protocol):
     def __call__(self, uri: str) -> JSONType: ...
@@ -20,6 +30,8 @@ def is_valid(
     retriever: RetrieverProtocol | None = None,
     registry: Registry | None = None,
     mask: str | None = None,
+    base_uri: str | None = None,
+    pattern_options: PatternOptionsType | None = None,
 ) -> bool: ...
 def validate(
     schema: _SchemaT,
@@ -32,6 +44,8 @@ def validate(
     retriever: RetrieverProtocol | None = None,
     registry: Registry | None = None,
     mask: str | None = None,
+    base_uri: str | None = None,
+    pattern_options: PatternOptionsType | None = None,
 ) -> None: ...
 def iter_errors(
     schema: _SchemaT,
@@ -43,6 +57,8 @@ def iter_errors(
     ignore_unknown_formats: bool = True,
     retriever: RetrieverProtocol | None = None,
     mask: str | None = None,
+    base_uri: str | None = None,
+    pattern_options: PatternOptionsType | None = None,
 ) -> Iterator[ValidationError]: ...
 
 class ReferencingError:
@@ -168,8 +184,10 @@ class Draft4Validator:
         validate_formats: bool | None = None,
         ignore_unknown_formats: bool = True,
         retriever: RetrieverProtocol | None = None,
-        registry: Registry | None= None,
+        registry: Registry | None = None,
         mask: str | None = None,
+        base_uri: str | None = None,
+        pattern_options: PatternOptionsType | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -185,6 +203,8 @@ class Draft6Validator:
         retriever: RetrieverProtocol | None = None,
         registry: Registry | None = None,
         mask: str | None = None,
+        base_uri: str | None = None,
+        pattern_options: PatternOptionsType | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -200,6 +220,8 @@ class Draft7Validator:
         retriever: RetrieverProtocol | None = None,
         registry: Registry | None = None,
         mask: str | None = None,
+        base_uri: str | None = None,
+        pattern_options: PatternOptionsType | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -215,6 +237,8 @@ class Draft201909Validator:
         retriever: RetrieverProtocol | None = None,
         registry: Registry | None = None,
         mask: str | None = None,
+        base_uri: str | None = None,
+        pattern_options: PatternOptionsType | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -230,6 +254,8 @@ class Draft202012Validator:
         retriever: RetrieverProtocol | None = None,
         registry: Registry | None = None,
         mask: str | None = None,
+        base_uri: str | None = None,
+        pattern_options: PatternOptionsType | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -243,12 +269,14 @@ def validator_for(
     retriever: RetrieverProtocol | None = None,
     registry: Registry | None = None,
     mask: str | None = None,
+    base_uri: str | None = None,
+    pattern_options: PatternOptionsType | None = None,
 ) -> Draft4Validator | Draft6Validator | Draft7Validator | Draft201909Validator | Draft202012Validator: ...
 
 class Registry:
     def __init__(
         self,
         resources: list[tuple[str, JSONType]],
-        draft:  int | None = None,
+        draft: int | None = None,
         retriever: RetrieverProtocol | None = None,
     ) -> None: ...

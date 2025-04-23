@@ -16,7 +16,7 @@ use crate::{
 use ahash::AHashMap;
 use referencing::{uri, Draft, Resource, Retrieve};
 use serde_json::Value;
-use std::{fmt, sync::Arc};
+use std::{fmt, marker::PhantomData, sync::Arc};
 
 /// Configuration options for JSON Schema validation.
 #[derive(Clone)]
@@ -25,6 +25,7 @@ pub struct ValidationOptions<R = Arc<dyn Retrieve>> {
     content_media_type_checks: AHashMap<&'static str, Option<ContentMediaTypeCheckType>>,
     content_encoding_checks_and_converters:
         AHashMap<&'static str, Option<(ContentEncodingCheckType, ContentEncodingConverterType)>>,
+    pub(crate) base_uri: Option<String>,
     /// Retriever for external resources
     pub(crate) retriever: R,
     /// Additional resources that should be addressable during validation.
@@ -35,6 +36,7 @@ pub struct ValidationOptions<R = Arc<dyn Retrieve>> {
     pub(crate) validate_schema: bool,
     ignore_unknown_formats: bool,
     keywords: AHashMap<String, Arc<dyn KeywordFactory>>,
+    pattern_options: PatternEngineOptions,
 }
 
 impl Default for ValidationOptions<Arc<dyn Retrieve>> {
@@ -43,6 +45,7 @@ impl Default for ValidationOptions<Arc<dyn Retrieve>> {
             draft: None,
             content_media_type_checks: AHashMap::default(),
             content_encoding_checks_and_converters: AHashMap::default(),
+            base_uri: None,
             retriever: Arc::new(DefaultRetriever),
             resources: AHashMap::default(),
             registry: None,
@@ -51,6 +54,7 @@ impl Default for ValidationOptions<Arc<dyn Retrieve>> {
             validate_schema: true,
             ignore_unknown_formats: true,
             keywords: AHashMap::default(),
+            pattern_options: PatternEngineOptions::default(),
         }
     }
 }
@@ -62,6 +66,7 @@ impl Default for ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             draft: None,
             content_media_type_checks: AHashMap::default(),
             content_encoding_checks_and_converters: AHashMap::default(),
+            base_uri: None,
             retriever: Arc::new(DefaultRetriever),
             resources: AHashMap::default(),
             registry: None,
@@ -70,6 +75,7 @@ impl Default for ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             validate_schema: true,
             ignore_unknown_formats: true,
             keywords: AHashMap::default(),
+            pattern_options: PatternEngineOptions::default(),
         }
     }
 }
@@ -222,6 +228,34 @@ impl<R> ValidationOptions<R> {
             .insert(content_encoding, None);
         self
     }
+    /// Establish an anchor for resolving relative schema references during validation.
+    ///
+    /// Relative URIs found within the schema will be interpreted against this base.
+    /// This is especially useful when validating schemas loaded from sources without an inherent base URL.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use serde_json::json;
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///
+    /// let validator = jsonschema::options()
+    /// // Define a base URI for resolving relative references.
+    ///     .with_base_uri("https://example.com/schemas/")
+    ///     .build(&json!({
+    ///         "$id": "relative-schema.json",
+    ///         "type": "object"
+    ///     }))?;
+    ///
+    /// // Relative URIs in the schema will now resolve against "https://example.com/schemas/".
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[inline]
+    pub fn with_base_uri(mut self, base_uri: impl Into<String>) -> Self {
+        self.base_uri = Some(base_uri.into());
+        self
+    }
     /// Add a custom schema, allowing it to be referenced by the specified URI during validation.
     ///
     /// This enables the use of additional in-memory schemas alongside the main schema being validated.
@@ -284,7 +318,6 @@ impl<R> ValidationOptions<R> {
         }
         self
     }
-
     /// Use external schema resources from the registry, making them accessible via references
     /// during validation.
     ///
@@ -534,6 +567,38 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
         self.retriever = Arc::new(retriever);
         self
     }
+    /// Configure the regular expression engine used during validation for keywords like `pattern`
+    /// or `patternProperties`.
+    ///
+    /// The default engine is [fancy-regex](https://docs.rs/fancy-regex), which supports advanced
+    /// features (e.g., backreferences, look-around). Be aware that using these may lead to exponential
+    /// runtime due to backtracking. For simpler regexes without these features, [regex](https://docs.rs/regex)
+    /// provides linear time performance.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use serde_json::json;
+    /// use jsonschema::PatternOptions;
+    ///
+    /// let schema = json!({"type": "string"});
+    ///
+    /// // Set backtracking limit to 20000.
+    /// let validator = jsonschema::options()
+    ///     .with_pattern_options(
+    ///         PatternOptions::fancy_regex()
+    ///             .backtrack_limit(20000)
+    ///     )
+    ///     .build(&schema)
+    ///     .expect("A valid schema");
+    /// ```
+    pub fn with_pattern_options<E>(mut self, options: PatternOptions<E>) -> Self {
+        self.pattern_options = options.inner;
+        self
+    }
+    pub(crate) fn pattern_options(&self) -> PatternEngineOptions {
+        self.pattern_options
+    }
 }
 
 #[cfg(feature = "resolve-async")]
@@ -550,6 +615,7 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             retriever: Arc::new(retriever),
             content_media_type_checks: self.content_media_type_checks,
             content_encoding_checks_and_converters: self.content_encoding_checks_and_converters,
+            base_uri: None,
             resources: self.resources,
             registry: self.registry,
             formats: self.formats,
@@ -557,6 +623,7 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             validate_schema: self.validate_schema,
             ignore_unknown_formats: self.ignore_unknown_formats,
             keywords: self.keywords,
+            pattern_options: self.pattern_options,
         }
     }
     pub(crate) async fn draft_for(
@@ -596,6 +663,7 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             retriever: Arc::new(retriever),
             content_media_type_checks: self.content_media_type_checks,
             content_encoding_checks_and_converters: self.content_encoding_checks_and_converters,
+            base_uri: None,
             resources: self.resources,
             registry: self.registry,
             formats: self.formats,
@@ -603,6 +671,7 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             validate_schema: self.validate_schema,
             ignore_unknown_formats: self.ignore_unknown_formats,
             keywords: self.keywords,
+            pattern_options: self.pattern_options,
         }
     }
 }
@@ -620,8 +689,129 @@ impl fmt::Debug for ValidationOptions {
     }
 }
 
+/// Configuration for how regular expressions are handled in schema keywords like `pattern` and `patternProperties`.
+#[derive(Debug, Clone)]
+pub struct PatternOptions<E> {
+    inner: PatternEngineOptions,
+    _marker: PhantomData<E>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum PatternEngineOptions {
+    FancyRegex {
+        backtrack_limit: Option<usize>,
+        size_limit: Option<usize>,
+        dfa_size_limit: Option<usize>,
+    },
+    Regex {
+        size_limit: Option<usize>,
+        dfa_size_limit: Option<usize>,
+    },
+}
+
+/// Marker for using the `fancy-regex` engine that includes advanced features like lookarounds.
+pub struct FancyRegex;
+/// Marker for using the `regex` engine, that has fewer features than `fancy-regex` but guarantees
+/// linear time performance.
+pub struct Regex;
+
+impl PatternOptions<FancyRegex> {
+    /// Create a pattern configuration based on the `fancy-regex` engine.
+    pub fn fancy_regex() -> PatternOptions<FancyRegex> {
+        PatternOptions {
+            inner: PatternEngineOptions::FancyRegex {
+                backtrack_limit: None,
+                size_limit: None,
+                dfa_size_limit: None,
+            },
+            _marker: PhantomData,
+        }
+    }
+    /// Limit for how many times backtracking should be attempted for fancy regexes (where
+    /// backtracking is used). If this limit is exceeded, execution returns an error.
+    /// This is for preventing a regex with catastrophic backtracking to run for too long.
+    ///
+    /// Default is `1_000_000` (1 million).
+    pub fn backtrack_limit(mut self, limit: usize) -> Self {
+        if let PatternEngineOptions::FancyRegex {
+            ref mut backtrack_limit,
+            ..
+        } = self.inner
+        {
+            *backtrack_limit = Some(limit);
+        }
+        self
+    }
+    /// Set the approximate size limit, in bytes, of the compiled regex.
+    pub fn size_limit(mut self, limit: usize) -> Self {
+        if let PatternEngineOptions::FancyRegex {
+            ref mut size_limit, ..
+        } = self.inner
+        {
+            *size_limit = Some(limit);
+        }
+        self
+    }
+    /// Set the approximate capacity, in bytes, of the cache of transitions used by the lazy DFA.
+    pub fn dfa_size_limit(mut self, limit: usize) -> Self {
+        if let PatternEngineOptions::FancyRegex {
+            ref mut dfa_size_limit,
+            ..
+        } = self.inner
+        {
+            *dfa_size_limit = Some(limit);
+        }
+        self
+    }
+}
+
+impl PatternOptions<Regex> {
+    /// Create a pattern configuration based on the `regex` engine.
+    pub fn regex() -> PatternOptions<Regex> {
+        PatternOptions {
+            inner: PatternEngineOptions::Regex {
+                size_limit: None,
+                dfa_size_limit: None,
+            },
+            _marker: PhantomData,
+        }
+    }
+    /// Set the approximate size limit, in bytes, of the compiled regex.
+    pub fn size_limit(mut self, limit: usize) -> Self {
+        if let PatternEngineOptions::Regex {
+            ref mut size_limit, ..
+        } = self.inner
+        {
+            *size_limit = Some(limit);
+        }
+        self
+    }
+    /// Set the approximate capacity, in bytes, of the cache of transitions used by the lazy DFA.
+    pub fn dfa_size_limit(mut self, limit: usize) -> Self {
+        if let PatternEngineOptions::Regex {
+            ref mut dfa_size_limit,
+            ..
+        } = self.inner
+        {
+            *dfa_size_limit = Some(limit);
+        }
+        self
+    }
+}
+
+impl Default for PatternEngineOptions {
+    fn default() -> Self {
+        PatternEngineOptions::FancyRegex {
+            backtrack_limit: None,
+            size_limit: None,
+            dfa_size_limit: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
     use referencing::{Registry, Resource};
     use serde_json::json;
 
@@ -659,5 +849,44 @@ mod tests {
             .expect("Invalid schema");
         assert!(validator.is_valid(&json!({ "name": "Valid String" })));
         assert!(!validator.is_valid(&json!({ "name": 123 })));
+    }
+
+    #[test]
+    fn test_fancy_regex_options_builder() {
+        let options = PatternOptions::fancy_regex()
+            .backtrack_limit(1_000_000)
+            .size_limit(10_000)
+            .dfa_size_limit(5000);
+
+        if let PatternEngineOptions::FancyRegex {
+            backtrack_limit,
+            size_limit,
+            dfa_size_limit,
+        } = options.inner
+        {
+            assert_eq!(backtrack_limit, Some(1_000_000));
+            assert_eq!(size_limit, Some(10_000));
+            assert_eq!(dfa_size_limit, Some(5000));
+        } else {
+            panic!("Expected FancyRegex variant");
+        }
+    }
+
+    #[test]
+    fn test_regex_options_builder() {
+        let options = PatternOptions::regex()
+            .size_limit(20_000)
+            .dfa_size_limit(8000);
+
+        if let PatternEngineOptions::Regex {
+            size_limit,
+            dfa_size_limit,
+        } = options.inner
+        {
+            assert_eq!(size_limit, Some(20_000));
+            assert_eq!(dfa_size_limit, Some(8000));
+        } else {
+            panic!("Expected Regex variant");
+        }
     }
 }
