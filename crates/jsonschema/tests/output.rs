@@ -1,3 +1,6 @@
+use std::collections::BTreeSet;
+
+use ahash::HashSet;
 use serde_json::json;
 use test_case::test_case;
 
@@ -1016,4 +1019,128 @@ fn test_additional_properties_basic_output(
         let actual_str = serde_json::to_string_pretty(&output).unwrap();
         panic!("\nExpected:\n{}\n\nGot:\n{}\n", expected_str, actual_str);
     }
+}
+
+#[derive(serde::Deserialize)]
+struct TestSuite {
+    tests: Vec<OutputTest>,
+}
+
+#[derive(serde::Deserialize)]
+struct OutputTest {
+    schema: serde_json::Value,
+    schema_id: String,
+    instances: Vec<Instance>,
+}
+
+#[derive(serde::Deserialize)]
+struct Instance {
+    instance: serde_json::Value,
+    errors: Vec<serde_json::Value>,
+}
+
+#[test]
+fn test_error_locations() {
+    let data: TestSuite = serde_json::from_str(include_str!("output_basic_draft2020_12.json"))
+        .expect("Invalid output tests");
+
+    for mut test in data.tests {
+        if test.schema_id != "oneOf" {
+            continue;
+        }
+        if test.schema.is_object() && test.schema["$id"].is_null() {
+            test.schema["$id"] = "urn:test".into();
+        }
+        let validator = jsonschema::validator_for(&test.schema).expect("Invalid schema");
+
+        for instance in test.instances {
+            let jsonschema::BasicOutput::Invalid(result) =
+                validator.apply(&instance.instance).basic()
+            else {
+                panic!(
+                    "Instance {:?} should not be valid against schema {}",
+                    &instance.instance, &test.schema_id
+                );
+            };
+
+            // Extract only `keywordLocation`, `instanceLocation`, and `absoluteKeywordLocation`
+            fn normalize_error(err: &serde_json::Value) -> (String, String, String) {
+                let keyword_location = err
+                    .get("keywordLocation")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let instance_location = err
+                    .get("instanceLocation")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let absolute_keyword_location = err
+                    .get("absoluteKeywordLocation")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                (
+                    keyword_location,
+                    instance_location,
+                    absolute_keyword_location,
+                )
+            }
+
+            let expected_errors: HashSet<_> = instance.errors.iter().map(normalize_error).collect();
+            let actual_errors: HashSet<_> = result
+                .iter()
+                .map(|e| normalize_error(&serde_json::to_value(e).unwrap_or_default()))
+                .collect();
+
+            let missing_errors: BTreeSet<_> = expected_errors.difference(&actual_errors).collect();
+            let extra_errors: BTreeSet<_> = actual_errors.difference(&expected_errors).collect();
+
+            if !missing_errors.is_empty() || !extra_errors.is_empty() {
+                panic!(
+                    "\nMismatched errors for instance:\n\
+                     - Schema ID: {}\n\
+                     - Schema:\n{}\n\
+                     - Instance:\n{}\n\
+                     - Expected count: {}\n\
+                     - Actual count: {}\n\
+                     - Missing errors:\n{}\n\
+                     - Extra errors:\n{}\n",
+                    test.schema_id,
+                    serde_json::to_string_pretty(&test.schema)
+                        .unwrap_or_else(|_| "<failed to serialize schema>".to_string()),
+                    serde_json::to_string_pretty(&instance.instance)
+                        .unwrap_or_else(|_| "<failed to serialize instance>".to_string()),
+                    expected_errors.len(),
+                    actual_errors.len(),
+                    format_error_list(&missing_errors),
+                    format_error_list(&extra_errors)
+                );
+            }
+
+            //assert_eq!(
+            //    instance.errors.len(),
+            //    result.len(),
+            //    "Instance {:?} produces a different number of errors ({}) than expected ({}). Schema: {}",
+            //    &instance.instance, result.len(), instance.errors.len(), &test.schema_id
+            //);
+        }
+    }
+}
+
+/// Formats a set of `(keywordLocation, instanceLocation, absoluteKeywordLocation)` triplets into a readable string list.
+fn format_error_list(errors: &BTreeSet<&(String, String, String)>) -> String {
+    if errors.is_empty() {
+        return "  (none)".to_string();
+    }
+    errors
+        .iter()
+        .map(|(keyword, instance, absolute)| {
+            format!(
+                "  - keyword: {}\n    instance: {}\n    absolute: {}",
+                keyword, instance, absolute
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
