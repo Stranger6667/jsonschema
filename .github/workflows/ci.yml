@@ -37,8 +37,9 @@ jobs:
       #       will be able to do the same on their side (which is a bad UX though),
       #       but apparently there is nothing can be done on the `jsonschema` side
       #       beside bumping MSRV to 1.85 and upgrading to the new resolver.
-      - run: cargo update -p litemap@0.7.5 --precise 0.7.4
-      - run: cargo update -p zerofrom@0.1.6 --precise 0.1.5
+      - run: cargo update -p idna_adapter --precise 1.2.0
+      - run: cargo update -p litemap --precise 0.7.4
+      - run: cargo update -p zerofrom --precise 0.1.5
       - run: cargo build -p jsonschema
 
   test-stable:
