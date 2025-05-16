@@ -12,6 +12,8 @@ type ObjectIter<'a> = FlatMap<
 >;
 
 /// A simple iterator that either wraps an iterator producing &Value or is empty.
+/// NOTE: It is noticeably slower if `Object` is boxed.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum SubresourceIterator<'a> {
     Object(ObjectIter<'a>),
     Empty,
