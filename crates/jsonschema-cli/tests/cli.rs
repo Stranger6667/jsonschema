@@ -280,3 +280,64 @@ fn test_nested_ref_resolution_with_different_path_formats() {
 
     std::env::set_current_dir(original_dir).unwrap();
 }
+
+#[test]
+fn test_draft_enforcement_property_names() {
+    let dir = tempdir().unwrap();
+
+    // Schema uses `propertyNames`, which Draft 4 doesn’t understand (so it’s ignored)
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"
+        {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "propertyNames": { "pattern": "^a" }
+        }
+        "#,
+    );
+
+    let bad = create_temp_file(&dir, "bad.json", r#"{ "foo": 1 }"#);
+    let good = create_temp_file(&dir, "good.json", r#"{ "apple": 2 }"#);
+
+    // Draft 4: propertyNames is ignored → both should be valid
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("-d")
+        .arg("4")
+        .arg("--instance")
+        .arg(&bad)
+        .arg("--instance")
+        .arg(&good);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Draft 4 should ignore propertyNames:\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let out = sanitize_output(
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        &[&bad, &good],
+    );
+    assert_snapshot!("draft4_property_names_ignored", out);
+
+    // Draft 2020: propertyNames enforced → “bad” fails, “good” passes
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        // omit `-d` to use default (2020), or explicitly `-d 2020`
+        .arg("--instance")
+        .arg(&bad)
+        .arg("--instance")
+        .arg(&good);
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "Draft 2020 should enforce propertyNames:\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let out = sanitize_output(
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        &[&bad, &good],
+    );
+    assert_snapshot!("draft2020_property_names_enforced", out);
+}

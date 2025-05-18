@@ -1,0 +1,7 @@
+---
+source: crates/jsonschema-cli/tests/cli.rs
+expression: out
+---
+{FILE_1} - INVALID. Errors:
+1. "foo" does not match "^a"
+{FILE_2} - VALID

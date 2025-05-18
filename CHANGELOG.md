@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **CLI**: flag `-d, --draft <4|6|7|2019|2020>` to enforce a specific JSON Schema draft.
+
 ## [0.30.0] - 2025-04-16
 
 ### Added

@@ -6,7 +6,7 @@ use std::{
     process::ExitCode,
 };
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use percent_encoding::{percent_encode, AsciiSet, CONTROLS};
 
 #[derive(Parser)]
@@ -20,9 +20,44 @@ struct Cli {
     #[arg(value_parser, required_unless_present("version"))]
     schema: Option<PathBuf>,
 
+    /// Which JSON Schema draft to enforce.
+    #[arg(
+        short = 'd',
+        long = "draft",
+        value_enum,
+        help = "Enforce a specific JSON Schema draft"
+    )]
+    draft: Option<Draft>,
+
     /// Show program's version number and exit.
     #[arg(short = 'v', long = "version")]
     version: bool,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug)]
+enum Draft {
+    #[clap(name = "4")]
+    Draft4,
+    #[clap(name = "6")]
+    Draft6,
+    #[clap(name = "7")]
+    Draft7,
+    #[clap(name = "2019")]
+    Draft201909,
+    #[clap(name = "2020")]
+    Draft202012,
+}
+
+impl From<Draft> for jsonschema::Draft {
+    fn from(d: Draft) -> jsonschema::Draft {
+        match d {
+            Draft::Draft4 => jsonschema::Draft::Draft4,
+            Draft::Draft6 => jsonschema::Draft::Draft6,
+            Draft::Draft7 => jsonschema::Draft::Draft7,
+            Draft::Draft201909 => jsonschema::Draft::Draft201909,
+            Draft::Draft202012 => jsonschema::Draft::Draft202012,
+        }
+    }
 }
 
 fn read_json(
@@ -98,16 +133,18 @@ fn path_to_uri(path: &std::path::Path) -> String {
 fn validate_instances(
     instances: &[PathBuf],
     schema_path: &Path,
+    draft: Option<Draft>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let mut success = true;
 
     let schema_json = read_json(schema_path)??;
     let base_uri = path_to_uri(schema_path);
     let base_uri = referencing::uri::from_str(&base_uri)?;
-    match jsonschema::options()
-        .with_base_uri(base_uri)
-        .build(&schema_json)
-    {
+    let mut options = jsonschema::options().with_base_uri(base_uri);
+    if let Some(draft) = draft {
+        options = options.with_draft(draft.into());
+    }
+    match options.build(&schema_json) {
         Ok(validator) => {
             for instance in instances {
                 let instance_json = read_json(instance)??;
@@ -143,7 +180,7 @@ fn main() -> ExitCode {
 
     if let Some(schema) = config.schema {
         if let Some(instances) = config.instances {
-            return match validate_instances(&instances, &schema) {
+            return match validate_instances(&instances, &schema, config.draft) {
                 Ok(true) => ExitCode::SUCCESS,
                 Ok(false) => ExitCode::FAILURE,
                 Err(error) => {
