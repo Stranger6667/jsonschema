@@ -1,0 +1,5 @@
+---
+source: crates/jsonschema-cli/tests/cli.rs
+expression: out
+---
+{FILE_1} - VALID

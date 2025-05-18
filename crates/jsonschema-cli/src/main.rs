@@ -6,7 +6,7 @@ use std::{
     process::ExitCode,
 };
 
-use clap::{Parser, ValueEnum};
+use clap::{ArgAction, Parser, ValueEnum};
 use percent_encoding::{percent_encode, AsciiSet, CONTROLS};
 
 #[derive(Parser)]
@@ -28,6 +28,24 @@ struct Cli {
         help = "Enforce a specific JSON Schema draft"
     )]
     draft: Option<Draft>,
+
+    /// Enable validation of `format` keywords.
+    #[arg(
+        long = "assert-format",
+        action = ArgAction::SetTrue,
+        overrides_with = "no_assert_format",
+        help = "Turn ON format validation"
+    )]
+    assert_format: Option<bool>,
+
+    /// Disable validation of `format` keywords.
+    #[arg(
+        long = "no-assert-format",
+        action = ArgAction::SetTrue,
+        overrides_with = "assert_format",
+        help = "Turn OFF format validation"
+    )]
+    no_assert_format: Option<bool>,
 
     /// Show program's version number and exit.
     #[arg(short = 'v', long = "version")]
@@ -134,6 +152,7 @@ fn validate_instances(
     instances: &[PathBuf],
     schema_path: &Path,
     draft: Option<Draft>,
+    assert_format: Option<bool>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let mut success = true;
 
@@ -143,6 +162,9 @@ fn validate_instances(
     let mut options = jsonschema::options().with_base_uri(base_uri);
     if let Some(draft) = draft {
         options = options.with_draft(draft.into());
+    }
+    if let Some(assert_format) = assert_format {
+        options = options.should_validate_formats(assert_format);
     }
     match options.build(&schema_json) {
         Ok(validator) => {
@@ -180,7 +202,11 @@ fn main() -> ExitCode {
 
     if let Some(schema) = config.schema {
         if let Some(instances) = config.instances {
-            return match validate_instances(&instances, &schema, config.draft) {
+            // - Some(true)  if --assert-format
+            // - Some(false) if --no-assert-format
+            // - None        if neither (use builder’s default)
+            let assert_format = config.assert_format.or(config.no_assert_format);
+            return match validate_instances(&instances, &schema, config.draft, assert_format) {
                 Ok(true) => ExitCode::SUCCESS,
                 Ok(false) => ExitCode::FAILURE,
                 Err(error) => {

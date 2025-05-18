@@ -341,3 +341,57 @@ fn test_draft_enforcement_property_names() {
     );
     assert_snapshot!("draft2020_property_names_enforced", out);
 }
+
+#[test]
+fn test_format_enforcement_via_cli_flag() {
+    let dir = tempdir().unwrap();
+
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"
+        {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "email": { "type": "string", "format": "email" }
+            }
+        }
+        "#,
+    );
+
+    let invalid = create_temp_file(&dir, "invalid.json", r#"{ "email": "not-an-email" }"#);
+
+    // Format validation disabled (default behavior)
+    let mut cmd = cli();
+    cmd.arg(&schema).arg("--instance").arg(&invalid);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Expected success with format validation disabled:\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let out = sanitize_output(
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        &[&invalid],
+    );
+    assert_snapshot!("format_enforcement_disabled", out);
+
+    // Format validation explicitly enabled via CLI flag
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--instance")
+        .arg(&invalid)
+        .arg("--assert-format");
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "Expected failure with format validation enabled:\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let out = sanitize_output(
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        &[&invalid],
+    );
+    assert_snapshot!("format_enforcement_enabled", out);
+}

@@ -5,6 +5,7 @@
 ### Added
 
 - **CLI**: flag `-d, --draft <4|6|7|2019|2020>` to enforce a specific JSON Schema draft.
+- **CLI**: flags `--assert-format` and `--no-assert-format` to toggle validation of `format` keywords.
 
 ## [0.30.0] - 2025-04-16
 
