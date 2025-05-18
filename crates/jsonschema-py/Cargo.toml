@@ -16,7 +16,7 @@ name = "jsonschema_rs"
 crate-type = ["cdylib"]
 
 [build-dependencies]
-built = { version = "0.7.1", features = ["cargo-lock", "chrono"] }
+built = { version = "0.8.0", features = ["cargo-lock", "chrono"] }
 pyo3-build-config = { version = "0.25.0", features = ["resolve-config"] }
 
 [dependencies]
