@@ -1,6 +1,6 @@
-use std::{borrow::Cow, iter::once, sync::Arc};
+use std::{borrow::Cow, iter::once, ops::Range, sync::Arc};
 
-use jsonschema_ir::{NodeId, NodeValue, ResolvedSchema};
+use jsonschema_ir::{EdgeLabel, NodeId, NodeValue, ResolvedSchema};
 use referencing::{uri, Registry};
 use serde_json::Value;
 
@@ -35,19 +35,77 @@ pub(crate) fn build(mut config: ValidationOptions, schema: &Value) {
             .build(pairs)
             .unwrap()
     };
-    let schema = jsonschema_ir::build(base_uri.clone(), draft, &registry);
-    compile_at(&schema, schema.root());
+    let schema = jsonschema_ir::build(base_uri, draft, &registry);
+    let mut validator = Validator::new();
+    compile_at(&schema, schema.root(), &mut validator);
+    dbg!(&validator);
 }
 
-fn compile_at<'a>(schema: &ResolvedSchema<'a>, node_id: NodeId) {
+fn compile_at<'a>(schema: &ResolvedSchema<'a>, node_id: NodeId, v: &mut Validator) {
     match &schema.get(node_id).value {
         NodeValue::Bool(b) => {}
         NodeValue::Object => {
-            dbg!("OBJECT");
+            for child_id in schema.children(node_id) {
+                let node = schema.get(child_id);
+                if let Some(EdgeLabel::Key(key)) = node.parent_label {
+                    if key == "maxLength" {
+                        if let NodeValue::Number(num) = node.value {
+                            if let Some(limit) = num.as_u64() {
+                                v.push(Assertion::MaxLength {
+                                    limit: limit as usize,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
         }
-        _ => {
-            panic!("ASD")
+        _ => {}
+    }
+}
+
+#[derive(Debug)]
+struct Validator {
+    schemas: Vec<Schema>,
+    assertions: Vec<Assertion>,
+}
+
+#[derive(Debug)]
+pub struct Schema {
+    assertions: Range<usize>,
+}
+
+impl Validator {
+    pub fn new() -> Self {
+        Validator {
+            schemas: Vec::new(),
+            assertions: Vec::new(),
         }
+    }
+
+    pub fn push(&mut self, a: Assertion) {
+        self.assertions.push(a);
+    }
+
+    fn is_valid(&self, value: &Value) -> bool {
+        let root = &self.schemas[0];
+        for assertion in &self.assertions[root.assertions.clone()] {
+            if !assertion.is_valid(value) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+#[derive(Debug)]
+enum Assertion {
+    MaxLength { limit: usize },
+}
+
+impl Assertion {
+    fn is_valid(&self, value: &Value) -> bool {
+        true
     }
 }
 
@@ -58,7 +116,7 @@ mod tests {
 
     #[test]
     fn test_debug() {
-        let schema = json!({"type": "object"});
+        let schema = json!({"type": "string", "maxLength": 10});
         let config = crate::options();
         build(config, &schema);
     }
