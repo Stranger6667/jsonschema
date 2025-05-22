@@ -35,7 +35,7 @@ pub(crate) fn build(mut config: ValidationOptions, schema: &Value) {
             .build(pairs)
             .unwrap()
     };
-    let schema = jsonschema_ir::build(base_uri.clone(), draft, schema, &registry);
+    let schema = jsonschema_ir::build(base_uri.clone(), draft, &registry);
     compile_at(&schema, schema.root());
 }
 

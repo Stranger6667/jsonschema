@@ -51,16 +51,14 @@ impl NodeId {
     }
 }
 
-pub fn build<'a>(
-    base_uri: Uri<String>,
-    draft: Draft,
-    value: &'a Value,
-    registry: &'a Registry,
-) -> ResolvedSchema<'a> {
+pub fn build(base_uri: Uri<String>, draft: Draft, registry: &Registry) -> ResolvedSchema<'_> {
+    let value = registry
+        .get_document(&base_uri)
+        .expect("Schema is not present in the registry");
     let mut schema = ResolvedSchema::new();
     let mut value_to_node_id = HashMap::new();
     let mut pending_references = Vec::new();
-    let mut seen = HashSet::new();
+    let mut seen: HashSet<*const Value> = HashSet::new();
     seen.insert(value);
     let resolver = registry.resolver(base_uri);
     let mut stack = VecDeque::new();
@@ -97,17 +95,16 @@ pub fn build<'a>(
                 }
                 if let Some((key, Value::String(reference))) = object.get_key_value("$ref") {
                     let resolved = resolver.lookup(reference).expect("Unresolvable reference");
-                    let value = resolved.contents();
-
-                    if seen.insert(value) {
+                    let resolved_value = resolved.contents();
+                    if seen.insert(resolved_value) {
                         let ref_node_id = schema.push(
                             Some(node_id),
                             Some(EdgeLabel::Key(key)),
                             NodeValue::Reference(reference, NodeId::root_id()),
                         );
 
-                        pending_references.push((ref_node_id, value as *const Value));
-                        stack.push_back((resolved.resolver().clone(), None, None, value));
+                        pending_references.push((ref_node_id, resolved_value as *const Value));
+                        stack.push_back((resolved.resolver().clone(), None, None, resolved_value));
                     }
                 }
 
