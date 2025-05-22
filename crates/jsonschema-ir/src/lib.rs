@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
+    iter::successors,
     num::NonZeroUsize,
 };
 
@@ -25,11 +26,11 @@ pub enum EdgeLabel<'a> {
 
 #[derive(Debug)]
 pub struct Node<'a> {
-    parent: Option<NodeId>,
-    first_child: Option<NodeId>,
-    next_sibling: Option<NodeId>,
-    parent_label: Option<EdgeLabel<'a>>,
-    value: NodeValue<'a>,
+    pub parent: Option<NodeId>,
+    pub first_child: Option<NodeId>,
+    pub next_sibling: Option<NodeId>,
+    pub parent_label: Option<EdgeLabel<'a>>,
+    pub value: NodeValue<'a>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -55,15 +56,8 @@ pub fn build<'a>(
     draft: Draft,
     value: &'a Value,
     registry: &'a Registry,
-) -> Vec<Node<'a>> {
-    let mut arena = Vec::new();
-    arena.push(Node {
-        parent: None,
-        first_child: None,
-        next_sibling: None,
-        parent_label: None,
-        value: NodeValue::Null,
-    });
+) -> ResolvedSchema<'a> {
+    let mut schema = ResolvedSchema::new();
     let mut value_to_node_id = HashMap::new();
     let mut pending_references = Vec::new();
     let mut seen = HashSet::new();
@@ -74,12 +68,12 @@ pub fn build<'a>(
 
     while let Some((mut resolver, parent, label, value)) = stack.pop_front() {
         let node_id = match value {
-            Value::Null => new_node(&mut arena, parent, label, NodeValue::Null),
-            Value::Bool(b) => new_node(&mut arena, parent, label, NodeValue::Bool(*b)),
-            Value::Number(n) => new_node(&mut arena, parent, label, NodeValue::Number(n)),
-            Value::String(s) => new_node(&mut arena, parent, label, NodeValue::String(s)),
+            Value::Null => schema.push(parent, label, NodeValue::Null),
+            Value::Bool(b) => schema.push(parent, label, NodeValue::Bool(*b)),
+            Value::Number(n) => schema.push(parent, label, NodeValue::Number(n)),
+            Value::String(s) => schema.push(parent, label, NodeValue::String(s)),
             Value::Array(arr) => {
-                let node_id = new_node(&mut arena, parent, label, NodeValue::Array);
+                let node_id = schema.push(parent, label, NodeValue::Array);
                 for (idx, item) in arr.iter().enumerate().rev() {
                     if seen.insert(item) {
                         stack.push_back((
@@ -93,7 +87,7 @@ pub fn build<'a>(
                 node_id
             }
             Value::Object(object) => {
-                let node_id = new_node(&mut arena, parent, label, NodeValue::Object);
+                let node_id = schema.push(parent, label, NodeValue::Object);
                 let resource = ResourceRef::new(value, draft);
 
                 if let Some(id) = resource.id() {
@@ -106,8 +100,7 @@ pub fn build<'a>(
                     let value = resolved.contents();
 
                     if seen.insert(value) {
-                        let ref_node_id = new_node(
-                            &mut arena,
+                        let ref_node_id = schema.push(
                             Some(node_id),
                             Some(EdgeLabel::Key(key)),
                             NodeValue::Reference(reference, NodeId::root_id()),
@@ -136,7 +129,8 @@ pub fn build<'a>(
 
     for (node_id, target_ptr) in pending_references {
         if let Some(target_id) = value_to_node_id.get(&target_ptr) {
-            if let NodeValue::Reference(_, reference_target_id) = &mut arena[node_id.get()].value {
+            if let NodeValue::Reference(_, reference_target_id) = &mut schema.get_mut(node_id).value
+            {
                 *reference_target_id = *target_id;
             } else {
                 panic!("Node is not a reference")
@@ -146,36 +140,84 @@ pub fn build<'a>(
         }
     }
 
-    arena
+    schema
 }
 
-fn new_node<'a>(
-    arena: &mut Vec<Node<'a>>,
-    parent: Option<NodeId>,
-    label: Option<EdgeLabel<'a>>,
-    value: NodeValue<'a>,
-) -> NodeId {
-    let id = NodeId::new(arena.len());
-    arena.push(Node {
-        parent,
-        first_child: None,
-        next_sibling: None,
-        parent_label: label,
-        value,
-    });
-    // Link into parent's child list
-    if let Some(parent_id) = parent {
-        let parent = &mut arena[parent_id.get()];
-        if let Some(child_id) = parent.first_child {
-            // Walk to last sibling
-            let mut sibling_id = child_id.get();
-            while let Some(next) = arena[sibling_id].next_sibling {
-                sibling_id = next.get();
-            }
-            arena[sibling_id].next_sibling = Some(id);
-        } else {
-            parent.first_child = Some(id);
-        }
+#[derive(Debug)]
+pub struct ResolvedSchema<'a> {
+    nodes: Vec<Node<'a>>,
+}
+
+impl<'a> ResolvedSchema<'a> {
+    fn new() -> Self {
+        // dummy slot at index 0
+        let nodes = vec![Node {
+            parent: None,
+            first_child: None,
+            next_sibling: None,
+            parent_label: None,
+            value: NodeValue::Null,
+        }];
+        ResolvedSchema { nodes }
     }
-    id
+    /// Append a new node, link it into its parent, and return its `NodeId`.
+    pub fn push(
+        &mut self,
+        parent: Option<NodeId>,
+        label: Option<EdgeLabel<'a>>,
+        value: NodeValue<'a>,
+    ) -> NodeId {
+        let id = NodeId::new(self.nodes.len());
+        self.nodes.push(Node {
+            parent,
+            first_child: None,
+            next_sibling: None,
+            parent_label: label,
+            value,
+        });
+
+        if let Some(parent_id) = parent {
+            let parent = &mut self.nodes[parent_id.get()];
+            if let Some(child) = parent.first_child {
+                // find tail of sibling chain
+                let mut child_id = child.get();
+                while let Some(next) = self.nodes[child_id].next_sibling {
+                    child_id = next.get();
+                }
+                self.nodes[child_id].next_sibling = Some(id);
+            } else {
+                parent.first_child = Some(id);
+            }
+        }
+
+        id
+    }
+
+    /// The `NodeId` of the actual root (skips index 0).
+    pub fn root(&self) -> NodeId {
+        NodeId::root_id()
+    }
+
+    /// Immutably get a node by its `NodeId`.
+    pub fn get(&self, id: NodeId) -> &Node<'a> {
+        &self.nodes[id.get()]
+    }
+
+    fn get_mut(&mut self, id: NodeId) -> &mut Node<'a> {
+        &mut self.nodes[id.get()]
+    }
+
+    pub fn children(&self, id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
+        successors(self.get(id).first_child, |&node| {
+            self.get(node).next_sibling
+        })
+    }
+
+    pub fn parent(&self, id: NodeId) -> Option<NodeId> {
+        self.get(id).parent
+    }
+
+    pub fn next_sibling(&self, id: NodeId) -> Option<NodeId> {
+        self.get(id).next_sibling
+    }
 }
