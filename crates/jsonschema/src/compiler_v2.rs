@@ -38,7 +38,6 @@ pub(crate) fn build(mut config: ValidationOptions, schema: &Value) {
     let schema = jsonschema_ir::build(base_uri, draft, &registry);
     let mut validator = Validator::new();
     compile_at(&schema, schema.root(), &mut validator);
-    dbg!(&validator);
 }
 
 fn compile_at<'a>(schema: &ResolvedSchema<'a>, node_id: NodeId, v: &mut Validator) {
@@ -105,7 +104,9 @@ enum Assertion {
 
 impl Assertion {
     fn is_valid(&self, value: &Value) -> bool {
-        true
+        match self {
+            Assertion::MaxLength { limit } => value.as_str().map_or(true, |s| s.len() <= *limit),
+        }
     }
 }
 
