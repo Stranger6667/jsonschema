@@ -1,5 +1,6 @@
 use std::{borrow::Cow, iter::once, sync::Arc};
 
+use jsonschema_ir::{NodeId, NodeValue, ResolvedSchema};
 use referencing::{uri, Registry};
 use serde_json::Value;
 
@@ -34,14 +35,20 @@ pub(crate) fn build(mut config: ValidationOptions, schema: &Value) {
             .build(pairs)
             .unwrap()
     };
-    let a = jsonschema_ir::build(base_uri.clone(), draft, schema, &registry);
-    let root = a.root();
-    for node in a.children(root) {
-        dbg!(a.get(node));
+    let schema = jsonschema_ir::build(base_uri.clone(), draft, schema, &registry);
+    compile_at(&schema, schema.root());
+}
+
+fn compile_at<'a>(schema: &ResolvedSchema<'a>, node_id: NodeId) {
+    match &schema.get(node_id).value {
+        NodeValue::Bool(b) => {}
+        NodeValue::Object => {
+            dbg!("OBJECT");
+        }
+        _ => {
+            panic!("ASD")
+        }
     }
-    //for node in jsonschema_ir::traverse(&a) {
-    //    dbg!(node);
-    //}
 }
 
 #[cfg(test)]
