@@ -2,11 +2,14 @@ use crate::ir::EdgeLabel;
 
 use super::{IRValue, NodeId, SchemaIR};
 
-pub(crate) struct IRJsonAdapter<'s, 'a>(pub(super) &'s SchemaIR<'a>);
+pub(crate) struct IRJsonAdapter<'s, 'a> {
+    pub(super) schema: &'s SchemaIR<'a>,
+    pub(super) node_id: NodeId,
+}
 
 impl<'s, 'a> std::fmt::Display for IRJsonAdapter<'s, 'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.write_node(f, self.0.root(), 0)
+        self.write_node(f, self.node_id, 0)
     }
 }
 
@@ -17,7 +20,7 @@ impl<'s, 'a> IRJsonAdapter<'s, 'a> {
         node_id: NodeId,
         depth: usize,
     ) -> std::fmt::Result {
-        match &self.0[node_id].value {
+        match &self.schema[node_id].value {
             IRValue::Null => write!(f, "null"),
             IRValue::Bool(b) => write!(f, "{}", b),
             IRValue::Number(n) => write!(f, "{}", n),
@@ -35,8 +38,8 @@ impl<'s, 'a> IRJsonAdapter<'s, 'a> {
         depth: usize,
     ) -> std::fmt::Result {
         writeln!(f, "{{")?;
-        for child_id in self.0.children(node_id) {
-            let child = &self.0[child_id];
+        for child_id in self.schema.children(node_id) {
+            let child = &self.schema[child_id];
             if let Some(EdgeLabel::Key(key)) = &child.label {
                 for _ in 0..=depth {
                     write!(f, "  ")?;
@@ -64,7 +67,7 @@ impl<'s, 'a> IRJsonAdapter<'s, 'a> {
         depth: usize,
     ) -> std::fmt::Result {
         write!(f, "[")?;
-        for (i, child_id) in self.0.children(node_id).enumerate() {
+        for (i, child_id) in self.schema.children(node_id).enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
             }
