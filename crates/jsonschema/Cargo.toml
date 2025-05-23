@@ -32,7 +32,6 @@ fraction = { version = "0.15", default-features = false, features = [
 ] }
 idna = "1.0.2"
 itoa = "1"
-jsonschema-ir = { version = "0.30.0", path = "../jsonschema-ir" }
 num-cmp = "0.1"
 once_cell = "1.20.1"
 percent-encoding = "2.3"

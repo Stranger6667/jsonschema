@@ -1,10 +1,9 @@
-use std::{borrow::Cow, iter::once, ops::Range, sync::Arc};
+use std::{borrow::Cow, collections::VecDeque, iter::once, ops::Range, sync::Arc};
 
-use jsonschema_ir::{EdgeLabel, NodeId, NodeValue, ResolvedSchema};
 use referencing::{uri, Registry};
 use serde_json::Value;
 
-use crate::{compiler::DEFAULT_BASE_URI, ValidationOptions};
+use crate::{compiler::DEFAULT_BASE_URI, ir, ValidationOptions};
 
 pub(crate) fn build(mut config: ValidationOptions, schema: &Value) -> Validator {
     let draft = config.draft_for(schema).unwrap();
@@ -35,49 +34,73 @@ pub(crate) fn build(mut config: ValidationOptions, schema: &Value) -> Validator 
             .build(pairs)
             .unwrap()
     };
-    let schema = jsonschema_ir::build(base_uri, draft, &registry);
-    let mut validator = Validator::new();
-    compile_at(&schema, schema.root(), &mut validator);
-    validator
+    let schema = ir::build(base_uri, draft, &registry);
+    compile_impl(&schema)
 }
 
-fn compile_at<'a>(schema: &ResolvedSchema<'a>, node_id: NodeId, v: &mut Validator) {
-    match &schema.get(node_id).value {
-        NodeValue::Bool(b) => {}
-        NodeValue::Object => {
-            let assertions_start = v.assertions.len();
-            for child_id in schema.children(node_id) {
-                let node = schema.get(child_id);
-                if let Some(EdgeLabel::Key(key)) = node.parent_label {
-                    if key == "maxLength" {
-                        if let NodeValue::Number(num) = node.value {
-                            if let Some(limit) = num.as_u64() {
-                                v.push_assertion(Assertion::MaxLength {
-                                    limit: limit as usize,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-            let assertions_end = v.assertions.len();
-            v.push_schema(Schema {
-                assertions: assertions_start..assertions_end,
-            });
-        }
-        _ => {}
-    }
+// TODO:
+//  - mark object with `$ref` to apply draft-specific logic
+
+fn compile_impl<'a>(schema: &ir::SchemaIR<'a>) -> Validator {
+    // Main compilation loop
+    //   - Compile assertions right away, so they are stored contiguously
+    //   - Similarly, store annotations in a contiguous block of memory
+    //   - Defer applicators, so their assertions appear after the ones coming from the current node
+    let mut validator = Validator::new();
+    let mut queue = VecDeque::new();
+    queue.push_back(schema.root());
+    // Traverse in BFS order
+    //while let Some(node_id) = queue.pop_front() {
+    //    match &schema[node_id].value {
+    //        NodeValue::Bool(b) => {}
+    //        NodeValue::Object => {
+    //            let assertions_start = validator.assertions.len();
+    //            for child_id in schema.children(node_id) {
+    //                let node = schema.get(child_id);
+    //                if let Some(EdgeLabel::Key(key)) = node.parent_label {
+    //                    if key == "maxLength" {
+    //                        if let NodeValue::Number(num) = node.value {
+    //                            if let Some(limit) = num.as_u64() {
+    //                                validator.push_assertion(Assertion::MaxLength {
+    //                                    limit: limit as usize,
+    //                                });
+    //                            }
+    //                        }
+    //                    } else if key == "properties" {
+    //                        // Compile properties - need to store keys + their schema ids. But
+    //                        // schema ids are not yet available as they are not compiled yet - how
+    //                        // to proceed here?
+    //                        for property_id in schema.children(child_id) {
+    //                            let property = schema.get(property_id);
+    //                            queue.push_back(property_id);
+    //                        }
+    //                    }
+    //                }
+    //            }
+    //            // TODO: store applicators for this schema, so we can apply subschemas during
+    //            // validation
+    //            let assertions_end = validator.assertions.len();
+    //            //validator.push_schema(Schema {
+    //            //    assertions: assertions_start..assertions_end,
+    //            //});
+    //        }
+    //        _ => {}
+    //    }
+    //}
+    validator
 }
 
 #[derive(Debug)]
 struct Validator {
     schemas: Vec<Schema>,
     assertions: Vec<Assertion>,
+    applicators: Vec<Applicator>,
 }
 
 #[derive(Debug)]
 pub struct Schema {
     assertions: Range<usize>,
+    applicators: Range<usize>,
 }
 
 impl Validator {
@@ -85,6 +108,7 @@ impl Validator {
         Validator {
             schemas: Vec::new(),
             assertions: Vec::new(),
+            applicators: Vec::new(),
         }
     }
 
@@ -97,12 +121,12 @@ impl Validator {
     }
 
     fn is_valid(&self, value: &Value) -> bool {
-        let root = &self.schemas[0];
-        for assertion in &self.assertions[root.assertions.clone()] {
-            if !assertion.is_valid(value) {
-                return false;
-            }
-        }
+        //let root = &self.schemas[0];
+        //for assertion in &self.assertions[root.assertions.clone()] {
+        //    if !assertion.is_valid(value) {
+        //        return false;
+        //    }
+        //}
         true
     }
 }
@@ -120,17 +144,40 @@ impl Assertion {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct SchemaId(usize);
+
+impl SchemaId {
+    fn new(index: usize) -> Self {
+        SchemaId(index)
+    }
+}
+
+#[derive(Debug)]
+enum Applicator {
+    Properties { properties: Vec<(String, SchemaId)> },
+}
+
 #[cfg(test)]
 mod tests {
     use super::build;
     use serde_json::json;
 
-    #[test]
-    fn test_debug() {
-        let schema = json!({"type": "string", "maxLength": 5});
-        let config = crate::options();
-        let validator = build(config, &schema);
-        assert!(validator.is_valid(&json!("abc")));
-        assert!(!validator.is_valid(&json!("abcefg")));
-    }
+    //#[test]
+    //fn test_assertion_only() {
+    //    let schema = json!({"type": "string", "maxLength": 5});
+    //    let config = crate::options();
+    //    let validator = build(config, &schema);
+    //    assert!(validator.is_valid(&json!("abc")));
+    //    assert!(!validator.is_valid(&json!("abcefg")));
+    //}
+    //
+    //#[test]
+    //fn test_properties() {
+    //    let schema = json!({"properties": {"name": {"maxLength": 5}}});
+    //    let config = crate::options();
+    //    let validator = build(config, &schema);
+    //    assert!(validator.is_valid(&json!({"name": "abc"})));
+    //    assert!(!validator.is_valid(&json!({"name": "abcefg"})));
+    //}
 }

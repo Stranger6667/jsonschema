@@ -649,6 +649,7 @@ mod content_media_type;
 mod ecma;
 pub mod error;
 pub mod ext;
+pub(crate) mod ir;
 mod keywords;
 mod node;
 mod options;
