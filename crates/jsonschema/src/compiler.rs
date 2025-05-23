@@ -269,7 +269,7 @@ pub(crate) fn build_validator(
         )
     };
     let vocabularies = registry.find_vocabularies(draft, schema);
-    let resolver = Rc::new(registry.resolver(base_uri));
+    let resolver = Rc::new(registry.resolver(base_uri.clone()));
 
     let config = Arc::new(config);
     let ctx = Context::new(
@@ -285,6 +285,8 @@ pub(crate) fn build_validator(
     if config.validate_schema {
         validate_schema(draft, schema)?;
     }
+
+    crate::ir::build(base_uri, draft, &registry);
 
     // Finally, compile the validator
     let root = compile(&ctx, resource_ref).map_err(|err| err.to_owned())?;
