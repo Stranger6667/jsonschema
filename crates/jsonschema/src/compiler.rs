@@ -268,7 +268,7 @@ pub(crate) fn build_validator(
                 .build(pairs)?,
         )
     };
-    jsonschema_ir::build(base_uri.clone(), draft, &registry);
+    crate::ir::build(base_uri.clone(), draft, &registry);
     let vocabularies = registry.find_vocabularies(draft, schema);
     let resolver = Rc::new(registry.resolver(base_uri));
 
