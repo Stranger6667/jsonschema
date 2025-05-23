@@ -66,7 +66,16 @@ impl<'a> SchemaIR<'a> {
     }
 
     pub(crate) fn as_json(&self) -> display::IRJsonAdapter {
-        display::IRJsonAdapter(self)
+        display::IRJsonAdapter {
+            schema: self,
+            node_id: self.root(),
+        }
+    }
+    pub(crate) fn as_json_at(&self, node_id: NodeId) -> display::IRJsonAdapter {
+        display::IRJsonAdapter {
+            schema: self,
+            node_id,
+        }
     }
 }
 
@@ -258,5 +267,155 @@ mod tests {
         let reparsed: Value =
             serde_json::from_str(&json1).expect("Failed to parse IR-generated JSON");
         assert_eq!(input, reparsed);
+    }
+
+    fn get_ref_target(parsed_json: &Value, pointer: &str) -> Option<u64> {
+        parsed_json.pointer(pointer).and_then(|v| v.as_u64())
+    }
+
+    #[test]
+    fn test_ref_to_root() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "self": {"$ref": "#"}
+            }
+        });
+
+        let (base_uri, registry) = init_registry(schema);
+        let ir = build(base_uri, Draft::Draft202012, &registry);
+        let json_output = ir.as_json().to_string();
+
+        let parsed: Value =
+            serde_json::from_str(&json_output).expect("Should parse IR output as JSON");
+
+        let target_node_id =
+            get_ref_target(&parsed, "/properties/self/$ref").expect("Should find $ref target");
+
+        assert_eq!(target_node_id, 1, "Reference should point to root node");
+    }
+
+    #[test]
+    fn test_ref_to_definition() {
+        let schema = json!({
+            "properties": {
+                "user": {"$ref": "#/definitions/person"}
+            },
+            "definitions": {
+                "person": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"}
+                    }
+                }
+            }
+        });
+
+        let (base_uri, registry) = init_registry(schema.clone());
+        let ir = build(base_uri, Draft::Draft202012, &registry);
+        let json_output = ir.as_json().to_string();
+
+        let parsed: Value =
+            serde_json::from_str(&json_output).expect("Should parse IR output as JSON");
+
+        let target_node_id =
+            get_ref_target(&parsed, "/properties/user/$ref").expect("Should find $ref target");
+
+        let target_json = ir
+            .as_json_at(NodeId::new(target_node_id as usize))
+            .to_string();
+        let target_parsed: Value =
+            serde_json::from_str(&target_json).expect("Target should be valid JSON");
+
+        let expected_person = &schema["definitions"]["person"];
+        assert_eq!(target_parsed, *expected_person);
+    }
+
+    #[test]
+    fn test_nested_refs() {
+        let schema = json!({
+            "allOf": [
+                {"$ref": "#/definitions/base"}
+            ],
+            "definitions": {
+                "base": {
+                    "properties": {
+                        "nested": {"$ref": "#/definitions/nested"}
+                    }
+                },
+                "nested": {"type": "number"}
+            }
+        });
+
+        let (base_uri, registry) = init_registry(schema.clone());
+        let ir = build(base_uri, Draft::Draft202012, &registry);
+        let json_output = ir.as_json().to_string();
+
+        let parsed: Value =
+            serde_json::from_str(&json_output).expect("Should parse IR output as JSON");
+
+        let base_target =
+            get_ref_target(&parsed, "/allOf/0/$ref").expect("Should find base $ref target");
+
+        let base_json = ir.as_json_at(NodeId::new(base_target as usize)).to_string();
+        let base_parsed: Value =
+            serde_json::from_str(&base_json).expect("Base target should be valid JSON");
+
+        let mut expected_base = schema["definitions"]["base"].clone();
+        expected_base["properties"]["nested"]["$ref"] = json!(4);
+        assert_eq!(base_parsed, expected_base);
+
+        let nested_target = get_ref_target(&base_parsed, "/properties/nested/$ref")
+            .expect("Should find nested $ref target");
+
+        let nested_json = ir
+            .as_json_at(NodeId::new(nested_target as usize))
+            .to_string();
+        let nested_parsed: Value =
+            serde_json::from_str(&nested_json).expect("Nested target should be valid JSON");
+
+        let expected_nested = &schema["definitions"]["nested"];
+        assert_eq!(nested_parsed, *expected_nested);
+    }
+
+    #[test]
+    fn test_multiple_refs_same_target() {
+        let schema = json!({
+            "properties": {
+                "user1": {"$ref": "#/definitions/person"},
+                "user2": {"$ref": "#/definitions/person"}
+            },
+            "definitions": {
+                "person": {"type": "string"}
+            }
+        });
+
+        let (base_uri, registry) = init_registry(schema.clone());
+        let ir = build(base_uri, Draft::Draft202012, &registry);
+        let json_output = ir.as_json().to_string();
+
+        let parsed: Value =
+            serde_json::from_str(&json_output).expect("Should parse IR output as JSON");
+
+        let target1 = get_ref_target(&parsed, "/properties/user1/$ref")
+            .expect("Should find first $ref target");
+        let target2 = get_ref_target(&parsed, "/properties/user2/$ref")
+            .expect("Should find second $ref target");
+
+        assert_eq!(target1, target2);
+
+        // Verify both targets match the original person definition
+        let target1_json = ir.as_json_at(NodeId::new(target1 as usize)).to_string();
+        let target1_parsed: Value =
+            serde_json::from_str(&target1_json).expect("Target1 should be valid JSON");
+
+        let target2_json = ir.as_json_at(NodeId::new(target2 as usize)).to_string();
+        let target2_parsed: Value =
+            serde_json::from_str(&target2_json).expect("Target2 should be valid JSON");
+
+        let expected_person = &schema["definitions"]["person"];
+        assert_eq!(target1_parsed, *expected_person);
+        assert_eq!(target2_parsed, *expected_person);
+        assert_eq!(target1_parsed, target2_parsed);
     }
 }
