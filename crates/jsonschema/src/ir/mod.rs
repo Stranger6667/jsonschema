@@ -96,20 +96,23 @@ impl<'a> std::ops::IndexMut<NodeId> for SchemaIR<'a> {
 }
 
 pub fn build(document_uri: Uri<String>, draft: Draft, registry: &Registry) -> SchemaIR<'_> {
-    let value = registry
+    let root_document = registry
         .get_document(&document_uri)
-        .expect("Schema is not present in the registry");
-    let mut schema = SchemaIR::new();
-    let mut value_to_node_id = AHashMap::new();
-    let mut pending_references = Vec::new();
-    let mut seen: AHashSet<*const Value> = AHashSet::new();
-    seen.insert(value);
-    let resolver = registry.resolver(document_uri);
-    let mut stack = VecDeque::new();
-    stack.push_back((resolver, None, None, value));
+        .expect("Document is not present in the registry");
 
-    while let Some((mut resolver, parent, label, value)) = stack.pop_front() {
-        let node_id = match value {
+    let mut schema = SchemaIR::new();
+    let mut value_ptr_to_node = AHashMap::new();
+    let mut pending_references = Vec::new();
+    let mut visited: AHashSet<*const Value> = AHashSet::new();
+    let mut queue = VecDeque::new();
+
+    visited.insert(root_document);
+    let root_resolver = registry.resolver(document_uri);
+    queue.push_back((root_resolver, None, None, root_document));
+
+    // Step 1: Build tree with BFS traversal
+    while let Some((mut resolver, parent, label, value)) = queue.pop_front() {
+        let node = match value {
             Value::Null => schema.append(parent, label, IRValue::Null),
             Value::Bool(b) => schema.append(parent, label, IRValue::Bool(*b)),
             Value::Number(n) => schema.append(parent, label, IRValue::Number(Number::from(n))),
@@ -117,8 +120,8 @@ pub fn build(document_uri: Uri<String>, draft: Draft, registry: &Registry) -> Sc
             Value::Array(arr) => {
                 let node_id = schema.append(parent, label, IRValue::Array);
                 for (idx, item) in arr.iter().enumerate() {
-                    if seen.insert(item) {
-                        stack.push_back((
+                    if visited.insert(item) {
+                        queue.push_back((
                             resolver.clone(),
                             Some(node_id),
                             Some(EdgeLabel::Index(idx)),
@@ -129,54 +132,64 @@ pub fn build(document_uri: Uri<String>, draft: Draft, registry: &Registry) -> Sc
                 node_id
             }
             Value::Object(object) => {
-                let node_id = schema.append(parent, label, IRValue::Object);
-                let resource = ResourceRef::new(value, draft);
+                let node = schema.append(parent, label, IRValue::Object);
 
+                let resource = ResourceRef::new(value, draft);
                 if let Some(id) = resource.id() {
                     if !id.starts_with('#') {
                         resolver = resolver.in_subresource(resource).expect("Invalid URI");
                     }
                 }
+
+                let mut reference_processed = false;
                 if let Some((key, Value::String(reference))) = object.get_key_value("$ref") {
                     let resolved = resolver.lookup(reference).expect("Unresolvable reference");
                     let resolved_value = resolved.contents();
-                    let ref_node_id = schema.append(
-                        Some(node_id),
+
+                    let reference_node = schema.append(
+                        Some(node),
                         Some(EdgeLabel::Key(key)),
                         IRValue::Reference(NodeId::placeholder()),
                     );
 
-                    pending_references.push((ref_node_id, resolved_value as *const Value));
-                    if seen.insert(resolved_value) {
-                        stack.push_back((resolved.resolver().clone(), None, None, resolved_value));
+                    pending_references.push((reference_node, resolved_value as *const Value));
+
+                    if visited.insert(resolved_value) {
+                        queue.push_back((resolved.resolver().clone(), None, None, resolved_value));
                     }
+
+                    reference_processed = true;
                 }
 
                 for (key, value) in object.iter().rev() {
-                    if key != "$ref" && seen.insert(value) {
-                        stack.push_back((
+                    if key == "$ref" && reference_processed {
+                        continue;
+                    }
+                    if visited.insert(value) {
+                        queue.push_back((
                             resolver.clone(),
-                            Some(node_id),
+                            Some(node),
                             Some(EdgeLabel::Key(key)),
                             value,
                         ));
                     }
                 }
-                node_id
+                node
             }
         };
-        value_to_node_id.insert(value as *const Value, node_id);
+        value_ptr_to_node.insert(value as *const Value, node);
     }
 
-    for (node_id, target_ptr) in pending_references {
-        if let Some(target_id) = value_to_node_id.get(&target_ptr) {
-            if let IRValue::Reference(reference_target_id) = &mut schema[node_id].value {
-                *reference_target_id = *target_id;
-            } else {
-                panic!("Node is not a reference")
-            }
+    // Step 2: Resolve all pending references
+    for (reference_node_id, target_ptr) in pending_references {
+        let target_node_id = value_ptr_to_node
+            .get(&target_ptr)
+            .expect("Reference target not found in built tree");
+
+        if let IRValue::Reference(target_id) = &mut schema[reference_node_id].value {
+            *target_id = *target_node_id;
         } else {
-            panic!("Reference not found")
+            panic!("Expected reference node");
         }
     }
 
@@ -417,5 +430,25 @@ mod tests {
         assert_eq!(target1_parsed, *expected_person);
         assert_eq!(target2_parsed, *expected_person);
         assert_eq!(target1_parsed, target2_parsed);
+    }
+
+    #[test]
+    fn test_ref_as_property_name() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "$ref": {"type": "string"},
+                "name": {"type": "string"}
+            }
+        });
+
+        let (base_uri, registry) = init_registry(schema.clone());
+        let ir = build(base_uri, Draft::Draft202012, &registry);
+        let json_output = ir.as_json().to_string();
+
+        let parsed: Value =
+            serde_json::from_str(&json_output).expect("Should parse IR output as JSON");
+
+        assert_eq!(parsed, schema);
     }
 }
