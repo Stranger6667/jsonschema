@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::{compiler::DEFAULT_BASE_URI, ValidationOptions};
 
-pub(crate) fn build(mut config: ValidationOptions, schema: &Value) {
+pub(crate) fn build(mut config: ValidationOptions, schema: &Value) -> Validator {
     let draft = config.draft_for(schema).unwrap();
     let resource_ref = draft.create_resource_ref(schema);
     let resource = draft.create_resource(schema.clone());
@@ -38,19 +38,21 @@ pub(crate) fn build(mut config: ValidationOptions, schema: &Value) {
     let schema = jsonschema_ir::build(base_uri, draft, &registry);
     let mut validator = Validator::new();
     compile_at(&schema, schema.root(), &mut validator);
+    validator
 }
 
 fn compile_at<'a>(schema: &ResolvedSchema<'a>, node_id: NodeId, v: &mut Validator) {
     match &schema.get(node_id).value {
         NodeValue::Bool(b) => {}
         NodeValue::Object => {
+            let assertions_start = v.assertions.len();
             for child_id in schema.children(node_id) {
                 let node = schema.get(child_id);
                 if let Some(EdgeLabel::Key(key)) = node.parent_label {
                     if key == "maxLength" {
                         if let NodeValue::Number(num) = node.value {
                             if let Some(limit) = num.as_u64() {
-                                v.push(Assertion::MaxLength {
+                                v.push_assertion(Assertion::MaxLength {
                                     limit: limit as usize,
                                 });
                             }
@@ -58,6 +60,10 @@ fn compile_at<'a>(schema: &ResolvedSchema<'a>, node_id: NodeId, v: &mut Validato
                     }
                 }
             }
+            let assertions_end = v.assertions.len();
+            v.push_schema(Schema {
+                assertions: assertions_start..assertions_end,
+            });
         }
         _ => {}
     }
@@ -82,8 +88,12 @@ impl Validator {
         }
     }
 
-    pub fn push(&mut self, a: Assertion) {
-        self.assertions.push(a);
+    pub fn push_schema(&mut self, schema: Schema) {
+        self.schemas.push(schema);
+    }
+
+    pub fn push_assertion(&mut self, assertion: Assertion) {
+        self.assertions.push(assertion);
     }
 
     fn is_valid(&self, value: &Value) -> bool {
@@ -117,8 +127,10 @@ mod tests {
 
     #[test]
     fn test_debug() {
-        let schema = json!({"type": "string", "maxLength": 10});
+        let schema = json!({"type": "string", "maxLength": 5});
         let config = crate::options();
-        build(config, &schema);
+        let validator = build(config, &schema);
+        assert!(validator.is_valid(&json!("abc")));
+        assert!(!validator.is_valid(&json!("abcefg")));
     }
 }
