@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Improve the precision of `multipleOf` for float values.
+
 ## [0.30.0] - 2025-04-16
 
 ### Added

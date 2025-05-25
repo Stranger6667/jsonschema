@@ -128,11 +128,20 @@ mod tests {
     #[test_case(&json!({"multipleOf": 0.1}), &json!(12.2))]
     #[test_case(&json!({"multipleOf": 0.0001}), &json!(3.1254))]
     #[test_case(&json!({"multipleOf": 0.0001}), &json!(47.498))]
+    #[test_case(&json!({"multipleOf": 0.1}), &json!(1.1))]
+    #[test_case(&json!({"multipleOf": 0.1}), &json!(1.2))]
+    #[test_case(&json!({"multipleOf": 0.1}), &json!(1.3))]
+    #[test_case(&json!({"multipleOf": 0.02}), &json!(1.02))]
+    #[test_case(&json!({"multipleOf": 1e-16}), &json!(1e-15))]
     fn multiple_of_is_valid(schema: &Value, instance: &Value) {
         tests_util::is_valid(schema, instance)
     }
 
     #[test_case(&json!({"multipleOf": 1.0}), &json!(4.5))]
+    #[test_case(&json!({"multipleOf": 0.1}), &json!(4.55))]
+    #[test_case(&json!({"multipleOf": 0.2}), &json!(4.5))]
+    #[test_case(&json!({"multipleOf": 0.02}), &json!(1.01))]
+    #[test_case(&json!({"multipleOf": 1.3}), &json!(1.3e-16))]
     fn multiple_of_is_not_valid(schema: &Value, instance: &Value) {
         tests_util::is_not_valid(schema, instance)
     }

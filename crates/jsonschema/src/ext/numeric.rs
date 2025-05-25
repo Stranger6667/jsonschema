@@ -1,4 +1,4 @@
-use fraction::BigFraction;
+use fraction::{BigFraction, Zero};
 use num_traits::One;
 use serde_json::Number;
 
@@ -34,7 +34,20 @@ define_num_cmp!(
 
 pub(crate) fn is_multiple_of_float(value: &Number, multiple: f64) -> bool {
     let value = value.as_f64().expect("Always valid");
-    // Involves heap allocations via the underlying `BigUint` type
+    if value.is_zero() {
+        // Zero is a multiple of anything
+        return true;
+    }
+    if value < multiple {
+        return false;
+    }
+    // From the JSON Schema spec
+    //
+    // > A numeric instance is valid only if division by this keyword's value results in an integer.
+    //
+    // For fractions, integers have denominator equal to one.
+    //
+    // Ref: https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.1
     (BigFraction::from(value) / BigFraction::from(multiple))
         .denom()
         .map(|denom| denom.is_one())
