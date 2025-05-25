@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Update `pyo3` to `0.25`.
+
 ### Fixed
 
 - Improve the precision of `multipleOf` for float values.
