@@ -92,6 +92,17 @@ impl<'a> ResourceRef<'a> {
     pub fn draft(&self) -> Draft {
         self.draft
     }
+
+    /// Create a resource-ref with automatically detecting specification which applies to the contents.
+    ///
+    /// # Errors
+    ///
+    /// On unknown `$schema` value it returns [`Error::UnknownSpecification`]
+    pub fn from_contents(contents: &'a Value) -> Result<Self, Error> {
+        let draft = Draft::default().detect(contents)?;
+        Ok(Self::new(contents, draft))
+    }
+
     #[must_use]
     pub fn id(&self) -> Option<&str> {
         JsonSchemaResource::id(self)

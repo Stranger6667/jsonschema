@@ -19,12 +19,28 @@ use crate::{
     resource::{unescape_segment, InnerResourcePtr, JsonSchemaResource},
     uri,
     vocabularies::{self, VocabularySet},
-    Anchor, DefaultRetriever, Draft, Error, Resolver, Resource, Retrieve,
+    Anchor, DefaultRetriever, Draft, Error, Resolver, Resource, ResourceRef, Retrieve,
 };
+
+/// An owned-or-refstatic wrapper for JSON `Value`.
+#[derive(Debug)]
+pub(crate) enum ValueWrapper {
+    Owned(Value),
+    StaticRef(&'static Value),
+}
+
+impl AsRef<Value> for ValueWrapper {
+    fn as_ref(&self) -> &Value {
+        match self {
+            ValueWrapper::Owned(value) => value,
+            ValueWrapper::StaticRef(value) => value,
+        }
+    }
+}
 
 // SAFETY: `Pin` guarantees stable memory locations for resource pointers,
 // while `Arc` enables cheap sharing between multiple registries
-type DocumentStore = AHashMap<Arc<Uri<String>>, Pin<Arc<Value>>>;
+type DocumentStore = AHashMap<Arc<Uri<String>>, Pin<Arc<ValueWrapper>>>;
 type ResourceMap = AHashMap<Arc<Uri<String>>, InnerResourcePtr>;
 
 /// Pre-loaded registry containing all JSON Schema meta-schemas and their vocabularies
@@ -32,7 +48,7 @@ pub static SPECIFICATIONS: Lazy<Registry> = Lazy::new(|| {
     let pairs = meta::META_SCHEMAS.into_iter().map(|(uri, schema)| {
         (
             uri,
-            Resource::from_contents(schema.clone()).expect("Invalid resource"),
+            ResourceRef::from_contents(schema).expect("Invalid resource"),
         )
     });
 
@@ -550,7 +566,7 @@ impl Registry {
 }
 
 fn process_meta_schemas(
-    pairs: impl IntoIterator<Item = (impl AsRef<str>, Resource)>,
+    pairs: impl IntoIterator<Item = (impl AsRef<str>, ResourceRef<'static>)>,
     documents: &mut DocumentStore,
     resources: &mut ResourceMap,
     anchors: &mut AHashMap<AnchorKey, Anchor>,
@@ -561,11 +577,10 @@ fn process_meta_schemas(
     for (uri, resource) in pairs {
         let uri = uri::from_str(uri.as_ref().trim_end_matches('#'))?;
         let key = Arc::new(uri);
-        let (draft, contents) = resource.into_inner();
-        let boxed = Arc::pin(contents);
-        let contents = std::ptr::addr_of!(*boxed);
-        let resource = InnerResourcePtr::new(contents, draft);
-        documents.insert(Arc::clone(&key), boxed);
+        let contents: &'static Value = resource.contents();
+        let wrapped_value = Arc::pin(ValueWrapper::StaticRef(contents));
+        let resource = InnerResourcePtr::new((*wrapped_value).as_ref(), resource.draft());
+        documents.insert(Arc::clone(&key), wrapped_value);
         resources.insert(Arc::clone(&key), resource.clone());
         queue.push_back((key, resource));
     }
@@ -624,12 +639,11 @@ fn process_input_resources(
             Entry::Occupied(_) => {}
             Entry::Vacant(entry) => {
                 let (draft, contents) = resource.into_inner();
-                let boxed = Arc::pin(contents);
-                let contents = std::ptr::addr_of!(*boxed);
-                let resource = InnerResourcePtr::new(contents, draft);
+                let wrapped_value = Arc::pin(ValueWrapper::Owned(contents));
+                let resource = InnerResourcePtr::new((*wrapped_value).as_ref(), draft);
                 resources.insert(Arc::clone(&key), resource.clone());
                 state.queue.push_back((key, resource));
-                entry.insert(boxed);
+                entry.insert(wrapped_value);
             }
         }
     }
@@ -713,11 +727,10 @@ fn create_resource(
     resources: &mut ResourceMap,
 ) -> Result<(Arc<Uri<String>>, InnerResourcePtr), Error> {
     let draft = default_draft.detect(&retrieved)?;
-    let boxed = Arc::pin(retrieved);
-    let contents = std::ptr::addr_of!(*boxed);
-    let resource = InnerResourcePtr::new(contents, draft);
+    let wrapped_value = Arc::pin(ValueWrapper::Owned(retrieved));
+    let resource = InnerResourcePtr::new((*wrapped_value).as_ref(), draft);
     let key = Arc::new(fragmentless);
-    documents.insert(Arc::clone(&key), boxed);
+    documents.insert(Arc::clone(&key), wrapped_value);
     resources.insert(Arc::clone(&key), resource.clone());
     Ok((key, resource))
 }

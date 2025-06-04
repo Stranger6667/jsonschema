@@ -79,7 +79,7 @@ schema!(
     pub DRAFT202012_CONTENT,
     "../metaschemas/draft2020-12/meta/content.json"
 );
-pub(crate) static META_SCHEMAS: Lazy<[(&'static str, &Value); 18]> = Lazy::new(|| {
+pub(crate) static META_SCHEMAS: Lazy<[(&'static str, &'static Value); 18]> = Lazy::new(|| {
     [
         ("http://json-schema.org/draft-04/schema#", &*DRAFT4),
         ("http://json-schema.org/draft-06/schema#", &*DRAFT6),
