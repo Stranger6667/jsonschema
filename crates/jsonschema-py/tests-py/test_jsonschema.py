@@ -2,7 +2,7 @@ import sys
 import uuid
 from collections import OrderedDict, namedtuple
 from contextlib import suppress
-from enum import Enum
+import enum as E
 from functools import partial
 
 import pytest
@@ -281,12 +281,12 @@ def test_iter_err_empty(func):
         pytest.fail("Validation error should happen")
 
 
-class StrEnum(Enum):
+class StrEnum(E.Enum):
     bar = "bar"
     foo = "foo"
 
 
-class IntEnum(Enum):
+class IntEnum(E.Enum):
     bar = 1
     foo = 2
 
@@ -309,9 +309,8 @@ def test_enums(type_, value, expected):
 def test_dict_with_non_str_keys():
     schema = {"type": "object"}
     instance = {uuid.uuid4(): "foo"}
-    with pytest.raises(ValueError) as exec_info:
+    with pytest.raises(ValueError, match="Dict key must be str or str enum. Got 'UUID'"):
         validate(schema, instance)
-    assert exec_info.value.args[0] == "Dict key must be str. Got 'UUID'"
 
 
 class MyDict(dict):
@@ -438,3 +437,55 @@ def test_ignore_unknown_formats(cls, ignore_unknown_formats, should_raise):
 def test_unicode_pattern():
     validator = Draft202012Validator({"pattern": "aaaaaaaèaaéaaaaéè"})
     assert not validator.is_valid("a")
+
+
+enum_type_dec = pytest.mark.parametrize(
+    "enum_type",
+    (
+        "old",
+        pytest.param(
+            "new",
+            marks=pytest.mark.skipif(sys.version_info < (3, 11), reason="New style enums are supported from 3.11"),
+        ),
+    ),
+)
+
+
+@enum_type_dec
+@pytest.mark.parametrize("valid", (True, False))
+def test_enum_as_keys(enum_type, valid):
+    if enum_type == "old":
+        bases = (str, E.Enum)
+    else:
+        bases = (E.StrEnum,)
+
+    class EnumCls(*bases):
+        A = "a"
+        B = "b"
+
+    schema = {
+        "properties": {
+            "a": {"type": "string"},
+        },
+        "additionalProperties": False,
+    }
+    if valid:
+        schema["properties"]["b"] = {"type": "number"}
+
+    assert is_valid(schema, {EnumCls.A: "xyz", EnumCls.B: 42}) is valid
+
+
+@enum_type_dec
+def test_enum_as_keys_invalid(enum_type):
+    if enum_type == "old":
+
+        class EnumCls(E.IntEnum):
+            A = 42
+    else:
+
+        class EnumCls(E.Enum):
+            A = "a"
+
+    schema = {"properties": {"a": {"type": "string"}}}
+    with pytest.raises(ValueError, match=f"Dict key must be str or str enum. Got '{EnumCls.__name__}'"):
+        is_valid(schema, {EnumCls.A: "xyz"})

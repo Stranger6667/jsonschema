@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added support for old and new style string enums in object keys.
+
 ### Changed
 
 - Update `pyo3` to `0.25`.

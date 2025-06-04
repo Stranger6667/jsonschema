@@ -2,8 +2,8 @@ use pyo3::{
     exceptions,
     ffi::{
         PyDictObject, PyFloat_AS_DOUBLE, PyList_GET_ITEM, PyList_GET_SIZE, PyLong_AsLongLong,
-        PyObject_GetAttr, PyTuple_GET_ITEM, PyTuple_GET_SIZE, PyUnicode_AsUTF8AndSize, Py_DECREF,
-        Py_TPFLAGS_DICT_SUBCLASS, Py_TYPE,
+        PyObject_GetAttr, PyObject_IsInstance, PyTuple_GET_ITEM, PyTuple_GET_SIZE,
+        PyUnicode_AsUTF8AndSize, Py_DECREF, Py_TPFLAGS_DICT_SUBCLASS, Py_TYPE,
     },
     prelude::*,
     types::PyAny,
@@ -81,18 +81,6 @@ fn get_object_type_from_object(object: *mut pyo3::ffi::PyObject) -> ObjectType {
 
 fn get_type_name(object_type: *mut pyo3::ffi::PyTypeObject) -> std::borrow::Cow<'static, str> {
     unsafe { CStr::from_ptr((*object_type).tp_name).to_string_lossy() }
-}
-
-#[inline]
-fn check_type_is_str<E: ser::Error>(object: *mut pyo3::ffi::PyObject) -> Result<(), E> {
-    let object_type = unsafe { Py_TYPE(object) };
-    if object_type != unsafe { types::STR_TYPE } {
-        return Err(ser::Error::custom(format!(
-            "Dict key must be str. Got '{}'",
-            get_type_name(object_type)
-        )));
-    }
-    Ok(())
 }
 
 #[inline]
@@ -216,8 +204,34 @@ impl Serialize for SerializePyObject {
                         unsafe {
                             pyo3::ffi::PyDict_Next(self.object, &mut pos, &mut key, &mut value);
                         }
-                        tri!(check_type_is_str(key));
-                        let ptr = unsafe { PyUnicode_AsUTF8AndSize(key, &mut str_size) };
+                        let object_type = unsafe { Py_TYPE(key) };
+                        let key_unicode = if object_type == unsafe { types::STR_TYPE } {
+                            // if the key type is string, use it as is
+                            key
+                        } else {
+                            let is_str = unsafe {
+                                PyObject_IsInstance(
+                                    key,
+                                    types::STR_TYPE.cast::<pyo3::ffi::PyObject>(),
+                                )
+                            };
+                            if is_str < 0 {
+                                return Err(ser::Error::custom("Error while checking key type"));
+                            }
+
+                            // cover for both old-style str enums subclassing str and Enum and for new-style
+                            // ones subclassing StrEnum
+                            if is_str > 0 && is_enum_subclass(object_type) {
+                                unsafe { PyObject_GetAttr(key, types::VALUE_STR) }
+                            } else {
+                                return Err(ser::Error::custom(format!(
+                                    "Dict key must be str or str enum. Got '{}'",
+                                    get_type_name(object_type)
+                                )));
+                            }
+                        };
+
+                        let ptr = unsafe { PyUnicode_AsUTF8AndSize(key_unicode, &mut str_size) };
                         let slice = unsafe {
                             std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                                 ptr.cast::<u8>(),
