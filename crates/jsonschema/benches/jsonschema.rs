@@ -70,11 +70,47 @@ fn bench_is_valid2(c: &mut Criterion) {
             }
         }
     });
+    let schema = serde_json::json!({
+        "properties": {
+            "name": {"maxLength": 3},
+            "child": {"$ref": "#"}
+        }
+    });
     let config = jsonschema::options();
     let validator2 = jsonschema::compiler_v2::build(config, &schema);
     let validator = jsonschema::validator_for(&schema).expect("Valid schema");
     c.bench_function("new_is_valid", |b| {
-        let instance = serde_json::json!({"name": "abc"});
+        // let instance = serde_json::json!({"name": "abc"});
+        let instance = serde_json::json!({
+            "name": "Bob",
+            "child": {
+                "name": "Ann",
+                "child": {
+                    "name": "Joe",
+                    "child": {
+                        "name": "Sam",
+                        "child": {
+                            "name": "Max",
+                            "child": {
+                                "name": "Eve",
+                                "child": {
+                                    "name": "Roy",
+                                    "child": {
+                                        "name": "Zoe",
+                                        "child": {
+                                            "name": "Leo",
+                                            "child": {
+                                                "name": "Amy"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
         b.iter(|| {
             let _ = validator2.is_valid(&instance);
         })

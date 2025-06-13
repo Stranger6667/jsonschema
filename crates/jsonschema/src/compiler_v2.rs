@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::VecDeque, iter::once, ops::Range, sync::Arc};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use referencing::{uri, Registry};
 use serde_json::Value;
 
@@ -67,6 +67,7 @@ fn compile_impl<'a>(schema: &ir::SchemaIR<'a>) -> Validator {
     let mut queue = VecDeque::new();
     let mut node_to_schema = AHashMap::new();
     let mut pending_patches = Vec::new();
+    let mut seen = AHashSet::new();
 
     queue.push_back(schema.root());
     while let Some(node_id) = queue.pop_front() {
@@ -101,7 +102,9 @@ fn compile_impl<'a>(schema: &ir::SchemaIR<'a>) -> Validator {
                                 validator
                                     .push_applicator(Applicator::Properties { properties: vec![] });
                                 for property_id in schema.children(child_id) {
-                                    queue.push_back(property_id);
+                                    if seen.insert(property_id) {
+                                        queue.push_back(property_id);
+                                    }
                                 }
                             }
                             "$ref" => {
@@ -116,8 +119,9 @@ fn compile_impl<'a>(schema: &ir::SchemaIR<'a>) -> Validator {
                                 validator.push_applicator(Applicator::Ref {
                                     schema_id: SchemaId::new(0),
                                 });
-                                // TODO: Check for seen nodes
-                                queue.push_back(target_id);
+                                if seen.insert(target_id) {
+                                    queue.push_back(target_id);
+                                }
                             }
                             _ => {}
                         }
@@ -217,7 +221,6 @@ impl Validator {
     }
 
     pub fn is_valid(&self, value: &Value) -> bool {
-        dbg!(self);
         for assertion in &self.assertions[self.root.assertions.clone()] {
             if !assertion.is_valid(value) {
                 return false;
@@ -344,5 +347,31 @@ mod tests {
         let validator = build(config, &schema);
         assert!(validator.is_valid(&json!({"name": "abc"})));
         assert!(!validator.is_valid(&json!({"name": "abcefg"})));
+    }
+
+    #[test]
+    fn test_self_ref_with_assertion() {
+        let schema = json!({
+            "properties": {
+                "name": {"maxLength": 3},
+                "child": {"$ref": "#"}
+            }
+        });
+        let config = crate::options();
+        let validator = build(config, &schema);
+
+        assert!(validator.is_valid(&json!({"name": "Bob"})));
+        assert!(validator.is_valid(&json!({
+            "name": "Bob",
+            "child": {"name": "Ann"}
+        })));
+        assert!(validator.is_valid(&json!({
+            "name": "Bob",
+            "child": {
+                "name": "Ann",
+                "child": {"name": "Joe"}
+            }
+        })));
+        assert!(!validator.is_valid(&json!({"name": "Robert"})));
     }
 }
