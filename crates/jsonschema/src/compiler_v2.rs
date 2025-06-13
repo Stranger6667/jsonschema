@@ -59,6 +59,7 @@ struct PendingPatch {
 
 enum PatchType {
     Properties { properties_node_id: ir::NodeId },
+    Ref { node_id: ir::NodeId },
 }
 
 fn compile_impl<'a>(schema: &ir::SchemaIR<'a>) -> Validator {
@@ -102,6 +103,21 @@ fn compile_impl<'a>(schema: &ir::SchemaIR<'a>) -> Validator {
                                 for property_id in schema.children(child_id) {
                                     queue.push_back(property_id);
                                 }
+                            }
+                            "$ref" => {
+                                let applicator_index = validator.applicators.len();
+                                let ir::IRValue::Reference(target_id) = node.value else {
+                                    panic!()
+                                };
+                                pending_patches.push(PendingPatch {
+                                    applicator_index,
+                                    patch_type: PatchType::Ref { node_id: target_id },
+                                });
+                                validator.push_applicator(Applicator::Ref {
+                                    schema_id: SchemaId::new(0),
+                                });
+                                // TODO: Check for seen nodes
+                                queue.push_back(target_id);
                             }
                             _ => {}
                         }
@@ -152,6 +168,13 @@ fn apply_patch(
                 *props = properties;
             }
         }
+        PatchType::Ref { node_id } => {
+            if let Applicator::Ref { schema_id } =
+                &mut validator.applicators[patch.applicator_index]
+            {
+                *schema_id = node_to_schema[&node_id];
+            }
+        }
     }
 }
 
@@ -194,6 +217,7 @@ impl Validator {
     }
 
     pub fn is_valid(&self, value: &Value) -> bool {
+        dbg!(self);
         for assertion in &self.assertions[self.root.assertions.clone()] {
             if !assertion.is_valid(value) {
                 return false;
@@ -248,6 +272,7 @@ impl Validator {
                 }
                 true
             }
+            Applicator::Ref { schema_id } => self.is_valid_for_schema(value, *schema_id),
         }
     }
 }
@@ -284,6 +309,7 @@ impl SchemaId {
 #[derive(Debug)]
 enum Applicator {
     Properties { properties: Vec<(String, SchemaId)> },
+    Ref { schema_id: SchemaId },
 }
 
 #[cfg(test)]
@@ -294,6 +320,26 @@ mod tests {
     #[test]
     fn test_properties() {
         let schema = json!({"properties": {"name": {"maxLength": 5}}});
+        let config = crate::options();
+        let validator = build(config, &schema);
+        assert!(validator.is_valid(&json!({"name": "abc"})));
+        assert!(!validator.is_valid(&json!({"name": "abcefg"})));
+    }
+
+    #[test]
+    fn test_ref() {
+        let schema = json!({
+            "properties": {
+                "name": {
+                    "$ref": "#/$defs/Name"
+                }
+            },
+            "$defs": {
+                "Name": {
+                    "maxLength": 5
+                }
+            }
+        });
         let config = crate::options();
         let validator = build(config, &schema);
         assert!(validator.is_valid(&json!({"name": "abc"})));

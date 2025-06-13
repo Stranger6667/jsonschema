@@ -56,7 +56,20 @@ fn run_benchmarks(c: &mut Criterion) {
 }
 
 fn bench_is_valid2(c: &mut Criterion) {
-    let schema = serde_json::json!({"properties": {"name": {"maxLength": 5}}});
+    // let schema = serde_json::json!({"properties": {"name": {"maxLength": 5}}});
+
+    let schema = serde_json::json!({
+        "properties": {
+            "name": {
+                "$ref": "#/$defs/Name"
+            }
+        },
+        "$defs": {
+            "Name": {
+                "maxLength": 5
+            }
+        }
+    });
     let config = jsonschema::options();
     let validator2 = jsonschema::compiler_v2::build(config, &schema);
     let validator = jsonschema::validator_for(&schema).expect("Valid schema");
