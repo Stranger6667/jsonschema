@@ -43,10 +43,10 @@ pub enum EdgeLabel<'a> {
 
 #[derive(Debug)]
 pub(crate) struct IRNode<'a> {
-    pub(super) parent: Option<NodeId>,
-    pub(super) first_child: Option<NodeId>,
-    pub(super) last_child: Option<NodeId>,
-    pub(super) next_sibling: Option<NodeId>,
-    pub(super) label: Option<EdgeLabel<'a>>,
-    pub(super) value: IRValue<'a>,
+    pub(crate) parent: Option<NodeId>,
+    pub(crate) first_child: Option<NodeId>,
+    pub(crate) last_child: Option<NodeId>,
+    pub(crate) next_sibling: Option<NodeId>,
+    pub(crate) label: Option<EdgeLabel<'a>>,
+    pub(crate) value: IRValue<'a>,
 }

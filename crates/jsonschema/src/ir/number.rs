@@ -8,6 +8,16 @@ pub(crate) enum Number {
     Float(f64),
 }
 
+impl Number {
+    pub(crate) fn as_u64(&self) -> Option<u64> {
+        if let Number::PositiveInteger(value) = self {
+            Some(*value)
+        } else {
+            None
+        }
+    }
+}
+
 impl fmt::Display for Number {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

@@ -1,11 +1,16 @@
 use std::{borrow::Cow, collections::VecDeque, iter::once, ops::Range, sync::Arc};
 
+use ahash::AHashMap;
 use referencing::{uri, Registry};
 use serde_json::Value;
 
-use crate::{compiler::DEFAULT_BASE_URI, ir, ValidationOptions};
+use crate::{
+    compiler::DEFAULT_BASE_URI,
+    ir::{self, EdgeLabel, IRValue},
+    ValidationOptions,
+};
 
-pub(crate) fn build(mut config: ValidationOptions, schema: &Value) -> Validator {
+pub fn build(mut config: ValidationOptions, schema: &Value) -> Validator {
     let draft = config.draft_for(schema).unwrap();
     let resource_ref = draft.create_resource_ref(schema);
     let resource = draft.create_resource(schema.clone());
@@ -38,66 +43,127 @@ pub(crate) fn build(mut config: ValidationOptions, schema: &Value) -> Validator 
     compile_impl(&schema)
 }
 
-// TODO:
-//  - mark object with `$ref` to apply draft-specific logic
+// The idea is that a JSON Schema is stored as a tree in a flat layout.
+//
+// Each subschema (including the root one) may contain:
+//   - assertions (like `minLength`)
+//   - applicators (like `properties`)
+//   - annotations (like `description`) - TODO
+//
+// There are four allocations, one for schemas and one for each of the entities above.
+// Then schemas refer to them via ranges of IDs
+struct PendingPatch {
+    applicator_index: usize,
+    patch_type: PatchType,
+}
+
+enum PatchType {
+    Properties { properties_node_id: ir::NodeId },
+}
 
 fn compile_impl<'a>(schema: &ir::SchemaIR<'a>) -> Validator {
-    // Main compilation loop
-    //   - Compile assertions right away, so they are stored contiguously
-    //   - Similarly, store annotations in a contiguous block of memory
-    //   - Defer applicators, so their assertions appear after the ones coming from the current node
     let mut validator = Validator::new();
     let mut queue = VecDeque::new();
+    let mut node_to_schema = AHashMap::new();
+    let mut pending_patches = Vec::new();
+
     queue.push_back(schema.root());
-    // Traverse in BFS order
-    //while let Some(node_id) = queue.pop_front() {
-    //    match &schema[node_id].value {
-    //        NodeValue::Bool(b) => {}
-    //        NodeValue::Object => {
-    //            let assertions_start = validator.assertions.len();
-    //            for child_id in schema.children(node_id) {
-    //                let node = schema.get(child_id);
-    //                if let Some(EdgeLabel::Key(key)) = node.parent_label {
-    //                    if key == "maxLength" {
-    //                        if let NodeValue::Number(num) = node.value {
-    //                            if let Some(limit) = num.as_u64() {
-    //                                validator.push_assertion(Assertion::MaxLength {
-    //                                    limit: limit as usize,
-    //                                });
-    //                            }
-    //                        }
-    //                    } else if key == "properties" {
-    //                        // Compile properties - need to store keys + their schema ids. But
-    //                        // schema ids are not yet available as they are not compiled yet - how
-    //                        // to proceed here?
-    //                        for property_id in schema.children(child_id) {
-    //                            let property = schema.get(property_id);
-    //                            queue.push_back(property_id);
-    //                        }
-    //                    }
-    //                }
-    //            }
-    //            // TODO: store applicators for this schema, so we can apply subschemas during
-    //            // validation
-    //            let assertions_end = validator.assertions.len();
-    //            //validator.push_schema(Schema {
-    //            //    assertions: assertions_start..assertions_end,
-    //            //});
-    //        }
-    //        _ => {}
-    //    }
-    //}
+    while let Some(node_id) = queue.pop_front() {
+        match &schema[node_id].value {
+            IRValue::Bool(b) => {}
+            IRValue::Object => {
+                let schema_id = SchemaId(validator.schemas.len());
+                node_to_schema.insert(node_id, schema_id);
+                let assertions_start = validator.assertions.len();
+                let applicators_start = validator.applicators.len();
+                for child_id in schema.children(node_id) {
+                    let node = &schema[child_id];
+                    if let Some(EdgeLabel::Key(key)) = node.label {
+                        match key.as_str() {
+                            "maxLength" => {
+                                if let IRValue::Number(number) = node.value {
+                                    if let Some(limit) = number.as_u64() {
+                                        validator.push_assertion(Assertion::MaxLength {
+                                            limit: limit as usize,
+                                        });
+                                    }
+                                }
+                            }
+                            "properties" => {
+                                let applicator_index = validator.applicators.len();
+                                pending_patches.push(PendingPatch {
+                                    applicator_index,
+                                    patch_type: PatchType::Properties {
+                                        properties_node_id: child_id,
+                                    },
+                                });
+                                validator
+                                    .push_applicator(Applicator::Properties { properties: vec![] });
+                                for property_id in schema.children(child_id) {
+                                    queue.push_back(property_id);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                let assertions_end = validator.assertions.len();
+                let applicators_end = validator.applicators.len();
+                let schema = Schema {
+                    assertions: assertions_start..assertions_end,
+                    applicators: applicators_start..applicators_end,
+                };
+
+                if node_id == ir::NodeId::root_id() {
+                    validator.root = schema.clone();
+                }
+                validator.push_schema(schema);
+            }
+            _ => {}
+        }
+    }
+    for patch in pending_patches {
+        apply_patch(&mut validator, schema, patch, &node_to_schema);
+    }
     validator
 }
 
+fn apply_patch(
+    validator: &mut Validator,
+    schema: &ir::SchemaIR,
+    patch: PendingPatch,
+    node_to_schema: &AHashMap<ir::NodeId, SchemaId>,
+) {
+    match patch.patch_type {
+        PatchType::Properties { properties_node_id } => {
+            let mut properties = vec![];
+            for property_id in schema.children(properties_node_id) {
+                let property = &schema[property_id];
+                if let Some(EdgeLabel::Key(key)) = property.label {
+                    let schema_id = node_to_schema[&property_id];
+                    properties.push((key.to_string(), schema_id));
+                }
+            }
+
+            if let Applicator::Properties {
+                properties: ref mut props,
+            } = &mut validator.applicators[patch.applicator_index]
+            {
+                *props = properties;
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
-struct Validator {
+pub struct Validator {
+    root: Schema,
     schemas: Vec<Schema>,
     assertions: Vec<Assertion>,
     applicators: Vec<Applicator>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Schema {
     assertions: Range<usize>,
     applicators: Range<usize>,
@@ -106,6 +172,10 @@ pub struct Schema {
 impl Validator {
     pub fn new() -> Self {
         Validator {
+            root: Schema {
+                assertions: 0..0,
+                applicators: 0..0,
+            },
             schemas: Vec::new(),
             assertions: Vec::new(),
             applicators: Vec::new(),
@@ -119,15 +189,66 @@ impl Validator {
     pub fn push_assertion(&mut self, assertion: Assertion) {
         self.assertions.push(assertion);
     }
+    pub fn push_applicator(&mut self, applicator: Applicator) {
+        self.applicators.push(applicator);
+    }
 
-    fn is_valid(&self, value: &Value) -> bool {
-        //let root = &self.schemas[0];
-        //for assertion in &self.assertions[root.assertions.clone()] {
-        //    if !assertion.is_valid(value) {
-        //        return false;
-        //    }
-        //}
+    pub fn is_valid(&self, value: &Value) -> bool {
+        for assertion in &self.assertions[self.root.assertions.clone()] {
+            if !assertion.is_valid(value) {
+                return false;
+            }
+        }
+
+        for applicator in &self.applicators[self.root.applicators.clone()] {
+            if !self.apply_applicator(value, applicator) {
+                return false;
+            }
+        }
+
         true
+    }
+
+    #[inline]
+    fn is_valid_for_schema(&self, value: &Value, schema_id: SchemaId) -> bool {
+        // Run all assertions & applicators and return on the first failed one
+        let schema = &self.schemas[schema_id.0];
+
+        if !schema.assertions.is_empty() {
+            for assertion in &self.assertions[schema.assertions.clone()] {
+                if !assertion.is_valid(value) {
+                    return false;
+                }
+            }
+        }
+
+        if !schema.applicators.is_empty() {
+            for applicator in &self.applicators[schema.applicators.clone()] {
+                if !self.apply_applicator(value, applicator) {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
+    fn apply_applicator(&self, value: &Value, applicator: &Applicator) -> bool {
+        match applicator {
+            Applicator::Properties { properties } => {
+                let Some(object) = value.as_object() else {
+                    return true;
+                };
+                for (key, subschema_id) in properties {
+                    if let Some(subvalue) = object.get(key) {
+                        if !self.is_valid_for_schema(subvalue, *subschema_id) {
+                            return false;
+                        }
+                    }
+                }
+                true
+            }
+        }
     }
 }
 
@@ -139,7 +260,14 @@ enum Assertion {
 impl Assertion {
     fn is_valid(&self, value: &Value) -> bool {
         match self {
-            Assertion::MaxLength { limit } => value.as_str().map_or(true, |s| s.len() <= *limit),
+            Assertion::MaxLength { limit } => {
+                if let Value::String(item) = value {
+                    if item.len() > *limit {
+                        return false;
+                    }
+                }
+                true
+            }
         }
     }
 }
@@ -163,21 +291,12 @@ mod tests {
     use super::build;
     use serde_json::json;
 
-    //#[test]
-    //fn test_assertion_only() {
-    //    let schema = json!({"type": "string", "maxLength": 5});
-    //    let config = crate::options();
-    //    let validator = build(config, &schema);
-    //    assert!(validator.is_valid(&json!("abc")));
-    //    assert!(!validator.is_valid(&json!("abcefg")));
-    //}
-    //
-    //#[test]
-    //fn test_properties() {
-    //    let schema = json!({"properties": {"name": {"maxLength": 5}}});
-    //    let config = crate::options();
-    //    let validator = build(config, &schema);
-    //    assert!(validator.is_valid(&json!({"name": "abc"})));
-    //    assert!(!validator.is_valid(&json!({"name": "abcefg"})));
-    //}
+    #[test]
+    fn test_properties() {
+        let schema = json!({"properties": {"name": {"maxLength": 5}}});
+        let config = crate::options();
+        let validator = build(config, &schema);
+        assert!(validator.is_valid(&json!({"name": "abc"})));
+        assert!(!validator.is_valid(&json!({"name": "abcefg"})));
+    }
 }

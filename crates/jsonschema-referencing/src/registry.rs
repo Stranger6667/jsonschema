@@ -537,7 +537,7 @@ impl Registry {
         }
     }
     pub fn get_document(&self, uri: &Uri<String>) -> Option<&Value> {
-        self.documents.get(uri).map(|v| &**v)
+        self.documents.get(uri).map(|v| (**v).as_ref())
     }
     /// Resolves a reference URI against a base URI using registry's cache.
     ///

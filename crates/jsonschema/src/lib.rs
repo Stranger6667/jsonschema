@@ -643,7 +643,7 @@
 //! See the [External References](#external-references) section for implementation details.
 
 pub(crate) mod compiler;
-pub(crate) mod compiler_v2;
+pub mod compiler_v2;
 mod content_encoding;
 mod content_media_type;
 mod ecma;

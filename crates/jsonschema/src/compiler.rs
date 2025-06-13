@@ -286,7 +286,7 @@ pub(crate) fn build_validator(
         validate_schema(draft, schema)?;
     }
 
-    crate::ir::build(base_uri, draft, &registry);
+    // crate::ir::build(base_uri, draft, &registry);
 
     // Finally, compile the validator
     let root = compile(&ctx, resource_ref).map_err(|err| err.to_owned())?;
