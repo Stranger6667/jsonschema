@@ -52,30 +52,72 @@ pub fn build(mut config: ValidationOptions, schema: &Value) -> Validator {
 //
 // There are four allocations, one for schemas and one for each of the entities above.
 // Then schemas refer to them via ranges of IDs
+
+/// Context for backpatching of applicator nodes.
 struct PendingPatch {
-    applicator_index: usize,
-    patch_type: PatchType,
+    id: usize,
+    kind: PatchKind,
 }
 
-enum PatchType {
-    Properties { properties_node_id: ir::NodeId },
+impl PendingPatch {
+    fn properties(id: usize, node_id: ir::NodeId) -> Self {
+        PendingPatch {
+            id,
+            kind: PatchKind::Properties { node_id },
+        }
+    }
+    fn r#ref(id: usize, node_id: ir::NodeId) -> Self {
+        PendingPatch {
+            id,
+            kind: PatchKind::Ref { node_id },
+        }
+    }
+}
+
+enum PatchKind {
+    Properties { node_id: ir::NodeId },
     Ref { node_id: ir::NodeId },
+}
+
+struct Queue {
+    seen: AHashSet<ir::NodeId>,
+    items: VecDeque<ir::NodeId>,
+}
+
+impl Queue {
+    fn new() -> Self {
+        Queue {
+            seen: AHashSet::new(),
+            items: VecDeque::new(),
+        }
+    }
+    fn push(&mut self, id: ir::NodeId) {
+        if self.seen.insert(id) {
+            self.items.push_back(id);
+        }
+    }
+    fn pop(&mut self) -> Option<ir::NodeId> {
+        self.items.pop_front()
+    }
 }
 
 fn compile_impl<'a>(schema: &ir::SchemaIR<'a>) -> Validator {
     let mut validator = Validator::new();
-    let mut queue = VecDeque::new();
+    let mut queue = Queue::new();
     let mut node_to_schema = AHashMap::new();
     let mut pending_patches = Vec::new();
-    let mut seen = AHashSet::new();
 
-    queue.push_back(schema.root());
-    while let Some(node_id) = queue.pop_front() {
+    queue.push(schema.root());
+
+    while let Some(node_id) = queue.pop() {
         match &schema[node_id].value {
-            IRValue::Bool(b) => {}
+            IRValue::Bool(b) => {
+                // TODO: should there be a node here?
+            }
             IRValue::Object => {
                 let schema_id = SchemaId(validator.schemas.len());
                 node_to_schema.insert(node_id, schema_id);
+
                 let assertions_start = validator.assertions.len();
                 let applicators_start = validator.applicators.len();
                 for child_id in schema.children(node_id) {
@@ -92,46 +134,33 @@ fn compile_impl<'a>(schema: &ir::SchemaIR<'a>) -> Validator {
                                 }
                             }
                             "properties" => {
-                                let applicator_index = validator.applicators.len();
-                                pending_patches.push(PendingPatch {
-                                    applicator_index,
-                                    patch_type: PatchType::Properties {
-                                        properties_node_id: child_id,
-                                    },
-                                });
-                                validator
-                                    .push_applicator(Applicator::Properties { properties: vec![] });
-                                for property_id in schema.children(child_id) {
-                                    if seen.insert(property_id) {
-                                        queue.push_back(property_id);
-                                    }
+                                pending_patches.push(PendingPatch::properties(
+                                    validator.applicators.len(),
+                                    child_id,
+                                ));
+                                validator.push_applicator(Applicator::properties());
+                                for id in schema.children(child_id) {
+                                    queue.push(id);
                                 }
                             }
                             "$ref" => {
-                                let applicator_index = validator.applicators.len();
                                 let ir::IRValue::Reference(target_id) = node.value else {
                                     panic!()
                                 };
-                                pending_patches.push(PendingPatch {
-                                    applicator_index,
-                                    patch_type: PatchType::Ref { node_id: target_id },
-                                });
-                                validator.push_applicator(Applicator::Ref {
-                                    schema_id: SchemaId::new(0),
-                                });
-                                if seen.insert(target_id) {
-                                    queue.push_back(target_id);
-                                }
+                                pending_patches.push(PendingPatch::r#ref(
+                                    validator.applicators.len(),
+                                    target_id,
+                                ));
+                                validator.push_applicator(Applicator::r#ref());
+                                queue.push(target_id);
                             }
                             _ => {}
                         }
                     }
                 }
-                let assertions_end = validator.assertions.len();
-                let applicators_end = validator.applicators.len();
                 let schema = Schema {
-                    assertions: assertions_start..assertions_end,
-                    applicators: applicators_start..applicators_end,
+                    assertions: assertions_start..validator.assertions.len(),
+                    applicators: applicators_start..validator.applicators.len(),
                 };
 
                 if node_id == ir::NodeId::root_id() {
@@ -154,8 +183,10 @@ fn apply_patch(
     patch: PendingPatch,
     node_to_schema: &AHashMap<ir::NodeId, SchemaId>,
 ) {
-    match patch.patch_type {
-        PatchType::Properties { properties_node_id } => {
+    match patch.kind {
+        PatchKind::Properties {
+            node_id: properties_node_id,
+        } => {
             let mut properties = vec![];
             for property_id in schema.children(properties_node_id) {
                 let property = &schema[property_id];
@@ -167,15 +198,13 @@ fn apply_patch(
 
             if let Applicator::Properties {
                 properties: ref mut props,
-            } = &mut validator.applicators[patch.applicator_index]
+            } = &mut validator.applicators[patch.id]
             {
                 *props = properties;
             }
         }
-        PatchType::Ref { node_id } => {
-            if let Applicator::Ref { schema_id } =
-                &mut validator.applicators[patch.applicator_index]
-            {
+        PatchKind::Ref { node_id } => {
+            if let Applicator::Ref { schema_id } = &mut validator.applicators[patch.id] {
                 *schema_id = node_to_schema[&node_id];
             }
         }
@@ -236,7 +265,6 @@ impl Validator {
         true
     }
 
-    #[inline]
     fn is_valid_for_schema(&self, value: &Value, schema_id: SchemaId) -> bool {
         // Run all assertions & applicators and return on the first failed one
         let schema = &self.schemas[schema_id.0];
@@ -283,6 +311,7 @@ impl Validator {
 #[derive(Debug)]
 enum Assertion {
     MaxLength { limit: usize },
+    MinLength { limit: usize },
 }
 
 impl Assertion {
@@ -291,6 +320,14 @@ impl Assertion {
             Assertion::MaxLength { limit } => {
                 if let Value::String(item) = value {
                     if item.len() > *limit {
+                        return false;
+                    }
+                }
+                true
+            }
+            Assertion::MinLength { limit } => {
+                if let Value::String(item) = value {
+                    if item.len() < *limit {
                         return false;
                     }
                 }
@@ -313,6 +350,18 @@ impl SchemaId {
 enum Applicator {
     Properties { properties: Vec<(String, SchemaId)> },
     Ref { schema_id: SchemaId },
+}
+
+impl Applicator {
+    fn properties() -> Self {
+        Applicator::Properties { properties: vec![] }
+    }
+
+    fn r#ref() -> Self {
+        Applicator::Ref {
+            schema_id: SchemaId(0),
+        }
+    }
 }
 
 #[cfg(test)]
