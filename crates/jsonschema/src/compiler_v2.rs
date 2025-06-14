@@ -228,7 +228,7 @@ impl Validator {
     }
 
     pub fn is_valid(&self, value: &Value) -> bool {
-        for keyword in &self.keywords[self.root.keywords.clone()] {
+        for keyword in &self.keywords[self.root.keywords.start..self.root.keywords.end] {
             if !self.apply_keyword(keyword, value) {
                 return false;
             }
