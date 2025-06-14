@@ -28,6 +28,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let schema: Value = serde_json::from_str(&schema_str)?;
     let instance: Value = serde_json::from_str(&instance_str)?;
 
+    let schema = serde_json::json!({
+        "properties": {
+            "name": {"maxLength": 3},
+            "child": {"$ref": "#"}
+        }
+    });
+    let instance = serde_json::json!({
+        "name": "Bob",
+        "child": {
+            "name": "Ann",
+            "child": {
+                "name": "Joe",
+                "child": {
+                    "name": "Sam",
+                    "child": {
+                        "name": "Max",
+                        "child": {
+                            "name": "Eve",
+                            "child": {
+                                "name": "Roy",
+                                "child": {
+                                    "name": "Zoe",
+                                    "child": {
+                                        "name": "Leo",
+                                        "child": {
+                                            "name": "Amy"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    let config = jsonschema::options();
+    let validator2 = jsonschema::compiler_v2::build(config, &schema);
     let validator = jsonschema::validator_for(&schema)?;
 
     let input_resources = vec![(
@@ -43,7 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = jsonschema::validator_for(&schema)?;
             }
             "is_valid" => {
-                let _ = validator.is_valid(&instance);
+                let _ = validator2.is_valid(&instance);
             }
             "validate" => {
                 let _ = validator.validate(&instance);
