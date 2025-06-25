@@ -510,6 +510,9 @@ impl Registry {
             Err(Error::no_such_anchor(name.to_string()))
         }
     }
+    pub fn get_document(&self, uri: &Uri<String>) -> Option<&Value> {
+        self.documents.get(uri).map(|v| (**v).as_ref())
+    }
     /// Resolves a reference URI against a base URI using registry's cache.
     ///
     /// # Errors
