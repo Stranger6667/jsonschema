@@ -148,7 +148,9 @@ pub enum ValidationErrorKind {
     /// The given schema is valid under more than one of the schemas listed in the 'oneOf' keyword.
     OneOfMultipleValid,
     /// The given schema is not valid under any of the schemas listed in the 'oneOf' keyword.
-    OneOfNotValid,
+    OneOfNotValid {
+        errors: Vec<ValidationError<'static>>,
+    },
     /// When the input doesn't match to a pattern.
     Pattern { pattern: String },
     /// Object property names are invalid.
@@ -607,15 +609,18 @@ impl<'a> ValidationError<'a> {
             schema_path: location,
         }
     }
-    pub(crate) const fn one_of_not_valid(
+    pub(crate) fn one_of_not_valid(
         location: Location,
         instance_path: Location,
         instance: &'a Value,
+        errors: Vec<ValidationError<'a>>,
     ) -> ValidationError<'a> {
         ValidationError {
             instance_path,
             instance: Cow::Borrowed(instance),
-            kind: ValidationErrorKind::OneOfNotValid,
+            kind: ValidationErrorKind::OneOfNotValid {
+                errors: errors.into_iter().map(|error| error.to_owned()).collect(),
+            },
             schema_path: location,
         }
     }
@@ -825,7 +830,7 @@ impl fmt::Display for ValidationError<'_> {
                 "{} is not valid under any of the schemas listed in the 'anyOf' keyword",
                 self.instance
             ),
-            ValidationErrorKind::OneOfNotValid => write!(
+            ValidationErrorKind::OneOfNotValid { errors: _ } => write!(
                 f,
                 "{} is not valid under any of the schemas listed in the 'oneOf' keyword",
                 self.instance
@@ -1004,7 +1009,7 @@ impl fmt::Display for MaskedValidationError<'_, '_, '_> {
                 "{} is not valid under any of the schemas listed in the 'anyOf' keyword",
                 self.placeholder
             ),
-            ValidationErrorKind::OneOfNotValid => write!(
+            ValidationErrorKind::OneOfNotValid { errors: _ } => write!(
                 f,
                 "{} is not valid under any of the schemas listed in the 'oneOf' keyword",
                 self.placeholder

@@ -139,7 +139,9 @@ class ValidationErrorKind:
         schema: JSONType
 
     class OneOfMultipleValid: ...
-    class OneOfNotValid: ...
+
+    class OneOfNotValid:
+        errors: list["ValidationError"]
 
     class Pattern:
         pattern: str

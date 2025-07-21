@@ -129,7 +129,7 @@ enum ValidationErrorKind {
     MultipleOf { multiple_of: f64 },
     Not { schema: PyObject },
     OneOfMultipleValid {},
-    OneOfNotValid {},
+    OneOfNotValid { errors: Py<PyList> },
     Pattern { pattern: String },
     PropertyNames { error: Py<ValidationError> },
     Required { property: PyObject },
@@ -264,8 +264,33 @@ impl ValidationErrorKind {
             jsonschema::error::ValidationErrorKind::OneOfMultipleValid => {
                 ValidationErrorKind::OneOfMultipleValid {}
             }
-            jsonschema::error::ValidationErrorKind::OneOfNotValid => {
-                ValidationErrorKind::OneOfNotValid {}
+            jsonschema::error::ValidationErrorKind::OneOfNotValid { errors } => {
+                ValidationErrorKind::OneOfNotValid {
+                    errors: {
+                        let mut py_errors: Vec<Py<ValidationError>> = Vec::with_capacity(errors.len());
+
+                        for error in errors {
+                            let (message, verbose_message, schema_path, instance_path, kind, instance) =
+                                into_validation_error_args(py, error, mask)?;
+
+                            py_errors.push(
+                                Py::new(
+                                    py,
+                                    ValidationError {
+                                        message,
+                                        verbose_message,
+                                        schema_path,
+                                        instance_path,
+                                        kind: kind.into_pyobject(py)?.unbind(),
+                                        instance,
+                                    },
+                                )?
+                            );
+                        }
+
+                        PyList::new(py, py_errors)?.unbind()
+                    },
+                }
             }
             jsonschema::error::ValidationErrorKind::Pattern { pattern } => {
                 ValidationErrorKind::Pattern { pattern }
