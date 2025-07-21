@@ -143,7 +143,6 @@ def test_paths():
     ["schema", "instance", "kind", "attrs"],
     [
         ({"maxItems": 1}, [1, 2], ValidationErrorKind.MaxItems, {"limit": 1}),
-        ({"anyOf": [{"type": "string"}, {"type": "number"}]}, True, ValidationErrorKind.AnyOf, {}),
         ({"const": "test"}, "wrong", ValidationErrorKind.Constant, {"expected_value": "test"}),
         ({"contains": {"type": "string"}}, [1, 2, 3], ValidationErrorKind.Contains, {}),
         ({"enum": [1, 2, 3]}, 4, ValidationErrorKind.Enum, {"options": [1, 2, 3]}),
@@ -176,6 +175,45 @@ def test_validation_error_kinds(schema, instance, kind, attrs):
     for attr, expected_value in attrs.items():
         assert hasattr(exc.value.kind, attr)
         assert getattr(exc.value.kind, attr) == expected_value
+
+
+@pytest.mark.parametrize(
+    ["schema", "instance", "kind", "context"],
+    [
+        (
+            {"anyOf": [{"type": "string"}, {"type": "number"}]},
+            True,
+            ValidationErrorKind.AnyOf,
+            [
+                [ValidationError("true is not of type \"string\"", "", ['anyOf', 0, 'type'], [], ValidationErrorKind.Type(["string"]), True)],
+                [ValidationError("true is not of type \"number\"", "", ['anyOf', 1, 'type'], [], ValidationErrorKind.Type(["number"]), True)],
+            ]
+        ),
+        (
+            {"oneOf": [{"type": "number"}, {"type": "number"}]},
+            "1",
+            ValidationErrorKind.OneOfNotValid,
+            [
+                [ValidationError("\"1\" is not of type \"number\"", "", ['oneOf', 0, 'type'], [], ValidationErrorKind.Type(["number"]), "1")],
+                [ValidationError("\"1\" is not of type \"number\"", "", ['oneOf', 1, 'type'], [], ValidationErrorKind.Type(["number"]), "1")],
+            ]
+        ),
+    ],
+)
+def test_validation_error_kinds_with_context(schema, instance, kind, context):
+    with pytest.raises(ValidationError) as exc:
+        validate(schema, instance, validate_formats=True)
+
+    assert isinstance(exc.value.kind, kind)
+
+    for schema_id, errors in enumerate(context):
+        for index, expected_error in enumerate(errors):
+            actual_error = exc.value.kind.context[schema_id][index]
+            assert actual_error.message == expected_error.message
+            assert actual_error.schema_path == expected_error.schema_path
+            assert actual_error.instance_path == expected_error.instance_path
+            assert isinstance(actual_error.kind, type(expected_error.kind))
+            assert actual_error.instance == expected_error.instance
 
 
 @given(minimum=st.integers().map(abs))
