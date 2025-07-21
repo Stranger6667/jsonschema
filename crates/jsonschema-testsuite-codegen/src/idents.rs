@@ -5,7 +5,7 @@ pub(crate) fn get_unique(base: &str, used: &mut HashSet<String>) -> String {
     let mut counter = 1;
 
     while !used.insert(name.clone()) {
-        name = format!("{}_{}", base, counter);
+        name = format!("{base}_{counter}");
         counter += 1;
     }
 

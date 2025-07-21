@@ -190,7 +190,7 @@ mod tests {
             },
             "required": ["name"]
         });
-        write!(temp_file, "{}", external_schema).expect("Failed to write to temp file");
+        write!(temp_file, "{external_schema}").expect("Failed to write to temp file");
 
         let uri = path_to_uri(temp_file.path());
 
@@ -296,7 +296,7 @@ mod async_tests {
             },
             "required": ["name"]
         });
-        write!(temp_file, "{}", external_schema).expect("Failed to write to temp file");
+        write!(temp_file, "{external_schema}").expect("Failed to write to temp file");
 
         let uri = path_to_uri(temp_file.path());
 
@@ -365,7 +365,7 @@ mod async_tests {
                     "field": { "type": "string", "minLength": i }
                 }
             });
-            write!(temp_file, "{}", schema).expect("Failed to write to temp file");
+            write!(temp_file, "{schema}").expect("Failed to write to temp file");
             uris.push(path_to_uri(temp_file.path()));
             temp_files.push(temp_file);
         }

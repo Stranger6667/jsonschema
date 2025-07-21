@@ -505,8 +505,7 @@ fn make_options(
         for (name, callback) in formats.iter() {
             if !callback.is_callable() {
                 return Err(exceptions::PyValueError::new_err(format!(
-                    "Format checker for '{}' must be a callable",
-                    name
+                    "Format checker for '{name}' must be a callable",
                 )));
             }
             let callback: Py<PyAny> = callback.clone().unbind();
@@ -828,7 +827,7 @@ fn handle_format_checked_panic(err: Box<dyn Any + Send>) -> PyErr {
             let _ = panic::take_hook();
             err
         } else {
-            exceptions::PyRuntimeError::new_err(format!("Validation panicked: {:?}", err))
+            exceptions::PyRuntimeError::new_err(format!("Validation panicked: {err:?}"))
         }
     })
 }
@@ -896,7 +895,7 @@ fn validator_for_impl(
         let ptr = unsafe { PyUnicode_AsUTF8AndSize(obj_ptr, &mut str_size) };
         let slice = unsafe { std::slice::from_raw_parts(ptr.cast::<u8>(), str_size as usize) };
         serde_json::from_slice(slice)
-            .map_err(|error| PyValueError::new_err(format!("Invalid string: {}", error)))?
+            .map_err(|error| PyValueError::new_err(format!("Invalid string: {error}")))?
     } else {
         ser::to_value(schema)?
     };

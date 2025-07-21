@@ -1855,23 +1855,19 @@ pub(crate) mod tests_util {
     pub(crate) fn is_not_valid_with(validator: &Validator, instance: &Value) {
         assert!(
             !validator.is_valid(instance),
-            "{} should not be valid (via is_valid)",
-            instance
+            "{instance} should not be valid (via is_valid)",
         );
         assert!(
             validator.validate(instance).is_err(),
-            "{} should not be valid (via validate)",
-            instance
+            "{instance} should not be valid (via validate)",
         );
         assert!(
             validator.iter_errors(instance).next().is_some(),
-            "{} should not be valid (via validate)",
-            instance
+            "{instance} should not be valid (via validate)",
         );
         assert!(
             !validator.apply(instance).basic().is_valid(),
-            "{} should not be valid (via apply)",
-            instance
+            "{instance} should not be valid (via apply)",
         );
     }
 
@@ -1915,18 +1911,15 @@ pub(crate) mod tests_util {
         }
         assert!(
             validator.is_valid(instance),
-            "{} should be valid (via is_valid)",
-            instance
+            "{instance} should be valid (via is_valid)",
         );
         assert!(
             validator.validate(instance).is_ok(),
-            "{} should be valid (via is_valid)",
-            instance
+            "{instance} should be valid (via is_valid)",
         );
         assert!(
             validator.apply(instance).basic().is_valid(),
-            "{} should be valid (via apply)",
-            instance
+            "{instance} should be valid (via apply)",
         );
     }
 

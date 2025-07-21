@@ -315,7 +315,7 @@ mod tests {
     #[test]
     fn test_display_trait() {
         let loc = Location::new().join("property");
-        assert_eq!(format!("{}", loc), "/property");
+        assert_eq!(format!("{loc}"), "/property");
     }
 
     #[test_case("tilde~character", "/tilde~0character"; "escapes tilde")]

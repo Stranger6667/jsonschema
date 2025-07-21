@@ -1014,6 +1014,6 @@ fn test_additional_properties_basic_output(
     if &output != expected {
         let expected_str = serde_json::to_string_pretty(expected).unwrap();
         let actual_str = serde_json::to_string_pretty(&output).unwrap();
-        panic!("\nExpected:\n{}\n\nGot:\n{}\n", expected_str, actual_str);
+        panic!("\nExpected:\n{expected_str}\n\nGot:\n{actual_str}\n");
     }
 }

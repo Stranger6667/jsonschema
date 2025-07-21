@@ -781,13 +781,13 @@ fn write_quoted_list(f: &mut Formatter<'_>, items: &[impl fmt::Display]) -> fmt:
     let mut iter = items.iter();
     if let Some(item) = iter.next() {
         f.write_char('\'')?;
-        write!(f, "{}", item)?;
+        write!(f, "{item}")?;
         f.write_char('\'')?;
     }
     for item in iter {
         f.write_str(", ")?;
         f.write_char('\'')?;
-        write!(f, "{}", item)?;
+        write!(f, "{item}")?;
         f.write_char('\'')?;
     }
     Ok(())
@@ -817,11 +817,11 @@ impl fmt::Display for ValidationError<'_> {
                 let mut iter = array.iter().skip(*limit);
 
                 if let Some(item) = iter.next() {
-                    write!(f, "{}", item)?;
+                    write!(f, "{item}")?;
                 }
                 for item in iter {
                     f.write_str(", ")?;
-                    write!(f, "{}", item)?;
+                    write!(f, "{item}")?;
                 }
 
                 write_unexpected_suffix(f, array.len() - limit)
@@ -847,7 +847,7 @@ impl fmt::Display for ValidationError<'_> {
                 self.instance
             ),
             ValidationErrorKind::Constant { expected_value } => {
-                write!(f, "{} was expected", expected_value)
+                write!(f, "{expected_value} was expected")
             }
             ValidationErrorKind::ContentEncoding { content_encoding } => {
                 write!(
@@ -943,7 +943,7 @@ impl fmt::Display for ValidationError<'_> {
             }
             ValidationErrorKind::PropertyNames { error } => error.fmt(f),
             ValidationErrorKind::Required { property } => {
-                write!(f, "{} is a required property", property)
+                write!(f, "{property} is a required property")
             }
             ValidationErrorKind::MultipleOf { multiple_of } => {
                 write!(f, "{} is not a multiple of {}", self.instance, multiple_of)
@@ -971,13 +971,13 @@ impl fmt::Display for ValidationError<'_> {
                 let mut iter = types.iter();
                 if let Some(t) = iter.next() {
                     f.write_char('"')?;
-                    write!(f, "{}", t)?;
+                    write!(f, "{t}")?;
                     f.write_char('"')?;
                 }
                 for t in iter {
                     f.write_str(", ")?;
                     f.write_char('"')?;
-                    write!(f, "{}", t)?;
+                    write!(f, "{t}")?;
                     f.write_char('"')?;
                 }
                 Ok(())
@@ -1026,7 +1026,7 @@ impl fmt::Display for MaskedValidationError<'_, '_, '_> {
                 self.placeholder
             ),
             ValidationErrorKind::Constant { expected_value } => {
-                write!(f, "{} was expected", expected_value)
+                write!(f, "{expected_value} was expected")
             }
             ValidationErrorKind::ContentEncoding { content_encoding } => {
                 write!(
@@ -1126,7 +1126,7 @@ impl fmt::Display for MaskedValidationError<'_, '_, '_> {
             }
             ValidationErrorKind::PropertyNames { error } => error.fmt(f),
             ValidationErrorKind::Required { property } => {
-                write!(f, "{} is a required property", property)
+                write!(f, "{property} is a required property")
             }
             ValidationErrorKind::MultipleOf { multiple_of } => {
                 write!(
@@ -1160,13 +1160,13 @@ impl fmt::Display for MaskedValidationError<'_, '_, '_> {
                 let mut iter = types.iter();
                 if let Some(t) = iter.next() {
                     f.write_char('"')?;
-                    write!(f, "{}", t)?;
+                    write!(f, "{t}")?;
                     f.write_char('"')?;
                 }
                 for t in iter {
                     f.write_str(", ")?;
                     f.write_char('"')?;
-                    write!(f, "{}", t)?;
+                    write!(f, "{t}")?;
                     f.write_char('"')?;
                 }
                 Ok(())

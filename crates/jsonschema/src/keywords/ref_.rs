@@ -645,7 +645,7 @@ mod tests {
             .build(&schema)
         {
             Ok(validator) => validator,
-            Err(error) => panic!("Failed to build validator: {}", error),
+            Err(error) => panic!("Failed to build validator: {error}"),
         };
 
         assert!(validator.is_valid(&json!("test")));
@@ -691,7 +691,7 @@ mod tests {
             .build(&schema)
         {
             Ok(validator) => validator,
-            Err(error) => panic!("Failed to build validator: {}", error),
+            Err(error) => panic!("Failed to build validator: {error}"),
         };
 
         assert!(validator.is_valid(&json!(42)));

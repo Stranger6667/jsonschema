@@ -4,7 +4,7 @@ use serde_json::Value;
 use valico::json_schema;
 
 fn bench_build(c: &mut Criterion, name: &str, schema: &Value) {
-    c.bench_function(&format!("valico/{}/build", name), |b| {
+    c.bench_function(&format!("valico/{name}/build"), |b| {
         b.iter_batched(
             || (json_schema::Scope::new(), schema.clone()),
             |(mut scope, schema)| {

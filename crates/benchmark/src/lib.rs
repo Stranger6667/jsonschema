@@ -139,7 +139,7 @@ pub fn run_keyword_benchmarks(bench: &mut BenchFunc) {
                 .iter()
                 .enumerate()
                 .map(|(idx, instance)| BenchInstance {
-                    name: format!("{}/{}", prefix, idx),
+                    name: format!("{prefix}/{idx}"),
                     data: instance.clone(),
                 })
                 .collect();

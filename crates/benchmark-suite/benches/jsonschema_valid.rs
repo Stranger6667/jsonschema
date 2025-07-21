@@ -4,7 +4,7 @@ use jsonschema_valid::{schemas, Config};
 use serde_json::Value;
 
 fn bench_build(c: &mut Criterion, name: &str, schema: &Value) {
-    c.bench_function(&format!("jsonschema_valid/{}/build", name), |b| {
+    c.bench_function(&format!("jsonschema_valid/{name}/build"), |b| {
         b.iter_with_large_drop(|| {
             Config::from_schema(schema, Some(schemas::Draft::Draft7)).expect("Valid schema")
         })

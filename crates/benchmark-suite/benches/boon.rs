@@ -8,7 +8,7 @@ fn bench_build(c: &mut Criterion, name: &str, schema: &Value) {
     compiler
         .add_resource("schema.json", schema.clone())
         .expect("Failed to add resource");
-    c.bench_function(&format!("boon/{}/build", name), |b| {
+    c.bench_function(&format!("boon/{name}/build"), |b| {
         b.iter(|| {
             compiler
                 .compile("schema.json", &mut Schemas::new())
