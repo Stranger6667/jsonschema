@@ -255,7 +255,7 @@ impl ValidationErrorKind {
                                 verbose_message,
                                 schema_path,
                                 instance_path,
-                                kind: Py::new(py, kind)?,
+                                kind: kind.into_pyobject(py)?.unbind(),
                                 instance,
                             },
                         )?
