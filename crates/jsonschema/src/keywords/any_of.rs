@@ -52,7 +52,7 @@ impl Validate for AnyOfValidator {
                 instance,
                 self.schemas
                     .iter()
-                    .flat_map(|schema| schema.iter_errors(instance, location))
+                    .map(|schema| schema.iter_errors(instance, location).collect())
                     .collect(),
             ))
         }
@@ -76,7 +76,7 @@ impl Validate for AnyOfValidator {
                 instance,
                 self.schemas
                     .iter()
-                    .flat_map(|schema| schema.iter_errors(instance, location))
+                    .map(|schema| schema.iter_errors(instance, location).collect())
                     .collect(),
             ))
         }

@@ -72,7 +72,7 @@ class ValidationErrorKind:
         unexpected: list[str]
 
     class AnyOf:
-        errors: list["ValidationError"]
+        context: list[list["ValidationError"]]
 
     class BacktrackLimitExceeded:
         error: str
