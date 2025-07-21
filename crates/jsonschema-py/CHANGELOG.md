@@ -5,6 +5,7 @@
 ### Added
 
 - Added support for old and new style string enums in object keys.
+- Added `context` for `ValidationErrorKind.AnyOf` and `ValidationErrorKind.OneOfNotValid` which contains errors for all subschemas, each inside a separate list with an index matching subschema ID.
 
 ### Changed
 
