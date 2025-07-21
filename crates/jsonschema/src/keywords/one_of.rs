@@ -90,7 +90,7 @@ impl Validate for OneOfValidator {
                 instance,
                 self.schemas
                     .iter()
-                    .flat_map(|schema| schema.iter_errors(instance, location))
+                    .map(|schema| schema.iter_errors(instance, location).collect())
                     .collect(),
             ))
         }

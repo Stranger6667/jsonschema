@@ -129,7 +129,7 @@ enum ValidationErrorKind {
     MultipleOf { multiple_of: f64 },
     Not { schema: PyObject },
     OneOfMultipleValid {},
-    OneOfNotValid { errors: Py<PyList> },
+    OneOfNotValid { context: Py<PyList> },
     Pattern { pattern: String },
     PropertyNames { error: Py<ValidationError> },
     Required { property: PyObject },
@@ -275,36 +275,42 @@ impl ValidationErrorKind {
             jsonschema::error::ValidationErrorKind::OneOfMultipleValid => {
                 ValidationErrorKind::OneOfMultipleValid {}
             }
-            jsonschema::error::ValidationErrorKind::OneOfNotValid { errors } => {
+            jsonschema::error::ValidationErrorKind::OneOfNotValid { context } => {
                 ValidationErrorKind::OneOfNotValid {
-                    errors: {
-                        let mut py_errors: Vec<Py<ValidationError>> =
-                            Vec::with_capacity(errors.len());
+                    context: {
+                        let mut py_context: Vec<Py<PyList>> = Vec::with_capacity(context.len());
 
-                        for error in errors {
-                            let (
-                                message,
-                                verbose_message,
-                                schema_path,
-                                instance_path,
-                                kind,
-                                instance,
-                            ) = into_validation_error_args(py, error, mask)?;
+                        for errors in context {
+                            let mut py_errors: Vec<Py<ValidationError>> =
+                                Vec::with_capacity(errors.len());
 
-                            py_errors.push(Py::new(
-                                py,
-                                ValidationError {
+                            for error in errors {
+                                let (
                                     message,
                                     verbose_message,
                                     schema_path,
                                     instance_path,
-                                    kind: kind.into_pyobject(py)?.unbind(),
+                                    kind,
                                     instance,
-                                },
-                            )?);
+                                ) = into_validation_error_args(py, error, mask)?;
+
+                                py_errors.push(Py::new(
+                                    py,
+                                    ValidationError {
+                                        message,
+                                        verbose_message,
+                                        schema_path,
+                                        instance_path,
+                                        kind: kind.into_pyobject(py)?.unbind(),
+                                        instance,
+                                    },
+                                )?);
+                            }
+
+                            py_context.push(PyList::new(py, py_errors)?.unbind());
                         }
 
-                        PyList::new(py, py_errors)?.unbind()
+                        PyList::new(py, py_context)?.unbind()
                     },
                 }
             }

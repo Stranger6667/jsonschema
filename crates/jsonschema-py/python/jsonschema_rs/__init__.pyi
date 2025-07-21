@@ -141,7 +141,7 @@ class ValidationErrorKind:
     class OneOfMultipleValid: ...
 
     class OneOfNotValid:
-        errors: list["ValidationError"]
+        context: list[list["ValidationError"]]
 
     class Pattern:
         pattern: str
