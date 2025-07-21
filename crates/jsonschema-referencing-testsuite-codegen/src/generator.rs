@@ -30,7 +30,7 @@ pub(crate) fn generate_modules(
                 let full_test_path = case_path.join("::");
                 let should_ignore = xfail.iter().any(|x| full_test_path.starts_with(x));
                 let ignore_attr = if should_ignore {
-                    quote! { #[ignore] }
+                    quote! { #[ignore = "xfail"] }
                 } else {
                     quote! {}
                 };
