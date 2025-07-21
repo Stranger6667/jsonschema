@@ -98,7 +98,9 @@ pub enum ValidationErrorKind {
     /// Unexpected properties.
     AdditionalProperties { unexpected: Vec<String> },
     /// The input value is not valid under any of the schemas listed in the 'anyOf' keyword.
-    AnyOf,
+    AnyOf {
+        errors: Vec<ValidationError<'static>>,
+    },
     /// Results from a [`fancy_regex::RuntimeError::BacktrackLimitExceeded`] variant when matching
     BacktrackLimitExceeded { error: fancy_regex::Error },
     /// The input value doesn't match expected constant.
@@ -228,15 +230,18 @@ impl<'a> ValidationError<'a> {
             schema_path: location,
         }
     }
-    pub(crate) const fn any_of(
+    pub(crate) fn any_of(
         location: Location,
         instance_path: Location,
         instance: &'a Value,
+        errors: Vec<ValidationError<'a>>,
     ) -> ValidationError<'a> {
         ValidationError {
             instance_path,
             instance: Cow::Borrowed(instance),
-            kind: ValidationErrorKind::AnyOf,
+            kind: ValidationErrorKind::AnyOf {
+                errors: errors.into_iter().map(|error| error.to_owned()).collect(),
+            },
             schema_path: location,
         }
     }
@@ -815,7 +820,7 @@ impl fmt::Display for ValidationError<'_> {
                 write_quoted_list(f, unexpected)?;
                 write_unexpected_suffix(f, unexpected.len())
             }
-            ValidationErrorKind::AnyOf => write!(
+            ValidationErrorKind::AnyOf { errors: _ } => write!(
                 f,
                 "{} is not valid under any of the schemas listed in the 'anyOf' keyword",
                 self.instance
@@ -994,7 +999,7 @@ impl fmt::Display for MaskedValidationError<'_, '_, '_> {
                 write_quoted_list(f, unexpected)?;
                 write_unexpected_suffix(f, unexpected.len())
             }
-            ValidationErrorKind::AnyOf => write!(
+            ValidationErrorKind::AnyOf { errors: _ } => write!(
                 f,
                 "{} is not valid under any of the schemas listed in the 'anyOf' keyword",
                 self.placeholder

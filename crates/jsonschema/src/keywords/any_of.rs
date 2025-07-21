@@ -50,6 +50,10 @@ impl Validate for AnyOfValidator {
                 self.location.clone(),
                 location.into(),
                 instance,
+                self.schemas
+                    .iter()
+                    .flat_map(|schema| schema.iter_errors(instance, location))
+                    .collect(),
             ))
         }
     }
@@ -70,6 +74,10 @@ impl Validate for AnyOfValidator {
                 self.location.clone(),
                 location.into(),
                 instance,
+                self.schemas
+                    .iter()
+                    .flat_map(|schema| schema.iter_errors(instance, location))
+                    .collect(),
             ))
         }
     }

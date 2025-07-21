@@ -71,7 +71,8 @@ class ValidationErrorKind:
     class AdditionalProperties:
         unexpected: list[str]
 
-    class AnyOf: ...
+    class AnyOf:
+        errors: list["ValidationError"]
 
     class BacktrackLimitExceeded:
         error: str
