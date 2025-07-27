@@ -185,7 +185,6 @@ mod tests {
                     for segment in test_data["instance_path"]
                         .as_array()
                         .expect("Valid array")
-                        .iter()
                     {
                         instance_path.push('/');
                         instance_path.push_str(segment.as_str().expect("A string"));

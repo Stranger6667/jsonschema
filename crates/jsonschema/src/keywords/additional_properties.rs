@@ -119,7 +119,7 @@ impl Validate for AdditionalPropertiesValidator {
         location: &LazyLocation,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
-            for (name, value) in item.iter() {
+            for (name, value) in item {
                 self.node.validate(value, &location.push(name))?;
             }
         }
@@ -414,7 +414,7 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyValida
         location: &LazyLocation,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(props) = instance {
-            for (property, instance) in props.iter() {
+            for (property, instance) in props {
                 if let Some(validator) = self.properties.get_validator(property) {
                     validator.validate(instance, &location.push(property))?;
                 } else {
@@ -534,7 +534,7 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsValidator<R> {
         if let Value::Object(item) = instance {
             for (property, value) in item {
                 let mut has_match = false;
-                for (re, node) in self.patterns.iter() {
+                for (re, node) in &self.patterns {
                     if re.is_match(property).unwrap_or(false) {
                         has_match = true;
                         node.validate(value, &location.push(property))?;
@@ -668,7 +668,7 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsFalseValidator
         if let Value::Object(item) = instance {
             for (property, value) in item {
                 let mut has_match = false;
-                for (re, node) in self.patterns.iter() {
+                for (re, node) in &self.patterns {
                     if re.is_match(property).unwrap_or(false) {
                         has_match = true;
                         node.validate(value, &location.push(property))?;
@@ -848,14 +848,14 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
             for (property, value) in item {
                 if let Some((name, node)) = self.properties.get_key_validator(property) {
                     node.validate(value, &location.push(name))?;
-                    for (re, node) in self.patterns.iter() {
+                    for (re, node) in &self.patterns {
                         if re.is_match(property).unwrap_or(false) {
                             node.validate(value, &location.push(name))?;
                         }
                     }
                 } else {
                     let mut has_match = false;
-                    for (re, node) in self.patterns.iter() {
+                    for (re, node) in &self.patterns {
                         if re.is_match(property).unwrap_or(false) {
                             has_match = true;
                             node.validate(value, &location.push(property))?;
@@ -1023,14 +1023,14 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
             for (property, value) in item {
                 if let Some((name, node)) = self.properties.get_key_validator(property) {
                     node.validate(value, &location.push(name))?;
-                    for (re, node) in self.patterns.iter() {
+                    for (re, node) in &self.patterns {
                         if re.is_match(property).unwrap_or(false) {
                             node.validate(value, &location.push(name))?;
                         }
                     }
                 } else {
                     let mut has_match = false;
-                    for (re, node) in self.patterns.iter() {
+                    for (re, node) in &self.patterns {
                         if re.is_match(property).unwrap_or(false) {
                             has_match = true;
                             node.validate(value, &location.push(property))?;

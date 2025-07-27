@@ -78,7 +78,7 @@ impl Validate for PropertiesValidator {
         location: &LazyLocation,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
-            for (name, node) in self.properties.iter() {
+            for (name, node) in &self.properties {
                 if let Some(item) = item.get(name) {
                     node.validate(item, &location.push(name))?;
                 }

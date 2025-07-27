@@ -56,8 +56,8 @@ impl<R: RegexEngine> Validate for PatternPropertiesValidator<R> {
         location: &LazyLocation,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
-            for (re, node) in self.patterns.iter() {
-                for (key, value) in item.iter() {
+            for (re, node) in &self.patterns {
+                for (key, value) in item {
                     if re.is_match(key).unwrap_or(false) {
                         node.validate(value, &location.push(key))?;
                     }
@@ -128,7 +128,7 @@ impl<R: RegexEngine> Validate for SingleValuePatternPropertiesValidator<R> {
         location: &LazyLocation,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
-            for (key, value) in item.iter() {
+            for (key, value) in item {
                 if self.regex.is_match(key).unwrap_or(false) {
                     self.node.validate(value, &location.push(key))?;
                 }
