@@ -32,7 +32,7 @@ mod tests {
             }
             "draft2019-09" | "draft2020-12" => {}
             _ => panic!("Unsupported draft"),
-        };
+        }
         if test.is_optional {
             options = options.should_validate_formats(true);
         }

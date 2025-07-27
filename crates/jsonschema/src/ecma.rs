@@ -65,7 +65,7 @@ pub(crate) fn to_rust_regex(pattern: &str) -> Result<Cow<'_, str>, ()> {
             Err(_) => {
                 return Err(());
             }
-        };
+        }
     }
 }
 

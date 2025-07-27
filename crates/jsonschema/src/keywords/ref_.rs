@@ -108,7 +108,7 @@ impl LazyRefValidator {
         let mut base_uri = resolver.base_uri();
         if let Some(id) = resource.id() {
             base_uri = resolver.resolve_against(&base_uri.borrow(), id)?;
-        };
+        }
         Ok(Box::new(LazyRefValidator {
             resource,
             config: Arc::clone(ctx.config()),

@@ -120,7 +120,7 @@ impl SchemaNode {
             } => {
                 if let Some(annotations) = annotations {
                     child_results.insert(0, self.annotation_at(location, annotations));
-                };
+                }
                 BasicOutput::Valid(child_results)
             }
             PartialApplication::Invalid {

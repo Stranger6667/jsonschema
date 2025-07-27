@@ -148,23 +148,23 @@ impl ItemsFilter for Draft2019ItemsFilter {
         let mut contains = None;
         if let Some(subschema) = parent.get("contains") {
             contains = Some(compiler::compile(ctx, ctx.as_resource_ref(subschema))?);
-        };
+        }
         let mut unevaluated = None;
         if let Some(subschema) = parent.get("unevaluatedItems") {
             unevaluated = Some(compiler::compile(ctx, ctx.as_resource_ref(subschema))?);
-        };
+        }
         let mut all_of = None;
         if let Some(Some(subschemas)) = parent.get("allOf").map(Value::as_array) {
             all_of = Some(CombinatorFilter::new(ctx, subschemas)?);
-        };
+        }
         let mut any_of = None;
         if let Some(Some(subschemas)) = parent.get("anyOf").map(Value::as_array) {
             any_of = Some(CombinatorFilter::new(ctx, subschemas)?);
-        };
+        }
         let mut one_of = None;
         if let Some(Some(subschemas)) = parent.get("oneOf").map(Value::as_array) {
             one_of = Some(CombinatorFilter::new(ctx, subschemas)?);
-        };
+        }
         let mut items = None;
         if let Some(subschema) = parent.get("items") {
             let limit = if parent.contains_key("additionalItems") || subschema.is_object() {
@@ -176,7 +176,7 @@ impl ItemsFilter for Draft2019ItemsFilter {
                     .len()
             };
             items = Some(limit);
-        };
+        }
 
         Ok(Draft2019ItemsFilter {
             unevaluated,
@@ -329,24 +329,24 @@ impl ItemsFilter for DefaultItemsFilter {
         let mut contains = None;
         if let Some(subschema) = parent.get("contains") {
             contains = Some(compiler::compile(ctx, ctx.as_resource_ref(subschema))?);
-        };
+        }
         let mut unevaluated = None;
         if let Some(subschema) = parent.get("unevaluatedItems") {
             unevaluated = Some(compiler::compile(ctx, ctx.as_resource_ref(subschema))?);
-        };
+        }
         let mut all_of = None;
         if let Some(Some(subschemas)) = parent.get("allOf").map(Value::as_array) {
             all_of = Some(CombinatorFilter::new(ctx, subschemas)?);
-        };
+        }
         let mut any_of = None;
         if let Some(Some(subschemas)) = parent.get("anyOf").map(Value::as_array) {
             any_of = Some(CombinatorFilter::new(ctx, subschemas)?);
-        };
+        }
 
         let mut one_of = None;
         if let Some(Some(subschemas)) = parent.get("oneOf").map(Value::as_array) {
             one_of = Some(CombinatorFilter::new(ctx, subschemas)?);
-        };
+        }
 
         Ok(DefaultItemsFilter {
             unevaluated,

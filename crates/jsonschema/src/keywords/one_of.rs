@@ -102,7 +102,7 @@ impl Validate for OneOfValidator {
             match node.apply_rooted(instance, location) {
                 output @ BasicOutput::Valid(..) => successes.push(output),
                 output @ BasicOutput::Invalid(..) => failures.push(output),
-            };
+            }
         }
         if successes.len() == 1 {
             let success = successes.remove(0);

@@ -221,7 +221,7 @@ impl<'a> Context<'a> {
         let scopes = resolved.resolver().dynamic_scope();
         if let Some(id) = resource.id() {
             base_uri = self.registry.resolve_against(&base_uri.borrow(), id)?;
-        };
+        }
         Ok(Some((base_uri, scopes, resource)))
     }
 

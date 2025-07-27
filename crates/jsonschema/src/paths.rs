@@ -219,7 +219,7 @@ pub fn write_escaped_str(buffer: &mut String, value: &str) {
             // If no escape characters are found, append the segment as is
             buffer.push_str(value);
         }
-    };
+    }
 }
 
 impl Default for Location {
