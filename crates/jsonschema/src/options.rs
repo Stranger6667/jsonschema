@@ -686,6 +686,7 @@ pub struct Regex;
 
 impl PatternOptions<FancyRegex> {
     /// Create a pattern configuration based on the `fancy-regex` engine.
+    #[must_use]
     pub fn fancy_regex() -> PatternOptions<FancyRegex> {
         PatternOptions {
             inner: PatternEngineOptions::FancyRegex {
@@ -701,6 +702,7 @@ impl PatternOptions<FancyRegex> {
     /// This is for preventing a regex with catastrophic backtracking to run for too long.
     ///
     /// Default is `1_000_000` (1 million).
+    #[must_use]
     pub fn backtrack_limit(mut self, limit: usize) -> Self {
         if let PatternEngineOptions::FancyRegex {
             ref mut backtrack_limit,
@@ -712,6 +714,7 @@ impl PatternOptions<FancyRegex> {
         self
     }
     /// Set the approximate size limit, in bytes, of the compiled regex.
+    #[must_use]
     pub fn size_limit(mut self, limit: usize) -> Self {
         if let PatternEngineOptions::FancyRegex {
             ref mut size_limit, ..
@@ -722,6 +725,7 @@ impl PatternOptions<FancyRegex> {
         self
     }
     /// Set the approximate capacity, in bytes, of the cache of transitions used by the lazy DFA.
+    #[must_use]
     pub fn dfa_size_limit(mut self, limit: usize) -> Self {
         if let PatternEngineOptions::FancyRegex {
             ref mut dfa_size_limit,
@@ -736,6 +740,7 @@ impl PatternOptions<FancyRegex> {
 
 impl PatternOptions<Regex> {
     /// Create a pattern configuration based on the `regex` engine.
+    #[must_use]
     pub fn regex() -> PatternOptions<Regex> {
         PatternOptions {
             inner: PatternEngineOptions::Regex {
@@ -746,6 +751,7 @@ impl PatternOptions<Regex> {
         }
     }
     /// Set the approximate size limit, in bytes, of the compiled regex.
+    #[must_use]
     pub fn size_limit(mut self, limit: usize) -> Self {
         if let PatternEngineOptions::Regex {
             ref mut size_limit, ..
@@ -756,6 +762,7 @@ impl PatternOptions<Regex> {
         self
     }
     /// Set the approximate capacity, in bytes, of the cache of transitions used by the lazy DFA.
+    #[must_use]
     pub fn dfa_size_limit(mut self, limit: usize) -> Self {
         if let PatternEngineOptions::Regex {
             ref mut dfa_size_limit,

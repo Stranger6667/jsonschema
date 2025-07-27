@@ -824,6 +824,7 @@ pub async fn async_validator_for(schema: &Value) -> Result<Validator, Validation
 /// ```
 ///
 /// See [`ValidationOptions`] for all available configuration options.
+#[must_use]
 pub fn options() -> ValidationOptions {
     Validator::options()
 }
@@ -886,6 +887,7 @@ pub fn options() -> ValidationOptions {
 ///
 /// See [`ValidationOptions`] for all available configuration options.
 #[cfg(feature = "resolve-async")]
+#[must_use]
 pub fn async_options() -> ValidationOptions<std::sync::Arc<dyn AsyncRetrieve>> {
     Validator::async_options()
 }
@@ -955,6 +957,7 @@ pub mod meta {
     /// # Panics
     ///
     /// This function panics if the meta-schema can't be detected.
+    #[must_use]
     pub fn is_valid(schema: &Value) -> bool {
         meta_validator_for(schema).is_valid(schema)
     }

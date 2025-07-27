@@ -234,6 +234,7 @@ impl Validator {
     }
     /// Run validation against `instance` and return an iterator over [`ValidationError`] in the error case.
     #[inline]
+    #[must_use]
     pub fn iter_errors<'i>(&'i self, instance: &'i Value) -> ErrorIterator<'i> {
         self.root.iter_errors(instance, &LazyLocation::new())
     }

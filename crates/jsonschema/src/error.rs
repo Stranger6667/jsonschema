@@ -182,6 +182,7 @@ pub enum TypeKind {
 impl<'a> ValidationError<'a> {
     /// Returns a wrapper that masks instance values in error messages.
     /// Uses "value" as a default placeholder.
+    #[must_use]
     pub fn masked<'b>(&'b self) -> MaskedValidationError<'a, 'b, 'static> {
         self.masked_with("value")
     }
@@ -197,6 +198,7 @@ impl<'a> ValidationError<'a> {
         }
     }
     /// Converts the `ValidationError` into an owned version with `'static` lifetime.
+    #[must_use]
     pub fn to_owned(self) -> ValidationError<'static> {
         ValidationError {
             instance_path: self.instance_path,

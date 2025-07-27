@@ -39,6 +39,7 @@ impl Default for LazyLocation<'_, '_> {
 
 impl<'a> LazyLocation<'a, '_> {
     /// Create a root node of a JSON pointer.
+    #[must_use]
     pub const fn new() -> Self {
         LazyLocation {
             // The value does not matter, it will never be used
@@ -150,6 +151,7 @@ impl serde::Serialize for Location {
 
 impl Location {
     /// Create a new, empty `Location`.
+    #[must_use]
     pub fn new() -> Self {
         Self(Arc::new(String::new()))
     }
@@ -171,10 +173,12 @@ impl Location {
         }
     }
     /// Get a string slice representing the location.
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
     /// Get a byte slice representing the location.
+    #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         self.0.as_bytes()
     }

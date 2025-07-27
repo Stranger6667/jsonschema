@@ -88,11 +88,13 @@ impl Default for JsonTypeSet {
 impl JsonTypeSet {
     /// Create an empty set of types.
     #[inline]
+    #[must_use]
     pub const fn empty() -> Self {
         Self(0)
     }
     /// Create a set with all possible JSON types.
     #[inline]
+    #[must_use]
     pub const fn all() -> Self {
         JsonTypeSet::empty()
             .insert(JsonType::Null)
@@ -105,16 +107,19 @@ impl JsonTypeSet {
     }
     /// Add a type to this set and return the modified set.
     #[inline]
+    #[must_use]
     pub const fn insert(mut self, ty: JsonType) -> Self {
         self.0 |= ty as u8;
         self
     }
     /// Check if this set includes the specified type.
     #[inline]
+    #[must_use]
     pub fn contains(self, ty: JsonType) -> bool {
         self.0 & ty as u8 != 0
     }
     /// Check if a JSON value's type is allowed by this set.
+    #[must_use]
     pub fn contains_value_type(self, value: &Value) -> bool {
         match value {
             Value::Array(_) => self.contains(JsonType::Array),
@@ -135,6 +140,7 @@ impl JsonTypeSet {
     }
     /// Get an iterator over the types in this set.
     #[inline]
+    #[must_use]
     pub fn iter(&self) -> JsonTypeSetIterator {
         JsonTypeSetIterator { set: *self }
     }

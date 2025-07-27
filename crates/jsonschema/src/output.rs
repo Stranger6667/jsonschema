@@ -320,6 +320,7 @@ pub struct ErrorDescription(String);
 impl ErrorDescription {
     /// Returns the inner [`String`] of the error description.
     #[inline]
+    #[must_use]
     pub fn into_inner(self) -> String {
         self.0
     }
