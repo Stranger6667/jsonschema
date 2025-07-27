@@ -246,7 +246,7 @@ impl<'a> ValidationError<'a> {
             kind: ValidationErrorKind::AnyOf {
                 context: context
                     .into_iter()
-                    .map(|errors| errors.into_iter().map(|error| error.to_owned()).collect())
+                    .map(|errors| errors.into_iter().map(ValidationError::to_owned).collect())
                     .collect(),
             },
             schema_path: location,
@@ -626,7 +626,7 @@ impl<'a> ValidationError<'a> {
             kind: ValidationErrorKind::OneOfNotValid {
                 context: context
                     .into_iter()
-                    .map(|errors| errors.into_iter().map(|error| error.to_owned()).collect())
+                    .map(|errors| errors.into_iter().map(ValidationError::to_owned).collect())
                     .collect(),
             },
             schema_path: location,

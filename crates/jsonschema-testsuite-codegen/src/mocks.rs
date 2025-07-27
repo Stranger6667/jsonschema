@@ -19,7 +19,7 @@ pub(crate) fn generate(suite_path: &str) -> Result<TokenStream2, Box<dyn std::er
     if remotes.exists() && remotes.is_dir() {
         for entry in walkdir::WalkDir::new(&remotes)
             .into_iter()
-            .filter_map(|e| e.ok())
+            .filter_map(Result::ok)
             .filter(|e| e.file_type().is_file())
         {
             let path = entry.path();
