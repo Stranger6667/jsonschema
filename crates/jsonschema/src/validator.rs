@@ -417,15 +417,15 @@ mod tests {
             path: Location,
         ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
             const EXPECTED: &str = "ascii-keys";
-            if schema.as_str() != Some(EXPECTED) {
+            if schema.as_str() == Some(EXPECTED) {
+                Ok(Box::new(CustomObjectValidator))
+            } else {
                 Err(ValidationError::constant_string(
                     Location::new(),
                     path,
                     schema,
                     EXPECTED,
                 ))
-            } else {
-                Ok(Box::new(CustomObjectValidator))
             }
         }
 
