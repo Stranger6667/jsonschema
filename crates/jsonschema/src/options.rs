@@ -91,6 +91,7 @@ impl<R> ValidationOptions<R> {
     ///     .with_draft(Draft::Draft4);
     /// ```
     #[inline]
+    #[must_use]
     pub fn with_draft(mut self, draft: Draft) -> Self {
         self.draft = Some(draft);
         self
@@ -118,6 +119,7 @@ impl<R> ValidationOptions<R> {
     /// let options = jsonschema::options()
     ///     .with_content_media_type("application/custom", check_custom_media_type);
     /// ```
+    #[must_use]
     pub fn with_content_media_type(
         mut self,
         media_type: &'static str,
@@ -128,6 +130,7 @@ impl<R> ValidationOptions<R> {
         self
     }
     /// Remove support for a specific content media type validation.
+    #[must_use]
     pub fn without_content_media_type_support(mut self, media_type: &'static str) -> Self {
         self.content_media_type_checks.insert(media_type, None);
         self
@@ -202,6 +205,7 @@ impl<R> ValidationOptions<R> {
     /// let options = jsonschema::options()
     ///     .with_content_encoding("custom", check, convert);
     /// ```
+    #[must_use]
     pub fn with_content_encoding(
         mut self,
         encoding: &'static str,
@@ -220,6 +224,7 @@ impl<R> ValidationOptions<R> {
     /// let options = jsonschema::options()
     ///     .without_content_encoding_support("base64");
     /// ```
+    #[must_use]
     pub fn without_content_encoding_support(mut self, content_encoding: &'static str) -> Self {
         self.content_encoding_checks_and_converters
             .insert(content_encoding, None);
@@ -249,6 +254,7 @@ impl<R> ValidationOptions<R> {
     /// # }
     /// ```
     #[inline]
+    #[must_use]
     pub fn with_base_uri(mut self, base_uri: impl Into<String>) -> Self {
         self.base_uri = Some(base_uri.into());
         self
@@ -274,6 +280,7 @@ impl<R> ValidationOptions<R> {
     /// # Ok(())
     /// # }
     /// ```
+    #[must_use]
     pub fn with_resource(mut self, uri: impl Into<String>, resource: Resource) -> Self {
         self.resources.insert(uri.into(), resource);
         self
@@ -306,6 +313,7 @@ impl<R> ValidationOptions<R> {
     /// # Ok(())
     /// # }
     /// ```
+    #[must_use]
     pub fn with_resources(
         mut self,
         pairs: impl Iterator<Item = (impl Into<String>, Resource)>,
@@ -342,6 +350,7 @@ impl<R> ValidationOptions<R> {
     /// # Ok(())
     /// # }
     /// ```
+    #[must_use]
     pub fn with_registry(mut self, registry: referencing::Registry) -> Self {
         self.registry = Some(registry);
         self
@@ -367,6 +376,7 @@ impl<R> ValidationOptions<R> {
     /// assert!(validator.is_valid(&json!("foo42!")));
     /// # }
     /// ```
+    #[must_use]
     pub fn with_format<N, F>(mut self, name: N, format: F) -> Self
     where
         N: Into<String>,
@@ -383,6 +393,7 @@ impl<R> ValidationOptions<R> {
     /// Used internally to prevent infinite recursion when validating meta-schemas.
     /// **Note**: Manually-crafted `ValidationError`s may still occur during compilation.
     #[inline]
+    #[must_use]
     pub(crate) fn without_schema_validation(mut self) -> Self {
         self.validate_schema = false;
         self
@@ -392,6 +403,7 @@ impl<R> ValidationOptions<R> {
     /// Default behavior depends on the draft version. This method overrides
     /// the default, enabling or disabling format validation regardless of draft.
     #[inline]
+    #[must_use]
     pub fn should_validate_formats(mut self, yes: bool) -> Self {
         self.validate_formats = Some(yes);
         self
@@ -403,6 +415,7 @@ impl<R> ValidationOptions<R> {
     ///
     /// By default, unknown formats are silently ignored. Set to `false` to report
     /// unrecognized formats as validation errors.
+    #[must_use]
     pub fn should_ignore_unknown_formats(mut self, yes: bool) -> Self {
         self.ignore_unknown_formats = yes;
         self
@@ -466,6 +479,7 @@ impl<R> ValidationOptions<R> {
     ///
     /// assert!(validator.is_valid(&json!({ "a": "b"})));
     /// ```
+    #[must_use]
     pub fn with_keyword<N, F>(mut self, name: N, factory: F) -> Self
     where
         N: Into<String>,
@@ -532,6 +546,7 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
         }
     }
     /// Set a retriever to fetch external resources.
+    #[must_use]
     pub fn with_retriever(mut self, retriever: impl Retrieve + 'static) -> Self {
         self.retriever = Arc::new(retriever);
         self
@@ -561,6 +576,7 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
     ///     .build(&schema)
     ///     .expect("A valid schema");
     /// ```
+    #[must_use]
     pub fn with_pattern_options<E>(mut self, options: PatternOptions<E>) -> Self {
         self.pattern_options = options.inner;
         self
@@ -575,6 +591,7 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
     pub async fn build(&self, schema: &Value) -> Result<Validator, ValidationError<'static>> {
         compiler::build_validator_async(self.clone(), schema).await
     }
+    #[must_use]
     pub fn with_retriever(
         self,
         retriever: impl referencing::AsyncRetrieve + 'static,

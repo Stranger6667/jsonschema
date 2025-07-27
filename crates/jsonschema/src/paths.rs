@@ -50,6 +50,7 @@ impl<'a> LazyLocation<'a, '_> {
 
     /// Push a new segment to the JSON pointer.
     #[inline]
+    #[must_use]
     pub fn push(&'a self, segment: impl Into<LocationSegment<'a>>) -> Self {
         LazyLocation {
             segment: segment.into(),
@@ -155,6 +156,7 @@ impl Location {
     pub fn new() -> Self {
         Self(Arc::new(String::new()))
     }
+    #[must_use]
     pub fn join<'a>(&self, segment: impl Into<LocationSegment<'a>>) -> Self {
         let parent = self.0.as_str();
         match segment.into() {
