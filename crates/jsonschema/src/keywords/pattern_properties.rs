@@ -165,7 +165,7 @@ pub(crate) fn compile<'a>(
 ) -> Option<CompilationResult<'a>> {
     match parent.get("additionalProperties") {
         // This type of `additionalProperties` validator handles `patternProperties` logic
-        Some(Value::Bool(false)) | Some(Value::Object(_)) => None,
+        Some(Value::Bool(false) | Value::Object(_)) => None,
         _ => {
             if let Value::Object(map) = schema {
                 if map.len() == 1 {

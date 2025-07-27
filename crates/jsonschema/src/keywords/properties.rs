@@ -115,7 +115,7 @@ pub(crate) fn compile<'a>(
 ) -> Option<CompilationResult<'a>> {
     match parent.get("additionalProperties") {
         // This type of `additionalProperties` validator handles `properties` logic
-        Some(Value::Bool(false)) | Some(Value::Object(_)) => None,
+        Some(Value::Bool(false) | Value::Object(_)) => None,
         _ => Some(PropertiesValidator::compile(ctx, schema)),
     }
 }
