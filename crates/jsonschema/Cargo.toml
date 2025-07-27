@@ -26,7 +26,7 @@ ahash.workspace = true
 base64 = "0.22"
 bytecount = { version = "0.6", features = ["runtime-dispatch-simd"] }
 email_address = "0.2.9"
-fancy-regex = "0.14"
+fancy-regex = "0.15"
 fraction = { version = "0.15", default-features = false, features = [
   "with-bigint",
 ] }
