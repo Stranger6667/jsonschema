@@ -151,7 +151,7 @@ fn parse_four_digits(bytes: &[u8]) -> Option<u16> {
     let value = u32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
 
     // Check if all bytes are ASCII digits
-    if value.wrapping_sub(0x30303030) & 0xF0F0F0F0 == 0 {
+    if value.wrapping_sub(0x3030_3030) & 0xF0F0_F0F0 == 0 {
         let val = (value & 0x0F0F_0F0F).wrapping_mul(2561) >> 8;
         Some(((val & 0x00FF_00FF).wrapping_mul(6_553_601) >> 16) as u16)
     } else {
