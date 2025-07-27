@@ -1,6 +1,9 @@
 use std::borrow::Cow;
 
-use regex_syntax::ast::{self, parse::Parser, *};
+use regex_syntax::ast::{
+    self, parse::Parser, Ast, ClassPerl, ClassPerlKind, ClassSetItem, ErrorKind, Literal,
+    LiteralKind, Span, SpecialLiteralKind, Visitor,
+};
 
 /// Convert ECMA Script 262 regex to Rust regex on the best effort basiso.
 ///

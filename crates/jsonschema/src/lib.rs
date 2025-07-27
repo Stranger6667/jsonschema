@@ -1089,7 +1089,7 @@ pub mod meta {
 /// assert!(jsonschema::draft4::is_valid(&schema, &instance));
 /// ```
 pub mod draft4 {
-    use super::*;
+    use super::{Draft, ValidationError, ValidationOptions, Validator, Value};
 
     /// Create a new JSON Schema validator using Draft 4 specifications.
     ///
@@ -1244,7 +1244,7 @@ pub mod draft4 {
 /// assert!(jsonschema::draft6::is_valid(&schema, &instance));
 /// ```
 pub mod draft6 {
-    use super::*;
+    use super::{Draft, ValidationError, ValidationOptions, Validator, Value};
 
     /// Create a new JSON Schema validator using Draft 6 specifications.
     ///
@@ -1399,7 +1399,7 @@ pub mod draft6 {
 /// assert!(jsonschema::draft7::is_valid(&schema, &instance));
 /// ```
 pub mod draft7 {
-    use super::*;
+    use super::{Draft, ValidationError, ValidationOptions, Validator, Value};
 
     /// Create a new JSON Schema validator using Draft 7 specifications.
     ///
@@ -1554,7 +1554,7 @@ pub mod draft7 {
 /// assert!(jsonschema::draft201909::is_valid(&schema, &instance));
 /// ```
 pub mod draft201909 {
-    use super::*;
+    use super::{Draft, ValidationError, ValidationOptions, Validator, Value};
 
     /// Create a new JSON Schema validator using Draft 2019-09 specifications.
     ///
@@ -1711,7 +1711,7 @@ pub mod draft201909 {
 /// # }
 /// ```
 pub mod draft202012 {
-    use super::*;
+    use super::{Draft, ValidationError, ValidationOptions, Validator, Value};
 
     /// Create a new JSON Schema validator using Draft 2020-12 specifications.
     ///

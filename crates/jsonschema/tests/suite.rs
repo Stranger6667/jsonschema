@@ -182,10 +182,7 @@ mod tests {
                     let test_id = test_data["id"].as_u64().expect("Is integer") as usize;
                     let mut instance_path = String::new();
 
-                    for segment in test_data["instance_path"]
-                        .as_array()
-                        .expect("Valid array")
-                    {
+                    for segment in test_data["instance_path"].as_array().expect("Valid array") {
                         instance_path.push('/');
                         instance_path.push_str(segment.as_str().expect("A string"));
                     }

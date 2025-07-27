@@ -14,7 +14,11 @@ use crate::{
     options::PatternEngineOptions,
     output::{Annotations, BasicOutput, OutputUnit},
     paths::{LazyLocation, Location},
-    properties::*,
+    properties::{
+        are_properties_valid, compile_big_map, compile_dynamic_prop_map_validator,
+        compile_fancy_regex_patterns, compile_regex_patterns, compile_small_map, BigValidatorsMap,
+        PropertiesValidatorsMap, SmallValidatorsMap,
+    },
     regex::RegexEngine,
     types::JsonType,
     validator::{PartialApplication, Validate},
