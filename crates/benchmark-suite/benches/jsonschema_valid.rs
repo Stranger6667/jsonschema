@@ -7,7 +7,7 @@ fn bench_build(c: &mut Criterion, name: &str, schema: &Value) {
     c.bench_function(&format!("jsonschema_valid/{name}/build"), |b| {
         b.iter_with_large_drop(|| {
             Config::from_schema(schema, Some(schemas::Draft::Draft7)).expect("Valid schema")
-        })
+        });
     });
 }
 
@@ -19,7 +19,7 @@ fn bench_validate(c: &mut Criterion, name: &str, schema: &Value, instance: &Valu
         |b, instance| {
             b.iter(|| {
                 let _ = jsonschema_valid::validate(&cfg, instance);
-            })
+            });
         },
     );
 }

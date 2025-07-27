@@ -64,6 +64,6 @@ mod tests {
             &json!({"not": {"type": "string"}}),
             &json!("foo"),
             "/not",
-        )
+        );
     }
 }

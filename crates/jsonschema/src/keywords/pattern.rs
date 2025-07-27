@@ -121,12 +121,12 @@ mod tests {
         let text = json!(text);
         let schema = json!({"pattern": pattern});
         let validator = crate::validator_for(&schema).unwrap();
-        assert_eq!(validator.is_valid(&text), is_matching)
+        assert_eq!(validator.is_valid(&text), is_matching);
     }
 
     #[test]
     fn location() {
-        tests_util::assert_schema_location(&json!({"pattern": "^f"}), &json!("b"), "/pattern")
+        tests_util::assert_schema_location(&json!({"pattern": "^f"}), &json!("b"), "/pattern");
     }
 
     #[test]

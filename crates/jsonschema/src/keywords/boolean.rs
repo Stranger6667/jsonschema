@@ -37,6 +37,6 @@ mod tests {
 
     #[test]
     fn location() {
-        tests_util::assert_schema_location(&json!(false), &json!(1), "")
+        tests_util::assert_schema_location(&json!(false), &json!(1), "");
     }
 }

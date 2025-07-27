@@ -467,7 +467,7 @@ fn is_valid_idn_hostname(hostname: &str) -> bool {
             // Hiragana, Katakana, or Han
             // https://www.rfc-editor.org/rfc/rfc5892#appendix-A.7
             '\u{3040}'..='\u{309F}' | '\u{30A0}'..='\u{30FF}' | '\u{4E00}'..='\u{9FFF}' => {
-                has_hiragana_katakana_han = true
+                has_hiragana_katakana_han = true;
             }
             // ARABIC-INDIC DIGITS
             // https://www.rfc-editor.org/rfc/rfc5892#appendix-A.8
@@ -831,7 +831,7 @@ mod tests {
         let schema = json!({"format": "custom", "type": "string"});
         let instance = json!("foo");
         let validator = crate::validator_for(&schema).unwrap();
-        assert!(validator.is_valid(&instance))
+        assert!(validator.is_valid(&instance));
     }
 
     #[test]
@@ -861,12 +861,12 @@ mod tests {
         let schema = json!({"format": "regex", "type": "string"});
         let instance = json!("^\\cc$");
         let validator = crate::validator_for(&schema).unwrap();
-        assert!(validator.is_valid(&instance))
+        assert!(validator.is_valid(&instance));
     }
 
     #[test]
     fn location() {
-        tests_util::assert_schema_location(&json!({"format": "date"}), &json!("bla"), "/format")
+        tests_util::assert_schema_location(&json!({"format": "date"}), &json!("bla"), "/format");
     }
 
     #[test]
@@ -883,7 +883,7 @@ mod tests {
             .unwrap();
 
         assert!(validator.is_valid(&passing_instance));
-        assert!(!validator.is_valid(&failing_instance))
+        assert!(!validator.is_valid(&failing_instance));
     }
 
     #[test]

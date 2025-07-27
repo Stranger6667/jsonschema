@@ -130,7 +130,7 @@ impl<F: PropertiesFilter> ReferenceFilter<F> {
                 .get_or_init()
                 .mark_evaluated_properties(instance, properties),
             ReferenceFilter::Default(filter) => {
-                filter.mark_evaluated_properties(instance, properties)
+                filter.mark_evaluated_properties(instance, properties);
             }
         }
     }
@@ -767,7 +767,7 @@ mod tests {
                 "unevaluatedProperties": false
             }),
             &json!({ "foo": "quux" }),
-        )
+        );
     }
 
     #[test]
@@ -782,7 +782,7 @@ mod tests {
                 "unevaluatedProperties": false
             }),
             &json!({ "foo": "rut roh" }),
-        )
+        );
     }
 
     #[test]
@@ -797,7 +797,7 @@ mod tests {
                 "unevaluatedProperties": false
             }),
             &json!({ "foo": "rut roh" }),
-        )
+        );
     }
 
     #[test]

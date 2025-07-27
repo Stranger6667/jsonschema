@@ -275,6 +275,6 @@ mod tests {
     #[test_case(&json!({"const": {}}), &json!(6), "/const")]
     #[test_case(&json!({"const": ""}), &json!(7), "/const")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
-        tests_util::assert_schema_location(schema, instance, expected)
+        tests_util::assert_schema_location(schema, instance, expected);
     }
 }

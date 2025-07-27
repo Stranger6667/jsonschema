@@ -146,6 +146,6 @@ mod tests {
     #[test_case(&json!({"enum": [1]}), &json!(2), "/enum")]
     #[test_case(&json!({"enum": [1, 3]}), &json!(2), "/enum")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
-        tests_util::assert_schema_location(schema, instance, expected)
+        tests_util::assert_schema_location(schema, instance, expected);
     }
 }

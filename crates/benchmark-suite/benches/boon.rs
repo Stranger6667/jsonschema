@@ -13,7 +13,7 @@ fn bench_build(c: &mut Criterion, name: &str, schema: &Value) {
             compiler
                 .compile("schema.json", &mut Schemas::new())
                 .expect("Failed to build");
-        })
+        });
     });
 }
 

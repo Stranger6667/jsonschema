@@ -84,6 +84,6 @@ mod tests {
 
     #[test]
     fn location() {
-        tests_util::assert_schema_location(&json!({"minItems": 1}), &json!([]), "/minItems")
+        tests_util::assert_schema_location(&json!({"minItems": 1}), &json!([]), "/minItems");
     }
 }

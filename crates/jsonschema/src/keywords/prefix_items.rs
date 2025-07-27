@@ -25,7 +25,7 @@ impl PrefixItemsValidator {
         for (idx, item) in items.iter().enumerate() {
             let ctx = ctx.new_at_location(idx);
             let validators = compiler::compile(&ctx, ctx.as_resource_ref(item))?;
-            schemas.push(validators)
+            schemas.push(validators);
         }
         Ok(Box::new(PrefixItemsValidator { schemas }))
     }
@@ -66,7 +66,7 @@ impl Validate for PrefixItemsValidator {
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             for (idx, (schema, item)) in self.schemas.iter().zip(items.iter()).enumerate() {
-                schema.validate(item, &location.push(idx))?
+                schema.validate(item, &location.push(idx))?;
             }
         }
         Ok(())
@@ -131,7 +131,7 @@ mod tests {
     #[test_case(&json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "prefixItems": [{"type": "integer"}, {"maximum": 5}], "items": {"type": "boolean"}}), &json!([42, 1, 42]), "/items/type")]
     #[test_case(&json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "prefixItems": [{"type": "integer"}, {"maximum": 5}], "items": {"type": "boolean"}}), &json!([42, 42, true]), "/prefixItems/1/maximum")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
-        tests_util::assert_schema_location(schema, instance, expected)
+        tests_util::assert_schema_location(schema, instance, expected);
     }
 
     #[test_case{

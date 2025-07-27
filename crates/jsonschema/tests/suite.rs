@@ -205,7 +205,7 @@ mod tests {
                         &data[suite_id]["description"],
                         &data[suite_id]["tests"][test_id]["description"],
                         &error
-                    )
+                    );
                 }
             }
         }

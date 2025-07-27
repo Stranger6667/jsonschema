@@ -27,7 +27,7 @@ impl Hash for HashedValue<'_> {
             Value::Bool(ref item) => item.hash(state),
             Value::Number(ref item) => {
                 if let Some(number) = item.as_f64() {
-                    number.to_bits().hash(state)
+                    number.to_bits().hash(state);
                 } else if let Some(number) = item.as_u64() {
                     number.hash(state);
                 } else if let Some(number) = item.as_i64() {
@@ -162,7 +162,7 @@ mod tests {
             &json!({"uniqueItems": true}),
             &json!([1, 1]),
             "/uniqueItems",
-        )
+        );
     }
 
     #[test_case(&[] => true; "empty array")]

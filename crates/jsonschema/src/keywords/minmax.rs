@@ -182,7 +182,7 @@ mod tests {
     #[test_case(&json!({"exclusiveMaximum": 1_u64 << 54}), &json!((1_u64 << 54) + 1))]
     #[test_case(&json!({"exclusiveMaximum": 1_i64 << 54}), &json!((1_i64 << 54) + 1))]
     fn is_not_valid(schema: &Value, instance: &Value) {
-        tests_util::is_not_valid(schema, instance)
+        tests_util::is_not_valid(schema, instance);
     }
 
     #[test_case(&json!({"minimum": 5}), &json!(1), "/minimum")]
@@ -198,6 +198,6 @@ mod tests {
     #[test_case(&json!({"exclusiveMaximum": -1}), &json!(7), "/exclusiveMaximum")]
     #[test_case(&json!({"exclusiveMaximum": -1.0}), &json!(7), "/exclusiveMaximum")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
-        tests_util::assert_schema_location(schema, instance, expected)
+        tests_util::assert_schema_location(schema, instance, expected);
     }
 }

@@ -384,6 +384,6 @@ mod tests {
             &json!({"contains": {"const": 2}}),
             &json!([]),
             "/contains",
-        )
+        );
     }
 }

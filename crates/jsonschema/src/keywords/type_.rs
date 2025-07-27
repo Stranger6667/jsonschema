@@ -387,6 +387,6 @@ mod tests {
     #[test_case(&json!({"type": "string"}), &json!(1), "/type")]
     #[test_case(&json!({"type": ["string", "object"]}), &json!(1), "/type")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
-        tests_util::assert_schema_location(schema, instance, expected)
+        tests_util::assert_schema_location(schema, instance, expected);
     }
 }

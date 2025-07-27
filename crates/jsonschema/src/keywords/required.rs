@@ -178,6 +178,6 @@ mod tests {
     #[test_case(&json!({"required": ["a"]}), &json!({}), "/required")]
     #[test_case(&json!({"required": ["a", "b"]}), &json!({}), "/required")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
-        tests_util::assert_schema_location(schema, instance, expected)
+        tests_util::assert_schema_location(schema, instance, expected);
     }
 }

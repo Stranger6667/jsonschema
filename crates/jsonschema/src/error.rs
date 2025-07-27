@@ -1191,7 +1191,7 @@ mod tests {
             &instance,
             JsonType::String,
         );
-        assert_eq!(err.to_string(), r#"42 is not of type "string""#)
+        assert_eq!(err.to_string(), r#"42 is not of type "string""#);
     }
 
     #[test]
@@ -1206,7 +1206,7 @@ mod tests {
             &instance,
             types,
         );
-        assert_eq!(err.to_string(), r#"42 is not of types "number", "string""#)
+        assert_eq!(err.to_string(), r#"42 is not of types "number", "string""#);
     }
 
     #[test_case(true, &json!({"foo": {"bar": 42}}), "/foo/bar")]

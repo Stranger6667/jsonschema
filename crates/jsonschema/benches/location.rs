@@ -46,7 +46,7 @@ fn benchmark_from_iterator(c: &mut Criterion) {
                     || i.clone().into_iter(),
                     |i| Location::from_iter(black_box(i)),
                     criterion::BatchSize::SmallInput,
-                )
+                );
             },
         );
     }

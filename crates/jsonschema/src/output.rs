@@ -144,11 +144,11 @@ impl AddAssign for BasicOutput<'_> {
                 anns.extend(anns_rhs);
             }
             (BasicOutput::Valid(..), BasicOutput::Invalid(errors)) => {
-                *self = BasicOutput::Invalid(errors)
+                *self = BasicOutput::Invalid(errors);
             }
             (BasicOutput::Invalid(..), BasicOutput::Valid(..)) => {}
             (BasicOutput::Invalid(errors), BasicOutput::Invalid(errors_rhs)) => {
-                errors.extend(errors_rhs)
+                errors.extend(errors_rhs);
             }
         }
     }

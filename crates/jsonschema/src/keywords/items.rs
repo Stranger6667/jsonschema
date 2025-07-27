@@ -23,7 +23,7 @@ impl ItemsArrayValidator {
         for (idx, item) in schemas.iter().enumerate() {
             let ictx = kctx.new_at_location(idx);
             let validators = compiler::compile(&ictx, ictx.as_resource_ref(item))?;
-            items.push(validators)
+            items.push(validators);
         }
         Ok(Box::new(ItemsArrayValidator { items }))
     }
@@ -256,6 +256,6 @@ mod tests {
     #[test_case(&json!({"items": {"type": "string"}}), &json!([1]), "/items/type")]
     #[test_case(&json!({"prefixItems": [{"type": "string"}]}), &json!([1]), "/prefixItems/0/type")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
-        tests_util::assert_schema_location(schema, instance, expected)
+        tests_util::assert_schema_location(schema, instance, expected);
     }
 }

@@ -88,6 +88,6 @@ mod tests {
             &json!({"minProperties": 2}),
             &json!({"a": 1}),
             "/minProperties",
-        )
+        );
     }
 }

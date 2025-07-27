@@ -131,6 +131,6 @@ mod tests {
             &json!({"properties": {"foo": {"properties": {"bar": {"required": ["spam"]}}}}}),
             &json!({"foo": {"bar": {}}}),
             "/properties/foo/properties/bar/required",
-        )
+        );
     }
 }

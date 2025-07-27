@@ -26,7 +26,7 @@ impl AllOfValidator {
         for (idx, item) in items.iter().enumerate() {
             let ctx = ctx.new_at_location(idx);
             let validators = compiler::compile(&ctx, ctx.as_resource_ref(item))?;
-            schemas.push(validators)
+            schemas.push(validators);
         }
         Ok(Box::new(AllOfValidator { schemas }))
     }
@@ -135,6 +135,6 @@ mod tests {
     #[test_case(&json!({"allOf": [{"type": "string"}]}), &json!(1), "/allOf/0/type")]
     #[test_case(&json!({"allOf": [{"type": "integer"}, {"maximum": 5}]}), &json!(6), "/allOf/1/maximum")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
-        tests_util::assert_schema_location(schema, instance, expected)
+        tests_util::assert_schema_location(schema, instance, expected);
     }
 }

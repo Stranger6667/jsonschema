@@ -13,7 +13,7 @@ fn bench_build(c: &mut Criterion, name: &str, schema: &Value) {
                     .expect("Valid schema");
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 }
 
@@ -28,7 +28,7 @@ fn bench_validate(c: &mut Criterion, name: &str, schema: &Value, instance: &Valu
         |b, instance| {
             b.iter(|| {
                 validator.validate(instance).is_valid();
-            })
+            });
         },
     );
 }

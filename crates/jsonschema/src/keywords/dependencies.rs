@@ -33,7 +33,7 @@ impl DependenciesValidator {
                         }
                         _ => compiler::compile(&ctx, ctx.as_resource_ref(subschema))?,
                     };
-                dependencies.push((key.clone(), s))
+                dependencies.push((key.clone(), s));
             }
             Ok(Box::new(DependenciesValidator { dependencies }))
         } else {
@@ -283,6 +283,6 @@ mod tests {
     #[test_case(&json!({"dependencies": {"bar": ["foo"]}}), &json!({"bar": 1}), "/dependencies")]
     #[test_case(&json!({"dependencies": {"bar": {"type": "string"}}}), &json!({"bar": 1}), "/dependencies/bar/type")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
-        tests_util::assert_schema_location(schema, instance, expected)
+        tests_util::assert_schema_location(schema, instance, expected);
     }
 }

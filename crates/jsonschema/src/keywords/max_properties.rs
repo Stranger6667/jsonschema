@@ -88,6 +88,6 @@ mod tests {
             &json!({"maxProperties": 1}),
             &json!({"a": 1, "b": 2}),
             "/maxProperties",
-        )
+        );
     }
 }

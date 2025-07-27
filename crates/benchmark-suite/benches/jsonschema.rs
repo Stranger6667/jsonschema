@@ -4,7 +4,7 @@ use serde_json::Value;
 
 fn bench_build(c: &mut Criterion, name: &str, schema: &Value) {
     c.bench_function(&format!("jsonschema/{name}/build"), |b| {
-        b.iter_with_large_drop(|| jsonschema::validator_for(schema).expect("Valid schema"))
+        b.iter_with_large_drop(|| jsonschema::validator_for(schema).expect("Valid schema"));
     });
 }
 
@@ -16,7 +16,7 @@ fn bench_is_valid(c: &mut Criterion, name: &str, schema: &Value, instance: &Valu
         |b, instance| {
             b.iter(|| {
                 let _ = validator.is_valid(instance);
-            })
+            });
         },
     );
 }
@@ -29,7 +29,7 @@ fn bench_validate(c: &mut Criterion, name: &str, schema: &Value, instance: &Valu
         |b, instance| {
             b.iter(|| {
                 let _ = validator.iter_errors(instance);
-            })
+            });
         },
     );
 }

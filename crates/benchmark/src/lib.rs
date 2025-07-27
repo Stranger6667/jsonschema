@@ -35,7 +35,7 @@ impl Benchmark {
         <Benchmark as IntoEnumIterator>::iter()
     }
     pub fn run(self, bench: &mut BenchFunc) {
-        BENCHMARK_SUITE.run(self, bench)
+        BENCHMARK_SUITE.run(self, bench);
     }
 }
 

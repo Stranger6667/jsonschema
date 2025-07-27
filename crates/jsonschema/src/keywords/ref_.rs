@@ -272,7 +272,7 @@ mod tests {
         "/properties/foo/$ref/type"
     )]
     fn location(schema: &Value, instance: &Value, expected: &str) {
-        tests_util::assert_schema_location(schema, instance, expected)
+        tests_util::assert_schema_location(schema, instance, expected);
     }
 
     #[test]

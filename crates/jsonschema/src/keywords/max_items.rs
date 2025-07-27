@@ -84,6 +84,6 @@ mod tests {
 
     #[test]
     fn location() {
-        tests_util::assert_schema_location(&json!({"maxItems": 1}), &json!([1, 2]), "/maxItems")
+        tests_util::assert_schema_location(&json!({"maxItems": 1}), &json!([1, 2]), "/maxItems");
     }
 }
