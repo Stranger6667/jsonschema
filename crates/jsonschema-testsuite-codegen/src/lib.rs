@@ -49,7 +49,7 @@ pub fn suite(args: TokenStream, input: TokenStream) -> TokenStream {
         };
         let modules =
             generator::generate_modules(&suite_tree, &mut functions, &config.xfail, &draft);
-        let draft = format_ident!("{}", &draft.replace("-", "_"));
+        let draft = format_ident!("{}", &draft.replace('-', "_"));
         output = quote! {
             #output
 
