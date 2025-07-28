@@ -49,8 +49,7 @@ pub(crate) fn is_multiple_of_float(value: &Number, multiple: f64) -> bool {
     // Ref: https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.1
     (BigFraction::from(value) / BigFraction::from(multiple))
         .denom()
-        .map(fraction::One::is_one)
-        .unwrap_or(true)
+        .map_or(true, fraction::One::is_one)
 }
 
 pub(crate) fn is_multiple_of_integer(value: &Number, multiple: f64) -> bool {

@@ -21,8 +21,7 @@ pub(crate) trait ItemsFilter: Send + Sync + Sized + 'static {
     fn is_valid(&self, instance: &Value) -> bool {
         self.unevaluated()
             .as_ref()
-            .map(|u| u.is_valid(instance))
-            .unwrap_or(false)
+            .is_some_and(|u| u.is_valid(instance))
     }
 
     fn mark_evaluated_indexes(&self, instance: &Value, indexes: &mut Vec<bool>);
