@@ -305,9 +305,9 @@ impl PropertiesFilter for Draft2019PropertiesFilter {
 
         Ok(Draft2019PropertiesFilter {
             unevaluated,
+            additional,
             properties,
             dependent,
-            additional,
             pattern_properties,
             ref_,
             recursive_ref,
@@ -562,9 +562,9 @@ impl PropertiesFilter for DefaultPropertiesFilter {
 
         Ok(DefaultPropertiesFilter {
             unevaluated,
+            additional,
             properties,
             dependent,
-            additional,
             pattern_properties,
             ref_,
             dynamic_ref,
