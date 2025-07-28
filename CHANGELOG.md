@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added missing `context` field to `ValidationErrorKind::OneOfMultipleValid`.
+
 ### Changed
 
 - Improved error message for `enum`.
@@ -12,7 +16,7 @@
 
 - **CLI**: flag `-d, --draft <4|6|7|2019|2020>` to enforce a specific JSON Schema draft.
 - **CLI**: flags `--assert-format` and `--no-assert-format` to toggle validation of `format` keywords.
-- Added `context` for `ValidationErrorKind.AnyOf` and `ValidationErrorKind.OneOfNotValid` which contains errors for all subschemas, each inside a separate vector with an index matching subschema ID.
+- Added `context` for `ValidationErrorKind::AnyOf` and `ValidationErrorKind::OneOfNotValid` which contains errors for all subschemas, each inside a separate vector with an index matching subschema ID.
 
 ### Fixed
 

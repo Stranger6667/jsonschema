@@ -146,7 +146,9 @@ pub enum ValidationErrorKind {
     /// Negated schema failed validation.
     Not { schema: Value },
     /// The given schema is valid under more than one of the schemas listed in the 'oneOf' keyword.
-    OneOfMultipleValid,
+    OneOfMultipleValid {
+        context: Vec<Vec<ValidationError<'static>>>,
+    },
     /// The given schema is not valid under any of the schemas listed in the 'oneOf' keyword.
     OneOfNotValid {
         context: Vec<Vec<ValidationError<'static>>>,
@@ -602,15 +604,21 @@ impl<'a> ValidationError<'a> {
             schema_path: location,
         }
     }
-    pub(crate) const fn one_of_multiple_valid(
+    pub(crate) fn one_of_multiple_valid(
         location: Location,
         instance_path: Location,
         instance: &'a Value,
+        context: Vec<Vec<ValidationError<'a>>>,
     ) -> ValidationError<'a> {
         ValidationError {
             instance_path,
             instance: Cow::Borrowed(instance),
-            kind: ValidationErrorKind::OneOfMultipleValid,
+            kind: ValidationErrorKind::OneOfMultipleValid {
+                context: context
+                    .into_iter()
+                    .map(|errors| errors.into_iter().map(ValidationError::to_owned).collect())
+                    .collect(),
+            },
             schema_path: location,
         }
     }
@@ -975,7 +983,7 @@ impl fmt::Display for ValidationError<'_> {
             ValidationErrorKind::Not { schema } => {
                 write!(f, "{} is not allowed for {}", schema, self.instance)
             }
-            ValidationErrorKind::OneOfMultipleValid => write!(
+            ValidationErrorKind::OneOfMultipleValid { .. } => write!(
                 f,
                 "{} is valid under more than one of the schemas listed in the 'oneOf' keyword",
                 self.instance
@@ -1052,7 +1060,7 @@ impl fmt::Display for MaskedValidationError<'_, '_, '_> {
                 write_quoted_list(f, unexpected)?;
                 write_unexpected_suffix(f, unexpected.len())
             }
-            ValidationErrorKind::AnyOf { context: _ } => write!(
+            ValidationErrorKind::AnyOf { .. } => write!(
                 f,
                 "{} is not valid under any of the schemas listed in the 'anyOf' keyword",
                 self.placeholder
@@ -1158,7 +1166,7 @@ impl fmt::Display for MaskedValidationError<'_, '_, '_> {
             ValidationErrorKind::Not { schema } => {
                 write!(f, "{} is not allowed for {}", schema, self.placeholder)
             }
-            ValidationErrorKind::OneOfMultipleValid => write!(
+            ValidationErrorKind::OneOfMultipleValid { .. } => write!(
                 f,
                 "{} is valid under more than one of the schemas listed in the 'oneOf' keyword",
                 self.placeholder

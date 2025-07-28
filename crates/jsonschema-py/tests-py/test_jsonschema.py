@@ -185,18 +185,54 @@ def test_validation_error_kinds(schema, instance, kind, attrs):
             True,
             ValidationErrorKind.AnyOf,
             [
-                [ValidationError("true is not of type \"string\"", "", ['anyOf', 0, 'type'], [], ValidationErrorKind.Type(["string"]), True)],
-                [ValidationError("true is not of type \"number\"", "", ['anyOf', 1, 'type'], [], ValidationErrorKind.Type(["number"]), True)],
-            ]
+                [
+                    ValidationError(
+                        'true is not of type "string"',
+                        "",
+                        ["anyOf", 0, "type"],
+                        [],
+                        ValidationErrorKind.Type(["string"]),
+                        True,
+                    )
+                ],
+                [
+                    ValidationError(
+                        'true is not of type "number"',
+                        "",
+                        ["anyOf", 1, "type"],
+                        [],
+                        ValidationErrorKind.Type(["number"]),
+                        True,
+                    )
+                ],
+            ],
         ),
         (
             {"oneOf": [{"type": "number"}, {"type": "number"}]},
             "1",
             ValidationErrorKind.OneOfNotValid,
             [
-                [ValidationError("\"1\" is not of type \"number\"", "", ['oneOf', 0, 'type'], [], ValidationErrorKind.Type(["number"]), "1")],
-                [ValidationError("\"1\" is not of type \"number\"", "", ['oneOf', 1, 'type'], [], ValidationErrorKind.Type(["number"]), "1")],
-            ]
+                [
+                    ValidationError(
+                        '"1" is not of type "number"',
+                        "",
+                        ["oneOf", 0, "type"],
+                        [],
+                        ValidationErrorKind.Type(["number"]),
+                        "1",
+                    )
+                ],
+                [
+                    ValidationError(
+                        '"1" is not of type "number"',
+                        "",
+                        ["oneOf", 1, "type"],
+                        [],
+                        ValidationErrorKind.Type(["number"]),
+                        "1",
+                    )
+                ],
+            ],
         ),
     ],
 )
@@ -214,6 +250,26 @@ def test_validation_error_kinds_with_context(schema, instance, kind, context):
             assert actual_error.instance_path == expected_error.instance_path
             assert isinstance(actual_error.kind, type(expected_error.kind))
             assert actual_error.instance == expected_error.instance
+
+
+def test_one_of_multiple_valid_with_context():
+    schema = {
+        "oneOf": [
+            {"type": "string"},
+            {"minLength": 1},
+            {"maxLength": 3},
+        ]
+    }
+    instance = "hello"
+
+    with pytest.raises(ValidationError) as exc:
+        validate(schema, instance)
+
+    assert isinstance(exc.value.kind, ValidationErrorKind.OneOfMultipleValid)
+    assert len(exc.value.kind.context) == 3
+    assert len(exc.value.kind.context[0]) == 0  # First schema (type: string) passed
+    assert len(exc.value.kind.context[1]) == 0  # Second schema (minLength: 1) passed
+    assert len(exc.value.kind.context[2]) == 1  # Third schema (maxLength: 3) failed
 
 
 @given(minimum=st.integers().map(abs))

@@ -128,7 +128,7 @@ enum ValidationErrorKind {
     MinProperties { limit: u64 },
     MultipleOf { multiple_of: f64 },
     Not { schema: PyObject },
-    OneOfMultipleValid {},
+    OneOfMultipleValid { context: Py<PyList> },
     OneOfNotValid { context: Py<PyList> },
     Pattern { pattern: String },
     PropertyNames { error: Py<ValidationError> },
@@ -157,41 +157,7 @@ impl ValidationErrorKind {
             }
             jsonschema::error::ValidationErrorKind::AnyOf { context } => {
                 ValidationErrorKind::AnyOf {
-                    context: {
-                        let mut py_context: Vec<Py<PyList>> = Vec::with_capacity(context.len());
-
-                        for errors in context {
-                            let mut py_errors: Vec<Py<ValidationError>> =
-                                Vec::with_capacity(errors.len());
-
-                            for error in errors {
-                                let (
-                                    message,
-                                    verbose_message,
-                                    schema_path,
-                                    instance_path,
-                                    kind,
-                                    instance,
-                                ) = into_validation_error_args(py, error, mask)?;
-
-                                py_errors.push(Py::new(
-                                    py,
-                                    ValidationError {
-                                        message,
-                                        verbose_message,
-                                        schema_path,
-                                        instance_path,
-                                        kind: kind.into_pyobject(py)?.unbind(),
-                                        instance,
-                                    },
-                                )?);
-                            }
-
-                            py_context.push(PyList::new(py, py_errors)?.unbind());
-                        }
-
-                        PyList::new(py, py_context)?.unbind()
-                    },
+                    context: convert_validation_context(py, context, mask)?,
                 }
             }
             jsonschema::error::ValidationErrorKind::BacktrackLimitExceeded { error } => {
@@ -272,46 +238,14 @@ impl ValidationErrorKind {
             jsonschema::error::ValidationErrorKind::Not { schema } => ValidationErrorKind::Not {
                 schema: pythonize::pythonize(py, &schema)?.unbind(),
             },
-            jsonschema::error::ValidationErrorKind::OneOfMultipleValid => {
-                ValidationErrorKind::OneOfMultipleValid {}
+            jsonschema::error::ValidationErrorKind::OneOfMultipleValid { context } => {
+                ValidationErrorKind::OneOfMultipleValid {
+                    context: convert_validation_context(py, context, mask)?,
+                }
             }
             jsonschema::error::ValidationErrorKind::OneOfNotValid { context } => {
                 ValidationErrorKind::OneOfNotValid {
-                    context: {
-                        let mut py_context: Vec<Py<PyList>> = Vec::with_capacity(context.len());
-
-                        for errors in context {
-                            let mut py_errors: Vec<Py<ValidationError>> =
-                                Vec::with_capacity(errors.len());
-
-                            for error in errors {
-                                let (
-                                    message,
-                                    verbose_message,
-                                    schema_path,
-                                    instance_path,
-                                    kind,
-                                    instance,
-                                ) = into_validation_error_args(py, error, mask)?;
-
-                                py_errors.push(Py::new(
-                                    py,
-                                    ValidationError {
-                                        message,
-                                        verbose_message,
-                                        schema_path,
-                                        instance_path,
-                                        kind: kind.into_pyobject(py)?.unbind(),
-                                        instance,
-                                    },
-                                )?);
-                            }
-
-                            py_context.push(PyList::new(py, py_errors)?.unbind());
-                        }
-
-                        PyList::new(py, py_context)?.unbind()
-                    },
+                    context: convert_validation_context(py, context, mask)?,
                 }
             }
             jsonschema::error::ValidationErrorKind::Pattern { pattern } => {
@@ -378,6 +312,39 @@ impl ValidationErrorKind {
             }
         })
     }
+}
+
+fn convert_validation_context(
+    py: Python<'_>,
+    context: Vec<Vec<jsonschema::error::ValidationError>>,
+    mask: Option<&str>,
+) -> PyResult<Py<PyList>> {
+    let mut py_context: Vec<Py<PyList>> = Vec::with_capacity(context.len());
+
+    for errors in context {
+        let mut py_errors: Vec<Py<ValidationError>> = Vec::with_capacity(errors.len());
+
+        for error in errors {
+            let (message, verbose_message, schema_path, instance_path, kind, instance) =
+                into_validation_error_args(py, error, mask)?;
+
+            py_errors.push(Py::new(
+                py,
+                ValidationError {
+                    message,
+                    verbose_message,
+                    schema_path,
+                    instance_path,
+                    kind: kind.into_pyobject(py)?.unbind(),
+                    instance,
+                },
+            )?);
+        }
+
+        py_context.push(PyList::new(py, py_errors)?.unbind());
+    }
+
+    Ok(PyList::new(py, py_context)?.unbind())
 }
 
 #[pyclass]

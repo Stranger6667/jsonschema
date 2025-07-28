@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added missing `context` field to `ValidationErrorKind.OneOfMultipleValid`.
+
 ### Changed
 
 - Improved error message for `enum`.

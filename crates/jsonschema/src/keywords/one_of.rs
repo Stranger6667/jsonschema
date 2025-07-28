@@ -80,6 +80,10 @@ impl Validate for OneOfValidator {
                     self.location.clone(),
                     location.into(),
                     instance,
+                    self.schemas
+                        .iter()
+                        .map(|schema| schema.iter_errors(instance, location).collect())
+                        .collect(),
                 ));
             }
             Ok(())
