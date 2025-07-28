@@ -5,17 +5,15 @@ use jsonschema::paths::{Location, LocationSegment};
 
 fn benchmark_into_iterator(c: &mut Criterion) {
     let empty = Location::new();
-    let small = Location::from_iter(
-        vec!["a", "b", "c"]
-            .into_iter()
-            .map(LocationSegment::from)
-            .chain((0..3).map(LocationSegment::from)),
-    );
-    let large = Location::from_iter(
-        (0..500)
-            .map(|_| LocationSegment::from("abc"))
-            .chain((0..500).map(LocationSegment::from)),
-    );
+    let small = vec!["a", "b", "c"]
+        .into_iter()
+        .map(LocationSegment::from)
+        .chain((0..3).map(LocationSegment::from))
+        .collect::<Location>();
+    let large = (0..500)
+        .map(|_| LocationSegment::from("abc"))
+        .chain((0..500).map(LocationSegment::from))
+        .collect::<Location>();
 
     for (parameter, input) in [("empty", empty), ("small", small), ("large", large)] {
         c.bench_with_input(
@@ -44,7 +42,7 @@ fn benchmark_from_iterator(c: &mut Criterion) {
             |b, i| {
                 b.iter_batched(
                     || i.clone().into_iter(),
-                    |i| Location::from_iter(black_box(i)),
+                    |i| black_box(i).collect::<Location>(),
                     criterion::BatchSize::SmallInput,
                 );
             },
