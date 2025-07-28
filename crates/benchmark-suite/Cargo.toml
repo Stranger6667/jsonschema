@@ -12,7 +12,7 @@ publish = false
 [dev-dependencies]
 benchmark = { path = "../benchmark/" }
 boon = "0.6.0"
-criterion = { version = "0.6", default-features = false }
+criterion = { version = "0.7", default-features = false }
 jsonschema = { path = "../jsonschema/" }
 jsonschema-valid = "0.5.2"
 serde_json.workspace = true

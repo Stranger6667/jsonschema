@@ -30,7 +30,7 @@ workspace = true
 [dev-dependencies]
 benchmark = { path = "../benchmark/" }
 codspeed-criterion-compat = { version = "3.0", default-features = false }
-criterion = { version = "0.6", default-features = false }
+criterion = { version = "0.7", default-features = false }
 referencing_testsuite = { package = "jsonschema-referencing-testsuite", path = "../jsonschema-referencing-testsuite/" }
 test-case = "3.3.1"
 tokio = { version = "1", features = ["macros", "rt"] }
