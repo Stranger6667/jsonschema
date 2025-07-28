@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Improved error message for `enum`.
+
 ## [0.31.0] - 2025-07-28
 
 ### Added

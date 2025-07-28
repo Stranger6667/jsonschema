@@ -803,6 +803,48 @@ fn write_unexpected_suffix(f: &mut Formatter<'_>, len: usize) -> fmt::Result {
     })
 }
 
+const MAX_DISPLAYED_ENUM_VARIANTS: usize = 3;
+
+fn write_enum_message(
+    f: &mut Formatter<'_>,
+    value: impl fmt::Display,
+    options: &Value,
+) -> fmt::Result {
+    let array = options
+        .as_array()
+        .expect("Enum options must be a JSON array");
+
+    write!(f, "{value} is not one of ")?;
+
+    let total_count = array.len();
+
+    if total_count <= MAX_DISPLAYED_ENUM_VARIANTS {
+        // Show all options with proper "a, b or c" formatting
+        for (i, option) in array.iter().enumerate() {
+            if i == 0 {
+                write!(f, "{option}")?;
+            } else if i == total_count - 1 {
+                write!(f, " or {option}")?;
+            } else {
+                write!(f, ", {option}")?;
+            }
+        }
+    } else {
+        // Show first few, then "or X other candidates"
+        let show_count = MAX_DISPLAYED_ENUM_VARIANTS - 1;
+        for (i, option) in array.iter().take(show_count).enumerate() {
+            if i == 0 {
+                write!(f, "{option}")?;
+            } else {
+                write!(f, ", {option}")?;
+            }
+        }
+        let remaining = total_count - show_count;
+        write!(f, " or {remaining} other candidates")?;
+    }
+    Ok(())
+}
+
 /// Textual representation of various validation errors.
 impl fmt::Display for ValidationError<'_> {
     #[allow(clippy::too_many_lines)] // The function is long but it does formatting only
@@ -866,9 +908,7 @@ impl fmt::Display for ValidationError<'_> {
                 )
             }
             ValidationErrorKind::FromUtf8 { error } => error.fmt(f),
-            ValidationErrorKind::Enum { options } => {
-                write!(f, "{} is not one of {}", self.instance, options)
-            }
+            ValidationErrorKind::Enum { options } => write_enum_message(f, &self.instance, options),
             ValidationErrorKind::ExclusiveMaximum { limit } => write!(
                 f,
                 "{} is greater than or equal to the maximum of {}",
@@ -1046,7 +1086,7 @@ impl fmt::Display for MaskedValidationError<'_, '_, '_> {
             }
             ValidationErrorKind::FromUtf8 { error } => error.fmt(f),
             ValidationErrorKind::Enum { options } => {
-                write!(f, "{} is not one of {}", self.placeholder, options)
+                write_enum_message(f, &self.placeholder, options)
             }
             ValidationErrorKind::ExclusiveMaximum { limit } => write!(
                 f,
