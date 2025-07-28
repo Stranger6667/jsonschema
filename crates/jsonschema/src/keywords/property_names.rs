@@ -71,7 +71,7 @@ impl Validate for PropertyNamesObjectValidator {
             for key in item.keys() {
                 let wrapper = Value::String(key.to_string());
                 match self.node.validate(&wrapper, location) {
-                    Ok(_) => {}
+                    Ok(()) => {}
                     Err(error) => {
                         return Err(ValidationError::property_names(
                             error.schema_path.clone(),

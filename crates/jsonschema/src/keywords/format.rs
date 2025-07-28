@@ -63,7 +63,7 @@ fn is_valid_relative_json_pointer(s: &str) -> bool {
                 match c {
                     '#' => return chars.next().is_none(),
                     '/' => return is_valid_json_pointer_impl(chars),
-                    c if c.is_ascii_digit() => continue,
+                    c if c.is_ascii_digit() => {}
                     _ => return false,
                 }
             }
@@ -276,9 +276,8 @@ fn is_valid_time(time: &str) -> bool {
 
 fn is_valid_datetime(datetime: &str) -> bool {
     // Find the position of 'T' or 't' separator
-    let t_pos = match datetime.bytes().position(|b| b == b'T' || b == b't') {
-        Some(pos) => pos,
-        None => return false, // 'T' separator not found
+    let Some(t_pos) = datetime.bytes().position(|b| b == b'T' || b == b't') else {
+        return false;
     };
 
     // Split the string into date and time parts

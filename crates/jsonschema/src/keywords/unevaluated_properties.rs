@@ -338,7 +338,6 @@ impl PropertiesFilter for Draft2019PropertiesFilter {
                 for (p, node) in &self.properties {
                     if property == p && node.is_valid(value) {
                         properties.insert(property);
-                        continue;
                     }
                 }
                 if let Some(additional) = self.additional.as_ref() {
@@ -593,7 +592,6 @@ impl PropertiesFilter for DefaultPropertiesFilter {
                 for (p, node) in &self.properties {
                     if property == p && node.is_valid(value) {
                         properties.insert(property);
-                        continue;
                     }
                 }
                 if let Some(additional) = self.additional.as_ref() {
