@@ -643,11 +643,13 @@
 //! See the [External References](#external-references) section for implementation details.
 
 pub(crate) mod compiler;
+pub mod compiler_v2;
 mod content_encoding;
 mod content_media_type;
 mod ecma;
 pub mod error;
 pub mod ext;
+pub(crate) mod ir;
 mod keywords;
 mod node;
 mod options;
