@@ -130,6 +130,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "fancy-regex 0.16 no longer fails for this test case"]
     fn test_fancy_regex_backtrack_limit_exceeded() {
         let schema = json!({"pattern": "(?i)(a|b|ab)*(?=c)"});
         let validator = crate::options()
