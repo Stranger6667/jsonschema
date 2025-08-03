@@ -4,6 +4,7 @@ import jsonschema_rs
 from jsonschema_rs import FancyRegexOptions, RegexOptions
 
 
+@pytest.mark.xfail(reason="fancy-regex 0.16 no longer fails for this test case")
 def test_fancy_regex_backtrack_limit_exceeded():
     schema = {"pattern": "(?i)(a|b|ab)*(?=c)"}
 
