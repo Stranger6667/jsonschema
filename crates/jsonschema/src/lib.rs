@@ -985,7 +985,7 @@ pub mod meta {
     /// # Panics
     ///
     /// This function panics if the meta-schema can't be detected.
-    pub fn validate(schema: &Value) -> Result<(), ValidationError> {
+    pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
         meta_validator_for(schema).validate(schema)
     }
 
@@ -1055,7 +1055,9 @@ pub mod meta {
     /// });
     /// assert!(jsonschema::meta::try_validate(&undetectable_schema).is_err());
     /// ```
-    pub fn try_validate(schema: &Value) -> Result<Result<(), ValidationError>, ReferencingError> {
+    pub fn try_validate(
+        schema: &Value,
+    ) -> Result<Result<(), ValidationError<'_>>, ReferencingError> {
         Ok(try_meta_validator_for(schema)?.validate(schema))
     }
 
@@ -1220,7 +1222,7 @@ pub mod draft4 {
         /// assert!(jsonschema::draft4::meta::validate(&invalid_schema).is_err());
         /// ```
         #[inline]
-        pub fn validate(schema: &Value) -> Result<(), ValidationError> {
+        pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
             VALIDATOR.validate(schema)
         }
     }
@@ -1375,7 +1377,7 @@ pub mod draft6 {
         /// assert!(jsonschema::draft6::meta::validate(&invalid_schema).is_err());
         /// ```
         #[inline]
-        pub fn validate(schema: &Value) -> Result<(), ValidationError> {
+        pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
             VALIDATOR.validate(schema)
         }
     }
@@ -1530,7 +1532,7 @@ pub mod draft7 {
         /// assert!(jsonschema::draft7::meta::validate(&invalid_schema).is_err());
         /// ```
         #[inline]
-        pub fn validate(schema: &Value) -> Result<(), ValidationError> {
+        pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
             VALIDATOR.validate(schema)
         }
     }
@@ -1684,7 +1686,7 @@ pub mod draft201909 {
         /// assert!(jsonschema::draft201909::meta::validate(&invalid_schema).is_err());
         /// ```
         #[inline]
-        pub fn validate(schema: &Value) -> Result<(), ValidationError> {
+        pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
             VALIDATOR.validate(schema)
         }
     }
@@ -1842,7 +1844,7 @@ pub mod draft202012 {
         /// assert!(jsonschema::draft202012::meta::validate(&invalid_schema).is_err());
         /// ```
         #[inline]
-        pub fn validate(schema: &Value) -> Result<(), ValidationError> {
+        pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
             VALIDATOR.validate(schema)
         }
     }

@@ -16,7 +16,7 @@ pub(crate) struct MultipleTypesValidator {
 
 impl MultipleTypesValidator {
     #[inline]
-    pub(crate) fn compile(items: &[Value], location: Location) -> CompilationResult {
+    pub(crate) fn compile(items: &[Value], location: Location) -> CompilationResult<'_> {
         let mut types = JsonTypeSet::empty();
         for item in items {
             match item {

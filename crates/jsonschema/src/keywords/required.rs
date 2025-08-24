@@ -15,7 +15,7 @@ pub(crate) struct RequiredValidator {
 
 impl RequiredValidator {
     #[inline]
-    pub(crate) fn compile(items: &[Value], location: Location) -> CompilationResult {
+    pub(crate) fn compile(items: &[Value], location: Location) -> CompilationResult<'_> {
         let mut required = Vec::with_capacity(items.len());
         for item in items {
             match item {
@@ -94,7 +94,7 @@ pub(crate) struct SingleItemRequiredValidator {
 
 impl SingleItemRequiredValidator {
     #[inline]
-    pub(crate) fn compile(value: &str, location: Location) -> CompilationResult {
+    pub(crate) fn compile(value: &str, location: Location) -> CompilationResult<'_> {
         Ok(Box::new(SingleItemRequiredValidator {
             value: value.to_string(),
             location,
@@ -140,7 +140,10 @@ pub(crate) fn compile<'a>(
 }
 
 #[inline]
-pub(crate) fn compile_with_path(schema: &Value, location: Location) -> Option<CompilationResult> {
+pub(crate) fn compile_with_path(
+    schema: &Value,
+    location: Location,
+) -> Option<CompilationResult<'_>> {
     // IMPORTANT: If this function will ever return `None`, adjust `dependencies.rs` accordingly
     match schema {
         Value::Array(items) => {

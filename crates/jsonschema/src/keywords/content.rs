@@ -24,7 +24,7 @@ impl ContentMediaTypeValidator {
         media_type: &str,
         func: ContentMediaTypeCheckType,
         location: Location,
-    ) -> CompilationResult {
+    ) -> CompilationResult<'_> {
         Ok(Box::new(ContentMediaTypeValidator {
             media_type: media_type.to_string(),
             func,
@@ -78,7 +78,7 @@ impl ContentEncodingValidator {
         encoding: &str,
         func: ContentEncodingCheckType,
         location: Location,
-    ) -> CompilationResult {
+    ) -> CompilationResult<'_> {
         Ok(Box::new(ContentEncodingValidator {
             encoding: encoding.to_string(),
             func,

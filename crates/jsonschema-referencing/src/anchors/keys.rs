@@ -48,11 +48,11 @@ impl<'a> AnchorKeyRef<'a> {
 }
 
 pub(crate) trait BorrowDyn {
-    fn borrowed_key(&self) -> AnchorKeyRef;
+    fn borrowed_key(&self) -> AnchorKeyRef<'_>;
 }
 
 impl BorrowDyn for AnchorKey {
-    fn borrowed_key(&self) -> AnchorKeyRef {
+    fn borrowed_key(&self) -> AnchorKeyRef<'_> {
         AnchorKeyRef::new(&self.uri, self.name.as_str())
     }
 }

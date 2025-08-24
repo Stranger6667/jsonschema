@@ -474,13 +474,13 @@ impl Registry {
     /// # Errors
     ///
     /// Returns an error if the base URI is invalid.
-    pub fn try_resolver(&self, base_uri: &str) -> Result<Resolver, Error> {
+    pub fn try_resolver(&self, base_uri: &str) -> Result<Resolver<'_>, Error> {
         let base = uri::from_str(base_uri)?;
         Ok(self.resolver(base))
     }
     /// Create a new [`Resolver`] for this registry with a known valid base URI.
     #[must_use]
-    pub fn resolver(&self, base_uri: Uri<String>) -> Resolver {
+    pub fn resolver(&self, base_uri: Uri<String>) -> Resolver<'_> {
         Resolver::new(self, Arc::new(base_uri))
     }
     #[must_use]
@@ -488,7 +488,7 @@ impl Registry {
         &self,
         base_uri: Arc<Uri<String>>,
         scopes: List<Uri<String>>,
-    ) -> Resolver {
+    ) -> Resolver<'_> {
         Resolver::from_parts(self, base_uri, scopes)
     }
     pub(crate) fn anchor<'a>(&self, uri: &'a Uri<String>, name: &'a str) -> Result<&Anchor, Error> {

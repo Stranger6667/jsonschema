@@ -112,7 +112,11 @@ impl SchemaNode {
     /// validator tree and so rather than returning a `PartialApplication` it is able to return a
     /// complete `BasicOutput`. This is the mechanism which compositional validators use to combine
     /// results from sub-schemas
-    pub(crate) fn apply_rooted(&self, instance: &Value, location: &LazyLocation) -> BasicOutput {
+    pub(crate) fn apply_rooted(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+    ) -> BasicOutput<'_> {
         match self.apply(instance, location) {
             PartialApplication::Valid {
                 annotations,
