@@ -1,5 +1,31 @@
 # Migration Guide
 
+## Upgrading from 0.32.x to 0.33.0 note
+
+In 0.33 `LocationSegment::Property` now holds a `Cow<'_, str>` and `LocationSegment` is no longer `Copy`. 
+
+If your code matches the enum and treats the property as `&str`, update it like this.
+
+This change was made to support proper round-trips for JSON Pointer segments (escaped vs. unescaped forms).
+
+```rust
+// Old (0.32.x)
+match segment {
+    LocationSegment::Property(p) => do_something(p), // p: &str
+    LocationSegment::Index(i)    => ...
+}
+
+do_something_else(segment);
+
+// New (0.33.0)
+match segment {
+    LocationSegment::Property(p) => do_something(&*p), // p: Cow<'_, str>
+    LocationSegment::Index(i)    => ...
+}
+
+// `LocationSegment` is no longer Copy, use `.clone()` if you need ownership
+do_something_else(segment.clone());
+```
 
 ## Upgrading from 0.29.x to 0.30.0
 

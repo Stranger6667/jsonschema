@@ -27,9 +27,9 @@ fn benchmark_into_iterator(c: &mut Criterion) {
 fn benchmark_from_iterator(c: &mut Criterion) {
     let empty = vec![];
     let small = vec![
-        LocationSegment::Property("a"),
-        LocationSegment::Property("b"),
-        LocationSegment::Property("c"),
+        LocationSegment::from("a"),
+        LocationSegment::from("b"),
+        LocationSegment::from("c"),
     ];
     let large = (0..1000)
         .map(|_| LocationSegment::from("abc"))

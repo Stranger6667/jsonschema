@@ -583,3 +583,42 @@ def test_enum_as_keys_invalid(enum_type):
     schema = {"properties": {"a": {"type": "string"}}}
     with pytest.raises(ValueError, match=f"Dict key must be str or str enum. Got '{EnumCls.__name__}'"):
         is_valid(schema, {EnumCls.A: "xyz"})
+
+
+def test_validate_error_instance_path_traverses_instance():
+    schema = {
+        "type": "object",
+        "properties": {
+            "table-node": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {"~": {"type": "string", "minLength": 1}},
+                    "required": ["~"],
+                },
+            }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+    }
+
+    instance = {
+        "table-node": [
+            {"~": ""},
+            {"other-value": ""},
+        ],
+    }
+
+    with pytest.raises(ValidationError) as excinfo:
+        validate(schema, instance)
+
+    error = excinfo.value
+
+    # Traverse instance using the `instance_path`` segments
+    current = instance
+    for segment in error.instance_path:
+        if isinstance(segment, int):
+            current = current[segment]
+        elif isinstance(segment, str):
+            current = current[segment]
+
+    assert current == instance["table-node"][0]["~"]

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **BREAKING**: `instance_path` segments are now unescaped when iterating. `LocationSegment::Property` now holds `Cow<'_, str>` and `LocationSegment` is no longer `Copy`. [#788](https://github.com/Stranger6667/jsonschema/issues/788)
+
 ## [0.32.1] - 2025-08-03
 
 ### Changed

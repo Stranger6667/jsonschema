@@ -1,13 +1,15 @@
 //! Facilities for working with paths within schemas or validated instances.
-use std::{fmt, sync::Arc};
+use std::{borrow::Cow, fmt, sync::Arc};
+
+use referencing::unescape_segment;
 
 use crate::keywords::Keyword;
 
 /// A location segment.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LocationSegment<'a> {
     /// Property name within a JSON object.
-    Property(&'a str),
+    Property(Cow<'a, str>),
     /// JSON Schema keyword.
     Index(usize),
 }
@@ -67,7 +69,7 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
 
         while let Some(next) = head.parent {
             capacity += 1;
-            string_capacity += match head.segment {
+            string_capacity += match &head.segment {
                 LocationSegment::Property(property) => property.len() + 1,
                 LocationSegment::Index(idx) => idx.checked_ilog10().unwrap_or(0) as usize + 2,
             };
@@ -80,13 +82,13 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
         head = value;
 
         if head.parent.is_some() {
-            segments.push(head.segment);
+            segments.push(head.segment.clone());
         }
 
         while let Some(next) = head.parent {
             head = next;
             if head.parent.is_some() {
-                segments.push(head.segment);
+                segments.push(head.segment.clone());
             }
         }
 
@@ -110,8 +112,8 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
 impl<'a> From<&'a Keyword> for LocationSegment<'a> {
     fn from(value: &'a Keyword) -> Self {
         match value {
-            Keyword::Builtin(k) => LocationSegment::Property(k.as_str()),
-            Keyword::Custom(s) => LocationSegment::Property(s),
+            Keyword::Builtin(k) => LocationSegment::Property(k.as_str().into()),
+            Keyword::Custom(s) => LocationSegment::Property(Cow::Borrowed(s)),
         }
     }
 }
@@ -119,13 +121,20 @@ impl<'a> From<&'a Keyword> for LocationSegment<'a> {
 impl<'a> From<&'a str> for LocationSegment<'a> {
     #[inline]
     fn from(value: &'a str) -> LocationSegment<'a> {
-        LocationSegment::Property(value)
+        LocationSegment::Property(Cow::Borrowed(value))
     }
 }
 
 impl<'a> From<&'a String> for LocationSegment<'a> {
     #[inline]
     fn from(value: &'a String) -> LocationSegment<'a> {
+        LocationSegment::Property(Cow::Borrowed(value))
+    }
+}
+
+impl<'a> From<Cow<'a, str>> for LocationSegment<'a> {
+    #[inline]
+    fn from(value: Cow<'a, str>) -> LocationSegment<'a> {
         LocationSegment::Property(value)
     }
 }
@@ -164,7 +173,7 @@ impl Location {
                 let mut buffer = String::with_capacity(parent.len() + property.len() + 1);
                 buffer.push_str(parent);
                 buffer.push('/');
-                write_escaped_str(&mut buffer, property);
+                write_escaped_str(&mut buffer, &property);
                 Self(Arc::new(buffer))
             }
             LocationSegment::Index(idx) => {
@@ -245,8 +254,10 @@ impl<'a> IntoIterator for &'a Location {
             .split('/')
             .filter(|p| !p.is_empty())
             .map(|p| {
-                p.parse::<usize>()
-                    .map_or(LocationSegment::Property(p), LocationSegment::Index)
+                p.parse::<usize>().map_or(
+                    LocationSegment::Property(unescape_segment(p)),
+                    LocationSegment::Index,
+                )
             })
             .collect::<Vec<_>>()
             .into_iter()
@@ -277,6 +288,7 @@ impl<'a> FromIterator<LocationSegment<'a>> for Location {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use test_case::test_case;
 
     #[test]
@@ -334,12 +346,12 @@ mod tests {
         assert_eq!(loc.as_str(), expected);
     }
 
-    #[test_case("/a/b/c", vec![LocationSegment::Property("a"), LocationSegment::Property("b"), LocationSegment::Property("c")]; "location with properties")]
+    #[test_case("/a/b/c", vec![LocationSegment::from("a"), LocationSegment::from("b"), LocationSegment::from("c")]; "location with properties")]
     #[test_case("/1/2/3", vec![LocationSegment::Index(1), LocationSegment::Index(2), LocationSegment::Index(3)]; "location with indices")]
     #[test_case("/a/1/b/2", vec![
-        LocationSegment::Property("a"),
+        LocationSegment::from("a"),
         LocationSegment::Index(1),
-        LocationSegment::Property("b"),
+        LocationSegment::from("b"),
         LocationSegment::Index(2)
     ]; "mixed properties and indices")]
     fn test_into_iter(location: &str, expected_segments: Vec<LocationSegment>) {
@@ -347,10 +359,71 @@ mod tests {
         assert_eq!(loc.into_iter().collect::<Vec<_>>(), expected_segments);
     }
 
-    #[test_case(vec![LocationSegment::Property("a"), LocationSegment::Property("b")], "/a/b"; "properties only")]
+    #[test_case(vec![LocationSegment::from("a"), LocationSegment::from("b")], "/a/b"; "properties only")]
     #[test_case(vec![LocationSegment::Index(1), LocationSegment::Index(2)], "/1/2"; "indices only")]
-    #[test_case(vec![LocationSegment::Property("a"), LocationSegment::Index(1)], "/a/1"; "mixed segments")]
+    #[test_case(vec![LocationSegment::from("a"), LocationSegment::Index(1)], "/a/1"; "mixed segments")]
     fn test_from_iter(segments: Vec<LocationSegment>, expected: &str) {
         assert_eq!(Location::from_iter(segments).as_str(), expected);
+    }
+
+    #[test]
+    fn test_roundtrip_join_iter_rebuild_equals() {
+        let loc = Location::new().join("a/b").join(2).join("x~y");
+
+        let segments: Vec<_> = loc.into_iter().collect();
+
+        let rebuilt = segments
+            .into_iter()
+            .fold(Location::new(), |acc, seg| match seg {
+                LocationSegment::Property(p) => acc.join(p),
+                LocationSegment::Index(i) => acc.join(i),
+            });
+
+        assert_eq!(loc, rebuilt);
+    }
+
+    #[test]
+    fn test_validate_error_instance_path_traverses_instance() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "table-node": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": { "~": { "type": "string", "minLength": 1 } },
+                        "required": ["~"],
+                    }
+                }
+            },
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+        });
+        let instance = json!({
+            "table-node": [
+                { "~": "" },
+                { "other-value": "" },
+            ],
+        });
+
+        let error = crate::validate(&schema, &instance).expect_err("Should fail");
+
+        // Traverse instance using the `instance_path`` segments
+        let mut current = &instance;
+        for segment in error.instance_path.into_iter() {
+            match segment {
+                LocationSegment::Property(property) => {
+                    current = &current[property.as_ref()];
+                }
+                LocationSegment::Index(idx) => {
+                    current = &current[idx];
+                }
+            }
+        }
+        assert_eq!(
+            current,
+            instance
+                .pointer("/table-node/0/~0")
+                .expect("Pointer is valid")
+        );
     }
 }

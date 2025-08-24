@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `instance_path` segments are now unescaped when iterating. [#788](https://github.com/Stranger6667/jsonschema/issues/788)
+
 ## [0.32.1] - 2025-08-03
 
 ### Changed
