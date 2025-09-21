@@ -52,12 +52,19 @@ impl Draft {
             .and_then(|contents| contents.get("$schema"))
             .and_then(|schema| schema.as_str())
         {
-            Ok(match schema.trim_end_matches('#') {
-                "https://json-schema.org/draft/2020-12/schema" => Draft::Draft202012,
-                "https://json-schema.org/draft/2019-09/schema" => Draft::Draft201909,
-                "http://json-schema.org/draft-07/schema" => Draft::Draft7,
-                "http://json-schema.org/draft-06/schema" => Draft::Draft6,
-                "http://json-schema.org/draft-04/schema" => Draft::Draft4,
+            let normalized = schema.trim_end_matches('#');
+            Ok(match normalized {
+                // Accept both HTTPS and HTTP for all known drafts
+                "https://json-schema.org/draft/2020-12/schema"
+                | "http://json-schema.org/draft/2020-12/schema" => Draft::Draft202012,
+                "https://json-schema.org/draft/2019-09/schema"
+                | "http://json-schema.org/draft/2019-09/schema" => Draft::Draft201909,
+                "https://json-schema.org/draft-07/schema"
+                | "http://json-schema.org/draft-07/schema" => Draft::Draft7,
+                "https://json-schema.org/draft-06/schema"
+                | "http://json-schema.org/draft-06/schema" => Draft::Draft6,
+                "https://json-schema.org/draft-04/schema"
+                | "http://json-schema.org/draft-04/schema" => Draft::Draft4,
                 value => return Err(Error::unknown_specification(value)),
             })
         } else {
@@ -199,8 +206,11 @@ mod tests {
     #[test_case(&json!({"$schema": "https://json-schema.org/draft/2020-12/schema#"}), Draft::Draft202012; "detect Draft 2020-12 with fragment")]
     #[test_case(&json!({"$schema": "https://json-schema.org/draft/2019-09/schema"}), Draft::Draft201909; "detect Draft 2019-09")]
     #[test_case(&json!({"$schema": "http://json-schema.org/draft-07/schema"}), Draft::Draft7; "detect Draft 7")]
+    #[test_case(&json!({"$schema": "https://json-schema.org/draft-07/schema"}), Draft::Draft7; "detect Draft 7 https")]
     #[test_case(&json!({"$schema": "http://json-schema.org/draft-06/schema"}), Draft::Draft6; "detect Draft 6")]
+    #[test_case(&json!({"$schema": "https://json-schema.org/draft-06/schema"}), Draft::Draft6; "detect Draft 6 https")]
     #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema"}), Draft::Draft4; "detect Draft 4")]
+    #[test_case(&json!({"$schema": "https://json-schema.org/draft-04/schema"}), Draft::Draft4; "detect Draft 4 https")]
     #[test_case(&json!({}), Draft::Draft7; "default to Draft 7 when no $schema")]
     fn test_detect(contents: &serde_json::Value, expected: Draft) {
         let result = Draft::Draft7
