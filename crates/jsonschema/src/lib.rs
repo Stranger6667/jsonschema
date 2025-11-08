@@ -901,37 +901,37 @@ pub mod meta {
 
     pub(crate) mod validators {
         use crate::Validator;
-        use once_cell::sync::Lazy;
+        use std::sync::LazyLock;
 
-        pub static DRAFT4_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
+        pub static DRAFT4_META_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
             crate::options()
                 .without_schema_validation()
                 .build(&referencing::meta::DRAFT4)
                 .expect("Draft 4 meta-schema should be valid")
         });
 
-        pub static DRAFT6_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
+        pub static DRAFT6_META_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
             crate::options()
                 .without_schema_validation()
                 .build(&referencing::meta::DRAFT6)
                 .expect("Draft 6 meta-schema should be valid")
         });
 
-        pub static DRAFT7_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
+        pub static DRAFT7_META_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
             crate::options()
                 .without_schema_validation()
                 .build(&referencing::meta::DRAFT7)
                 .expect("Draft 7 meta-schema should be valid")
         });
 
-        pub static DRAFT201909_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
+        pub static DRAFT201909_META_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
             crate::options()
                 .without_schema_validation()
                 .build(&referencing::meta::DRAFT201909)
                 .expect("Draft 2019-09 meta-schema should be valid")
         });
 
-        pub static DRAFT202012_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
+        pub static DRAFT202012_META_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
             crate::options()
                 .without_schema_validation()
                 .build(&referencing::meta::DRAFT202012)

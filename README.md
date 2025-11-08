@@ -88,7 +88,7 @@ For detailed benchmarks, see our [full performance comparison](https://github.co
 
 ## Minimum Supported Rust Version (MSRV)
 
-This crate requires Rust 1.71.1 or later.
+This crate requires Rust 1.83.0 or later.
 
 ## Acknowledgements
 
@@ -115,4 +115,3 @@ See [CONTRIBUTING.md](https://github.com/Stranger6667/jsonschema/blob/master/CON
 ## License
 
 Licensed under [MIT License](https://github.com/Stranger6667/jsonschema/blob/master/LICENSE).
-

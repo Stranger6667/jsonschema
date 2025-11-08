@@ -7,8 +7,8 @@ use std::{
 
 use email_address::EmailAddress;
 use fancy_regex::Regex;
-use once_cell::sync::Lazy;
 use serde_json::{Map, Value};
+use std::sync::LazyLock;
 use uuid_simd::{parse_hyphenated, Out};
 
 use crate::{
@@ -21,7 +21,7 @@ use crate::{
     Draft,
 };
 
-static URI_TEMPLATE_RE: Lazy<Regex> = Lazy::new(|| {
+static URI_TEMPLATE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r#"^(?:(?:[^\x00-\x20"'<>%\\^`{|}]|%[0-9a-f]{2})|\{[+#./;?&=,!@|]?(?:[a-z0-9_]|%[0-9a-f]{2})+(?::[1-9][0-9]{0,3}|\*)?(?:,(?:[a-z0-9_]|%[0-9a-f]{2})+(?::[1-9][0-9]{0,3}|\*)?)*})*\z"#
     )

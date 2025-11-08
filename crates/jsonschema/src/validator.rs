@@ -315,8 +315,8 @@ mod tests {
     };
     use fancy_regex::Regex;
     use num_cmp::NumCmp;
-    use once_cell::sync::Lazy;
     use serde_json::{json, Map, Value};
+    use std::sync::LazyLock;
 
     #[cfg(not(target_arch = "wasm32"))]
     fn load(path: &str, idx: usize) -> Value {
@@ -458,7 +458,7 @@ mod tests {
     fn custom_format_and_override_keyword() {
         /// Check that a string has some number of digits followed by a dot followed by exactly 2 digits.
         fn currency_format_checker(s: &str) -> bool {
-            static CURRENCY_RE: Lazy<Regex> = Lazy::new(|| {
+            static CURRENCY_RE: LazyLock<Regex> = LazyLock::new(|| {
                 Regex::new("^(0|([1-9]+[0-9]*))(\\.[0-9]{2})$").expect("Invalid regex")
             });
             CURRENCY_RE.is_match(s).expect("Invalid regex")

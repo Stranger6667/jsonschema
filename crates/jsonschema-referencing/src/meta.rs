@@ -1,19 +1,16 @@
 //! Built-in JSON Schema meta-schemas.
 //!
 //! This module provides access to the official JSON Schema meta-schemas for different draft versions.
-use std::sync::Arc;
-
-use once_cell::sync::Lazy;
 use serde_json::Value;
+use std::sync::{Arc, LazyLock};
 
 use crate::Draft;
 
 macro_rules! schema {
     ($vis:vis $name:ident, $path:expr) => {
-        $vis static $name: once_cell::sync::Lazy<Arc<serde_json::Value>> =
-            once_cell::sync::Lazy::new(|| {
-                Arc::new(serde_json::from_slice(include_bytes!($path)).expect("Invalid schema"))
-            });
+        $vis static $name: LazyLock<Arc<serde_json::Value>> = LazyLock::new(|| {
+            Arc::new(serde_json::from_slice(include_bytes!($path)).expect("Invalid schema"))
+        });
     };
     ($name:ident, $path:expr) => {
         schema!(pub(crate) $name, $path);
@@ -81,85 +78,86 @@ schema!(
     pub DRAFT202012_CONTENT,
     "../metaschemas/draft2020-12/meta/content.json"
 );
-pub(crate) static META_SCHEMAS_ALL: Lazy<[(&'static str, &'static Value); 18]> = Lazy::new(|| {
-    [
-        ("http://json-schema.org/draft-04/schema#", &*DRAFT4),
-        ("http://json-schema.org/draft-06/schema#", &*DRAFT6),
-        ("http://json-schema.org/draft-07/schema#", &*DRAFT7),
-        (
-            "https://json-schema.org/draft/2019-09/schema",
-            &*DRAFT201909,
-        ),
-        (
-            "https://json-schema.org/draft/2019-09/meta/applicator",
-            &*DRAFT201909_APPLICATOR,
-        ),
-        (
-            "https://json-schema.org/draft/2019-09/meta/content",
-            &*DRAFT201909_CONTENT,
-        ),
-        (
-            "https://json-schema.org/draft/2019-09/meta/core",
-            &*DRAFT201909_CORE,
-        ),
-        (
-            "https://json-schema.org/draft/2019-09/meta/format",
-            &*DRAFT201909_FORMAT,
-        ),
-        (
-            "https://json-schema.org/draft/2019-09/meta/meta-data",
-            &*DRAFT201909_META_DATA,
-        ),
-        (
-            "https://json-schema.org/draft/2019-09/meta/validation",
-            &*DRAFT201909_VALIDATION,
-        ),
-        (
-            "https://json-schema.org/draft/2020-12/schema",
-            &*DRAFT202012,
-        ),
-        (
-            "https://json-schema.org/draft/2020-12/meta/core",
-            &*DRAFT202012_CORE,
-        ),
-        (
-            "https://json-schema.org/draft/2020-12/meta/applicator",
-            &*DRAFT202012_APPLICATOR,
-        ),
-        (
-            "https://json-schema.org/draft/2020-12/meta/unevaluated",
-            &*DRAFT202012_UNEVALUATED,
-        ),
-        (
-            "https://json-schema.org/draft/2020-12/meta/validation",
-            &*DRAFT202012_VALIDATION,
-        ),
-        (
-            "https://json-schema.org/draft/2020-12/meta/meta-data",
-            &*DRAFT202012_META_DATA,
-        ),
-        (
-            "https://json-schema.org/draft/2020-12/meta/format-annotation",
-            &*DRAFT202012_FORMAT_ANNOTATION,
-        ),
-        (
-            "https://json-schema.org/draft/2020-12/meta/content",
-            &*DRAFT202012_CONTENT,
-        ),
-    ]
-});
+pub(crate) static META_SCHEMAS_ALL: LazyLock<[(&'static str, &'static Value); 18]> =
+    LazyLock::new(|| {
+        [
+            ("http://json-schema.org/draft-04/schema#", &*DRAFT4),
+            ("http://json-schema.org/draft-06/schema#", &*DRAFT6),
+            ("http://json-schema.org/draft-07/schema#", &*DRAFT7),
+            (
+                "https://json-schema.org/draft/2019-09/schema",
+                &*DRAFT201909,
+            ),
+            (
+                "https://json-schema.org/draft/2019-09/meta/applicator",
+                &*DRAFT201909_APPLICATOR,
+            ),
+            (
+                "https://json-schema.org/draft/2019-09/meta/content",
+                &*DRAFT201909_CONTENT,
+            ),
+            (
+                "https://json-schema.org/draft/2019-09/meta/core",
+                &*DRAFT201909_CORE,
+            ),
+            (
+                "https://json-schema.org/draft/2019-09/meta/format",
+                &*DRAFT201909_FORMAT,
+            ),
+            (
+                "https://json-schema.org/draft/2019-09/meta/meta-data",
+                &*DRAFT201909_META_DATA,
+            ),
+            (
+                "https://json-schema.org/draft/2019-09/meta/validation",
+                &*DRAFT201909_VALIDATION,
+            ),
+            (
+                "https://json-schema.org/draft/2020-12/schema",
+                &*DRAFT202012,
+            ),
+            (
+                "https://json-schema.org/draft/2020-12/meta/core",
+                &*DRAFT202012_CORE,
+            ),
+            (
+                "https://json-schema.org/draft/2020-12/meta/applicator",
+                &*DRAFT202012_APPLICATOR,
+            ),
+            (
+                "https://json-schema.org/draft/2020-12/meta/unevaluated",
+                &*DRAFT202012_UNEVALUATED,
+            ),
+            (
+                "https://json-schema.org/draft/2020-12/meta/validation",
+                &*DRAFT202012_VALIDATION,
+            ),
+            (
+                "https://json-schema.org/draft/2020-12/meta/meta-data",
+                &*DRAFT202012_META_DATA,
+            ),
+            (
+                "https://json-schema.org/draft/2020-12/meta/format-annotation",
+                &*DRAFT202012_FORMAT_ANNOTATION,
+            ),
+            (
+                "https://json-schema.org/draft/2020-12/meta/content",
+                &*DRAFT202012_CONTENT,
+            ),
+        ]
+    });
 
-pub(crate) static META_SCHEMAS_DRAFT4: Lazy<[(&'static str, &'static Value); 1]> =
-    Lazy::new(|| [("http://json-schema.org/draft-04/schema#", &*DRAFT4)]);
+pub(crate) static META_SCHEMAS_DRAFT4: LazyLock<[(&'static str, &'static Value); 1]> =
+    LazyLock::new(|| [("http://json-schema.org/draft-04/schema#", &*DRAFT4)]);
 
-pub(crate) static META_SCHEMAS_DRAFT6: Lazy<[(&'static str, &'static Value); 1]> =
-    Lazy::new(|| [("http://json-schema.org/draft-06/schema#", &*DRAFT6)]);
+pub(crate) static META_SCHEMAS_DRAFT6: LazyLock<[(&'static str, &'static Value); 1]> =
+    LazyLock::new(|| [("http://json-schema.org/draft-06/schema#", &*DRAFT6)]);
 
-pub(crate) static META_SCHEMAS_DRAFT7: Lazy<[(&'static str, &'static Value); 1]> =
-    Lazy::new(|| [("http://json-schema.org/draft-07/schema#", &*DRAFT7)]);
+pub(crate) static META_SCHEMAS_DRAFT7: LazyLock<[(&'static str, &'static Value); 1]> =
+    LazyLock::new(|| [("http://json-schema.org/draft-07/schema#", &*DRAFT7)]);
 
-pub(crate) static META_SCHEMAS_DRAFT2019: Lazy<[(&'static str, &'static Value); 7]> =
-    Lazy::new(|| {
+pub(crate) static META_SCHEMAS_DRAFT2019: LazyLock<[(&'static str, &'static Value); 7]> =
+    LazyLock::new(|| {
         [
             (
                 "https://json-schema.org/draft/2019-09/schema",
@@ -192,8 +190,8 @@ pub(crate) static META_SCHEMAS_DRAFT2019: Lazy<[(&'static str, &'static Value); 
         ]
     });
 
-pub(crate) static META_SCHEMAS_DRAFT2020: Lazy<[(&'static str, &'static Value); 8]> =
-    Lazy::new(|| {
+pub(crate) static META_SCHEMAS_DRAFT2020: LazyLock<[(&'static str, &'static Value); 8]> =
+    LazyLock::new(|| {
         [
             (
                 "https://json-schema.org/draft/2020-12/schema",

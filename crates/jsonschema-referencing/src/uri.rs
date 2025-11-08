@@ -3,7 +3,7 @@ use fluent_uri::{
     encoding::{encoder::Fragment, EStr, Encoder},
     Uri, UriRef,
 };
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 use crate::Error;
 pub use fluent_uri::encoding::encoder::Path;
@@ -44,8 +44,8 @@ pub fn from_str(uri: &str) -> Result<Uri<String>, Error> {
     }
 }
 
-pub(crate) static DEFAULT_ROOT_URI: Lazy<Uri<String>> =
-    Lazy::new(|| Uri::parse("json-schema:///".to_string()).expect("Invalid URI"));
+pub(crate) static DEFAULT_ROOT_URI: LazyLock<Uri<String>> =
+    LazyLock::new(|| Uri::parse("json-schema:///".to_string()).expect("Invalid URI"));
 
 pub type EncodedString = EStr<Fragment>;
 

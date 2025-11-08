@@ -30,7 +30,7 @@ pub fn suite(args: TokenStream, input: TokenStream) -> TokenStream {
     let mut output = quote! {
         #test_func
 
-        static MOCK: once_cell::sync::Lazy<mockito::Server> = once_cell::sync::Lazy::new(|| {
+        static MOCK: std::sync::LazyLock<mockito::Server> = std::sync::LazyLock::new(|| {
             #mocks
         });
     };

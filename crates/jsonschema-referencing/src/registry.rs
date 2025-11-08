@@ -2,12 +2,11 @@ use std::{
     collections::{hash_map::Entry, HashSet, VecDeque},
     hash::{Hash, Hasher},
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
 
 use ahash::{AHashMap, AHashSet, AHasher};
 use fluent_uri::Uri;
-use once_cell::sync::Lazy;
 use serde_json::Value;
 
 use crate::{
@@ -44,8 +43,8 @@ type DocumentStore = AHashMap<Arc<Uri<String>>, Pin<Arc<ValueWrapper>>>;
 type ResourceMap = AHashMap<Arc<Uri<String>>, InnerResourcePtr>;
 
 /// Pre-loaded registry containing all JSON Schema meta-schemas and their vocabularies
-pub static SPECIFICATIONS: Lazy<Registry> =
-    Lazy::new(|| Registry::build_from_meta_schemas(meta::META_SCHEMAS_ALL.as_slice()));
+pub static SPECIFICATIONS: LazyLock<Registry> =
+    LazyLock::new(|| Registry::build_from_meta_schemas(meta::META_SCHEMAS_ALL.as_slice()));
 
 /// A registry of JSON Schema resources, each identified by their canonical URIs.
 ///
