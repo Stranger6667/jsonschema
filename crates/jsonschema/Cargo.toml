@@ -52,7 +52,7 @@ regex = "1.11.1"
 
 [dev-dependencies]
 benchmark = { path = "../benchmark/" }
-codspeed-criterion-compat = { version = "3.0", default-features = false }
+codspeed-criterion-compat = { version = "4.1", default-features = false }
 criterion = { version = "0.7", default-features = false }
 testsuite = { package = "jsonschema-testsuite", path = "../jsonschema-testsuite" }
 test-case = "3"
