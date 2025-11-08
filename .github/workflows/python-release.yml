@@ -43,7 +43,7 @@ jobs:
         working-directory: crates/jsonschema-py
 
       - name: Upload sdist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: sdist
           path: crates/jsonschema-py/dist
@@ -69,7 +69,7 @@ jobs:
         run: |
           pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: wheel-macos-x86_64-py${{ matrix.python-version }}
           path: dist
@@ -94,7 +94,7 @@ jobs:
         run: |
           pip install dist/${{ env.PACKAGE_NAME }}-*universal2.whl --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: wheel-macos-universal-py${{ matrix.python-version }}
           path: dist
@@ -122,7 +122,7 @@ jobs:
         run: |
           python -m pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: wheel-windows-${{ matrix.target }}-py${{ matrix.python-version }}
           path: dist
@@ -167,7 +167,7 @@ jobs:
             venv/bin/pip install -U pip wheel
             venv/bin/pip install ${{ env.PACKAGE_NAME }} --no-index --find-links dist/ --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: wheel-linux-${{ matrix.target }}-py${{ matrix.python-version }}
           path: dist
