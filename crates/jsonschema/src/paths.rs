@@ -193,6 +193,11 @@ impl Location {
     pub fn as_bytes(&self) -> &[u8] {
         self.0.as_bytes()
     }
+
+    #[must_use]
+    pub fn iter(&self) -> std::vec::IntoIter<LocationSegment<'_>> {
+        <&Self as IntoIterator>::into_iter(self)
+    }
 }
 
 pub fn write_escaped_str(buffer: &mut String, value: &str) {

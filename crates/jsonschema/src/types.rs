@@ -146,6 +146,14 @@ impl JsonTypeSet {
     }
 }
 
+impl IntoIterator for &JsonTypeSet {
+    type Item = JsonType;
+    type IntoIter = JsonTypeSetIterator;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 impl fmt::Debug for JsonTypeSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "(")?;
