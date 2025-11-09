@@ -492,6 +492,11 @@ fn is_valid_idn_hostname(hostname: &str) -> bool {
     is_valid_hostname(&ascii_hostname)
 }
 
+#[inline]
+fn unit_index(units: &[u8], unit: u8) -> Option<usize> {
+    units.iter().position(|&u| u == unit)
+}
+
 fn is_valid_duration(duration: &str) -> bool {
     let bytes = duration.as_bytes();
     let len = bytes.len();
@@ -511,10 +516,6 @@ fn is_valid_duration(duration: &str) -> bool {
 
     let date_units = [b'Y', b'M', b'W', b'D'];
     let time_units = [b'H', b'M', b'S'];
-
-    fn unit_index(units: &[u8], unit: u8) -> Option<usize> {
-        units.iter().position(|&u| u == unit)
-    }
 
     while i < len {
         if bytes[i] == b'T' {

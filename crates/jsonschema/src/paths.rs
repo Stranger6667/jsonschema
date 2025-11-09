@@ -414,7 +414,7 @@ mod tests {
 
         // Traverse instance using the `instance_path`` segments
         let mut current = &instance;
-        for segment in error.instance_path.into_iter() {
+        for segment in &error.instance_path {
             match segment {
                 LocationSegment::Property(property) => {
                     current = &current[property.as_ref()];

@@ -259,6 +259,95 @@ mod tests {
     use serde_json::{json, Value};
     use test_case::test_case;
 
+    struct MyRetrieve;
+
+    impl Retrieve for MyRetrieve {
+        fn retrieve(
+            &self,
+            uri: &Uri<String>,
+        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+            match uri.path().as_str() {
+                "/indirection" => Ok(json!({
+                    "$id": "/indirection",
+                    "baz": {
+                        "$ref": "/types#/foo"
+                    }
+                })),
+                "/types" => Ok(json!({
+                    "$id": "/types",
+                    "foo": {
+                        "$id": "#/foo",
+                        "$ref": "#/bar"
+                    },
+                    "bar": {
+                        "type": "integer"
+                    }
+                })),
+                _ => panic!("Not found"),
+            }
+        }
+    }
+
+    struct TestRetrieve {
+        storage: HashMap<String, Value>,
+    }
+
+    impl Retrieve for TestRetrieve {
+        fn retrieve(
+            &self,
+            uri: &Uri<String>,
+        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+            self.storage
+                .get(uri.path().as_str())
+                .cloned()
+                .ok_or_else(|| "Document not found".into())
+        }
+    }
+
+    struct NestedRetrieve;
+
+    impl Retrieve for NestedRetrieve {
+        fn retrieve(
+            &self,
+            uri: &Uri<String>,
+        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+            match uri.as_str() {
+                "foo://schema_2.json" => Ok(json!({
+                    "$id": "foo://schema_2.json",
+                    "type": "string"
+                })),
+                _ => panic!("Unexpected URI: {}", uri.path()),
+            }
+        }
+    }
+
+    struct FragmentRetrieve;
+
+    impl Retrieve for FragmentRetrieve {
+        fn retrieve(
+            &self,
+            uri: &Uri<String>,
+        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+            match uri.path().as_str() {
+                "/tmp/schemas/one.json" => Ok(json!({
+                    "$defs": {
+                        "obj": {
+                            "$ref": "other.json#/$defs/obj"
+                        }
+                    }
+                })),
+                "/tmp/schemas/other.json" => Ok(json!({
+                    "$defs": {
+                        "obj": {
+                            "type": "number"
+                        }
+                    }
+                })),
+                _ => panic!("Unexpected URI: {}", uri.path()),
+            }
+        }
+    }
+
     #[test_case(
         &json!({
             "properties": {
@@ -449,35 +538,6 @@ mod tests {
     fn test_resolving_finds_references_in_referenced_resources() {
         let schema = json!({"$ref": "/indirection#/baz"});
 
-        struct MyRetrieve;
-
-        impl Retrieve for MyRetrieve {
-            fn retrieve(
-                &self,
-                uri: &Uri<String>,
-            ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-                match uri.path().as_str() {
-                    "/indirection" => Ok(json!({
-                        "$id": "/indirection",
-                        "baz": {
-                            "$ref": "/types#/foo"
-                        }
-                    })),
-                    "/types" => Ok(json!({
-                        "$id": "/types",
-                        "foo": {
-                            "$id": "#/foo",
-                            "$ref": "#/bar"
-                        },
-                        "bar": {
-                            "type": "integer"
-                        }
-                    })),
-                    _ => panic!("Not found"),
-                }
-            }
-        }
-
         let validator = match crate::options().with_retriever(MyRetrieve).build(&schema) {
             Ok(validator) => validator,
             Err(error) => panic!("{error}"),
@@ -485,22 +545,6 @@ mod tests {
 
         assert!(validator.is_valid(&json!(2)));
         assert!(!validator.is_valid(&json!("")));
-    }
-
-    struct TestRetrieve {
-        storage: HashMap<String, Value>,
-    }
-
-    impl Retrieve for TestRetrieve {
-        fn retrieve(
-            &self,
-            uri: &Uri<String>,
-        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-            self.storage
-                .get(uri.path().as_str())
-                .cloned()
-                .ok_or_else(|| "Document not found".into())
-        }
     }
 
     #[test_case(
@@ -623,23 +667,6 @@ mod tests {
             }
         });
 
-        struct NestedRetrieve;
-
-        impl Retrieve for NestedRetrieve {
-            fn retrieve(
-                &self,
-                uri: &Uri<String>,
-            ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-                match uri.as_str() {
-                    "foo://schema_2.json" => Ok(json!({
-                        "$id": "foo://schema_2.json",
-                        "type": "string"
-                    })),
-                    _ => panic!("Unexpected URI: {}", uri.path()),
-                }
-            }
-        }
-
         let validator = match crate::options()
             .with_retriever(NestedRetrieve)
             .build(&schema)
@@ -658,33 +685,6 @@ mod tests {
             "$id": "file:///tmp/schemas/root.json",
             "$ref": "one.json#/$defs/obj"
         });
-
-        struct FragmentRetrieve;
-
-        impl Retrieve for FragmentRetrieve {
-            fn retrieve(
-                &self,
-                uri: &Uri<String>,
-            ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-                match uri.path().as_str() {
-                    "/tmp/schemas/one.json" => Ok(json!({
-                        "$defs": {
-                            "obj": {
-                                "$ref": "other.json#/$defs/obj"
-                            }
-                        }
-                    })),
-                    "/tmp/schemas/other.json" => Ok(json!({
-                        "$defs": {
-                            "obj": {
-                                "type": "number"
-                            }
-                        }
-                    })),
-                    _ => panic!("Unexpected URI: {}", uri.path()),
-                }
-            }
-        }
 
         let validator = match crate::options()
             .with_retriever(FragmentRetrieve)

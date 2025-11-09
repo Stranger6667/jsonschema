@@ -110,33 +110,40 @@ impl referencing::AsyncRetrieve for DefaultRetriever {
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
+use percent_encoding::{AsciiSet, CONTROLS};
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+const URI_SEGMENT: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'<')
+    .add(b'>')
+    .add(b'`')
+    .add(b'#')
+    .add(b'?')
+    .add(b'{')
+    .add(b'}')
+    .add(b'/')
+    .add(b'%');
+
+#[cfg(all(test, not(target_arch = "wasm32"), not(target_os = "windows")))]
+const UNIX_URI_SEGMENT: &AsciiSet = &URI_SEGMENT.add(b'\\');
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
 fn path_to_uri(path: &std::path::Path) -> String {
-    use percent_encoding::{percent_encode, AsciiSet, CONTROLS};
+    use percent_encoding::percent_encode;
 
     let mut result = "file://".to_owned();
-    const SEGMENT: &AsciiSet = &CONTROLS
-        .add(b' ')
-        .add(b'"')
-        .add(b'<')
-        .add(b'>')
-        .add(b'`')
-        .add(b'#')
-        .add(b'?')
-        .add(b'{')
-        .add(b'}')
-        .add(b'/')
-        .add(b'%');
 
     #[cfg(not(target_os = "windows"))]
     {
         use std::os::unix::ffi::OsStrExt;
 
-        const CUSTOM_SEGMENT: &AsciiSet = &SEGMENT.add(b'\\');
         for component in path.components().skip(1) {
             result.push('/');
             result.extend(percent_encode(
                 component.as_os_str().as_bytes(),
-                CUSTOM_SEGMENT,
+                UNIX_URI_SEGMENT,
             ));
         }
     }
@@ -165,7 +172,7 @@ fn path_to_uri(path: &std::path::Path) -> String {
             let component = component.as_os_str().to_str().expect("Unexpected path");
 
             result.push('/');
-            result.extend(percent_encode(component.as_bytes(), SEGMENT));
+            result.extend(percent_encode(component.as_bytes(), URI_SEGMENT));
         }
     }
     result
