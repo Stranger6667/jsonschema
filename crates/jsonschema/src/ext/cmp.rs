@@ -15,6 +15,7 @@ macro_rules! num_cmp {
 
 /// Tests for two JSON values to be equal using the JSON Schema semantic.
 #[must_use]
+#[allow(clippy::missing_panics_doc)]
 pub fn equal(left: &Value, right: &Value) -> bool {
     match (left, right) {
         (Value::String(left), Value::String(right)) => left == right,

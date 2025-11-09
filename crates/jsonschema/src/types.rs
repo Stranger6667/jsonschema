@@ -154,6 +154,15 @@ impl IntoIterator for &JsonTypeSet {
     }
 }
 
+impl IntoIterator for JsonTypeSet {
+    type Item = JsonType;
+    type IntoIter = JsonTypeSetIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        JsonTypeSetIterator { set: self }
+    }
+}
+
 impl fmt::Debug for JsonTypeSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "(")?;
@@ -186,7 +195,7 @@ impl Iterator for JsonTypeSetIterator {
             None
         } else {
             // Find the least significant bit that is set
-            let lsb = self.set.0 & -(self.set.0 as i8) as u8;
+            let lsb = self.set.0 & self.set.0.wrapping_neg();
 
             // Clear the least significant bit
             self.set.0 &= self.set.0 - 1;

@@ -255,6 +255,7 @@ impl<T> OutputUnit<T> {
 impl OutputUnit<Annotations<'_>> {
     /// The annotations found at this output unit.
     #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn value(&self) -> Cow<'_, serde_json::Value> {
         self.value.value()
     }
@@ -275,6 +276,7 @@ pub struct Annotations<'a>(AnnotationsInner<'a>);
 impl<'a> Annotations<'a> {
     /// The `serde_json::Value` of the annotation.
     #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn value(&'a self) -> Cow<'a, serde_json::Value> {
         match &self.0 {
             AnnotationsInner::Value(v) => Cow::Borrowed(v),

@@ -191,12 +191,14 @@ macro_rules! handle_offset {
         }
 
         if $second == 60 {
-            let mut utc_hh = $hour as i8;
-            let mut utc_mm = $minute as i8;
+            let mut utc_hh = i16::from($hour);
+            let mut utc_mm = i16::from($minute);
+            let offset_hh = i16::from(offset_hh);
+            let offset_mm = i16::from(offset_mm);
 
             // Apply offset based on the sign (+ or -)
-            utc_hh $sign offset_hh as i8;
-            utc_mm $sign offset_mm as i8;
+            utc_hh $sign offset_hh;
+            utc_mm $sign offset_mm;
 
             // Adjust for minute overflow/underflow
             utc_hh += utc_mm / 60;
