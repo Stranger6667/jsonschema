@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Update `fluent-uri` to `0.4.1`.
 - Bump MSRV to `1.83.0`.
 
 ## [0.33.0] - 2025-08-24

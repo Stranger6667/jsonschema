@@ -1,10 +1,7 @@
 use core::fmt;
 use std::{num::ParseIntError, str::Utf8Error};
 
-use fluent_uri::{
-    error::{ParseError, ResolveError},
-    Uri,
-};
+use fluent_uri::{resolve::ResolveError, ParseError, Uri};
 
 /// Errors that can occur during reference resolution and resource handling.
 #[derive(Debug)]

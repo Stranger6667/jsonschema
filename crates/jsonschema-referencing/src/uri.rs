@@ -1,12 +1,12 @@
 //! URI handling utilities for JSON Schema references.
 use fluent_uri::{
-    encoding::{encoder::Fragment, EStr, Encoder},
+    pct_enc::{encoder::Fragment, EStr, Encoder},
     Uri, UriRef,
 };
 use std::sync::LazyLock;
 
 use crate::Error;
-pub use fluent_uri::encoding::encoder::Path;
+pub use fluent_uri::pct_enc::encoder::Path;
 
 /// Resolves the URI reference against the given base URI and returns the target URI.
 ///
