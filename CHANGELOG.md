@@ -6,6 +6,10 @@
 
 - Bump MSRV to `1.83.0`.
 
+### Fixed
+
+- Hostname and IDN hostname formats now decode `xn--` labels, reject leading combining marks/uppercase prefixes, and enforce the latest JSON Schema punycode context rules.
+
 ## [0.33.0] - 2025-08-24
 
 ### Fixed
