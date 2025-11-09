@@ -20,12 +20,12 @@ crate-type = ["cdylib"]
 
 [build-dependencies]
 built = { version = "0.8.0", features = ["cargo-lock", "chrono"] }
-pyo3-build-config = { version = "0.25.0", features = ["resolve-config"] }
+pyo3-build-config = { version = "0.27", features = ["resolve-config"] }
 
 [dependencies]
 jsonschema = { path = "../jsonschema/" }
 serde.workspace = true
 serde_json.workspace = true
-pyo3 = { version = "0.25", features = ["extension-module"] }
-pythonize = "0.25"
+pyo3 = { version = "0.27", features = ["extension-module"] }
+pythonize = "0.27"
 pyo3-built = "0.6"

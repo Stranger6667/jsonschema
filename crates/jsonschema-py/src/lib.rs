@@ -53,7 +53,7 @@ struct ValidationError {
     #[pyo3(get)]
     kind: Py<ValidationErrorKind>,
     #[pyo3(get)]
-    instance: PyObject,
+    instance: Py<PyAny>,
 }
 
 #[pymethods]
@@ -65,7 +65,7 @@ impl ValidationError {
         schema_path: Py<PyList>,
         instance_path: Py<PyList>,
         kind: Py<ValidationErrorKind>,
-        instance: PyObject,
+        instance: Py<PyAny>,
     ) -> Self {
         ValidationError {
             message,
@@ -113,32 +113,32 @@ enum ValidationErrorKind {
     AdditionalProperties { unexpected: Py<PyList> },
     AnyOf { context: Py<PyList> },
     BacktrackLimitExceeded { error: String },
-    Constant { expected_value: PyObject },
+    Constant { expected_value: Py<PyAny> },
     Contains {},
     ContentEncoding { content_encoding: String },
     ContentMediaType { content_media_type: String },
     Custom { message: String },
-    Enum { options: PyObject },
-    ExclusiveMaximum { limit: PyObject },
-    ExclusiveMinimum { limit: PyObject },
+    Enum { options: Py<PyAny> },
+    ExclusiveMaximum { limit: Py<PyAny> },
+    ExclusiveMinimum { limit: Py<PyAny> },
     FalseSchema {},
     Format { format: String },
     FromUtf8 { error: String },
     MaxItems { limit: u64 },
-    Maximum { limit: PyObject },
+    Maximum { limit: Py<PyAny> },
     MaxLength { limit: u64 },
     MaxProperties { limit: u64 },
     MinItems { limit: u64 },
-    Minimum { limit: PyObject },
+    Minimum { limit: Py<PyAny> },
     MinLength { limit: u64 },
     MinProperties { limit: u64 },
     MultipleOf { multiple_of: f64 },
-    Not { schema: PyObject },
+    Not { schema: Py<PyAny> },
     OneOfMultipleValid { context: Py<PyList> },
     OneOfNotValid { context: Py<PyList> },
     Pattern { pattern: String },
     PropertyNames { error: Py<ValidationError> },
-    Required { property: PyObject },
+    Required { property: Py<PyAny> },
     Type { types: Py<PyList> },
     UnevaluatedItems { unexpected: Py<PyList> },
     UnevaluatedProperties { unexpected: Py<PyList> },
@@ -379,7 +379,7 @@ fn into_validation_error_args(
     Py<PyList>,
     Py<PyList>,
     ValidationErrorKind,
-    PyObject,
+    Py<PyAny>,
 )> {
     let message = if let Some(mask) = mask {
         error.masked_with(mask).to_string()
@@ -389,9 +389,9 @@ fn into_validation_error_args(
     let verbose_message = to_error_message(&error, message.clone(), mask);
     let into_path = |segment: LocationSegment<'_>| match segment {
         LocationSegment::Property(property) => {
-            property.into_pyobject(py).and_then(PyObject::try_from)
+            property.into_pyobject(py).and_then(Py::<PyAny>::try_from)
         }
-        LocationSegment::Index(idx) => idx.into_pyobject(py).and_then(PyObject::try_from),
+        LocationSegment::Index(idx) => idx.into_pyobject(py).and_then(Py::<PyAny>::try_from),
     };
     let elements = error
         .schema_path
@@ -483,7 +483,7 @@ fn make_options(
             }
             let callback: Py<PyAny> = callback.clone().unbind();
             let call_py_callback = move |value: &str| {
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     let value = PyString::new(py, value);
                     callback.call(py, (value,), None)?.is_truthy(py)
                 })
@@ -516,7 +516,7 @@ fn make_options(
     }
     if let Some(pattern_options) = pattern_options {
         if let Ok(fancy_options) = pattern_options.extract::<Py<FancyRegexOptions>>() {
-            let pattern_options = Python::with_gil(|py| {
+            let pattern_options = Python::attach(|py| {
                 let fancy_options = fancy_options.borrow(py);
                 let mut pattern_options = jsonschema::PatternOptions::fancy_regex();
 
@@ -533,7 +533,7 @@ fn make_options(
             });
             options = options.with_pattern_options(pattern_options);
         } else if let Ok(regex_opts) = pattern_options.extract::<Py<RegexOptions>>() {
-            let pattern_options = Python::with_gil(|py| {
+            let pattern_options = Python::attach(|py| {
                 let regex_opts = regex_opts.borrow(py);
                 let mut pattern_options = jsonschema::PatternOptions::regex();
 
