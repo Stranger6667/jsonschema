@@ -517,6 +517,11 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
     /// assert!(validator.is_valid(&json!("Hello")));
     /// assert!(!validator.is_valid(&json!(42)));
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `schema` is invalid for the selected draft or if referenced resources
+    /// cannot be retrieved or resolved.
     pub fn build(&self, schema: &Value) -> Result<Validator, ValidationError<'static>> {
         compiler::build_validator(self.clone(), schema)
     }
@@ -588,6 +593,12 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
 
 #[cfg(feature = "resolve-async")]
 impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
+    /// Build a JSON Schema validator using the current async options.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `schema` is invalid for the selected draft or if referenced resources
+    /// cannot be retrieved or resolved.
     pub async fn build(&self, schema: &Value) -> Result<Validator, ValidationError<'static>> {
         compiler::build_validator_async(self.clone(), schema).await
     }

@@ -402,7 +402,7 @@
 //! regular expression features such as lookaround and backreferences.
 //!
 //! The primary motivation for switching to the `regex` engine is security and performance:
-//! it guarantees linear-time matching, preventing potential DoS attacks from malicious patterns
+//! it guarantees linear-time matching, preventing potential Denial of Service attacks from malicious patterns
 //! in user-provided schemas while offering better performance with a smaller feature set.
 //!
 //! You can configure the engine at **runtime** using the [`PatternOptions`] API:
@@ -721,6 +721,10 @@ pub fn is_valid(schema: &Value, instance: &Value) -> bool {
 /// assert!(jsonschema::validate(&schema, &instance).is_ok());
 /// ```
 ///
+/// # Errors
+///
+/// Returns the first [`ValidationError`] encountered when `instance` violates `schema`.
+///
 /// # Panics
 ///
 /// This function panics if an invalid schema is passed.
@@ -747,6 +751,10 @@ pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), Validatio
 /// # Ok(())
 /// # }
 /// ```
+///
+/// # Errors
+///
+/// Returns an error if the schema is invalid or external references cannot be resolved.
 pub fn validator_for(schema: &Value) -> Result<Validator, ValidationError<'static>> {
     Validator::new(schema)
 }
@@ -775,6 +783,10 @@ pub fn validator_for(schema: &Value) -> Result<Validator, ValidationError<'stati
 /// # Ok(())
 /// # }
 /// ```
+///
+/// # Errors
+///
+/// Returns an error if the schema is invalid or external references cannot be resolved.
 #[cfg(feature = "resolve-async")]
 pub async fn async_validator_for(schema: &Value) -> Result<Validator, ValidationError<'static>> {
     Validator::async_new(schema).await
@@ -982,6 +994,10 @@ pub mod meta {
     /// assert!(jsonschema::meta::validate(&invalid_schema).is_err());
     /// ```
     ///
+    /// # Errors
+    ///
+    /// Returns the first [`ValidationError`] describing why the schema violates the detected meta-schema.
+    ///
     /// # Panics
     ///
     /// This function panics if the meta-schema can't be detected.
@@ -1019,6 +1035,10 @@ pub mod meta {
     /// });
     /// assert!(jsonschema::meta::try_is_valid(&undetectable_schema).is_err());
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the draft cannot be detected (for example, because `$schema` contains an invalid URI).
     pub fn try_is_valid(schema: &Value) -> Result<bool, ReferencingError> {
         Ok(try_meta_validator_for(schema)?.is_valid(schema))
     }
@@ -1055,6 +1075,10 @@ pub mod meta {
     /// });
     /// assert!(jsonschema::meta::try_validate(&undetectable_schema).is_err());
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the draft cannot be detected (for example, because `$schema` contains an invalid URI).
     pub fn try_validate(
         schema: &Value,
     ) -> Result<Result<(), ValidationError<'_>>, ReferencingError> {
@@ -1109,6 +1133,11 @@ pub mod draft4 {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the schema is not a valid Draft 4 document or if referenced resources
+    /// cannot be resolved.
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         options().build(schema)
     }
@@ -1126,6 +1155,10 @@ pub mod draft4 {
     /// assert!(jsonschema::draft4::is_valid(&schema, &valid));
     /// assert!(!jsonschema::draft4::is_valid(&schema, &invalid));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 4 validator.
     #[must_use]
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
@@ -1144,6 +1177,14 @@ pub mod draft4 {
     /// assert!(jsonschema::draft4::validate(&schema, &valid).is_ok());
     /// assert!(jsonschema::draft4::validate(&schema, &invalid).is_err());
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`ValidationError`] when `instance` violates the schema.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 4 validator.
     pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         new(schema).expect("Invalid schema").validate(instance)
     }
@@ -1221,6 +1262,10 @@ pub mod draft4 {
         /// });
         /// assert!(jsonschema::draft4::meta::validate(&invalid_schema).is_err());
         /// ```
+        ///
+        /// # Errors
+        ///
+        /// Returns the first [`ValidationError`] describing why the schema violates the Draft 4 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
             VALIDATOR.validate(schema)
@@ -1264,6 +1309,11 @@ pub mod draft6 {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the schema is not a valid Draft 6 document or if referenced resources
+    /// cannot be resolved.
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         options().build(schema)
     }
@@ -1281,6 +1331,10 @@ pub mod draft6 {
     /// assert!(jsonschema::draft6::is_valid(&schema, &valid));
     /// assert!(!jsonschema::draft6::is_valid(&schema, &invalid));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 6 validator.
     #[must_use]
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
@@ -1299,6 +1353,14 @@ pub mod draft6 {
     /// assert!(jsonschema::draft6::validate(&schema, &valid).is_ok());
     /// assert!(jsonschema::draft6::validate(&schema, &invalid).is_err());
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`ValidationError`] when `instance` violates the schema.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 6 validator.
     pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         new(schema).expect("Invalid schema").validate(instance)
     }
@@ -1376,6 +1438,10 @@ pub mod draft6 {
         /// });
         /// assert!(jsonschema::draft6::meta::validate(&invalid_schema).is_err());
         /// ```
+        ///
+        /// # Errors
+        ///
+        /// Returns the first [`ValidationError`] describing why the schema violates the Draft 6 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
             VALIDATOR.validate(schema)
@@ -1419,6 +1485,11 @@ pub mod draft7 {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the schema is not a valid Draft 7 document or if referenced resources
+    /// cannot be resolved.
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         options().build(schema)
     }
@@ -1436,6 +1507,10 @@ pub mod draft7 {
     /// assert!(jsonschema::draft7::is_valid(&schema, &valid));
     /// assert!(!jsonschema::draft7::is_valid(&schema, &invalid));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 7 validator.
     #[must_use]
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
@@ -1454,6 +1529,14 @@ pub mod draft7 {
     /// assert!(jsonschema::draft7::validate(&schema, &valid).is_ok());
     /// assert!(jsonschema::draft7::validate(&schema, &invalid).is_err());
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`ValidationError`] when `instance` violates the schema.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 7 validator.
     pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         new(schema).expect("Invalid schema").validate(instance)
     }
@@ -1531,6 +1614,10 @@ pub mod draft7 {
         /// });
         /// assert!(jsonschema::draft7::meta::validate(&invalid_schema).is_err());
         /// ```
+        ///
+        /// # Errors
+        ///
+        /// Returns the first [`ValidationError`] describing why the schema violates the Draft 7 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
             VALIDATOR.validate(schema)
@@ -1574,6 +1661,11 @@ pub mod draft201909 {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the schema is not a valid Draft 2019-09 document or if referenced resources
+    /// cannot be resolved.
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         options().build(schema)
     }
@@ -1591,6 +1683,10 @@ pub mod draft201909 {
     /// assert!(jsonschema::draft201909::is_valid(&schema, &valid));
     /// assert!(!jsonschema::draft201909::is_valid(&schema, &invalid));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 2019-09 validator.
     #[must_use]
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
@@ -1609,6 +1705,14 @@ pub mod draft201909 {
     /// assert!(jsonschema::draft201909::validate(&schema, &valid).is_ok());
     /// assert!(jsonschema::draft201909::validate(&schema, &invalid).is_err());
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`ValidationError`] when `instance` violates the schema.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 2019-09 validator.
     pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         new(schema).expect("Invalid schema").validate(instance)
     }
@@ -1685,6 +1789,10 @@ pub mod draft201909 {
         /// });
         /// assert!(jsonschema::draft201909::meta::validate(&invalid_schema).is_err());
         /// ```
+        ///
+        /// # Errors
+        ///
+        /// Returns the first [`ValidationError`] describing why the schema violates the Draft 2019-09 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
             VALIDATOR.validate(schema)
@@ -1731,6 +1839,11 @@ pub mod draft202012 {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the schema is not a valid Draft 2020-12 document or if referenced resources
+    /// cannot be resolved.
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         options().build(schema)
     }
@@ -1748,6 +1861,10 @@ pub mod draft202012 {
     /// assert!(jsonschema::draft202012::is_valid(&schema, &valid));
     /// assert!(!jsonschema::draft202012::is_valid(&schema, &invalid));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 2020-12 validator.
     #[must_use]
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
@@ -1766,6 +1883,14 @@ pub mod draft202012 {
     /// assert!(jsonschema::draft202012::validate(&schema, &valid).is_ok());
     /// assert!(jsonschema::draft202012::validate(&schema, &invalid).is_err());
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`ValidationError`] when `instance` violates the schema.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 2020-12 validator.
     pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         new(schema).expect("Invalid schema").validate(instance)
     }
@@ -1843,6 +1968,10 @@ pub mod draft202012 {
         /// });
         /// assert!(jsonschema::draft202012::meta::validate(&invalid_schema).is_err());
         /// ```
+        ///
+        /// # Errors
+        ///
+        /// Returns the first [`ValidationError`] describing why the schema violates the Draft 2020-12 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
             VALIDATOR.validate(schema)

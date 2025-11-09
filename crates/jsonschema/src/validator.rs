@@ -219,15 +219,27 @@ impl Validator {
         ValidationOptions::default()
     }
     /// Create a validator using the default options.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the supplied `schema` is invalid for the selected draft or references cannot be resolved.
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         Self::options().build(schema)
     }
     /// Create a validator using the default async options.
     #[cfg(feature = "resolve-async")]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the supplied `schema` is invalid for the selected draft or references cannot be resolved.
     pub async fn async_new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         Self::async_options().build(schema).await
     }
     /// Validate `instance` against `schema` and return the first error if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`ValidationError`] describing why `instance` does not satisfy the schema.
     #[inline]
     pub fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         self.root.validate(instance, &LazyLocation::new())

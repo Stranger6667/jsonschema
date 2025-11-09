@@ -253,7 +253,7 @@ impl<T> OutputUnit<T> {
 }
 
 impl OutputUnit<Annotations<'_>> {
-    /// The annotations found at this output unit
+    /// The annotations found at this output unit.
     #[must_use]
     pub fn value(&self) -> Cow<'_, serde_json::Value> {
         self.value.value()
@@ -273,7 +273,7 @@ impl OutputUnit<ErrorDescription> {
 pub struct Annotations<'a>(AnnotationsInner<'a>);
 
 impl<'a> Annotations<'a> {
-    /// The `serde_json::Value` of the annotation
+    /// The `serde_json::Value` of the annotation.
     #[must_use]
     pub fn value(&'a self) -> Cow<'a, serde_json::Value> {
         match &self.0 {

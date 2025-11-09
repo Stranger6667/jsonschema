@@ -37,6 +37,10 @@ pub trait Keyword: Send + Sync {
     /// easily or efficiently expressed in JSON schema.
     ///
     /// The custom validation is applied in addition to the JSON schema validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error describing why `instance` violates the custom keyword semantics.
     fn validate<'i>(
         &self,
         instance: &'i Value,
