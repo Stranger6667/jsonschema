@@ -1,4 +1,10 @@
 #![allow(clippy::too_many_arguments)]
+#![allow(unsafe_code)]
+#![allow(unreachable_pub)]
+#![allow(rustdoc::bare_urls)]
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_wrap)]
 use std::{
     any::Any,
     cell::RefCell,
@@ -666,6 +672,7 @@ impl Write for StringWriter<'_> {
 /// instead.
 #[pyfunction]
 #[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None))]
+#[allow(clippy::needless_pass_by_value)]
 fn is_valid(
     py: Python<'_>,
     schema: &Bound<'_, PyAny>,
@@ -714,6 +721,7 @@ fn is_valid(
 /// instead.
 #[pyfunction]
 #[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None))]
+#[allow(clippy::needless_pass_by_value)]
 fn validate(
     py: Python<'_>,
     schema: &Bound<'_, PyAny>,
@@ -757,6 +765,7 @@ fn validate(
 /// instead.
 #[pyfunction]
 #[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None))]
+#[allow(clippy::needless_pass_by_value)]
 fn iter_errors(
     py: Python<'_>,
     schema: &Bound<'_, PyAny>,
@@ -788,6 +797,7 @@ fn iter_errors(
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn handle_format_checked_panic(err: Box<dyn Any + Send>) -> PyErr {
     LAST_FORMAT_ERROR.with(|last| {
         if let Some(err) = last.borrow_mut().take() {
@@ -859,7 +869,7 @@ fn validator_for_impl(
     let object_type = unsafe { pyo3::ffi::Py_TYPE(obj_ptr) };
     let schema = if unsafe { object_type == types::STR_TYPE } {
         let mut str_size: pyo3::ffi::Py_ssize_t = 0;
-        let ptr = unsafe { PyUnicode_AsUTF8AndSize(obj_ptr, &mut str_size) };
+        let ptr = unsafe { PyUnicode_AsUTF8AndSize(obj_ptr, &raw mut str_size) };
         let slice = unsafe { std::slice::from_raw_parts(ptr.cast::<u8>(), str_size as usize) };
         serde_json::from_slice(slice)
             .map_err(|error| PyValueError::new_err(format!("Invalid string: {error}")))?
@@ -977,7 +987,7 @@ impl Validator {
 ///     False
 ///
 #[pyclass(module = "jsonschema_rs", extends=Validator, subclass)]
-struct Draft4Validator {}
+struct Draft4Validator;
 
 #[pymethods]
 impl Draft4Validator {
@@ -1023,7 +1033,7 @@ impl Draft4Validator {
 ///     False
 ///
 #[pyclass(module = "jsonschema_rs", extends=Validator, subclass)]
-struct Draft6Validator {}
+struct Draft6Validator;
 
 #[pymethods]
 impl Draft6Validator {
@@ -1069,7 +1079,7 @@ impl Draft6Validator {
 ///     False
 ///
 #[pyclass(module = "jsonschema_rs", extends=Validator, subclass)]
-struct Draft7Validator {}
+struct Draft7Validator;
 
 #[pymethods]
 impl Draft7Validator {
@@ -1115,7 +1125,7 @@ impl Draft7Validator {
 ///     False
 ///
 #[pyclass(module = "jsonschema_rs", extends=Validator, subclass)]
-struct Draft201909Validator {}
+struct Draft201909Validator;
 
 #[pymethods]
 impl Draft201909Validator {
@@ -1161,7 +1171,7 @@ impl Draft201909Validator {
 ///     False
 ///
 #[pyclass(module = "jsonschema_rs", extends=Validator, subclass)]
-struct Draft202012Validator {}
+struct Draft202012Validator;
 
 #[pymethods]
 impl Draft202012Validator {

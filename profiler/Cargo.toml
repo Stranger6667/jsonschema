@@ -19,4 +19,3 @@ dhat-heap = []
 
 [profile.release]
 debug = true
-

@@ -116,7 +116,7 @@ macro_rules! bail_on_integer_conversion_error {
         if !$value.is_null() {
             let repr = unsafe { pyo3::ffi::PyObject_Str($value) };
             let mut size = 0;
-            let ptr = unsafe { PyUnicode_AsUTF8AndSize(repr, &mut size) };
+            let ptr = unsafe { PyUnicode_AsUTF8AndSize(repr, &raw mut size) };
             return if !ptr.is_null() {
                 let slice = unsafe {
                     std::str::from_utf8_unchecked(std::slice::from_raw_parts(
@@ -154,7 +154,7 @@ impl Serialize for SerializePyObject {
         match self.object_type {
             ObjectType::Str => {
                 let mut str_size: pyo3::ffi::Py_ssize_t = 0;
-                let ptr = unsafe { PyUnicode_AsUTF8AndSize(self.object, &mut str_size) };
+                let ptr = unsafe { PyUnicode_AsUTF8AndSize(self.object, &raw mut str_size) };
                 let slice = unsafe {
                     std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                         ptr.cast::<u8>(),
@@ -176,7 +176,13 @@ impl Serialize for SerializePyObject {
                         let mut ptype: *mut pyo3::ffi::PyObject = std::ptr::null_mut();
                         let mut pvalue: *mut pyo3::ffi::PyObject = std::ptr::null_mut();
                         let mut ptraceback: *mut pyo3::ffi::PyObject = std::ptr::null_mut();
-                        unsafe { pyo3::ffi::PyErr_Fetch(&mut ptype, &mut pvalue, &mut ptraceback) };
+                        unsafe {
+                            pyo3::ffi::PyErr_Fetch(
+                                &raw mut ptype,
+                                &raw mut pvalue,
+                                &raw mut ptraceback,
+                            );
+                        }
                         bail_on_integer_conversion_error!(pvalue);
                     };
                 }
@@ -202,7 +208,12 @@ impl Serialize for SerializePyObject {
                     let mut value: *mut pyo3::ffi::PyObject = std::ptr::null_mut();
                     for _ in 0..length {
                         unsafe {
-                            pyo3::ffi::PyDict_Next(self.object, &mut pos, &mut key, &mut value);
+                            pyo3::ffi::PyDict_Next(
+                                self.object,
+                                &raw mut pos,
+                                &raw mut key,
+                                &raw mut value,
+                            );
                         }
                         let object_type = unsafe { Py_TYPE(key) };
                         let key_unicode = if object_type == unsafe { types::STR_TYPE } {
@@ -231,7 +242,8 @@ impl Serialize for SerializePyObject {
                             }
                         };
 
-                        let ptr = unsafe { PyUnicode_AsUTF8AndSize(key_unicode, &mut str_size) };
+                        let ptr =
+                            unsafe { PyUnicode_AsUTF8AndSize(key_unicode, &raw mut str_size) };
                         let slice = unsafe {
                             std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                                 ptr.cast::<u8>(),

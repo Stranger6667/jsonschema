@@ -9,6 +9,9 @@ repository.workspace = true
 license.workspace = true
 publish = false
 
+[lints]
+workspace = true
+
 [dev-dependencies]
 benchmark = { path = "../benchmark/" }
 boon = "0.6.0"

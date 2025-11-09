@@ -15,6 +15,7 @@ use pyo3::prelude::*;
 ///     size_limit: Maximum compiled pattern size in bytes
 ///     dfa_size_limit: Maximum regex DFA cache size in bytes
 #[pyclass(module = "jsonschema_rs")]
+#[allow(clippy::struct_field_names)]
 pub(crate) struct FancyRegexOptions {
     pub(crate) backtrack_limit: Option<usize>,
     pub(crate) size_limit: Option<usize>,

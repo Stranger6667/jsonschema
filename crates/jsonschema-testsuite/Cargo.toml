@@ -7,6 +7,9 @@ authors.workspace = true
 license.workspace = true
 publish = false
 
+[lints]
+workspace = true
+
 [dependencies]
 codegen = { package = "jsonschema-testsuite-codegen", path = "../jsonschema-testsuite-codegen/" }
 internal = { package = "jsonschema-testsuite-internal", path = "../jsonschema-testsuite-internal/" }

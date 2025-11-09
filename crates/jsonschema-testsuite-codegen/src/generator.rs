@@ -11,27 +11,27 @@ pub(crate) fn generate_modules(
     xfail: &[String],
     draft: &str,
 ) -> TokenStream {
-    generate_nested_structure(tree, functions, vec![draft.to_string()], xfail, draft)
+    let root_path = vec![draft.to_string()];
+    generate_nested_structure(tree, functions, &root_path, xfail, draft)
 }
 
 fn generate_nested_structure(
     tree: &loader::TestCaseTree,
     functions: &mut HashSet<String>,
-    current_path: Vec<String>,
+    current_path: &[String],
     xfail: &[String],
     draft: &str,
 ) -> TokenStream {
     let modules = tree.iter().map(|(name, node)| {
         let module_name = testsuite::sanitize_name(name.to_snake_case());
         let module_ident = format_ident!("{}", module_name);
-        let mut new_path = current_path.clone();
+        let mut new_path = current_path.to_owned();
         new_path.push(module_name.clone());
 
         match node {
             loader::TestCaseNode::Submodule(subtree) => {
-                let submodules = generate_nested_structure(
-                    subtree, functions, new_path, xfail, draft
-                );
+                let submodules =
+                    generate_nested_structure(subtree, functions, &new_path, xfail, draft);
                 quote! {
                     mod #module_ident {
                         use super::*;

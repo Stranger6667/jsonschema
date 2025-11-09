@@ -11,6 +11,9 @@ rust-version.workspace = true
 edition.workspace = true
 authors.workspace = true
 
+[lints]
+workspace = true
+
 [lib]
 name = "jsonschema_rs"
 crate-type = ["cdylib"]

@@ -15,6 +15,11 @@ static CITM: &[u8] = include_bytes!("../data/citm_catalog.json");
 static FAST_VALID: &[u8] = include_bytes!("../data/fast_valid.json");
 static FAST_INVALID: &[u8] = include_bytes!("../data/fast_invalid.json");
 
+/// Parses the given JSON fixture slice into a `serde_json::Value`.
+///
+/// # Panics
+///
+/// Panics if `slice` does not contain well-formed JSON (fixtures are trusted).
 #[must_use]
 pub fn read_json(slice: &[u8]) -> Value {
     serde_json::from_slice(slice).expect("Invalid JSON")
