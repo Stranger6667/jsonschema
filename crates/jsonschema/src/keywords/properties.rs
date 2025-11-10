@@ -87,7 +87,7 @@ impl Validate for PropertiesValidator {
         Ok(())
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         if let Value::Object(props) = instance {
             let mut result = BasicOutput::default();
             let mut matched_props = Vec::with_capacity(props.len());

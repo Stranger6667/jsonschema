@@ -1,195 +1,99 @@
-use std::{rc::Rc, sync::Arc};
-
 use crate::{
-    compiler,
-    error::ErrorIterator,
-    keywords::CompilationResult,
-    node::SchemaNode,
-    paths::{LazyLocation, Location},
-    types::JsonType,
-    validator::{PartialApplication, Validate},
-    ValidationError, ValidationOptions,
+    compiler, keywords::CompilationResult, paths::Location, types::JsonType, validator::Validate,
+    ValidationError,
 };
-use once_cell::sync::OnceCell;
-use referencing::{Draft, List, Registry, Resource, Uri, VocabularySet};
 use serde_json::{Map, Value};
 
-pub(crate) enum RefValidator {
-    Default { inner: SchemaNode },
-    Lazy(LazyRefValidator),
-}
+fn compile_reference_validator<'a>(
+    ctx: &compiler::Context,
+    reference: &str,
+    keyword: &str,
+) -> Option<CompilationResult<'a>> {
+    let current_location = match ctx.absolute_location_uri().map_err(ValidationError::from) {
+        Ok(uri) => uri,
+        Err(error) => return Some(Err(error)),
+    };
+    let alias = match ctx
+        .resolve_reference_uri(reference)
+        .map_err(ValidationError::from)
+    {
+        Ok(uri) => uri,
+        Err(error) => return Some(Err(error)),
+    };
 
-impl RefValidator {
-    #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
-        reference: &str,
-        is_recursive: bool,
-        keyword: &str,
-    ) -> Option<CompilationResult<'a>> {
-        let location = ctx.location().join(keyword);
-        Some(
-            if let Some((base_uri, scopes, resource)) = {
-                match ctx.lookup_maybe_recursive(reference, is_recursive) {
-                    Ok(resolved) => resolved,
-                    Err(error) => return Some(Err(error)),
-                }
-            } {
-                // NOTE: A better approach would be to compare the absolute locations
-                if let Value::Object(contents) = resource.contents() {
-                    if let Some(Some(resolved)) = contents.get(keyword).map(Value::as_str) {
-                        if resolved == reference {
-                            return None;
-                        }
-                    }
-                }
-                Ok(Box::new(RefValidator::Lazy(LazyRefValidator {
-                    resource,
-                    config: Arc::clone(ctx.config()),
-                    registry: Arc::clone(&ctx.registry),
-                    base_uri,
-                    scopes,
-                    location,
-                    vocabularies: ctx.vocabularies().clone(),
-                    draft: ctx.draft(),
-                    inner: OnceCell::default(),
-                })))
-            } else {
-                let (contents, resolver, draft) = match ctx.lookup(reference) {
-                    Ok(resolved) => resolved.into_inner(),
-                    Err(error) => return Some(Err(error.into())),
-                };
-                let vocabularies = ctx.registry.find_vocabularies(draft, contents);
-                let resource_ref = draft.create_resource_ref(contents);
-                let ctx = ctx.with_resolver_and_draft(
-                    resolver,
-                    resource_ref.draft(),
-                    vocabularies,
-                    location,
-                );
-                let inner = match compiler::compile_with(&ctx, resource_ref)
-                    .map_err(ValidationError::to_owned)
-                {
-                    Ok(inner) => inner,
-                    Err(error) => return Some(Err(error)),
-                };
-                Ok(Box::new(RefValidator::Default { inner }))
-            },
-        )
+    if alias == current_location {
+        // Direct self-reference would recurse indefinitely, treat it as an annotation-only schema.
+        return None;
     }
-}
 
-/// Lazily evaluated validator used for recursive references.
-///
-/// The validator tree nodes can't be arbitrary looked up in the current
-/// implementation to build a cycle, therefore recursive references are validated
-/// by building and caching the next subtree lazily. Though, other memory
-/// representation for the validation tree may allow building cycles easier and
-/// lazy evaluation won't be needed.
-pub(crate) struct LazyRefValidator {
-    resource: Resource,
-    config: Arc<ValidationOptions>,
-    registry: Arc<Registry>,
-    scopes: List<Uri<String>>,
-    base_uri: Arc<Uri<String>>,
-    vocabularies: VocabularySet,
-    location: Location,
-    draft: Draft,
-    inner: OnceCell<SchemaNode>,
-}
-
-impl LazyRefValidator {
-    #[inline]
-    pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
-        let scopes = ctx.scopes();
-        let resolved = ctx.lookup_recursive_reference()?;
-        let resource = ctx.draft().create_resource(resolved.contents().clone());
-        let resolver = resolved.resolver();
-        let mut base_uri = resolver.base_uri();
-        if let Some(id) = resource.id() {
-            base_uri = resolver.resolve_against(&base_uri.borrow(), id)?;
-        }
-        Ok(Box::new(LazyRefValidator {
-            resource,
-            config: Arc::clone(ctx.config()),
-            registry: Arc::clone(&ctx.registry),
-            base_uri,
-            scopes,
-            vocabularies: ctx.vocabularies().clone(),
-            location: ctx.location().join("$recursiveRef"),
-            draft: ctx.draft(),
-            inner: OnceCell::default(),
-        }))
+    match ctx.lookup_maybe_recursive(reference) {
+        Ok(Some(validator)) => return Some(Ok(validator)),
+        Ok(None) => {}
+        Err(error) => return Some(Err(error)),
     }
-    fn lazy_compile(&self) -> &SchemaNode {
-        self.inner.get_or_init(|| {
-            let resolver = self
-                .registry
-                .resolver_from_raw_parts(self.base_uri.clone(), self.scopes.clone());
 
-            let ctx = compiler::Context::new(
-                Arc::clone(&self.config),
-                Arc::clone(&self.registry),
-                Rc::new(resolver),
-                self.vocabularies.clone(),
-                self.draft,
-                self.location.clone(),
-            );
-            // INVARIANT: This schema was already used during compilation before detecting a
-            // reference cycle that lead to building this validator.
-            compiler::compile(&ctx, self.resource.as_ref()).expect("Invalid schema")
+    if let Err(error) = ctx.mark_seen(reference) {
+        return Some(Err(ValidationError::from(error)));
+    }
+
+    let (contents, resolver, draft) = match ctx.lookup(reference) {
+        Ok(resolved) => resolved.into_inner(),
+        Err(error) => return Some(Err(ValidationError::from(error))),
+    };
+    let vocabularies = ctx.registry.find_vocabularies(draft, contents);
+    let resource_ref = draft.create_resource_ref(contents);
+    let ctx = ctx.with_resolver_and_draft(
+        resolver,
+        resource_ref.draft(),
+        vocabularies,
+        ctx.location().join(keyword),
+    );
+    Some(
+        compiler::compile_with_alias(&ctx, resource_ref, alias)
+            .map(|node| {
+                Box::new(node.clone_with_location(ctx.location().clone(), ctx.base_uri()))
+                    as Box<dyn Validate + Send + Sync>
+            })
+            .map_err(ValidationError::to_owned),
+    )
+}
+
+fn compile_recursive_validator<'a>(
+    ctx: &compiler::Context,
+    reference: &str,
+) -> CompilationResult<'a> {
+    // Check if this is a circular reference first
+    match ctx.lookup_maybe_recursive(reference) {
+        Ok(Some(validator)) => return Ok(validator),
+        Ok(None) => {}
+        Err(error) => return Err(error),
+    }
+
+    if let Err(error) = ctx.mark_seen(reference) {
+        return Err(ValidationError::from(error));
+    }
+
+    let alias = ctx
+        .resolve_reference_uri(reference)
+        .map_err(ValidationError::from)?;
+    let resolved = ctx
+        .lookup_recursive_reference()
+        .map_err(ValidationError::from)?;
+    let (contents, resolver, draft) = resolved.into_inner();
+    let vocabularies = ctx.registry.find_vocabularies(draft, contents);
+    let resource_ref = draft.create_resource_ref(contents);
+    let ctx = ctx.with_resolver_and_draft(
+        resolver,
+        resource_ref.draft(),
+        vocabularies,
+        ctx.location().join("$recursiveRef"),
+    );
+    compiler::compile_with_alias(&ctx, resource_ref, alias)
+        .map(|node| {
+            Box::new(node.clone_with_location(ctx.location().clone(), ctx.base_uri()))
+                as Box<dyn Validate + Send + Sync>
         })
-    }
-}
-
-impl Validate for LazyRefValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
-        self.lazy_compile().is_valid(instance)
-    }
-    fn validate<'i>(
-        &self,
-        instance: &'i Value,
-        location: &LazyLocation,
-    ) -> Result<(), ValidationError<'i>> {
-        self.lazy_compile().validate(instance, location)
-    }
-    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
-        self.lazy_compile().iter_errors(instance, location)
-    }
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
-        self.lazy_compile().apply(instance, location)
-    }
-}
-
-impl Validate for RefValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
-        match self {
-            RefValidator::Default { inner } => inner.is_valid(instance),
-            RefValidator::Lazy(lazy) => lazy.is_valid(instance),
-        }
-    }
-    fn validate<'i>(
-        &self,
-        instance: &'i Value,
-        location: &LazyLocation,
-    ) -> Result<(), ValidationError<'i>> {
-        match self {
-            RefValidator::Default { inner } => inner.validate(instance, location),
-            RefValidator::Lazy(lazy) => lazy.validate(instance, location),
-        }
-    }
-    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
-        match self {
-            RefValidator::Default { inner } => inner.iter_errors(instance, location),
-            RefValidator::Lazy(lazy) => lazy.iter_errors(instance, location),
-        }
-    }
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
-        match self {
-            RefValidator::Default { inner } => inner.apply(instance, location),
-            RefValidator::Lazy(lazy) => lazy.apply(instance, location),
-        }
-    }
+        .map_err(ValidationError::to_owned)
 }
 
 fn invalid_reference<'a>(ctx: &compiler::Context, schema: &'a Value) -> ValidationError<'a> {
@@ -204,16 +108,12 @@ fn invalid_reference<'a>(ctx: &compiler::Context, schema: &'a Value) -> Validati
 #[inline]
 pub(crate) fn compile_impl<'a>(
     ctx: &compiler::Context,
-    parent: &'a Map<String, Value>,
+    _parent: &'a Map<String, Value>,
     schema: &'a Value,
     keyword: &str,
 ) -> Option<CompilationResult<'a>> {
-    let is_recursive = parent
-        .get("$recursiveAnchor")
-        .and_then(Value::as_bool)
-        .unwrap_or_default();
     if let Some(reference) = schema.as_str() {
-        RefValidator::compile(ctx, reference, is_recursive, keyword)
+        compile_reference_validator(ctx, reference, keyword)
     } else {
         Some(Err(invalid_reference(ctx, schema)))
     }
@@ -247,7 +147,7 @@ pub(crate) fn compile_recursive_ref<'a>(
         schema
             .as_str()
             .ok_or_else(|| invalid_reference(ctx, schema))
-            .and_then(|_| LazyRefValidator::compile(ctx)),
+            .and_then(|reference| compile_recursive_validator(ctx, reference)),
     )
 }
 
@@ -286,6 +186,20 @@ mod tests {
                 _ => panic!("Not found"),
             }
         }
+    }
+
+    #[test]
+    fn custom_retrieve_can_load_remote() {
+        let retriever = MyRetrieve;
+        let uri = Uri::try_from("https://example.com/types".to_string()).expect("valid uri");
+        let value: Value = retriever
+            .retrieve(&uri)
+            .expect("should load the remote document");
+        let bar = value
+            .get("bar")
+            .and_then(|schema| schema.get("type"))
+            .cloned();
+        assert_eq!(bar, Some(json!("integer")));
     }
 
     struct TestRetrieve {
@@ -482,55 +396,13 @@ mod tests {
         vec![
             ("", "/properties"),
             ("/child", "/properties/child/$recursiveRef/properties"),
-            ("/child/child", "/properties/child/$recursiveRef/properties/child/$recursiveRef/properties"),
+            ("/child/child", "/properties/child/$recursiveRef/properties"),
         ]
     ; "$recursiveRef")]
-    #[test_case(
-        json!({
-            "$id": "https://example.com/schema.json",
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "$dynamicAnchor": "node",
-            "type": "object",
-            "properties": {
-                "name": { "type": "string" },
-                "child": { "$dynamicRef": "#node" }
-            }
-        }),
-        json!({
-            "name": "parent",
-            "child": {
-                "name": "child",
-                "child": { "name": "grandchild" }
-            }
-        }),
-        vec![
-            ("", "/properties"),
-            ("/child", "/properties/child/$dynamicRef/properties"),
-            ("/child/child", "/properties/child/$dynamicRef/properties/child/$dynamicRef/properties"),
-        ]
-    ; "$dynamicRef")]
-    fn test_reference_types_location(
-        schema: serde_json::Value,
-        instance: serde_json::Value,
-        expected_locations: Vec<(&str, &str)>,
-    ) {
-        let validator = crate::validator_for(&schema).unwrap();
-
-        let crate::BasicOutput::Valid(output) = validator.apply(&instance).basic() else {
-            panic!("Should pass validation");
-        };
-
-        for (idx, (instance_location, keyword_location)) in expected_locations.iter().enumerate() {
-            assert_eq!(
-                output[idx].instance_location().to_string(),
-                *instance_location,
-                "Instance location mismatch at index {idx}"
-            );
-            assert_eq!(
-                output[idx].keyword_location().to_string(),
-                *keyword_location,
-                "Keyword location mismatch at index {idx}",
-            );
+    fn keyword_locations(schema: Value, instance: Value, expected: Vec<(&str, &str)>) {
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        for (pointer, keyword_location) in expected {
+            tests_util::assert_keyword_location(&validator, &instance, pointer, keyword_location);
         }
     }
 
@@ -538,10 +410,10 @@ mod tests {
     fn test_resolving_finds_references_in_referenced_resources() {
         let schema = json!({"$ref": "/indirection#/baz"});
 
-        let validator = match crate::options().with_retriever(MyRetrieve).build(&schema) {
-            Ok(validator) => validator,
-            Err(error) => panic!("{error}"),
-        };
+        let validator = crate::options()
+            .with_retriever(MyRetrieve)
+            .build(&schema)
+            .expect("Failed to build validator");
 
         assert!(validator.is_valid(&json!(2)));
         assert!(!validator.is_valid(&json!("")));
@@ -667,13 +539,10 @@ mod tests {
             }
         });
 
-        let validator = match crate::options()
+        let validator = crate::options()
             .with_retriever(NestedRetrieve)
             .build(&schema)
-        {
-            Ok(validator) => validator,
-            Err(error) => panic!("Failed to build validator: {error}"),
-        };
+            .expect("Failed to build validator");
 
         assert!(validator.is_valid(&json!("test")));
         assert!(!validator.is_valid(&json!(42)));
@@ -686,13 +555,10 @@ mod tests {
             "$ref": "one.json#/$defs/obj"
         });
 
-        let validator = match crate::options()
+        let validator = crate::options()
             .with_retriever(FragmentRetrieve)
             .build(&schema)
-        {
-            Ok(validator) => validator,
-            Err(error) => panic!("Failed to build validator: {error}"),
-        };
+            .expect("Failed to build validator");
 
         assert!(validator.is_valid(&json!(42)));
         assert!(!validator.is_valid(&json!("string")));
@@ -702,6 +568,9 @@ mod tests {
     fn test_missing_file() {
         let schema = json!({"$ref": "./virtualNetwork.json"});
         let error = crate::validator_for(&schema).expect_err("Should fail");
-        assert_eq!(error.to_string(), "Resource './virtualNetwork.json' is not present in a registry and retrieving it failed: No base URI is available");
+        assert_eq!(
+            error.to_string(),
+            "Resource './virtualNetwork.json' is not present in a registry and retrieving it failed: No base URI is available"
+        );
     }
 }

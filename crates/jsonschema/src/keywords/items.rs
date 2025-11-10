@@ -117,7 +117,7 @@ impl Validate for ItemsObjectValidator {
         Ok(())
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         if let Value::Array(items) = instance {
             let mut results = Vec::with_capacity(items.len());
             for (idx, item) in items.iter().enumerate() {
@@ -204,7 +204,7 @@ impl Validate for ItemsObjectSkipPrefixValidator {
         Ok(())
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         if let Value::Array(items) = instance {
             let mut results = Vec::with_capacity(items.len().saturating_sub(self.skip_prefix));
             for (idx, item) in items.iter().enumerate().skip(self.skip_prefix) {

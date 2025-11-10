@@ -11,6 +11,16 @@
 
 - Hostname and IDN hostname formats now decode `xn--` labels, reject leading combining marks/uppercase prefixes, and enforce the latest JSON Schema punycode context rules.
 
+### Performance
+
+- Reworked the `apply` pipeline to reuse cached schema locations, URI fragments, and preallocated buffers; validation-heavy workloads see up to ~2.5× throughput improvements.
+- Recursive and regular `$ref` compilation reuses validator nodes instead of re-emitting them, preventing memory growth during validation and cutting redundant compilation work.
+- Validator compilation now restores the regex cache and precomputes absolute schema pointers. Regex-heavy schemas often compile faster thanks to the cache, while pointer-heavy schemas may take slightly longer because more work happens upfront.
+
+### Removed
+
+- `Validator::config` to reduce the memory footprint.
+
 ## [0.33.0] - 2025-08-24
 
 ### Fixed

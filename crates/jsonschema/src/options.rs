@@ -523,7 +523,7 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
     /// Returns an error if `schema` is invalid for the selected draft or if referenced resources
     /// cannot be retrieved or resolved.
     pub fn build(&self, schema: &Value) -> Result<Validator, ValidationError<'static>> {
-        compiler::build_validator(self.clone(), schema)
+        compiler::build_validator(self, schema)
     }
     pub(crate) fn draft_for(&self, contents: &Value) -> Result<Draft, ValidationError<'static>> {
         // Preference:
@@ -600,7 +600,7 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
     /// Returns an error if `schema` is invalid for the selected draft or if referenced resources
     /// cannot be retrieved or resolved.
     pub async fn build(&self, schema: &Value) -> Result<Validator, ValidationError<'static>> {
-        compiler::build_validator_async(self.clone(), schema).await
+        compiler::build_validator_async(self, schema).await
     }
     #[must_use]
     pub fn with_retriever(
@@ -693,7 +693,7 @@ pub struct PatternOptions<E> {
     _marker: PhantomData<E>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub(crate) enum PatternEngineOptions {
     FancyRegex {
         backtrack_limit: Option<usize>,

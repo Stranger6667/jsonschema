@@ -9,7 +9,6 @@ use crate::{
     Draft, ValidationError, ValidationOptions,
 };
 use serde_json::Value;
-use std::{collections::VecDeque, sync::Arc};
 
 /// The Validate trait represents a predicate over some JSON value. Some validators are very simple
 /// predicates such as "a value which is a string", whereas others may be much more complex,
@@ -84,9 +83,9 @@ pub(crate) trait Validate: Send + Sync {
     /// }
     /// ```
     ///
-    /// `BasicOutput` also implements `Sum<BasicOutput>` and `FromIterator<BasicOutput<'a>> for PartialApplication<'a>`
+    /// `BasicOutput` also implements `Sum<BasicOutput>` and `FromIterator<BasicOutput>` for `PartialApplication`
     /// so you can use `sum()` and `collect()` in simple cases.
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         let errors: Vec<ErrorDescription> = self
             .iter_errors(instance, location)
             .map(ErrorDescription::from)
@@ -103,41 +102,41 @@ pub(crate) trait Validate: Send + Sync {
 /// `Validate::apply` this is a "partial" result because it does not include information about
 /// where the error or annotation occurred.
 #[derive(Clone, PartialEq)]
-pub(crate) enum PartialApplication<'a> {
+pub(crate) enum PartialApplication {
     Valid {
         /// Annotations produced by this validator
-        annotations: Option<Annotations<'a>>,
+        annotations: Option<Annotations>,
         /// Any outputs produced by validators which are children of this validator
-        child_results: VecDeque<OutputUnit<Annotations<'a>>>,
+        child_results: Vec<OutputUnit<Annotations>>,
     },
     Invalid {
         /// Errors which caused this schema to be invalid
         errors: Vec<ErrorDescription>,
         /// Any error outputs produced by child validators of this validator
-        child_results: VecDeque<OutputUnit<ErrorDescription>>,
+        child_results: Vec<OutputUnit<ErrorDescription>>,
     },
 }
 
-impl<'a> PartialApplication<'a> {
+impl PartialApplication {
     /// Create an empty `PartialApplication` which is valid
-    pub(crate) fn valid_empty() -> PartialApplication<'static> {
+    pub(crate) fn valid_empty() -> PartialApplication {
         PartialApplication::Valid {
             annotations: None,
-            child_results: VecDeque::new(),
+            child_results: Vec::new(),
         }
     }
 
     /// Create an empty `PartialApplication` which is invalid
-    pub(crate) fn invalid_empty(errors: Vec<ErrorDescription>) -> PartialApplication<'static> {
+    pub(crate) fn invalid_empty(errors: Vec<ErrorDescription>) -> PartialApplication {
         PartialApplication::Invalid {
             errors,
-            child_results: VecDeque::new(),
+            child_results: Vec::new(),
         }
     }
 
     /// Set the annotation that will be returned for the current validator. If this
     /// `PartialApplication` is invalid then this method does nothing
-    pub(crate) fn annotate(&mut self, new_annotations: Annotations<'a>) {
+    pub(crate) fn annotate(&mut self, new_annotations: Annotations) {
         match self {
             Self::Valid { annotations, .. } => *annotations = Some(new_annotations),
             Self::Invalid { .. } => {}
@@ -153,7 +152,7 @@ impl<'a> PartialApplication<'a> {
             Self::Valid { .. } => {
                 *self = Self::Invalid {
                     errors: vec![error],
-                    child_results: VecDeque::new(),
+                    child_results: Vec::new(),
                 }
             }
         }
@@ -168,7 +167,7 @@ impl<'a> PartialApplication<'a> {
 #[derive(Debug)]
 pub struct Validator {
     pub(crate) root: SchemaNode,
-    pub(crate) config: Arc<ValidationOptions>,
+    pub(crate) draft: Draft,
 }
 
 impl Validator {
@@ -215,7 +214,7 @@ impl Validator {
     /// For sync validation, use [`options`] instead.
     #[cfg(feature = "resolve-async")]
     #[must_use]
-    pub fn async_options() -> ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
+    pub fn async_options() -> ValidationOptions<std::sync::Arc<dyn referencing::AsyncRetrieve>> {
         ValidationOptions::default()
     }
     /// Create a validator using the default options.
@@ -306,13 +305,7 @@ impl Validator {
     /// The [`Draft`] which was used to build this validator.
     #[must_use]
     pub fn draft(&self) -> Draft {
-        self.config.draft()
-    }
-
-    /// The [`ValidationOptions`] that were used to build this validator.
-    #[must_use]
-    pub fn config(&self) -> Arc<ValidationOptions> {
-        Arc::clone(&self.config)
+        self.draft
     }
 }
 

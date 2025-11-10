@@ -44,38 +44,3 @@ impl RegexError for regex::Error {
         None
     }
 }
-
-#[allow(clippy::result_large_err)]
-pub(crate) fn build_fancy_regex(
-    pattern: &str,
-    backtrack_limit: Option<usize>,
-    size_limit: Option<usize>,
-    dfa_size_limit: Option<usize>,
-) -> Result<fancy_regex::Regex, fancy_regex::Error> {
-    let mut builder = fancy_regex::RegexBuilder::new(pattern);
-    if let Some(limit) = backtrack_limit {
-        builder.backtrack_limit(limit);
-    }
-    if let Some(limit) = size_limit {
-        builder.delegate_size_limit(limit);
-    }
-    if let Some(limit) = dfa_size_limit {
-        builder.delegate_dfa_size_limit(limit);
-    }
-    builder.build()
-}
-
-pub(crate) fn build_regex(
-    pattern: &str,
-    size_limit: Option<usize>,
-    dfa_size_limit: Option<usize>,
-) -> Result<regex::Regex, regex::Error> {
-    let mut builder = regex::RegexBuilder::new(pattern);
-    if let Some(limit) = size_limit {
-        builder.size_limit(limit);
-    }
-    if let Some(limit) = dfa_size_limit {
-        builder.dfa_size_limit(limit);
-    }
-    builder.build()
-}

@@ -6,6 +6,11 @@
 
 - Update `pyo3` to `0.27`.
 
+### Performance
+
+- Recursive and regular `$ref` compilation now reuses existing validator nodes, so memory stays flat during validation and redundant compilation passes are removed.
+- Validator compilation once again caches regex engines and also precomputes absolute schema pointers; regex-heavy schemas often compile faster, while pointer-heavy ones may take slightly longer because more work is done during compilation.
+
 ## [0.32.1] - 2025-08-24
 
 ### Fixed

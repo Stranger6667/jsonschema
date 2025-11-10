@@ -111,7 +111,9 @@ impl ItemsFilter for Draft2019ItemsFilter {
         if let Some(Value::String(reference)) = parent.get("$ref") {
             let resolved = ctx.lookup(reference)?;
             if let Value::Object(subschema) = resolved.contents() {
-                ref_ = Some(Box::new(Self::new(ctx, subschema)?));
+                ref_ = Some(Box::new(
+                    Self::new(ctx, subschema).map_err(ValidationError::to_owned)?,
+                ));
             }
         }
         let mut recursive_ref = None;
@@ -119,7 +121,9 @@ impl ItemsFilter for Draft2019ItemsFilter {
         if parent.contains_key("$recursiveRef") {
             let resolved = ctx.lookup_recursive_reference()?;
             if let Value::Object(subschema) = resolved.contents() {
-                recursive_ref = Some(Box::new(Self::new(ctx, subschema)?));
+                recursive_ref = Some(Box::new(
+                    Self::new(ctx, subschema).map_err(ValidationError::to_owned)?,
+                ));
             }
         }
 
@@ -127,17 +131,23 @@ impl ItemsFilter for Draft2019ItemsFilter {
 
         if let Some(subschema) = parent.get("if") {
             if let Value::Object(if_parent) = subschema {
+                let if_ctx = ctx.new_at_location("if");
                 let mut then_ = None;
                 if let Some(Value::Object(subschema)) = parent.get("then") {
-                    then_ = Some(Self::new(ctx, subschema)?);
+                    let then_ctx = ctx.new_at_location("then");
+                    then_ =
+                        Some(Self::new(&then_ctx, subschema).map_err(ValidationError::to_owned)?);
                 }
                 let mut else_ = None;
                 if let Some(Value::Object(subschema)) = parent.get("else") {
-                    else_ = Some(Self::new(ctx, subschema)?);
+                    let else_ctx = ctx.new_at_location("else");
+                    else_ =
+                        Some(Self::new(&else_ctx, subschema).map_err(ValidationError::to_owned)?);
                 }
                 conditional = Some(Box::new(ConditionalFilter {
-                    condition: compiler::compile(ctx, ctx.as_resource_ref(subschema))?,
-                    if_: Self::new(ctx, if_parent)?,
+                    condition: compiler::compile(&if_ctx, if_ctx.as_resource_ref(subschema))
+                        .map_err(ValidationError::to_owned)?,
+                    if_: Self::new(&if_ctx, if_parent).map_err(ValidationError::to_owned)?,
                     then_,
                     else_,
                 }));
@@ -146,23 +156,43 @@ impl ItemsFilter for Draft2019ItemsFilter {
 
         let mut contains = None;
         if let Some(subschema) = parent.get("contains") {
-            contains = Some(compiler::compile(ctx, ctx.as_resource_ref(subschema))?);
+            let contains_ctx = ctx.new_at_location("contains");
+            contains = Some(
+                compiler::compile(&contains_ctx, contains_ctx.as_resource_ref(subschema))
+                    .map_err(ValidationError::to_owned)?,
+            );
         }
         let mut unevaluated = None;
         if let Some(subschema) = parent.get("unevaluatedItems") {
-            unevaluated = Some(compiler::compile(ctx, ctx.as_resource_ref(subschema))?);
+            let unevaluated_ctx = ctx.new_at_location("unevaluatedItems");
+            unevaluated = Some(
+                compiler::compile(&unevaluated_ctx, unevaluated_ctx.as_resource_ref(subschema))
+                    .map_err(ValidationError::to_owned)?,
+            );
         }
         let mut all_of = None;
         if let Some(Some(subschemas)) = parent.get("allOf").map(Value::as_array) {
-            all_of = Some(CombinatorFilter::new(ctx, subschemas)?);
+            let all_of_ctx = ctx.new_at_location("allOf");
+            all_of = Some(
+                CombinatorFilter::new(&all_of_ctx, subschemas)
+                    .map_err(ValidationError::to_owned)?,
+            );
         }
         let mut any_of = None;
         if let Some(Some(subschemas)) = parent.get("anyOf").map(Value::as_array) {
-            any_of = Some(CombinatorFilter::new(ctx, subschemas)?);
+            let any_of_ctx = ctx.new_at_location("anyOf");
+            any_of = Some(
+                CombinatorFilter::new(&any_of_ctx, subschemas)
+                    .map_err(ValidationError::to_owned)?,
+            );
         }
         let mut one_of = None;
         if let Some(Some(subschemas)) = parent.get("oneOf").map(Value::as_array) {
-            one_of = Some(CombinatorFilter::new(ctx, subschemas)?);
+            let one_of_ctx = ctx.new_at_location("oneOf");
+            one_of = Some(
+                CombinatorFilter::new(&one_of_ctx, subschemas)
+                    .map_err(ValidationError::to_owned)?,
+            );
         }
         let mut items = None;
         if let Some(subschema) = parent.get("items") {
@@ -286,7 +316,9 @@ impl ItemsFilter for DefaultItemsFilter {
         if let Some(Value::String(reference)) = parent.get("$ref") {
             let resolved = ctx.lookup(reference)?;
             if let Value::Object(subschema) = resolved.contents() {
-                ref_ = Some(Box::new(Self::new(ctx, subschema)?));
+                ref_ = Some(Box::new(
+                    Self::new(ctx, subschema).map_err(ValidationError::to_owned)?,
+                ));
             }
         }
 
@@ -295,7 +327,9 @@ impl ItemsFilter for DefaultItemsFilter {
         if let Some(Value::String(reference)) = parent.get("$dynamicRef") {
             let resolved = ctx.lookup(reference)?;
             if let Value::Object(subschema) = resolved.contents() {
-                dynamic_ref = Some(Box::new(Self::new(ctx, subschema)?));
+                dynamic_ref = Some(Box::new(
+                    Self::new(ctx, subschema).map_err(ValidationError::to_owned)?,
+                ));
             }
         }
 
@@ -303,17 +337,23 @@ impl ItemsFilter for DefaultItemsFilter {
 
         if let Some(subschema) = parent.get("if") {
             if let Value::Object(if_parent) = subschema {
+                let if_ctx = ctx.new_at_location("if");
                 let mut then_ = None;
                 if let Some(Value::Object(subschema)) = parent.get("then") {
-                    then_ = Some(Self::new(ctx, subschema)?);
+                    let then_ctx = ctx.new_at_location("then");
+                    then_ =
+                        Some(Self::new(&then_ctx, subschema).map_err(ValidationError::to_owned)?);
                 }
                 let mut else_ = None;
                 if let Some(Value::Object(subschema)) = parent.get("else") {
-                    else_ = Some(Self::new(ctx, subschema)?);
+                    let else_ctx = ctx.new_at_location("else");
+                    else_ =
+                        Some(Self::new(&else_ctx, subschema).map_err(ValidationError::to_owned)?);
                 }
                 conditional = Some(Box::new(ConditionalFilter {
-                    condition: compiler::compile(ctx, ctx.as_resource_ref(subschema))?,
-                    if_: Self::new(ctx, if_parent)?,
+                    condition: compiler::compile(&if_ctx, if_ctx.as_resource_ref(subschema))
+                        .map_err(ValidationError::to_owned)?,
+                    if_: Self::new(&if_ctx, if_parent).map_err(ValidationError::to_owned)?,
                     then_,
                     else_,
                 }));
@@ -327,24 +367,44 @@ impl ItemsFilter for DefaultItemsFilter {
 
         let mut contains = None;
         if let Some(subschema) = parent.get("contains") {
-            contains = Some(compiler::compile(ctx, ctx.as_resource_ref(subschema))?);
+            let contains_ctx = ctx.new_at_location("contains");
+            contains = Some(
+                compiler::compile(&contains_ctx, contains_ctx.as_resource_ref(subschema))
+                    .map_err(ValidationError::to_owned)?,
+            );
         }
         let mut unevaluated = None;
         if let Some(subschema) = parent.get("unevaluatedItems") {
-            unevaluated = Some(compiler::compile(ctx, ctx.as_resource_ref(subschema))?);
+            let unevaluated_ctx = ctx.new_at_location("unevaluatedItems");
+            unevaluated = Some(
+                compiler::compile(&unevaluated_ctx, unevaluated_ctx.as_resource_ref(subschema))
+                    .map_err(ValidationError::to_owned)?,
+            );
         }
         let mut all_of = None;
         if let Some(Some(subschemas)) = parent.get("allOf").map(Value::as_array) {
-            all_of = Some(CombinatorFilter::new(ctx, subschemas)?);
+            let all_of_ctx = ctx.new_at_location("allOf");
+            all_of = Some(
+                CombinatorFilter::new(&all_of_ctx, subschemas)
+                    .map_err(ValidationError::to_owned)?,
+            );
         }
         let mut any_of = None;
         if let Some(Some(subschemas)) = parent.get("anyOf").map(Value::as_array) {
-            any_of = Some(CombinatorFilter::new(ctx, subschemas)?);
+            let any_of_ctx = ctx.new_at_location("anyOf");
+            any_of = Some(
+                CombinatorFilter::new(&any_of_ctx, subschemas)
+                    .map_err(ValidationError::to_owned)?,
+            );
         }
 
         let mut one_of = None;
         if let Some(Some(subschemas)) = parent.get("oneOf").map(Value::as_array) {
-            one_of = Some(CombinatorFilter::new(ctx, subschemas)?);
+            let one_of_ctx = ctx.new_at_location("oneOf");
+            one_of = Some(
+                CombinatorFilter::new(&one_of_ctx, subschemas)
+                    .map_err(ValidationError::to_owned)?,
+            );
         }
 
         Ok(DefaultItemsFilter {
@@ -455,15 +515,17 @@ impl<F: ItemsFilter> CombinatorFilter<F> {
 
 impl<F: ItemsFilter> CombinatorFilter<F> {
     fn new<'a>(
-        ctx: &'a compiler::Context,
+        ctx: &'a compiler::Context<'a>,
         subschemas: &'a [Value],
     ) -> Result<CombinatorFilter<F>, ValidationError<'a>> {
         let mut buffer = Vec::with_capacity(subschemas.len());
-        for subschema in subschemas {
+        for (idx, subschema) in subschemas.iter().enumerate() {
             if let Value::Object(parent) = subschema {
+                let subschema_ctx = ctx.new_at_location(idx);
                 buffer.push((
-                    compiler::compile(ctx, ctx.as_resource_ref(subschema))?,
-                    F::new(ctx, parent)?,
+                    compiler::compile(&subschema_ctx, subschema_ctx.as_resource_ref(subschema))
+                        .map_err(ValidationError::to_owned)?,
+                    F::new(&subschema_ctx, parent).map_err(ValidationError::to_owned)?,
                 ));
             }
         }

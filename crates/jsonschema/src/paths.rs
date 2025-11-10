@@ -183,6 +183,12 @@ impl Location {
             }
         }
     }
+    /// Get a clone of the inner Arc<str> representing the location.
+    #[must_use]
+    pub(crate) fn as_arc(&self) -> Arc<str> {
+        Arc::clone(&self.0)
+    }
+
     /// Get a string slice representing the location.
     #[must_use]
     pub fn as_str(&self) -> &str {

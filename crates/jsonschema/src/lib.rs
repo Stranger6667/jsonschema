@@ -1982,7 +1982,7 @@ pub mod draft202012 {
 #[cfg(test)]
 pub(crate) mod tests_util {
     use super::Validator;
-    use crate::ValidationError;
+    use crate::{output::OutputUnit, BasicOutput, ValidationError};
     use serde_json::Value;
 
     #[track_caller]
@@ -2098,6 +2098,47 @@ pub(crate) mod tests_util {
         for (error, location) in errors.zip(expected) {
             assert_eq!(error.schema_path.as_str(), *location);
         }
+    }
+
+    #[track_caller]
+    pub(crate) fn assert_keyword_location(
+        validator: &Validator,
+        instance: &Value,
+        instance_pointer: &str,
+        keyword_pointer: &str,
+    ) {
+        fn ensure_location<T>(
+            units: Vec<OutputUnit<T>>,
+            instance_pointer: &str,
+            keyword_pointer: &str,
+        ) -> Result<(), Vec<String>> {
+            let mut available = Vec::new();
+            for unit in units {
+                let instance_location = unit.instance_location().as_str();
+                if instance_location == instance_pointer {
+                    let keyword_location = unit.keyword_location().as_str().to_string();
+                    if keyword_location == keyword_pointer {
+                        return Ok(());
+                    }
+                    available.push(keyword_location);
+                }
+            }
+            Err(available)
+        }
+
+        match validator.apply(instance).basic() {
+            BasicOutput::Valid(units) => {
+                ensure_location(units, instance_pointer, keyword_pointer)
+            }
+            BasicOutput::Invalid(units) => {
+                ensure_location(units, instance_pointer, keyword_pointer)
+            }
+        }
+        .unwrap_or_else(|available| {
+            panic!(
+                "No annotation for instance pointer `{instance_pointer}` with keyword location `{keyword_pointer}`. Available keyword locations for pointer: {available:?}"
+            )
+        });
     }
 }
 

@@ -72,7 +72,7 @@ impl Validate for PrefixItemsValidator {
         Ok(())
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         if let Value::Array(items) = instance {
             if !items.is_empty() {
                 let validate_total = self.schemas.len();

@@ -65,7 +65,7 @@ impl Validate for IfThenValidator {
         }
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         let mut if_result = self.schema.apply_rooted(instance, location);
         if if_result.is_valid() {
             let then_result = self.then_schema.apply_rooted(instance, location);
@@ -133,7 +133,7 @@ impl Validate for IfElseValidator {
         }
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         let if_result = self.schema.apply_rooted(instance, location);
         if if_result.is_valid() {
             if_result.into()
@@ -206,7 +206,7 @@ impl Validate for IfThenElseValidator {
         }
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         let mut if_result = self.schema.apply_rooted(instance, location);
         if if_result.is_valid() {
             if_result += self.then_schema.apply_rooted(instance, location);

@@ -25,6 +25,7 @@ use crate::{
 };
 use referencing::Uri;
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 macro_rules! is_valid {
     ($node:expr, $value:ident) => {{
@@ -130,7 +131,7 @@ impl Validate for AdditionalPropertiesValidator {
         Ok(())
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         if let Value::Object(item) = instance {
             let mut matched_props = Vec::with_capacity(item.len());
             let mut output = BasicOutput::default();
@@ -301,7 +302,7 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
         Ok(())
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         if let Value::Object(item) = instance {
             let mut unexpected = Vec::with_capacity(item.len());
             let mut output = BasicOutput::default();
@@ -429,7 +430,7 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyValida
         Ok(())
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         if let Value::Object(map) = instance {
             let mut matched_propnames = Vec::with_capacity(map.len());
             let mut output = BasicOutput::default();
@@ -484,7 +485,7 @@ pub(crate) struct AdditionalPropertiesWithPatternsValidator<R> {
     /// "additionalProperties" as it's path. However, we need to produce annotations which have the
     /// patternProperties keyword as their path so we store the paths here.
     pattern_keyword_path: Location,
-    pattern_keyword_absolute_location: Option<Uri<String>>,
+    pattern_keyword_absolute_location: Option<Arc<Uri<String>>>,
 }
 
 impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsValidator<R> {
@@ -552,7 +553,7 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsValidator<R> {
         Ok(())
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         if let Value::Object(item) = instance {
             let mut output = BasicOutput::default();
             let mut pattern_matched_propnames = Vec::with_capacity(item.len());
@@ -573,7 +574,7 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsValidator<R> {
                 }
             }
             if !pattern_matched_propnames.is_empty() {
-                output += OutputUnit::<Annotations<'_>>::annotations(
+                output += OutputUnit::<Annotations>::annotations(
                     self.pattern_keyword_path.clone(),
                     location.into(),
                     self.pattern_keyword_absolute_location.clone(),
@@ -617,7 +618,7 @@ pub(crate) struct AdditionalPropertiesWithPatternsFalseValidator<R> {
     patterns: Vec<(R, SchemaNode)>,
     location: Location,
     pattern_keyword_path: Location,
-    pattern_keyword_absolute_location: Option<Uri<String>>,
+    pattern_keyword_absolute_location: Option<Arc<Uri<String>>>,
 }
 
 impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsFalseValidator<R> {
@@ -691,7 +692,7 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsFalseValidator
         Ok(())
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         if let Value::Object(item) = instance {
             let mut output = BasicOutput::default();
             let mut unexpected = Vec::with_capacity(item.len());
@@ -711,7 +712,7 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsFalseValidator
                 }
             }
             if !pattern_matched_props.is_empty() {
-                output += OutputUnit::<Annotations<'_>>::annotations(
+                output += OutputUnit::<Annotations>::annotations(
                     self.pattern_keyword_path.clone(),
                     location.into(),
                     self.pattern_keyword_absolute_location.clone(),
@@ -875,7 +876,7 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
         Ok(())
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         if let Value::Object(item) = instance {
             let mut output = BasicOutput::default();
             let mut additional_matches = Vec::with_capacity(item.len());
@@ -1054,7 +1055,7 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
         Ok(())
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         if let Value::Object(item) = instance {
             let mut output = BasicOutput::default();
             let mut unexpected = vec![];
@@ -1177,18 +1178,8 @@ pub(crate) fn compile<'a>(
         if let Value::Object(obj) = patterns {
             // Compile all patterns & their validators to avoid doing work in the `patternProperties` validator
             match ctx.config().pattern_options() {
-                PatternEngineOptions::FancyRegex {
-                    backtrack_limit,
-                    size_limit,
-                    dfa_size_limit,
-                } => {
-                    let patterns = match compile_fancy_regex_patterns(
-                        ctx,
-                        obj,
-                        backtrack_limit,
-                        size_limit,
-                        dfa_size_limit,
-                    ) {
+                PatternEngineOptions::FancyRegex { .. } => {
+                    let patterns = match compile_fancy_regex_patterns(ctx, obj) {
                         Ok(patterns) => patterns,
                         Err(error) => return Some(Err(error)),
                     };
@@ -1254,15 +1245,11 @@ pub(crate) fn compile<'a>(
                         }
                     }
                 }
-                PatternEngineOptions::Regex {
-                    size_limit,
-                    dfa_size_limit,
-                } => {
-                    let patterns =
-                        match compile_regex_patterns(ctx, obj, size_limit, dfa_size_limit) {
-                            Ok(patterns) => patterns,
-                            Err(error) => return Some(Err(error)),
-                        };
+                PatternEngineOptions::Regex { .. } => {
+                    let patterns = match compile_regex_patterns(ctx, obj) {
+                        Ok(patterns) => patterns,
+                        Err(error) => return Some(Err(error)),
+                    };
                     match schema {
                         Value::Bool(true) => None, // "additionalProperties" are "true" by default
                         Value::Bool(false) => {

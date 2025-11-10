@@ -5,10 +5,10 @@
 
 use std::{
     borrow::Cow,
-    collections::VecDeque,
     fmt,
     iter::{FromIterator, Sum},
     ops::AddAssign,
+    sync::Arc,
 };
 
 use crate::{paths::Location, validator::PartialApplication, ValidationError};
@@ -102,7 +102,7 @@ impl<'a> Output<'a, '_> {
     /// }
     /// ```
     #[must_use]
-    pub fn basic(&self) -> BasicOutput<'a> {
+    pub fn basic(&self) -> BasicOutput {
         self.root_node
             .apply_rooted(self.instance, &LazyLocation::new())
     }
@@ -111,14 +111,14 @@ impl<'a> Output<'a, '_> {
 /// The "basic" output format. See the documentation for [`Output::basic`] for
 /// examples of how to use this.
 #[derive(Debug, PartialEq)]
-pub enum BasicOutput<'a> {
+pub enum BasicOutput {
     /// The schema was valid, collected annotations can be examined
-    Valid(VecDeque<OutputUnit<Annotations<'a>>>),
+    Valid(Vec<OutputUnit<Annotations>>),
     /// The schema was invalid
-    Invalid(VecDeque<OutputUnit<ErrorDescription>>),
+    Invalid(Vec<OutputUnit<ErrorDescription>>),
 }
 
-impl BasicOutput<'_> {
+impl BasicOutput {
     /// A shortcut to check whether the output represents passed validation.
     #[must_use]
     pub const fn is_valid(&self) -> bool {
@@ -129,18 +129,17 @@ impl BasicOutput<'_> {
     }
 }
 
-impl<'a> From<OutputUnit<Annotations<'a>>> for BasicOutput<'a> {
-    fn from(unit: OutputUnit<Annotations<'a>>) -> Self {
-        let mut units = VecDeque::new();
-        units.push_front(unit);
-        BasicOutput::Valid(units)
+impl From<OutputUnit<Annotations>> for BasicOutput {
+    fn from(unit: OutputUnit<Annotations>) -> Self {
+        BasicOutput::Valid(vec![unit])
     }
 }
 
-impl AddAssign for BasicOutput<'_> {
+impl AddAssign for BasicOutput {
     fn add_assign(&mut self, rhs: Self) {
         match (&mut *self, rhs) {
             (BasicOutput::Valid(ref mut anns), BasicOutput::Valid(anns_rhs)) => {
+                anns.reserve(anns_rhs.len());
                 anns.extend(anns_rhs);
             }
             (BasicOutput::Valid(..), BasicOutput::Invalid(errors)) => {
@@ -148,15 +147,16 @@ impl AddAssign for BasicOutput<'_> {
             }
             (BasicOutput::Invalid(..), BasicOutput::Valid(..)) => {}
             (BasicOutput::Invalid(errors), BasicOutput::Invalid(errors_rhs)) => {
+                errors.reserve(errors_rhs.len());
                 errors.extend(errors_rhs);
             }
         }
     }
 }
 
-impl Sum for BasicOutput<'_> {
+impl Sum for BasicOutput {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        let result = BasicOutput::Valid(VecDeque::new());
+        let result = BasicOutput::Valid(Vec::new());
         iter.fold(result, |mut acc, elem| {
             acc += elem;
             acc
@@ -164,14 +164,14 @@ impl Sum for BasicOutput<'_> {
     }
 }
 
-impl Default for BasicOutput<'_> {
+impl Default for BasicOutput {
     fn default() -> Self {
-        BasicOutput::Valid(VecDeque::new())
+        BasicOutput::Valid(Vec::new())
     }
 }
 
-impl<'a> From<BasicOutput<'a>> for PartialApplication<'a> {
-    fn from(output: BasicOutput<'a>) -> Self {
+impl From<BasicOutput> for PartialApplication {
+    fn from(output: BasicOutput) -> Self {
         match output {
             BasicOutput::Valid(anns) => PartialApplication::Valid {
                 annotations: None,
@@ -185,9 +185,9 @@ impl<'a> From<BasicOutput<'a>> for PartialApplication<'a> {
     }
 }
 
-impl<'a> FromIterator<BasicOutput<'a>> for PartialApplication<'a> {
-    fn from_iter<T: IntoIterator<Item = BasicOutput<'a>>>(iter: T) -> Self {
-        iter.into_iter().sum::<BasicOutput<'_>>().into()
+impl FromIterator<BasicOutput> for PartialApplication {
+    fn from_iter<T: IntoIterator<Item = BasicOutput>>(iter: T) -> Self {
+        iter.into_iter().sum::<BasicOutput>().into()
     }
 }
 
@@ -200,7 +200,7 @@ impl<'a> FromIterator<BasicOutput<'a>> for PartialApplication<'a> {
 pub struct OutputUnit<T> {
     keyword_location: Location,
     instance_location: Location,
-    absolute_keyword_location: Option<Uri<String>>,
+    absolute_keyword_location: Option<Arc<Uri<String>>>,
     value: T,
 }
 
@@ -208,9 +208,9 @@ impl<T> OutputUnit<T> {
     pub(crate) const fn annotations(
         keyword_location: Location,
         instance_location: Location,
-        absolute_keyword_location: Option<Uri<String>>,
-        annotations: Annotations<'_>,
-    ) -> OutputUnit<Annotations<'_>> {
+        absolute_keyword_location: Option<Arc<Uri<String>>>,
+        annotations: Annotations,
+    ) -> OutputUnit<Annotations> {
         OutputUnit {
             keyword_location,
             instance_location,
@@ -222,7 +222,7 @@ impl<T> OutputUnit<T> {
     pub(crate) const fn error(
         keyword_location: Location,
         instance_location: Location,
-        absolute_keyword_location: Option<Uri<String>>,
+        absolute_keyword_location: Option<Arc<Uri<String>>>,
         error: ErrorDescription,
     ) -> OutputUnit<ErrorDescription> {
         OutputUnit {
@@ -252,12 +252,12 @@ impl<T> OutputUnit<T> {
     }
 }
 
-impl OutputUnit<Annotations<'_>> {
+impl OutputUnit<Annotations> {
     /// The annotations found at this output unit.
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
     pub fn value(&self) -> Cow<'_, serde_json::Value> {
-        self.value.value()
+        Cow::Borrowed(self.value.value())
     }
 }
 
@@ -270,48 +270,57 @@ impl OutputUnit<ErrorDescription> {
 }
 
 /// Annotations associated with an output unit.
-#[derive(serde::Serialize, Debug, Clone, PartialEq)]
-pub struct Annotations<'a>(AnnotationsInner<'a>);
+#[derive(Debug, Clone, PartialEq)]
+pub struct Annotations(Arc<serde_json::Value>);
 
-impl<'a> Annotations<'a> {
+impl Annotations {
     /// The `serde_json::Value` of the annotation.
     #[must_use]
-    #[allow(clippy::missing_panics_doc)]
-    pub fn value(&'a self) -> Cow<'a, serde_json::Value> {
-        match &self.0 {
-            AnnotationsInner::Value(v) => Cow::Borrowed(v),
-            AnnotationsInner::ValueRef(v) => Cow::Borrowed(v),
-            AnnotationsInner::UnmatchedKeywords(kvs) => {
-                let value = serde_json::to_value(kvs)
-                    .expect("&AHashMap<String, serde_json::Value> cannot fail serializing");
-                Cow::Owned(value)
-            }
+    pub fn value(&self) -> &serde_json::Value {
+        &self.0
+    }
+}
+
+impl From<&AHashMap<String, serde_json::Value>> for Annotations {
+    fn from(anns: &AHashMap<String, serde_json::Value>) -> Self {
+        let mut object = serde_json::Map::with_capacity(anns.len());
+        for (key, value) in anns {
+            object.insert(key.clone(), value.clone());
         }
+        Annotations(Arc::new(serde_json::Value::Object(object)))
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-enum AnnotationsInner<'a> {
-    UnmatchedKeywords(&'a AHashMap<String, serde_json::Value>),
-    ValueRef(&'a serde_json::Value),
-    Value(Box<serde_json::Value>),
-}
-
-impl<'a> From<&'a AHashMap<String, serde_json::Value>> for Annotations<'a> {
-    fn from(anns: &'a AHashMap<String, serde_json::Value>) -> Self {
-        Annotations(AnnotationsInner::UnmatchedKeywords(anns))
+impl From<&serde_json::Value> for Annotations {
+    fn from(v: &serde_json::Value) -> Self {
+        Annotations(Arc::new(v.clone()))
     }
 }
 
-impl<'a> From<&'a serde_json::Value> for Annotations<'a> {
-    fn from(v: &'a serde_json::Value) -> Self {
-        Annotations(AnnotationsInner::ValueRef(v))
+impl From<Arc<serde_json::Value>> for Annotations {
+    fn from(v: Arc<serde_json::Value>) -> Self {
+        Annotations(v)
     }
 }
 
-impl From<serde_json::Value> for Annotations<'_> {
+impl From<&Arc<serde_json::Value>> for Annotations {
+    fn from(v: &Arc<serde_json::Value>) -> Self {
+        Annotations(Arc::clone(v))
+    }
+}
+
+impl From<serde_json::Value> for Annotations {
     fn from(v: serde_json::Value) -> Self {
-        Annotations(AnnotationsInner::Value(Box::new(v)))
+        Annotations(Arc::new(v))
+    }
+}
+
+impl serde::Serialize for Annotations {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
     }
 }
 
@@ -346,7 +355,7 @@ impl<'a> From<&'a str> for ErrorDescription {
     }
 }
 
-impl serde::Serialize for BasicOutput<'_> {
+impl serde::Serialize for BasicOutput {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -366,20 +375,7 @@ impl serde::Serialize for BasicOutput<'_> {
     }
 }
 
-impl serde::Serialize for AnnotationsInner<'_> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            Self::UnmatchedKeywords(kvs) => kvs.serialize(serializer),
-            Self::Value(v) => v.serialize(serializer),
-            Self::ValueRef(v) => v.serialize(serializer),
-        }
-    }
-}
-
-impl serde::Serialize for OutputUnit<Annotations<'_>> {
+impl serde::Serialize for OutputUnit<Annotations> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -388,7 +384,7 @@ impl serde::Serialize for OutputUnit<Annotations<'_>> {
         map_ser.serialize_entry("keywordLocation", self.keyword_location.as_str())?;
         map_ser.serialize_entry("instanceLocation", self.instance_location.as_str())?;
         if let Some(absolute) = &self.absolute_keyword_location {
-            map_ser.serialize_entry("absoluteKeywordLocation", &absolute)?;
+            map_ser.serialize_entry("absoluteKeywordLocation", absolute.as_str())?;
         }
         map_ser.serialize_entry("annotations", &self.value)?;
         map_ser.end()
@@ -404,7 +400,7 @@ impl serde::Serialize for OutputUnit<ErrorDescription> {
         map_ser.serialize_entry("keywordLocation", self.keyword_location.as_str())?;
         map_ser.serialize_entry("instanceLocation", self.instance_location.as_str())?;
         if let Some(absolute) = &self.absolute_keyword_location {
-            map_ser.serialize_entry("absoluteKeywordLocation", &absolute)?;
+            map_ser.serialize_entry("absoluteKeywordLocation", absolute.as_str())?;
         }
         map_ser.serialize_entry("error", &self.value)?;
         map_ser.end()

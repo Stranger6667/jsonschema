@@ -86,7 +86,7 @@ impl Validate for PropertyNamesObjectValidator {
         Ok(())
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         if let Value::Object(item) = instance {
             item.keys()
                 .map(|key| {

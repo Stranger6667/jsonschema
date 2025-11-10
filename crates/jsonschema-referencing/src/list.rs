@@ -13,6 +13,28 @@ impl<T: Clone> Clone for List<T> {
     }
 }
 
+impl<T: std::fmt::Debug> std::fmt::Debug for List<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+impl<T: PartialEq> PartialEq for List<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.iter().eq(other.iter())
+    }
+}
+
+impl<T: Eq> Eq for List<T> {}
+
+impl<T: std::hash::Hash> std::hash::Hash for List<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        for item in self {
+            item.hash(state);
+        }
+    }
+}
+
 impl<T> Drop for List<T> {
     fn drop(&mut self) {
         let mut current = self.head.take();
