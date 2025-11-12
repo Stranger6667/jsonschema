@@ -10,6 +10,7 @@
 ### Fixed
 
 - Hostname and IDN hostname formats now decode `xn--` labels, reject leading combining marks/uppercase prefixes, and enforce the latest JSON Schema punycode context rules.
+- Restore `wasm32-unknown-unknown` support. [#785](https://github.com/Stranger6667/jsonschema/issues/785)
 
 ### Performance
 

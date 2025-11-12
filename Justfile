@@ -34,3 +34,15 @@ bench-py *FLAGS:
 
 miri:
   cargo +nightly miri test -p referencing
+
+install-wasm-deps:
+  rustup target add wasm32-wasip1 wasm32-unknown-unknown
+  cargo install wasm-bindgen-cli --vers 0.2.105
+
+test-wasm32-wasip1:
+  cargo test --target wasm32-wasip1 --no-default-features -p jsonschema
+
+test-wasm32-unknown-unknown:
+  cargo test --target wasm32-unknown-unknown --no-default-features -p jsonschema
+
+test-wasm: test-wasm32-wasip1 test-wasm32-unknown-unknown

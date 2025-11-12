@@ -86,6 +86,36 @@ You can check the current status on the [Bowtie Report](https://bowtie.report/#/
 
 For detailed benchmarks, see our [full performance comparison](https://github.com/Stranger6667/jsonschema/tree/master/crates/benchmark-suite).
 
+## WebAssembly
+
+`jsonschema` supports WebAssembly with different capabilities depending on the target:
+
+### Browser/JavaScript (`wasm32-unknown-unknown`)
+
+For browser environments, use without default features:
+
+```toml
+jsonschema = { version = "0.33", default-features = false }
+```
+
+External references (`resolve-http`, `resolve-file`) are not supported. Implement a custom retriever for external schemas (see [documentation](https://docs.rs/jsonschema) for details).
+
+### WASI (`wasm32-wasip1`)
+
+WASI environments have limited built-in support due to library architecture:
+
+**Supported:**
+- Synchronous file resolution
+- Custom synchronous retrievers
+
+```toml
+jsonschema = { version = "0.33", default-features = false, features = ["resolve-file"] }
+```
+
+**Not supported:** Built-in HTTP and async resolution (requires `Send + Sync` trait bounds incompatible with single-threaded WASM).
+
+**Workaround:** Implement a custom synchronous retriever that wraps your async HTTP client internally.
+
 ## Minimum Supported Rust Version (MSRV)
 
 This crate requires Rust 1.83.0 or later.

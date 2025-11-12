@@ -628,19 +628,68 @@
 //!
 //! # WebAssembly support
 //!
-//! When using `jsonschema` in WASM environments, be aware that external references are
-//! not supported by default due to WASM limitations:
-//!    - No filesystem access (`resolve-file` feature)
-//!    - No direct HTTP requests, at least right now (`resolve-http` feature)
+//! `jsonschema` supports WebAssembly with different capabilities based on the target platform:
 //!
-//! To use `jsonschema` in WASM, disable default features:
+//! ## Browser/JavaScript (`wasm32-unknown-unknown`)
+//!
+//! When targeting browser or JavaScript environments, external reference resolution is not
+//! supported by default due to platform limitations:
+//!    - No filesystem access (`resolve-file` feature is not available)
+//!    - No synchronous HTTP requests (`resolve-http` feature is not available)
+//!
+//! To use `jsonschema` in these environments, disable default features:
 //!
 //! ```toml
 //! jsonschema = { version = "x.y.z", default-features = false }
 //! ```
 //!
-//! For external references in WASM you may want to implement a custom retriever.
-//! See the [External References](#external-references) section for implementation details.
+//! Note: Attempting to compile with `resolve-http` or `resolve-file` features on
+//! `wasm32-unknown-unknown` will result in a compile error.
+//!
+//! For external references in browser environments, implement a custom retriever that uses
+//! browser APIs (like `fetch`). See the [External References](#external-references) section.
+//!
+//! ## WASI (`wasm32-wasip1`)
+//!
+//! WASI environments have limited support due to this library's architecture:
+//!
+//! **Supported:**
+//! - Synchronous file resolution (`resolve-file` feature)
+//! - Custom synchronous retrievers (including wrapping async operations)
+//!
+//! **Not Supported:**
+//! - Built-in HTTP resolution - reqwest doesn't support blocking I/O on WASM
+//! - Built-in async resolution - our `AsyncRetrieve` trait requires `Send + Sync` bounds for
+//!   thread-safety in multi-threaded environments, which are incompatible with single-threaded
+//!   WASM futures
+//!
+//! ```toml
+//! jsonschema = { version = "x.y.z", default-features = false, features = ["resolve-file"] }
+//! ```
+//!
+//! **Workaround for HTTP:** Implement a custom synchronous [`Retrieve`] that internally uses
+//! your preferred async HTTP client. Since WASI is single-threaded, you can block on futures
+//! within your retriever implementation.
+
+#[cfg(all(
+    target_arch = "wasm32",
+    target_os = "unknown",
+    any(feature = "resolve-file", feature = "resolve-http")
+))]
+compile_error!(
+    "Features 'resolve-http' and 'resolve-file' are not supported on wasm32-unknown-unknown"
+);
+
+#[cfg(all(target_arch = "wasm32", feature = "resolve-async"))]
+compile_error!(
+    "Feature 'resolve-async' is not supported on wasm32 targets.\n\
+    \n\
+    The AsyncRetrieve trait requires Send + Sync bounds for thread-safety in multi-threaded \n\
+    environments, which are incompatible with single-threaded WASM futures.\n\
+    \n\
+    Workaround: Implement a custom synchronous Retrieve trait that wraps async operations internally.\n\
+    See the documentation for examples: https://docs.rs/jsonschema"
+);
 
 pub(crate) mod compiler;
 mod content_encoding;
@@ -678,12 +727,6 @@ pub use validator::Validator;
 pub use referencing::AsyncRetrieve;
 
 use serde_json::Value;
-
-#[cfg(all(
-    target_arch = "wasm32",
-    any(feature = "resolve-http", feature = "resolve-file")
-))]
-compile_error!("Features 'resolve-http' and 'resolve-file' are not supported on WASM.");
 
 /// Validate `instance` against `schema` and get a `true` if the instance is valid and `false`
 /// otherwise. Draft is detected automatically.
