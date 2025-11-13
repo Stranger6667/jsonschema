@@ -15,6 +15,8 @@
 - Recursive and regular `$ref` compilation deduplicates validator nodes, which decreases the memory usage and improves performance.
 - Validator compilation restores the regex cache for faster builds on regex-heavy schemas and precomputes absolute schema locations, trading a bit of compile time for faster `apply` on location-heavy workloads.
 - Large schema compilation is significantly faster. [#755](https://github.com/Stranger6667/jsonschema/issues/755)
+- `unevaluatedProperties` validation is 25-35% faster through optimized property marking and early-exit paths.
+- `unevaluatedProperties` memory usage drastically reduced by eliminating redundant registry clones during compilation.
 
 ## [0.32.1] - 2025-08-24
 

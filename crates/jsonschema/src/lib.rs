@@ -2167,16 +2167,6 @@ pub(crate) mod tests_util {
         is_not_valid_with(&validator, instance);
     }
 
-    #[track_caller]
-    pub(crate) fn is_not_valid_with_draft(draft: crate::Draft, schema: &Value, instance: &Value) {
-        let validator = crate::options()
-            .should_validate_formats(true)
-            .with_draft(draft)
-            .build(schema)
-            .expect("Invalid schema");
-        is_not_valid_with(&validator, instance);
-    }
-
     pub(crate) fn expect_errors(schema: &Value, instance: &Value, errors: &[&str]) {
         assert_eq!(
             crate::validator_for(schema)
@@ -2216,12 +2206,6 @@ pub(crate) mod tests_util {
             .should_validate_formats(true)
             .build(schema)
             .expect("Invalid schema");
-        is_valid_with(&validator, instance);
-    }
-
-    #[track_caller]
-    pub(crate) fn is_valid_with_draft(draft: crate::Draft, schema: &Value, instance: &Value) {
-        let validator = crate::options().with_draft(draft).build(schema).unwrap();
         is_valid_with(&validator, instance);
     }
 

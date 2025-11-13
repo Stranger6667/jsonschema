@@ -140,7 +140,6 @@ mod bench {
     }
 
     fn run_benchmarks(c: &mut Criterion) {
-        // Only benchmark large schema with invalid instance (most interesting case)
         let large = large_schema();
         bench_build(c, "unevaluated_properties", &large);
 

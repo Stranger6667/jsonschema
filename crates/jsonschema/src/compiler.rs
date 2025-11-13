@@ -6,6 +6,7 @@ use crate::{
         self,
         custom::{CustomKeyword, KeywordFactory},
         format::Format,
+        unevaluated_properties::PendingPropertyValidators,
         BoxedValidator, BuiltinKeyword, Keyword,
     },
     node::{PendingSchemaNode, SchemaNode},
@@ -28,9 +29,22 @@ pub(crate) const DEFAULT_BASE_URI: &str = "json-schema:///";
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub(crate) struct LocationCacheKey {
-    base_uri: Arc<Uri<String>>,
+    pub(crate) base_uri: Arc<Uri<String>>,
     location: Arc<str>,
     dynamic_scope: List<Uri<String>>,
+}
+
+#[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
+struct PropertyValidatorsPendingKey {
+    schema_ptr: usize,
+}
+
+impl PropertyValidatorsPendingKey {
+    fn new(schema: &Map<String, Value>) -> Self {
+        Self {
+            schema_ptr: schema as *const _ as usize,
+        }
+    }
 }
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
@@ -47,6 +61,9 @@ struct SharedContextState {
     alias_nodes: Rc<RefCell<AHashMap<AliasCacheKey, SchemaNode>>>,
     pending_nodes: Rc<RefCell<AHashMap<LocationCacheKey, PendingSchemaNode>>>,
     alias_placeholders: Rc<RefCell<AHashMap<Arc<Uri<String>>, PendingSchemaNode>>>,
+    pending_property_validators: Rc<RefCell<AHashMap<LocationCacheKey, PendingPropertyValidators>>>,
+    pending_property_validators_by_schema:
+        Rc<RefCell<AHashMap<PropertyValidatorsPendingKey, PendingPropertyValidators>>>,
     pattern_cache: Rc<RefCell<AHashMap<Arc<str>, PatternCacheEntry>>>,
     uri_buffer: Rc<RefCell<String>>,
 }
@@ -66,18 +83,11 @@ impl SharedContextState {
             alias_nodes: Rc::new(RefCell::new(AHashMap::new())),
             pending_nodes: Rc::new(RefCell::new(AHashMap::new())),
             alias_placeholders: Rc::new(RefCell::new(AHashMap::new())),
+            pending_property_validators: Rc::new(RefCell::new(AHashMap::new())),
+            pending_property_validators_by_schema: Rc::new(RefCell::new(AHashMap::new())),
             pattern_cache: Rc::new(RefCell::new(AHashMap::new())),
             uri_buffer: Rc::new(RefCell::new(String::new())),
         }
-    }
-
-    fn clear(&self) {
-        self.location_nodes.borrow_mut().clear();
-        self.alias_nodes.borrow_mut().clear();
-        self.pending_nodes.borrow_mut().clear();
-        self.alias_placeholders.borrow_mut().clear();
-        self.pattern_cache.borrow_mut().clear();
-        self.uri_buffer.borrow_mut().clear();
     }
 }
 
@@ -159,11 +169,7 @@ impl<'a> Context<'a> {
         self.resolver.lookup(reference)
     }
 
-    pub(crate) fn scopes(&self) -> List<Uri<String>> {
-        self.resolver.dynamic_scope()
-    }
-
-    fn location_cache_key(&self) -> LocationCacheKey {
+    pub(crate) fn location_cache_key(&self) -> LocationCacheKey {
         LocationCacheKey {
             base_uri: self.resolver.base_uri(),
             location: self.location.as_arc(),
@@ -213,9 +219,6 @@ impl<'a> Context<'a> {
         Ok(translated)
     }
 
-    pub(crate) fn clear_shared_state(&self) {
-        self.shared.clear();
-    }
     fn is_known_keyword(&self, keyword: &str) -> bool {
         self.draft.is_known_keyword(keyword)
     }
@@ -348,6 +351,74 @@ impl<'a> Context<'a> {
         self.shared.pending_nodes.borrow_mut().remove(key);
     }
 
+    pub(crate) fn get_pending_property_validators(
+        &self,
+        key: &LocationCacheKey,
+    ) -> Option<PendingPropertyValidators> {
+        self.shared
+            .pending_property_validators
+            .borrow()
+            .get(key)
+            .cloned()
+    }
+
+    pub(crate) fn cache_pending_property_validators(
+        &self,
+        key: LocationCacheKey,
+        pending: PendingPropertyValidators,
+    ) {
+        self.shared
+            .pending_property_validators
+            .borrow_mut()
+            .insert(key, pending);
+    }
+
+    pub(crate) fn remove_pending_property_validators(&self, key: &LocationCacheKey) {
+        self.shared
+            .pending_property_validators
+            .borrow_mut()
+            .remove(key);
+    }
+
+    fn property_schema_key(schema: &Map<String, Value>) -> PropertyValidatorsPendingKey {
+        PropertyValidatorsPendingKey::new(schema)
+    }
+
+    pub(crate) fn get_pending_property_validators_for_schema(
+        &self,
+        schema: &Map<String, Value>,
+    ) -> Option<PendingPropertyValidators> {
+        let key = Self::property_schema_key(schema);
+        self.shared
+            .pending_property_validators_by_schema
+            .borrow()
+            .get(&key)
+            .cloned()
+    }
+
+    pub(crate) fn cache_pending_property_validators_for_schema(
+        &self,
+        schema: &Map<String, Value>,
+        pending: PendingPropertyValidators,
+    ) {
+        let key = Self::property_schema_key(schema);
+        self.shared
+            .pending_property_validators_by_schema
+            .borrow_mut()
+            .insert(key, pending);
+    }
+
+    pub(crate) fn remove_pending_property_validators_for_schema(
+        &self,
+        schema: &Map<String, Value>,
+    ) {
+        let key = Self::property_schema_key(schema);
+        self.shared
+            .pending_property_validators_by_schema
+            .borrow_mut()
+            .remove(&key);
+    }
+
     pub(crate) fn cached_alias_placeholder(
         &self,
         alias: &Arc<Uri<String>>,
@@ -473,10 +544,6 @@ impl<'a> Context<'a> {
         &self.location
     }
 
-    pub(crate) fn vocabularies(&self) -> &VocabularySet {
-        &self.vocabularies
-    }
-
     pub(crate) fn has_vocabulary(&self, vocabulary: &Vocabulary) -> bool {
         if self.draft() < Draft::Draft201909 || vocabulary == &Vocabulary::Core {
             true
@@ -535,16 +602,7 @@ pub(crate) fn build_validator(
     }
 
     // Finally, compile the validator
-    let root = match compile(&ctx, resource_ref).map_err(ValidationError::to_owned) {
-        Ok(node) => {
-            ctx.clear_shared_state();
-            node
-        }
-        Err(err) => {
-            ctx.clear_shared_state();
-            return Err(err);
-        }
-    };
+    let root = compile(&ctx, resource_ref).map_err(ValidationError::to_owned)?;
     let draft = config.draft();
     Ok(Validator { root, draft })
 }
@@ -604,16 +662,7 @@ pub(crate) async fn build_validator_async(
         validate_schema(draft, schema)?;
     }
 
-    let root = match compile(&ctx, resource_ref).map_err(ValidationError::to_owned) {
-        Ok(node) => {
-            ctx.clear_shared_state();
-            node
-        }
-        Err(err) => {
-            ctx.clear_shared_state();
-            return Err(err);
-        }
-    };
+    let root = compile(&ctx, resource_ref).map_err(ValidationError::to_owned)?;
     let draft = config.draft();
     Ok(Validator { root, draft })
 }
