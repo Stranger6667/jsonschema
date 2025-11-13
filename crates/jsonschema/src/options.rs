@@ -8,6 +8,7 @@ use crate::{
     keywords::{custom::KeywordFactory, format::Format},
     paths::Location,
     retriever::DefaultRetriever,
+    thread::ThreadBound,
     Keyword, ValidationError, Validator,
 };
 use ahash::AHashMap;
@@ -380,7 +381,7 @@ impl<R> ValidationOptions<R> {
     pub fn with_format<N, F>(mut self, name: N, format: F) -> Self
     where
         N: Into<String>,
-        F: Fn(&str) -> bool + Send + Sync + 'static,
+        F: Fn(&str) -> bool + ThreadBound + 'static,
     {
         self.formats.insert(name.into(), Arc::new(format));
         self
@@ -488,8 +489,7 @@ impl<R> ValidationOptions<R> {
                 &'a Value,
                 Location,
             ) -> Result<Box<dyn Keyword>, ValidationError<'a>>
-            + Send
-            + Sync
+            + ThreadBound
             + 'static,
     {
         self.keywords.insert(name.into(), Arc::new(factory));

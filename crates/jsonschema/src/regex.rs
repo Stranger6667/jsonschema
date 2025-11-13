@@ -1,4 +1,6 @@
-pub(crate) trait RegexEngine: Sized + Send + Sync {
+use crate::thread::ThreadBound;
+
+pub(crate) trait RegexEngine: Sized + ThreadBound {
     type Error: RegexError;
     fn is_match(&self, text: &str) -> Result<bool, Self::Error>;
 

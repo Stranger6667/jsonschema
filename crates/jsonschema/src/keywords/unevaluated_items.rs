@@ -5,13 +5,14 @@ use crate::{
     compiler,
     node::SchemaNode,
     paths::{LazyLocation, Location},
+    thread::ThreadBound,
     validator::Validate,
     ValidationError,
 };
 
 use super::CompilationResult;
 
-pub(crate) trait ItemsFilter: Send + Sync + Sized + 'static {
+pub(crate) trait ItemsFilter: ThreadBound + Sized + 'static {
     fn new<'a>(
         ctx: &'a compiler::Context<'a>,
         parent: &'a Map<String, Value>,

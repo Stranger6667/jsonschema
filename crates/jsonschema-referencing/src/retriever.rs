@@ -3,11 +3,23 @@ use core::fmt;
 use fluent_uri::Uri;
 use serde_json::Value;
 
+#[cfg(target_family = "wasm")]
+pub trait RetrieverBounds {}
+
+#[cfg(target_family = "wasm")]
+impl<T: ?Sized> RetrieverBounds for T {}
+
+#[cfg(not(target_family = "wasm"))]
+pub trait RetrieverBounds: Send + Sync {}
+
+#[cfg(not(target_family = "wasm"))]
+impl<T: ?Sized + Send + Sync> RetrieverBounds for T {}
+
 /// Trait for retrieving resources from external sources.
 ///
 /// Implementors of this trait can be used to fetch resources that are not
 /// initially present in a [`crate::Registry`].
-pub trait Retrieve: Send + Sync {
+pub trait Retrieve: RetrieverBounds {
     /// Attempt to retrieve a resource from the given URI.
     ///
     /// # Arguments
@@ -48,8 +60,9 @@ impl Retrieve for DefaultRetriever {
 }
 
 #[cfg(feature = "retrieve-async")]
-#[async_trait::async_trait]
-pub trait AsyncRetrieve: Send + Sync {
+#[cfg_attr(target_family = "wasm", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait::async_trait)]
+pub trait AsyncRetrieve: RetrieverBounds {
     /// Asynchronously retrieve a resource from the given URI.
     ///
     /// This is the non-blocking equivalent of [`Retrieve::retrieve`].
@@ -71,7 +84,8 @@ pub trait AsyncRetrieve: Send + Sync {
 }
 
 #[cfg(feature = "retrieve-async")]
-#[async_trait::async_trait]
+#[cfg_attr(target_family = "wasm", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait::async_trait)]
 impl AsyncRetrieve for DefaultRetriever {
     async fn retrieve(
         &self,

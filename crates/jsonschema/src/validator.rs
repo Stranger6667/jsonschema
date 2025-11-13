@@ -6,6 +6,7 @@ use crate::{
     node::SchemaNode,
     output::{Annotations, ErrorDescription, Output, OutputUnit},
     paths::LazyLocation,
+    thread::ThreadBound,
     Draft, ValidationError, ValidationOptions,
 };
 use serde_json::Value;
@@ -24,7 +25,7 @@ use serde_json::Value;
 /// If you are implementing `Validate` it is often sufficient to implement `validate` and
 /// `is_valid`. `apply` is only necessary for validators which compose other validators. See the
 /// documentation for `apply` for more information.
-pub(crate) trait Validate: Send + Sync {
+pub(crate) trait Validate: ThreadBound {
     fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
         match self.validate(instance, location) {
             Ok(()) => no_error(),
@@ -315,6 +316,7 @@ mod tests {
         error::ValidationError,
         keywords::custom::Keyword,
         paths::{LazyLocation, Location},
+        thread::ThreadBound,
         types::JsonType,
         Validator,
     };
@@ -613,7 +615,7 @@ mod tests {
 
     #[test]
     fn test_validator_is_send_and_sync() {
-        fn assert_send_sync<T: Send + Sync>() {}
+        fn assert_send_sync<T: ThreadBound>() {}
         assert_send_sync::<Validator>();
     }
 }

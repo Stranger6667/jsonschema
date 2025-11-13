@@ -72,10 +72,19 @@ jobs:
           - target: wasm32-wasip1
             needs_wasmtime: true
             needs_wasm_bindgen: false
+            features: ""
+            display: wasm32-wasip1 (sync)
+          - target: wasm32-wasip1
+            needs_wasmtime: true
+            needs_wasm_bindgen: false
+            features: "resolve-async"
+            display: wasm32-wasip1 (async)
           - target: wasm32-unknown-unknown
             needs_wasmtime: false
             needs_wasm_bindgen: true
-    name: Test on ${{ matrix.target }}
+            features: ""
+            display: wasm32-unknown-unknown
+    name: Test on ${{ matrix.display }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
@@ -101,7 +110,12 @@ jobs:
           tool: 'wasm-bindgen@0.2.105'
 
       - name: Run tests
-        run: cargo test --target ${{ matrix.target }} --no-default-features -p jsonschema
+        run: |
+          if [ -n "${{ matrix.features }}" ]; then
+            cargo test --target ${{ matrix.target }} --no-default-features --features "${{ matrix.features }}" -p jsonschema
+          else
+            cargo test --target ${{ matrix.target }} --no-default-features -p jsonschema
+          fi
 
   check-wasm-compile-errors:
     strategy:
@@ -114,12 +128,6 @@ jobs:
           - target: wasm32-unknown-unknown
             feature: resolve-file
             pattern: "resolve-http.*resolve-file.*not supported.*wasm32-unknown-unknown"
-          - target: wasm32-unknown-unknown
-            feature: resolve-async
-            pattern: "resolve-async.*not supported.*wasm32"
-          - target: wasm32-wasip1
-            feature: resolve-async
-            pattern: "resolve-async.*not supported.*wasm32"
     name: Check ${{ matrix.feature }} fails on ${{ matrix.target }}
     runs-on: ubuntu-22.04
     steps:
@@ -354,7 +362,7 @@ jobs:
             flags: "--feature-powerset --exclude-features default,resolve-http,resolve-file,resolve-async,retrieve-async"
           - target: wasm32-wasip1
             name: wasm32-wasip1
-            flags: "--feature-powerset --exclude-features resolve-async,retrieve-async"
+            flags: "--feature-powerset --exclude-features retrieve-async"
     name: Check features on ${{ matrix.name }}
     runs-on: ubuntu-22.04
     steps:

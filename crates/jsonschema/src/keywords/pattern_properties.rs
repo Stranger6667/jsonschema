@@ -190,7 +190,7 @@ pub(crate) fn compile<'a>(
                     .map(|patterns| {
                         build_validator_from_entries(patterns, |regex, node| {
                             Box::new(SingleValuePatternPropertiesValidator { regex, node })
-                                as Box<dyn Validate + Send + Sync>
+                                as Box<dyn Validate>
                         })
                     })
                 }
@@ -202,7 +202,7 @@ pub(crate) fn compile<'a>(
                     .map(|patterns| {
                         build_validator_from_entries(patterns, |regex, node| {
                             Box::new(SingleValuePatternPropertiesValidator { regex, node })
-                                as Box<dyn Validate + Send + Sync>
+                                as Box<dyn Validate>
                         })
                     })
                 }
@@ -238,8 +238,8 @@ where
 /// Pick the optimal validator representation for the compiled pattern entries.
 fn build_validator_from_entries<R>(
     mut entries: Vec<(Arc<R>, SchemaNode)>,
-    single_factory: impl FnOnce(Arc<R>, SchemaNode) -> Box<dyn Validate + Send + Sync>,
-) -> Box<dyn Validate + Send + Sync>
+    single_factory: impl FnOnce(Arc<R>, SchemaNode) -> Box<dyn Validate>,
+) -> Box<dyn Validate>
 where
     R: RegexEngine + 'static,
 {

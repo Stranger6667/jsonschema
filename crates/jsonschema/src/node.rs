@@ -4,6 +4,7 @@ use crate::{
     keywords::{BoxedValidator, Keyword},
     output::{Annotations, BasicOutput, ErrorDescription, OutputUnit},
     paths::{LazyLocation, Location},
+    thread::{Shared, SharedWeak},
     validator::{PartialApplication, Validate},
     ValidationError,
 };
@@ -12,13 +13,13 @@ use serde_json::Value;
 use std::{
     cell::OnceCell,
     fmt,
-    sync::{Arc, OnceLock, Weak},
+    sync::{Arc, OnceLock},
 };
 
 /// A node in the schema tree, returned by [`compiler::compile`]
 #[derive(Clone, Debug)]
 pub(crate) struct SchemaNode {
-    validators: Arc<NodeValidators>,
+    validators: Shared<NodeValidators>,
     location: Location,
     absolute_path: Option<Arc<Uri<String>>>,
 }
@@ -26,12 +27,12 @@ pub(crate) struct SchemaNode {
 // Separate type used only during compilation for handling recursive references
 #[derive(Clone, Debug)]
 pub(crate) struct PendingSchemaNode {
-    cell: Arc<OnceLock<PendingTarget>>,
+    cell: Shared<OnceLock<PendingTarget>>,
 }
 
 #[derive(Debug)]
 struct PendingTarget {
-    validators: Weak<NodeValidators>,
+    validators: SharedWeak<NodeValidators>,
     location: Location,
     absolute_path: Option<Arc<Uri<String>>>,
 }
@@ -91,13 +92,13 @@ struct ArrayValidatorEntry {
 impl PendingSchemaNode {
     pub(crate) fn new() -> Self {
         PendingSchemaNode {
-            cell: Arc::new(OnceLock::new()),
+            cell: Shared::new(OnceLock::new()),
         }
     }
 
     pub(crate) fn initialize(&self, node: &SchemaNode) {
         let target = PendingTarget {
-            validators: Arc::downgrade(&node.validators),
+            validators: Shared::downgrade(&node.validators),
             location: node.location.clone(),
             absolute_path: node.absolute_path.clone(),
         };
@@ -164,7 +165,7 @@ impl SchemaNode {
         SchemaNode {
             location: ctx.location().clone(),
             absolute_path: ctx.base_uri(),
-            validators: Arc::new(NodeValidators::Boolean { validator }),
+            validators: Shared::new(NodeValidators::Boolean { validator }),
         }
     }
 
@@ -189,7 +190,7 @@ impl SchemaNode {
         SchemaNode {
             location: ctx.location().clone(),
             absolute_path,
-            validators: Arc::new(NodeValidators::Keyword(KeywordValidators {
+            validators: Shared::new(NodeValidators::Keyword(KeywordValidators {
                 unmatched_keywords,
                 validators,
             })),
@@ -214,7 +215,7 @@ impl SchemaNode {
         SchemaNode {
             location: ctx.location().clone(),
             absolute_path,
-            validators: Arc::new(NodeValidators::Array { validators }),
+            validators: Shared::new(NodeValidators::Array { validators }),
         }
     }
 
@@ -224,7 +225,7 @@ impl SchemaNode {
         absolute_path: Option<Arc<Uri<String>>>,
     ) -> SchemaNode {
         SchemaNode {
-            validators: Arc::clone(&self.validators),
+            validators: self.validators.clone(),
             location,
             absolute_path,
         }

@@ -1,4 +1,6 @@
-use crate::{compiler, node::SchemaNode, paths::Location, validator::Validate as _};
+use crate::{
+    compiler, node::SchemaNode, paths::Location, thread::ThreadBound, validator::Validate as _,
+};
 use ahash::AHashMap;
 use serde_json::{Map, Value};
 
@@ -8,7 +10,7 @@ pub(crate) type FancyRegexValidators = Vec<(fancy_regex::Regex, SchemaNode)>;
 pub(crate) type RegexValidators = Vec<(regex::Regex, SchemaNode)>;
 
 /// A value that can look up property validators by name.
-pub(crate) trait PropertiesValidatorsMap: Send + Sync {
+pub(crate) trait PropertiesValidatorsMap: ThreadBound {
     fn get_validator(&self, property: &str) -> Option<&SchemaNode>;
     fn get_key_validator(&self, property: &str) -> Option<(&String, &SchemaNode)>;
 }

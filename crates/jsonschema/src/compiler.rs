@@ -453,7 +453,7 @@ impl<'a> Context<'a> {
     pub(crate) fn lookup_maybe_recursive(
         &self,
         reference: &str,
-    ) -> Result<Option<Box<dyn Validate + Send + Sync>>, ValidationError<'static>> {
+    ) -> Result<Option<Box<dyn Validate>>, ValidationError<'static>> {
         if self.is_circular_reference(reference)? {
             let uri = self
                 .resolve_reference_uri(reference)
@@ -639,14 +639,7 @@ fn collect_resource_pairs<'a>(
 }
 
 fn validate_schema(draft: Draft, schema: &Value) -> Result<(), ValidationError<'static>> {
-    let validator = match draft {
-        Draft::Draft4 => &crate::draft4::meta::VALIDATOR,
-        Draft::Draft6 => &crate::draft6::meta::VALIDATOR,
-        Draft::Draft7 => &crate::draft7::meta::VALIDATOR,
-        Draft::Draft201909 => &crate::draft201909::meta::VALIDATOR,
-        Draft::Draft202012 => &crate::draft202012::meta::VALIDATOR,
-        _ => unreachable!("Unknown draft"),
-    };
+    let validator = crate::meta::validator_for_draft(draft);
     if let Err(error) = validator.validate(schema) {
         return Err(error.to_owned());
     }

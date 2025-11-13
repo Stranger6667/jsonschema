@@ -52,7 +52,7 @@ fn compile_reference_validator<'a>(
         compiler::compile_with_alias(&ctx, resource_ref, alias)
             .map(|node| {
                 Box::new(node.clone_with_location(ctx.location().clone(), ctx.base_uri()))
-                    as Box<dyn Validate + Send + Sync>
+                    as Box<dyn Validate>
             })
             .map_err(ValidationError::to_owned),
     )
@@ -91,7 +91,7 @@ fn compile_recursive_validator<'a>(
     compiler::compile_with_alias(&ctx, resource_ref, alias)
         .map(|node| {
             Box::new(node.clone_with_location(ctx.location().clone(), ctx.base_uri()))
-                as Box<dyn Validate + Send + Sync>
+                as Box<dyn Validate>
         })
         .map_err(ValidationError::to_owned)
 }

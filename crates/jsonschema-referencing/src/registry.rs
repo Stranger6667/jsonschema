@@ -105,7 +105,8 @@ pub static SPECIFICATIONS: LazyLock<Registry> =
 ///
 /// struct ExampleRetriever;
 ///
-/// #[async_trait::async_trait]
+/// #[cfg_attr(target_family = "wasm", async_trait::async_trait(?Send))]
+/// #[cfg_attr(not(target_family = "wasm"), async_trait::async_trait)]
 /// impl AsyncRetrieve for ExampleRetriever {
 ///     async fn retrieve(
 ///         &self,
@@ -1456,7 +1457,8 @@ mod async_tests {
         }
     }
 
-    #[async_trait::async_trait]
+    #[cfg_attr(target_family = "wasm", async_trait::async_trait(?Send))]
+    #[cfg_attr(not(target_family = "wasm"), async_trait::async_trait)]
     impl crate::AsyncRetrieve for TestAsyncRetriever {
         async fn retrieve(
             &self,

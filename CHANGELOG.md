@@ -6,6 +6,8 @@
 
 - Update `fluent-uri` to `0.4.1`.
 - Bump MSRV to `1.83.0`.
+- Remove the `Send + Sync` bounds from `Retrieve`/`AsyncRetrieve` on `wasm32`.
+- Introduce the `draftX::meta::validator()` helper so meta-schema validators lazily initialize on `wasm32` (owned handles) while native targets still borrow cached statics; use the shared `jsonschema::meta::MetaValidator` handle instead of `...::meta::VALIDATOR`.
 
 ### Fixed
 

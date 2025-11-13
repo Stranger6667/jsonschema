@@ -1,5 +1,6 @@
 use crate::{
     paths::{LazyLocation, Location},
+    thread::ThreadBound,
     validator::Validate,
     ValidationError,
 };
@@ -30,7 +31,7 @@ impl Validate for CustomKeyword {
 }
 
 /// Trait that allows implementing custom validation for keywords.
-pub trait Keyword: Send + Sync {
+pub trait Keyword: ThreadBound {
     /// Validate instance according to a custom specification.
     ///
     /// A custom keyword validator may be used when a validation that cannot be
@@ -52,7 +53,7 @@ pub trait Keyword: Send + Sync {
     fn is_valid(&self, instance: &Value) -> bool;
 }
 
-pub(crate) trait KeywordFactory: Send + Sync {
+pub(crate) trait KeywordFactory: ThreadBound {
     fn init<'a>(
         &self,
         parent: &'a Map<String, Value>,
@@ -68,8 +69,7 @@ where
             &'a Value,
             Location,
         ) -> Result<Box<dyn Keyword>, ValidationError<'a>>
-        + Send
-        + Sync,
+        + ThreadBound,
 {
     fn init<'a>(
         &self,

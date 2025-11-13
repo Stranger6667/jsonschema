@@ -1,6 +1,68 @@
 # Migration Guide
 
-## Upgrading from 0.32.x to 0.33.0 note
+## Upgrading from 0.33.x to 0.34.0
+
+Meta-schema helpers moved to `draftX::meta::validator()` so `MetaValidator` exposes the same handle on native and wasm targets. Dropping the `Send + Sync` bounds for retrievers means the old `LazyLock` statics can’t store validators on `wasm32` anymore, so the new helper borrows cached validators on native platforms and builds owned copies on WebAssembly.
+
+```rust
+// Old (0.33.x)
+let validator = jsonschema::draft7::meta::VALIDATOR;
+validator.is_valid(&schema);
+
+// New (0.34.x)
+let validator = jsonschema::draft7::meta::validator();
+validator.is_valid(&schema);
+```
+
+`Retrieve` / `AsyncRetrieve` on `wasm32` no longer require `Send + Sync`.
+
+```rust
+use jsonschema::{Retrieve, Uri};
+use serde_json::Value;
+use std::error::Error;
+
+// Old (0.33.x)
+use std::sync::{Arc, Mutex};
+struct BrowserRetriever(Arc<Mutex<JsFetcher>>);
+
+impl Retrieve for BrowserRetriever {
+    fn retrieve(&self, uri: &Uri<String>) -> Result<Value, Box<dyn Error + Send + Sync>> {
+        self.0.lock().unwrap().fetch(uri)
+    }
+}
+
+// New (0.34.x)
+use std::rc::Rc;
+struct BrowserRetriever(Rc<JsFetcher>);
+
+impl Retrieve for BrowserRetriever {
+    fn retrieve(&self, uri: &Uri<String>) -> Result<Value, Box<dyn Error + Send + Sync>> {
+        self.0.fetch(uri)
+    }
+}
+```
+
+Async retrievers follow the same pattern—switch `async_trait::async_trait` to `async_trait::async_trait(?Send)` on wasm so the implementation can hold non-thread-safe types.
+
+```rust
+// Old (0.33.x)
+#[async_trait::async_trait]
+impl AsyncRetrieve for BrowserRetriever {
+    async fn retrieve(&self, uri: &Uri<String>) -> Result<Value, Box<dyn Error + Send + Sync>> {
+        self.0.lock().unwrap().fetch(uri).await
+    }
+}
+
+// New (0.34.x, wasm32)
+#[async_trait::async_trait(?Send)]
+impl AsyncRetrieve for BrowserRetriever {
+    async fn retrieve(&self, uri: &Uri<String>) -> Result<Value, Box<dyn Error + Send + Sync>> {
+        self.0.fetch(uri).await
+    }
+}
+```
+
+## Upgrading from 0.32.x to 0.33.0
 
 In 0.33 `LocationSegment::Property` now holds a `Cow<'_, str>` and `LocationSegment` is no longer `Copy`. 
 
@@ -288,4 +350,3 @@ The following items have been renamed. While the old names are still supported i
 | `JSONPointer` | `JsonPointer` |
 | `jsonschema::compile` | `jsonschema::validator_for` |
 | `CompilationOptions::compile` | `ValidationOptions::build` |
-

@@ -333,7 +333,8 @@
 //!
 //! struct HttpRetriever;
 //!
-//! #[async_trait::async_trait]
+//! #[cfg_attr(target_family = "wasm", async_trait::async_trait(?Send))]
+//! #[cfg_attr(not(target_family = "wasm"), async_trait::async_trait)]
 //! impl AsyncRetrieve for HttpRetriever {
 //!     async fn retrieve(
 //!         &self,
@@ -355,6 +356,8 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! On `wasm32` targets, use `async_trait::async_trait(?Send)` so your retriever can rely on `Rc`, `JsFuture`, or other non-thread-safe types.
 //!
 //! # Output Styles
 //!
@@ -649,27 +652,28 @@
 //! For external references in browser environments, implement a custom retriever that uses
 //! browser APIs (like `fetch`). See the [External References](#external-references) section.
 //!
-//! ## WASI (`wasm32-wasip1`)
+//! ## WASI (`wasm32-wasip1` / `wasm32-wasip2`)
 //!
-//! WASI environments have limited support due to this library's architecture:
+//! WASI environments (preview 1 and preview 2) can compile schemas and run validators, but the bundled
+//! HTTP retriever depends on `reqwest`’s blocking client, which isn't available on these targets. Use
+//! file access and custom retrievers instead.
 //!
 //! **Supported:**
-//! - Synchronous file resolution (`resolve-file` feature)
-//! - Custom synchronous retrievers (including wrapping async operations)
+//! - Blocking file resolution (`resolve-file` feature)
+//! - Custom blocking retrievers (including wrapping async operations)
+//! - Custom async retrievers via the `resolve-async` feature (for example, `jsonschema::async_options`
+//!   together with your own async runtime)
 //!
 //! **Not Supported:**
-//! - Built-in HTTP resolution - reqwest doesn't support blocking I/O on WASM
-//! - Built-in async resolution - our `AsyncRetrieve` trait requires `Send + Sync` bounds for
-//!   thread-safety in multi-threaded environments, which are incompatible with single-threaded
-//!   WASM futures
+//! - The bundled HTTP retriever (depends on `reqwest`’s blocking client)
 //!
 //! ```toml
 //! jsonschema = { version = "x.y.z", default-features = false, features = ["resolve-file"] }
 //! ```
 //!
-//! **Workaround for HTTP:** Implement a custom synchronous [`Retrieve`] that internally uses
-//! your preferred async HTTP client. Since WASI is single-threaded, you can block on futures
-//! within your retriever implementation.
+//! **Workaround for HTTP:** Implement a custom blocking or async [`Retrieve`] that uses your preferred
+//! HTTP client, and enable `resolve-async` if you want to build validators through [`async_options`]
+//! on WASI.
 
 #[cfg(all(
     target_arch = "wasm32",
@@ -678,17 +682,6 @@
 ))]
 compile_error!(
     "Features 'resolve-http' and 'resolve-file' are not supported on wasm32-unknown-unknown"
-);
-
-#[cfg(all(target_arch = "wasm32", feature = "resolve-async"))]
-compile_error!(
-    "Feature 'resolve-async' is not supported on wasm32 targets.\n\
-    \n\
-    The AsyncRetrieve trait requires Send + Sync bounds for thread-safety in multi-threaded \n\
-    environments, which are incompatible with single-threaded WASM futures.\n\
-    \n\
-    Workaround: Implement a custom synchronous Retrieve trait that wraps async operations internally.\n\
-    See the documentation for examples: https://docs.rs/jsonschema"
 );
 
 pub(crate) mod compiler;
@@ -705,6 +698,7 @@ pub mod paths;
 pub(crate) mod properties;
 pub(crate) mod regex;
 mod retriever;
+pub(crate) mod thread;
 pub mod types;
 mod validator;
 
@@ -920,7 +914,8 @@ pub fn options() -> ValidationOptions {
 /// // Custom async retriever
 /// struct MyRetriever;
 ///
-/// #[async_trait::async_trait]
+/// #[cfg_attr(target_family = "wasm", async_trait::async_trait(?Send))]
+/// #[cfg_attr(not(target_family = "wasm"), async_trait::async_trait)]
 /// impl AsyncRetrieve for MyRetriever {
 ///     async fn retrieve(&self, uri: &Uri<String>) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
 ///         // Custom retrieval logic
@@ -940,6 +935,8 @@ pub fn options() -> ValidationOptions {
 /// # }
 /// ```
 ///
+/// On `wasm32` targets, annotate your implementation with `async_trait::async_trait(?Send)` to drop the `Send + Sync` requirement.
+///
 /// See [`ValidationOptions`] for all available configuration options.
 #[cfg(feature = "resolve-async")]
 #[must_use]
@@ -952,46 +949,140 @@ pub mod meta {
     use crate::{error::ValidationError, Draft, ReferencingError};
     use serde_json::Value;
 
-    use crate::Validator;
+    pub use validator_handle::MetaValidator;
+
+    mod validator_handle {
+        use crate::Validator;
+        #[cfg(target_family = "wasm")]
+        use std::marker::PhantomData;
+        use std::ops::Deref;
+
+        /// Handle to a draft-specific meta-schema [`Validator`]. Borrows cached validators on native
+        /// targets and owns validators on `wasm32`.
+        pub struct MetaValidator<'a>(MetaValidatorInner<'a>);
+
+        // Native builds can hand out references to cached validators, while wasm targets need
+        // owned instances because the validator type does not implement `Sync` there.
+        enum MetaValidatorInner<'a> {
+            #[cfg(not(target_family = "wasm"))]
+            Borrowed(&'a Validator),
+            #[cfg(target_family = "wasm")]
+            Owned(Box<Validator>, PhantomData<&'a Validator>),
+        }
+
+        impl<'a> MetaValidator<'a> {
+            #[cfg(not(target_family = "wasm"))]
+            pub(crate) fn borrowed(validator: &'a Validator) -> Self {
+                Self(MetaValidatorInner::Borrowed(validator))
+            }
+
+            #[cfg(target_family = "wasm")]
+            pub(crate) fn owned(validator: Validator) -> Self {
+                Self(MetaValidatorInner::Owned(Box::new(validator), PhantomData))
+            }
+        }
+
+        impl<'a> AsRef<Validator> for MetaValidator<'a> {
+            fn as_ref(&self) -> &Validator {
+                match &self.0 {
+                    #[cfg(not(target_family = "wasm"))]
+                    MetaValidatorInner::Borrowed(validator) => validator,
+                    #[cfg(target_family = "wasm")]
+                    MetaValidatorInner::Owned(validator, _) => validator,
+                }
+            }
+        }
+
+        impl<'a> Deref for MetaValidator<'a> {
+            type Target = Validator;
+
+            fn deref(&self) -> &Self::Target {
+                self.as_ref()
+            }
+        }
+    }
 
     pub(crate) mod validators {
         use crate::Validator;
+        #[cfg(not(target_family = "wasm"))]
         use std::sync::LazyLock;
 
-        pub static DRAFT4_META_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
+        fn build_validator(schema: &serde_json::Value) -> Validator {
             crate::options()
                 .without_schema_validation()
-                .build(&referencing::meta::DRAFT4)
-                .expect("Draft 4 meta-schema should be valid")
-        });
+                .build(schema)
+                .expect("Meta-schema should be valid")
+        }
 
-        pub static DRAFT6_META_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
-            crate::options()
-                .without_schema_validation()
-                .build(&referencing::meta::DRAFT6)
-                .expect("Draft 6 meta-schema should be valid")
-        });
+        #[cfg(not(target_family = "wasm"))]
+        pub static DRAFT4_META_VALIDATOR: LazyLock<Validator> =
+            LazyLock::new(|| build_validator(&referencing::meta::DRAFT4));
+        #[cfg(target_family = "wasm")]
+        pub fn draft4_meta_validator() -> Validator {
+            build_validator(&referencing::meta::DRAFT4)
+        }
 
-        pub static DRAFT7_META_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
-            crate::options()
-                .without_schema_validation()
-                .build(&referencing::meta::DRAFT7)
-                .expect("Draft 7 meta-schema should be valid")
-        });
+        #[cfg(not(target_family = "wasm"))]
+        pub static DRAFT6_META_VALIDATOR: LazyLock<Validator> =
+            LazyLock::new(|| build_validator(&referencing::meta::DRAFT6));
+        #[cfg(target_family = "wasm")]
+        pub fn draft6_meta_validator() -> Validator {
+            build_validator(&referencing::meta::DRAFT6)
+        }
 
-        pub static DRAFT201909_META_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
-            crate::options()
-                .without_schema_validation()
-                .build(&referencing::meta::DRAFT201909)
-                .expect("Draft 2019-09 meta-schema should be valid")
-        });
+        #[cfg(not(target_family = "wasm"))]
+        pub static DRAFT7_META_VALIDATOR: LazyLock<Validator> =
+            LazyLock::new(|| build_validator(&referencing::meta::DRAFT7));
+        #[cfg(target_family = "wasm")]
+        pub fn draft7_meta_validator() -> Validator {
+            build_validator(&referencing::meta::DRAFT7)
+        }
 
-        pub static DRAFT202012_META_VALIDATOR: LazyLock<Validator> = LazyLock::new(|| {
-            crate::options()
-                .without_schema_validation()
-                .build(&referencing::meta::DRAFT202012)
-                .expect("Draft 2020-12 meta-schema should be valid")
-        });
+        #[cfg(not(target_family = "wasm"))]
+        pub static DRAFT201909_META_VALIDATOR: LazyLock<Validator> =
+            LazyLock::new(|| build_validator(&referencing::meta::DRAFT201909));
+        #[cfg(target_family = "wasm")]
+        pub fn draft201909_meta_validator() -> Validator {
+            build_validator(&referencing::meta::DRAFT201909)
+        }
+
+        #[cfg(not(target_family = "wasm"))]
+        pub static DRAFT202012_META_VALIDATOR: LazyLock<Validator> =
+            LazyLock::new(|| build_validator(&referencing::meta::DRAFT202012));
+        #[cfg(target_family = "wasm")]
+        pub fn draft202012_meta_validator() -> Validator {
+            build_validator(&referencing::meta::DRAFT202012)
+        }
+    }
+
+    pub(crate) fn validator_for_draft(draft: Draft) -> MetaValidator<'static> {
+        #[cfg(not(target_family = "wasm"))]
+        {
+            match draft {
+                Draft::Draft4 => MetaValidator::borrowed(&validators::DRAFT4_META_VALIDATOR),
+                Draft::Draft6 => MetaValidator::borrowed(&validators::DRAFT6_META_VALIDATOR),
+                Draft::Draft7 => MetaValidator::borrowed(&validators::DRAFT7_META_VALIDATOR),
+                Draft::Draft201909 => {
+                    MetaValidator::borrowed(&validators::DRAFT201909_META_VALIDATOR)
+                }
+                Draft::Draft202012 => {
+                    MetaValidator::borrowed(&validators::DRAFT202012_META_VALIDATOR)
+                }
+                _ => unreachable!("Unknown draft"),
+            }
+        }
+        #[cfg(target_family = "wasm")]
+        {
+            let validator = match draft {
+                Draft::Draft4 => validators::draft4_meta_validator(),
+                Draft::Draft6 => validators::draft6_meta_validator(),
+                Draft::Draft7 => validators::draft7_meta_validator(),
+                Draft::Draft201909 => validators::draft201909_meta_validator(),
+                Draft::Draft202012 => validators::draft202012_meta_validator(),
+                _ => unreachable!("Unknown draft"),
+            };
+            MetaValidator::owned(validator)
+        }
     }
 
     /// Validate a JSON Schema document against its meta-schema and get a `true` if the schema is valid
@@ -1014,7 +1105,7 @@ pub mod meta {
     /// This function panics if the meta-schema can't be detected.
     #[must_use]
     pub fn is_valid(schema: &Value) -> bool {
-        meta_validator_for(schema).is_valid(schema)
+        meta_validator_for(schema).as_ref().is_valid(schema)
     }
     /// Validate a JSON Schema document against its meta-schema and return the first error if any.
     /// Draft version is detected automatically.
@@ -1045,10 +1136,10 @@ pub mod meta {
     ///
     /// This function panics if the meta-schema can't be detected.
     pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
-        meta_validator_for(schema).validate(schema)
+        meta_validator_for(schema).as_ref().validate(schema)
     }
 
-    fn meta_validator_for(schema: &Value) -> &'static Validator {
+    fn meta_validator_for(schema: &Value) -> MetaValidator<'static> {
         try_meta_validator_for(schema).expect("Failed to detect meta schema")
     }
 
@@ -1083,7 +1174,7 @@ pub mod meta {
     ///
     /// Returns an error when the draft cannot be detected (for example, because `$schema` contains an invalid URI).
     pub fn try_is_valid(schema: &Value) -> Result<bool, ReferencingError> {
-        Ok(try_meta_validator_for(schema)?.is_valid(schema))
+        Ok(try_meta_validator_for(schema)?.as_ref().is_valid(schema))
     }
 
     /// Try to validate a JSON Schema document against its meta-schema.
@@ -1125,18 +1216,12 @@ pub mod meta {
     pub fn try_validate(
         schema: &Value,
     ) -> Result<Result<(), ValidationError<'_>>, ReferencingError> {
-        Ok(try_meta_validator_for(schema)?.validate(schema))
+        Ok(try_meta_validator_for(schema)?.as_ref().validate(schema))
     }
 
-    fn try_meta_validator_for(schema: &Value) -> Result<&'static Validator, ReferencingError> {
-        Ok(match Draft::default().detect(schema)? {
-            Draft::Draft4 => &validators::DRAFT4_META_VALIDATOR,
-            Draft::Draft6 => &validators::DRAFT6_META_VALIDATOR,
-            Draft::Draft7 => &validators::DRAFT7_META_VALIDATOR,
-            Draft::Draft201909 => &validators::DRAFT201909_META_VALIDATOR,
-            Draft::Draft202012 => &validators::DRAFT202012_META_VALIDATOR,
-            _ => unreachable!("Unknown draft"),
-        })
+    fn try_meta_validator_for(schema: &Value) -> Result<MetaValidator<'static>, ReferencingError> {
+        let draft = Draft::default().detect(schema)?;
+        Ok(validator_for_draft(draft))
     }
 }
 
@@ -1261,10 +1346,15 @@ pub mod draft4 {
 
     /// Functionality for validating JSON Schema Draft 4 documents.
     pub mod meta {
-        use crate::ValidationError;
+        use crate::{meta::MetaValidator, ValidationError};
         use serde_json::Value;
 
-        pub use crate::meta::validators::DRAFT4_META_VALIDATOR as VALIDATOR;
+        /// Returns a handle to the Draft 4 meta-schema validator. Native targets borrow cached
+        /// statics while `wasm32` builds an owned validator.
+        #[must_use]
+        pub fn validator() -> MetaValidator<'static> {
+            crate::meta::validator_for_draft(super::Draft::Draft4)
+        }
 
         /// Validate a JSON Schema document against Draft 4 meta-schema and get a `true` if the schema is valid
         /// and `false` otherwise.
@@ -1283,7 +1373,7 @@ pub mod draft4 {
         #[must_use]
         #[inline]
         pub fn is_valid(schema: &Value) -> bool {
-            VALIDATOR.is_valid(schema)
+            validator().as_ref().is_valid(schema)
         }
 
         /// Validate a JSON Schema document against Draft 4 meta-schema and return the first error if any.
@@ -1311,7 +1401,7 @@ pub mod draft4 {
         /// Returns the first [`ValidationError`] describing why the schema violates the Draft 4 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
-            VALIDATOR.validate(schema)
+            validator().as_ref().validate(schema)
         }
     }
 }
@@ -1437,10 +1527,15 @@ pub mod draft6 {
 
     /// Functionality for validating JSON Schema Draft 6 documents.
     pub mod meta {
-        use crate::ValidationError;
+        use crate::{meta::MetaValidator, ValidationError};
         use serde_json::Value;
 
-        pub use crate::meta::validators::DRAFT6_META_VALIDATOR as VALIDATOR;
+        /// Returns a handle to the Draft 6 meta-schema validator. Native targets borrow cached
+        /// statics while `wasm32` builds an owned validator.
+        #[must_use]
+        pub fn validator() -> MetaValidator<'static> {
+            crate::meta::validator_for_draft(super::Draft::Draft6)
+        }
 
         /// Validate a JSON Schema document against Draft 6 meta-schema and get a `true` if the schema is valid
         /// and `false` otherwise.
@@ -1459,7 +1554,7 @@ pub mod draft6 {
         #[must_use]
         #[inline]
         pub fn is_valid(schema: &Value) -> bool {
-            VALIDATOR.is_valid(schema)
+            validator().as_ref().is_valid(schema)
         }
 
         /// Validate a JSON Schema document against Draft 6 meta-schema and return the first error if any.
@@ -1487,7 +1582,7 @@ pub mod draft6 {
         /// Returns the first [`ValidationError`] describing why the schema violates the Draft 6 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
-            VALIDATOR.validate(schema)
+            validator().as_ref().validate(schema)
         }
     }
 }
@@ -1613,10 +1708,15 @@ pub mod draft7 {
 
     /// Functionality for validating JSON Schema Draft 7 documents.
     pub mod meta {
-        use crate::ValidationError;
+        use crate::{meta::MetaValidator, ValidationError};
         use serde_json::Value;
 
-        pub use crate::meta::validators::DRAFT7_META_VALIDATOR as VALIDATOR;
+        /// Returns a handle to the Draft 7 meta-schema validator. Native targets borrow cached
+        /// statics while `wasm32` builds an owned validator.
+        #[must_use]
+        pub fn validator() -> MetaValidator<'static> {
+            crate::meta::validator_for_draft(super::Draft::Draft7)
+        }
 
         /// Validate a JSON Schema document against Draft 7 meta-schema and get a `true` if the schema is valid
         /// and `false` otherwise.
@@ -1635,7 +1735,7 @@ pub mod draft7 {
         #[must_use]
         #[inline]
         pub fn is_valid(schema: &Value) -> bool {
-            VALIDATOR.is_valid(schema)
+            validator().as_ref().is_valid(schema)
         }
 
         /// Validate a JSON Schema document against Draft 7 meta-schema and return the first error if any.
@@ -1663,7 +1763,7 @@ pub mod draft7 {
         /// Returns the first [`ValidationError`] describing why the schema violates the Draft 7 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
-            VALIDATOR.validate(schema)
+            validator().as_ref().validate(schema)
         }
     }
 }
@@ -1789,10 +1889,15 @@ pub mod draft201909 {
 
     /// Functionality for validating JSON Schema Draft 2019-09 documents.
     pub mod meta {
-        use crate::ValidationError;
+        use crate::{meta::MetaValidator, ValidationError};
         use serde_json::Value;
 
-        pub use crate::meta::validators::DRAFT201909_META_VALIDATOR as VALIDATOR;
+        /// Returns a handle to the Draft 2019-09 meta-schema validator. Native targets borrow cached
+        /// statics while `wasm32` builds an owned validator.
+        #[must_use]
+        pub fn validator() -> MetaValidator<'static> {
+            crate::meta::validator_for_draft(super::Draft::Draft201909)
+        }
         /// Validate a JSON Schema document against Draft 2019-09 meta-schema and get a `true` if the schema is valid
         /// and `false` otherwise.
         ///
@@ -1810,7 +1915,7 @@ pub mod draft201909 {
         #[must_use]
         #[inline]
         pub fn is_valid(schema: &Value) -> bool {
-            VALIDATOR.is_valid(schema)
+            validator().as_ref().is_valid(schema)
         }
 
         /// Validate a JSON Schema document against Draft 2019-09 meta-schema and return the first error if any.
@@ -1838,7 +1943,7 @@ pub mod draft201909 {
         /// Returns the first [`ValidationError`] describing why the schema violates the Draft 2019-09 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
-            VALIDATOR.validate(schema)
+            validator().as_ref().validate(schema)
         }
     }
 }
@@ -1967,10 +2072,15 @@ pub mod draft202012 {
 
     /// Functionality for validating JSON Schema Draft 2020-12 documents.
     pub mod meta {
-        use crate::ValidationError;
+        use crate::{meta::MetaValidator, ValidationError};
         use serde_json::Value;
 
-        pub use crate::meta::validators::DRAFT202012_META_VALIDATOR as VALIDATOR;
+        /// Returns a handle to the Draft 2020-12 meta-schema validator. Native targets borrow
+        /// cached statics while `wasm32` builds an owned validator.
+        #[must_use]
+        pub fn validator() -> MetaValidator<'static> {
+            crate::meta::validator_for_draft(super::Draft::Draft202012)
+        }
 
         /// Validate a JSON Schema document against Draft 2020-12 meta-schema and get a `true` if the schema is valid
         /// and `false` otherwise.
@@ -1989,7 +2099,7 @@ pub mod draft202012 {
         #[must_use]
         #[inline]
         pub fn is_valid(schema: &Value) -> bool {
-            VALIDATOR.is_valid(schema)
+            validator().as_ref().is_valid(schema)
         }
 
         /// Validate a JSON Schema document against Draft 2020-12 meta-schema and return the first error if any.
@@ -2017,7 +2127,7 @@ pub mod draft202012 {
         /// Returns the first [`ValidationError`] describing why the schema violates the Draft 2020-12 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
-            VALIDATOR.validate(schema)
+            validator().as_ref().validate(schema)
         }
     }
 }
@@ -2456,16 +2566,17 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "resolve-async"))]
+#[cfg(all(test, feature = "resolve-async", not(target_family = "wasm")))]
 mod async_tests {
     use referencing::Resource;
-    use std::collections::HashMap;
+    use std::{collections::HashMap, sync::Arc};
 
     use serde_json::json;
 
     use crate::{AsyncRetrieve, Draft, Uri};
 
     /// Mock async retriever for testing
+    #[derive(Clone)]
     struct TestRetriever {
         schemas: HashMap<String, serde_json::Value>,
     }
@@ -2488,7 +2599,8 @@ mod async_tests {
         }
     }
 
-    #[async_trait::async_trait]
+    #[cfg_attr(target_family = "wasm", async_trait::async_trait(?Send))]
+    #[cfg_attr(not(target_family = "wasm"), async_trait::async_trait)]
     impl AsyncRetrieve for TestRetriever {
         async fn retrieve(
             &self,
@@ -2651,5 +2763,30 @@ mod async_tests {
 
         assert!(validator.is_valid(&json!(42)));
         assert!(!validator.is_valid(&json!("abc")));
+    }
+
+    #[tokio::test]
+    async fn test_async_build_future_is_send() {
+        let schema = Arc::new(json!({
+            "$ref": "https://example.com/user.json"
+        }));
+        let retriever = TestRetriever::new();
+
+        let handle = tokio::spawn({
+            let schema = Arc::clone(&schema);
+            let retriever = retriever.clone();
+            async move {
+                crate::async_options()
+                    .with_retriever(retriever)
+                    .build(&schema)
+                    .await
+            }
+        });
+
+        let validator = handle.await.unwrap().unwrap();
+        assert!(validator.is_valid(&json!({
+            "name": "John Doe",
+            "age": 30
+        })));
     }
 }

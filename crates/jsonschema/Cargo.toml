@@ -59,6 +59,7 @@ uuid-simd = { version = "0.8", default-features = false, features = ["std", "det
 
 [dev-dependencies]
 test-case = "3"
+futures = { version = "0.3", default-features = false, features = ["std"] }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
 wasm-bindgen-test = "0.3.55"

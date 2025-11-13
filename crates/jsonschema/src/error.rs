@@ -37,6 +37,7 @@
 //! ```
 use crate::{
     paths::Location,
+    thread::ThreadBound,
     types::{JsonType, JsonTypeSet},
 };
 use serde_json::{Map, Number, Value};
@@ -78,7 +79,15 @@ pub struct ValidationError<'a> {
 ///     }
 /// }
 /// ```
-pub type ErrorIterator<'a> = Box<dyn Iterator<Item = ValidationError<'a>> + Sync + Send + 'a>;
+#[doc(hidden)]
+pub trait ValidationErrorIterator<'a>: Iterator<Item = ValidationError<'a>> + ThreadBound {}
+
+impl<'a, T> ValidationErrorIterator<'a> for T where
+    T: Iterator<Item = ValidationError<'a>> + ThreadBound
+{
+}
+
+pub type ErrorIterator<'a> = Box<dyn ValidationErrorIterator<'a> + 'a>;
 
 // Empty iterator means no error happened
 pub(crate) fn no_error<'a>() -> ErrorIterator<'a> {

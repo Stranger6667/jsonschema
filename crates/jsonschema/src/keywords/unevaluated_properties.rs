@@ -9,13 +9,14 @@ use crate::{
     compiler, ecma,
     node::SchemaNode,
     paths::{LazyLocation, Location},
+    thread::ThreadBound,
     validator::Validate,
     ValidationError, ValidationOptions,
 };
 
 use super::CompilationResult;
 
-pub(crate) trait PropertiesFilter: Send + Sync + Sized + 'static {
+pub(crate) trait PropertiesFilter: ThreadBound + Sized + 'static {
     fn new<'a>(
         ctx: &'a compiler::Context<'_>,
         parent: &'a Map<String, Value>,

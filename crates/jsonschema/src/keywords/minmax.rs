@@ -4,6 +4,7 @@ use crate::{
     ext::numeric,
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
+    thread::ThreadBound,
     types::JsonType,
     validator::Validate,
 };
@@ -28,7 +29,7 @@ macro_rules! define_numeric_keywords {
 
             impl<T> Validate for $struct_name<T>
             where
-                T: Copy + Send + Sync,
+                T: Copy + ThreadBound,
                 u64: NumCmp<T>,
                 i64: NumCmp<T>,
                 f64: NumCmp<T>,
