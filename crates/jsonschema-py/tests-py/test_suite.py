@@ -1,53 +1,47 @@
 import json
 import os
-import random
-import socket
-import subprocess
-import sys
 from pathlib import Path
-from time import sleep
-from urllib.parse import urlparse
 
 import pytest
 
 import jsonschema_rs
 
 TEST_SUITE_PATH = Path(__file__).parent.parent.parent / "jsonschema/tests/suite"
-EXPONENTIAL_BASE = 2
-JITTER = (0.0, 0.5)
-INITIAL_RETRY_DELAY = 0.05
-MAX_WAITING_RETRIES = 10
+REMOTE_PREFIXES = ("http://localhost:1234", "https://localhost:1234")
 
 
-def is_available(url: str) -> bool:
-    """Whether the `url` is available for connection or not."""
-    parsed = urlparse(url)
-    try:
-        with socket.create_connection((parsed.hostname, parsed.port or 80)):
-            return True
-    except ConnectionError:
-        return False
+def load_remote_documents():
+    remotes = TEST_SUITE_PATH / "remotes"
+    documents = {}
+    for root, _, files in os.walk(remotes):
+        for filename in files:
+            path = Path(root) / filename
+            relative = path.relative_to(remotes).as_posix()
+            contents = path.read_text(encoding="utf-8")
+            for prefix in REMOTE_PREFIXES:
+                documents[f"{prefix}/{relative}"] = contents
+    return documents
 
 
-def wait_until_responsive(url: str, retries: int = MAX_WAITING_RETRIES, delay: float = INITIAL_RETRY_DELAY) -> None:
-    while retries > 0:
-        if is_available(url):
-            return
-        retries -= 1
-        delay *= EXPONENTIAL_BASE
-        delay += random.uniform(*JITTER)
-        sleep(delay)
-    raise RuntimeError(f"{url} is not available")
+REMOTE_DOCUMENTS = load_remote_documents()
 
 
-@pytest.fixture(scope="session", autouse=True)
-def mock_server():
-    process = subprocess.Popen(args=[sys.executable, TEST_SUITE_PATH / "bin/jsonschema_suite", "serve"])
-    wait_until_responsive("http://127.0.0.1:1234")
-    try:
-        yield
-    finally:
-        process.terminate()
+def make_testsuite_retriever():
+    localhost_alias = "http://127.0.0.1:1234/"
+
+    def _retriever(uri: str):
+        normalized = uri
+        if normalized.startswith(localhost_alias):
+            normalized = f"http://localhost:1234/{normalized[len(localhost_alias):]}"
+        try:
+            return json.loads(REMOTE_DOCUMENTS[normalized])
+        except KeyError as exc:
+            raise ValueError(f"Unknown remote schema: {uri}") from exc
+
+    return _retriever
+
+
+TESTSUITE_RETRIEVER = make_testsuite_retriever()
 
 
 SUPPORTED_DRAFTS = ("4", "6", "7", "2019-09", "2020-12")
@@ -62,8 +56,7 @@ NOT_SUPPORTED_CASES = {
 
 def load_file(path):
     with open(path, mode="r", encoding="utf-8") as fd:
-        raw = fd.read().replace("https://localhost:1234", "http://127.0.0.1:1234")
-        for block in json.loads(raw):
+        for block in json.load(fd):
             yield block
 
 
@@ -98,7 +91,7 @@ def test_draft(filename, draft, schema, instance, expected, description, is_opti
             "2019-09": jsonschema_rs.Draft201909Validator,
             "2020-12": jsonschema_rs.Draft202012Validator,
         }[draft]
-        kwargs = {}
+        kwargs = {"retriever": TESTSUITE_RETRIEVER}
         if is_optional:
             kwargs["validate_formats"] = True
         result = cls(schema, **kwargs).is_valid(instance)

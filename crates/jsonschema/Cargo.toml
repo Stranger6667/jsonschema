@@ -60,6 +60,7 @@ uuid-simd = { version = "0.8", default-features = false, features = ["std", "det
 [dev-dependencies]
 test-case = "3"
 futures = { version = "0.3", default-features = false, features = ["std"] }
+testsuite = { package = "jsonschema-testsuite", path = "../jsonschema-testsuite" }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
 wasm-bindgen-test = "0.3.55"
@@ -68,10 +69,8 @@ wasm-bindgen-test = "0.3.55"
 benchmark = { path = "../benchmark/" }
 codspeed-criterion-compat = { version = "4.1", default-features = false }
 criterion = { version = "0.7", default-features = false }
-mockito = "1.5"
 tempfile = "3.13.0"
 test-case = "3"
-testsuite = { package = "jsonschema-testsuite", path = "../jsonschema-testsuite" }
 tokio = { version = "1", features = ["macros", "rt"] }
 
 [lints.clippy]

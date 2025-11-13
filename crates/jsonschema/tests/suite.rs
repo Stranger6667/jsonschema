@@ -1,6 +1,8 @@
-#[cfg(not(target_arch = "wasm32"))]
 mod tests {
     use jsonschema::{Draft, PatternOptions};
+    #[cfg(not(target_arch = "wasm32"))]
+    use std::env;
+    #[cfg(not(target_arch = "wasm32"))]
     use std::fs;
     use testsuite::{suite, Test};
 
@@ -33,9 +35,13 @@ mod tests {
             "draft2019-09" | "draft2020-12" => {}
             _ => panic!("Unsupported draft"),
         }
+        if should_skip_draft(test.draft) {
+            return;
+        }
         if test.is_optional {
             options = options.should_validate_formats(true);
         }
+        options = options.with_retriever(testsuite_retriever());
 
         enum RegexEngine {
             Regex,
@@ -159,6 +165,7 @@ mod tests {
         serde_json::to_string_pretty(v).expect("Failed to format JSON")
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_instance_path() {
         let expectations: serde_json::Value =
@@ -172,11 +179,12 @@ mod tests {
                 let schema = &data[suite_id]["schema"];
                 let validator = jsonschema::options()
                     .with_draft(Draft::Draft7)
+                    .with_retriever(testsuite_retriever())
                     .build(schema)
                     .unwrap_or_else(|_| {
                         panic!(
-                            "Valid schema. File: {filename}; Suite ID: {suite_id}; Schema: {schema}",
-                        )
+                    "Valid schema. File: {filename}; Suite ID: {suite_id}; Schema: {schema}",
+                )
                     });
                 for test_data in item["tests"].as_array().expect("Valid array") {
                     let test_id = test_data["id"].as_u64().expect("Is integer") as usize;
@@ -205,5 +213,26 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn should_skip_draft(draft: &str) -> bool {
+        if let Some(filter) = allowed_draft_filter() {
+            for entry in filter.split(',') {
+                if entry.trim().eq_ignore_ascii_case(draft) {
+                    return false;
+                }
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    fn allowed_draft_filter() -> Option<String> {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Ok(value) = env::var("JSONSCHEMA_SUITE_DRAFT_FILTER") {
+            return Some(value);
+        }
+        option_env!("JSONSCHEMA_SUITE_DRAFT_FILTER").map(str::to_string)
     }
 }

@@ -74,7 +74,8 @@ fn generate_nested_structure(
 
                         quote! {
                             #ignore_attr
-                            #[test]
+                            #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+                            #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test::wasm_bindgen_test)]
                             fn #test_ident() {
                                 let test = testsuite::Test {
                                     draft: #draft,

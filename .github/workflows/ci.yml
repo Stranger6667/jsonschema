@@ -110,6 +110,8 @@ jobs:
           tool: 'wasm-bindgen@0.2.105'
 
       - name: Run tests
+        env:
+          JSONSCHEMA_SUITE_DRAFT_FILTER: draft2020-12
         run: |
           if [ -n "${{ matrix.features }}" ]; then
             cargo test --target ${{ matrix.target }} --no-default-features --features "${{ matrix.features }}" -p jsonschema
