@@ -58,10 +58,11 @@ impl<R: RegexEngine> Validate for PatternPropertiesValidator<R> {
         location: &LazyLocation,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
-            for (re, node) in &self.patterns {
-                for (key, value) in item {
+            for (key, value) in item {
+                let key_location = location.push(key);
+                for (re, node) in &self.patterns {
                     if re.is_match(key).unwrap_or(false) {
-                        node.validate(value, &location.push(key))?;
+                        node.validate(value, &key_location)?;
                     }
                 }
             }

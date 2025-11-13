@@ -61,7 +61,8 @@ impl Validate for AdditionalItemsObjectValidator {
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             for (idx, item) in items.iter().enumerate().skip(self.items_count) {
-                self.node.validate(item, &location.push(idx))?;
+                let item_location = location.push(idx);
+                self.node.validate(item, &item_location)?;
             }
         }
         Ok(())

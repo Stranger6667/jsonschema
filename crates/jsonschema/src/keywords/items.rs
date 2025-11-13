@@ -62,7 +62,8 @@ impl Validate for ItemsArrayValidator {
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             for (idx, (item, node)) in items.iter().zip(self.items.iter()).enumerate() {
-                node.validate(item, &location.push(idx))?;
+                let item_location = location.push(idx);
+                node.validate(item, &item_location)?;
             }
         }
         Ok(())
@@ -111,7 +112,8 @@ impl Validate for ItemsObjectValidator {
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             for (idx, item) in items.iter().enumerate() {
-                self.node.validate(item, &location.push(idx))?;
+                let item_location = location.push(idx);
+                self.node.validate(item, &item_location)?;
             }
         }
         Ok(())
@@ -197,8 +199,8 @@ impl Validate for ItemsObjectSkipPrefixValidator {
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             for (idx, item) in items.iter().skip(self.skip_prefix).enumerate() {
-                self.node
-                    .validate(item, &location.push(idx + self.skip_prefix))?;
+                let item_location = location.push(idx + self.skip_prefix);
+                self.node.validate(item, &item_location)?;
             }
         }
         Ok(())
