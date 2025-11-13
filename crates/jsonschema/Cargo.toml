@@ -96,3 +96,7 @@ name = "location"
 [[bench]]
 harness = false
 name = "unevaluated_properties"
+
+[[bench]]
+harness = false
+name = "unevaluated_items"
