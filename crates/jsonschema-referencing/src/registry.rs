@@ -1,18 +1,17 @@
 use std::{
-    collections::{hash_map::Entry, HashSet, VecDeque},
-    hash::{Hash, Hasher},
+    collections::{hash_map::Entry, VecDeque},
+    num::NonZeroUsize,
     pin::Pin,
     sync::{Arc, LazyLock},
 };
 
-use ahash::{AHashMap, AHashSet, AHasher};
+use ahash::{AHashMap, AHashSet};
 use fluent_uri::Uri;
 use serde_json::Value;
 
 use crate::{
     anchors::{AnchorKey, AnchorKeyRef},
     cache::{SharedUriCache, UriCache},
-    hasher::BuildNoHashHasher,
     list::List,
     meta::{self, metas_for_draft},
     resource::{unescape_segment, InnerResourcePtr, JsonSchemaResource},
@@ -616,9 +615,27 @@ fn process_meta_schemas(
     Ok(())
 }
 
+#[derive(Hash, Eq, PartialEq)]
+struct ReferenceKey {
+    base_ptr: NonZeroUsize,
+    reference: String,
+}
+
+impl ReferenceKey {
+    fn new(base: &Arc<Uri<String>>, reference: &str) -> Self {
+        Self {
+            base_ptr: NonZeroUsize::new(Arc::as_ptr(base) as usize)
+                .expect("Arc pointer should never be null"),
+            reference: reference.to_owned(),
+        }
+    }
+}
+
+type ReferenceTracker = AHashSet<ReferenceKey>;
+
 struct ProcessingState {
     queue: VecDeque<(Arc<Uri<String>>, InnerResourcePtr)>,
-    seen: HashSet<u64, BuildNoHashHasher>,
+    seen: ReferenceTracker,
     external: AHashSet<(String, Uri<String>)>,
     scratch: String,
     refers_metaschemas: bool,
@@ -628,7 +645,7 @@ impl ProcessingState {
     fn new() -> Self {
         Self {
             queue: VecDeque::with_capacity(32),
-            seen: HashSet::with_hasher(BuildNoHashHasher::default()),
+            seen: ReferenceTracker::new(),
             external: AHashSet::new(),
             scratch: String::new(),
             refers_metaschemas: false,
@@ -879,10 +896,10 @@ async fn process_resources_async(
 }
 
 fn collect_external_resources(
-    base: &Uri<String>,
+    base: &Arc<Uri<String>>,
     contents: &Value,
     collected: &mut AHashSet<(String, Uri<String>)>,
-    seen: &mut HashSet<u64, BuildNoHashHasher>,
+    seen: &mut ReferenceTracker,
     resolution_cache: &mut UriCache,
     scratch: &mut String,
     refers_metaschemas: &mut bool,
@@ -903,10 +920,7 @@ fn collect_external_resources(
                     *refers_metaschemas = true;
                 }
             } else if $reference != "#" {
-                let mut hasher = AHasher::default();
-                (base.as_str(), $reference).hash(&mut hasher);
-                let hash = hasher.finish();
-                if seen.insert(hash) {
+                if mark_reference(seen, base, $reference) {
                     // Handle local references separately as they may have nested references to external resources
                     if $reference.starts_with('#') {
                         if let Some(referenced) =
@@ -924,7 +938,7 @@ fn collect_external_resources(
                         }
                     } else {
                         let resolved = if base.has_fragment() {
-                            let mut base_without_fragment = base.clone();
+                            let mut base_without_fragment = base.as_ref().clone();
                             base_without_fragment.set_fragment(None);
 
                             let (path, fragment) = match $reference.split_once('#') {
@@ -951,7 +965,9 @@ fn collect_external_resources(
                             }
                             resolved
                         } else {
-                            (*resolution_cache.resolve_against(&base.borrow(), $reference)?).clone()
+                            (*resolution_cache
+                                .resolve_against(&base.borrow(), $reference)?)
+                            .clone()
                         };
 
                         collected.insert(($reference.to_string(), resolved));
@@ -984,6 +1000,10 @@ fn collect_external_resources(
         }
     }
     Ok(())
+}
+
+fn mark_reference(seen: &mut ReferenceTracker, base: &Arc<Uri<String>>, reference: &str) -> bool {
+    seen.insert(ReferenceKey::new(base, reference))
 }
 
 /// Look up a value by a JSON Pointer.

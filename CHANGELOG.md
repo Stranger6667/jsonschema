@@ -4,6 +4,7 @@
 
 ### Changed
 
+- `referencing`: URI caching now avoids hash collisions and reduces lock contention.
 - Update `fluent-uri` to `0.4.1`.
 - Bump MSRV to `1.83.0`.
 - Drop the `Send + Sync` bounds from `Retrieve`/`AsyncRetrieve` on `wasm32`.

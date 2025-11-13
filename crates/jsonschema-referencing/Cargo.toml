@@ -25,6 +25,7 @@ futures = { version = "0.3.31", optional = true }
 parking_lot = "0.12.3"
 percent-encoding = "2.3.1"
 serde_json.workspace = true
+hashbrown = "0.16"
 
 [dev-dependencies]
 benchmark = { path = "../benchmark/" }
