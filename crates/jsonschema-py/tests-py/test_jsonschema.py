@@ -629,10 +629,8 @@ def test_custom_meta_schema_unregistered():
     schema = {
         "$schema": "http://example.com/meta/custom-schema",
         "type": "object",
-        "properties": {
-            "name": {"type": "string"}
-        },
-        "required": ["name"]
+        "properties": {"name": {"type": "string"}},
+        "required": ["name"],
     }
 
     with pytest.raises(ValidationError, match="Unknown meta-schema"):
@@ -645,10 +643,7 @@ def test_custom_meta_schema_registered():
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "Core schema definition",
         "type": "object",
-        "allOf": [
-            {"$ref": "#/$defs/editable"},
-            {"$ref": "#/$defs/core"}
-        ],
+        "allOf": [{"$ref": "#/$defs/editable"}, {"$ref": "#/$defs/core"}],
         "properties": {
             "properties": {
                 "type": "object",
@@ -658,15 +653,12 @@ def test_custom_meta_schema_registered():
                         "properties": {
                             "type": {
                                 "type": "string",
-                                "enum": ["array", "boolean", "integer", "number", "object", "string", "null"]
+                                "enum": ["array", "boolean", "integer", "number", "object", "string", "null"],
                             }
-                        }
+                        },
                     }
                 },
-                "propertyNames": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                }
+                "propertyNames": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
             }
         },
         "unevaluatedProperties": False,
@@ -680,19 +672,19 @@ def test_custom_meta_schema_registered():
                     "type": {"const": "object"},
                     "title": {"type": "string"},
                     "description": {"type": "string"},
-                    "additionalProperties": {"type": "boolean", "const": False}
+                    "additionalProperties": {"type": "boolean", "const": False},
                 },
-                "required": ["$id", "$schema", "type"]
+                "required": ["$id", "$schema", "type"],
             },
             "editable": {
                 "type": "object",
                 "properties": {
                     "creationDate": {"type": "string", "format": "date-time"},
-                    "updateDate": {"type": "string", "format": "date-time"}
+                    "updateDate": {"type": "string", "format": "date-time"},
                 },
-                "required": ["creationDate"]
-            }
-        }
+                "required": ["creationDate"],
+            },
+        },
     }
 
     element_schema = {
@@ -701,18 +693,149 @@ def test_custom_meta_schema_registered():
         "title": "Element",
         "description": "An element",
         "creationDate": "2024-12-31T12:31:53+01:00",
-        "properties": {
-            "value": {"type": "string"}
-        },
-        "type": "object"
+        "properties": {"value": {"type": "string"}},
+        "type": "object",
     }
 
-    registry = Registry([
-        ("http://example.com/meta/schema", meta_schema),
-        ("http://example.com/schemas/element", element_schema)
-    ])
+    registry = Registry(
+        [("http://example.com/meta/schema", meta_schema), ("http://example.com/schemas/element", element_schema)]
+    )
 
     validator = validator_for(element_schema, registry=registry)
 
     assert validator.is_valid({"value": "test string"})
     assert not validator.is_valid({"value": 123})
+
+
+@pytest.mark.parametrize(
+    "schema, instance, expected",
+    [
+        # minimum with large integers
+        ({"minimum": 18446744073709551616}, 18446744073709551617, True),
+        ({"minimum": 18446744073709551616}, 18446744073709551615, False),
+        # maximum with large integers
+        ({"maximum": 18446744073709551616}, 18446744073709551615, True),
+        ({"maximum": 18446744073709551616}, 18446744073709551617, False),
+        # exclusiveMinimum with large integers
+        ({"exclusiveMinimum": 18446744073709551616}, 18446744073709551617, True),
+        ({"exclusiveMinimum": 18446744073709551616}, 18446744073709551616, False),
+        # exclusiveMaximum with large integers
+        ({"exclusiveMaximum": 18446744073709551616}, 18446744073709551615, True),
+        ({"exclusiveMaximum": 18446744073709551616}, 18446744073709551616, False),
+        # negative large integers
+        ({"minimum": -9223372036854775809}, -9223372036854775808, True),
+        ({"minimum": -9223372036854775809}, -9223372036854775810, False),
+        # multipleOf with large integers
+        ({"multipleOf": 18446744073709551616}, 36893488147419103232, True),
+        ({"multipleOf": 18446744073709551616}, 18446744073709551617, False),
+    ],
+)
+def test_large_integer_validation(schema, instance, expected):
+    assert is_valid(schema, instance) == expected
+
+
+@pytest.mark.parametrize(
+    ["schema", "instance", "expected_instance_in_error", "expected_schema_in_error"],
+    [
+        # const with large integer - both values should be exact
+        (
+            {"const": 18446744073709551616},
+            18446744073709551617,
+            "18446744073709551617",
+            "18446744073709551616",
+        ),
+        # const with negative large integer
+        (
+            {"const": -9223372036854775809},
+            -9223372036854775808,
+            "-9223372036854775808",
+            "-9223372036854775809",
+        ),
+        # minimum with large integer - both should be exact
+        (
+            {"minimum": 18446744073709551616},
+            18446744073709551615,
+            "18446744073709551615",
+            "18446744073709551616",
+        ),
+        # maximum with large integer
+        (
+            {"maximum": 18446744073709551616},
+            18446744073709551617,
+            "18446744073709551617",
+            "18446744073709551616",
+        ),
+        # multipleOf with large integers
+        (
+            {"multipleOf": 18446744073709551616},
+            18446744073709551617,
+            "18446744073709551617",
+            "18446744073709551616",
+        ),
+        # very large integer beyond u64 range
+        (
+            {"const": 99999999999999999999999999999999999999},
+            99999999999999999999999999999999999998,
+            "99999999999999999999999999999999999998",
+            "99999999999999999999999999999999999999",
+        ),
+    ],
+)
+def test_large_number_precision_in_errors(schema, instance, expected_instance_in_error, expected_schema_in_error):
+    with pytest.raises(ValidationError) as exc:
+        validate(schema, instance)
+
+    error_msg = str(exc.value)
+    # Both the instance value and schema value should appear with full precision
+    assert expected_instance_in_error in error_msg, (
+        f"Instance value '{expected_instance_in_error}' not found in error message: {error_msg}"
+    )
+    assert expected_schema_in_error in error_msg, (
+        f"Schema value '{expected_schema_in_error}' not found in error message: {error_msg}"
+    )
+
+
+@pytest.mark.parametrize(
+    "schema, instance",
+    [
+        ({"minimum": 18446744073709551616}, 18446744073709551617),
+        ({"multipleOf": 18446744073709551616}, 36893488147419103232),
+        ({"const": 99999999999999999999}, 99999999999999999999),
+        ({"multipleOf": 0.1}, 0.3),
+    ],
+)
+def test_large_number_iter_errors(schema, instance):
+    errors = list(iter_errors(schema, instance))
+    assert len(errors) == 0
+
+
+@pytest.mark.parametrize(
+    "schema, instance",
+    [
+        ({"minimum": 18446744073709551616}, 18446744073709551615),
+        ({"multipleOf": 18446744073709551616}, 18446744073709551617),
+        ({"const": 99999999999999999999}, 99999999999999999998),
+    ],
+)
+def test_large_number_validation_error_attributes(schema, instance):
+    errors = list(iter_errors(schema, instance))
+    assert len(errors) == 1
+    error = errors[0]
+    assert error.instance == instance
+    assert isinstance(error.message, str)
+    assert len(error.message) > 0
+
+
+@pytest.mark.parametrize(
+    "instance, expected",
+    [
+        (0.01, True),
+        (0.02, True),
+        (1.23, True),
+        (0.015, False),
+    ],
+)
+def test_float_precision_from_string_schema(instance, expected):
+    # Schema values are no longer converted to f64, maintaining better precision
+    validator = validator_for('{"multipleOf": 0.01}')
+    assert validator.is_valid(instance) == expected

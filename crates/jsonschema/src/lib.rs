@@ -629,6 +629,31 @@
 //!   opt in by calling `.should_validate_formats(true)` on your options builder. If you omit
 //!   it, all `format` keywords are ignored at validation time.
 //!
+//! # Arbitrary Precision Numbers
+//!
+//! Enable the `arbitrary-precision` feature for exact validation of numbers beyond standard numeric ranges:
+//!
+//! ```toml
+//! jsonschema = { version = "x.y.z", features = ["arbitrary-precision"] }
+//! ```
+//!
+//! This provides:
+//! - Arbitrarily large integers (e.g., `18446744073709551616`)
+//! - Exact decimal precision without `f64` rounding (e.g., `0.1`, `0.3`)
+//!
+//! **Important**: Precision is only preserved when parsing JSON from strings. Using Rust literals
+//! or the `json!()` macro converts numbers to `f64`, losing precision.
+//!
+//! ```rust
+//! # use jsonschema::Validator;
+//! // Precision preserved - parsed from JSON string
+//! let schema = serde_json::from_str(r#"{"minimum": 0.1}"#)?;
+//! let instance = serde_json::from_str("0.3")?;
+//! let validator = Validator::new(&schema)?;
+//! assert!(validator.is_valid(&instance));
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
 //! # WebAssembly support
 //!
 //! `jsonschema` supports WebAssembly with different capabilities based on the target platform:

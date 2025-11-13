@@ -58,10 +58,6 @@ The following drafts are supported:
 
 You can check the current status on the [Bowtie Report](https://bowtie.report/#/implementations/rust-jsonschema).
 
-## Limitations
-
-- No support for arbitrary precision numbers
-
 ## Installation
 
 To install `jsonschema-rs` via `pip` run the following command:

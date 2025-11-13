@@ -5,6 +5,7 @@
 ### Added
 
 - Support for custom meta-schemas. Schemas with custom `$schema` URIs can now be used by registering their meta-schemas in the `Registry` via `jsonschema::options().with_registry()`. [#664](https://github.com/Stranger6667/jsonschema/issues/664)
+- `arbitrary-precision` feature for exact numeric validation of large integers and decimals beyond standard floating-point limits. [#103](https://github.com/Stranger6667/jsonschema/issues/103)
 
 ### Changed
 
@@ -21,7 +22,6 @@
 - `required`: short-circuit when the instance object has fewer properties than required keys.
 
 ## [0.34.0] - 2025-11-14
-
 ### Changed
 
 - **BREAKING**: `BasicOutput` and `Annotations` no longer have lifetime parameters. Update type annotations from `BasicOutput<'a>` to `BasicOutput` and `Annotations<'a>` to `Annotations`.

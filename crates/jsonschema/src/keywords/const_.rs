@@ -119,7 +119,6 @@ impl Validate for ConstNullValidator {
 struct ConstNumberValidator {
     // This is saved in order to ensure that the error message is not altered by precision loss
     original_value: Number,
-    value: f64,
     location: Location,
 }
 
@@ -128,9 +127,6 @@ impl ConstNumberValidator {
     pub(crate) fn compile(original_value: &Number, location: Location) -> CompilationResult<'_> {
         Ok(Box::new(ConstNumberValidator {
             original_value: original_value.clone(),
-            value: original_value
-                .as_f64()
-                .expect("A JSON number will always be representable as f64"),
             location,
         }))
     }
@@ -156,7 +152,7 @@ impl Validate for ConstNumberValidator {
 
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::Number(item) = instance {
-            (self.value - item.as_f64().expect("Always representable as f64")).abs() < f64::EPSILON
+            crate::ext::cmp::equal_numbers(item, &self.original_value)
         } else {
             false
         }
@@ -276,5 +272,34 @@ mod tests {
     #[test_case(&json!({"const": ""}), &json!(7), "/const")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
         tests_util::assert_schema_location(schema, instance, expected);
+    }
+
+    // Tests for arbitrary-precision const validation
+    #[cfg(feature = "arbitrary-precision")]
+    mod arbitrary_precision {
+        use crate::tests_util;
+        use serde_json::Value;
+        use test_case::test_case;
+
+        fn parse_json(json: &str) -> Value {
+            serde_json::from_str(json).unwrap()
+        }
+
+        #[test_case(r#"{"const": 18446744073709551617}"#, "18446744073709551617", true; "large int exact match")]
+        #[test_case(r#"{"const": 18446744073709551617}"#, "18446744073709551616", false; "large int different by one")]
+        #[test_case(r#"{"const": 18446744073709551617}"#, "18446744073709551618", false; "large int different by one above")]
+        #[test_case(r#"{"const": -9223372036854775809}"#, "-9223372036854775809", true; "large negative int match")]
+        #[test_case(r#"{"const": -9223372036854775809}"#, "-9223372036854775808", false; "large negative int different")]
+        #[test_case(r#"{"const": 0.1}"#, "0.1", true; "decimal exact match")]
+        #[test_case(r#"{"const": 0.1}"#, "0.10000000000000001", false; "decimal precision difference")]
+        fn const_arbitrary_precision(schema_json: &str, instance_json: &str, expected_valid: bool) {
+            let schema = parse_json(schema_json);
+            let instance = parse_json(instance_json);
+            if expected_valid {
+                tests_util::is_valid(&schema, &instance);
+            } else {
+                tests_util::is_not_valid(&schema, &instance);
+            }
+        }
     }
 }

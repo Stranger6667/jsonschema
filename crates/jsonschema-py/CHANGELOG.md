@@ -8,6 +8,7 @@
 - `registry` parameter to `meta.is_valid()` and `meta.validate()` for validating schemas against custom meta-schemas.
 - Type stubs for the `meta` module.
 - PyPy 3.11 support. [#309](https://github.com/Stranger6667/jsonschema/issues/309)
+- Support for arbitrarily large integers. [#103](https://github.com/Stranger6667/jsonschema/issues/103)
 
 ### Changed
 
@@ -21,13 +22,13 @@
 ### Performance
 
 - `required`: short-circuit when the instance object has fewer properties than required keys.
+- Arbitrary precision support is always enabled. Performance impact is negligible for most schemas, with ~2x slowdown only for number-heavy instances (e.g., GeoJSON).
 
 ## [0.34.0] - 2025-11-14
 
 ### Added
 
 - Python 3.14 support.
-
 ### Changed
 
 - Update `pyo3` to `0.27`.

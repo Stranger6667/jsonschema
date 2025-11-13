@@ -50,6 +50,57 @@ fn referencing_error_type(py: Python<'_>) -> PyResult<Bound<'_, PyType>> {
     Ok(exception_class.cast_into::<PyType>()?)
 }
 
+/// Convert a serde_json::Value to a Python object, properly handling arbitrary precision numbers
+fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
+    match value {
+        serde_json::Value::Null => Ok(py.None()),
+        serde_json::Value::Bool(b) => Ok(pyo3::types::PyBool::new(py, *b)
+            .to_owned()
+            .into_any()
+            .unbind()),
+        serde_json::Value::Number(n) => {
+            // With arbitrary precision, try to parse as integer first, then fall back to float
+            if let Some(i) = n.as_i64() {
+                Ok(pyo3::types::PyInt::new(py, i).into_any().unbind())
+            } else if let Some(u) = n.as_u64() {
+                Ok(pyo3::types::PyInt::new(py, u).into_any().unbind())
+            } else {
+                // For values that don't fit in i64/u64, check the string representation
+                let s = n.as_str();
+                let is_float = s.bytes().any(|b| b == b'.' || b == b'e' || b == b'E');
+                if is_float {
+                    if let Some(f) = n.as_f64() {
+                        Ok(pyo3::types::PyFloat::new(py, f).into_any().unbind())
+                    } else {
+                        Err(pyo3::exceptions::PyValueError::new_err(
+                            "Invalid float value",
+                        ))
+                    }
+                } else {
+                    // Large integer - parse from string representation
+                    let int_type = py.get_type::<pyo3::types::PyInt>();
+                    int_type.call1((s,)).map(|obj| obj.into_any().unbind())
+                }
+            }
+        }
+        serde_json::Value::String(s) => Ok(PyString::new(py, s).into_any().unbind()),
+        serde_json::Value::Array(arr) => {
+            let py_list = PyList::empty(py);
+            for item in arr {
+                py_list.append(value_to_python(py, item)?)?;
+            }
+            Ok(py_list.into_any().unbind())
+        }
+        serde_json::Value::Object(obj) => {
+            let py_dict = PyDict::new(py);
+            for (k, v) in obj {
+                py_dict.set_item(k, value_to_python(py, v)?)?;
+            }
+            Ok(py_dict.into_any().unbind())
+        }
+    }
+}
+
 struct ValidationErrorArgs {
     message: String,
     verbose_message: String,
@@ -119,7 +170,7 @@ enum ValidationErrorKind {
     Minimum { limit: Py<PyAny> },
     MinLength { limit: u64 },
     MinProperties { limit: u64 },
-    MultipleOf { multiple_of: f64 },
+    MultipleOf { multiple_of: Py<PyAny> },
     Not { schema: Py<PyAny> },
     OneOfMultipleValid { context: Py<PyList> },
     OneOfNotValid { context: Py<PyList> },
@@ -160,7 +211,7 @@ impl ValidationErrorKind {
             }
             jsonschema::error::ValidationErrorKind::Constant { expected_value } => {
                 ValidationErrorKind::Constant {
-                    expected_value: pythonize::pythonize(py, &expected_value)?.unbind(),
+                    expected_value: value_to_python(py, &expected_value)?,
                 }
             }
             jsonschema::error::ValidationErrorKind::Contains => ValidationErrorKind::Contains {},
@@ -174,16 +225,16 @@ impl ValidationErrorKind {
                 ValidationErrorKind::Custom { message }
             }
             jsonschema::error::ValidationErrorKind::Enum { options } => ValidationErrorKind::Enum {
-                options: pythonize::pythonize(py, &options)?.unbind(),
+                options: value_to_python(py, &options)?,
             },
             jsonschema::error::ValidationErrorKind::ExclusiveMaximum { limit } => {
                 ValidationErrorKind::ExclusiveMaximum {
-                    limit: pythonize::pythonize(py, &limit)?.unbind(),
+                    limit: value_to_python(py, &limit)?,
                 }
             }
             jsonschema::error::ValidationErrorKind::ExclusiveMinimum { limit } => {
                 ValidationErrorKind::ExclusiveMinimum {
-                    limit: pythonize::pythonize(py, &limit)?.unbind(),
+                    limit: value_to_python(py, &limit)?,
                 }
             }
             jsonschema::error::ValidationErrorKind::FalseSchema => {
@@ -202,7 +253,7 @@ impl ValidationErrorKind {
             }
             jsonschema::error::ValidationErrorKind::Maximum { limit } => {
                 ValidationErrorKind::Maximum {
-                    limit: pythonize::pythonize(py, &limit)?.unbind(),
+                    limit: value_to_python(py, &limit)?,
                 }
             }
             jsonschema::error::ValidationErrorKind::MaxLength { limit } => {
@@ -216,7 +267,7 @@ impl ValidationErrorKind {
             }
             jsonschema::error::ValidationErrorKind::Minimum { limit } => {
                 ValidationErrorKind::Minimum {
-                    limit: pythonize::pythonize(py, &limit)?.unbind(),
+                    limit: value_to_python(py, &limit)?,
                 }
             }
             jsonschema::error::ValidationErrorKind::MinLength { limit } => {
@@ -226,10 +277,12 @@ impl ValidationErrorKind {
                 ValidationErrorKind::MinProperties { limit }
             }
             jsonschema::error::ValidationErrorKind::MultipleOf { multiple_of } => {
-                ValidationErrorKind::MultipleOf { multiple_of }
+                ValidationErrorKind::MultipleOf {
+                    multiple_of: value_to_python(py, &multiple_of)?,
+                }
             }
             jsonschema::error::ValidationErrorKind::Not { schema } => ValidationErrorKind::Not {
-                schema: pythonize::pythonize(py, &schema)?.unbind(),
+                schema: value_to_python(py, &schema)?,
             },
             jsonschema::error::ValidationErrorKind::OneOfMultipleValid { context } => {
                 ValidationErrorKind::OneOfMultipleValid {
@@ -265,7 +318,7 @@ impl ValidationErrorKind {
             }
             jsonschema::error::ValidationErrorKind::Required { property } => {
                 ValidationErrorKind::Required {
-                    property: pythonize::pythonize(py, &property)?.unbind(),
+                    property: value_to_python(py, &property)?,
                 }
             }
             jsonschema::error::ValidationErrorKind::Type { kind } => ValidationErrorKind::Type {
@@ -388,7 +441,7 @@ fn into_validation_error_args(
         .collect::<Result<Vec<_>, _>>()?;
     let instance_path = PyList::new(py, elements)?.unbind();
     let kind = ValidationErrorKind::try_new(py, error.kind, mask)?;
-    let instance = pythonize::pythonize(py, error.instance.as_ref())?.unbind();
+    let instance = value_to_python(py, error.instance.as_ref())?;
     Ok((
         message,
         verbose_message,

@@ -172,7 +172,7 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Run tests
+      - name: Run tests with all features
         run: |
           cargo llvm-cov --no-report --all-features --workspace \
             --exclude jsonschema-py \
@@ -186,7 +186,10 @@ jobs:
             --exclude jsonschema-referencing-testsuite-internal \
             --exclude testsuite-common
 
-      - name: Generate coverage reports
+      - name: Run tests without arbitrary-precision
+        run: cargo llvm-cov --no-report -p jsonschema
+
+      - name: Generate merged coverage report
         run: cargo llvm-cov report --lcov --output-path lcov.info
 
       - name: Upload coverage to Codecov
@@ -222,7 +225,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: hynek/setup-cached-uv@v2
+      - uses: astral-sh/setup-uv@v7
 
       - run: uvx ruff check python tests-py
         working-directory: crates/jsonschema-py
@@ -246,7 +249,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: hynek/setup-cached-uv@v2
+      - uses: astral-sh/setup-uv@v7
 
       - run: uv python install ${{ matrix.python-version }}
 
@@ -282,6 +285,7 @@ jobs:
           cache-all-crates: "true"
 
       - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo clippy --all-targets --features arbitrary-precision -p jsonschema -- -D warnings
       - run: cargo clippy --all-targets --all-features -- -D warnings
         working-directory: profiler
       - run: cargo clippy --all-targets --all-features -- -D warnings
@@ -342,7 +346,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: hynek/setup-cached-uv@v2
+      - uses: astral-sh/setup-uv@v7
 
       - run: uv python install "3.12"
 

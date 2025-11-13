@@ -16,7 +16,7 @@ name = "jsonschema_rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-jsonschema = { path = "../jsonschema/" }
+jsonschema = { path = "../jsonschema/", features = ["arbitrary-precision"] }
 pyo3 = { version = "0.27", features = ["extension-module", "abi3-py310"] }
 pyo3-built = "0.6"
 pythonize = "0.27"

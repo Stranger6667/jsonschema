@@ -13,7 +13,7 @@ use serde::{
 };
 
 use crate::types;
-use std::borrow::Cow;
+use std::{borrow::Cow, str::FromStr};
 
 #[cfg(not(Py_LIMITED_API))]
 use pyo3::ffi::{
@@ -214,31 +214,6 @@ pub fn get_object_type(object_type: *mut pyo3::ffi::PyTypeObject) -> ObjectType 
     }
 }
 
-macro_rules! bail_on_integer_conversion_error {
-    ($value:expr) => {
-        if !$value.is_null() {
-            let repr = unsafe { pyo3::ffi::PyObject_Str($value) };
-            let mut size = 0;
-            let ptr = unsafe { PyUnicode_AsUTF8AndSize(repr, &raw mut size) };
-            return if !ptr.is_null() {
-                let slice = unsafe {
-                    std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                        ptr.cast::<u8>(),
-                        size as usize,
-                    ))
-                };
-                let message = String::from(slice);
-                unsafe { Py_DECREF(repr) };
-                Err(ser::Error::custom(message))
-            } else {
-                Err(ser::Error::custom(
-                    "Internal Error: Failed to convert exception to string",
-                ))
-            };
-        }
-    };
-}
-
 macro_rules! tri {
     ($expr:expr) => {
         match $expr {
@@ -246,6 +221,43 @@ macro_rules! tri {
             Err(err) => return Err(err),
         }
     };
+}
+
+/// Helper function to serialize a large integer that doesn't fit in i64
+/// by converting it to a string and parsing as serde_json::Number
+fn serialize_large_int<S>(
+    object: *mut pyo3::ffi::PyObject,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let str_obj = unsafe { pyo3::ffi::PyObject_Str(object) };
+    if str_obj.is_null() {
+        return Err(ser::Error::custom(
+            "Failed to convert large integer to string",
+        ));
+    }
+    let mut str_size: pyo3::ffi::Py_ssize_t = 0;
+    let ptr = unsafe { pyo3::ffi::PyUnicode_AsUTF8AndSize(str_obj, &raw mut str_size) };
+    if ptr.is_null() {
+        unsafe { pyo3::ffi::Py_DecRef(str_obj) };
+        return Err(ser::Error::custom("Failed to get UTF-8 representation"));
+    }
+    let slice = unsafe {
+        std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+            ptr.cast::<u8>(),
+            str_size as usize,
+        ))
+    };
+    // With arbitrary_precision, serde_json can handle this as a number
+    let result = if let Ok(num) = serde_json::Number::from_str(slice) {
+        serializer.serialize_some(&num)
+    } else {
+        Err(ser::Error::custom("Failed to parse large integer"))
+    };
+    unsafe { pyo3::ffi::Py_DecRef(str_obj) };
+    result
 }
 
 /// Convert a Python value to `serde_json::Value`
@@ -272,7 +284,11 @@ impl Serialize for SerializePyObject {
                     #[cfg(Py_3_12)]
                     {
                         let exception = unsafe { pyo3::ffi::PyErr_GetRaisedException() };
-                        bail_on_integer_conversion_error!(exception);
+                        // Check if this is actually an overflow error
+                        if !exception.is_null() {
+                            unsafe { pyo3::ffi::PyErr_Clear() };
+                            return serialize_large_int(self.object, serializer);
+                        }
                     };
                     #[cfg(not(Py_3_12))]
                     {
@@ -286,7 +302,22 @@ impl Serialize for SerializePyObject {
                                 &raw mut ptraceback,
                             );
                         }
-                        bail_on_integer_conversion_error!(pvalue);
+                        // Check if this is actually an overflow error
+                        let is_overflow = !pvalue.is_null();
+                        if is_overflow {
+                            unsafe {
+                                if !ptype.is_null() {
+                                    pyo3::ffi::Py_DecRef(ptype);
+                                }
+                                if !pvalue.is_null() {
+                                    pyo3::ffi::Py_DecRef(pvalue);
+                                }
+                                if !ptraceback.is_null() {
+                                    pyo3::ffi::Py_DecRef(ptraceback);
+                                }
+                            };
+                            return serialize_large_int(self.object, serializer);
+                        }
                     };
                 }
                 serializer.serialize_i64(value)

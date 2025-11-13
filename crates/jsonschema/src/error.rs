@@ -151,7 +151,12 @@ pub enum ValidationErrorKind {
     /// Not enough properties in an object.
     MinProperties { limit: u64 },
     /// When some number is not a multiple of another number.
-    MultipleOf { multiple_of: f64 },
+    MultipleOf {
+        #[cfg(feature = "arbitrary-precision")]
+        multiple_of: Value,
+        #[cfg(not(feature = "arbitrary-precision"))]
+        multiple_of: f64,
+    },
     /// Negated schema failed validation.
     Not { schema: Value },
     /// The given schema is valid under more than one of the schemas listed in the 'oneOf' keyword.
@@ -587,6 +592,22 @@ impl<'a> ValidationError<'a> {
             schema_path: location,
         }
     }
+    #[cfg(feature = "arbitrary-precision")]
+    pub(crate) fn multiple_of(
+        location: Location,
+        instance_path: Location,
+        instance: &'a Value,
+        multiple_of: Value,
+    ) -> ValidationError<'a> {
+        ValidationError {
+            instance_path,
+            instance: Cow::Borrowed(instance),
+            kind: ValidationErrorKind::MultipleOf { multiple_of },
+            schema_path: location,
+        }
+    }
+
+    #[cfg(not(feature = "arbitrary-precision"))]
     pub(crate) const fn multiple_of(
         location: Location,
         instance_path: Location,

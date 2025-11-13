@@ -32,7 +32,7 @@ def make_testsuite_retriever():
     def _retriever(uri: str):
         normalized = uri
         if normalized.startswith(localhost_alias):
-            normalized = f"http://localhost:1234/{normalized[len(localhost_alias):]}"
+            normalized = f"http://localhost:1234/{normalized[len(localhost_alias) :]}"
         try:
             return json.loads(REMOTE_DOCUMENTS[normalized])
         except KeyError as exc:
@@ -43,14 +43,9 @@ def make_testsuite_retriever():
 
 TESTSUITE_RETRIEVER = make_testsuite_retriever()
 
-
 SUPPORTED_DRAFTS = ("4", "6", "7", "2019-09", "2020-12")
 NOT_SUPPORTED_CASES = {
     "4": ("bignum.json",),
-    "6": ("bignum.json",),
-    "7": ("bignum.json",),
-    "2019-09": ("bignum.json",),
-    "2020-12": ("bignum.json",),
 }
 
 
