@@ -6,6 +6,7 @@ use crate::{
         self,
         custom::{CustomKeyword, KeywordFactory},
         format::Format,
+        unevaluated_items::PendingItemsValidators,
         unevaluated_properties::PendingPropertyValidators,
         BoxedValidator, BuiltinKeyword, Keyword,
     },
@@ -27,6 +28,11 @@ use std::{borrow::Cow, cell::RefCell, iter::once, rc::Rc, sync::Arc};
 const DEFAULT_SCHEME: &str = "json-schema";
 pub(crate) const DEFAULT_BASE_URI: &str = "json-schema:///";
 
+/// Type alias for shared cache maps in compiler state.
+type SharedCache<K, V> = Rc<RefCell<AHashMap<K, V>>>;
+/// Type alias for shared sets in compiler state.
+type SharedSet<T> = Rc<RefCell<AHashSet<T>>>;
+
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub(crate) struct LocationCacheKey {
     pub(crate) base_uri: Arc<Uri<String>>,
@@ -47,6 +53,19 @@ impl PropertyValidatorsPendingKey {
     }
 }
 
+#[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
+struct ItemsValidatorsPendingKey {
+    schema_ptr: usize,
+}
+
+impl ItemsValidatorsPendingKey {
+    fn new(schema: &Map<String, Value>) -> Self {
+        Self {
+            schema_ptr: schema as *const _ as usize,
+        }
+    }
+}
+
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub(crate) struct AliasCacheKey {
     uri: Arc<Uri<String>>,
@@ -56,15 +75,18 @@ pub(crate) struct AliasCacheKey {
 /// Shared caches reused across every `Context` derived from a schema root.
 #[derive(Debug, Clone)]
 struct SharedContextState {
-    seen: Rc<RefCell<AHashSet<Arc<Uri<String>>>>>,
-    location_nodes: Rc<RefCell<AHashMap<LocationCacheKey, SchemaNode>>>,
-    alias_nodes: Rc<RefCell<AHashMap<AliasCacheKey, SchemaNode>>>,
-    pending_nodes: Rc<RefCell<AHashMap<LocationCacheKey, PendingSchemaNode>>>,
-    alias_placeholders: Rc<RefCell<AHashMap<Arc<Uri<String>>, PendingSchemaNode>>>,
-    pending_property_validators: Rc<RefCell<AHashMap<LocationCacheKey, PendingPropertyValidators>>>,
+    seen: SharedSet<Arc<Uri<String>>>,
+    location_nodes: SharedCache<LocationCacheKey, SchemaNode>,
+    alias_nodes: SharedCache<AliasCacheKey, SchemaNode>,
+    pending_nodes: SharedCache<LocationCacheKey, PendingSchemaNode>,
+    alias_placeholders: SharedCache<Arc<Uri<String>>, PendingSchemaNode>,
+    pending_property_validators: SharedCache<LocationCacheKey, PendingPropertyValidators>,
     pending_property_validators_by_schema:
-        Rc<RefCell<AHashMap<PropertyValidatorsPendingKey, PendingPropertyValidators>>>,
-    pattern_cache: Rc<RefCell<AHashMap<Arc<str>, PatternCacheEntry>>>,
+        SharedCache<PropertyValidatorsPendingKey, PendingPropertyValidators>,
+    pending_items_validators: SharedCache<LocationCacheKey, PendingItemsValidators>,
+    pending_items_validators_by_schema:
+        SharedCache<ItemsValidatorsPendingKey, PendingItemsValidators>,
+    pattern_cache: SharedCache<Arc<str>, PatternCacheEntry>,
     uri_buffer: Rc<RefCell<String>>,
 }
 
@@ -85,6 +107,8 @@ impl SharedContextState {
             alias_placeholders: Rc::new(RefCell::new(AHashMap::new())),
             pending_property_validators: Rc::new(RefCell::new(AHashMap::new())),
             pending_property_validators_by_schema: Rc::new(RefCell::new(AHashMap::new())),
+            pending_items_validators: Rc::new(RefCell::new(AHashMap::new())),
+            pending_items_validators_by_schema: Rc::new(RefCell::new(AHashMap::new())),
             pattern_cache: Rc::new(RefCell::new(AHashMap::new())),
             uri_buffer: Rc::new(RefCell::new(String::new())),
         }
@@ -417,6 +441,33 @@ impl<'a> Context<'a> {
             .pending_property_validators_by_schema
             .borrow_mut()
             .remove(&key);
+    }
+
+    fn items_schema_key(schema: &Map<String, Value>) -> ItemsValidatorsPendingKey {
+        ItemsValidatorsPendingKey::new(schema)
+    }
+
+    pub(crate) fn get_pending_items_validators_for_schema(
+        &self,
+        schema: &Map<String, Value>,
+    ) -> Option<PendingItemsValidators> {
+        let key = Self::items_schema_key(schema);
+        self.shared
+            .pending_items_validators_by_schema
+            .borrow()
+            .get(&key)
+            .cloned()
+    }
+
+    pub(crate) fn get_pending_items_validators(
+        &self,
+        key: &LocationCacheKey,
+    ) -> Option<PendingItemsValidators> {
+        self.shared
+            .pending_items_validators
+            .borrow()
+            .get(key)
+            .cloned()
     }
 
     pub(crate) fn cached_alias_placeholder(

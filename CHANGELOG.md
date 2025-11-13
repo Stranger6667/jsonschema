@@ -23,6 +23,7 @@
 - Large schema compilation is significantly faster. [#755](https://github.com/Stranger6667/jsonschema/issues/755)
 - `unevaluatedProperties` validation is 25-35% faster through optimized property marking and early-exit paths.
 - `unevaluatedProperties` memory usage drastically reduced by eliminating redundant registry clones during compilation.
+- `unevaluatedItems` validation is ~10% faster through early-exit optimizations and eliminating redundant validations in combinators.
 
 ### Removed
 

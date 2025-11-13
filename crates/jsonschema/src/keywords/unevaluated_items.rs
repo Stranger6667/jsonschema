@@ -1,61 +1,536 @@
+//! Implementation of the `unevaluatedItems` keyword.
+//!
+//! This keyword validates array items that were not evaluated by other keywords like
+//! `items`, `prefixItems`, `contains`, or nested schemas in combinators (`allOf`, `anyOf`, `oneOf`),
+//! conditionals, and references.
+//!
+//! The implementation eagerly compiles a recursive `ItemsValidators` structure during
+//! schema compilation, using `Shared<OnceLock>` for circular reference handling.
 use referencing::Draft;
 use serde_json::{Map, Value};
+use std::sync::OnceLock;
 
 use crate::{
     compiler,
     node::SchemaNode,
     paths::{LazyLocation, Location},
-    thread::ThreadBound,
+    thread::Shared,
     validator::Validate,
     ValidationError,
 };
 
 use super::CompilationResult;
 
-pub(crate) trait ItemsFilter: ThreadBound + Sized + 'static {
-    fn new<'a>(
-        ctx: &'a compiler::Context<'a>,
-        parent: &'a Map<String, Value>,
-    ) -> Result<Self, ValidationError<'a>>;
-    fn unevaluated(&self) -> Option<&SchemaNode>;
+/// Lazy items validators that are compiled on first access.
+/// Used for $recursiveRef and circular references to handle cycles during compilation.
+pub(crate) type PendingItemsValidators = Shared<OnceLock<ItemsValidators>>;
 
-    fn is_valid(&self, instance: &Value) -> bool {
-        self.unevaluated()
-            .as_ref()
-            .is_some_and(|u| u.is_valid(instance))
+/// Holds compiled validators for items evaluation in unevaluatedItems.
+/// This structure is built during schema compilation and used during validation.
+#[derive(Debug, Clone)]
+pub(crate) struct ItemsValidators {
+    /// Validator from "unevaluatedItems" keyword itself
+    unevaluated: Option<SchemaNode>,
+    /// Validator from "contains" keyword
+    contains: Option<SchemaNode>,
+    /// Reference validators from "$ref" keyword
+    ref_: Option<RefValidator>,
+    /// Reference validators from "$dynamicRef" keyword (Draft 2020-12+)
+    dynamic_ref: Option<Box<ItemsValidators>>,
+    /// Validators from "$recursiveRef" keyword (Draft 2019-09 only)
+    recursive_ref: Option<PendingItemsValidators>,
+    /// Items limit - for Draft 2019-09 "items" keyword behavior
+    /// If present, marks first N items as evaluated
+    items_limit: Option<usize>,
+    /// Items schema present - for Draft 2020-12+ "items" keyword
+    /// If true, marks ALL items as evaluated
+    items_all: bool,
+    /// Prefix items count - from "prefixItems" keyword
+    prefix_items: Option<usize>,
+    /// Conditional validators from "if/then/else" keywords
+    conditional: Option<Box<ConditionalValidators>>,
+    /// Validators from "allOf" keyword
+    all_of: Option<Vec<(SchemaNode, ItemsValidators)>>,
+    /// Validators from "anyOf" keyword
+    any_of: Option<Vec<(SchemaNode, ItemsValidators)>>,
+    /// Validators from "oneOf" keyword
+    one_of: Option<Vec<(SchemaNode, ItemsValidators)>>,
+}
+
+/// Reference validator - wraps ItemsValidators
+#[derive(Debug, Clone)]
+struct RefValidator(Box<ItemsValidators>);
+
+/// Conditional validators from "if/then/else" keywords
+#[derive(Debug, Clone)]
+struct ConditionalValidators {
+    condition: SchemaNode,
+    if_: ItemsValidators,
+    then_: Option<ItemsValidators>,
+    else_: Option<ItemsValidators>,
+}
+
+impl ItemsValidators {
+    /// Mark all items that are evaluated by this schema.
+    fn mark_evaluated_indexes(&self, instance: &Value, indexes: &mut Vec<bool>) {
+        // Early return optimization: if items marks ALL items, no need to check anything else
+        if self.items_all {
+            // Draft 2020-12+: items keyword marks ALL items as evaluated
+            for idx in indexes.iter_mut() {
+                *idx = true;
+            }
+            return;
+        }
+
+        // Handle $ref first
+        if let Some(ref_) = &self.ref_ {
+            ref_.0.mark_evaluated_indexes(instance, indexes);
+        }
+
+        // Handle $recursiveRef (Draft 2019-09 only)
+        if let Some(recursive_ref) = &self.recursive_ref {
+            if let Some(validators) = recursive_ref.get() {
+                validators.mark_evaluated_indexes(instance, indexes);
+            }
+        }
+
+        // Handle $dynamicRef (Draft 2020-12+)
+        if let Some(dynamic_ref) = &self.dynamic_ref {
+            dynamic_ref.mark_evaluated_indexes(instance, indexes);
+        }
+
+        // Mark items based on items/prefixItems keywords
+        if let Some(limit) = self.items_limit {
+            // Draft 2019-09: items (as array) marks first N items
+            for idx in indexes.iter_mut().take(limit) {
+                *idx = true;
+            }
+        }
+
+        if let Some(limit) = self.prefix_items {
+            // prefixItems marks first N items
+            for idx in indexes.iter_mut().take(limit) {
+                *idx = true;
+            }
+        }
+
+        // Early exit if all items are already evaluated
+        if indexes.iter().all(|&evaluated| evaluated) {
+            return;
+        }
+
+        // Process contains and unevaluatedItems
+        if let Value::Array(items) = instance {
+            for (item, is_evaluated) in items.iter().zip(indexes.iter_mut()) {
+                if *is_evaluated {
+                    continue;
+                }
+                // contains marks items that match
+                if let Some(validator) = &self.contains {
+                    if validator.is_valid(item) {
+                        *is_evaluated = true;
+                        continue;
+                    }
+                }
+                // unevaluatedItems itself can mark items
+                if let Some(validator) = &self.unevaluated {
+                    if validator.is_valid(item) {
+                        *is_evaluated = true;
+                    }
+                }
+            }
+        }
+
+        // Handle conditional
+        if let Some(conditional) = &self.conditional {
+            conditional.mark_evaluated_indexes(instance, indexes);
+        }
+
+        // Handle allOf - each schema that validates successfully marks items
+        if let Some(all_of) = &self.all_of {
+            for (validator, item_validators) in all_of {
+                if validator.is_valid(instance) {
+                    item_validators.mark_evaluated_indexes(instance, indexes);
+                }
+            }
+        }
+
+        // Handle anyOf - each schema that validates successfully marks items
+        if let Some(any_of) = &self.any_of {
+            for (validator, item_validators) in any_of {
+                if validator.is_valid(instance) {
+                    item_validators.mark_evaluated_indexes(instance, indexes);
+                }
+            }
+        }
+
+        // Handle oneOf - only mark if exactly one schema validates
+        // Optimization: cache validation results to avoid double validation
+        if let Some(one_of) = &self.one_of {
+            let results: Vec<_> = one_of.iter().map(|(v, _)| v.is_valid(instance)).collect();
+
+            if results.iter().filter(|&&valid| valid).count() == 1 {
+                for ((_, validators), &is_valid) in one_of.iter().zip(&results) {
+                    if is_valid {
+                        validators.mark_evaluated_indexes(instance, indexes);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl ConditionalValidators {
+    fn mark_evaluated_indexes(&self, instance: &Value, indexes: &mut Vec<bool>) {
+        if self.condition.is_valid(instance) {
+            self.if_.mark_evaluated_indexes(instance, indexes);
+            if let Some(then_) = &self.then_ {
+                then_.mark_evaluated_indexes(instance, indexes);
+            }
+        } else if let Some(else_) = &self.else_ {
+            else_.mark_evaluated_indexes(instance, indexes);
+        }
+    }
+}
+
+/// Compile all items validators for a schema.
+///
+/// Recursively builds the ItemsValidators tree by examining all keywords that
+/// can evaluate items. Handles circular references via pending nodes cached
+/// by location and schema pointer.
+fn compile_items_validators<'a>(
+    ctx: &compiler::Context<'_>,
+    parent: &'a Map<String, Value>,
+) -> Result<ItemsValidators, ValidationError<'a>> {
+    let unevaluated = compile_unevaluated(ctx, parent)?;
+    let contains = compile_contains(ctx, parent)?;
+    let ref_ = compile_ref(ctx, parent)?;
+    let dynamic_ref = compile_dynamic_ref(ctx, parent)?;
+    let recursive_ref = compile_recursive_ref(ctx, parent)?;
+
+    // Determine items behavior based on draft
+    let (items_limit, items_all) = compile_items(ctx, parent)?;
+    let prefix_items = compile_prefix_items(ctx, parent)?;
+
+    let conditional = compile_conditional(ctx, parent)?;
+    let all_of = compile_all_of(ctx, parent)?;
+    let any_of = compile_any_of(ctx, parent)?;
+    let one_of = compile_one_of(ctx, parent)?;
+
+    Ok(ItemsValidators {
+        unevaluated,
+        contains,
+        ref_,
+        dynamic_ref,
+        recursive_ref,
+        items_limit,
+        items_all,
+        prefix_items,
+        conditional,
+        all_of,
+        any_of,
+        one_of,
+    })
+}
+
+fn compile_unevaluated<'a>(
+    ctx: &compiler::Context<'_>,
+    parent: &'a Map<String, Value>,
+) -> Result<Option<SchemaNode>, ValidationError<'a>> {
+    if let Some(subschema) = parent.get("unevaluatedItems") {
+        let unevaluated_ctx = ctx.new_at_location("unevaluatedItems");
+        Ok(Some(
+            compiler::compile(&unevaluated_ctx, unevaluated_ctx.as_resource_ref(subschema))
+                .map_err(ValidationError::to_owned)?,
+        ))
+    } else {
+        Ok(None)
+    }
+}
+
+fn compile_contains<'a>(
+    ctx: &compiler::Context<'_>,
+    parent: &'a Map<String, Value>,
+) -> Result<Option<SchemaNode>, ValidationError<'a>> {
+    if let Some(subschema) = parent.get("contains") {
+        let contains_ctx = ctx.new_at_location("contains");
+        Ok(Some(
+            compiler::compile(&contains_ctx, contains_ctx.as_resource_ref(subschema))
+                .map_err(ValidationError::to_owned)?,
+        ))
+    } else {
+        Ok(None)
+    }
+}
+
+fn compile_ref<'a>(
+    ctx: &compiler::Context<'_>,
+    parent: &'a Map<String, Value>,
+) -> Result<Option<RefValidator>, ValidationError<'a>> {
+    if let Some(Value::String(reference)) = parent.get("$ref") {
+        let resolved = ctx.lookup(reference)?;
+        if let Value::Object(subschema) = resolved.contents() {
+            let validators =
+                compile_items_validators(ctx, subschema).map_err(ValidationError::to_owned)?;
+            return Ok(Some(RefValidator(Box::new(validators))));
+        }
+    }
+    Ok(None)
+}
+
+fn compile_dynamic_ref<'a>(
+    ctx: &compiler::Context<'_>,
+    parent: &'a Map<String, Value>,
+) -> Result<Option<Box<ItemsValidators>>, ValidationError<'a>> {
+    if let Some(Value::String(reference)) = parent.get("$dynamicRef") {
+        let resolved = ctx.lookup(reference)?;
+        if let Value::Object(subschema) = resolved.contents() {
+            let validators =
+                compile_items_validators(ctx, subschema).map_err(ValidationError::to_owned)?;
+            return Ok(Some(Box::new(validators)));
+        }
+    }
+    Ok(None)
+}
+
+fn compile_recursive_ref<'a>(
+    ctx: &compiler::Context<'_>,
+    parent: &Map<String, Value>,
+) -> Result<Option<PendingItemsValidators>, ValidationError<'a>> {
+    if !parent.contains_key("$recursiveRef") {
+        return Ok(None);
     }
 
-    fn mark_evaluated_indexes(&self, instance: &Value, indexes: &mut Vec<bool>);
+    // For $recursiveRef, we need to resolve the reference and check if it's already being compiled
+    let resolved = ctx
+        .lookup_recursive_reference()
+        .map_err(ValidationError::from)?;
+
+    // Create context for the resolved reference and check its cache key
+    let (contents, resolver, draft) = resolved.into_inner();
+    if let Value::Object(subschema) = &contents {
+        let vocabularies = ctx.registry.find_vocabularies(draft, contents);
+        let ref_ctx =
+            ctx.with_resolver_and_draft(resolver, draft, vocabularies, ctx.location().clone());
+
+        // Check if we're already compiling this schema (circular reference)
+        if let Some(pending) = ref_ctx.get_pending_items_validators_for_schema(subschema) {
+            return Ok(Some(pending));
+        }
+
+        let cache_key = ref_ctx.location_cache_key();
+        if let Some(pending) = ref_ctx.get_pending_items_validators(&cache_key) {
+            // Circular reference detected - return the pending node
+            return Ok(Some(pending));
+        }
+
+        // Not circular, compile normally
+        let validators =
+            compile_items_validators(&ref_ctx, subschema).map_err(ValidationError::to_owned)?;
+        let pending = Shared::new(OnceLock::new());
+        let _ = pending.set(validators);
+        Ok(Some(pending))
+    } else {
+        Ok(None)
+    }
 }
 
-pub(crate) struct UnevaluatedItemsValidator<F: ItemsFilter> {
+fn compile_items<'a>(
+    ctx: &compiler::Context<'_>,
+    parent: &'a Map<String, Value>,
+) -> Result<(Option<usize>, bool), ValidationError<'a>> {
+    if let Some(subschema) = parent.get("items") {
+        if ctx.draft() == Draft::Draft201909
+            || ctx.draft() == Draft::Draft7
+            || ctx.draft() == Draft::Draft6
+            || ctx.draft() == Draft::Draft4
+        {
+            // Older drafts: items can be array or object
+            let limit = if parent.contains_key("additionalItems") || subschema.is_object() {
+                usize::MAX
+            } else {
+                subschema
+                    .as_array()
+                    .map(|arr| arr.len())
+                    .unwrap_or(usize::MAX)
+            };
+            Ok((Some(limit), false))
+        } else {
+            // Draft 2020-12+: items is always a schema that applies to all items
+            Ok((None, true))
+        }
+    } else {
+        Ok((None, false))
+    }
+}
+
+fn compile_prefix_items<'a>(
+    _ctx: &compiler::Context<'_>,
+    parent: &'a Map<String, Value>,
+) -> Result<Option<usize>, ValidationError<'a>> {
+    if let Some(Some(items)) = parent.get("prefixItems").map(Value::as_array) {
+        Ok(Some(items.len()))
+    } else {
+        Ok(None)
+    }
+}
+
+fn compile_conditional<'a>(
+    ctx: &compiler::Context<'_>,
+    parent: &'a Map<String, Value>,
+) -> Result<Option<Box<ConditionalValidators>>, ValidationError<'a>> {
+    if let Some(subschema) = parent.get("if") {
+        if let Value::Object(if_parent) = subschema {
+            let if_ctx = ctx.new_at_location("if");
+
+            let mut then_ = None;
+            if let Some(Value::Object(subschema)) = parent.get("then") {
+                let then_ctx = ctx.new_at_location("then");
+                then_ = Some(
+                    compile_items_validators(&then_ctx, subschema)
+                        .map_err(ValidationError::to_owned)?,
+                );
+            }
+
+            let mut else_ = None;
+            if let Some(Value::Object(subschema)) = parent.get("else") {
+                let else_ctx = ctx.new_at_location("else");
+                else_ = Some(
+                    compile_items_validators(&else_ctx, subschema)
+                        .map_err(ValidationError::to_owned)?,
+                );
+            }
+
+            return Ok(Some(Box::new(ConditionalValidators {
+                condition: compiler::compile(&if_ctx, if_ctx.as_resource_ref(subschema))
+                    .map_err(ValidationError::to_owned)?,
+                if_: compile_items_validators(&if_ctx, if_parent)
+                    .map_err(ValidationError::to_owned)?,
+                then_,
+                else_,
+            })));
+        }
+    }
+    Ok(None)
+}
+
+fn compile_all_of<'a>(
+    ctx: &compiler::Context<'_>,
+    parent: &'a Map<String, Value>,
+) -> Result<Option<Vec<(SchemaNode, ItemsValidators)>>, ValidationError<'a>> {
+    if let Some(Some(subschemas)) = parent.get("allOf").map(Value::as_array) {
+        let all_of_ctx = ctx.new_at_location("allOf");
+        let mut result = Vec::with_capacity(subschemas.len());
+
+        for (idx, subschema) in subschemas.iter().enumerate() {
+            if let Value::Object(parent) = subschema {
+                let subschema_ctx = all_of_ctx.new_at_location(idx);
+                result.push((
+                    compiler::compile(&subschema_ctx, subschema_ctx.as_resource_ref(subschema))
+                        .map_err(ValidationError::to_owned)?,
+                    compile_items_validators(&subschema_ctx, parent)
+                        .map_err(ValidationError::to_owned)?,
+                ));
+            }
+        }
+
+        Ok(Some(result))
+    } else {
+        Ok(None)
+    }
+}
+
+fn compile_any_of<'a>(
+    ctx: &compiler::Context<'_>,
+    parent: &'a Map<String, Value>,
+) -> Result<Option<Vec<(SchemaNode, ItemsValidators)>>, ValidationError<'a>> {
+    if let Some(Some(subschemas)) = parent.get("anyOf").map(Value::as_array) {
+        let any_of_ctx = ctx.new_at_location("anyOf");
+        let mut result = Vec::with_capacity(subschemas.len());
+
+        for (idx, subschema) in subschemas.iter().enumerate() {
+            if let Value::Object(parent) = subschema {
+                let subschema_ctx = any_of_ctx.new_at_location(idx);
+                result.push((
+                    compiler::compile(&subschema_ctx, subschema_ctx.as_resource_ref(subschema))
+                        .map_err(ValidationError::to_owned)?,
+                    compile_items_validators(&subschema_ctx, parent)
+                        .map_err(ValidationError::to_owned)?,
+                ));
+            }
+        }
+
+        Ok(Some(result))
+    } else {
+        Ok(None)
+    }
+}
+
+fn compile_one_of<'a>(
+    ctx: &compiler::Context<'_>,
+    parent: &'a Map<String, Value>,
+) -> Result<Option<Vec<(SchemaNode, ItemsValidators)>>, ValidationError<'a>> {
+    if let Some(Some(subschemas)) = parent.get("oneOf").map(Value::as_array) {
+        let one_of_ctx = ctx.new_at_location("oneOf");
+        let mut result = Vec::with_capacity(subschemas.len());
+
+        for (idx, subschema) in subschemas.iter().enumerate() {
+            if let Value::Object(parent) = subschema {
+                let subschema_ctx = one_of_ctx.new_at_location(idx);
+                result.push((
+                    compiler::compile(&subschema_ctx, subschema_ctx.as_resource_ref(subschema))
+                        .map_err(ValidationError::to_owned)?,
+                    compile_items_validators(&subschema_ctx, parent)
+                        .map_err(ValidationError::to_owned)?,
+                ));
+            }
+        }
+
+        Ok(Some(result))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Validator for the `unevaluatedItems` keyword.
+pub(crate) struct UnevaluatedItemsValidator {
     location: Location,
-    filter: F,
+    validators: ItemsValidators,
 }
 
-impl<F: ItemsFilter> UnevaluatedItemsValidator<F> {
-    #[inline]
+impl UnevaluatedItemsValidator {
     pub(crate) fn compile<'a>(
         ctx: &'a compiler::Context,
         parent: &'a Map<String, Value>,
     ) -> CompilationResult<'a> {
+        let validators =
+            compile_items_validators(ctx, parent).map_err(ValidationError::to_owned)?;
+
         Ok(Box::new(UnevaluatedItemsValidator {
             location: ctx.location().join("unevaluatedItems"),
-            filter: F::new(ctx, parent)?,
+            validators,
         }))
     }
 }
 
-impl<F: ItemsFilter> Validate for UnevaluatedItemsValidator<F> {
+impl Validate for UnevaluatedItemsValidator {
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::Array(items) = instance {
-            // NOTE: It could be a packed bitset instead
             let mut indexes = vec![false; items.len()];
-            self.filter.mark_evaluated_indexes(instance, &mut indexes);
+            self.validators
+                .mark_evaluated_indexes(instance, &mut indexes);
 
             for (item, is_evaluated) in items.iter().zip(indexes) {
-                if !is_evaluated && !self.filter.is_valid(item) {
-                    return false;
+                if !is_evaluated {
+                    if let Some(validator) = &self.validators.unevaluated {
+                        if !validator.is_valid(item) {
+                            return false;
+                        }
+                    } else {
+                        // unevaluatedItems: false and item not evaluated
+                        return false;
+                    }
                 }
             }
         }
@@ -68,15 +543,25 @@ impl<F: ItemsFilter> Validate for UnevaluatedItemsValidator<F> {
         location: &LazyLocation,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
-            // NOTE: It could be a packed bitset instead
             let mut indexes = vec![false; items.len()];
-            self.filter.mark_evaluated_indexes(instance, &mut indexes);
+            self.validators
+                .mark_evaluated_indexes(instance, &mut indexes);
             let mut unevaluated = vec![];
+
             for (item, is_evaluated) in items.iter().zip(indexes) {
-                if !is_evaluated && !self.filter.is_valid(item) {
-                    unevaluated.push(item.to_string());
+                if !is_evaluated {
+                    let is_valid = if let Some(validator) = &self.validators.unevaluated {
+                        validator.is_valid(item)
+                    } else {
+                        false
+                    };
+
+                    if !is_valid {
+                        unevaluated.push(item.to_string());
+                    }
                 }
             }
+
             if !unevaluated.is_empty() {
                 return Err(ValidationError::unevaluated_items(
                     self.location.clone(),
@@ -90,470 +575,6 @@ impl<F: ItemsFilter> Validate for UnevaluatedItemsValidator<F> {
     }
 }
 
-struct Draft2019ItemsFilter {
-    unevaluated: Option<SchemaNode>,
-    contains: Option<SchemaNode>,
-    ref_: Option<Box<Self>>,
-    recursive_ref: Option<Box<Self>>,
-    items: Option<usize>,
-    conditional: Option<Box<ConditionalFilter<Self>>>,
-    all_of: Option<CombinatorFilter<Self>>,
-    any_of: Option<CombinatorFilter<Self>>,
-    one_of: Option<CombinatorFilter<Self>>,
-}
-
-impl ItemsFilter for Draft2019ItemsFilter {
-    fn new<'a>(
-        ctx: &'a compiler::Context<'_>,
-        parent: &'a Map<String, Value>,
-    ) -> Result<Self, ValidationError<'a>> {
-        let mut ref_ = None;
-
-        if let Some(Value::String(reference)) = parent.get("$ref") {
-            let resolved = ctx.lookup(reference)?;
-            if let Value::Object(subschema) = resolved.contents() {
-                ref_ = Some(Box::new(
-                    Self::new(ctx, subschema).map_err(ValidationError::to_owned)?,
-                ));
-            }
-        }
-        let mut recursive_ref = None;
-
-        if parent.contains_key("$recursiveRef") {
-            let resolved = ctx.lookup_recursive_reference()?;
-            if let Value::Object(subschema) = resolved.contents() {
-                recursive_ref = Some(Box::new(
-                    Self::new(ctx, subschema).map_err(ValidationError::to_owned)?,
-                ));
-            }
-        }
-
-        let mut conditional = None;
-
-        if let Some(subschema) = parent.get("if") {
-            if let Value::Object(if_parent) = subschema {
-                let if_ctx = ctx.new_at_location("if");
-                let mut then_ = None;
-                if let Some(Value::Object(subschema)) = parent.get("then") {
-                    let then_ctx = ctx.new_at_location("then");
-                    then_ =
-                        Some(Self::new(&then_ctx, subschema).map_err(ValidationError::to_owned)?);
-                }
-                let mut else_ = None;
-                if let Some(Value::Object(subschema)) = parent.get("else") {
-                    let else_ctx = ctx.new_at_location("else");
-                    else_ =
-                        Some(Self::new(&else_ctx, subschema).map_err(ValidationError::to_owned)?);
-                }
-                conditional = Some(Box::new(ConditionalFilter {
-                    condition: compiler::compile(&if_ctx, if_ctx.as_resource_ref(subschema))
-                        .map_err(ValidationError::to_owned)?,
-                    if_: Self::new(&if_ctx, if_parent).map_err(ValidationError::to_owned)?,
-                    then_,
-                    else_,
-                }));
-            }
-        }
-
-        let mut contains = None;
-        if let Some(subschema) = parent.get("contains") {
-            let contains_ctx = ctx.new_at_location("contains");
-            contains = Some(
-                compiler::compile(&contains_ctx, contains_ctx.as_resource_ref(subschema))
-                    .map_err(ValidationError::to_owned)?,
-            );
-        }
-        let mut unevaluated = None;
-        if let Some(subschema) = parent.get("unevaluatedItems") {
-            let unevaluated_ctx = ctx.new_at_location("unevaluatedItems");
-            unevaluated = Some(
-                compiler::compile(&unevaluated_ctx, unevaluated_ctx.as_resource_ref(subschema))
-                    .map_err(ValidationError::to_owned)?,
-            );
-        }
-        let mut all_of = None;
-        if let Some(Some(subschemas)) = parent.get("allOf").map(Value::as_array) {
-            let all_of_ctx = ctx.new_at_location("allOf");
-            all_of = Some(
-                CombinatorFilter::new(&all_of_ctx, subschemas)
-                    .map_err(ValidationError::to_owned)?,
-            );
-        }
-        let mut any_of = None;
-        if let Some(Some(subschemas)) = parent.get("anyOf").map(Value::as_array) {
-            let any_of_ctx = ctx.new_at_location("anyOf");
-            any_of = Some(
-                CombinatorFilter::new(&any_of_ctx, subschemas)
-                    .map_err(ValidationError::to_owned)?,
-            );
-        }
-        let mut one_of = None;
-        if let Some(Some(subschemas)) = parent.get("oneOf").map(Value::as_array) {
-            let one_of_ctx = ctx.new_at_location("oneOf");
-            one_of = Some(
-                CombinatorFilter::new(&one_of_ctx, subschemas)
-                    .map_err(ValidationError::to_owned)?,
-            );
-        }
-        let mut items = None;
-        if let Some(subschema) = parent.get("items") {
-            let limit = if parent.contains_key("additionalItems") || subschema.is_object() {
-                usize::MAX
-            } else {
-                subschema
-                    .as_array()
-                    .expect("Items are either an object or an array")
-                    .len()
-            };
-            items = Some(limit);
-        }
-
-        Ok(Draft2019ItemsFilter {
-            unevaluated,
-            contains,
-            ref_,
-            recursive_ref,
-            items,
-            conditional,
-            all_of,
-            any_of,
-            one_of,
-        })
-    }
-    fn unevaluated(&self) -> Option<&SchemaNode> {
-        self.unevaluated.as_ref()
-    }
-    fn mark_evaluated_indexes(&self, instance: &Value, indexes: &mut Vec<bool>) {
-        if let Some(limit) = self.items {
-            for idx in indexes.iter_mut().take(limit) {
-                *idx = true;
-            }
-        }
-
-        if let Some(ref_) = &self.ref_ {
-            ref_.mark_evaluated_indexes(instance, indexes);
-        }
-
-        if let Some(recursive_ref) = &self.recursive_ref {
-            recursive_ref.mark_evaluated_indexes(instance, indexes);
-        }
-
-        if let Some(conditional) = &self.conditional {
-            conditional.mark_evaluated_indexes(instance, indexes);
-        }
-        if let Value::Array(items) = instance {
-            for (item, is_evaluated) in items.iter().zip(indexes.iter_mut()) {
-                if *is_evaluated {
-                    continue;
-                }
-                if let Some(validator) = &self.contains {
-                    if validator.is_valid(item) {
-                        *is_evaluated = true;
-                        continue;
-                    }
-                }
-                if let Some(validator) = &self.unevaluated {
-                    if validator.is_valid(item) {
-                        *is_evaluated = true;
-                    }
-                }
-            }
-        }
-
-        if let Some(combinator) = &self.all_of {
-            if combinator
-                .subschemas
-                .iter()
-                .all(|(v, _)| v.is_valid(instance))
-            {
-                combinator.mark_evaluated_indexes(instance, indexes);
-            }
-        }
-
-        if let Some(combinator) = &self.any_of {
-            if combinator
-                .subschemas
-                .iter()
-                .all(|(v, _)| v.is_valid(instance))
-            {
-                combinator.mark_evaluated_indexes(instance, indexes);
-            }
-        }
-
-        if let Some(combinator) = &self.one_of {
-            if combinator
-                .subschemas
-                .iter()
-                .filter(|(v, _)| v.is_valid(instance))
-                .count()
-                == 1
-            {
-                combinator.mark_evaluated_indexes(instance, indexes);
-            }
-        }
-    }
-}
-
-struct DefaultItemsFilter {
-    unevaluated: Option<SchemaNode>,
-    contains: Option<SchemaNode>,
-    ref_: Option<Box<Self>>,
-    dynamic_ref: Option<Box<Self>>,
-    items: bool,
-    prefix_items: Option<usize>,
-    conditional: Option<Box<ConditionalFilter<Self>>>,
-    all_of: Option<CombinatorFilter<Self>>,
-    any_of: Option<CombinatorFilter<Self>>,
-    one_of: Option<CombinatorFilter<Self>>,
-}
-
-impl ItemsFilter for DefaultItemsFilter {
-    fn new<'a>(
-        ctx: &'a compiler::Context<'a>,
-        parent: &'a Map<String, Value>,
-    ) -> Result<DefaultItemsFilter, ValidationError<'a>> {
-        let mut ref_ = None;
-
-        if let Some(Value::String(reference)) = parent.get("$ref") {
-            let resolved = ctx.lookup(reference)?;
-            if let Value::Object(subschema) = resolved.contents() {
-                ref_ = Some(Box::new(
-                    Self::new(ctx, subschema).map_err(ValidationError::to_owned)?,
-                ));
-            }
-        }
-
-        let mut dynamic_ref = None;
-
-        if let Some(Value::String(reference)) = parent.get("$dynamicRef") {
-            let resolved = ctx.lookup(reference)?;
-            if let Value::Object(subschema) = resolved.contents() {
-                dynamic_ref = Some(Box::new(
-                    Self::new(ctx, subschema).map_err(ValidationError::to_owned)?,
-                ));
-            }
-        }
-
-        let mut conditional = None;
-
-        if let Some(subschema) = parent.get("if") {
-            if let Value::Object(if_parent) = subschema {
-                let if_ctx = ctx.new_at_location("if");
-                let mut then_ = None;
-                if let Some(Value::Object(subschema)) = parent.get("then") {
-                    let then_ctx = ctx.new_at_location("then");
-                    then_ =
-                        Some(Self::new(&then_ctx, subschema).map_err(ValidationError::to_owned)?);
-                }
-                let mut else_ = None;
-                if let Some(Value::Object(subschema)) = parent.get("else") {
-                    let else_ctx = ctx.new_at_location("else");
-                    else_ =
-                        Some(Self::new(&else_ctx, subschema).map_err(ValidationError::to_owned)?);
-                }
-                conditional = Some(Box::new(ConditionalFilter {
-                    condition: compiler::compile(&if_ctx, if_ctx.as_resource_ref(subschema))
-                        .map_err(ValidationError::to_owned)?,
-                    if_: Self::new(&if_ctx, if_parent).map_err(ValidationError::to_owned)?,
-                    then_,
-                    else_,
-                }));
-            }
-        }
-
-        let mut prefix_items = None;
-        if let Some(Some(items)) = parent.get("prefixItems").map(Value::as_array) {
-            prefix_items = Some(items.len());
-        }
-
-        let mut contains = None;
-        if let Some(subschema) = parent.get("contains") {
-            let contains_ctx = ctx.new_at_location("contains");
-            contains = Some(
-                compiler::compile(&contains_ctx, contains_ctx.as_resource_ref(subschema))
-                    .map_err(ValidationError::to_owned)?,
-            );
-        }
-        let mut unevaluated = None;
-        if let Some(subschema) = parent.get("unevaluatedItems") {
-            let unevaluated_ctx = ctx.new_at_location("unevaluatedItems");
-            unevaluated = Some(
-                compiler::compile(&unevaluated_ctx, unevaluated_ctx.as_resource_ref(subschema))
-                    .map_err(ValidationError::to_owned)?,
-            );
-        }
-        let mut all_of = None;
-        if let Some(Some(subschemas)) = parent.get("allOf").map(Value::as_array) {
-            let all_of_ctx = ctx.new_at_location("allOf");
-            all_of = Some(
-                CombinatorFilter::new(&all_of_ctx, subschemas)
-                    .map_err(ValidationError::to_owned)?,
-            );
-        }
-        let mut any_of = None;
-        if let Some(Some(subschemas)) = parent.get("anyOf").map(Value::as_array) {
-            let any_of_ctx = ctx.new_at_location("anyOf");
-            any_of = Some(
-                CombinatorFilter::new(&any_of_ctx, subschemas)
-                    .map_err(ValidationError::to_owned)?,
-            );
-        }
-
-        let mut one_of = None;
-        if let Some(Some(subschemas)) = parent.get("oneOf").map(Value::as_array) {
-            let one_of_ctx = ctx.new_at_location("oneOf");
-            one_of = Some(
-                CombinatorFilter::new(&one_of_ctx, subschemas)
-                    .map_err(ValidationError::to_owned)?,
-            );
-        }
-
-        Ok(DefaultItemsFilter {
-            unevaluated,
-            contains,
-            ref_,
-            dynamic_ref,
-            items: parent.contains_key("items"),
-            prefix_items,
-            conditional,
-            all_of,
-            any_of,
-            one_of,
-        })
-    }
-    fn unevaluated(&self) -> Option<&SchemaNode> {
-        self.unevaluated.as_ref()
-    }
-
-    fn mark_evaluated_indexes(&self, instance: &Value, indexes: &mut Vec<bool>) {
-        if self.items {
-            for idx in indexes {
-                *idx = true;
-            }
-            return;
-        }
-
-        if let Some(ref_) = &self.ref_ {
-            ref_.mark_evaluated_indexes(instance, indexes);
-        }
-
-        if let Some(dynamic_ref) = &self.dynamic_ref {
-            dynamic_ref.mark_evaluated_indexes(instance, indexes);
-        }
-
-        if let Some(limit) = self.prefix_items {
-            for idx in indexes.iter_mut().take(limit) {
-                *idx = true;
-            }
-        }
-        if let Some(conditional) = &self.conditional {
-            conditional.mark_evaluated_indexes(instance, indexes);
-        }
-        if let Value::Array(items) = instance {
-            for (item, is_evaluated) in items.iter().zip(indexes.iter_mut()) {
-                if *is_evaluated {
-                    continue;
-                }
-                if let Some(validator) = &self.contains {
-                    if validator.is_valid(item) {
-                        *is_evaluated = true;
-                        continue;
-                    }
-                }
-                if let Some(validator) = &self.unevaluated {
-                    if validator.is_valid(item) {
-                        *is_evaluated = true;
-                    }
-                }
-            }
-        }
-
-        if let Some(combinator) = &self.all_of {
-            if combinator
-                .subschemas
-                .iter()
-                .all(|(v, _)| v.is_valid(instance))
-            {
-                combinator.mark_evaluated_indexes(instance, indexes);
-            }
-        }
-
-        if let Some(combinator) = &self.any_of {
-            if combinator
-                .subschemas
-                .iter()
-                .all(|(v, _)| v.is_valid(instance))
-            {
-                combinator.mark_evaluated_indexes(instance, indexes);
-            }
-        }
-
-        if let Some(combinator) = &self.one_of {
-            if combinator
-                .subschemas
-                .iter()
-                .filter(|(v, _)| v.is_valid(instance))
-                .count()
-                == 1
-            {
-                combinator.mark_evaluated_indexes(instance, indexes);
-            }
-        }
-    }
-}
-
-struct CombinatorFilter<F> {
-    subschemas: Vec<(SchemaNode, F)>,
-}
-
-impl<F: ItemsFilter> CombinatorFilter<F> {
-    fn mark_evaluated_indexes(&self, instance: &Value, indexes: &mut Vec<bool>) {
-        for (_, subschema) in &self.subschemas {
-            subschema.mark_evaluated_indexes(instance, indexes);
-        }
-    }
-}
-
-impl<F: ItemsFilter> CombinatorFilter<F> {
-    fn new<'a>(
-        ctx: &'a compiler::Context<'a>,
-        subschemas: &'a [Value],
-    ) -> Result<CombinatorFilter<F>, ValidationError<'a>> {
-        let mut buffer = Vec::with_capacity(subschemas.len());
-        for (idx, subschema) in subschemas.iter().enumerate() {
-            if let Value::Object(parent) = subschema {
-                let subschema_ctx = ctx.new_at_location(idx);
-                buffer.push((
-                    compiler::compile(&subschema_ctx, subschema_ctx.as_resource_ref(subschema))
-                        .map_err(ValidationError::to_owned)?,
-                    F::new(&subschema_ctx, parent).map_err(ValidationError::to_owned)?,
-                ));
-            }
-        }
-        Ok(CombinatorFilter { subschemas: buffer })
-    }
-}
-
-struct ConditionalFilter<F> {
-    condition: SchemaNode,
-    if_: F,
-    then_: Option<F>,
-    else_: Option<F>,
-}
-
-impl<F: ItemsFilter> ConditionalFilter<F> {
-    fn mark_evaluated_indexes(&self, instance: &Value, indexes: &mut Vec<bool>) {
-        if self.condition.is_valid(instance) {
-            self.if_.mark_evaluated_indexes(instance, indexes);
-            if let Some(then_) = &self.then_ {
-                then_.mark_evaluated_indexes(instance, indexes);
-            }
-        } else if let Some(else_) = &self.else_ {
-            else_.mark_evaluated_indexes(instance, indexes);
-        }
-    }
-}
-
 pub(crate) fn compile<'a>(
     ctx: &'a compiler::Context,
     parent: &'a Map<String, Value>,
@@ -561,17 +582,7 @@ pub(crate) fn compile<'a>(
 ) -> Option<CompilationResult<'a>> {
     match schema.as_bool() {
         Some(true) => None,
-        _ => {
-            if ctx.draft() == Draft::Draft201909 {
-                Some(UnevaluatedItemsValidator::<Draft2019ItemsFilter>::compile(
-                    ctx, parent,
-                ))
-            } else {
-                Some(UnevaluatedItemsValidator::<DefaultItemsFilter>::compile(
-                    ctx, parent,
-                ))
-            }
-        }
+        _ => Some(UnevaluatedItemsValidator::compile(ctx, parent)),
     }
 }
 
