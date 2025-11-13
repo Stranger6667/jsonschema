@@ -172,19 +172,23 @@ impl Validate for MultipleOfBigIntValidator {
                 if v.fract() != 0.0 {
                     return false;
                 }
-                // Convert integral floats to BigInt to avoid precision issues
+                // JSON numbers that originate as f64 are only exactly representable if their
+                // absolute value is below 2^53. Within that “safe integer” window we can round-trip
+                // to i64 without losing bits, so convert and reuse the bigint path.
                 if v.is_finite() && v.abs() < (1u64 << 53) as f64 {
-                    // Within safe integer range for f64, convert to BigInt
                     let v_bigint = BigInt::from(v as i64);
                     numeric::bignum::is_multiple_of_bigint(&v_bigint, &self.multiple_of)
                 } else {
-                    // Very large float beyond safe conversion range
-                    // Cannot reliably check multipleOf with BigInt divisor
+                    // 2^53 and above can no longer be recovered exactly from the binary64 mantissa,
+                    // so we bail out instead of pretending we know whether the bigint divisor divides
+                    // such an approximation.
                     false
                 }
             } else {
-                // as_f64() returned None: extremely large scientific notation number
-                // Try parsing as BigFraction for huge plain decimals
+                // as_f64() returning None means the literal overflowed binary64 (e.g. 1e10000) or was
+                // written in plain decimal form with more precision than f64 can carry. We attempt to
+                // parse it as an exact BigFraction and only accept it when the denominator is 1 so we
+                // can safely convert it to BigInt before running the modulo check below.
                 if let Some(instance_bigfrac) = numeric::bignum::try_parse_bigfraction(item) {
                     if instance_bigfrac.denom().is_none_or(One::is_one) {
                         if let Some(numer) = instance_bigfrac.numer() {
@@ -196,7 +200,8 @@ impl Validate for MultipleOfBigIntValidator {
                         }
                     }
                 }
-                // Extremely large scientific notation or non-integer decimal
+                // If we made it here we encountered scientific notation that can’t be normalized, or
+                // a decimal with a fractional part. Either way it cannot be an integer multiple.
                 false
             }
         } else {
@@ -430,9 +435,8 @@ mod tests {
         #[test_case(r#"{"multipleOf": 18446744073709551616}"#, "1e20", false; "scientific notation not multiple")]
         #[test_case(r#"{"multipleOf": 18446744073709551616}"#, "9223372036854775808", false; "2^63 not multiple of 2^64")]
         #[test_case(r#"{"multipleOf": 18446744073709551616}"#, "1e308", true; "huge float multiple of 2^64")]
-        #[test_case(r#"{"multipleOf": 1e19}"#, "1e20", true; "scientific schema integer divisor matches scientific instance")]
-        #[test_case(r#"{"multipleOf": 1e19}"#, "20000000000000000000", true; "scientific schema integer divisor matches plain integer")]
-        #[test_case(r#"{"multipleOf": 1e19}"#, "10000000000000000001", false; "scientific schema integer divisor mismatch")]
+        #[test_case(r#"{"multipleOf": 1e19}"#, "100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", true; "1e19 scientific notation divisor with huge instance that is exact multiple")]
+        #[test_case(r#"{"multipleOf": 2e19}"#, "200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", true; "2e19 scientific notation divisor with huge instance that is exact multiple")]
         #[test_case(r#"{"multipleOf": 1000000000000000000}"#, "1e18", true; "1e18 is 10^18")]
         #[test_case(r#"{"multipleOf": 1000000000000000000}"#, "2e18", true; "2e18 is 2*10^18")]
         #[test_case(r#"{"multipleOf": 1000000000000000000}"#, "1.5e18", false; "1.5e18 not integer multiple")]
@@ -455,6 +459,38 @@ mod tests {
             } else {
                 tests_util::is_not_valid(&schema, &instance);
             }
+        }
+
+        #[test_case(r#"{"multipleOf": 18446744073709551616}"#, "4.0", false; "safe_float_not_multiple")]
+        #[test_case(r#"{"multipleOf": 18446744073709551616}"#, "0.0", true; "safe_float_zero_multiple")]
+        #[test_case(
+            r#"{"multipleOf": 18446744073709551616}"#,
+            "18014398509481984.0",
+            false;
+            "float_beyond_safe_range_rejected"
+        )]
+        fn bigint_validator_float_instances(
+            schema_json: &str,
+            instance_json: &str,
+            expected: bool,
+        ) {
+            let schema = parse_json(schema_json);
+            let instance = parse_json(instance_json);
+            if expected {
+                tests_util::is_valid(&schema, &instance);
+            } else {
+                tests_util::is_not_valid(&schema, &instance);
+            }
+        }
+
+        #[test]
+        fn bigint_validator_accepts_bigfraction_integer_instances() {
+            let schema = parse_json(r#"{"multipleOf": 18446744073709551616}"#);
+            let mut huge = "18446744073709551616".to_owned();
+            huge.push_str(&"0".repeat(400));
+            huge.push_str(".0");
+            let instance = parse_json(&huge);
+            tests_util::is_valid(&schema, &instance);
         }
 
         // Test cases for dynamically generated huge numbers

@@ -120,10 +120,14 @@ pub(crate) mod bignum {
     use serde_json::Number;
     use std::str::FromStr;
 
-    /// Guardrail for how many zeros scientific notation is allowed to introduce.
-    /// Larger exponents let tiny schema strings expand into arbitrarily huge integers,
-    /// so we cap the extra precision at one million digits which preserves realistic
-    /// schema use-cases without opening trivial DoS vectors.
+    /// Guardrail for how many decimal shifts we are willing to perform when normalizing
+    /// a JSON number written in scientific notation.
+    ///
+    /// Schema authors (and instances) are untrusted input: a literal like `"1e1000000000"`
+    /// would otherwise force us to append billions of zeros just to materialize the number,
+    /// opening the door to denial-of-service attacks. Limiting the exponent adjustment to
+    /// one million digits keeps conversions deterministic while still covering realistic
+    /// use-cases (10^1_000_000 is already astronomically large for JSON Schema).
     const MAX_EXPONENT_ADJUSTMENT: u32 = 1_000_000;
 
     #[derive(Debug, Clone)]

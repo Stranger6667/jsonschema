@@ -4,6 +4,7 @@ from collections import OrderedDict, namedtuple
 from contextlib import suppress
 import enum as E
 from functools import partial
+from decimal import Decimal
 
 import pytest
 from hypothesis import given
@@ -138,6 +139,14 @@ def test_paths():
     assert exc.value.message == '1 is not of type "string"'
     assert isinstance(exc.value.kind, ValidationErrorKind.Type)
     assert exc.value.instance == 1
+
+
+def test_validation_error_handles_huge_scientific_numbers():
+    validator = validator_for('{"const": 1e10000}')
+    with pytest.raises(ValidationError) as exc:
+        validator.validate(0)
+    assert isinstance(exc.value.kind, ValidationErrorKind.Constant)
+    assert exc.value.kind.expected_value == Decimal("1e10000")
 
 
 @pytest.mark.parametrize(

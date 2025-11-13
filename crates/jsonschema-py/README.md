@@ -155,6 +155,35 @@ On instance:
     "unknown"'''
 ```
 
+### Arbitrary-Precision Numbers
+
+The Python bindings always include the `arbitrary-precision` support from the Rust validator, so numeric
+values are exposed to Python using the most accurate type available:
+
+- Integers, regardless of size, are returned as regular `int` objects.
+- Floating-point literals that fit into IEEE-754 become Python `float`s.
+- Floating-point literals that don't fit in `float` (for example `1e10000` or extremely precise
+  decimals) fall back to [`decimal.Decimal`](https://docs.python.org/3/library/decimal.html) using
+  their original JSON string representation.
+
+This means `ValidationError.kind` attributes may contain `Decimal` instances for very large numbers.
+Import `Decimal` from the standard library if you need to compare against or serialize those
+values exactly:
+
+```python
+from decimal import Decimal
+from jsonschema_rs import ValidationError, validator_for
+
+validator = validator_for('{"const": 1e10000}')
+try:
+    validator.validate(0)
+except ValidationError as exc:
+    assert exc.kind.expected_value == Decimal("1e10000")
+
+# Extremely large exponents (beyond ~10^1_000_000) are clamped internally to keep parsing
+# predictable, matching the Rust implementation's guardrails.
+```
+
 ## Meta-Schema Validation
 
 JSON Schema documents can be validated against their meta-schemas to ensure they are valid schemas. `jsonschema-rs` provides this functionality through the `meta` module:

@@ -72,9 +72,11 @@ fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyA
                     if let Some(f) = n.as_f64() {
                         Ok(pyo3::types::PyFloat::new(py, f).into_any().unbind())
                     } else {
-                        Err(pyo3::exceptions::PyValueError::new_err(
-                            "Invalid float value",
-                        ))
+                        // Fall back to decimal.Decimal for values outside f64 range so Python callers
+                        // observe the exact literal from JSON instead of ValueError/inf when numbers
+                        // exceed binary64 limits.
+                        let decimal = py.import("decimal")?.getattr("Decimal")?;
+                        decimal.call1((s,)).map(|obj| obj.into_any().unbind())
                     }
                 } else {
                     // Large integer - parse from string representation
