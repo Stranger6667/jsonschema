@@ -454,10 +454,13 @@ impl<'a> Context<'a> {
         &self,
         reference: &str,
     ) -> Result<Option<Box<dyn Validate>>, ValidationError<'static>> {
-        if self.is_circular_reference(reference)? {
-            let uri = self
-                .resolve_reference_uri(reference)
-                .map_err(ValidationError::from)?;
+        // Resolve URI once and check if circular in same operation
+        let uri = self
+            .resolve_reference_uri(reference)
+            .map_err(ValidationError::from)?;
+
+        if self.shared.seen.borrow().contains(&*uri) {
+            // This is a circular reference, check caches
             let key = self.alias_cache_key(Arc::clone(&uri));
             if let Some(node) = self.cached_alias_node(&key) {
                 return Ok(Some(Box::new(node)));
