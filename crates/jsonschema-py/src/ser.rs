@@ -1,9 +1,8 @@
 use pyo3::{
     exceptions,
     ffi::{
-        PyDictObject, PyFloat_AS_DOUBLE, PyList_GET_ITEM, PyList_GET_SIZE, PyLong_AsLongLong,
-        PyObject_GetAttr, PyObject_IsInstance, PyTuple_GET_ITEM, PyTuple_GET_SIZE,
-        PyUnicode_AsUTF8AndSize, Py_DECREF, Py_TPFLAGS_DICT_SUBCLASS, Py_TYPE,
+        PyLong_AsLongLong, PyObject_GetAttr, PyObject_GetAttrString, PyObject_IsInstance,
+        PyType_IsSubtype, PyUnicode_AsUTF8AndSize, Py_DECREF, Py_TYPE,
     },
     prelude::*,
     types::PyAny,
@@ -13,8 +12,14 @@ use serde::{
     Serializer,
 };
 
-use crate::{ffi, types};
-use std::ffi::CStr;
+use crate::types;
+use std::borrow::Cow;
+
+#[cfg(not(Py_LIMITED_API))]
+use pyo3::ffi::{
+    PyDictObject, PyFloat_AS_DOUBLE, PyList_GET_ITEM, PyList_GET_SIZE, PyTuple_GET_ITEM,
+    PyTuple_GET_SIZE,
+};
 
 pub const RECURSION_LIMIT: u8 = 255;
 
@@ -63,13 +68,91 @@ impl SerializePyObject {
 }
 
 #[inline]
+unsafe fn pyfloat_as_double(object: *mut pyo3::ffi::PyObject) -> f64 {
+    #[cfg(Py_LIMITED_API)]
+    {
+        pyo3::ffi::PyFloat_AsDouble(object)
+    }
+    #[cfg(not(Py_LIMITED_API))]
+    {
+        PyFloat_AS_DOUBLE(object)
+    }
+}
+
+#[inline]
+unsafe fn pylist_len(object: *mut pyo3::ffi::PyObject) -> usize {
+    #[cfg(Py_LIMITED_API)]
+    {
+        pyo3::ffi::PyList_Size(object) as usize
+    }
+    #[cfg(not(Py_LIMITED_API))]
+    {
+        PyList_GET_SIZE(object) as usize
+    }
+}
+
+#[inline]
+unsafe fn pylist_get_item(
+    object: *mut pyo3::ffi::PyObject,
+    index: pyo3::ffi::Py_ssize_t,
+) -> *mut pyo3::ffi::PyObject {
+    #[cfg(Py_LIMITED_API)]
+    {
+        pyo3::ffi::PyList_GetItem(object, index)
+    }
+    #[cfg(not(Py_LIMITED_API))]
+    {
+        PyList_GET_ITEM(object, index)
+    }
+}
+
+#[inline]
+unsafe fn pytuple_len(object: *mut pyo3::ffi::PyObject) -> usize {
+    #[cfg(Py_LIMITED_API)]
+    {
+        pyo3::ffi::PyTuple_Size(object) as usize
+    }
+    #[cfg(not(Py_LIMITED_API))]
+    {
+        PyTuple_GET_SIZE(object) as usize
+    }
+}
+
+#[inline]
+unsafe fn pytuple_get_item(
+    object: *mut pyo3::ffi::PyObject,
+    index: pyo3::ffi::Py_ssize_t,
+) -> *mut pyo3::ffi::PyObject {
+    #[cfg(Py_LIMITED_API)]
+    {
+        pyo3::ffi::PyTuple_GetItem(object, index)
+    }
+    #[cfg(not(Py_LIMITED_API))]
+    {
+        PyTuple_GET_ITEM(object, index)
+    }
+}
+
+#[inline]
+unsafe fn dict_len(object: *mut pyo3::ffi::PyObject) -> usize {
+    #[cfg(Py_LIMITED_API)]
+    {
+        pyo3::ffi::PyDict_Size(object) as usize
+    }
+    #[cfg(not(Py_LIMITED_API))]
+    {
+        (*object.cast::<PyDictObject>()).ma_used as usize
+    }
+}
+
+#[inline]
 fn is_enum_subclass(object_type: *mut pyo3::ffi::PyTypeObject) -> bool {
-    unsafe { (*(object_type.cast::<ffi::PyTypeObject>())).ob_type == types::ENUM_TYPE }
+    unsafe { PyType_IsSubtype(object_type, types::ENUM_BASE) != 0 }
 }
 
 #[inline]
 fn is_dict_subclass(object_type: *mut pyo3::ffi::PyTypeObject) -> bool {
-    unsafe { (*object_type).tp_flags & Py_TPFLAGS_DICT_SUBCLASS != 0 }
+    unsafe { PyType_IsSubtype(object_type, types::DICT_TYPE) != 0 }
 }
 
 fn get_object_type_from_object(object: *mut pyo3::ffi::PyObject) -> ObjectType {
@@ -79,8 +162,26 @@ fn get_object_type_from_object(object: *mut pyo3::ffi::PyObject) -> ObjectType {
     }
 }
 
-fn get_type_name(object_type: *mut pyo3::ffi::PyTypeObject) -> std::borrow::Cow<'static, str> {
-    unsafe { CStr::from_ptr((*object_type).tp_name).to_string_lossy() }
+fn get_type_name(object_type: *mut pyo3::ffi::PyTypeObject) -> Cow<'static, str> {
+    unsafe {
+        let name_obj = PyObject_GetAttrString(
+            object_type.cast::<pyo3::ffi::PyObject>(),
+            c"__name__".as_ptr(),
+        );
+        if name_obj.is_null() {
+            return Cow::Borrowed("<unknown>");
+        }
+        let mut size: pyo3::ffi::Py_ssize_t = 0;
+        let ptr = PyUnicode_AsUTF8AndSize(name_obj, &raw mut size);
+        let cow = if ptr.is_null() {
+            Cow::Borrowed("<unknown>")
+        } else {
+            let slice = std::slice::from_raw_parts(ptr.cast::<u8>(), size as usize);
+            Cow::Owned(std::str::from_utf8_unchecked(slice).to_string())
+        };
+        Py_DECREF(name_obj);
+        cow
+    }
 }
 
 #[inline]
@@ -189,7 +290,7 @@ impl Serialize for SerializePyObject {
                 serializer.serialize_i64(value)
             }
             ObjectType::Float => {
-                serializer.serialize_f64(unsafe { PyFloat_AS_DOUBLE(self.object) })
+                serializer.serialize_f64(unsafe { pyfloat_as_double(self.object) })
             }
             ObjectType::Bool => serializer.serialize_bool(self.object == unsafe { types::TRUE }),
             ObjectType::None => serializer.serialize_unit(),
@@ -197,7 +298,7 @@ impl Serialize for SerializePyObject {
                 if self.recursion_depth == RECURSION_LIMIT {
                     return Err(ser::Error::custom("Recursion limit reached"));
                 }
-                let length = unsafe { (*self.object.cast::<PyDictObject>()).ma_used } as usize;
+                let length = unsafe { dict_len(self.object) };
                 if length == 0 {
                     tri!(serializer.serialize_map(Some(0))).end()
                 } else {
@@ -262,7 +363,7 @@ impl Serialize for SerializePyObject {
                 if self.recursion_depth == RECURSION_LIMIT {
                     return Err(ser::Error::custom("Recursion limit reached"));
                 }
-                let length = unsafe { PyList_GET_SIZE(self.object) as usize };
+                let length = unsafe { pylist_len(self.object) };
                 if length == 0 {
                     tri!(serializer.serialize_seq(Some(0))).end()
                 } else {
@@ -270,7 +371,8 @@ impl Serialize for SerializePyObject {
                     let mut ob_type = ObjectType::Str;
                     let mut sequence = tri!(serializer.serialize_seq(Some(length)));
                     for i in 0..length {
-                        let elem = unsafe { PyList_GET_ITEM(self.object, i as isize) };
+                        let elem =
+                            unsafe { pylist_get_item(self.object, i as pyo3::ffi::Py_ssize_t) };
                         let current_ob_type = unsafe { Py_TYPE(elem) };
                         if current_ob_type != type_ptr {
                             type_ptr = current_ob_type;
@@ -289,7 +391,7 @@ impl Serialize for SerializePyObject {
                 if self.recursion_depth == RECURSION_LIMIT {
                     return Err(ser::Error::custom("Recursion limit reached"));
                 }
-                let length = unsafe { PyTuple_GET_SIZE(self.object) as usize };
+                let length = unsafe { pytuple_len(self.object) };
                 if length == 0 {
                     tri!(serializer.serialize_seq(Some(0))).end()
                 } else {
@@ -297,7 +399,8 @@ impl Serialize for SerializePyObject {
                     let mut ob_type = ObjectType::Str;
                     let mut sequence = tri!(serializer.serialize_seq(Some(length)));
                     for i in 0..length {
-                        let elem = unsafe { PyTuple_GET_ITEM(self.object, i as isize) };
+                        let elem =
+                            unsafe { pytuple_get_item(self.object, i as pyo3::ffi::Py_ssize_t) };
                         let current_ob_type = unsafe { Py_TYPE(elem) };
                         if current_ob_type != type_ptr {
                             type_ptr = current_ob_type;
@@ -321,7 +424,7 @@ impl Serialize for SerializePyObject {
                 let object_type = unsafe { Py_TYPE(self.object) };
                 Err(ser::Error::custom(format!(
                     "Unsupported type: '{}'",
-                    unsafe { CStr::from_ptr((*object_type).tp_name).to_string_lossy() }
+                    get_type_name(object_type)
                 )))
             }
         }

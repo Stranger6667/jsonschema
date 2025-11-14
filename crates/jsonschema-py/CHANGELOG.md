@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Migrated to abi3 so a single wheel per platform works on all supported 3.10+ interpreters.
+
+### Removed
+
+- Support for Python 3.8 & 3.9.
+
 ## [0.34.0] - 2025-11-14
 
 ### Added

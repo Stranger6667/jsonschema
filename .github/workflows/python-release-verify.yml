@@ -1,0 +1,54 @@
+name: Python Release Verify
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  PACKAGE_NAME: jsonschema_rs
+  PYTHON_VERSION: "3.10"
+
+jobs:
+  wheel-smoke-test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install maturin
+        run: uv pip install --system --python ${{ env.PYTHON_VERSION }} maturin
+
+      - name: Build wheel
+        run: |
+          maturin build --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter $PYTHON_VERSION
+
+      - name: Install built wheel
+        run: |
+          uv pip install --system --python ${{ env.PYTHON_VERSION }} dist/${PACKAGE_NAME}-*.whl --force-reinstall
+
+      - name: Test wheel with basic validation
+        run: |
+          python${{ env.PYTHON_VERSION }} -c "
+          import jsonschema_rs
+
+          schema = {'type': 'object', 'properties': {'name': {'type': 'string'}}}
+
+          assert jsonschema_rs.is_valid(schema, {'name': 'test'}), 'Valid instance failed'
+          assert not jsonschema_rs.is_valid(schema, {'name': 123}), 'Invalid instance passed'
+
+          print('Basic validation tests passed!')
+          "

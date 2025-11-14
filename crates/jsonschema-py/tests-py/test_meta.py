@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 import pytest
 
 from jsonschema_rs import ReferencingError, ValidationError, meta
@@ -66,3 +69,47 @@ def test_validation_error_details():
 def test_type_errors(invalid_input):
     with pytest.raises((ValueError, ValidationError)):
         meta.validate(invalid_input)
+
+
+def test_exceptions_remain_consistent_after_reload():
+    # Module reloading affects global state and can contaminate other tests that import
+    # exception classes at module level. Run in subprocess for complete isolation.
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+import importlib
+import jsonschema_rs
+
+schema = {"type": "integer"}
+
+# Test before reload
+try:
+    jsonschema_rs.validate(schema, "not-int")
+    raise AssertionError("Expected ValidationError")
+except jsonschema_rs.ValidationError:
+    pass
+
+# Reload the module
+reloaded = importlib.reload(jsonschema_rs)
+assert reloaded is jsonschema_rs
+
+# Test after reload - exceptions should still work
+try:
+    jsonschema_rs.validate(schema, "still-not-int")
+    raise AssertionError("Expected ValidationError")
+except jsonschema_rs.ValidationError:
+    pass
+
+try:
+    jsonschema_rs.meta.validate({"$schema": "invalid", "type": "string"})
+    raise AssertionError("Expected ReferencingError")
+except jsonschema_rs.ReferencingError:
+    pass
+""",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"Test failed with stdout:\n{result.stdout}\nstderr:\n{result.stderr}"

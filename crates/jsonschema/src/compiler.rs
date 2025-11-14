@@ -726,11 +726,11 @@ fn annotations_to_value(annotations: AHashMap<String, Value>) -> Arc<Value> {
     Arc::new(Value::Object(object))
 }
 
-fn collect_resource_pairs<'a>(
-    base_uri: &'a str,
+fn collect_resource_pairs(
+    base_uri: &str,
     resource: Resource,
     resources: AHashMap<String, Resource>,
-) -> impl IntoIterator<Item = (Cow<'a, str>, Resource)> {
+) -> impl IntoIterator<Item = (Cow<'_, str>, Resource)> {
     once((Cow::Borrowed(base_uri), resource)).chain(
         resources
             .into_iter()

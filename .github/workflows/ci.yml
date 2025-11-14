@@ -62,7 +62,7 @@ jobs:
           cache-all-crates: "true"
           key: ${{ matrix.os }}
 
-      - run: cargo test --no-fail-fast --all-features
+      - run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py
 
   test-wasm:
     strategy:
@@ -173,7 +173,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Run tests
-        run: cargo llvm-cov --no-report --all-features
+        run: cargo llvm-cov --no-report --all-features --workspace --exclude jsonschema-py
 
       - name: Generate coverage reports
         run: cargo llvm-cov report --lcov --output-path lcov.info
@@ -224,7 +224,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, macos-15, windows-2022]
-        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14']
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
 
     name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}

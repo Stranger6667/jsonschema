@@ -982,7 +982,7 @@ pub mod meta {
             }
         }
 
-        impl<'a> AsRef<Validator> for MetaValidator<'a> {
+        impl AsRef<Validator> for MetaValidator<'_> {
             fn as_ref(&self) -> &Validator {
                 match &self.0 {
                     #[cfg(not(target_family = "wasm"))]
@@ -993,7 +993,7 @@ pub mod meta {
             }
         }
 
-        impl<'a> Deref for MetaValidator<'a> {
+        impl Deref for MetaValidator<'_> {
             type Target = Validator;
 
             fn deref(&self) -> &Self::Target {

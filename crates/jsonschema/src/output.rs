@@ -31,7 +31,7 @@ pub struct Output<'a, 'b> {
     instance: &'b serde_json::Value,
 }
 
-impl<'a> Output<'a, '_> {
+impl Output<'_, '_> {
     pub(crate) const fn new<'c, 'd>(
         schema: &'c Validator,
         root_node: &'c SchemaNode,
