@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Python 3.14 support.
+
 ### Changed
 
 - Update `pyo3` to `0.27`.
