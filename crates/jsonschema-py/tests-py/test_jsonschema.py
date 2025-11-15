@@ -622,3 +622,101 @@ def test_validate_error_instance_path_traverses_instance():
             current = current[segment]
 
     assert current == instance["table-node"][0]["~"]
+
+
+def test_custom_meta_schema_unregistered():
+    import pytest
+    from jsonschema_rs import validator_for, ValidationError
+
+    schema = {
+        "$schema": "http://example.com/meta/custom-schema",
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"}
+        },
+        "required": ["name"]
+    }
+
+    with pytest.raises(ValidationError, match="Unknown meta-schema"):
+        validator_for(schema)
+
+
+def test_custom_meta_schema_registered():
+    from jsonschema_rs import validator_for, Registry
+
+    meta_schema = {
+        "$id": "http://example.com/meta/schema",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "Core schema definition",
+        "type": "object",
+        "allOf": [
+            {"$ref": "#/$defs/editable"},
+            {"$ref": "#/$defs/core"}
+        ],
+        "properties": {
+            "properties": {
+                "type": "object",
+                "patternProperties": {
+                    ".*": {
+                        "type": "object",
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": ["array", "boolean", "integer", "number", "object", "string", "null"]
+                            }
+                        }
+                    }
+                },
+                "propertyNames": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                }
+            }
+        },
+        "unevaluatedProperties": False,
+        "required": ["properties"],
+        "$defs": {
+            "core": {
+                "type": "object",
+                "properties": {
+                    "$id": {"type": "string"},
+                    "$schema": {"type": "string"},
+                    "type": {"const": "object"},
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "additionalProperties": {"type": "boolean", "const": False}
+                },
+                "required": ["$id", "$schema", "type"]
+            },
+            "editable": {
+                "type": "object",
+                "properties": {
+                    "creationDate": {"type": "string", "format": "date-time"},
+                    "updateDate": {"type": "string", "format": "date-time"}
+                },
+                "required": ["creationDate"]
+            }
+        }
+    }
+
+    element_schema = {
+        "$schema": "http://example.com/meta/schema",
+        "$id": "http://example.com/schemas/element",
+        "title": "Element",
+        "description": "An element",
+        "creationDate": "2024-12-31T12:31:53+01:00",
+        "properties": {
+            "value": {"type": "string"}
+        },
+        "type": "object"
+    }
+
+    registry = Registry([
+        ("http://example.com/meta/schema", meta_schema),
+        ("http://example.com/schemas/element", element_schema)
+    ])
+
+    validator = validator_for(element_schema, registry=registry)
+
+    assert validator.is_valid({"value": "test string"})
+    assert not validator.is_valid({"value": 123})

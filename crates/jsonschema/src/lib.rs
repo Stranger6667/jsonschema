@@ -946,27 +946,24 @@ pub fn async_options() -> ValidationOptions<std::sync::Arc<dyn AsyncRetrieve>> {
 
 /// Functionality for validating JSON Schema documents against their meta-schemas.
 pub mod meta {
-    use crate::{error::ValidationError, Draft, ReferencingError};
+    use crate::{error::ValidationError, Draft};
     use serde_json::Value;
 
     pub use validator_handle::MetaValidator;
 
     mod validator_handle {
         use crate::Validator;
-        #[cfg(target_family = "wasm")]
-        use std::marker::PhantomData;
-        use std::ops::Deref;
+        use std::{marker::PhantomData, ops::Deref};
 
         /// Handle to a draft-specific meta-schema [`Validator`]. Borrows cached validators on native
         /// targets and owns validators on `wasm32`.
         pub struct MetaValidator<'a>(MetaValidatorInner<'a>);
 
-        // Native builds can hand out references to cached validators, while wasm targets need
-        // owned instances because the validator type does not implement `Sync` there.
+        // Native builds can hand out references to cached validators or own dynamic ones,
+        // while wasm targets need owned instances because the validator type does not implement `Sync` there.
         enum MetaValidatorInner<'a> {
             #[cfg(not(target_family = "wasm"))]
             Borrowed(&'a Validator),
-            #[cfg(target_family = "wasm")]
             Owned(Box<Validator>, PhantomData<&'a Validator>),
         }
 
@@ -976,7 +973,6 @@ pub mod meta {
                 Self(MetaValidatorInner::Borrowed(validator))
             }
 
-            #[cfg(target_family = "wasm")]
             pub(crate) fn owned(validator: Validator) -> Self {
                 Self(MetaValidatorInner::Owned(Box::new(validator), PhantomData))
             }
@@ -987,7 +983,6 @@ pub mod meta {
                 match &self.0 {
                     #[cfg(not(target_family = "wasm"))]
                     MetaValidatorInner::Borrowed(validator) => validator,
-                    #[cfg(target_family = "wasm")]
                     MetaValidatorInner::Owned(validator, _) => validator,
                 }
             }
@@ -1065,10 +1060,8 @@ pub mod meta {
                 Draft::Draft201909 => {
                     MetaValidator::borrowed(&validators::DRAFT201909_META_VALIDATOR)
                 }
-                Draft::Draft202012 => {
-                    MetaValidator::borrowed(&validators::DRAFT202012_META_VALIDATOR)
-                }
-                _ => unreachable!("Unknown draft"),
+                // Draft202012, Unknown, or any future draft variants
+                _ => MetaValidator::borrowed(&validators::DRAFT202012_META_VALIDATOR),
             }
         }
         #[cfg(target_family = "wasm")]
@@ -1078,8 +1071,8 @@ pub mod meta {
                 Draft::Draft6 => validators::draft6_meta_validator(),
                 Draft::Draft7 => validators::draft7_meta_validator(),
                 Draft::Draft201909 => validators::draft201909_meta_validator(),
-                Draft::Draft202012 => validators::draft202012_meta_validator(),
-                _ => unreachable!("Unknown draft"),
+                // Draft202012, Unknown, or any future draft variants
+                _ => validators::draft202012_meta_validator(),
             };
             MetaValidator::owned(validator)
         }
@@ -1140,88 +1133,75 @@ pub mod meta {
     }
 
     fn meta_validator_for(schema: &Value) -> MetaValidator<'static> {
-        try_meta_validator_for(schema).expect("Failed to detect meta schema")
+        let draft = Draft::default().detect(schema);
+
+        // For custom meta-schemas (Draft::Unknown), attempt to resolve the meta-schema chain
+        // by fetching the meta-schema. This only works if:
+        // 1. The URI is fetchable (file:// or http(s):// with resolve-* features)
+        // 2. The meta-schema chain terminates at a known draft
+        // If fetching fails or the chain is invalid, fall back to Draft 2020-12 validation.
+        if draft == Draft::Unknown {
+            if let Some(meta_schema_uri) = schema
+                .as_object()
+                .and_then(|obj| obj.get("$schema"))
+                .and_then(|s| s.as_str())
+            {
+                // Only attempt resolution for file:// URIs to avoid slow network timeouts
+                // in tests and for unreachable HTTP URIs. For production use with real
+                // custom meta-schemas, users should use validator building with a registry.
+                if meta_schema_uri.starts_with("file://") {
+                    if let Ok((custom_meta_schema, resolved_draft)) =
+                        resolve_meta_schema_chain(meta_schema_uri)
+                    {
+                        let validator = crate::options()
+                            .with_draft(resolved_draft)
+                            .without_schema_validation()
+                            .build(&custom_meta_schema)
+                            .expect("Failed to build meta-schema validator");
+                        return MetaValidator::owned(validator);
+                    }
+                }
+            }
+        }
+
+        validator_for_draft(draft)
     }
 
-    /// Try to validate a JSON Schema document against its meta-schema.
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(true)` if the schema is valid
-    /// - `Ok(false)` if the schema is invalid
-    /// - `Err(ReferencingError)` if the meta-schema can't be detected
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use serde_json::json;
-    ///
-    /// let schema = json!({
-    ///     "type": "string",
-    ///     "maxLength": 5
-    /// });
-    /// assert!(jsonschema::meta::try_is_valid(&schema).expect("Unknown draft"));
-    ///
-    /// // Invalid $schema URI
-    /// let undetectable_schema = json!({
-    ///     "$schema": "invalid-uri",
-    ///     "type": "string"
-    /// });
-    /// assert!(jsonschema::meta::try_is_valid(&undetectable_schema).is_err());
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the draft cannot be detected (for example, because `$schema` contains an invalid URI).
-    pub fn try_is_valid(schema: &Value) -> Result<bool, ReferencingError> {
-        Ok(try_meta_validator_for(schema)?.as_ref().is_valid(schema))
-    }
+    fn resolve_meta_schema_chain(
+        uri: &str,
+    ) -> Result<(Value, Draft), Box<dyn std::error::Error + Send + Sync>> {
+        use referencing::Retrieve;
 
-    /// Try to validate a JSON Schema document against its meta-schema.
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(Ok(()))` if the schema is valid
-    /// - `Ok(Err(ValidationError))` if the schema is invalid
-    /// - `Err(ReferencingError)` if the meta-schema can't be detected
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use serde_json::json;
-    ///
-    /// let schema = json!({
-    ///     "type": "string",
-    ///     "maxLength": 5
-    /// });
-    /// assert!(jsonschema::meta::try_validate(&schema).expect("Invalid schema").is_ok());
-    ///
-    /// // Invalid schema
-    /// let invalid_schema = json!({
-    ///     "type": "invalid_type"
-    /// });
-    /// assert!(jsonschema::meta::try_validate(&invalid_schema).expect("Invalid schema").is_err());
-    ///
-    /// // Invalid $schema URI
-    /// let undetectable_schema = json!({
-    ///     "$schema": "invalid-uri",
-    ///     "type": "string"
-    /// });
-    /// assert!(jsonschema::meta::try_validate(&undetectable_schema).is_err());
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the draft cannot be detected (for example, because `$schema` contains an invalid URI).
-    pub fn try_validate(
-        schema: &Value,
-    ) -> Result<Result<(), ValidationError<'_>>, ReferencingError> {
-        Ok(try_meta_validator_for(schema)?.as_ref().validate(schema))
-    }
+        let mut visited = std::collections::HashSet::new();
+        let mut current_uri = uri.to_string();
+        let retriever = crate::retriever::DefaultRetriever;
+        let first_meta_uri = referencing::uri::from_str(&current_uri)?;
 
-    fn try_meta_validator_for(schema: &Value) -> Result<MetaValidator<'static>, ReferencingError> {
-        let draft = Draft::default().detect(schema)?;
-        Ok(validator_for_draft(draft))
+        // Attempt to retrieve the first meta-schema. If this fails (e.g., network error,
+        // unreachable URI), we'll fall back to Draft 2020-12 validation.
+        let first_meta_schema = retriever.retrieve(&first_meta_uri)?;
+
+        loop {
+            if !visited.insert(current_uri.clone()) {
+                return Err("Circular meta-schema reference detected".into());
+            }
+
+            let meta_uri = referencing::uri::from_str(&current_uri)?;
+            let meta_schema = retriever.retrieve(&meta_uri)?;
+
+            let draft = Draft::default().detect(&meta_schema);
+
+            if draft != Draft::Unknown {
+                return Ok((first_meta_schema, draft));
+            }
+
+            current_uri = meta_schema
+                .as_object()
+                .and_then(|obj| obj.get("$schema"))
+                .and_then(|s| s.as_str())
+                .ok_or("Meta-schema chain does not terminate at a known draft")?
+                .to_string();
+        }
     }
 }
 
@@ -2488,13 +2468,11 @@ mod tests {
             "exclusiveMinimum": exclusive_minimum.into()
         });
 
-        let is_valid_result = crate::meta::try_is_valid(&schema);
-        assert!(is_valid_result.is_ok());
-        assert_eq!(is_valid_result.expect("Unknown draft"), expected);
+        let is_valid_result = crate::meta::is_valid(&schema);
+        assert_eq!(is_valid_result, expected);
 
-        let validate_result = crate::meta::try_validate(&schema);
-        assert!(validate_result.is_ok());
-        assert_eq!(validate_result.expect("Unknown draft").is_ok(), expected);
+        let validate_result = crate::meta::validate(&schema);
+        assert_eq!(validate_result.is_ok(), expected);
     }
 
     #[test]
@@ -2504,21 +2482,30 @@ mod tests {
             "type": "string"
         });
 
-        assert!(crate::meta::try_is_valid(&schema).is_err());
-        assert!(crate::meta::try_validate(&schema).is_err());
+        let result = crate::options().without_schema_validation().build(&schema);
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("Unknown meta-schema"));
+        assert!(error.to_string().contains("invalid-uri"));
     }
 
     #[test]
     fn test_invalid_schema_keyword() {
         let schema = json!({
-            // Note `htt`, not `http`
             "$schema": "htt://json-schema.org/draft-07/schema",
+            "type": "string"
         });
-        let error = crate::validator_for(&schema).expect_err("Should fail");
-        assert_eq!(
-            error.to_string(),
-            "Unknown specification: htt://json-schema.org/draft-07/schema"
-        );
+
+        // Without registering the meta-schema, this should fail
+        let result = crate::options().without_schema_validation().build(&schema);
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("Unknown meta-schema"));
+        assert!(error
+            .to_string()
+            .contains("htt://json-schema.org/draft-07/schema"));
     }
 
     #[test_case(Draft::Draft4)]
@@ -2547,6 +2534,252 @@ mod tests {
             Ok(())
         }
         let _ = foo();
+    }
+
+    #[test]
+    fn test_meta_validation_with_unknown_schema() {
+        let schema = json!({
+            "$schema": "http://example.com/custom",
+            "type": "string"
+        });
+
+        // Meta-validation works (validates against Draft 2020-12)
+        assert!(crate::meta::is_valid(&schema));
+        assert!(crate::meta::validate(&schema).is_ok());
+
+        // But building a validator fails without registration
+        let result = crate::validator_for(&schema);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "resolve-file"))]
+    fn test_meta_validation_respects_metaschema_draft() {
+        use std::io::Write;
+
+        let mut temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        let meta_schema_draft7 = json!({
+            "$id": "http://example.com/meta/draft7",
+            "$schema": "http://json-schema.org/draft-07/schema",
+            "type": ["object", "boolean"],
+            "properties": {
+                "$schema": { "type": "string" },
+                "type": {},
+                "properties": { "type": "object" }
+            },
+            "additionalProperties": false
+        });
+        write!(temp_file, "{meta_schema_draft7}").expect("Failed to write to temp file");
+
+        let uri = crate::retriever::path_to_uri(temp_file.path());
+
+        let schema_using_draft7_meta = json!({
+            "$schema": uri,
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" }
+            },
+            "unevaluatedProperties": false
+        });
+
+        let schema_valid_for_draft7_meta = json!({
+            "$schema": uri,
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" }
+            }
+        });
+
+        assert!(crate::meta::is_valid(&meta_schema_draft7));
+        assert!(!crate::meta::is_valid(&schema_using_draft7_meta));
+        assert!(crate::meta::is_valid(&schema_valid_for_draft7_meta));
+    }
+
+    #[test]
+    fn simple_schema_with_unknown_draft() {
+        use referencing::Resource;
+
+        // Define a custom meta-schema
+        let meta_schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "http://custom.example.com/schema",
+            "$vocabulary": {
+                "https://json-schema.org/draft/2020-12/vocab/core": true,
+                "https://json-schema.org/draft/2020-12/vocab/applicator": true,
+                "https://json-schema.org/draft/2020-12/vocab/validation": true,
+            }
+        });
+
+        // Schema using the custom meta-schema
+        let schema = json!({
+            "$schema": "http://custom.example.com/schema",
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" }
+            }
+        });
+
+        // Register the custom meta-schema as a resource
+        let resources = vec![(
+            "http://custom.example.com/schema".to_string(),
+            Resource::from_contents(meta_schema),
+        )];
+
+        let validator = crate::options()
+            .without_schema_validation()
+            .with_resources(resources.into_iter())
+            .build(&schema)
+            .expect("Should build validator");
+
+        // Valid instance
+        assert!(validator.is_valid(&json!({"name": "test"})));
+
+        // Invalid instance - name should be string, not number
+        assert!(!validator.is_valid(&json!({"name": 123})));
+
+        // Also verify type validation works
+        assert!(!validator.is_valid(&json!("not an object")));
+    }
+
+    #[test]
+    fn custom_meta_schema_support() {
+        // Define a custom meta-schema that extends Draft 2020-12
+        let meta_schema = json!({
+            "$id": "http://example.com/meta/schema",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "Core schema definition",
+            "type": "object",
+            "allOf": [
+                {
+                    "$ref": "#/$defs/editable"
+                },
+                {
+                    "$ref": "#/$defs/core"
+                }
+            ],
+            "properties": {
+                "properties": {
+                    "type": "object",
+                    "patternProperties": {
+                        ".*": {
+                            "type": "object",
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "enum": [
+                                        "array",
+                                        "boolean",
+                                        "integer",
+                                        "number",
+                                        "object",
+                                        "string",
+                                        "null"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "propertyNames": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                    }
+                }
+            },
+            "unevaluatedProperties": false,
+            "required": [
+                "properties"
+            ],
+            "$defs": {
+                "core": {
+                    "type": "object",
+                    "properties": {
+                        "$id": {
+                            "type": "string"
+                        },
+                        "$schema": {
+                            "type": "string"
+                        },
+                        "type": {
+                            "const": "object"
+                        },
+                        "title": {
+                            "type": "string"
+                        },
+                        "description": {
+                            "type": "string"
+                        },
+                        "additionalProperties": {
+                            "type": "boolean",
+                            "const": false
+                        }
+                    },
+                    "required": [
+                        "$id",
+                        "$schema",
+                        "type"
+                    ]
+                },
+                "editable": {
+                    "type": "object",
+                    "properties": {
+                        "creationDate": {
+                            "type": "string",
+                            "format": "date-time"
+                        },
+                        "updateDate": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    },
+                    "required": [
+                        "creationDate"
+                    ]
+                }
+            }
+        });
+
+        // A schema that uses the custom meta-schema
+        let element_schema = json!({
+            "$schema": "http://example.com/meta/schema",
+            "$id": "http://example.com/schemas/element",
+            "title": "Element",
+            "description": "An element",
+            "creationDate": "2024-12-31T12:31:53+01:00",
+            "properties": {
+                "value": {
+                    "type": "string"
+                }
+            },
+            "type": "object"
+        });
+
+        // Build the validator with both the meta-schema and the element schema as resources
+        let resources = vec![
+            (
+                "http://example.com/meta/schema".to_string(),
+                referencing::Resource::from_contents(meta_schema),
+            ),
+            (
+                "http://example.com/schemas/element".to_string(),
+                referencing::Resource::from_contents(element_schema.clone()),
+            ),
+        ];
+
+        let validator = crate::options()
+            .without_schema_validation()
+            .with_resources(resources.into_iter())
+            .build(&element_schema)
+            .expect("Should successfully build validator with custom meta-schema");
+
+        let valid_instance = json!({
+            "value": "test string"
+        });
+        assert!(validator.is_valid(&valid_instance));
+
+        let invalid_instance = json!({
+            "value": 123
+        });
+        assert!(!validator.is_valid(&invalid_instance));
     }
 }
 
@@ -2714,8 +2947,7 @@ mod async_tests {
                         "age": {"type": "integer", "minimum": 0}
                     },
                     "required": ["name"]
-                }))
-                .unwrap(),
+                })),
             )])
             .await
             .unwrap();

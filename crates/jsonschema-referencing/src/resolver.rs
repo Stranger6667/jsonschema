@@ -53,17 +53,6 @@ impl<'r> Resolver<'r> {
             scopes: List::new(),
         }
     }
-    pub(crate) fn from_parts(
-        registry: &'r Registry,
-        base_uri: Arc<Uri<String>>,
-        scopes: List<Uri<String>>,
-    ) -> Self {
-        Self {
-            registry,
-            base_uri,
-            scopes,
-        }
-    }
     #[must_use]
     pub fn base_uri(&self) -> Arc<Uri<String>> {
         self.base_uri.clone()
@@ -239,11 +228,6 @@ impl<'r> Resolved<'r> {
     #[must_use]
     pub fn resolver(&self) -> &Resolver<'r> {
         &self.resolver
-    }
-
-    #[must_use]
-    pub fn draft(&self) -> Draft {
-        self.draft
     }
     #[must_use]
     pub fn into_inner(self) -> (&'r Value, Resolver<'r>, Draft) {

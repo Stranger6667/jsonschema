@@ -64,6 +64,7 @@ impl Error {
             anchor: anchor.into(),
         }
     }
+
     pub(crate) fn unknown_specification(specification: impl Into<String>) -> Error {
         Error::UnknownSpecification {
             specification: specification.into(),
@@ -132,7 +133,7 @@ impl fmt::Display for Error {
             }
             Error::InvalidUri(error) => error.fmt(f),
             Error::UnknownSpecification { specification } => {
-                f.write_fmt(format_args!("Unknown specification: {specification}"))
+                write!(f, "Unknown meta-schema: '{specification}'. Custom meta-schemas must be registered in the registry before use")
             }
         }
     }

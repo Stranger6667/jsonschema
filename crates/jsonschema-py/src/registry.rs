@@ -35,8 +35,7 @@ impl Registry {
             let (key, value) = pair.extract::<(Bound<PyAny>, Bound<PyAny>)>(py)?;
             let uri = key.extract::<String>()?;
             let schema = to_value(&value)?;
-            let resource = Resource::from_contents(schema)
-                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+            let resource = Resource::from_contents(schema);
             Ok((uri, resource))
         });
 

@@ -170,10 +170,7 @@ impl<'a> Context<'a> {
         })
     }
     pub(crate) fn as_resource_ref<'r>(&'a self, contents: &'r Value) -> ResourceRef<'r> {
-        self.draft
-            .detect(contents)
-            .unwrap_or_default()
-            .create_resource_ref(contents)
+        self.draft.detect(contents).create_resource_ref(contents)
     }
 
     #[inline]

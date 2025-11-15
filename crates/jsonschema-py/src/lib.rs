@@ -87,11 +87,6 @@ fn create_referencing_error_object(py: Python<'_>, message: String) -> PyResult<
     Ok(obj.into())
 }
 
-fn referencing_error_pyerr(py: Python<'_>, message: String) -> PyResult<PyErr> {
-    let obj = create_referencing_error_object(py, message)?;
-    Ok(PyErr::from_value(obj.into_bound(py)))
-}
-
 /// Type of validation failure with its contextual data.
 #[pyclass]
 #[derive(Debug)]
@@ -1196,7 +1191,6 @@ mod build {
 
 /// Meta-schema validation
 mod meta {
-    use super::referencing_error_pyerr;
     use pyo3::prelude::*;
 
     /// is_valid(schema)
@@ -1210,37 +1204,27 @@ mod meta {
     ///
     #[pyfunction]
     #[pyo3(signature = (schema))]
-    pub(crate) fn is_valid(py: Python<'_>, schema: &Bound<'_, PyAny>) -> PyResult<bool> {
+    pub(crate) fn is_valid(schema: &Bound<'_, PyAny>) -> PyResult<bool> {
         let schema = crate::ser::to_value(schema)?;
-        match jsonschema::meta::try_is_valid(&schema) {
-            Ok(valid) => Ok(valid),
-            Err(err) => Err(referencing_error_pyerr(py, err.to_string())?),
-        }
+        Ok(jsonschema::meta::is_valid(&schema))
     }
 
     /// validate(schema)
     ///
     /// Validate a JSON Schema document against its meta-schema and raise ValidationError if invalid.
-    /// Draft version is detected automatically.
+    /// Draft version is detected automatically. Schemas with custom/unknown `$schema` values will fail unless their meta-schema is registered.
     ///
     ///     >>> jsonschema_rs.meta.validate({"type": "string"})
     ///     >>> jsonschema_rs.meta.validate({"type": "invalid_type"})
     ///     ...
-    ///     >>> jsonschema_rs.meta.validate({"$schema": "invalid-uri"})
-    ///     Traceback (most recent call last):
-    ///         ...
-    ///     jsonschema_rs.ReferencingError: Unknown specification: invalid-uri
     ///
     #[pyfunction]
     #[pyo3(signature = (schema))]
     pub(crate) fn validate(py: Python<'_>, schema: &Bound<'_, PyAny>) -> PyResult<()> {
         let schema = crate::ser::to_value(schema)?;
-        match jsonschema::meta::try_validate(&schema) {
-            Ok(validation_result) => match validation_result {
-                Ok(()) => Ok(()),
-                Err(error) => Err(crate::into_py_err(py, error, None)?),
-            },
-            Err(err) => Err(referencing_error_pyerr(py, err.to_string())?),
+        match jsonschema::meta::validate(&schema) {
+            Ok(()) => Ok(()),
+            Err(error) => Err(crate::into_py_err(py, error, None)?),
         }
     }
 }

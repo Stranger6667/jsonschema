@@ -137,7 +137,7 @@ const URI_SEGMENT: &AsciiSet = &CONTROLS
 const UNIX_URI_SEGMENT: &AsciiSet = &URI_SEGMENT.add(b'\\');
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
-fn path_to_uri(path: &std::path::Path) -> String {
+pub(crate) fn path_to_uri(path: &std::path::Path) -> String {
     use percent_encoding::percent_encode;
 
     let mut result = "file://".to_owned();

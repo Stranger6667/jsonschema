@@ -12,7 +12,6 @@ use serde_json::Value;
 use crate::{
     anchors::{AnchorKey, AnchorKeyRef},
     cache::{SharedUriCache, UriCache},
-    list::List,
     meta::{self, metas_for_draft},
     resource::{unescape_segment, InnerResourcePtr, JsonSchemaResource},
     uri,
@@ -87,7 +86,7 @@ pub static SPECIFICATIONS: LazyLock<Registry> =
 ///                     // Should be retrieved by `ExampleRetriever`
 ///                     "role": {"$ref": "https://example.com/role.json"}
 ///                 }
-///             }))?
+///             }))
 ///         )
 ///     ])?;
 /// # Ok(())
@@ -125,7 +124,7 @@ pub static SPECIFICATIONS: LazyLock<Registry> =
 ///             Resource::from_contents(json!({
 ///                 // Should be retrieved by `ExampleRetriever`
 ///                 "$ref": "https://example.com/common/user.json"
-///             }))?
+///             }))
 ///         )
 ///     ])
 ///     .await?;
@@ -334,6 +333,10 @@ impl Registry {
             &mut resolution_cache,
             draft,
         )?;
+
+        // Validate that all custom $schema references are registered
+        validate_custom_metaschemas(&resources)?;
+
         Ok(Registry {
             documents,
             resources,
@@ -371,6 +374,9 @@ impl Registry {
             draft,
         )
         .await?;
+
+        // Validate that all custom $schema references are registered
+        validate_custom_metaschemas(&resources)?;
 
         Ok(Registry {
             documents,
@@ -428,6 +434,7 @@ impl Registry {
             &mut resolution_cache,
             draft,
         )?;
+        validate_custom_metaschemas(&resources)?;
         Ok(Registry {
             documents,
             resources,
@@ -461,6 +468,7 @@ impl Registry {
             draft,
         )
         .await?;
+        validate_custom_metaschemas(&resources)?;
         Ok(Registry {
             documents,
             resources,
@@ -481,14 +489,6 @@ impl Registry {
     #[must_use]
     pub fn resolver(&self, base_uri: Uri<String>) -> Resolver<'_> {
         Resolver::new(self, Arc::new(base_uri))
-    }
-    #[must_use]
-    pub fn resolver_from_raw_parts(
-        &self,
-        base_uri: Arc<Uri<String>>,
-        scopes: List<Uri<String>>,
-    ) -> Resolver<'_> {
-        Resolver::from_parts(self, base_uri, scopes)
     }
     pub(crate) fn anchor<'a>(&self, uri: &'a Uri<String>, name: &'a str) -> Result<&Anchor, Error> {
         let key = AnchorKeyRef::new(uri, name);
@@ -518,34 +518,45 @@ impl Registry {
         self.resolution_cache.resolve_against(base, uri)
     }
     /// Returns vocabulary set configured for given draft and contents.
+    ///
+    /// For custom meta-schemas (`Draft::Unknown`), looks up the meta-schema in the registry
+    /// and extracts its `$vocabulary` declaration. If the meta-schema is not registered,
+    /// returns the default Draft 2020-12 vocabularies.
     #[must_use]
     pub fn find_vocabularies(&self, draft: Draft, contents: &Value) -> VocabularySet {
         match draft.detect(contents) {
-            Ok(draft) => draft.default_vocabularies(),
-            Err(Error::UnknownSpecification { specification }) => {
-                // Try to lookup the specification and find enabled vocabularies
-                if let Ok(Some(resource)) =
-                    uri::from_str(&specification).map(|uri| self.resources.get(&uri))
+            Draft::Unknown => {
+                // Custom/unknown meta-schema - try to look it up in the registry
+                if let Some(specification) = contents
+                    .as_object()
+                    .and_then(|obj| obj.get("$schema"))
+                    .and_then(|s| s.as_str())
                 {
-                    if let Ok(Some(vocabularies)) = vocabularies::find(resource.contents()) {
-                        return vocabularies;
+                    if let Ok(uri) = uri::from_str(specification) {
+                        if let Some(resource) = self.resources.get(&uri) {
+                            // Found the custom meta-schema - extract vocabularies
+                            if let Ok(Some(vocabularies)) = vocabularies::find(resource.contents())
+                            {
+                                return vocabularies;
+                            }
+                        }
+                        // Meta-schema not registered - this will be caught during compilation
+                        // For now, return default vocabularies to allow resource creation
                     }
                 }
-                draft.default_vocabularies()
+                // Default to Draft 2020-12 vocabularies for unknown meta-schemas
+                Draft::Unknown.default_vocabularies()
             }
-            _ => unreachable!(),
+            draft => draft.default_vocabularies(),
         }
     }
 
     /// Build a registry with all the given meta-schemas from specs.
     pub(crate) fn build_from_meta_schemas(schemas: &[(&'static str, &'static Value)]) -> Self {
         let schemas_count = schemas.len();
-        let pairs = schemas.iter().map(|(uri, schema)| {
-            (
-                uri,
-                ResourceRef::from_contents(schema).expect("Invalid resource"),
-            )
-        });
+        let pairs = schemas
+            .iter()
+            .map(|(uri, schema)| (uri, ResourceRef::from_contents(schema)));
 
         let mut documents = DocumentStore::with_capacity(schemas_count);
         let mut resources = ResourceMap::with_capacity(schemas_count);
@@ -633,10 +644,16 @@ impl ReferenceKey {
 
 type ReferenceTracker = AHashSet<ReferenceKey>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum ReferenceKind {
+    Ref,
+    Schema,
+}
+
 struct ProcessingState {
     queue: VecDeque<(Arc<Uri<String>>, InnerResourcePtr)>,
     seen: ReferenceTracker,
-    external: AHashSet<(String, Uri<String>)>,
+    external: AHashSet<(String, Uri<String>, ReferenceKind)>,
     scratch: String,
     refers_metaschemas: bool,
 }
@@ -717,16 +734,15 @@ fn handle_fragment(
     key: &Arc<Uri<String>>,
     default_draft: Draft,
     queue: &mut VecDeque<(Arc<Uri<String>>, InnerResourcePtr)>,
-) -> Result<(), Error> {
+) {
     if let Some(fragment) = uri.fragment() {
         if let Some(resolved) = pointer(resource.contents(), fragment.as_str()) {
-            let draft = default_draft.detect(resolved)?;
+            let draft = default_draft.detect(resolved);
             let contents = std::ptr::addr_of!(*resolved);
             let resource = InnerResourcePtr::new(contents, draft);
             queue.push_back((Arc::clone(key), resource));
         }
     }
-    Ok(())
 }
 
 fn handle_metaschemas(
@@ -755,14 +771,14 @@ fn create_resource(
     default_draft: Draft,
     documents: &mut DocumentStore,
     resources: &mut ResourceMap,
-) -> Result<(Arc<Uri<String>>, InnerResourcePtr), Error> {
-    let draft = default_draft.detect(&retrieved)?;
+) -> (Arc<Uri<String>>, InnerResourcePtr) {
+    let draft = default_draft.detect(&retrieved);
     let wrapped_value = Arc::pin(ValueWrapper::Owned(retrieved));
     let resource = InnerResourcePtr::new((*wrapped_value).as_ref(), draft);
     let key = Arc::new(fragmentless);
     documents.insert(Arc::clone(&key), wrapped_value);
     resources.insert(Arc::clone(&key), resource.clone());
-    Ok((key, resource))
+    (key, resource)
 }
 
 fn process_resources(
@@ -785,29 +801,37 @@ fn process_resources(
         process_queue(&mut state, resources, anchors, resolution_cache)?;
 
         // Retrieve external resources
-        for (original, uri) in state.external.drain() {
+        for (original, uri, kind) in state.external.drain() {
             let mut fragmentless = uri.clone();
             fragmentless.set_fragment(None);
             if !resources.contains_key(&fragmentless) {
                 let retrieved = match retriever.retrieve(&fragmentless) {
                     Ok(retrieved) => retrieved,
                     Err(error) => {
-                        return if uri.scheme().as_str() == "json-schema" {
-                            Err(Error::unretrievable(
-                                original,
-                                "No base URI is available".into(),
-                            ))
-                        } else {
-                            Err(Error::unretrievable(fragmentless.as_str(), error))
+                        // $ref fetch failures are fatal - they're required for validation
+                        // $schema fetch failures during resource processing are non-fatal here,
+                        // but unregistered custom meta-schemas will be caught in validate_custom_metaschemas()
+                        match kind {
+                            ReferenceKind::Schema => {
+                                continue;
+                            }
+                            ReferenceKind::Ref => {
+                                return if uri.scheme().as_str() == "json-schema" {
+                                    Err(Error::unretrievable(
+                                        original,
+                                        "No base URI is available".into(),
+                                    ))
+                                } else {
+                                    Err(Error::unretrievable(fragmentless.as_str(), error))
+                                }
+                            }
                         }
                     }
                 };
 
                 let (key, resource) =
-                    create_resource(retrieved, fragmentless, default_draft, documents, resources)?;
-
-                handle_fragment(&uri, &resource, &key, default_draft, &mut state.queue)?;
-
+                    create_resource(retrieved, fragmentless, default_draft, documents, resources);
+                handle_fragment(&uri, &resource, &key, default_draft, &mut state.queue);
                 state.queue.push_back((key, resource));
             }
         }
@@ -842,13 +866,13 @@ async fn process_resources_async(
             let data = state
                 .external
                 .drain()
-                .filter_map(|(original, uri)| {
+                .filter_map(|(original, uri, kind)| {
                     let mut fragmentless = uri.clone();
                     fragmentless.set_fragment(None);
                     if resources.contains_key(&fragmentless) {
                         None
                     } else {
-                        Some((original, uri, fragmentless))
+                        Some((original, uri, kind, fragmentless))
                     }
                 })
                 .collect::<Vec<_>>();
@@ -856,21 +880,31 @@ async fn process_resources_async(
             let results = {
                 let futures = data
                     .iter()
-                    .map(|(_, _, fragmentless)| retriever.retrieve(fragmentless));
+                    .map(|(_, _, _, fragmentless)| retriever.retrieve(fragmentless));
                 futures::future::join_all(futures).await
             };
 
-            for ((original, uri, fragmentless), result) in data.iter().zip(results) {
+            for ((original, uri, kind, fragmentless), result) in data.iter().zip(results) {
                 let retrieved = match result {
                     Ok(retrieved) => retrieved,
                     Err(error) => {
-                        return if uri.scheme().as_str() == "json-schema" {
-                            Err(Error::unretrievable(
-                                original,
-                                "No base URI is available".into(),
-                            ))
-                        } else {
-                            Err(Error::unretrievable(fragmentless.as_str(), error))
+                        // $ref fetch failures are fatal - they're required for validation
+                        // $schema fetch failures during resource processing are non-fatal here,
+                        // but unregistered custom meta-schemas will be caught in validate_custom_metaschemas()
+                        match kind {
+                            ReferenceKind::Schema => {
+                                continue;
+                            }
+                            ReferenceKind::Ref => {
+                                return if uri.scheme().as_str() == "json-schema" {
+                                    Err(Error::unretrievable(
+                                        original,
+                                        "No base URI is available".into(),
+                                    ))
+                                } else {
+                                    Err(Error::unretrievable(fragmentless.as_str(), error))
+                                }
+                            }
                         }
                     }
                 };
@@ -881,10 +915,8 @@ async fn process_resources_async(
                     default_draft,
                     documents,
                     resources,
-                )?;
-
-                handle_fragment(uri, &resource, &key, default_draft, &mut state.queue)?;
-
+                );
+                handle_fragment(uri, &resource, &key, default_draft, &mut state.queue);
                 state.queue.push_back((key, resource));
             }
         }
@@ -895,10 +927,44 @@ async fn process_resources_async(
     Ok(())
 }
 
+fn validate_custom_metaschemas(resources: &ResourceMap) -> Result<(), Error> {
+    for resource in resources.values() {
+        if resource.draft() == Draft::Unknown {
+            // Extract the $schema value from this resource
+            if let Some(schema_uri) = resource
+                .contents()
+                .as_object()
+                .and_then(|obj| obj.get("$schema"))
+                .and_then(|s| s.as_str())
+            {
+                // Check if this meta-schema is registered
+                let normalized_schema_uri = schema_uri.trim_end_matches('#');
+                match uri::from_str(normalized_schema_uri) {
+                    Ok(meta_uri) => {
+                        if !resources.contains_key(&meta_uri) {
+                            return Err(Error::unknown_specification(schema_uri));
+                        }
+                    }
+                    Err(_) => {
+                        return Err(Error::unknown_specification(schema_uri));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Check if a schema URI is a standard JSON Schema meta-schema.
+fn is_standard_metaschema(schema_uri: &str) -> bool {
+    schema_uri.starts_with("https://json-schema.org/draft/")
+        || schema_uri.starts_with("http://json-schema.org/draft-")
+}
+
 fn collect_external_resources(
     base: &Arc<Uri<String>>,
     contents: &Value,
-    collected: &mut AHashSet<(String, Uri<String>)>,
+    collected: &mut AHashSet<(String, Uri<String>, ReferenceKind)>,
     seen: &mut ReferenceTracker,
     resolution_cache: &mut UriCache,
     scratch: &mut String,
@@ -970,7 +1036,12 @@ fn collect_external_resources(
                             .clone()
                         };
 
-                        collected.insert(($reference.to_string(), resolved));
+                        let kind = if $key == "$schema" {
+                            ReferenceKind::Schema
+                        } else {
+                            ReferenceKind::Ref
+                        };
+                        collected.insert(($reference.to_string(), resolved, kind));
                     }
                 }
             }
@@ -985,8 +1056,18 @@ fn collect_external_resources(
                         on_reference!(reference, "$ref");
                     }
                 } else if key == "$schema" {
+                    // $schema indicates which meta-schema this schema conforms to
+                    // For custom meta-schemas, we want to fetch them for vocabulary resolution
+                    // but they're not required to succeed (schema compilation should work even if meta-schema is unavailable)
                     if let Some(reference) = value.as_str() {
-                        on_reference!(reference, "$schema");
+                        if is_standard_metaschema(reference) {
+                            // Track that this schema refers to a known meta-schema
+                            *refers_metaschemas = true;
+                        } else {
+                            // Custom meta-schema - try to fetch it for vocabulary resolution
+                            // Use on_reference! to add it to external resources
+                            on_reference!(reference, "$schema");
+                        }
                     }
                 }
             }
@@ -995,7 +1076,15 @@ fn collect_external_resources(
                 on_reference!(reference, "$ref");
             }
             if let Some(reference) = object.get("$schema").and_then(Value::as_str) {
-                on_reference!(reference, "$schema");
+                // $schema indicates which meta-schema this schema conforms to
+                // For custom meta-schemas, we want to fetch them for vocabulary resolution
+                if is_standard_metaschema(reference) {
+                    // Track that this schema refers to a known meta-schema
+                    *refers_metaschemas = true;
+                } else {
+                    // Custom meta-schema - try to fetch it for vocabulary resolution
+                    on_reference!(reference, "$schema");
+                }
             }
         }
     }
@@ -1099,6 +1188,99 @@ mod tests {
         let schema = Draft::Draft202012.create_resource(json!({"$ref": "./virtualNetwork.json"}));
         let error = Registry::try_new("json-schema:///", schema).expect_err("Should fail");
         assert_eq!(error.to_string(), "Resource './virtualNetwork.json' is not present in a registry and retrieving it failed: No base URI is available");
+    }
+
+    #[test]
+    fn test_try_with_resources_requires_registered_custom_meta_schema() {
+        let base_registry = Registry::try_new(
+            "http://example.com/root",
+            Resource::from_contents(json!({"type": "object"})),
+        )
+        .expect("Base registry should be created");
+
+        let custom_schema = Resource::from_contents(json!({
+            "$id": "http://example.com/custom",
+            "$schema": "http://example.com/meta/custom",
+            "type": "string"
+        }));
+
+        let error = base_registry
+            .try_with_resources(
+                [("http://example.com/custom", custom_schema)],
+                Draft::default(),
+            )
+            .expect_err("Extending registry must fail when the custom $schema is not registered");
+
+        assert!(error
+            .to_string()
+            .contains("Unknown meta-schema: 'http://example.com/meta/custom'"));
+    }
+
+    #[test]
+    fn test_try_with_resources_accepts_registered_custom_meta_schema_fragment() {
+        let meta_schema = Resource::from_contents(json!({
+            "$id": "http://example.com/meta/custom#",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object"
+        }));
+
+        let registry = Registry::try_new("http://example.com/meta/custom#", meta_schema)
+            .expect("Meta-schema should be registered successfully");
+
+        let schema = Resource::from_contents(json!({
+            "$id": "http://example.com/schemas/my-schema",
+            "$schema": "http://example.com/meta/custom#",
+            "type": "string"
+        }));
+
+        registry
+            .clone()
+            .try_with_resources(
+                [("http://example.com/schemas/my-schema", schema)],
+                Draft::default(),
+            )
+            .expect("Schema should accept registered meta-schema URI with trailing '#'");
+    }
+
+    #[test]
+    fn test_chained_custom_meta_schemas() {
+        // Meta-schema B (uses standard Draft 2020-12)
+        let meta_schema_b = Resource::from_contents(json!({
+            "$id": "http://example.com/meta/level-b",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$vocabulary": {
+                "https://json-schema.org/draft/2020-12/vocab/core": true,
+                "https://json-schema.org/draft/2020-12/vocab/validation": true,
+            },
+            "type": "object",
+            "properties": {
+                "customProperty": {"type": "string"}
+            }
+        }));
+
+        // Meta-schema A (uses Meta-schema B)
+        let meta_schema_a = Resource::from_contents(json!({
+            "$id": "http://example.com/meta/level-a",
+            "$schema": "http://example.com/meta/level-b",
+            "customProperty": "level-a-meta",
+            "type": "object"
+        }));
+
+        // Schema (uses Meta-schema A)
+        let schema = Resource::from_contents(json!({
+            "$id": "http://example.com/schemas/my-schema",
+            "$schema": "http://example.com/meta/level-a",
+            "customProperty": "my-schema",
+            "type": "string"
+        }));
+
+        // Register all meta-schemas and schema in a chained manner
+        Registry::try_from_resources([
+            ("http://example.com/meta/level-b", meta_schema_b),
+            ("http://example.com/meta/level-a", meta_schema_a),
+            ("http://example.com/schemas/my-schema", schema),
+        ])
+        .expect("Chained custom meta-schemas should be accepted when all are registered");
     }
 
     struct TestRetriever {
@@ -1314,12 +1496,7 @@ mod tests {
             .input_resources
             .clone()
             .into_iter()
-            .map(|(uri, value)| {
-                (
-                    uri,
-                    Resource::from_contents(value).expect("Invalid resource"),
-                )
-            });
+            .map(|(uri, value)| (uri, Resource::from_contents(value)));
 
         let registry = Registry::options()
             .retriever(retriever)
@@ -1336,8 +1513,7 @@ mod tests {
     fn test_default_retriever_with_remote_refs() {
         let result = Registry::try_from_resources([(
             "http://example.com/schema1",
-            Resource::from_contents(json!({"$ref": "http://example.com/schema2"}))
-                .expect("Invalid resource"),
+            Resource::from_contents(json!({"$ref": "http://example.com/schema2"})),
         )]);
         let error = result.expect_err("Should fail");
         assert_eq!(error.to_string(), "Resource 'http://example.com/schema2' is not present in a registry and retrieving it failed: Default retriever does not fetch resources");
@@ -1347,10 +1523,7 @@ mod tests {
     #[test]
     fn test_options() {
         let _registry = RegistryOptions::default()
-            .build([(
-                "",
-                Resource::from_contents(json!({})).expect("Invalid resource"),
-            )])
+            .build([("", Resource::from_contents(json!({})))])
             .expect("Invalid resources");
     }
 
@@ -1413,10 +1586,7 @@ mod tests {
     fn test_resolver_debug() {
         let registry = SPECIFICATIONS
             .clone()
-            .try_with_resource(
-                "http://example.com",
-                Resource::from_contents(json!({})).expect("Invalid resource"),
-            )
+            .try_with_resource("http://example.com", Resource::from_contents(json!({})))
             .expect("Invalid resource");
         let resolver = registry
             .try_resolver("http://127.0.0.1/schema")
@@ -1431,10 +1601,7 @@ mod tests {
     fn test_try_with_resource() {
         let registry = SPECIFICATIONS
             .clone()
-            .try_with_resource(
-                "http://example.com",
-                Resource::from_contents(json!({})).expect("Invalid resource"),
-            )
+            .try_with_resource("http://example.com", Resource::from_contents(json!({})))
             .expect("Invalid resource");
         let resolver = registry.try_resolver("").expect("Invalid base URI");
         let resolved = resolver
@@ -1497,8 +1664,7 @@ mod async_tests {
             .async_retriever(DefaultRetriever)
             .build([(
                 "http://example.com/schema1",
-                Resource::from_contents(json!({"$ref": "http://example.com/schema2"}))
-                    .expect("Invalid resource"),
+                Resource::from_contents(json!({"$ref": "http://example.com/schema2"})),
             )])
             .await;
 
@@ -1585,8 +1751,7 @@ mod async_tests {
             .async_retriever(retriever)
             .build([(
                 "http://example.com",
-                Resource::from_contents(json!({"$ref": "http://example.com/schema2"}))
-                    .expect("Invalid resource"),
+                Resource::from_contents(json!({"$ref": "http://example.com/schema2"})),
             )])
             .await
             .expect("Invalid resource");
@@ -1623,8 +1788,7 @@ mod async_tests {
                         "obj": {"$ref": "http://example.com/schema2"},
                         "str": {"$ref": "http://example.com/schema3"}
                     }
-                }))
-                .expect("Invalid resource"),
+                })),
             )])
             .await
             .expect("Invalid resource");
@@ -1677,8 +1841,7 @@ mod async_tests {
                         "name": {"type": "string"},
                         "address": {"$ref": "http://example.com/address"}
                     }
-                }))
-                .expect("Invalid resource"),
+                })),
             )])
             .await
             .expect("Invalid resource");
