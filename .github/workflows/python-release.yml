@@ -17,6 +17,7 @@ concurrency:
 env:
   PACKAGE_NAME: jsonschema_rs
   PYTHON_ABI_VERSION: "3.10"
+  PYPY_VERSION: "pypy3.11"
 
 jobs:
   sdist:
@@ -169,6 +170,67 @@ jobs:
           name: wheel-linux-${{ matrix.target }}
           path: dist
 
+  pypy:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-13
+            target: x86_64
+            artifact: wheel-macos-pypy
+            manylinux: ''
+          - os: windows-2022
+            target: x64
+            artifact: wheel-windows-pypy
+            manylinux: ''
+          - os: ubuntu-22.04
+            target: x86_64
+            artifact: wheel-linux-pypy
+            manylinux: auto
+          - os: ubuntu-22.04
+            target: aarch64
+            artifact: wheel-linux-pypy-aarch64
+            manylinux: 2_24
+
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install uv and cache PyPy
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.PYPY_VERSION }}
+          enable-cache: true
+          cache-python: true
+          cache-suffix: pypy-${{ matrix.os }}-${{ matrix.target }}
+      - name: Ensure PyPy interpreter
+        run: |
+          uv python install ${{ env.PYPY_VERSION }}
+          interp=$(uv python find ${{ env.PYPY_VERSION }})
+          echo "PYPY_INTERPRETER=$interp" >> "$GITHUB_ENV"
+          "$interp" --version
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build wheels - PyPy (manylinux)
+        if: ${{ matrix.manylinux != '' }}
+        uses: messense/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYPY_INTERPRETER }}
+      - name: Build wheels - PyPy
+        if: ${{ matrix.manylinux == '' }}
+        uses: messense/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYPY_INTERPRETER }}
+      - name: Install built wheel - PyPy
+        if: ${{ matrix.target != 'aarch64' }}
+        run: |
+          uv pip install --python "${{ env.PYPY_INTERPRETER }}" dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
+      - name: Upload wheels
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist
+
   release:
     name: Release
     runs-on: ubuntu-22.04
@@ -178,6 +240,7 @@ jobs:
       - macos-universal
       - windows
       - linux
+      - pypy
     if: "startsWith(github.ref, 'refs/tags/')"
     steps:
       - uses: actions/download-artifact@v6

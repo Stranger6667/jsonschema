@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- PyPy 3.11 support. [#309](https://github.com/Stranger6667/jsonschema/issues/309)
+
 ### Changed
 
 - Migrated to abi3 so a single wheel per platform works on all supported 3.10+ interpreters.

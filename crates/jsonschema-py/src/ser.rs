@@ -17,9 +17,11 @@ use std::borrow::Cow;
 
 #[cfg(not(Py_LIMITED_API))]
 use pyo3::ffi::{
-    PyDictObject, PyFloat_AS_DOUBLE, PyList_GET_ITEM, PyList_GET_SIZE, PyTuple_GET_ITEM,
-    PyTuple_GET_SIZE,
+    PyFloat_AS_DOUBLE, PyList_GET_ITEM, PyList_GET_SIZE, PyTuple_GET_ITEM, PyTuple_GET_SIZE,
 };
+
+#[cfg(all(not(Py_LIMITED_API), not(PyPy)))]
+use pyo3::ffi::PyDictObject;
 
 pub const RECURSION_LIMIT: u8 = 255;
 
@@ -135,11 +137,11 @@ unsafe fn pytuple_get_item(
 
 #[inline]
 unsafe fn dict_len(object: *mut pyo3::ffi::PyObject) -> usize {
-    #[cfg(Py_LIMITED_API)]
+    #[cfg(any(Py_LIMITED_API, PyPy))]
     {
         pyo3::ffi::PyDict_Size(object) as usize
     }
-    #[cfg(not(Py_LIMITED_API))]
+    #[cfg(all(not(Py_LIMITED_API), not(PyPy)))]
     {
         (*object.cast::<PyDictObject>()).ma_used as usize
     }
