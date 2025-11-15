@@ -11,8 +11,12 @@ fuzz_target!(|data: (&[u8], &[u8])| {
                 for error in validator.iter_errors(&instance) {
                     let _ = error.to_string();
                 }
-                let output = validator.apply(&instance).basic();
-                let _ = serde_json::to_value(output).expect("Failed to serialize");
+                let evaluation = validator.evaluate(&instance);
+                let _ = evaluation.flag();
+                let _ = serde_json::to_value(evaluation.list())
+                    .expect("Failed to serialize list output");
+                let _ = serde_json::to_value(evaluation.hierarchical())
+                    .expect("Failed to serialize hierarchical output");
             }
         }
     }

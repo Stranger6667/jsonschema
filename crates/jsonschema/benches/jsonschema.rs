@@ -3,6 +3,7 @@ mod bench {
     pub use benchmark::Benchmark;
     pub use codspeed_criterion_compat::{criterion_group, BenchmarkId, Criterion};
     pub use serde_json::Value;
+    use std::hint::black_box;
 
     pub fn bench_build(c: &mut Criterion, name: &str, schema: &Value) {
         c.bench_with_input(BenchmarkId::new("build", name), schema, |b, schema| {
@@ -36,11 +37,15 @@ mod bench {
         );
     }
 
-    pub fn bench_apply(c: &mut Criterion, name: &str, schema: &Value, instance: &Value) {
+    pub fn bench_evaluate(c: &mut Criterion, name: &str, schema: &Value, instance: &Value) {
         let validator = jsonschema::validator_for(schema).expect("Valid schema");
-        c.bench_with_input(BenchmarkId::new("apply", name), instance, |b, instance| {
-            b.iter_with_large_drop(|| validator.apply(instance).basic());
-        });
+        c.bench_with_input(
+            BenchmarkId::new("evaluate", name),
+            instance,
+            |b, instance| {
+                b.iter_with_large_drop(|| black_box(validator.evaluate(instance)));
+            },
+        );
     }
 
     pub fn run_benchmarks(c: &mut Criterion) {
@@ -51,7 +56,7 @@ mod bench {
                     let name = format!("{}/{}", name, instance.name);
                     bench_is_valid(c, &name, schema, &instance.data);
                     bench_validate(c, &name, schema, &instance.data);
-                    bench_apply(c, &name, schema, &instance.data);
+                    bench_evaluate(c, &name, schema, &instance.data);
                 }
             });
         }

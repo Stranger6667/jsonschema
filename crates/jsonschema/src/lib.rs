@@ -375,23 +375,10 @@
 //! let instance = json!("some string");
 //! let validator = jsonschema::validator_for(&schema_json)?;
 //!
-//! let output = validator.apply(&instance).basic();
-//!
-//! assert_eq!(
-//!     serde_json::to_value(output)?,
-//!     json!({
-//!         "valid": true,
-//!         "annotations": [
-//!             {
-//!                 "keywordLocation": "",
-//!                 "instanceLocation": "",
-//!                 "annotations": {
-//!                     "title": "string value"
-//!                 }
-//!             }
-//!         ]
-//!     })
-//! );
+//! let evaluation = validator.evaluate(&instance);
+//! assert!(evaluation.flag().valid);
+//! let list = serde_json::to_value(evaluation.list())?;
+//! println!("{}", serde_json::to_string_pretty(&list)?);
 //! #    Ok(())
 //! # }
 //! ```
@@ -689,6 +676,7 @@ mod content_encoding;
 mod content_media_type;
 mod ecma;
 pub mod error;
+mod evaluation;
 #[doc(hidden)]
 pub mod ext;
 mod keywords;
@@ -704,9 +692,9 @@ pub mod types;
 mod validator;
 
 pub use error::{ErrorIterator, MaskedValidationError, ValidationError};
+pub use evaluation::{Evaluation, FlagOutput, HierarchicalOutput, ListOutput};
 pub use keywords::custom::Keyword;
 pub use options::{FancyRegex, PatternOptions, Regex, ValidationOptions};
-pub use output::BasicOutput;
 pub use referencing::{
     Draft, Error as ReferencingError, Registry, RegistryOptions, Resource, Retrieve, Uri,
 };
@@ -2247,7 +2235,7 @@ pub mod draft202012 {
 #[cfg(test)]
 pub(crate) mod tests_util {
     use super::Validator;
-    use crate::{output::OutputUnit, BasicOutput, ValidationError};
+    use crate::ValidationError;
     use serde_json::Value;
 
     #[track_caller]
@@ -2264,9 +2252,10 @@ pub(crate) mod tests_util {
             validator.iter_errors(instance).next().is_some(),
             "{instance} should not be valid (via validate)",
         );
+        let evaluation = validator.evaluate(instance);
         assert!(
-            !validator.apply(instance).basic().is_valid(),
-            "{instance} should not be valid (via apply)",
+            !evaluation.flag().valid,
+            "{instance} should not be valid (via evaluate)",
         );
     }
 
@@ -2306,9 +2295,10 @@ pub(crate) mod tests_util {
             validator.validate(instance).is_ok(),
             "{instance} should be valid (via is_valid)",
         );
+        let evaluation = validator.evaluate(instance);
         assert!(
-            validator.apply(instance).basic().is_valid(),
-            "{instance} should be valid (via apply)",
+            evaluation.flag().valid,
+            "{instance} should be valid (via evaluate)",
         );
     }
 
@@ -2356,38 +2346,45 @@ pub(crate) mod tests_util {
         instance_pointer: &str,
         keyword_pointer: &str,
     ) {
-        fn ensure_location<T>(
-            units: Vec<OutputUnit<T>>,
-            instance_pointer: &str,
-            keyword_pointer: &str,
-        ) -> Result<(), Vec<String>> {
-            let mut available = Vec::new();
-            for unit in units {
-                let instance_location = unit.instance_location().as_str();
-                if instance_location == instance_pointer {
-                    let keyword_location = unit.keyword_location().as_str().to_string();
-                    if keyword_location == keyword_pointer {
-                        return Ok(());
-                    }
-                    available.push(keyword_location);
-                }
-            }
-            Err(available)
+        fn pointer_from_schema_location(location: &str) -> &str {
+            location
+                .split_once('#')
+                .map(|(_, fragment)| fragment)
+                .unwrap_or(location)
         }
 
-        match validator.apply(instance).basic() {
-            BasicOutput::Valid(units) => {
-                ensure_location(units, instance_pointer, keyword_pointer)
+        let evaluation = validator.evaluate(instance);
+        let serialized =
+            serde_json::to_value(evaluation.list()).expect("List output should be serializable");
+        let details = serialized
+            .get("details")
+            .and_then(|value| value.as_array())
+            .expect("List output must contain details");
+        let mut available = Vec::new();
+        for entry in details {
+            let Some(instance_location) = entry
+                .get("instanceLocation")
+                .and_then(|value| value.as_str())
+            else {
+                continue;
+            };
+            if instance_location != instance_pointer {
+                continue;
             }
-            BasicOutput::Invalid(units) => {
-                ensure_location(units, instance_pointer, keyword_pointer)
+            let schema_location = entry
+                .get("schemaLocation")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let pointer = pointer_from_schema_location(schema_location);
+            if pointer == keyword_pointer {
+                return;
             }
+            available.push(pointer.to_string());
         }
-        .unwrap_or_else(|available| {
-            panic!(
-                "No annotation for instance pointer `{instance_pointer}` with keyword location `{keyword_pointer}`. Available keyword locations for pointer: {available:?}"
-            )
-        });
+
+        panic!(
+            "No annotation for instance pointer `{instance_pointer}` with keyword location `{keyword_pointer}`. Available keyword locations for pointer: {available:?}"
+        );
     }
 }
 

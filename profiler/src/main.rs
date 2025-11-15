@@ -76,8 +76,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = Registry::try_from_resources(input_resources.into_iter());
             }
         }
-        "is_valid" | "validate" | "iter_errors" | "apply" => {
-            let instance_path = args.instance_path.as_ref()
+        "is_valid" | "validate" | "iter_errors" | "evaluate" => {
+            let instance_path = args
+                .instance_path
+                .as_ref()
                 .ok_or("--instance or --preset required for this method")?;
             let instance_str = fs::read_to_string(instance_path)?;
             let instance: Value = serde_json::from_str(&instance_str)?;
@@ -99,9 +101,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         for _error in validator.iter_errors(&instance) {}
                     }
                 }
-                "apply" => {
+                "evaluate" => {
                     for _ in 0..args.iterations {
-                        let _ = validator.apply(&instance).basic();
+                        let evaluation = validator.evaluate(&instance);
+                        let _ = evaluation.flag();
+                        let _ = serde_json::to_value(evaluation.list())
+                            .expect("Failed to serialize list output");
+                        let _ = serde_json::to_value(evaluation.hierarchical())
+                            .expect("Failed to serialize hierarchical output");
                     }
                 }
                 _ => unreachable!(),
@@ -109,7 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             return Err(
-                "Invalid method. Use 'registry', 'build', 'is_valid', 'validate', 'iter_errors', or 'apply'".into()
+                "Invalid method. Use 'registry', 'build', 'is_valid', 'validate', 'iter_errors', or 'evaluate'".into()
             );
         }
     }

@@ -1,11 +1,12 @@
 use crate::{
     compiler::Context,
     error::ErrorIterator,
+    evaluation::{format_schema_location, EvaluationNode},
     keywords::{BoxedValidator, Keyword},
-    output::{Annotations, BasicOutput, ErrorDescription, OutputUnit},
+    output::Annotations,
     paths::{LazyLocation, Location},
     thread::{Shared, SharedWeak},
-    validator::{PartialApplication, Validate},
+    validator::{EvaluationResult, Validate},
     ValidationError,
 };
 use referencing::Uri;
@@ -155,8 +156,8 @@ impl Validate for PendingSchemaNode {
         self.with_node(|node| node.iter_errors(instance, location))
     }
 
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
-        self.with_node(|node| node.apply(instance, location))
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+        self.with_node(|node| node.evaluate(instance, location))
     }
 }
 
@@ -249,79 +250,49 @@ impl SchemaNode {
         }
     }
 
-    /// This is similar to `Validate::apply` except that `SchemaNode` knows where it is in the
-    /// validator tree and so rather than returning a `PartialApplication` it is able to return a
-    /// complete `BasicOutput`. This is the mechanism which compositional validators use to combine
-    /// results from sub-schemas
-    pub(crate) fn apply_rooted(&self, instance: &Value, location: &LazyLocation) -> BasicOutput {
-        match self.apply(instance, location) {
-            PartialApplication::Valid {
+    pub(crate) fn evaluate_instance(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+    ) -> EvaluationNode {
+        let instance_location: Location = location.into();
+        let schema_location = format_schema_location(&self.location, self.absolute_path.as_ref());
+        match self.evaluate(instance, location) {
+            EvaluationResult::Valid {
                 annotations,
                 child_results,
-            } => {
-                if let Some(annotations) = annotations {
-                    let mut outputs = Vec::with_capacity(child_results.len() + 1);
-                    outputs.push(self.annotation_at(location, annotations));
-                    outputs.extend(child_results);
-                    BasicOutput::Valid(outputs)
-                } else {
-                    BasicOutput::Valid(child_results)
-                }
-            }
-            PartialApplication::Invalid {
+            } => EvaluationNode::valid(
+                self.location.clone(),
+                self.absolute_path.clone(),
+                schema_location,
+                instance_location,
+                annotations,
+                child_results,
+            ),
+            EvaluationResult::Invalid {
                 errors,
                 child_results,
-            } => {
-                if errors.is_empty() {
-                    BasicOutput::Invalid(child_results)
-                } else {
-                    let mut outputs = Vec::with_capacity(child_results.len() + errors.len());
-                    for error in errors {
-                        outputs.push(self.error_at(location, error));
-                    }
-                    outputs.extend(child_results);
-                    BasicOutput::Invalid(outputs)
-                }
-            }
+                annotations,
+            } => EvaluationNode::invalid(
+                self.location.clone(),
+                self.absolute_path.clone(),
+                schema_location,
+                instance_location,
+                annotations,
+                errors,
+                child_results,
+            ),
         }
     }
 
-    /// Create an error output which is marked as occurring at this schema node
-    pub(crate) fn error_at(
-        &self,
-        location: &LazyLocation,
-        error: ErrorDescription,
-    ) -> OutputUnit<ErrorDescription> {
-        OutputUnit::<ErrorDescription>::error(
-            self.location.clone(),
-            location.into(),
-            self.absolute_path.clone(),
-            error,
-        )
-    }
-
-    /// Create an annotation output which is marked as occurring at this schema node
-    pub(crate) fn annotation_at(
-        &self,
-        location: &LazyLocation,
-        annotations: Annotations,
-    ) -> OutputUnit<Annotations> {
-        OutputUnit::<Annotations>::annotations(
-            self.location.clone(),
-            location.into(),
-            self.absolute_path.clone(),
-            annotations,
-        )
-    }
-
-    /// Helper function to apply subschemas which already know their locations.
-    fn apply_subschemas<'a, I>(
+    /// Helper function to evaluate subschemas which already know their locations.
+    fn evaluate_subschemas<'a, I>(
         &self,
         instance: &Value,
         location: &LazyLocation,
         subschemas: I,
         annotations: Option<Annotations>,
-    ) -> PartialApplication
+    ) -> EvaluationResult
     where
         I: Iterator<
                 Item = (
@@ -332,9 +303,8 @@ impl SchemaNode {
             > + 'a,
     {
         let (lower_bound, _) = subschemas.size_hint();
-        let mut success_annotations: Vec<OutputUnit<Annotations>> = Vec::with_capacity(lower_bound);
-        let mut success_children: Vec<OutputUnit<Annotations>> = Vec::with_capacity(lower_bound);
-        let mut error_results: Vec<OutputUnit<ErrorDescription>> = Vec::with_capacity(lower_bound);
+        let mut children: Vec<EvaluationNode> = Vec::with_capacity(lower_bound);
+        let mut invalid = false;
         let instance_location: OnceCell<Location> = OnceCell::new();
 
         macro_rules! instance_location {
@@ -346,59 +316,53 @@ impl SchemaNode {
         for (child_location, absolute_location, validator) in subschemas {
             let schema_location = child_location.clone();
             let absolute_location = absolute_location.cloned();
-            match validator.apply(instance, location) {
-                PartialApplication::Valid {
-                    annotations,
-                    mut child_results,
-                } => {
-                    if let Some(annotations) = annotations {
-                        success_annotations.push(OutputUnit::<Annotations>::annotations(
-                            schema_location.clone(),
-                            instance_location!(),
-                            absolute_location.clone(),
-                            annotations,
-                        ));
-                    }
-                    success_children.append(&mut child_results);
-                }
-                PartialApplication::Invalid {
-                    errors: these_errors,
-                    mut child_results,
-                } => {
-                    let child_len = child_results.len();
-                    error_results.reserve(child_len + these_errors.len());
-                    error_results.append(&mut child_results);
-                    error_results.extend(these_errors.into_iter().map(|error| {
-                        OutputUnit::<ErrorDescription>::error(
-                            schema_location.clone(),
-                            instance_location!(),
-                            absolute_location.clone(),
-                            error,
-                        )
-                    }));
-                }
-            }
-        }
-        if error_results.is_empty() {
-            let mut child_results = success_children;
-            if success_annotations.is_empty() {
-                PartialApplication::Valid {
+            let instance_location = instance_location!();
+            let formatted_schema_location =
+                format_schema_location(&schema_location, absolute_location.as_ref());
+            let child_node = match validator.evaluate(instance, location) {
+                EvaluationResult::Valid {
                     annotations,
                     child_results,
-                }
-            } else {
-                let mut annotations_front = success_annotations;
-                annotations_front.reverse();
-                annotations_front.append(&mut child_results);
-                PartialApplication::Valid {
+                } => EvaluationNode::valid(
+                    schema_location,
+                    absolute_location,
+                    formatted_schema_location,
+                    instance_location,
                     annotations,
-                    child_results: annotations_front,
+                    child_results,
+                ),
+                EvaluationResult::Invalid {
+                    errors,
+                    child_results,
+                    annotations,
+                } => {
+                    invalid = true;
+                    EvaluationNode::invalid(
+                        schema_location,
+                        absolute_location,
+                        formatted_schema_location,
+                        instance_location,
+                        annotations,
+                        errors,
+                        child_results,
+                    )
                 }
+            };
+            if !child_node.valid {
+                invalid = true;
+            }
+            children.push(child_node);
+        }
+        if invalid {
+            EvaluationResult::Invalid {
+                errors: Vec::new(),
+                child_results: children,
+                annotations,
             }
         } else {
-            PartialApplication::Invalid {
-                errors: Vec::new(),
-                child_results: error_results,
+            EvaluationResult::Valid {
+                annotations,
+                child_results: children,
             }
         }
     }
@@ -490,9 +454,9 @@ impl Validate for SchemaNode {
         }
     }
 
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
         match self.validators.as_ref() {
-            NodeValidators::Array { ref validators } => self.apply_subschemas(
+            NodeValidators::Array { ref validators } => self.evaluate_subschemas(
                 instance,
                 location,
                 validators.iter().map(|entry| {
@@ -506,9 +470,9 @@ impl Validate for SchemaNode {
             ),
             NodeValidators::Boolean { ref validator } => {
                 if let Some(validator) = validator {
-                    validator.apply(instance, location)
+                    validator.evaluate(instance, location)
                 } else {
-                    PartialApplication::Valid {
+                    EvaluationResult::Valid {
                         annotations: None,
                         child_results: Vec::new(),
                     }
@@ -521,7 +485,7 @@ impl Validate for SchemaNode {
                 } = *kvals;
                 let annotations: Option<Annotations> =
                     unmatched_keywords.as_ref().map(Annotations::from);
-                self.apply_subschemas(
+                self.evaluate_subschemas(
                     instance,
                     location,
                     validators.iter().map(|entry| {

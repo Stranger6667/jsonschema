@@ -75,6 +75,32 @@ use jsonschema::primitive_type::{PrimitiveType, PrimitiveTypesBitMap};
 use jsonschema::types::{JsonType, JsonTypeSet};
 ```
 
+### Removal of `Validator::apply`, `Output`, and `BasicOutput`
+
+The legacy `apply()` API and its `BasicOutput`/`OutputUnit` structures have been removed in favor of
+the richer [`Validator::evaluate`](https://docs.rs/jsonschema/latest/jsonschema/struct.Validator.html#method.evaluate)
+interface that exposes the JSON Schema output formats directly.
+
+```rust
+// Old (0.34.x)
+let output = validator.apply(&instance).basic();
+match output {
+    BasicOutput::Valid(units) => println!("valid: {units:?}"),
+    BasicOutput::Invalid(errors) => println!("errors: {errors:?}"),
+}
+
+// New (0.35.0)
+let evaluation = validator.evaluate(&instance);
+if evaluation.flag().valid {
+    println!("valid");
+}
+let list = serde_json::to_value(evaluation.list())?;
+let hierarchical = serde_json::to_value(evaluation.hierarchical())?;
+```
+
+`Annotations` and `ErrorDescription` continue to be available if you need to inspect the evaluation
+tree manually.
+
 ## Upgrading from 0.33.x to 0.34.0
 
 ### Removed `Validator::config()`

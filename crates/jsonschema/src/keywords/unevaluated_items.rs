@@ -15,7 +15,7 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, Location},
     thread::Shared,
-    validator::Validate,
+    validator::{EvaluationResult, Validate},
     ValidationError,
 };
 
@@ -572,6 +572,62 @@ impl Validate for UnevaluatedItemsValidator {
             }
         }
         Ok(())
+    }
+
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+        if let Value::Array(items) = instance {
+            let mut indexes = vec![false; items.len()];
+            self.validators
+                .mark_evaluated_indexes(instance, &mut indexes);
+            let mut children = Vec::new();
+            let mut unevaluated = Vec::new();
+            let mut invalid = false;
+
+            for (idx, (item, is_evaluated)) in items.iter().zip(indexes.iter()).enumerate() {
+                if *is_evaluated {
+                    continue;
+                }
+                if let Some(validator) = &self.validators.unevaluated {
+                    let child = validator.evaluate_instance(item, &location.push(idx));
+                    if !child.valid {
+                        invalid = true;
+                        unevaluated.push(item.to_string());
+                    }
+                    children.push(child);
+                } else {
+                    invalid = true;
+                    unevaluated.push(item.to_string());
+                }
+            }
+
+            let mut errors = Vec::new();
+            if !unevaluated.is_empty() {
+                errors.push(
+                    ValidationError::unevaluated_items(
+                        self.location.clone(),
+                        location.into(),
+                        instance,
+                        unevaluated,
+                    )
+                    .into(),
+                );
+            }
+
+            if invalid {
+                EvaluationResult::Invalid {
+                    errors,
+                    child_results: children,
+                    annotations: None,
+                }
+            } else {
+                EvaluationResult::Valid {
+                    annotations: None,
+                    child_results: children,
+                }
+            }
+        } else {
+            EvaluationResult::valid_empty()
+        }
     }
 }
 
