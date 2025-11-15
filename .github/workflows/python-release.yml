@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - python-v*
+  pull_request:
+    branches:
+      - master
   workflow_dispatch:
 
 defaults:
@@ -21,11 +24,14 @@ env:
 
 jobs:
   sdist:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
+      - name: Add macOS x86_64 target
+        if: runner.os == 'macOS'
+        run: rustup target add x86_64-apple-darwin
 
       - uses: Swatinem/rust-cache@v2
 
@@ -51,23 +57,29 @@ jobs:
           path: crates/jsonschema-py/dist
 
   macos-x86_64:
-    runs-on: macos-13
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_ABI_VERSION }}
-          architecture: x64
+      - name: Ensure CPython interpreter
+        shell: bash
+        run: |
+          uv python install ${{ env.PYTHON_ABI_VERSION }}
+          interp=$(uv python find ${{ env.PYTHON_ABI_VERSION }})
+          echo "CPYTHON_INTERPRETER=$interp" >> "$GITHUB_ENV"
+      - name: Create virtual environment
+        run: uv venv --python '${{ env.CPYTHON_INTERPRETER }}' venv
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
       - name: Build wheels - x86_64
         uses: messense/maturin-action@v1
         with:
           target: x86_64
-          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.CPYTHON_INTERPRETER }}
       - name: Install built wheel - x86_64
         run: |
-          uv pip install --python ${{ env.PYTHON_ABI_VERSION }} dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
+          uv pip install --python venv dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
       - name: Upload wheels
         uses: actions/upload-artifact@v5
         with:
@@ -75,22 +87,28 @@ jobs:
           path: dist
 
   macos-universal:
-    runs-on: macos-13
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_ABI_VERSION }}
-          architecture: x64
+      - name: Ensure CPython interpreter
+        shell: bash
+        run: |
+          uv python install ${{ env.PYTHON_ABI_VERSION }}
+          interp=$(uv python find ${{ env.PYTHON_ABI_VERSION }})
+          echo "CPYTHON_INTERPRETER=$interp" >> "$GITHUB_ENV"
+      - name: Create virtual environment
+        run: uv venv --python '${{ env.CPYTHON_INTERPRETER }}' venv
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
       - name: Build wheels - universal2
         uses: messense/maturin-action@v1
         with:
-          args: --release -m crates/jsonschema-py/Cargo.toml --target universal2-apple-darwin --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --target universal2-apple-darwin --out dist --interpreter ${{ env.CPYTHON_INTERPRETER }}
       - name: Install built wheel - universal2
         run: |
-          uv pip install --python ${{ env.PYTHON_ABI_VERSION }} dist/${{ env.PACKAGE_NAME }}-*universal2.whl --force-reinstall
+          uv pip install --python venv dist/${{ env.PACKAGE_NAME }}-*universal2.whl --force-reinstall
       - name: Upload wheels
         uses: actions/upload-artifact@v5
         with:
@@ -98,7 +116,7 @@ jobs:
           path: dist
 
   windows:
-    runs-on: windows-2022
+    runs-on: windows-2025
     strategy:
       matrix:
         target: [ x64, x86 ]
@@ -109,16 +127,24 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_ABI_VERSION }}
           architecture: ${{ matrix.target }}
+      - name: Record CPython interpreter
+        shell: pwsh
+        run: |
+          $interp = Join-Path $env:pythonLocation "python.exe"
+          "CPYTHON_INTERPRETER=$interp" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Create virtual environment
+        shell: pwsh
+        run: uv venv --python "$env:CPYTHON_INTERPRETER" venv
       - uses: dtolnay/rust-toolchain@stable
       - name: Build wheels
         uses: messense/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.CPYTHON_INTERPRETER }}
       - name: Install built wheel
-        shell: bash
+        shell: pwsh
         run: |
-          uv pip install --python ${{ env.PYTHON_ABI_VERSION }} dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
+          uv pip install --python venv dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
       - name: Upload wheels
         uses: actions/upload-artifact@v5
         with:
@@ -126,31 +152,38 @@ jobs:
           path: dist
 
   linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         target: [ x86_64, i686, aarch64 ]
+    env:
+      UV_PYTHON_INSTALL_DIR: ${{ github.workspace }}/.uv-python/${{ matrix.target }}
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_ABI_VERSION }}
+      - name: Ensure CPython interpreter
+        shell: bash
+        run: |
+          uv python install ${{ env.PYTHON_ABI_VERSION }}
+          interp=$(uv python find ${{ env.PYTHON_ABI_VERSION }})
+          echo "CPYTHON_INTERPRETER=$interp" >> "$GITHUB_ENV"
+      - name: Create virtual environment
+        run: uv venv --python '${{ env.CPYTHON_INTERPRETER }}' venv
       - name: Build wheels
         uses: messense/maturin-action@v1
         with:
           target: ${{ matrix.target }}
           manylinux: auto
-          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.CPYTHON_INTERPRETER }}
       - name: Install built wheel on native architecture
         if: matrix.target == 'x86_64'
         run: |
-          uv pip install --python ${{ env.PYTHON_ABI_VERSION }} dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
+          uv pip install --python venv dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
       - uses: uraimo/run-on-arch-action@v3
         if: matrix.target == 'aarch64'
         name: Install built wheel on ARM architecture
         with:
-          base_image: '--platform=linux/aarch64 ubuntu:22.04'
+          base_image: '--platform=linux/aarch64 ubuntu:24.04'
           githubToken: ${{ github.token }}
           install: |
             export TZ=UTC
@@ -175,22 +208,24 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos-13
+          - os: macos-15
             target: x86_64
             artifact: wheel-macos-pypy
             manylinux: ''
-          - os: windows-2022
+          - os: windows-2025
             target: x64
             artifact: wheel-windows-pypy
             manylinux: ''
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             target: x86_64
             artifact: wheel-linux-pypy
             manylinux: auto
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             target: aarch64
             artifact: wheel-linux-pypy-aarch64
             manylinux: 2_24
+    env:
+      UV_PYTHON_INSTALL_DIR: ${{ github.workspace }}/.uv-python/${{ matrix.os }}-${{ matrix.target }}
 
     steps:
       - uses: actions/checkout@v5
@@ -202,12 +237,17 @@ jobs:
           cache-python: true
           cache-suffix: pypy-${{ matrix.os }}-${{ matrix.target }}
       - name: Ensure PyPy interpreter
+        env:
+          UV_PYTHON_INSTALL_DIR: ${{ github.workspace }}/.uv-python/${{ matrix.os }}-${{ matrix.target }}
         run: |
           uv python install ${{ env.PYPY_VERSION }}
           interp=$(uv python find ${{ env.PYPY_VERSION }})
           echo "PYPY_INTERPRETER=$interp" >> "$GITHUB_ENV"
           "$interp" --version
       - uses: dtolnay/rust-toolchain@stable
+      - name: Add macOS x86_64 target
+        if: runner.os == 'macOS'
+        run: rustup target add x86_64-apple-darwin
       - name: Build wheels - PyPy (manylinux)
         if: ${{ matrix.manylinux != '' }}
         uses: messense/maturin-action@v1
@@ -224,7 +264,8 @@ jobs:
       - name: Install built wheel - PyPy
         if: ${{ matrix.target != 'aarch64' }}
         run: |
-          uv pip install --python "${{ env.PYPY_INTERPRETER }}" dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
+          uv venv --python "${{ env.PYPY_INTERPRETER }}" venv
+          uv pip install --python venv dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
       - name: Upload wheels
         uses: actions/upload-artifact@v5
         with:
@@ -233,7 +274,7 @@ jobs:
 
   release:
     name: Release
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - sdist
       - macos-x86_64
