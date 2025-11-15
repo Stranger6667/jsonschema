@@ -1199,48 +1199,97 @@ mod meta {
     use super::referencing_error_pyerr;
     use pyo3::prelude::*;
 
-    /// is_valid(schema)
+    /// is_valid(schema, registry=None)
     ///
     /// Validate a JSON Schema document against its meta-schema. Draft version is detected automatically.
+    /// Schemas with unknown `$schema` values raise `jsonschema_rs.ReferencingError`.
     ///
     ///     >>> jsonschema_rs.meta.is_valid({"type": "string"})
     ///     True
     ///     >>> jsonschema_rs.meta.is_valid({"type": "invalid_type"})
     ///     False
     ///
+    /// For custom meta-schemas, provide a registry:
+    ///
+    ///     >>> custom_meta = {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object"}
+    ///     >>> registry = Registry([("http://example.com/meta", custom_meta)])
+    ///     >>> schema = {"$schema": "http://example.com/meta", "customKeyword": "value"}
+    ///     >>> jsonschema_rs.meta.is_valid(schema, registry=registry)
+    ///     True
+    ///
     #[pyfunction]
-    #[pyo3(signature = (schema))]
-    pub(crate) fn is_valid(py: Python<'_>, schema: &Bound<'_, PyAny>) -> PyResult<bool> {
+    #[pyo3(signature = (schema, registry=None))]
+    pub(crate) fn is_valid(
+        py: Python<'_>,
+        schema: &Bound<'_, PyAny>,
+        registry: Option<&crate::registry::Registry>,
+    ) -> PyResult<bool> {
         let schema = crate::ser::to_value(schema)?;
-        match jsonschema::meta::try_is_valid(&schema) {
-            Ok(valid) => Ok(valid),
-            Err(err) => Err(referencing_error_pyerr(py, err.to_string())?),
+        let result = if let Some(registry) = registry {
+            jsonschema::meta::options()
+                .with_registry(registry.inner.clone())
+                .validate(&schema)
+        } else {
+            jsonschema::meta::validate(&schema)
+        };
+
+        match result {
+            Ok(()) => Ok(true),
+            Err(error) => {
+                if let jsonschema::error::ValidationErrorKind::Referencing(err) = &error.kind {
+                    return Err(referencing_error_pyerr(py, err.to_string())?);
+                }
+                Ok(false)
+            }
         }
     }
 
-    /// validate(schema)
+    /// validate(schema, registry=None)
     ///
     /// Validate a JSON Schema document against its meta-schema and raise ValidationError if invalid.
-    /// Draft version is detected automatically.
+    /// Draft version is detected automatically. Schemas with custom/unknown `$schema` values raise `jsonschema_rs.ReferencingError`.
     ///
     ///     >>> jsonschema_rs.meta.validate({"type": "string"})
     ///     >>> jsonschema_rs.meta.validate({"type": "invalid_type"})
-    ///     ...
-    ///     >>> jsonschema_rs.meta.validate({"$schema": "invalid-uri"})
     ///     Traceback (most recent call last):
     ///         ...
-    ///     jsonschema_rs.ReferencingError: Unknown specification: invalid-uri
+    ///     jsonschema_rs.ValidationError: ...
+    ///     >>> jsonschema_rs.meta.validate({"$schema": "http://custom.example.com/schema", "type": "object"})
+    ///     Traceback (most recent call last):
+    ///         ...
+    ///     jsonschema_rs.ReferencingError: Unknown meta-schema: http://custom.example.com/schema
+    ///
+    /// For custom meta-schemas, provide a registry:
+    ///
+    ///     >>> custom_meta = {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object"}
+    ///     >>> registry = Registry([("http://example.com/meta", custom_meta)])
+    ///     >>> schema = {"$schema": "http://example.com/meta", "customKeyword": "value"}
+    ///     >>> jsonschema_rs.meta.validate(schema, registry=registry)
     ///
     #[pyfunction]
-    #[pyo3(signature = (schema))]
-    pub(crate) fn validate(py: Python<'_>, schema: &Bound<'_, PyAny>) -> PyResult<()> {
+    #[pyo3(signature = (schema, registry=None))]
+    pub(crate) fn validate(
+        py: Python<'_>,
+        schema: &Bound<'_, PyAny>,
+        registry: Option<&crate::registry::Registry>,
+    ) -> PyResult<()> {
         let schema = crate::ser::to_value(schema)?;
-        match jsonschema::meta::try_validate(&schema) {
-            Ok(validation_result) => match validation_result {
-                Ok(()) => Ok(()),
-                Err(error) => Err(crate::into_py_err(py, error, None)?),
-            },
-            Err(err) => Err(referencing_error_pyerr(py, err.to_string())?),
+        let result = if let Some(registry) = registry {
+            jsonschema::meta::options()
+                .with_registry(registry.inner.clone())
+                .validate(&schema)
+        } else {
+            jsonschema::meta::validate(&schema)
+        };
+
+        match result {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                if let jsonschema::error::ValidationErrorKind::Referencing(err) = &error.kind {
+                    return Err(referencing_error_pyerr(py, err.to_string())?);
+                }
+                Err(crate::into_py_err(py, error, None)?)
+            }
         }
     }
 }

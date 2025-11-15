@@ -1,5 +1,68 @@
 # Migration Guide
 
+## Upgrading from 0.34.x to 0.35.0
+
+### Custom meta-schemas require explicit registration
+
+Schemas with custom/unknown `$schema` URIs now require their meta-schema to be registered before building validators. Custom meta-schemas automatically inherit the draft-specific behavior of their underlying draft by walking the meta-schema chain. Validators always honor an explicitly configured draft (e.g., via `ValidationOptions::with_draft`), so overriding the draft is still the highest priority and bypasses auto-detection and the registry check intentionally.
+
+```rust
+// Old (0.34.x) - would fail with unclear error
+let schema = json!({
+    "$schema": "http://example.com/custom",
+    "type": "object"
+});
+let validator = jsonschema::validator_for(&schema)?;
+
+// New (0.35.x) - explicit registration required
+use jsonschema::{Registry, Resource, Draft};
+
+let meta_schema = json!({
+    "$id": "http://example.com/custom",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$vocabulary": {
+        "https://json-schema.org/draft/2020-12/vocab/core": true,
+        "https://json-schema.org/draft/2020-12/vocab/validation": true,
+    }
+});
+
+let registry = Registry::try_from_resources(
+    [("http://example.com/custom", Resource::from_contents(meta_schema))]
+)?;
+
+let validator = jsonschema::options()
+    .with_registry(registry)
+    .build(&schema)?;
+```
+
+**Draft Resolution:** Custom meta-schemas inherit draft-specific behavior from their underlying draft. For example, a custom meta-schema based on Draft 7 will preserve Draft 7 semantics (ignoring `$ref` siblings, validating formats by default). The validator walks the meta-schema chain to determine the appropriate draft. To override this behavior, use `.with_draft()` to explicitly set a draft version.
+
+**Note:** `meta::is_valid` / `meta::validate` now behave strictly: they only succeed for schemas whose `$schema` resolves to one of the bundled meta-schemas. Unknown `$schema` values trigger the same error/panic you get during validator compilation. To meta-validate against custom specs, build a registry that contains those meta-schemas and call `jsonschema::meta::options().with_registry(registry)` before invoking `is_valid` / `validate` through the options builder.
+
+### Removed `meta::try_is_valid` and `meta::try_validate`
+
+The `try_*` variants have been removed. Use the non-`try_` versions which treat unknown `$schema` values as Draft 2020-12.
+
+```rust
+// Old (0.34.x)
+let result = jsonschema::meta::try_is_valid(&schema)?;
+
+// New (0.35.x)
+let result = jsonschema::meta::is_valid(&schema); // Returns bool
+```
+
+### `Resource::from_contents` no longer returns `Result`
+
+The method now always succeeds and returns `Resource` directly, since draft detection no longer fails for unknown `$schema` values.
+
+```rust
+// Old (0.34.x)
+let resource = Resource::from_contents(schema)?;
+
+// New (0.35.x)
+let resource = Resource::from_contents(schema); // No ? needed
+```
+
 ## Upgrading from 0.33.x to 0.34.0
 
 ### Removed `Validator::config()`

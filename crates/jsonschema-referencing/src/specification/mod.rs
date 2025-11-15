@@ -30,6 +30,11 @@ pub enum Draft {
     /// JSON Schema Draft 2020-12
     #[default]
     Draft202012,
+    /// Internal use only: Represents custom/unrecognized meta-schemas.
+    /// Do not use directly. Custom meta-schemas are resolved automatically
+    /// when registered in the Registry.
+    #[doc(hidden)]
+    Unknown,
 }
 
 impl Draft {
@@ -43,32 +48,34 @@ impl Draft {
     }
     /// Detect what specification could be applied to the given contents.
     ///
-    /// # Errors
-    ///
-    /// On unknown `$schema` value it returns [`Error::UnknownSpecification`]
-    pub fn detect(self, contents: &Value) -> Result<Draft, Error> {
+    /// Returns `Draft::Unknown` for custom/unknown `$schema` values.
+    /// Validation of custom meta-schemas happens during registry building.
+    #[must_use]
+    pub fn detect(self, contents: &Value) -> Draft {
         if let Some(schema) = contents
             .as_object()
             .and_then(|contents| contents.get("$schema"))
             .and_then(|schema| schema.as_str())
         {
-            Ok(match schema.trim_end_matches('#') {
+            match schema.trim_end_matches('#') {
                 "https://json-schema.org/draft/2020-12/schema" => Draft::Draft202012,
                 "https://json-schema.org/draft/2019-09/schema" => Draft::Draft201909,
                 "http://json-schema.org/draft-07/schema" => Draft::Draft7,
                 "http://json-schema.org/draft-06/schema" => Draft::Draft6,
                 "http://json-schema.org/draft-04/schema" => Draft::Draft4,
-                value => return Err(Error::unknown_specification(value)),
-            })
+                // Custom/unknown meta-schemas return Unknown
+                // Validation of custom meta-schemas happens during registry building
+                _ => Draft::Unknown,
+            }
         } else {
-            Ok(self)
+            self
         }
     }
     pub(crate) fn id_of(self, contents: &Value) -> Option<&str> {
         match self {
             Draft::Draft4 => ids::legacy_id(contents),
             Draft::Draft6 | Draft::Draft7 => ids::legacy_dollar_id(contents),
-            Draft::Draft201909 | Draft::Draft202012 => ids::dollar_id(contents),
+            Draft::Draft201909 | Draft::Draft202012 | Draft::Unknown => ids::dollar_id(contents),
         }
     }
     pub fn subresources_of(self, contents: &Value) -> impl Iterator<Item = &Value> {
@@ -79,7 +86,7 @@ impl Draft {
                     Draft::Draft6 => draft6::object_iter,
                     Draft::Draft7 => draft7::object_iter,
                     Draft::Draft201909 => draft201909::object_iter,
-                    Draft::Draft202012 => subresources::object_iter,
+                    Draft::Draft202012 | Draft::Unknown => subresources::object_iter,
                 };
                 SubresourceIterator::Object(schema.iter().flat_map(object_iter))
             }
@@ -91,7 +98,7 @@ impl Draft {
             Draft::Draft4 => anchors::legacy_anchor_in_id(self, contents),
             Draft::Draft6 | Draft::Draft7 => anchors::legacy_anchor_in_dollar_id(self, contents),
             Draft::Draft201909 => anchors::anchor_2019(self, contents),
-            Draft::Draft202012 => anchors::anchor(self, contents),
+            Draft::Draft202012 | Draft::Unknown => anchors::anchor(self, contents),
         }
     }
     pub(crate) fn maybe_in_subresource<'r>(
@@ -107,7 +114,7 @@ impl Draft {
             Draft::Draft201909 => {
                 draft201909::maybe_in_subresource(segments, resolver, subresource)
             }
-            Draft::Draft202012 => {
+            Draft::Draft202012 | Draft::Unknown => {
                 subresources::maybe_in_subresource(segments, resolver, subresource)
             }
         }
@@ -148,7 +155,11 @@ impl Draft {
 
             "id" if *self == Draft::Draft4 => true,
 
-            "$id" | "const" | "contains" | "propertyNames" if *self >= Draft::Draft6 => true,
+            "$id" | "const" | "contains" | "propertyNames"
+                if *self >= Draft::Draft6 || *self == Draft::Unknown =>
+            {
+                true
+            }
 
             "contentEncoding" | "contentMediaType"
                 if matches!(self, Draft::Draft6 | Draft::Draft7) =>
@@ -156,7 +167,7 @@ impl Draft {
                 true
             }
 
-            "else" | "if" | "then" if *self >= Draft::Draft7 => true,
+            "else" | "if" | "then" if *self >= Draft::Draft7 || *self == Draft::Unknown => true,
 
             "$anchor"
             | "$defs"
@@ -169,12 +180,16 @@ impl Draft {
             | "prefixItems"
             | "unevaluatedItems"
             | "unevaluatedProperties"
-                if *self >= Draft::Draft201909 =>
+                if *self >= Draft::Draft201909 || *self == Draft::Unknown =>
             {
                 true
             }
 
-            "$dynamicAnchor" | "$dynamicRef" if *self == Draft::Draft202012 => true,
+            "$dynamicAnchor" | "$dynamicRef"
+                if *self == Draft::Draft202012 || *self == Draft::Unknown =>
+            {
+                true
+            }
 
             _ => false,
         }
@@ -184,7 +199,9 @@ impl Draft {
         match self {
             Draft::Draft4 | Draft::Draft6 | Draft::Draft7 => VocabularySet::new(),
             Draft::Draft201909 => VocabularySet::from_known(DRAFT_2019_09_VOCABULARIES),
-            Draft::Draft202012 => VocabularySet::from_known(DRAFT_2020_12_VOCABULARIES),
+            Draft::Draft202012 | Draft::Unknown => {
+                VocabularySet::from_known(DRAFT_2020_12_VOCABULARIES)
+            }
         }
     }
 }
@@ -203,18 +220,14 @@ mod tests {
     #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema"}), Draft::Draft4; "detect Draft 4")]
     #[test_case(&json!({}), Draft::Draft7; "default to Draft 7 when no $schema")]
     fn test_detect(contents: &serde_json::Value, expected: Draft) {
-        let result = Draft::Draft7
-            .detect(contents)
-            .expect("Unknown specification");
+        let result = Draft::Draft7.detect(contents);
         assert_eq!(result, expected);
     }
 
     #[test]
     fn test_unknown_specification() {
-        let error = Draft::Draft7
-            .detect(&json!({"$schema": "invalid"}))
-            .expect_err("Unknown specification");
-        assert_eq!(error.to_string(), "Unknown specification: invalid");
+        let draft = Draft::Draft7.detect(&json!({"$schema": "invalid"}));
+        assert_eq!(draft, Draft::Unknown);
     }
 
     #[test_case(Draft::Draft4; "Draft 4 stays Draft 4")]
@@ -224,7 +237,7 @@ mod tests {
     #[test_case(Draft::Draft202012; "Draft 2020-12 stays Draft 2020-12")]
     fn test_detect_no_change(draft: Draft) {
         let contents = json!({});
-        let result = draft.detect(&contents).expect("Failed to detect draft");
+        let result = draft.detect(&contents);
         assert_eq!(result, draft);
     }
 }

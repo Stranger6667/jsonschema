@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- Support for custom meta-schemas. Schemas with custom `$schema` URIs can now be used by registering their meta-schemas in the `Registry` via `jsonschema::options().with_registry()`. [#664](https://github.com/Stranger6667/jsonschema/issues/664)
+
+### Changed
+
+- **BREAKING**: `meta::is_valid` and `meta::validate` now return errors for unknown `$schema` values instead of defaulting to Draft 2020-12. Use `meta::options().with_registry()` to validate schemas against custom meta-schemas.
+- **BREAKING**: `Resource::from_contents` no longer returns `Result` and always succeeds, since draft detection no longer fails for unknown `$schema` values.
+
+### Removed
+
+- **BREAKING**: `meta::try_is_valid` and `meta::try_validate`. Use `meta::is_valid` and `meta::validate` instead.
+
 ### Performance
 
 - `required`: short-circuit when the instance object has fewer properties than required keys.

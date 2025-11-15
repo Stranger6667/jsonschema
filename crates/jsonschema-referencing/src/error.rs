@@ -29,6 +29,8 @@ pub enum Error {
     InvalidUri(UriError),
     /// An unknown JSON Schema specification was encountered.
     UnknownSpecification { specification: String },
+    /// A circular reference was detected in a meta-schema chain.
+    CircularMetaschema { uri: String },
 }
 
 impl Error {
@@ -64,13 +66,18 @@ impl Error {
             anchor: anchor.into(),
         }
     }
-    pub(crate) fn unknown_specification(specification: impl Into<String>) -> Error {
+
+    pub fn unknown_specification(specification: impl Into<String>) -> Error {
         Error::UnknownSpecification {
             specification: specification.into(),
         }
     }
 
-    pub(crate) fn unretrievable(
+    pub fn circular_metaschema(uri: impl Into<String>) -> Error {
+        Error::CircularMetaschema { uri: uri.into() }
+    }
+
+    pub fn unretrievable(
         uri: impl Into<String>,
         source: Box<dyn std::error::Error + Send + Sync>,
     ) -> Error {
@@ -132,7 +139,10 @@ impl fmt::Display for Error {
             }
             Error::InvalidUri(error) => error.fmt(f),
             Error::UnknownSpecification { specification } => {
-                f.write_fmt(format_args!("Unknown specification: {specification}"))
+                write!(f, "Unknown meta-schema: '{specification}'. Custom meta-schemas must be registered in the registry before use")
+            }
+            Error::CircularMetaschema { uri } => {
+                write!(f, "Circular meta-schema reference detected at '{uri}'")
             }
         }
     }

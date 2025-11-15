@@ -43,18 +43,10 @@ impl Resource {
     }
     /// Create a resource with automatically detecting specification which applies to the contents.
     ///
-    /// # Errors
-    ///
-    /// On unknown `$schema` value it returns [`Error::UnknownSpecification`]
-    pub fn from_contents(contents: Value) -> Result<Resource, Error> {
-        Self::from_contents_and_specification(contents, Draft::default())
-    }
-
-    pub(crate) fn from_contents_and_specification(
-        contents: Value,
-        draft: Draft,
-    ) -> Result<Resource, Error> {
-        Ok(draft.detect(&contents)?.create_resource(contents))
+    /// Unknown `$schema` values are treated as `Draft::Unknown`.
+    #[must_use]
+    pub fn from_contents(contents: Value) -> Resource {
+        Draft::default().detect(&contents).create_resource(contents)
     }
 }
 
@@ -81,12 +73,11 @@ impl<'a> ResourceRef<'a> {
 
     /// Create a resource-ref with automatically detecting specification which applies to the contents.
     ///
-    /// # Errors
-    ///
-    /// On unknown `$schema` value it returns [`Error::UnknownSpecification`]
-    pub fn from_contents(contents: &'a Value) -> Result<Self, Error> {
-        let draft = Draft::default().detect(contents)?;
-        Ok(Self::new(contents, draft))
+    /// Unknown `$schema` values are treated as `Draft::Unknown`.
+    #[must_use]
+    pub fn from_contents(contents: &'a Value) -> Self {
+        let draft = Draft::default().detect(contents);
+        Self::new(contents, draft)
     }
 
     #[must_use]

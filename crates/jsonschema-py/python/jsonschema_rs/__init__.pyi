@@ -283,3 +283,9 @@ class Registry:
         draft: int | None = None,
         retriever: RetrieverProtocol | None = None,
     ) -> None: ...
+
+class _Meta:
+    def is_valid(self, schema: _SchemaT, registry: Registry | None = None) -> bool: ...
+    def validate(self, schema: _SchemaT, registry: Registry | None = None) -> None: ...
+
+meta: _Meta

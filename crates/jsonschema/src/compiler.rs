@@ -170,10 +170,7 @@ impl<'a> Context<'a> {
         })
     }
     pub(crate) fn as_resource_ref<'r>(&'a self, contents: &'r Value) -> ResourceRef<'r> {
-        self.draft
-            .detect(contents)
-            .unwrap_or_default()
-            .create_resource_ref(contents)
+        self.draft.detect(contents).create_resource_ref(contents)
     }
 
     #[inline]
@@ -324,12 +321,18 @@ impl<'a> Context<'a> {
         self.resolver.lookup_recursive_ref()
     }
     pub(crate) fn absolute_location_uri(&self) -> Result<Arc<Uri<String>>, referencing::Error> {
-        let mut fragment = String::from("#");
+        // Reuse the shared buffer to avoid allocations
+        let mut buffer = self.shared.uri_buffer.borrow_mut();
+        buffer.clear();
+        buffer.push('#');
         if !self.location.as_str().is_empty() {
-            uri::encode_to(self.location.as_str(), &mut fragment);
+            uri::encode_to(self.location.as_str(), &mut buffer);
         }
-        self.resolver
-            .resolve_against(&self.resolver.base_uri().borrow(), &fragment)
+        let result = self
+            .resolver
+            .resolve_against(&self.resolver.base_uri().borrow(), &buffer);
+        buffer.clear();
+        result
     }
 
     pub(crate) fn resolve_reference_uri(
@@ -739,6 +742,18 @@ fn collect_resource_pairs(
 }
 
 fn validate_schema(draft: Draft, schema: &Value) -> Result<(), ValidationError<'static>> {
+    // Boolean schemas are always valid per the spec, skip validation
+    if schema.is_boolean() {
+        return Ok(());
+    }
+
+    // For objects, we can skip validation if they're empty (always valid)
+    if let Some(obj) = schema.as_object() {
+        if obj.is_empty() {
+            return Ok(());
+        }
+    }
+
     let validator = crate::meta::validator_for_draft(draft);
     if let Err(error) = validator.validate(schema) {
         return Err(error.to_owned());

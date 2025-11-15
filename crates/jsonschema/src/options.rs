@@ -12,7 +12,7 @@ use crate::{
     Keyword, ValidationError, Validator,
 };
 use ahash::AHashMap;
-use referencing::{uri, Draft, Resource, Retrieve};
+use referencing::{Draft, Resource, Retrieve};
 use serde_json::Value;
 use std::{fmt, marker::PhantomData, sync::Arc};
 
@@ -91,9 +91,20 @@ impl<R> ValidationOptions<R> {
     /// let options = jsonschema::options()
     ///     .with_draft(Draft::Draft4);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `Draft::Unknown` is provided. `Draft::Unknown` is internal-only
+    /// and represents custom meta-schemas that are resolved automatically from
+    /// the registry.
     #[inline]
     #[must_use]
     pub fn with_draft(mut self, draft: Draft) -> Self {
+        assert!(
+            draft != Draft::Unknown,
+            "Draft::Unknown is internal-only and cannot be explicitly set. \
+             Custom meta-schemas are resolved automatically when registered in the Registry."
+        );
         self.draft = Some(draft);
         self
     }
@@ -271,7 +282,7 @@ impl<R> ValidationOptions<R> {
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use jsonschema::Resource;
     ///
-    /// let extra = Resource::from_contents(json!({"minimum": 5}))?;
+    /// let extra = Resource::from_contents(json!({"minimum": 5}));
     ///
     /// let validator = jsonschema::options()
     ///     .with_resource("urn:minimum-schema", extra)
@@ -301,11 +312,11 @@ impl<R> ValidationOptions<R> {
     ///     .with_resources([
     ///         (
     ///             "urn:minimum-schema",
-    ///             Resource::from_contents(json!({"minimum": 5}))?,
+    ///             Resource::from_contents(json!({"minimum": 5})),
     ///         ),
     ///         (
     ///             "urn:maximum-schema",
-    ///             Resource::from_contents(json!({"maximum": 10}))?,
+    ///             Resource::from_contents(json!({"maximum": 10})),
     ///         ),
     ///       ].into_iter())
     ///     .build(&json!({"$ref": "urn:minimum-schema"}))?;
@@ -336,7 +347,7 @@ impl<R> ValidationOptions<R> {
     ///
     /// let registry = Registry::try_new(
     ///     "urn:name-schema",
-    ///     Resource::from_contents(json!({"type": "string"}))?
+    ///     Resource::from_contents(json!({"type": "string"}))
     /// )?;
     /// let schema = json!({
     ///     "properties": {
@@ -528,27 +539,43 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
     pub(crate) fn draft_for(&self, contents: &Value) -> Result<Draft, ValidationError<'static>> {
         // Preference:
         //  - Explicitly set
-        //  - Autodetected
+        //  - Autodetected (with registry resolution for custom meta-schemas)
         //  - Default
         if let Some(draft) = self.draft {
             Ok(draft)
         } else {
             let default = Draft::default();
-            match default.detect(contents) {
-                Ok(draft) => Ok(draft),
-                Err(referencing::Error::UnknownSpecification { specification }) => {
-                    // Try to retrieve the specification and detect its draft
-                    if let Ok(Ok(retrieved)) =
-                        uri::from_str(&specification).map(|uri| self.retriever.retrieve(&uri))
+            let detected = default.detect(contents);
+
+            // If detected draft is Unknown (custom meta-schema), try to resolve it
+            if detected == Draft::Unknown {
+                if let Some(registry) = &self.registry {
+                    if let Some(meta_schema_uri) = contents
+                        .as_object()
+                        .and_then(|obj| obj.get("$schema"))
+                        .and_then(|s| s.as_str())
                     {
-                        Ok(default.detect(&retrieved)?)
-                    } else {
-                        Err(referencing::Error::UnknownSpecification { specification }.into())
+                        // Walk the meta-schema chain to find the underlying draft
+                        return self.resolve_draft_from_registry(meta_schema_uri, registry);
                     }
                 }
-                Err(error) => Err(error.into()),
             }
+
+            Ok(detected)
         }
+    }
+
+    fn resolve_draft_from_registry(
+        &self,
+        uri: &str,
+        registry: &referencing::Registry,
+    ) -> Result<Draft, ValidationError<'static>> {
+        let uri = uri.trim_end_matches('#');
+        crate::meta::walk_meta_schema_chain(uri, |current_uri| {
+            let resolver = registry.try_resolver(current_uri)?;
+            let resolved = resolver.lookup("")?;
+            Ok(resolved.contents().clone())
+        })
     }
     /// Set a retriever to fetch external resources.
     #[must_use]
@@ -635,19 +662,7 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             Ok(draft)
         } else {
             let default = Draft::default();
-            match default.detect(contents) {
-                Ok(draft) => Ok(draft),
-                Err(referencing::Error::UnknownSpecification { specification }) => {
-                    // Try to retrieve the specification and detect its draft
-                    if let Ok(uri) = uri::from_str(&specification) {
-                        if let Ok(retrieved) = self.retriever.retrieve(&uri).await {
-                            return Ok(default.detect(&retrieved)?);
-                        }
-                    }
-                    Err(referencing::Error::UnknownSpecification { specification }.into())
-                }
-                Err(error) => Err(error.into()),
-            }
+            Ok(default.detect(contents))
         }
     }
     /// Set a retriever to fetch external resources.
@@ -839,7 +854,7 @@ mod tests {
     fn with_registry() {
         let registry = Registry::try_new(
             "urn:name-schema",
-            Resource::from_contents(json!({"type": "string"})).expect("Invalid resource"),
+            Resource::from_contents(json!({"type": "string"})),
         )
         .expect("Invalid URI");
         let schema = json!({
@@ -874,6 +889,25 @@ mod tests {
         } else {
             panic!("Expected FancyRegex variant");
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "Draft::Unknown is internal-only and cannot be explicitly set")]
+    fn with_draft_rejects_unknown() {
+        let _options = crate::options().with_draft(Draft::Unknown);
+    }
+
+    #[test]
+    fn custom_meta_schema_allowed_when_draft_overridden() {
+        let schema = json!({
+            "$schema": "json-schema:///custom/meta",
+            "type": "string"
+        });
+
+        crate::options()
+            .with_draft(Draft::Draft7)
+            .build(&schema)
+            .expect("Explicit draft override should bypass custom meta-schema registry checks");
     }
 
     #[test]

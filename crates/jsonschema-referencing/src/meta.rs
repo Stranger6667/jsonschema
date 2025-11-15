@@ -235,6 +235,8 @@ pub(crate) fn metas_for_draft(draft: Draft) -> &'static [(&'static str, &'static
         Draft::Draft6 => &*META_SCHEMAS_DRAFT6,
         Draft::Draft7 => &*META_SCHEMAS_DRAFT7,
         Draft::Draft201909 => &*META_SCHEMAS_DRAFT2019,
-        Draft::Draft202012 => &*META_SCHEMAS_DRAFT2020,
+        // Unknown drafts default to 2020-12 vocabularies.
+        // Custom meta-schemas should explicitly declare vocabularies in their $vocabulary field.
+        Draft::Draft202012 | Draft::Unknown => &*META_SCHEMAS_DRAFT2020,
     }
 }

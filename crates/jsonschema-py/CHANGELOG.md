@@ -4,10 +4,14 @@
 
 ### Added
 
+- Support for custom meta-schemas. Schemas with custom `$schema` URIs can now be used by registering their meta-schemas via the `registry` parameter in `validator_for()`. [#664](https://github.com/Stranger6667/jsonschema/issues/664)
+- `registry` parameter to `meta.is_valid()` and `meta.validate()` for validating schemas against custom meta-schemas.
+- Type stubs for the `meta` module.
 - PyPy 3.11 support. [#309](https://github.com/Stranger6667/jsonschema/issues/309)
 
 ### Changed
 
+- **BREAKING**: `meta.is_valid()` and `meta.validate()` now raise `ReferencingError` for unknown `$schema` values instead of defaulting to Draft 2020-12. Use the `registry` parameter to validate against custom meta-schemas.
 - Migrated to abi3 so a single wheel per platform works on all supported 3.10+ interpreters.
 
 ### Removed
