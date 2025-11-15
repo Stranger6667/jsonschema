@@ -63,6 +63,18 @@ let resource = Resource::from_contents(schema)?;
 let resource = Resource::from_contents(schema); // No ? needed
 ```
 
+### Removed `primitive_type` module
+
+The `primitive_type` module has been removed. Use `jsonschema::types` instead.
+
+```rust
+// Old (0.34.x)
+use jsonschema::primitive_type::{PrimitiveType, PrimitiveTypesBitMap};
+
+// New (0.35.x)
+use jsonschema::types::{JsonType, JsonTypeSet};
+```
+
 ## Upgrading from 0.33.x to 0.34.0
 
 ### Removed `Validator::config()`

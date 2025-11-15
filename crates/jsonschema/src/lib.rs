@@ -703,11 +703,6 @@ pub(crate) mod thread;
 pub mod types;
 mod validator;
 
-#[deprecated(since = "0.30.0", note = "Use `jsonschema::types` instead.")]
-pub mod primitive_type {
-    pub use super::types::*;
-}
-
 pub use error::{ErrorIterator, MaskedValidationError, ValidationError};
 pub use keywords::custom::Keyword;
 pub use options::{FancyRegex, PatternOptions, Regex, ValidationOptions};

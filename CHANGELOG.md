@@ -14,6 +14,7 @@
 ### Removed
 
 - **BREAKING**: `meta::try_is_valid` and `meta::try_validate`. Use `meta::is_valid` and `meta::validate` instead.
+- **BREAKING**: `primitive_type` module (deprecated since 0.30.0). Use `jsonschema::types` instead.
 
 ### Performance
 
