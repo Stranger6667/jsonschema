@@ -173,7 +173,18 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Run tests
-        run: cargo llvm-cov --no-report --all-features --workspace --exclude jsonschema-py
+        run: |
+          cargo llvm-cov --no-report --all-features --workspace \
+            --exclude jsonschema-py \
+            --exclude benchmark \
+            --exclude benchmark-suite \
+            --exclude jsonschema-testsuite \
+            --exclude jsonschema-testsuite-codegen \
+            --exclude jsonschema-testsuite-internal \
+            --exclude jsonschema-referencing-testsuite \
+            --exclude jsonschema-referencing-testsuite-codegen \
+            --exclude jsonschema-referencing-testsuite-internal \
+            --exclude testsuite-common
 
       - name: Generate coverage reports
         run: cargo llvm-cov report --lcov --output-path lcov.info
