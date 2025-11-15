@@ -12,7 +12,6 @@ use serde_json::Value;
 use crate::{
     anchors::{AnchorKey, AnchorKeyRef},
     cache::{SharedUriCache, UriCache},
-    list::List,
     meta::{self, metas_for_draft},
     resource::{unescape_segment, InnerResourcePtr, JsonSchemaResource},
     uri,
@@ -481,14 +480,6 @@ impl Registry {
     #[must_use]
     pub fn resolver(&self, base_uri: Uri<String>) -> Resolver<'_> {
         Resolver::new(self, Arc::new(base_uri))
-    }
-    #[must_use]
-    pub fn resolver_from_raw_parts(
-        &self,
-        base_uri: Arc<Uri<String>>,
-        scopes: List<Uri<String>>,
-    ) -> Resolver<'_> {
-        Resolver::from_parts(self, base_uri, scopes)
     }
     pub(crate) fn anchor<'a>(&self, uri: &'a Uri<String>, name: &'a str) -> Result<&Anchor, Error> {
         let key = AnchorKeyRef::new(uri, name);

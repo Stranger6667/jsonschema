@@ -56,20 +56,6 @@ impl Resource {
     ) -> Result<Resource, Error> {
         Ok(draft.detect(&contents)?.create_resource(contents))
     }
-    /// Resource identifier.
-    #[must_use]
-    pub fn id(&self) -> Option<&str> {
-        self.draft
-            .id_of(&self.contents)
-            .map(|id| id.trim_end_matches('#'))
-    }
-    #[must_use]
-    pub fn as_ref(&self) -> ResourceRef<'_> {
-        ResourceRef {
-            contents: &self.contents,
-            draft: self.draft,
-        }
-    }
 }
 
 /// A borrowed document with a concrete interpretation under a JSON Schema specification.
