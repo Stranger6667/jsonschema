@@ -3035,6 +3035,62 @@ mod tests {
     }
 
     #[test]
+    fn strict_meta_schema_catches_typos() {
+        // Issue #764: Use strict meta-schema with unevaluatedProperties: false
+        // to catch typos in schema keywords
+
+        let strict_meta = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://json-schema.org/draft/2020-12/strict",
+            "$dynamicAnchor": "meta",
+            "$ref": "https://json-schema.org/draft/2020-12/schema",
+            "unevaluatedProperties": false
+        });
+
+        let registry = Registry::try_new(
+            "https://json-schema.org/draft/2020-12/strict",
+            Resource::from_contents(strict_meta),
+        )
+        .expect("Should create registry");
+
+        // Valid schema - all keywords are recognized
+        let valid_schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/strict",
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "minLength": 1}
+            }
+        });
+
+        assert!(crate::meta::options()
+            .with_registry(registry.clone())
+            .is_valid(&valid_schema));
+
+        // Invalid schema - top-level typo "typ" instead of "type"
+        let invalid_schema_top_level = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/strict",
+            "typ": "string"  // Typo
+        });
+
+        assert!(!crate::meta::options()
+            .with_registry(registry.clone())
+            .is_valid(&invalid_schema_top_level));
+
+        // Invalid schema - nested invalid keyword "minSize" (not a real JSON Schema keyword)
+        let invalid_schema_nested = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/strict",
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "minSize": 1}  // Invalid keyword in nested schema
+            }
+        });
+
+        assert!(!crate::meta::options()
+            .with_registry(registry)
+            .is_valid(&invalid_schema_nested));
+    }
+
+    #[test]
     fn custom_meta_schema_preserves_underlying_draft_behavior() {
         // Regression test: Custom meta-schemas should preserve the draft-specific
         // behavior of their underlying draft, not default to Draft 2020-12
