@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- `required`: short-circuit when the instance object has fewer properties than required keys.
+
 ## [0.34.0] - 2025-11-14
 
 ### Changed
