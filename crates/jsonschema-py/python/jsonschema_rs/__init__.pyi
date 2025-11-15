@@ -1,10 +1,30 @@
 from collections.abc import Iterator
-from typing import Any, Callable, Protocol, TypeAlias, TypeVar, Union
+from typing import Any, Callable, List, Protocol, TypeAlias, TypeVar, TypedDict, Union
 
 _SchemaT = TypeVar("_SchemaT", bool, dict[str, Any])
 _FormatFunc = TypeVar("_FormatFunc", bound=Callable[[str], bool])
 JSONType: TypeAlias = dict[str, Any] | list | str | int | float | bool | None
 JSONPrimitive: TypeAlias = str | int | float | bool | None
+
+class EvaluationAnnotation(TypedDict):
+    schemaLocation: str
+    absoluteKeywordLocation: str | None
+    instanceLocation: str
+    annotations: JSONType
+
+class EvaluationErrorEntry(TypedDict):
+    schemaLocation: str
+    absoluteKeywordLocation: str | None
+    instanceLocation: str
+    error: str
+
+class Evaluation:
+    valid: bool
+    def flag(self) -> JSONType: ...
+    def list(self) -> JSONType: ...
+    def hierarchical(self) -> JSONType: ...
+    def annotations(self) -> List[EvaluationAnnotation]: ...
+    def errors(self) -> List[EvaluationErrorEntry]: ...
 
 class FancyRegexOptions:
     def __init__(
@@ -56,10 +76,23 @@ def iter_errors(
     validate_formats: bool | None = None,
     ignore_unknown_formats: bool = True,
     retriever: RetrieverProtocol | None = None,
+    registry: Registry | None = None,
     mask: str | None = None,
     base_uri: str | None = None,
     pattern_options: PatternOptionsType | None = None,
 ) -> Iterator[ValidationError]: ...
+def evaluate(
+    schema: _SchemaT,
+    instance: Any,
+    draft: int | None = None,
+    formats: dict[str, _FormatFunc] | None = None,
+    validate_formats: bool | None = None,
+    ignore_unknown_formats: bool = True,
+    retriever: RetrieverProtocol | None = None,
+    registry: Registry | None = None,
+    base_uri: str | None = None,
+    pattern_options: PatternOptionsType | None = None,
+) -> Evaluation: ...
 
 class ReferencingError:
     message: str
@@ -195,6 +228,7 @@ class Draft4Validator:
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
     def iter_errors(self, instance: Any) -> Iterator[ValidationError]: ...
+    def evaluate(self, instance: Any) -> Evaluation: ...
 
 class Draft6Validator:
     def __init__(
@@ -212,6 +246,7 @@ class Draft6Validator:
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
     def iter_errors(self, instance: Any) -> Iterator[ValidationError]: ...
+    def evaluate(self, instance: Any) -> Evaluation: ...
 
 class Draft7Validator:
     def __init__(
@@ -229,6 +264,7 @@ class Draft7Validator:
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
     def iter_errors(self, instance: Any) -> Iterator[ValidationError]: ...
+    def evaluate(self, instance: Any) -> Evaluation: ...
 
 class Draft201909Validator:
     def __init__(
@@ -246,6 +282,7 @@ class Draft201909Validator:
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
     def iter_errors(self, instance: Any) -> Iterator[ValidationError]: ...
+    def evaluate(self, instance: Any) -> Evaluation: ...
 
 class Draft202012Validator:
     def __init__(
@@ -263,6 +300,7 @@ class Draft202012Validator:
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
     def iter_errors(self, instance: Any) -> Iterator[ValidationError]: ...
+    def evaluate(self, instance: Any) -> Evaluation: ...
 
 def validator_for(
     schema: _SchemaT,

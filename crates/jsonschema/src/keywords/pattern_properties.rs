@@ -3,14 +3,14 @@ use std::sync::Arc;
 use crate::{
     compiler,
     error::{no_error, ErrorIterator, ValidationError},
+    evaluation::Annotations,
     keywords::CompilationResult,
     node::SchemaNode,
     options::PatternEngineOptions,
-    output::BasicOutput,
     paths::{LazyLocation, Location},
     regex::RegexEngine,
     types::JsonType,
-    validator::{PartialApplication, Validate},
+    validator::{EvaluationResult, Validate},
 };
 use serde_json::{Map, Value};
 
@@ -70,24 +70,24 @@ impl<R: RegexEngine> Validate for PatternPropertiesValidator<R> {
         Ok(())
     }
 
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
         if let Value::Object(item) = instance {
             let mut matched_propnames = Vec::with_capacity(item.len());
-            let mut sub_results = BasicOutput::default();
+            let mut children = Vec::new();
             for (pattern, node) in &self.patterns {
                 for (key, value) in item {
                     if pattern.is_match(key).unwrap_or(false) {
                         let path = location.push(key.as_str());
                         matched_propnames.push(key.clone());
-                        sub_results += node.apply_rooted(value, &path);
+                        children.push(node.evaluate_instance(value, &path));
                     }
                 }
             }
-            let mut result: PartialApplication = sub_results.into();
-            result.annotate(Value::from(matched_propnames).into());
+            let mut result = EvaluationResult::from_children(children);
+            result.annotate(Annotations::new(Value::from(matched_propnames)));
             result
         } else {
-            PartialApplication::valid_empty()
+            EvaluationResult::valid_empty()
         }
     }
 }
@@ -140,22 +140,22 @@ impl<R: RegexEngine> Validate for SingleValuePatternPropertiesValidator<R> {
         Ok(())
     }
 
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
         if let Value::Object(item) = instance {
             let mut matched_propnames = Vec::with_capacity(item.len());
-            let mut outputs = BasicOutput::default();
+            let mut children = Vec::new();
             for (key, value) in item {
                 if self.regex.is_match(key).unwrap_or(false) {
                     let path = location.push(key.as_str());
                     matched_propnames.push(key.clone());
-                    outputs += self.node.apply_rooted(value, &path);
+                    children.push(self.node.evaluate_instance(value, &path));
                 }
             }
-            let mut result: PartialApplication = outputs.into();
-            result.annotate(Value::from(matched_propnames).into());
+            let mut result = EvaluationResult::from_children(children);
+            result.annotate(Annotations::new(Value::from(matched_propnames)));
             result
         } else {
-            PartialApplication::valid_empty()
+            EvaluationResult::valid_empty()
         }
     }
 }

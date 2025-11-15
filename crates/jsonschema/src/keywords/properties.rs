@@ -1,12 +1,12 @@
 use crate::{
     compiler,
     error::{no_error, ErrorIterator, ValidationError},
+    evaluation::Annotations,
     keywords::CompilationResult,
     node::SchemaNode,
-    output::BasicOutput,
     paths::{LazyLocation, Location},
     types::JsonType,
-    validator::{PartialApplication, Validate},
+    validator::{EvaluationResult, Validate},
 };
 use serde_json::{Map, Value};
 
@@ -87,22 +87,22 @@ impl Validate for PropertiesValidator {
         Ok(())
     }
 
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
         if let Value::Object(props) = instance {
-            let mut result = BasicOutput::default();
             let mut matched_props = Vec::with_capacity(props.len());
+            let mut children = Vec::new();
             for (prop_name, node) in &self.properties {
                 if let Some(prop) = props.get(prop_name) {
                     let path = location.push(prop_name.as_str());
                     matched_props.push(prop_name.clone());
-                    result += node.apply_rooted(prop, &path);
+                    children.push(node.evaluate_instance(prop, &path));
                 }
             }
-            let mut application: PartialApplication = result.into();
-            application.annotate(Value::from(matched_props).into());
+            let mut application = EvaluationResult::from_children(children);
+            application.annotate(Annotations::new(Value::from(matched_props)));
             application
         } else {
-            PartialApplication::valid_empty()
+            EvaluationResult::valid_empty()
         }
     }
 }

@@ -187,6 +187,49 @@ pub enum ValidationErrorKind {
     Referencing(referencing::Error),
 }
 
+impl ValidationErrorKind {
+    pub(crate) fn keyword(&self) -> &'static str {
+        match self {
+            ValidationErrorKind::AdditionalItems { .. } => "additionalItems",
+            ValidationErrorKind::AdditionalProperties { .. } => "additionalProperties",
+            ValidationErrorKind::AnyOf { .. } => "anyOf",
+            ValidationErrorKind::BacktrackLimitExceeded { .. }
+            | ValidationErrorKind::Pattern { .. } => "pattern",
+            ValidationErrorKind::Constant { .. } => "const",
+            ValidationErrorKind::Contains => "contains",
+            ValidationErrorKind::ContentEncoding { .. } | ValidationErrorKind::FromUtf8 { .. } => {
+                "contentEncoding"
+            }
+            ValidationErrorKind::ContentMediaType { .. } => "contentMediaType",
+            ValidationErrorKind::Custom { .. } => "custom",
+            ValidationErrorKind::Enum { .. } => "enum",
+            ValidationErrorKind::ExclusiveMaximum { .. } => "exclusiveMaximum",
+            ValidationErrorKind::ExclusiveMinimum { .. } => "exclusiveMinimum",
+            ValidationErrorKind::FalseSchema => "falseSchema",
+            ValidationErrorKind::Format { .. } => "format",
+            ValidationErrorKind::MaxItems { .. } => "maxItems",
+            ValidationErrorKind::Maximum { .. } => "maximum",
+            ValidationErrorKind::MaxLength { .. } => "maxLength",
+            ValidationErrorKind::MaxProperties { .. } => "maxProperties",
+            ValidationErrorKind::MinItems { .. } => "minItems",
+            ValidationErrorKind::Minimum { .. } => "minimum",
+            ValidationErrorKind::MinLength { .. } => "minLength",
+            ValidationErrorKind::MinProperties { .. } => "minProperties",
+            ValidationErrorKind::MultipleOf { .. } => "multipleOf",
+            ValidationErrorKind::Not { .. } => "not",
+            ValidationErrorKind::OneOfMultipleValid { .. }
+            | ValidationErrorKind::OneOfNotValid { .. } => "oneOf",
+            ValidationErrorKind::PropertyNames { .. } => "propertyNames",
+            ValidationErrorKind::Required { .. } => "required",
+            ValidationErrorKind::Type { .. } => "type",
+            ValidationErrorKind::UnevaluatedItems { .. } => "unevaluatedItems",
+            ValidationErrorKind::UnevaluatedProperties { .. } => "unevaluatedProperties",
+            ValidationErrorKind::UniqueItems => "uniqueItems",
+            ValidationErrorKind::Referencing(_) => "$ref",
+        }
+    }
+}
+
 #[derive(Debug)]
 #[allow(missing_docs)]
 pub enum TypeKind {

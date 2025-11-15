@@ -1,11 +1,13 @@
-use std::collections::HashSet;
-
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
+use std::collections::HashSet;
 use syn::{parse_macro_input, ItemFn};
+
 mod generator;
 mod idents;
 mod loader;
+mod output_generator;
+mod output_loader;
 mod remotes;
 
 /// A procedural macro that generates tests from
@@ -18,12 +20,7 @@ pub fn suite(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let remotes = match remotes::generate(&config.path) {
         Ok(remotes) => remotes,
-        Err(e) => {
-            let err = e.to_string();
-            return TokenStream::from(quote! {
-                compile_error!(#err);
-            });
-        }
+        Err(e) => return compile_error_ts(e.to_string()),
     };
 
     let mut output = quote! {
@@ -49,7 +46,7 @@ pub fn suite(args: TokenStream, input: TokenStream) -> TokenStream {
                 match REMOTE_MAP.get(uri.as_str()) {
                     Some(contents) => Ok(serde_json::from_str(contents)
                         .expect("Failed to parse remote schema")),
-                    None => Err(format!("Unknown remote: {}", uri).into()),
+                    None => Err(format!("Unknown remote: {uri}").into()),
                 }
             }
         }
@@ -66,12 +63,7 @@ pub fn suite(args: TokenStream, input: TokenStream) -> TokenStream {
     for draft in &config.drafts {
         let suite_tree = match loader::load_suite(&config.path, draft) {
             Ok(tree) => tree,
-            Err(e) => {
-                let err = e.to_string();
-                return TokenStream::from(quote! {
-                    compile_error!(#err);
-                });
-            }
+            Err(e) => return compile_error_ts(e.to_string()),
         };
         let modules =
             generator::generate_modules(&suite_tree, &mut functions, &config.xfail, draft);
@@ -92,4 +84,74 @@ pub fn suite(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     }
     output.into()
+}
+
+/// A procedural macro that generates tests for the structured output test suite.
+#[proc_macro_attribute]
+pub fn output_suite(args: TokenStream, input: TokenStream) -> TokenStream {
+    let config = parse_macro_input!(args as testsuite::SuiteConfig);
+    let test_func = parse_macro_input!(input as ItemFn);
+    let test_func_ident = &test_func.sig.ident;
+
+    let mut output = quote! {
+        #test_func
+
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        use wasm_bindgen_test::wasm_bindgen_test;
+    };
+
+    let mut functions = HashSet::new();
+    for version in &config.drafts {
+        let suite_tree = match output_loader::load_cases(&config.path, version) {
+            Ok(tree) => tree,
+            Err(e) => return compile_error_ts(e.to_string()),
+        };
+        let docs = match output_loader::load_output_schema(&config.path, version) {
+            Ok(docs) => docs,
+            Err(e) => return compile_error_ts(e.to_string()),
+        };
+        let schema_literal = docs.schema;
+        let remote_entries = docs.uris.iter().map(|uri| {
+            quote! {
+                testsuite::OutputRemote { uri: #uri, contents: OUTPUT_SCHEMA_JSON }
+            }
+        });
+        let module_ident = format_ident!("{}", version.replace('-', "_"));
+        let remotes_ident = format_ident!("OUTPUT_REMOTES");
+        let modules = output_generator::generate_modules(
+            &suite_tree,
+            &mut functions,
+            &config.xfail,
+            version,
+            &remotes_ident,
+        );
+        output = quote! {
+            #output
+
+            mod #module_ident {
+                use testsuite::OutputTest;
+                use super::#test_func_ident;
+
+                const OUTPUT_SCHEMA_JSON: &str = #schema_literal;
+                const #remotes_ident: &[testsuite::OutputRemote] = &[
+                    #(#remote_entries),*
+                ];
+
+                #[inline]
+                fn inner_test(test: OutputTest) {
+                    #test_func_ident(test);
+                }
+
+                #modules
+            }
+        };
+    }
+
+    output.into()
+}
+
+fn compile_error_ts(err: impl quote::ToTokens) -> TokenStream {
+    TokenStream::from(quote! {
+        compile_error!(#err);
+    })
 }

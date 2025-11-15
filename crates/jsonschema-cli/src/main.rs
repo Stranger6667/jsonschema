@@ -8,6 +8,7 @@ use std::{
 
 use clap::{ArgAction, Parser, ValueEnum};
 use percent_encoding::{percent_encode, AsciiSet, CONTROLS};
+use serde_json::json;
 
 #[derive(Parser)]
 #[command(name = "jsonschema")]
@@ -47,9 +48,37 @@ struct Cli {
     )]
     no_assert_format: Option<bool>,
 
+    /// Select the output format (text, flag, list, hierarchical). All modes emit newline-delimited JSON records.
+    #[arg(
+        long = "output",
+        value_enum,
+        default_value_t = Output::Text,
+        help = "Select output style: text (default), flag, list, hierarchical"
+    )]
+    output: Output,
+
     /// Show program's version number and exit.
     #[arg(short = 'v', long = "version")]
     version: bool,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+enum Output {
+    Text,
+    Flag,
+    List,
+    Hierarchical,
+}
+
+impl Output {
+    fn as_str(self) -> &'static str {
+        match self {
+            Output::Text => "text",
+            Output::Flag => "flag",
+            Output::List => "list",
+            Output::Hierarchical => "hierarchical",
+        }
+    }
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
@@ -153,6 +182,7 @@ fn validate_instances(
     schema_path: &Path,
     draft: Option<Draft>,
     assert_format: Option<bool>,
+    output: Output,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let mut success = true;
 
@@ -168,19 +198,48 @@ fn validate_instances(
     }
     match options.build(&schema_json) {
         Ok(validator) => {
-            for instance in instances {
-                let instance_json = read_json(instance)??;
-                let mut errors = validator.iter_errors(&instance_json);
-                let filename = instance.to_string_lossy();
-                if let Some(first) = errors.next() {
-                    success = false;
-                    println!("{filename} - INVALID. Errors:");
-                    println!("1. {first}");
-                    for (i, error) in errors.enumerate() {
-                        println!("{}. {error}", i + 2);
+            if matches!(output, Output::Text) {
+                for instance in instances {
+                    let instance_json = read_json(instance)??;
+                    let mut errors = validator.iter_errors(&instance_json);
+                    let filename = instance.to_string_lossy();
+                    if let Some(first) = errors.next() {
+                        success = false;
+                        println!("{filename} - INVALID. Errors:");
+                        println!("1. {first}");
+                        for (i, error) in errors.enumerate() {
+                            println!("{}. {error}", i + 2);
+                        }
+                    } else {
+                        println!("{filename} - VALID");
                     }
-                } else {
-                    println!("{filename} - VALID");
+                }
+            } else {
+                let schema_display = schema_path.to_string_lossy().to_string();
+                let output_format = output.as_str();
+                for instance in instances {
+                    let instance_json = read_json(instance)??;
+                    let evaluation = validator.evaluate(&instance_json);
+                    let flag_output = evaluation.flag();
+                    let payload = match output {
+                        Output::Text => unreachable!("handled above"),
+                        Output::Flag => serde_json::to_value(flag_output)?,
+                        Output::List => serde_json::to_value(evaluation.list())?,
+                        Output::Hierarchical => serde_json::to_value(evaluation.hierarchical())?,
+                    };
+
+                    let instance_display = instance.to_string_lossy();
+                    let record = json!({
+                        "output": output_format,
+                        "schema": &schema_display,
+                        "instance": instance_display,
+                        "payload": payload,
+                    });
+                    println!("{}", serde_json::to_string(&record)?);
+
+                    if !flag_output.valid {
+                        success = false;
+                    }
                 }
             }
         }
@@ -206,7 +265,13 @@ fn main() -> ExitCode {
             // - Some(false) if --no-assert-format
             // - None        if neither (use builder’s default)
             let assert_format = config.assert_format.or(config.no_assert_format);
-            return match validate_instances(&instances, &schema, config.draft, assert_format) {
+            return match validate_instances(
+                &instances,
+                &schema,
+                config.draft,
+                assert_format,
+                config.output,
+            ) {
                 Ok(true) => ExitCode::SUCCESS,
                 Ok(false) => ExitCode::FAILURE,
                 Err(error) => {

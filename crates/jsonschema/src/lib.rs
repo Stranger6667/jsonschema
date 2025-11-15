@@ -6,7 +6,7 @@
 //! - 📚 Support for popular JSON Schema drafts
 //! - 🔧 Custom keywords and format validators
 //! - 🌐 Blocking & non-blocking remote reference fetching (network/file)
-//! - 🎨 `Basic` output style as per JSON Schema spec
+//! - 🎨 Structured Output v1 reports (flag/list/hierarchical)
 //! - ✨ Meta-schema validation for schema documents
 //! - 🚀 WebAssembly support
 //!
@@ -88,6 +88,167 @@
 //! ```
 //!
 //! Once built, any `format` keywords in your schema will be actively validated according to the chosen draft.
+//!
+//! # Structured Output
+//!
+//! The `evaluate()` method provides access to structured validation output formats defined by
+//! [JSON Schema Output v1](https://github.com/json-schema-org/json-schema-spec/blob/main/specs/output/jsonschema-validation-output-machines.md).
+//! This is useful when you need detailed information about the validation process beyond simple pass/fail results.
+//!
+//! ```rust
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! use serde_json::json;
+//!
+//! let schema = json!({
+//!     "type": "object",
+//!     "properties": {
+//!         "name": {"type": "string"},
+//!         "age": {"type": "number", "minimum": 0}
+//!     },
+//!     "required": ["name"]
+//! });
+//!
+//! let validator = jsonschema::validator_for(&schema)?;
+//! let instance = json!({"name": "Alice", "age": 30});
+//!
+//! // Evaluate the instance
+//! let evaluation = validator.evaluate(&instance);
+//!
+//! // Flag format: Simple boolean validity
+//! let flag = evaluation.flag();
+//! assert!(flag.valid);
+//!
+//! // List format: Flat list of all evaluation steps
+//! let list_output = serde_json::to_value(evaluation.list())?;
+//! println!("List output: {}", serde_json::to_string_pretty(&list_output)?);
+//!
+//! // Hierarchical format: Nested tree structure
+//! let hierarchical_output = serde_json::to_value(evaluation.hierarchical())?;
+//! println!(
+//!     "Hierarchical output: {}",
+//!     serde_json::to_string_pretty(&hierarchical_output)?
+//! );
+//!
+//! // Iterate over annotations collected during validation
+//! for annotation in evaluation.iter_annotations() {
+//!     println!("Annotation at {}: {:?}",
+//!         annotation.instance_location,
+//!         annotation.annotations
+//!     );
+//! }
+//!
+//! // Iterate over errors (if any)
+//! for error in evaluation.iter_errors() {
+//!     println!("Error: {}", error.error);
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! The structured output formats are particularly useful for:
+//! - **Debugging**: Understanding exactly which schema keywords matched or failed
+//! - **User feedback**: Providing detailed, actionable error messages
+//! - **Annotations**: Collecting metadata produced by successful validation
+//! - **Tooling**: Building development tools that work with JSON Schema
+//!
+//! For example, validating `["hello", "oops"]` against a schema with both `prefixItems` and
+//! `items` produces list output similar to:
+//!
+//! ```json
+//! {
+//!   "valid": false,
+//!   "details": [
+//!     {"valid": false, "evaluationPath": "", "schemaLocation": "", "instanceLocation": ""},
+//!     {
+//!       "valid": false,
+//!       "evaluationPath": "/items",
+//!       "schemaLocation": "/items",
+//!       "instanceLocation": "",
+//!       "droppedAnnotations": true
+//!     },
+//!     {
+//!       "valid": false,
+//!       "evaluationPath": "/items",
+//!       "schemaLocation": "/items",
+//!       "instanceLocation": "/1"
+//!     },
+//!     {
+//!       "valid": false,
+//!       "evaluationPath": "/items/type",
+//!       "schemaLocation": "/items/type",
+//!       "instanceLocation": "/1",
+//!       "errors": {"type": "\"oops\" is not of type \"integer\""}
+//!     },
+//!     {"valid": true, "evaluationPath": "/prefixItems", "schemaLocation": "/prefixItems", "instanceLocation": "", "annotations": 0}
+//!   ]
+//! }
+//! ```
+//!
+//! ## Output Formats
+//!
+//! ### Flag Format
+//!
+//! The simplest format, containing only a boolean validity indicator:
+//!
+//! ```rust
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # use serde_json::json;
+//! # let schema = json!({"type": "string"});
+//! # let validator = jsonschema::validator_for(&schema)?;
+//! let evaluation = validator.evaluate(&json!("hello"));
+//! let flag = evaluation.flag();
+//!
+//! let output = serde_json::to_value(flag)?;
+//! // Output: {"valid": true}
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### List Format
+//!
+//! A flat list of all evaluation units, where each unit describes a validation step:
+//!
+//! ```rust
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # use serde_json::json;
+//! let schema = json!({
+//!     "allOf": [
+//!         {"type": "number"},
+//!         {"minimum": 0}
+//!     ]
+//! });
+//! let validator = jsonschema::validator_for(&schema)?;
+//! let evaluation = validator.evaluate(&json!(42));
+//!
+//! let list = evaluation.list();
+//! let output = serde_json::to_value(list)?;
+//! // Output includes all evaluation steps in a flat array
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### Hierarchical Format
+//!
+//! A nested tree structure that mirrors the schema's logical structure:
+//!
+//! ```rust
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # use serde_json::json;
+//! let schema = json!({
+//!     "allOf": [
+//!         {"type": "number"},
+//!         {"minimum": 0}
+//!     ]
+//! });
+//! let validator = jsonschema::validator_for(&schema)?;
+//! let evaluation = validator.evaluate(&json!(42));
+//!
+//! let hierarchical = evaluation.hierarchical();
+//! let output = serde_json::to_value(hierarchical)?;
+//! // Output has nested "details" arrays for sub-schema evaluations
+//! # Ok(())
+//! # }
+//! ```
 //!
 //! # Meta-Schema Validation
 //!
@@ -361,43 +522,6 @@
 //! ```
 //!
 //! On `wasm32` targets, use `async_trait::async_trait(?Send)` so your retriever can rely on `Rc`, `JsFuture`, or other non-thread-safe types.
-//!
-//! # Output Styles
-//!
-//! `jsonschema` supports the `basic` output style as defined in JSON Schema Draft 2019-09.
-//! This styles allow you to serialize validation results in a standardized format using `serde`.
-//!
-//! ```rust
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! use serde_json::json;
-//!
-//! let schema_json = json!({
-//!     "title": "string value",
-//!     "type": "string"
-//! });
-//! let instance = json!("some string");
-//! let validator = jsonschema::validator_for(&schema_json)?;
-//!
-//! let output = validator.apply(&instance).basic();
-//!
-//! assert_eq!(
-//!     serde_json::to_value(output)?,
-//!     json!({
-//!         "valid": true,
-//!         "annotations": [
-//!             {
-//!                 "keywordLocation": "",
-//!                 "instanceLocation": "",
-//!                 "annotations": {
-//!                     "title": "string value"
-//!                 }
-//!             }
-//!         ]
-//!     })
-//! );
-//! #    Ok(())
-//! # }
-//! ```
 //!
 //! # Regular Expression Configuration
 //!
@@ -717,6 +841,7 @@ mod content_encoding;
 mod content_media_type;
 mod ecma;
 pub mod error;
+mod evaluation;
 #[doc(hidden)]
 pub mod ext;
 mod keywords;
@@ -732,9 +857,11 @@ pub mod types;
 mod validator;
 
 pub use error::{ErrorIterator, MaskedValidationError, ValidationError};
+pub use evaluation::{
+    AnnotationEntry, ErrorEntry, Evaluation, FlagOutput, HierarchicalOutput, ListOutput,
+};
 pub use keywords::custom::Keyword;
 pub use options::{FancyRegex, PatternOptions, Regex, ValidationOptions};
-pub use output::BasicOutput;
 pub use referencing::{
     Draft, Error as ReferencingError, Registry, RegistryOptions, Resource, Retrieve, Uri,
 };
@@ -2276,7 +2403,7 @@ pub mod draft202012 {
 #[cfg(test)]
 pub(crate) mod tests_util {
     use super::Validator;
-    use crate::{output::OutputUnit, BasicOutput, ValidationError};
+    use crate::ValidationError;
     use serde_json::Value;
 
     #[track_caller]
@@ -2293,9 +2420,10 @@ pub(crate) mod tests_util {
             validator.iter_errors(instance).next().is_some(),
             "{instance} should not be valid (via validate)",
         );
+        let evaluation = validator.evaluate(instance);
         assert!(
-            !validator.apply(instance).basic().is_valid(),
-            "{instance} should not be valid (via apply)",
+            !evaluation.flag().valid,
+            "{instance} should not be valid (via evaluate)",
         );
     }
 
@@ -2335,9 +2463,10 @@ pub(crate) mod tests_util {
             validator.validate(instance).is_ok(),
             "{instance} should be valid (via is_valid)",
         );
+        let evaluation = validator.evaluate(instance);
         assert!(
-            validator.apply(instance).basic().is_valid(),
-            "{instance} should be valid (via apply)",
+            evaluation.flag().valid,
+            "{instance} should be valid (via evaluate)",
         );
     }
 
@@ -2385,38 +2514,44 @@ pub(crate) mod tests_util {
         instance_pointer: &str,
         keyword_pointer: &str,
     ) {
-        fn ensure_location<T>(
-            units: Vec<OutputUnit<T>>,
-            instance_pointer: &str,
-            keyword_pointer: &str,
-        ) -> Result<(), Vec<String>> {
-            let mut available = Vec::new();
-            for unit in units {
-                let instance_location = unit.instance_location().as_str();
-                if instance_location == instance_pointer {
-                    let keyword_location = unit.keyword_location().as_str().to_string();
-                    if keyword_location == keyword_pointer {
-                        return Ok(());
-                    }
-                    available.push(keyword_location);
-                }
-            }
-            Err(available)
+        fn pointer_from_schema_location(location: &str) -> &str {
+            location
+                .split_once('#')
+                .map_or(location, |(_, fragment)| fragment)
         }
 
-        match validator.apply(instance).basic() {
-            BasicOutput::Valid(units) => {
-                ensure_location(units, instance_pointer, keyword_pointer)
+        let evaluation = validator.evaluate(instance);
+        let serialized =
+            serde_json::to_value(evaluation.list()).expect("List output should be serializable");
+        let details = serialized
+            .get("details")
+            .and_then(|value| value.as_array())
+            .expect("List output must contain details");
+        let mut available = Vec::new();
+        for entry in details {
+            let Some(instance_location) = entry
+                .get("instanceLocation")
+                .and_then(|value| value.as_str())
+            else {
+                continue;
+            };
+            if instance_location != instance_pointer {
+                continue;
             }
-            BasicOutput::Invalid(units) => {
-                ensure_location(units, instance_pointer, keyword_pointer)
+            let schema_location = entry
+                .get("schemaLocation")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let pointer = pointer_from_schema_location(schema_location);
+            if pointer == keyword_pointer {
+                return;
             }
+            available.push(pointer.to_string());
         }
-        .unwrap_or_else(|available| {
-            panic!(
-                "No annotation for instance pointer `{instance_pointer}` with keyword location `{keyword_pointer}`. Available keyword locations for pointer: {available:?}"
-            )
-        });
+
+        panic!(
+            "No annotation for instance pointer `{instance_pointer}` with keyword location `{keyword_pointer}`. Available keyword locations for pointer: {available:?}"
+        );
     }
 }
 

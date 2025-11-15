@@ -19,9 +19,10 @@ jsonschema [OPTIONS] <SCHEMA>
 
 **NOTE**: It only supports valid JSON as input.
 
-### Options:
+### Options
 
 - `-i, --instance <FILE>`: JSON instance(s) to validate (can be used multiple times)
+- `--output <text|flag|list|hierarchical>`: Select output style (default: `text`). `text` prints the human-friendly summary, while the structured modes emit newline-delimited JSON (`ndjson`) records with `schema`, `instance`, and JSON Schema Output v1 payloads.
 - `-v, --version`: Show version information
 - `--help`: Display help information
 
@@ -37,6 +38,13 @@ Validate multiple instances:
 jsonschema schema.json -i instance1.json -i instance2.json
 ```
 
+Emit JSON Schema Output v1 (`list`) for multiple instances:
+```
+jsonschema schema.json -i instance1.json -i instance2.json --output list
+{"output":"list","schema":"schema.json","instance":"instance1.json","payload":{"valid":true,...}}
+{"output":"list","schema":"schema.json","instance":"instance2.json","payload":{"valid":false,...}}
+```
+
 ## Features
 
 - Validate one or more JSON instances against a single schema
@@ -45,17 +53,18 @@ jsonschema schema.json -i instance1.json -i instance2.json
 
 ## Output
 
-For each instance, the tool will output:
+For each instance:
 
-- `<filename> - VALID` if the instance is valid
-- `<filename> - INVALID` followed by a list of errors if invalid
+- `text` (default): prints `<filename> - VALID` or `<filename> - INVALID. Errors:` followed by numbered error messages.
+- `flag|list|hierarchical`: emit newline-delimited JSON objects shaped as:
 
-Example output:
-```
-instance1.json - VALID
-instance2.json - INVALID. Errors:
-1. "name" is a required property
-2. "age" must be a number
+```json
+{
+  "output": "list",
+  "schema": "schema.json",
+  "instance": "instance.json",
+  "payload": { "... JSON Schema Output v1 data ..." }
+}
 ```
 
 ## Exit Codes

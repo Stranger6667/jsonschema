@@ -2,10 +2,9 @@ use crate::{
     compiler,
     error::{ErrorIterator, ValidationError},
     node::SchemaNode,
-    output::BasicOutput,
     paths::{LazyLocation, Location},
     types::JsonType,
-    validator::{PartialApplication, Validate},
+    validator::{EvaluationResult, Validate},
 };
 use serde_json::{Map, Value};
 
@@ -58,12 +57,13 @@ impl Validate for AllOfValidator {
         Ok(())
     }
 
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
-        self.schemas
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+        let children = self
+            .schemas
             .iter()
-            .map(move |node| node.apply_rooted(instance, location))
-            .sum::<BasicOutput>()
-            .into()
+            .map(move |node| node.evaluate_instance(instance, location))
+            .collect();
+        EvaluationResult::from_children(children)
     }
 }
 
@@ -98,8 +98,8 @@ impl Validate for SingleValueAllOfValidator {
         self.node.validate(instance, location)
     }
 
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
-        self.node.apply_rooted(instance, location).into()
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+        EvaluationResult::from(self.node.evaluate_instance(instance, location))
     }
 }
 

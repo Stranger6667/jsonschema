@@ -3,8 +3,8 @@
 //! everything needed to perform such validation in runtime.
 use crate::{
     error::{error, no_error, ErrorIterator},
+    evaluation::{Annotations, ErrorDescription, Evaluation, EvaluationNode},
     node::SchemaNode,
-    output::{Annotations, ErrorDescription, Output, OutputUnit},
     paths::LazyLocation,
     thread::ThreadBound,
     Draft, ValidationError, ValidationOptions,
@@ -19,12 +19,12 @@ use serde_json::Value;
 /// in that case the `is_valid` function is sufficient. Sometimes applications will want more
 /// detail about why a schema has failed, in which case the `validate` method can be used to
 /// iterate over the errors produced by this validator. Finally, applications may be interested in
-/// annotations produced by schemas over valid results, in this case the `apply` method can be used
+/// annotations produced by schemas over valid results, in this case the `evaluate` method can be used
 /// to obtain this information.
 ///
 /// If you are implementing `Validate` it is often sufficient to implement `validate` and
-/// `is_valid`. `apply` is only necessary for validators which compose other validators. See the
-/// documentation for `apply` for more information.
+/// `is_valid`. `evaluate` is only necessary for validators which compose other validators. See the
+/// documentation for `evaluate` for more information.
 pub(crate) trait Validate: ThreadBound {
     fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
         match self.validate(instance, location) {
@@ -43,118 +43,145 @@ pub(crate) trait Validate: ThreadBound {
         location: &LazyLocation,
     ) -> Result<(), ValidationError<'i>>;
 
-    /// `apply` applies this validator and any sub-validators it is composed of to the value in
-    /// question and collects the resulting annotations or errors. Note that the result of `apply`
-    /// is a `PartialApplication`.
+    /// `evaluate` applies this validator and any sub-validators it is composed of to the value in
+    /// question and collects the resulting annotations or errors. Note that the result of this
+    /// method is a `EvaluationResult`.
     ///
     /// What does "partial" mean in this context? Each validator can produce annotations or errors
-    /// in the case of successful or unsuccessful validation respectively. We're ultimately
-    /// producing these errors and annotations to produce the "basic" output format as specified in
-    /// the 2020-12 draft specification. In this format each annotation or error must include a
-    /// json pointer to the keyword in the schema and to the property in the instance. However,
-    /// most validators don't know where they are in the schema tree so we allow them to return the
-    /// errors or annotations they produce directly and leave it up to the parent validator to fill
-    /// in the path information. This means that only validators which are composed of other
-    /// validators must implement `apply`, for validators on the leaves of the validator tree the
+    /// in the case of successful or unsuccessful validation respectively. The evaluation layer is
+    /// responsible for attaching schema/instance locations to those annotations and errors to build
+    /// the final evaluation tree. Most validators don't know where they are in the schema tree so we
+    /// allow them to return the errors or annotations they produce directly and leave it up to the
+    /// parent validator (or [`SchemaNode::evaluate_instance`](crate::node::SchemaNode::evaluate_instance))
+    /// to fill in the path information. This means that only validators which are composed of other
+    /// validators must implement `evaluate`; for validators on the leaves of the validator tree the
     /// default implementation which is defined in terms of `validate` will suffice.
     ///
     /// If you are writing a validator which is composed of other validators then your validator will
     /// need to store references to the `SchemaNode`s which contain those other validators.
     /// `SchemaNode` stores information about where it is in the schema tree and therefore provides an
-    /// `apply_rooted` method which returns a full `BasicOutput`. `BasicOutput` implements `AddAssign`
-    /// so a typical pattern is to compose results from sub validators using `+=` and then use the
-    /// `From<BasicOutput> for PartialApplication` impl to convert the composed outputs into a
-    /// `PartialApplication` to return. For example, here is the implementation of
-    /// `IfThenValidator`
+    /// `evaluate_instance` method which returns an [`EvaluationNode`].
+    /// A typical pattern is to evaluate the subschemas and combine their resulting nodes, e.g. the
+    /// `if`/`then` composition can be implemented as follows:
     ///
     /// ```rust,ignore
-    /// // Note that self.schema is a `SchemaNode` and we use `apply_rooted` to return a `BasicOutput`
-    /// let mut if_result = self.schema.apply_rooted(instance, instance_path);
-    /// if if_result.is_valid() {
-    ///     // here we use the `AddAssign` implementation to combine the results of subschemas
-    ///     if_result += self
-    ///         .then_schema
-    ///         .apply_rooted(instance, instance_path);
-    ///     // Here we use the `From<BasicOutput> for PartialApplication impl
-    ///     if_result.into()
+    /// let if_node = self.schema.evaluate_instance(instance, instance_path);
+    /// if if_node.valid {
+    ///     let then_node = self.then_schema.evaluate_instance(instance, instance_path);
+    ///     EvaluationResult::from_children(vec![if_node, then_node])
     /// } else {
-    ///     self.else_schema
-    ///         .apply_rooted(instance, instance_path)
-    ///         .into()
+    ///     let else_node = self.else_schema.evaluate_instance(instance, instance_path);
+    ///     EvaluationResult::from_children(vec![else_node])
     /// }
     /// ```
-    ///
-    /// `BasicOutput` also implements `Sum<BasicOutput>` and `FromIterator<BasicOutput>` for `PartialApplication`
-    /// so you can use `sum()` and `collect()` in simple cases.
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
         let errors: Vec<ErrorDescription> = self
             .iter_errors(instance, location)
-            .map(ErrorDescription::from)
+            .map(|e| ErrorDescription::from_validation_error(&e))
             .collect();
         if errors.is_empty() {
-            PartialApplication::valid_empty()
+            EvaluationResult::valid_empty()
         } else {
-            PartialApplication::invalid_empty(errors)
+            EvaluationResult::invalid_empty(errors)
         }
     }
 }
 
-/// The result of applying a validator to an instance. As explained in the documentation for
-/// `Validate::apply` this is a "partial" result because it does not include information about
+/// The result of evaluating a validator against an instance. This is a "partial" result because it does not include information about
 /// where the error or annotation occurred.
-#[derive(Clone, PartialEq)]
-pub(crate) enum PartialApplication {
+#[derive(PartialEq)]
+pub(crate) enum EvaluationResult {
     Valid {
         /// Annotations produced by this validator
         annotations: Option<Annotations>,
-        /// Any outputs produced by validators which are children of this validator
-        child_results: Vec<OutputUnit<Annotations>>,
+        /// Children evaluation nodes
+        children: Vec<EvaluationNode>,
     },
     Invalid {
         /// Errors which caused this schema to be invalid
         errors: Vec<ErrorDescription>,
-        /// Any error outputs produced by child validators of this validator
-        child_results: Vec<OutputUnit<ErrorDescription>>,
+        /// Children evaluation nodes
+        children: Vec<EvaluationNode>,
+        /// Potential annotations that should be reported as dropped on failure
+        annotations: Option<Annotations>,
     },
 }
 
-impl PartialApplication {
-    /// Create an empty `PartialApplication` which is valid
-    pub(crate) fn valid_empty() -> PartialApplication {
-        PartialApplication::Valid {
+impl EvaluationResult {
+    /// Create an empty `EvaluationResult` which is valid
+    pub(crate) fn valid_empty() -> EvaluationResult {
+        EvaluationResult::Valid {
             annotations: None,
-            child_results: Vec::new(),
+            children: Vec::new(),
         }
     }
 
-    /// Create an empty `PartialApplication` which is invalid
-    pub(crate) fn invalid_empty(errors: Vec<ErrorDescription>) -> PartialApplication {
-        PartialApplication::Invalid {
+    /// Create an empty `EvaluationResult` which is invalid
+    pub(crate) fn invalid_empty(errors: Vec<ErrorDescription>) -> EvaluationResult {
+        EvaluationResult::Invalid {
             errors,
-            child_results: Vec::new(),
+            children: Vec::new(),
+            annotations: None,
         }
     }
 
     /// Set the annotation that will be returned for the current validator. If this
-    /// `PartialApplication` is invalid then this method does nothing
+    /// `EvaluationResult` is invalid then this method does nothing
     pub(crate) fn annotate(&mut self, new_annotations: Annotations) {
         match self {
-            Self::Valid { annotations, .. } => *annotations = Some(new_annotations),
-            Self::Invalid { .. } => {}
+            Self::Valid { annotations, .. } | Self::Invalid { annotations, .. } => {
+                *annotations = Some(new_annotations);
+            }
         }
     }
 
     /// Set the error that will be returned for the current validator. If this
-    /// `PartialApplication` is valid then this method converts this application into
-    /// `PartialApplication::Invalid`
+    /// `EvaluationResult` is valid then this method converts this application into
+    /// `EvaluationResult::Invalid`
     pub(crate) fn mark_errored(&mut self, error: ErrorDescription) {
         match self {
             Self::Invalid { errors, .. } => errors.push(error),
-            Self::Valid { .. } => {
+            Self::Valid {
+                annotations,
+                children,
+            } => {
                 *self = Self::Invalid {
                     errors: vec![error],
-                    child_results: Vec::new(),
+                    children: std::mem::take(children),
+                    annotations: annotations.take(),
                 }
+            }
+        }
+    }
+
+    pub(crate) fn from_children(children: Vec<EvaluationNode>) -> EvaluationResult {
+        if children.iter().any(|node| !node.valid) {
+            EvaluationResult::Invalid {
+                errors: Vec::new(),
+                children,
+                annotations: None,
+            }
+        } else {
+            EvaluationResult::Valid {
+                annotations: None,
+                children,
+            }
+        }
+    }
+}
+
+impl From<EvaluationNode> for EvaluationResult {
+    fn from(node: EvaluationNode) -> Self {
+        if node.valid {
+            EvaluationResult::Valid {
+                annotations: None,
+                children: vec![node],
+            }
+        } else {
+            EvaluationResult::Invalid {
+                errors: Vec::new(),
+                children: vec![node],
+                annotations: None,
             }
         }
     }
@@ -258,51 +285,13 @@ impl Validator {
     pub fn is_valid(&self, instance: &Value) -> bool {
         self.root.is_valid(instance)
     }
-    /// Apply the schema and return an [`Output`]. No actual work is done at this point, the
-    /// evaluation of the schema is deferred until a method is called on the `Output`. This is
-    /// because different output formats will have different performance characteristics.
-    ///
-    /// # Examples
-    ///
-    /// "basic" output format
-    ///
-    /// ```rust
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use serde_json::json;
-    ///
-    /// let schema = json!({
-    ///     "title": "string value",
-    ///     "type": "string"
-    /// });
-    /// let instance = json!("some string");
-    ///
-    /// let validator = jsonschema::validator_for(&schema)
-    ///     .expect("Invalid schema");
-    ///
-    /// let output = validator.apply(&instance).basic();
-    /// assert_eq!(
-    ///     serde_json::to_value(output)?,
-    ///     json!({
-    ///         "valid": true,
-    ///         "annotations": [
-    ///             {
-    ///                 "keywordLocation": "",
-    ///                 "instanceLocation": "",
-    ///                 "annotations": {
-    ///                     "title": "string value"
-    ///                 }
-    ///             }
-    ///         ]
-    ///     })
-    /// );
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Evaluate the schema and expose structured output formats.
     #[must_use]
-    pub const fn apply<'a, 'b>(&'a self, instance: &'b Value) -> Output<'a, 'b> {
-        Output::new(self, &self.root, instance)
+    #[inline]
+    pub fn evaluate(&self, instance: &Value) -> Evaluation {
+        let root = self.root.evaluate_instance(instance, &LazyLocation::new());
+        Evaluation::new(root)
     }
-
     /// The [`Draft`] which was used to build this validator.
     #[must_use]
     pub fn draft(&self) -> Draft {

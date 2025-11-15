@@ -34,6 +34,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Boolean result
     assert!(validator.is_valid(&instance));
 
+    // Structured output (JSON Schema Output v1)
+    let evaluation = validator.evaluate(&instance);
+    for annotation in evaluation.iter_annotations() {
+        eprintln!(
+            "Annotation at {}: {:?}",
+            annotation.schema_location,
+            annotation.annotations.value()
+        );
+    }
+
     Ok(())
 }
 ```
@@ -53,7 +63,7 @@ See more usage examples in the [documentation](https://docs.rs/jsonschema).
 - 📚 Full support for popular JSON Schema drafts
 - 🔧 Custom keywords and format validators
 - 🌐 Blocking & non-blocking remote reference fetching (network/file)
-- 🎨 `Basic` output style as per JSON Schema spec
+- 🎨 Structured Output v1 reports (flag/list/hierarchical)
 - ✨ Meta-schema validation for schema documents, including custom metaschemas
 - 🔗 Bindings for [Python](https://github.com/Stranger6667/jsonschema/tree/master/crates/jsonschema-py)
 - 🚀 WebAssembly support

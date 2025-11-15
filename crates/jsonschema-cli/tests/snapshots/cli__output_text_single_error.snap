@@ -1,0 +1,6 @@
+---
+source: crates/jsonschema-cli/tests/cli.rs
+expression: sanitized
+---
+{FILE_1} - INVALID. Errors:
+1. "not a number" is not of type "number"

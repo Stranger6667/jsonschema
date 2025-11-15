@@ -4,7 +4,7 @@ use crate::{
     keywords::CompilationResult,
     node::SchemaNode,
     paths::LazyLocation,
-    validator::{PartialApplication, Validate},
+    validator::{EvaluationResult, Validate},
     ValidationError,
 };
 use serde_json::{Map, Value};
@@ -65,14 +65,13 @@ impl Validate for IfThenValidator {
         }
     }
 
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
-        let mut if_result = self.schema.apply_rooted(instance, location);
-        if if_result.is_valid() {
-            let then_result = self.then_schema.apply_rooted(instance, location);
-            if_result += then_result;
-            if_result.into()
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+        let if_node = self.schema.evaluate_instance(instance, location);
+        if if_node.valid {
+            let then_node = self.then_schema.evaluate_instance(instance, location);
+            EvaluationResult::from_children(vec![if_node, then_node])
         } else {
-            PartialApplication::valid_empty()
+            EvaluationResult::valid_empty()
         }
     }
 }
@@ -133,12 +132,13 @@ impl Validate for IfElseValidator {
         }
     }
 
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
-        let if_result = self.schema.apply_rooted(instance, location);
-        if if_result.is_valid() {
-            if_result.into()
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+        let if_node = self.schema.evaluate_instance(instance, location);
+        if if_node.valid {
+            EvaluationResult::from_children(vec![if_node])
         } else {
-            self.else_schema.apply_rooted(instance, location).into()
+            let else_node = self.else_schema.evaluate_instance(instance, location);
+            EvaluationResult::from_children(vec![else_node])
         }
     }
 }
@@ -206,13 +206,14 @@ impl Validate for IfThenElseValidator {
         }
     }
 
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
-        let mut if_result = self.schema.apply_rooted(instance, location);
-        if if_result.is_valid() {
-            if_result += self.then_schema.apply_rooted(instance, location);
-            if_result.into()
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+        let if_node = self.schema.evaluate_instance(instance, location);
+        if if_node.valid {
+            let then_node = self.then_schema.evaluate_instance(instance, location);
+            EvaluationResult::from_children(vec![if_node, then_node])
         } else {
-            self.else_schema.apply_rooted(instance, location).into()
+            let else_node = self.else_schema.evaluate_instance(instance, location);
+            EvaluationResult::from_children(vec![else_node])
         }
     }
 }

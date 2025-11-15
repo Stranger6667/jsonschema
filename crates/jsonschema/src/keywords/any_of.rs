@@ -4,7 +4,7 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, Location},
     types::JsonType,
-    validator::{PartialApplication, Validate},
+    validator::{EvaluationResult, Validate},
 };
 use serde_json::{Map, Value};
 
@@ -82,22 +82,27 @@ impl Validate for AnyOfValidator {
         }
     }
 
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
-        let mut successes = Vec::new();
-        let mut failures = Vec::new();
-        for node in &self.schemas {
-            let result = node.apply_rooted(instance, location);
-            if result.is_valid() {
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+        let total = self.schemas.len();
+        let mut failures = Vec::with_capacity(total);
+        let mut iter = self.schemas.iter();
+        while let Some(node) = iter.next() {
+            let result = node.evaluate_instance(instance, location);
+            if result.valid {
+                let remaining = total.saturating_sub(failures.len() + 1);
+                let mut successes = Vec::with_capacity(remaining + 1);
                 successes.push(result);
-            } else {
-                failures.push(result);
+                for node in iter {
+                    let tail = node.evaluate_instance(instance, location);
+                    if tail.valid {
+                        successes.push(tail);
+                    }
+                }
+                return EvaluationResult::from_children(successes);
             }
+            failures.push(result);
         }
-        if successes.is_empty() {
-            failures.into_iter().collect()
-        } else {
-            successes.into_iter().collect()
-        }
+        EvaluationResult::from_children(failures)
     }
 }
 

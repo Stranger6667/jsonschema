@@ -6,9 +6,14 @@ coverage:
     project: off
     patch: off
 
-# Ignore test/benchmark infrastructure from coverage
+# Ignore test/benchmark infrastructure & dev-only suite helpers from coverage
 ignore:
   - "crates/benchmark/"
   - "crates/benchmark-suite/"
   - "crates/jsonschema-testsuite/"
+  - "crates/jsonschema-testsuite-codegen/"
+  - "crates/jsonschema-testsuite-internal/"
   - "crates/jsonschema-referencing-testsuite/"
+  - "crates/jsonschema-referencing-testsuite-codegen/"
+  - "crates/jsonschema-referencing-testsuite-internal/"
+  - "crates/testsuite-common/"

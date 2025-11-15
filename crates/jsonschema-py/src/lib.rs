@@ -23,6 +23,7 @@ use pyo3::{
 use regex::{FancyRegexOptions, RegexOptions};
 use retriever::{into_retriever, Retriever};
 use ser::to_value;
+use serde::Serialize;
 #[macro_use]
 extern crate pyo3_built;
 
@@ -100,6 +101,113 @@ fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyA
             }
             Ok(py_dict.into_any().unbind())
         }
+    }
+}
+
+fn evaluation_output_to_python<T>(py: Python<'_>, output: &T) -> PyResult<Py<PyAny>>
+where
+    T: Serialize + ?Sized,
+{
+    let json_value = serde_json::to_value(output).map_err(|err| {
+        PyValueError::new_err(format!("Failed to serialize evaluation output: {err}"))
+    })?;
+    value_to_python(py, &json_value)
+}
+
+fn annotation_entry_to_py(
+    py: Python<'_>,
+    entry: jsonschema::AnnotationEntry<'_>,
+) -> PyResult<Py<PyAny>> {
+    let dict = PyDict::new(py);
+    dict.set_item("schemaLocation", entry.schema_location)?;
+    if let Some(uri) = entry.absolute_keyword_location {
+        dict.set_item("absoluteKeywordLocation", uri.as_str())?;
+    } else {
+        dict.set_item("absoluteKeywordLocation", py.None())?;
+    }
+    dict.set_item("instanceLocation", entry.instance_location.as_str())?;
+    dict.set_item(
+        "annotations",
+        value_to_python(py, entry.annotations.value())?,
+    )?;
+    Ok(dict.into())
+}
+
+fn error_entry_to_py(py: Python<'_>, entry: jsonschema::ErrorEntry<'_>) -> PyResult<Py<PyAny>> {
+    let dict = PyDict::new(py);
+    dict.set_item("schemaLocation", entry.schema_location)?;
+    if let Some(uri) = entry.absolute_keyword_location {
+        dict.set_item("absoluteKeywordLocation", uri.as_str())?;
+    } else {
+        dict.set_item("absoluteKeywordLocation", py.None())?;
+    }
+    dict.set_item("instanceLocation", entry.instance_location.as_str())?;
+    dict.set_item("error", entry.error.to_string())?;
+    Ok(dict.into())
+}
+
+#[pyclass(module = "jsonschema_rs", name = "Evaluation")]
+struct PyEvaluation {
+    inner: jsonschema::Evaluation,
+}
+
+impl PyEvaluation {
+    fn new(evaluation: jsonschema::Evaluation) -> Self {
+        PyEvaluation { inner: evaluation }
+    }
+}
+
+#[pymethods]
+impl PyEvaluation {
+    /// Whether the evaluated instance is valid.
+    #[getter]
+    fn valid(&self) -> bool {
+        self.inner.flag().valid
+    }
+
+    /// Return the flag output representation as a Python object.
+    #[pyo3(text_signature = "()")]
+    fn flag(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let flag = self.inner.flag();
+        evaluation_output_to_python(py, &flag)
+    }
+
+    /// Return the list output representation as a Python object.
+    #[pyo3(text_signature = "()")]
+    fn list(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let list_output = self.inner.list();
+        evaluation_output_to_python(py, &list_output)
+    }
+
+    /// Return the hierarchical output representation as a Python object.
+    #[pyo3(text_signature = "()")]
+    fn hierarchical(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let hierarchical_output = self.inner.hierarchical();
+        evaluation_output_to_python(py, &hierarchical_output)
+    }
+
+    /// Return collected annotations for all evaluated nodes.
+    #[pyo3(text_signature = "()")]
+    fn annotations(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let entries = PyList::empty(py);
+        for entry in self.inner.iter_annotations() {
+            entries.append(annotation_entry_to_py(py, entry)?)?;
+        }
+        Ok(entries.into())
+    }
+
+    /// Return collected errors for all evaluated nodes.
+    #[pyo3(text_signature = "()")]
+    fn errors(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let entries = PyList::empty(py);
+        for entry in self.inner.iter_errors() {
+            entries.append(error_entry_to_py(py, entry)?)?;
+        }
+        Ok(entries.into())
+    }
+
+    fn __repr__(&self) -> String {
+        format!("<Evaluation valid={}>", self.inner.flag().valid)
     }
 }
 
@@ -833,6 +941,109 @@ fn iter_errors(
     }
 }
 
+/// evaluate(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None)
+///
+/// Evaluate an instance against a schema and return structured output formats.
+///
+/// ```text
+///     >>> schema = {"type": "array", "prefixItems": [{"type": "string"}], "items": {"type": "integer"}}
+///     >>> evaluation = evaluate(schema, ["hello", "oops"])
+///     >>> evaluation.list()
+///     {
+///         'valid': False,
+///         'details': [
+///             {
+///                 'evaluationPath': '',
+///                 'instanceLocation': '',
+///                 'schemaLocation': '',
+///                 'valid': False
+///             },
+///             {
+///                 'valid': False,
+///                 'evaluationPath': '/0',
+///                 'instanceLocation': '',
+///                 'schemaLocation': '/items',
+///                 'droppedAnnotations': True
+///             },
+///             {
+///                 'valid': False,
+///                 'evaluationPath': '/0/0',
+///                 'instanceLocation': '/1',
+///                 'schemaLocation': '/items'
+///             },
+///             {
+///                 'valid': False,
+///                 'evaluationPath': '/0/0/0',
+///                 'instanceLocation': '/1',
+///                 'schemaLocation': '/items/type',
+///                 'errors': {'type': '"oops" is not of type "integer"'}
+///             },
+///             {
+///                 'valid': True,
+///                 'evaluationPath': '/1',
+///                 'instanceLocation': '',
+///                 'schemaLocation': '/prefixItems',
+///                 'annotations': 0
+///             },
+///             {
+///                 'valid': True,
+///                 'evaluationPath': '/1/0',
+///                 'instanceLocation': '/0',
+///                 'schemaLocation': '/prefixItems/0'
+///             },
+///             {
+///                 'valid': True,
+///                 'evaluationPath': '/1/0/0',
+///                 'instanceLocation': '/0',
+///                 'schemaLocation': '/prefixItems/0/type'
+///             },
+///             {
+///                 'valid': True,
+///                 'evaluationPath': '/2',
+///                 'instanceLocation': '',
+///                 'schemaLocation': '/type'
+///             }
+///         ]
+///     }
+/// ```
+///
+#[pyfunction]
+#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, base_uri=None, pattern_options=None))]
+#[allow(clippy::needless_pass_by_value)]
+fn evaluate(
+    py: Python<'_>,
+    schema: &Bound<'_, PyAny>,
+    instance: &Bound<'_, PyAny>,
+    draft: Option<u8>,
+    formats: Option<&Bound<'_, PyDict>>,
+    validate_formats: Option<bool>,
+    ignore_unknown_formats: Option<bool>,
+    retriever: Option<&Bound<'_, PyAny>>,
+    registry: Option<&registry::Registry>,
+    base_uri: Option<String>,
+    pattern_options: Option<&Bound<'_, PyAny>>,
+) -> PyResult<PyEvaluation> {
+    let options = make_options(
+        draft,
+        formats,
+        validate_formats,
+        ignore_unknown_formats,
+        retriever,
+        registry,
+        base_uri,
+        pattern_options,
+    )?;
+    let schema = ser::to_value(schema)?;
+    let instance = ser::to_value(instance)?;
+    let validator = match options.build(&schema) {
+        Ok(validator) => validator,
+        Err(error) => return Err(into_py_err(py, error, None)?),
+    };
+    let evaluation = panic::catch_unwind(AssertUnwindSafe(|| validator.evaluate(&instance)))
+        .map_err(handle_format_checked_panic)?;
+    Ok(PyEvaluation::new(evaluation))
+}
+
 #[allow(clippy::needless_pass_by_value)]
 fn handle_format_checked_panic(err: Box<dyn Any + Send>) -> PyErr {
     LAST_FORMAT_ERROR.with(|last| {
@@ -1001,6 +1212,53 @@ impl Validator {
         instance: &Bound<'_, PyAny>,
     ) -> PyResult<ValidationErrorIter> {
         iter_on_error(py, &self.validator, instance, self.mask.as_deref())
+    }
+    /// evaluate(instance)
+    ///
+    /// Evaluate the instance and return structured JSON Schema outputs.
+    ///
+    /// ```text
+    ///     >>> validator = validator_for({"prefixItems": [{"type": "string"}], "items": {"type": "integer"}})
+    ///     >>> validator.evaluate(["hello", "oops"]).list()
+    ///     {
+    ///         'valid': False,
+    ///         'details': [
+    ///             {
+    ///                 'evaluationPath': '',
+    ///                 'instanceLocation': '',
+    ///                 'schemaLocation': '',
+    ///                 'valid': False
+    ///             },
+    ///             {
+    ///                 'valid': False,
+    ///                 'evaluationPath': '/0',
+    ///                 'instanceLocation': '',
+    ///                 'schemaLocation': '/items',
+    ///                 'droppedAnnotations': True
+    ///             },
+    ///             {
+    ///                 'valid': False,
+    ///                 'evaluationPath': '/0/0',
+    ///                 'instanceLocation': '/1',
+    ///                 'schemaLocation': '/items'
+    ///             },
+    ///             {
+    ///                 'valid': False,
+    ///                 'evaluationPath': '/0/0/0',
+    ///                 'instanceLocation': '/1',
+    ///                 'schemaLocation': '/items/type',
+    ///                 'errors': {'type': '"oops" is not of type "integer"'}
+    ///             }
+    ///         ]
+    ///     }
+    /// ```
+    #[pyo3(text_signature = "(instance)")]
+    fn evaluate(&self, instance: &Bound<'_, PyAny>) -> PyResult<PyEvaluation> {
+        let instance = ser::to_value(instance)?;
+        let evaluation =
+            panic::catch_unwind(AssertUnwindSafe(|| self.validator.evaluate(&instance)))
+                .map_err(handle_format_checked_panic)?;
+        Ok(PyEvaluation::new(evaluation))
     }
     fn __repr__(&self) -> &'static str {
         match self.validator.draft() {
@@ -1358,12 +1616,14 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_wrapped(wrap_pyfunction!(is_valid))?;
     module.add_wrapped(wrap_pyfunction!(validate))?;
     module.add_wrapped(wrap_pyfunction!(iter_errors))?;
+    module.add_wrapped(wrap_pyfunction!(evaluate))?;
     module.add_wrapped(wrap_pyfunction!(validator_for))?;
     module.add_class::<Draft4Validator>()?;
     module.add_class::<Draft6Validator>()?;
     module.add_class::<Draft7Validator>()?;
     module.add_class::<Draft201909Validator>()?;
     module.add_class::<Draft202012Validator>()?;
+    module.add_class::<PyEvaluation>()?;
     module.add_class::<registry::Registry>()?;
     module.add_class::<FancyRegexOptions>()?;
     module.add_class::<RegexOptions>()?;

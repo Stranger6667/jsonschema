@@ -1,5 +1,100 @@
 # Migration Guide
 
+## Upgrading from 0.35.x to 0.36.0
+
+### Removal of `Validator::apply`, `Output`, and `BasicOutput`
+
+The legacy `apply()` API and its `BasicOutput`/`OutputUnit` structures have been removed in favor of
+the richer [`Validator::evaluate`](https://docs.rs/jsonschema/latest/jsonschema/struct.Validator.html#method.evaluate)
+interface that exposes the JSON Schema Output v1 formats (flag/list/hierarchical) directly.
+
+```rust
+use serde_json::json;
+
+// Old (0.35.x)
+let output = validator.apply(&instance).basic();
+match output {
+    BasicOutput::Valid(units) => println!("valid: {units:?}"),
+    BasicOutput::Invalid(errors) => println!("errors: {errors:?}"),
+}
+
+// New (0.36.0)
+let evaluation = validator.evaluate(&instance);
+if evaluation.flag().valid {
+    println!("valid");
+}
+let list = serde_json::to_value(evaluation.list())?;
+let hierarchical = serde_json::to_value(evaluation.hierarchical())?;
+```
+
+Because `evaluate()` materializes every evaluation step so it can provide the structured outputs, it
+always walks the full schema tree. If you only need a boolean result, continue to prefer
+[`is_valid`](https://docs.rs/jsonschema/latest/jsonschema/fn.is_valid.html) or
+[`validate`](https://docs.rs/jsonschema/latest/jsonschema/fn.validate.html).
+
+The serialized JSON now matches the [JSON Schema Output v1 specification](https://github.com/json-schema-org/json-schema-spec/blob/main/specs/output/jsonschema-validation-output-machines.md)
+and its companion [schema](https://github.com/json-schema-org/json-schema-spec/blob/main/specs/output/schema.json).
+For example, evaluating an array against a schema with `prefixItems` and `items` produces list output like:
+
+```json
+{
+  "valid": false,
+  "details": [
+    {"valid": false, "evaluationPath": "", "schemaLocation": "", "instanceLocation": ""},
+    {
+      "valid": false,
+      "evaluationPath": "/items",
+      "instanceLocation": "",
+      "schemaLocation": "/items",
+      "droppedAnnotations": true
+    },
+    {
+      "valid": false,
+      "evaluationPath": "/items",
+      "instanceLocation": "/1",
+      "schemaLocation": "/items"
+    },
+    {
+      "valid": false,
+      "evaluationPath": "/items/type",
+      "instanceLocation": "/1",
+      "schemaLocation": "/items/type",
+      "errors": {"type": "\"oops\" is not of type \"integer\""}
+    },
+    {
+      "valid": true,
+      "evaluationPath": "/prefixItems",
+      "instanceLocation": "",
+      "schemaLocation": "/prefixItems",
+      "annotations": 0
+    },
+    {
+      "valid": true,
+      "evaluationPath": "/prefixItems/0",
+      "instanceLocation": "/0",
+      "schemaLocation": "/prefixItems/0"
+    },
+    {
+      "valid": true,
+      "evaluationPath": "/prefixItems/0/type",
+      "instanceLocation": "/0",
+      "schemaLocation": "/prefixItems/0/type"
+    },
+    {
+      "valid": true,
+      "evaluationPath": "/type",
+      "instanceLocation": "",
+      "schemaLocation": "/type"
+    }
+  ]
+}
+```
+
+If you need to inspect annotations or errors programmatically without serializing to JSON, use the
+new [`evaluation.iter_annotations()`](https://docs.rs/jsonschema/latest/jsonschema/struct.Evaluation.html#method.iter_annotations)
+and [`evaluation.iter_errors()`](https://docs.rs/jsonschema/latest/jsonschema/struct.Evaluation.html#method.iter_errors)
+helpers.
+
 ## Upgrading from 0.34.x to 0.35.0
 
 ### Custom meta-schemas require explicit registration

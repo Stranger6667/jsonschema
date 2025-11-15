@@ -1,6 +1,7 @@
 use assert_cmd::{cargo::cargo_bin_cmd, Command};
 use insta::assert_snapshot;
-use std::fs;
+use serde_json::Value;
+use std::{collections::HashMap, fs};
 use tempfile::tempdir;
 
 fn cli() -> Command {
@@ -19,6 +20,14 @@ fn sanitize_output(output: String, file_names: &[&str]) -> String {
         sanitized = sanitized.replace(name, &format!("{{FILE_{}}}", i + 1));
     }
     sanitized
+}
+
+fn parse_ndjson(output: &str) -> Vec<Value> {
+    output
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
 }
 
 #[test]
@@ -394,4 +403,262 @@ fn test_format_enforcement_via_cli_flag() {
         &[&invalid],
     );
     assert_snapshot!("format_enforcement_enabled", out);
+}
+
+#[test]
+fn test_output_flag_ndjson() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"type": "object", "properties": {"name": {"type": "string"}}}"#,
+    );
+    let valid = create_temp_file(&dir, "valid.json", r#"{"name": "John"}"#);
+    let invalid = create_temp_file(&dir, "invalid.json", r#"{"name": 123}"#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--instance")
+        .arg(&valid)
+        .arg("--instance")
+        .arg(&invalid)
+        .arg("--output")
+        .arg("flag");
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "flag output should fail when an instance is invalid"
+    );
+    let records = parse_ndjson(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(records.len(), 2);
+    for record in &records {
+        assert_eq!(record["output"], "flag");
+        assert_eq!(record["schema"], schema);
+    }
+    let mut by_instance = HashMap::new();
+    for record in records {
+        let instance = record["instance"].as_str().unwrap();
+        let valid = record["payload"]["valid"].as_bool().unwrap();
+        by_instance.insert(instance.to_string(), valid);
+    }
+    assert_eq!(by_instance.get(&valid), Some(&true));
+    assert_eq!(by_instance.get(&invalid), Some(&false));
+}
+
+#[test]
+fn test_output_list_ndjson() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"type": "object", "properties": {"age": {"type": "number"}}}"#,
+    );
+    let valid = create_temp_file(&dir, "valid.json", r#"{"age": 42}"#);
+    let invalid = create_temp_file(&dir, "invalid.json", r#"{"age": "old"}"#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--instance")
+        .arg(&valid)
+        .arg("--instance")
+        .arg(&invalid)
+        .arg("--output")
+        .arg("list");
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "list output should fail when an instance is invalid"
+    );
+    let records = parse_ndjson(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(records.len(), 2);
+    for record in records {
+        assert_eq!(record["output"], "list");
+        assert_eq!(record["schema"], schema);
+        assert!(
+            record["payload"]["details"].is_array(),
+            "list payload must contain details array"
+        );
+    }
+}
+
+#[test]
+fn test_output_text_valid() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"type": "object", "properties": {"name": {"type": "string"}}}"#,
+    );
+    let valid = create_temp_file(&dir, "valid.json", r#"{"name": "Alice"}"#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--instance")
+        .arg(&valid)
+        .arg("--output")
+        .arg("text");
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    let sanitized = sanitize_output(
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        &[&valid],
+    );
+    assert_snapshot!(sanitized);
+}
+
+#[test]
+fn test_output_text_single_error() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"type": "object", "properties": {"age": {"type": "number"}}}"#,
+    );
+    let invalid = create_temp_file(&dir, "invalid.json", r#"{"age": "not a number"}"#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--instance")
+        .arg(&invalid)
+        .arg("--output")
+        .arg("text");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    let sanitized = sanitize_output(
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        &[&invalid],
+    );
+    assert_snapshot!(sanitized);
+}
+
+#[test]
+fn test_output_text_multiple_errors() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "number"},
+                "email": {"type": "string"}
+            },
+            "required": ["name", "age", "email"]
+        }"#,
+    );
+    let invalid = create_temp_file(
+        &dir,
+        "invalid.json",
+        r#"{"name": 123, "age": "not a number"}"#,
+    );
+
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--instance")
+        .arg(&invalid)
+        .arg("--output")
+        .arg("text");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    let out = String::from_utf8_lossy(&output.stdout);
+    let sanitized = sanitize_output(out.to_string(), &[&invalid]);
+
+    // Verify error numbering: "1. <error>", "2. <error>", "3. <error>"
+    assert!(sanitized.contains("1. "));
+    assert!(sanitized.contains("2. "));
+    assert!(sanitized.contains("3. "));
+    assert_snapshot!(sanitized);
+}
+
+#[test]
+fn test_output_hierarchical_valid() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"type": "object", "properties": {"name": {"type": "string"}}}"#,
+    );
+    let valid = create_temp_file(&dir, "valid.json", r#"{"name": "Bob"}"#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--instance")
+        .arg(&valid)
+        .arg("--output")
+        .arg("hierarchical");
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    let records = parse_ndjson(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(records.len(), 1);
+    let record = &records[0];
+    assert_eq!(record["output"], "hierarchical");
+    assert_eq!(record["schema"], schema);
+    assert_eq!(record["instance"], valid);
+    assert_eq!(record["payload"]["valid"], true);
+}
+
+#[test]
+fn test_output_hierarchical_invalid() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{
+            "type": "object",
+            "properties": {
+                "age": {"type": "number", "minimum": 0}
+            }
+        }"#,
+    );
+    let invalid = create_temp_file(&dir, "invalid.json", r#"{"age": "invalid"}"#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--instance")
+        .arg(&invalid)
+        .arg("--output")
+        .arg("hierarchical");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    let records = parse_ndjson(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(records.len(), 1);
+    let record = &records[0];
+    assert_eq!(record["output"], "hierarchical");
+    assert_eq!(record["schema"], schema);
+    assert_eq!(record["instance"], invalid);
+    assert_eq!(record["payload"]["valid"], false);
+}
+
+#[test]
+fn test_output_hierarchical_multiple_instances() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type": "string", "minLength": 3}"#);
+    let valid = create_temp_file(&dir, "valid.json", r#""hello""#);
+    let invalid = create_temp_file(&dir, "invalid.json", r#""no""#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--instance")
+        .arg(&valid)
+        .arg("--instance")
+        .arg(&invalid)
+        .arg("--output")
+        .arg("hierarchical");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    let records = parse_ndjson(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(records.len(), 2);
+
+    let mut results = HashMap::new();
+    for record in &records {
+        assert_eq!(record["output"], "hierarchical");
+        assert_eq!(record["schema"], schema);
+        let instance = record["instance"].as_str().unwrap();
+        let valid = record["payload"]["valid"].as_bool().unwrap();
+        results.insert(instance.to_string(), valid);
+    }
+
+    assert_eq!(results.get(&valid), Some(&true));
+    assert_eq!(results.get(&invalid), Some(&false));
 }

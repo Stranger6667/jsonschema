@@ -125,15 +125,19 @@ mod bench {
         );
     }
 
-    fn bench_apply(
+    fn bench_evaluate(
         c: &mut Criterion,
         name: &str,
         validator: &jsonschema::Validator,
         instance: &Value,
     ) {
-        c.bench_with_input(BenchmarkId::new("apply", name), instance, |b, instance| {
-            b.iter_with_large_drop(|| validator.apply(instance).basic());
-        });
+        c.bench_with_input(
+            BenchmarkId::new("evaluate", name),
+            instance,
+            |b, instance| {
+                b.iter_with_large_drop(|| black_box(validator.evaluate(instance)));
+            },
+        );
     }
 
     fn bench_iter_errors(
@@ -164,7 +168,7 @@ mod bench {
 
         bench_is_valid(c, "unevaluated_items", &validator, &invalid);
         bench_validate(c, "unevaluated_items", &validator, &invalid);
-        bench_apply(c, "unevaluated_items", &validator, &invalid);
+        bench_evaluate(c, "unevaluated_items", &validator, &invalid);
         bench_iter_errors(c, "unevaluated_items", &validator, &invalid);
     }
 

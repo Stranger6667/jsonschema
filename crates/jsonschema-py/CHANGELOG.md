@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `jsonschema_rs.evaluate()`, `Validator.evaluate()`, and the `Evaluation` type for retrieving JSON Schema Output v1 (flag/list/hierarchical) formats along with annotations and errors.
+
 ## [0.35.0] - 2025-11-16
 
 ### Added

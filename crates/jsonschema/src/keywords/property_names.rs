@@ -4,7 +4,7 @@ use crate::{
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location},
-    validator::{PartialApplication, Validate},
+    validator::{EvaluationResult, Validate},
 };
 use serde_json::{Map, Value};
 
@@ -86,16 +86,16 @@ impl Validate for PropertyNamesObjectValidator {
         Ok(())
     }
 
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
         if let Value::Object(item) = instance {
-            item.keys()
-                .map(|key| {
-                    let wrapper = Value::String(key.clone());
-                    self.node.apply_rooted(&wrapper, location)
-                })
-                .collect()
+            let mut children = Vec::with_capacity(item.len());
+            for key in item.keys() {
+                let wrapper = Value::String(key.clone());
+                children.push(self.node.evaluate_instance(&wrapper, location));
+            }
+            EvaluationResult::from_children(children)
         } else {
-            PartialApplication::valid_empty()
+            EvaluationResult::valid_empty()
         }
     }
 }

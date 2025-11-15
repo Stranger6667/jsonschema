@@ -1,10 +1,11 @@
 use crate::{
     compiler,
     error::ValidationError,
+    evaluation::{Annotations, ErrorDescription},
     keywords::CompilationResult,
     node::SchemaNode,
     paths::LazyLocation,
-    validator::{PartialApplication, Validate},
+    validator::{EvaluationResult, Validate},
     Draft,
 };
 use serde_json::{Map, Value};
@@ -53,35 +54,39 @@ impl Validate for ContainsValidator {
         }
     }
 
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
         if let Value::Array(items) = instance {
             let mut results = Vec::with_capacity(items.len());
-            let mut indices = Vec::new();
+            let mut indices = Vec::with_capacity(items.len());
             for (idx, item) in items.iter().enumerate() {
                 let path = location.push(idx);
-                let result = self.node.apply_rooted(item, &path);
-                if result.is_valid() {
+                let result = self.node.evaluate_instance(item, &path);
+                if result.valid {
                     indices.push(idx);
                     results.push(result);
                 }
             }
-            let mut result: PartialApplication = results.into_iter().collect();
             if indices.is_empty() {
-                result.mark_errored(
-                    ValidationError::contains(
-                        self.node.location().clone(),
-                        location.into(),
-                        instance,
-                    )
-                    .into(),
-                );
+                EvaluationResult::Invalid {
+                    errors: vec![ErrorDescription::from_validation_error(
+                        &ValidationError::contains(
+                            self.node.location().clone(),
+                            location.into(),
+                            instance,
+                        ),
+                    )],
+                    children: Vec::new(),
+                    annotations: None,
+                }
             } else {
-                result.annotate(Value::from(indices).into());
+                EvaluationResult::Valid {
+                    annotations: Some(Annotations::new(Value::from(indices))),
+                    children: results,
+                }
             }
-            result
         } else {
-            let mut result = PartialApplication::valid_empty();
-            result.annotate(Value::Array(Vec::new()).into());
+            let mut result = EvaluationResult::valid_empty();
+            result.annotate(Annotations::new(Value::Array(Vec::new())));
             result
         }
     }

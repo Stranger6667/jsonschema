@@ -1,12 +1,12 @@
 use crate::{
     compiler,
     error::ValidationError,
+    evaluation::ErrorDescription,
     keywords::CompilationResult,
     node::SchemaNode,
-    output::BasicOutput,
     paths::{LazyLocation, Location},
     types::JsonType,
-    validator::{PartialApplication, Validate},
+    validator::{EvaluationResult, Validate},
 };
 use serde_json::{Map, Value};
 
@@ -99,24 +99,39 @@ impl Validate for OneOfValidator {
             ))
         }
     }
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
-        let mut failures = Vec::new();
-        let mut successes = Vec::new();
-        for node in &self.schemas {
-            match node.apply_rooted(instance, location) {
-                output @ BasicOutput::Valid(..) => successes.push(output),
-                output @ BasicOutput::Invalid(..) => failures.push(output),
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+        let total = self.schemas.len();
+        let mut failures = Vec::with_capacity(total);
+        let mut iter = self.schemas.iter();
+        while let Some(node) = iter.next() {
+            let child = node.evaluate_instance(instance, location);
+            if child.valid {
+                let mut successes = Vec::with_capacity(total.saturating_sub(failures.len()));
+                successes.push(child);
+                for node in iter {
+                    let next = node.evaluate_instance(instance, location);
+                    if next.valid {
+                        successes.push(next);
+                    }
+                }
+                return match successes.len() {
+                    1 => EvaluationResult::from(successes.remove(0)),
+                    _ => EvaluationResult::Invalid {
+                        errors: vec![ErrorDescription::new(
+                            "oneOf",
+                            "more than one subschema succeeded".to_string(),
+                        )],
+                        children: successes,
+                        annotations: None,
+                    },
+                };
             }
+            failures.push(child);
         }
-        if successes.len() == 1 {
-            let success = successes.remove(0);
-            success.into()
-        } else if successes.len() > 1 {
-            PartialApplication::invalid_empty(vec!["more than one subschema succeeded".into()])
-        } else if !failures.is_empty() {
-            failures.into_iter().sum::<BasicOutput>().into()
-        } else {
-            unreachable!("compilation should fail for oneOf with no subschemas")
+        EvaluationResult::Invalid {
+            errors: Vec::new(),
+            children: failures,
+            annotations: None,
         }
     }
 }

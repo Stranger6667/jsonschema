@@ -1,10 +1,11 @@
 use crate::{
     compiler,
     error::{no_error, ErrorIterator},
+    evaluation::Annotations,
     keywords::CompilationResult,
     node::SchemaNode,
     paths::LazyLocation,
-    validator::{PartialApplication, Validate},
+    validator::{EvaluationResult, Validate},
     ValidationError,
 };
 use serde_json::{Map, Value};
@@ -68,6 +69,19 @@ impl Validate for ItemsArrayValidator {
         }
         Ok(())
     }
+
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+        if let Value::Array(items) = instance {
+            let mut children = Vec::with_capacity(self.items.len().min(items.len()));
+            for (idx, (item, node)) in items.iter().zip(self.items.iter()).enumerate() {
+                let child_location = location.push(idx);
+                children.push(node.evaluate_instance(item, &child_location));
+            }
+            EvaluationResult::from_children(children)
+        } else {
+            EvaluationResult::valid_empty()
+        }
+    }
 }
 
 pub(crate) struct ItemsObjectValidator {
@@ -119,24 +133,24 @@ impl Validate for ItemsObjectValidator {
         Ok(())
     }
 
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
         if let Value::Array(items) = instance {
-            let mut results = Vec::with_capacity(items.len());
+            let mut children = Vec::with_capacity(items.len());
             for (idx, item) in items.iter().enumerate() {
                 let path = location.push(idx);
-                results.push(self.node.apply_rooted(item, &path));
+                children.push(self.node.evaluate_instance(item, &path));
             }
-            let mut output: PartialApplication = results.into_iter().collect();
             // Per draft 2020-12 section https://json-schema.org/draft/2020-12/json-schema-core.html#rfc.section.10.3.1.2
             // we must produce an annotation with a boolean value indicating whether the subschema
             // was applied to any positions in the underlying array. Since the struct
             // `ItemsObjectValidator` is not used when prefixItems is defined, this is true if
             // there are any items in the instance.
             let schema_was_applied = !items.is_empty();
-            output.annotate(serde_json::json!(schema_was_applied).into());
-            output
+            let mut result = EvaluationResult::from_children(children);
+            result.annotate(Annotations::new(serde_json::json!(schema_was_applied)));
+            result
         } else {
-            PartialApplication::valid_empty()
+            EvaluationResult::valid_empty()
         }
     }
 }
@@ -206,22 +220,22 @@ impl Validate for ItemsObjectSkipPrefixValidator {
         Ok(())
     }
 
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
         if let Value::Array(items) = instance {
-            let mut results = Vec::with_capacity(items.len().saturating_sub(self.skip_prefix));
+            let mut children = Vec::with_capacity(items.len().saturating_sub(self.skip_prefix));
             for (idx, item) in items.iter().enumerate().skip(self.skip_prefix) {
                 let path = location.push(idx);
-                results.push(self.node.apply_rooted(item, &path));
+                children.push(self.node.evaluate_instance(item, &path));
             }
-            let mut output: PartialApplication = results.into_iter().collect();
             // Per draft 2020-12 section https://json-schema.org/draft/2020-12/json-schema-core.html#rfc.section.10.3.1.2
             // we must produce an annotation with a boolean value indicating whether the subschema
             // was applied to any positions in the underlying array.
             let schema_was_applied = items.len() > self.skip_prefix;
-            output.annotate(serde_json::json!(schema_was_applied).into());
-            output
+            let mut result = EvaluationResult::from_children(children);
+            result.annotate(Annotations::new(serde_json::json!(schema_was_applied)));
+            result
         } else {
-            PartialApplication::valid_empty()
+            EvaluationResult::valid_empty()
         }
     }
 }

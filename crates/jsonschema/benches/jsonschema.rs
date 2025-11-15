@@ -1,5 +1,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 mod bench {
+    use std::hint::black_box;
+
     pub(crate) use benchmark::Benchmark;
     pub(crate) use codspeed_criterion_compat::{criterion_group, BenchmarkId, Criterion};
     pub(crate) use serde_json::Value;
@@ -36,11 +38,15 @@ mod bench {
         );
     }
 
-    pub(crate) fn bench_apply(c: &mut Criterion, name: &str, schema: &Value, instance: &Value) {
+    pub(crate) fn bench_evaluate(c: &mut Criterion, name: &str, schema: &Value, instance: &Value) {
         let validator = jsonschema::validator_for(schema).expect("Valid schema");
-        c.bench_with_input(BenchmarkId::new("apply", name), instance, |b, instance| {
-            b.iter_with_large_drop(|| validator.apply(instance).basic());
-        });
+        c.bench_with_input(
+            BenchmarkId::new("evaluate", name),
+            instance,
+            |b, instance| {
+                b.iter_with_large_drop(|| black_box(validator.evaluate(instance)));
+            },
+        );
     }
 
     pub(crate) fn run_benchmarks(c: &mut Criterion) {
@@ -51,7 +57,7 @@ mod bench {
                     let name = format!("{}/{}", name, instance.name);
                     bench_is_valid(c, &name, schema, &instance.data);
                     bench_validate(c, &name, schema, &instance.data);
-                    bench_apply(c, &name, schema, &instance.data);
+                    bench_evaluate(c, &name, schema, &instance.data);
                 }
             });
         }

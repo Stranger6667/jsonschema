@@ -155,6 +155,148 @@ On instance:
     "unknown"'''
 ```
 
+### Structured Output with `evaluate`
+
+When you need more than a boolean result, use the `evaluate` API to access the JSON Schema Output v1 formats:
+
+```python
+import jsonschema_rs
+
+schema = {
+    "type": "array",
+    "prefixItems": [{"type": "string"}],
+    "items": {"type": "integer"},
+}
+evaluation = jsonschema_rs.evaluate(schema, ["hello", "oops"])
+
+assert evaluation.flag() == {"valid": False}
+assert evaluation.list() == {
+    "valid": False,
+    "details": [
+        {
+            "evaluationPath": "",
+            "instanceLocation": "",
+            "schemaLocation": "",
+            "valid": False,
+        },
+        {
+            "valid": False,
+            "evaluationPath": "/items",
+            "instanceLocation": "",
+            "schemaLocation": "/items",
+            "droppedAnnotations": True,
+        },
+        {
+            "valid": False,
+            "evaluationPath": "/items",
+            "instanceLocation": "/1",
+            "schemaLocation": "/items",
+        },
+        {
+            "valid": False,
+            "evaluationPath": "/items/type",
+            "instanceLocation": "/1",
+            "schemaLocation": "/items/type",
+            "errors": {"type": '"oops" is not of type "integer"'},
+        },
+        {
+            "valid": True,
+            "evaluationPath": "/prefixItems",
+            "instanceLocation": "",
+            "schemaLocation": "/prefixItems",
+            "annotations": 0,
+        },
+        {
+            "valid": True,
+            "evaluationPath": "/prefixItems/0",
+            "instanceLocation": "/0",
+            "schemaLocation": "/prefixItems/0",
+        },
+        {
+            "valid": True,
+            "evaluationPath": "/prefixItems/0/type",
+            "instanceLocation": "/0",
+            "schemaLocation": "/prefixItems/0/type",
+        },
+        {
+            "valid": True,
+            "evaluationPath": "/type",
+            "instanceLocation": "",
+            "schemaLocation": "/type",
+        },
+    ],
+}
+
+hierarchical = evaluation.hierarchical()
+assert hierarchical == {
+    "valid": False,
+    "evaluationPath": "",
+    "instanceLocation": "",
+    "schemaLocation": "",
+    "details": [
+        {
+            "valid": False,
+            "evaluationPath": "/items",
+            "instanceLocation": "",
+            "schemaLocation": "/items",
+            "droppedAnnotations": True,
+            "details": [
+                {
+                    "valid": False,
+                    "evaluationPath": "/items",
+                    "instanceLocation": "/1",
+                    "schemaLocation": "/items",
+                    "details": [
+                        {
+                            "valid": False,
+                            "evaluationPath": "/items/type",
+                            "instanceLocation": "/1",
+                            "schemaLocation": "/items/type",
+                            "errors": {"type": '"oops" is not of type "integer"'},
+                        }
+                    ],
+                }
+            ],
+        },
+        {
+            "valid": True,
+            "evaluationPath": "/prefixItems",
+            "instanceLocation": "",
+            "schemaLocation": "/prefixItems",
+            "annotations": 0,
+            "details": [
+                {
+                    "valid": True,
+                    "evaluationPath": "/prefixItems/0",
+                    "instanceLocation": "/0",
+                    "schemaLocation": "/prefixItems/0",
+                    "details": [
+                        {
+                            "valid": True,
+                            "evaluationPath": "/prefixItems/0/type",
+                            "instanceLocation": "/0",
+                            "schemaLocation": "/prefixItems/0/type",
+                        }
+                    ],
+                }
+            ],
+        },
+        {
+            "valid": True,
+            "evaluationPath": "/type",
+            "instanceLocation": "",
+            "schemaLocation": "/type",
+        },
+    ],
+}
+
+for error in evaluation.errors():
+    print(error["instanceLocation"], error["error"])
+
+for annotation in evaluation.annotations():
+    print(annotation["schemaLocation"], annotation["annotations"])
+```
+
 ### Arbitrary-Precision Numbers
 
 The Python bindings always include the `arbitrary-precision` support from the Rust validator, so numeric

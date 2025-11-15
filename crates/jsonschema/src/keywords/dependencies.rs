@@ -5,7 +5,7 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, Location},
     types::JsonType,
-    validator::Validate,
+    validator::{EvaluationResult, Validate},
 };
 use serde_json::{Map, Value};
 
@@ -88,6 +88,20 @@ impl Validate for DependenciesValidator {
             }
         }
         Ok(())
+    }
+
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+        if let Value::Object(item) = instance {
+            let mut children = Vec::new();
+            for (property, dependency) in &self.dependencies {
+                if item.contains_key(property) {
+                    children.push(dependency.evaluate_instance(instance, location));
+                }
+            }
+            EvaluationResult::from_children(children)
+        } else {
+            EvaluationResult::valid_empty()
+        }
     }
 }
 
@@ -180,6 +194,20 @@ impl Validate for DependentRequiredValidator {
             Ok(())
         }
     }
+
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+        if let Value::Object(item) = instance {
+            let mut children = Vec::new();
+            for (property, dependency) in &self.dependencies {
+                if item.contains_key(property) {
+                    children.push(dependency.evaluate_instance(instance, location));
+                }
+            }
+            EvaluationResult::from_children(children)
+        } else {
+            EvaluationResult::valid_empty()
+        }
+    }
 }
 
 pub(crate) struct DependentSchemasValidator {
@@ -246,6 +274,20 @@ impl Validate for DependentSchemasValidator {
             Ok(())
         } else {
             Ok(())
+        }
+    }
+
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+        if let Value::Object(item) = instance {
+            let mut children = Vec::new();
+            for (property, dependency) in &self.dependencies {
+                if item.contains_key(property) {
+                    children.push(dependency.evaluate_instance(instance, location));
+                }
+            }
+            EvaluationResult::from_children(children)
+        } else {
+            EvaluationResult::valid_empty()
         }
     }
 }
