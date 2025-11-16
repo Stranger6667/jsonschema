@@ -304,9 +304,9 @@ def test_invalid_value(method):
 
 
 def test_invalid_schema_keyword():
-    # Note `https`, not `http`
-    schema = {"$schema": "https://json-schema.org/draft-07/schema"}
-    with pytest.raises(ValidationError, match="Unknown meta-schema: 'https://json-schema.org/draft-07/schema'"):
+    # Use a genuinely invalid/unknown meta-schema URL
+    schema = {"$schema": "https://json-schema.org/draft-99/schema"}
+    with pytest.raises(ValidationError, match="Unknown meta-schema: 'https://json-schema.org/draft-99/schema'"):
         validator_for(schema)
 
 

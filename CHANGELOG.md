@@ -6,6 +6,7 @@
 
 - Support for custom meta-schemas. Schemas with custom `$schema` URIs can now be used by registering their meta-schemas in the `Registry` via `jsonschema::options().with_registry()`. [#664](https://github.com/Stranger6667/jsonschema/issues/664)
 - `arbitrary-precision` feature for exact numeric validation of large integers and decimals beyond standard floating-point limits. [#103](https://github.com/Stranger6667/jsonschema/issues/103)
+- Support for HTTPS `$schema` URIs for drafts 04, 06, and 07 (e.g., `https://json-schema.org/draft-07/schema`). [#802](https://github.com/Stranger6667/jsonschema/issues/802)
 
 ### Changed
 

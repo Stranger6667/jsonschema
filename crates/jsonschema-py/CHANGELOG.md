@@ -9,6 +9,7 @@
 - Type stubs for the `meta` module.
 - PyPy 3.11 support. [#309](https://github.com/Stranger6667/jsonschema/issues/309)
 - Support for arbitrarily large integers. [#103](https://github.com/Stranger6667/jsonschema/issues/103)
+- Support for HTTPS `$schema` URIs for drafts 04, 06, and 07 (e.g., `https://json-schema.org/draft-07/schema`). [#802](https://github.com/Stranger6667/jsonschema/issues/802)
 
 ### Changed
 
