@@ -87,16 +87,19 @@ mod tests {
                     pretty_json(&test.schema),
                     pretty_json(&test.data),
                 );
-                let output = validator.apply(&test.data).basic();
+                let evaluation = validator.evaluate(&test.data);
                 assert!(
-                output.is_valid(),
-                "Test case should be valid via basic output:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}\nError: {:?}",
-                test.case,
-                test.description,
-                pretty_json(&test.schema),
-                pretty_json(&test.data),
-                output
-            );
+                    evaluation.flag().valid,
+                    "Evaluation output should be valid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                );
+                let _ =
+                    serde_json::to_value(evaluation.list()).expect("List output should serialize");
+                let _ = serde_json::to_value(evaluation.hierarchical())
+                    .expect("Hierarchical output should serialize");
             } else {
                 let errors = validator.iter_errors(&test.data).collect::<Vec<_>>();
                 assert!(
@@ -148,15 +151,19 @@ mod tests {
                 &*error.instance,
                 &pointer,
             );
-                let output = validator.apply(&test.data).basic();
+                let evaluation = validator.evaluate(&test.data);
                 assert!(
-                !output.is_valid(),
-                "Test case should be invalid via basic output:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
-                test.case,
-                test.description,
-                pretty_json(&test.schema),
-                pretty_json(&test.data),
-            );
+                    !evaluation.flag().valid,
+                    "Evaluation output should be invalid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                );
+                let _ =
+                    serde_json::to_value(evaluation.list()).expect("List output should serialize");
+                let _ = serde_json::to_value(evaluation.hierarchical())
+                    .expect("Hierarchical output should serialize");
             }
         }
     }

@@ -4,7 +4,7 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, Location},
     types::JsonType,
-    validator::{PartialApplication, Validate},
+    validator::{EvaluationResult, Validate},
 };
 use serde_json::{Map, Value};
 
@@ -73,33 +73,32 @@ impl Validate for PrefixItemsValidator {
         Ok(())
     }
 
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
         if let Value::Array(items) = instance {
             if !items.is_empty() {
-                let validate_total = self.schemas.len();
-                let mut results = Vec::with_capacity(validate_total);
-                let mut max_index_applied = 0;
+                let mut children = Vec::with_capacity(self.schemas.len().min(items.len()));
+                let mut max_index_applied = 0usize;
                 for (idx, (schema_node, item)) in self.schemas.iter().zip(items.iter()).enumerate()
                 {
                     let path = location.push(idx);
-                    results.push(schema_node.apply_rooted(item, &path));
+                    children.push(schema_node.evaluate_instance(item, &path));
                     max_index_applied = idx;
                 }
                 // Per draft 2020-12 section https://json-schema.org/draft/2020-12/json-schema-core.html#rfc.section.10.3.1.1
                 // we must produce an annotation with the largest index of the underlying
                 // array which the subschema was applied. The value MAY be a boolean true if
                 // a subschema was applied to every index of the instance.
-                let schema_was_applied: Value = if results.len() == items.len() {
-                    true.into()
+                let annotation = if children.len() == items.len() {
+                    Value::Bool(true)
                 } else {
-                    max_index_applied.into()
+                    Value::from(max_index_applied)
                 };
-                let mut output: PartialApplication = results.into_iter().collect();
-                output.annotate(schema_was_applied.into());
-                return output;
+                let mut result = EvaluationResult::from_children(children);
+                result.annotate(annotation.into());
+                return result;
             }
         }
-        PartialApplication::valid_empty()
+        EvaluationResult::valid_empty()
     }
 }
 
@@ -133,118 +132,5 @@ mod tests {
     #[test_case(&json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "prefixItems": [{"type": "integer"}, {"maximum": 5}], "items": {"type": "boolean"}}), &json!([42, 42, true]), "/prefixItems/1/maximum")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
         tests_util::assert_schema_location(schema, instance, expected);
-    }
-
-    #[test_case{
-        &json!({
-            "$schema": "https://json-schema.org/draft/2020-12/schema", 
-            "type": "array",
-            "prefixItems": [
-                {
-                    "type": "string"
-                }
-            ]
-        }),
-        &json!([]),
-        &json!({
-            "valid": true,
-            "annotations": []
-        }); "valid prefixItems empty array"
-    }]
-    #[test_case{
-        &json!({
-            "$schema": "https://json-schema.org/draft/2020-12/schema", 
-            "type": "array",
-            "prefixItems": [
-                {
-                    "type": "string"
-                },
-                {
-                    "type": "number"
-                }
-            ]
-        }),
-        &json!(["string", 1]),
-        &json!({
-            "valid": true,
-            "annotations": [
-                {
-                    "keywordLocation": "/prefixItems",
-                    "instanceLocation": "",
-                    "annotations": true
-                },
-            ]
-        }); "prefixItems valid items"
-    }]
-    #[test_case{
-        &json!({
-            "$schema": "https://json-schema.org/draft/2020-12/schema", 
-            "type": "array",
-            "prefixItems": [
-                {
-                    "type": "string"
-                }
-            ]
-        }),
-        &json!(["string", 1]),
-        &json!({
-            "valid": true,
-            "annotations": [
-                {
-                    "keywordLocation": "/prefixItems",
-                    "instanceLocation": "",
-                    "annotations": 0
-                },
-            ]
-        }); "prefixItems valid mixed items"
-    }]
-    #[test_case{
-        &json!({
-            "$schema": "https://json-schema.org/draft/2020-12/schema", 
-            "type": "array",
-            "items": {
-                "type": "number",
-                "annotation": "value"
-            },
-            "prefixItems": [
-                {
-                    "type": "string"
-                },
-                {
-                    "type": "boolean"
-                }
-            ]
-        }),
-        &json!(["string", true, 2, 3]),
-        &json!({
-            "valid": true,
-            "annotations": [
-                {
-                    "keywordLocation": "/prefixItems",
-                    "instanceLocation": "",
-                    "annotations": 1
-                },
-                {
-                    "keywordLocation": "/items",
-                    "instanceLocation": "",
-                    "annotations": true
-                },
-                {
-                    "annotations": {"annotation": "value" },
-                    "instanceLocation": "/2",
-                    "keywordLocation": "/items"
-                },
-                {
-                    "annotations": {"annotation": "value" },
-                    "instanceLocation": "/3",
-                    "keywordLocation": "/items"
-                }
-            ]
-        }); "valid prefixItems with mixed items"
-    }]
-    fn test_basic_output(schema: &Value, instance: &Value, expected_output: &Value) {
-        let validator = crate::validator_for(schema).unwrap();
-        let output = serde_json::to_value(validator.apply(instance).basic()).unwrap();
-        assert_eq!(&output, expected_output);
     }
 }

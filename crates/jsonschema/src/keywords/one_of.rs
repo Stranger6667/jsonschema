@@ -3,10 +3,9 @@ use crate::{
     error::ValidationError,
     keywords::CompilationResult,
     node::SchemaNode,
-    output::BasicOutput,
     paths::{LazyLocation, Location},
     types::JsonType,
-    validator::{PartialApplication, Validate},
+    validator::{EvaluationResult, Validate},
 };
 use serde_json::{Map, Value};
 
@@ -99,24 +98,29 @@ impl Validate for OneOfValidator {
             ))
         }
     }
-    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
-        let mut failures = Vec::new();
+    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
         let mut successes = Vec::new();
+        let mut failures = Vec::new();
         for node in &self.schemas {
-            match node.apply_rooted(instance, location) {
-                output @ BasicOutput::Valid(..) => successes.push(output),
-                output @ BasicOutput::Invalid(..) => failures.push(output),
+            let child = node.evaluate_instance(instance, location);
+            if child.valid {
+                successes.push(child);
+            } else {
+                failures.push(child);
             }
         }
-        if successes.len() == 1 {
-            let success = successes.remove(0);
-            success.into()
-        } else if successes.len() > 1 {
-            PartialApplication::invalid_empty(vec!["more than one subschema succeeded".into()])
-        } else if !failures.is_empty() {
-            failures.into_iter().sum::<BasicOutput>().into()
-        } else {
-            unreachable!("compilation should fail for oneOf with no subschemas")
+        match successes.len() {
+            1 => EvaluationResult::from(successes.remove(0)),
+            0 => EvaluationResult::Invalid {
+                errors: Vec::new(),
+                child_results: failures,
+                annotations: None,
+            },
+            _ => EvaluationResult::Invalid {
+                errors: vec!["more than one subschema succeeded".into()],
+                child_results: successes,
+                annotations: None,
+            },
         }
     }
 }
