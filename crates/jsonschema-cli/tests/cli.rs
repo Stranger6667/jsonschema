@@ -1,10 +1,10 @@
-use assert_cmd::Command;
+use assert_cmd::{cargo::cargo_bin_cmd, Command};
 use insta::assert_snapshot;
 use std::fs;
 use tempfile::tempdir;
 
 fn cli() -> Command {
-    Command::cargo_bin("jsonschema-cli").unwrap()
+    cargo_bin_cmd!("jsonschema-cli")
 }
 
 fn create_temp_file(dir: &tempfile::TempDir, name: &str, content: &str) -> String {

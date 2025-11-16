@@ -31,12 +31,12 @@ Then follow instructions below to run the tests either for the Rust Core or Pyth
 
 ### Rust Toolchain
 
-jsonschema targets Rust 1.71.1 as its Minimum Supported Rust Version (MSRV). Please ensure your contributions are compatible with this version.
+jsonschema targets Rust 1.83.0 as its Minimum Supported Rust Version (MSRV). Please ensure your contributions are compatible with this version.
 
 You can use [rustup](https://rustup.rs/) to manage your installed toolchains. To set up the correct version for the jsonschema project:
 
    ```console
-   $ rustup override set 1.71.1
+   $ rustup override set 1.83.0
    ```
 
 ### Running the Tests

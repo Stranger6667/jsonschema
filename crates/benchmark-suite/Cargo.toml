@@ -18,6 +18,9 @@ jsonschema-valid = "0.5.2"
 serde_json.workspace = true
 valico = "4.0.0"
 
+[lints]
+workspace = true
+
 [[bench]]
 harness = false
 name = "jsonschema"

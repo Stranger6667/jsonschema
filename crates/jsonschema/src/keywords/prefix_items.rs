@@ -66,13 +66,14 @@ impl Validate for PrefixItemsValidator {
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             for (idx, (schema, item)) in self.schemas.iter().zip(items.iter()).enumerate() {
-                schema.validate(item, &location.push(idx))?;
+                let item_location = location.push(idx);
+                schema.validate(item, &item_location)?;
             }
         }
         Ok(())
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         if let Value::Array(items) = instance {
             if !items.is_empty() {
                 let validate_total = self.schemas.len();

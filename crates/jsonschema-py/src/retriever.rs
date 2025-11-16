@@ -29,7 +29,7 @@ pub(crate) fn into_retriever(
     let retriever: Py<PyAny> = retriever.clone().unbind();
 
     Ok(move |value: &str| {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let value = PyString::new(py, value);
             retriever
                 .call(py, (value,), None)

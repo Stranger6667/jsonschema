@@ -1,12 +1,12 @@
 //! URI handling utilities for JSON Schema references.
 use fluent_uri::{
-    encoding::{encoder::Fragment, EStr, Encoder},
+    pct_enc::{encoder::Fragment, EStr, Encoder},
     Uri, UriRef,
 };
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 use crate::Error;
-pub use fluent_uri::encoding::encoder::Path;
+pub use fluent_uri::pct_enc::encoder::Path;
 
 /// Resolves the URI reference against the given base URI and returns the target URI.
 ///
@@ -44,8 +44,8 @@ pub fn from_str(uri: &str) -> Result<Uri<String>, Error> {
     }
 }
 
-pub(crate) static DEFAULT_ROOT_URI: Lazy<Uri<String>> =
-    Lazy::new(|| Uri::parse("json-schema:///".to_string()).expect("Invalid URI"));
+pub(crate) static DEFAULT_ROOT_URI: LazyLock<Uri<String>> =
+    LazyLock::new(|| Uri::parse("json-schema:///".to_string()).expect("Invalid URI"));
 
 pub type EncodedString = EStr<Fragment>;
 

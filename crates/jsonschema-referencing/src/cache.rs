@@ -1,30 +1,29 @@
-use core::hash::{BuildHasherDefault, Hash, Hasher};
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    sync::Arc,
-};
+use std::sync::Arc;
 
-use ahash::AHasher;
 use fluent_uri::Uri;
-use parking_lot::RwLock;
+use hashbrown::hash_map::{EntryRef, HashMap};
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 
-use crate::{hasher::BuildNoHashHasher, uri, Error};
+use crate::{uri, Error};
+
+type CacheBucket = HashMap<String, Arc<Uri<String>>>;
+type CacheMap = HashMap<String, CacheBucket>;
 
 #[derive(Debug, Clone)]
 pub(crate) struct UriCache {
-    cache: HashMap<u64, Arc<Uri<String>>, BuildNoHashHasher>,
+    cache: CacheMap,
 }
 
 impl UriCache {
     pub(crate) fn new() -> Self {
         Self {
-            cache: HashMap::with_hasher(BuildHasherDefault::default()),
+            cache: HashMap::new(),
         }
     }
 
     pub(crate) fn with_capacity(capacity: usize) -> Self {
         Self {
-            cache: HashMap::with_capacity_and_hasher(capacity, BuildHasherDefault::default()),
+            cache: HashMap::with_capacity(capacity),
         }
     }
 
@@ -33,17 +32,31 @@ impl UriCache {
         base: &Uri<&str>,
         uri: impl AsRef<str>,
     ) -> Result<Arc<Uri<String>>, Error> {
-        let mut hasher = AHasher::default();
-        (base.as_str(), uri.as_ref()).hash(&mut hasher);
-        let hash = hasher.finish();
+        let base_str = base.as_str();
+        let reference = uri.as_ref();
 
-        Ok(match self.cache.entry(hash) {
-            Entry::Occupied(entry) => Arc::clone(entry.get()),
-            Entry::Vacant(entry) => {
-                let new = Arc::new(uri::resolve_against(base, uri.as_ref())?);
-                Arc::clone(entry.insert(new))
+        let resolved = match self.cache.entry_ref(base_str) {
+            EntryRef::Occupied(mut entry) => {
+                if let Some(cached) = entry.get().get(reference) {
+                    return Ok(Arc::clone(cached));
+                }
+
+                let resolved = Arc::new(uri::resolve_against(base, reference)?);
+                entry
+                    .get_mut()
+                    .insert(reference.to_owned(), Arc::clone(&resolved));
+                resolved
             }
-        })
+            EntryRef::Vacant(entry) => {
+                let resolved = Arc::new(uri::resolve_against(base, reference)?);
+                let mut inner = HashMap::with_capacity(1);
+                inner.insert(reference.to_owned(), Arc::clone(&resolved));
+                entry.insert(inner);
+                resolved
+            }
+        };
+
+        Ok(resolved)
     }
 
     pub(crate) fn into_shared(self) -> SharedUriCache {
@@ -56,7 +69,7 @@ impl UriCache {
 /// A dedicated type for URI resolution caching.
 #[derive(Debug)]
 pub(crate) struct SharedUriCache {
-    cache: RwLock<HashMap<u64, Arc<Uri<String>>, BuildNoHashHasher>>,
+    cache: RwLock<CacheMap>,
 }
 
 impl Clone for SharedUriCache {
@@ -66,7 +79,15 @@ impl Clone for SharedUriCache {
                 self.cache
                     .read()
                     .iter()
-                    .map(|(k, v)| (*k, Arc::clone(v)))
+                    .map(|(base, entries)| {
+                        (
+                            base.clone(),
+                            entries
+                                .iter()
+                                .map(|(reference, value)| (reference.clone(), Arc::clone(value)))
+                                .collect(),
+                        )
+                    })
                     .collect(),
             ),
         }
@@ -79,17 +100,45 @@ impl SharedUriCache {
         base: &Uri<&str>,
         uri: impl AsRef<str>,
     ) -> Result<Arc<Uri<String>>, Error> {
-        let mut hasher = AHasher::default();
-        (base.as_str(), uri.as_ref()).hash(&mut hasher);
-        let hash = hasher.finish();
+        let base_str = base.as_str();
+        let reference = uri.as_ref();
 
-        if let Some(cached) = self.cache.read().get(&hash).cloned() {
-            return Ok(cached);
+        if let Some(cached) = self
+            .cache
+            .read()
+            .get(base_str)
+            .and_then(|inner| inner.get(reference))
+        {
+            return Ok(Arc::clone(cached));
         }
 
-        let new = Arc::new(uri::resolve_against(base, uri.as_ref())?);
-        self.cache.write().insert(hash, Arc::clone(&new));
-        Ok(new)
+        let cache = self.cache.upgradable_read();
+        if let Some(inner) = cache.get(base_str).and_then(|inner| inner.get(reference)) {
+            return Ok(Arc::clone(inner));
+        }
+
+        let resolved = Arc::new(uri::resolve_against(base, reference)?);
+
+        let mut cache = RwLockUpgradableReadGuard::upgrade(cache);
+        let inserted = match cache.entry_ref(base_str) {
+            EntryRef::Occupied(mut entry) => {
+                if let Some(existing) = entry.get().get(reference) {
+                    return Ok(Arc::clone(existing));
+                }
+                entry
+                    .get_mut()
+                    .insert(reference.to_owned(), Arc::clone(&resolved));
+                resolved
+            }
+            EntryRef::Vacant(entry) => {
+                let mut inner = HashMap::with_capacity(1);
+                inner.insert(reference.to_owned(), Arc::clone(&resolved));
+                entry.insert(inner);
+                resolved
+            }
+        };
+
+        Ok(inserted)
     }
 
     pub(crate) fn into_local(self) -> UriCache {

@@ -69,15 +69,15 @@ impl<'a> Borrow<dyn BorrowDyn + 'a> for AnchorKey {
     }
 }
 
-impl Eq for (dyn BorrowDyn + '_) {}
+impl Eq for dyn BorrowDyn + '_ {}
 
-impl PartialEq for (dyn BorrowDyn + '_) {
+impl PartialEq for dyn BorrowDyn + '_ {
     fn eq(&self, other: &dyn BorrowDyn) -> bool {
         self.borrowed_key().eq(&other.borrowed_key())
     }
 }
 
-impl Hash for (dyn BorrowDyn + '_) {
+impl Hash for dyn BorrowDyn + '_ {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.borrowed_key().hash(state);
     }

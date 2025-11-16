@@ -2,6 +2,50 @@
 
 ## [Unreleased]
 
+### Added
+
+- Support for custom meta-schemas. Schemas with custom `$schema` URIs can now be used by registering their meta-schemas via the `registry` parameter in `validator_for()`. [#664](https://github.com/Stranger6667/jsonschema/issues/664)
+- `registry` parameter to `meta.is_valid()` and `meta.validate()` for validating schemas against custom meta-schemas.
+- Type stubs for the `meta` module.
+- PyPy 3.11 support. [#309](https://github.com/Stranger6667/jsonschema/issues/309)
+- Support for arbitrarily large integers. [#103](https://github.com/Stranger6667/jsonschema/issues/103)
+
+### Changed
+
+- **BREAKING**: `meta.is_valid()` and `meta.validate()` now raise `ReferencingError` for unknown `$schema` values instead of defaulting to Draft 2020-12. Use the `registry` parameter to validate against custom meta-schemas.
+- Migrated to abi3 so a single wheel per platform works on all supported 3.10+ interpreters.
+
+### Removed
+
+- Support for Python 3.8 & 3.9.
+
+### Performance
+
+- `required`: short-circuit when the instance object has fewer properties than required keys.
+- Arbitrary precision support is always enabled. Performance impact is negligible for most schemas, with ~2x slowdown only for number-heavy instances (e.g., GeoJSON).
+
+## [0.34.0] - 2025-11-14
+
+### Added
+
+- Python 3.14 support.
+### Changed
+
+- Update `pyo3` to `0.27`.
+
+### Fixed
+
+- Hostname and IDN hostname formats now decode `xn--` labels, reject leading combining marks/uppercase prefixes, and enforce the latest JSON Schema punycode context rules.
+
+### Performance
+
+- Recursive and regular `$ref` compilation deduplicates validator nodes, which decreases the memory usage and improves performance.
+- Validator compilation restores the regex cache for faster builds on regex-heavy schemas and precomputes absolute schema locations, trading a bit of compile time for faster `apply` on location-heavy workloads.
+- Large schema compilation is significantly faster. [#755](https://github.com/Stranger6667/jsonschema/issues/755)
+- `unevaluatedProperties` validation is 25-35% faster through optimized property marking and early-exit paths.
+- `unevaluatedProperties` memory usage drastically reduced by eliminating redundant registry clones during compilation.
+- `unevaluatedItems` validation is ~10% faster through early-exit optimizations and eliminating redundant validations in combinators.
+
 ## [0.32.1] - 2025-08-24
 
 ### Fixed
@@ -693,7 +737,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.33.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.34.0...HEAD
+[0.34.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.33.0...python-v0.34.0
 [0.33.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.32.1...python-v0.33.0
 [0.32.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.32.0...python-v0.32.1
 [0.32.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.31.0...python-v0.32.0

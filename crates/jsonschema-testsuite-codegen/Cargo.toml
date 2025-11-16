@@ -12,11 +12,14 @@ publish = false
 proc-macro = true
 
 [dependencies]
-testsuite_internal = { package = "jsonschema-testsuite-internal", path = "../jsonschema-testsuite-internal/" }
 heck = "0.5"
 proc-macro2 = "1"
 quote = "1"
 serde_json.workspace = true
 syn = { version = "2", features = ["full"] }
 testsuite = { package = "testsuite-common", path = "../testsuite-common/" }
+testsuite_internal = { package = "jsonschema-testsuite-internal", path = "../jsonschema-testsuite-internal/" }
 walkdir = "2.5"
+
+[lints]
+workspace = true

@@ -3,15 +3,11 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-rust-version = "1.71.1"
+rust-version = "1.83.0"
 edition = "2021"
 authors = ["Dmitry Dygalo <dmitry@dygalo.dev>"]
 repository = "https://github.com/Stranger6667/jsonschema"
 license = "MIT"
-
-[profile.release]
-lto = "fat"
-codegen-units = 1
 
 [workspace.dependencies]
 ahash = { version = "0.8", features = ["serde"] }
@@ -45,3 +41,7 @@ rest_pat_in_fully_bound_structs = "warn"
 [workspace.metadata.typos]
 files.extend-exclude = ["*.json"]
 default.extend-ignore-re = ["propert"]
+
+[profile.release]
+lto = "fat"
+codegen-units = 1

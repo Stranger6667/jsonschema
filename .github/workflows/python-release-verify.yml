@@ -1,0 +1,53 @@
+name: Python Release Verify
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  PACKAGE_NAME: jsonschema_rs
+
+jobs:
+  wheel-smoke-test:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        python-version: ["3.10", "pypy3.11"]
+    name: Verify wheel for ${{ matrix.python-version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Setup Python interpreter
+        run: |
+          uv python install ${{ matrix.python-version }}
+          interp=$(uv python find ${{ matrix.python-version }})
+          echo "PYTHON_INTERPRETER=$interp" >> "$GITHUB_ENV"
+          "$interp" --version
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build wheel
+        run: |
+          uvx --python "$PYTHON_INTERPRETER" maturin build --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter "$PYTHON_INTERPRETER"
+
+      - name: Install built wheel
+        run: |
+          uvx --python "$PYTHON_INTERPRETER" --with dist/${{ env.PACKAGE_NAME }}-*.whl python - <<'PY'
+          import jsonschema_rs
+
+          schema = {'type': 'object', 'properties': {'name': {'type': 'string'}}}
+
+          assert jsonschema_rs.is_valid(schema, {'name': 'test'}), 'Valid instance failed'
+          assert not jsonschema_rs.is_valid(schema, {'name': 123}), 'Invalid instance passed'
+
+          print('Validation tests passed!')
+          PY

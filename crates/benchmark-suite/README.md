@@ -26,6 +26,7 @@ $ cargo bench
 | GeoJSON  | Canadian border in GeoJSON format              | 4.8 KB      | 2.1 MB        |
 | CITM     | Concert data catalog with inferred schema      | 2.3 KB      | 501 KB        |
 | Fast     | From fastjsonschema benchmarks (valid/invalid) | 595 B       | 55 B / 60 B   |
+| FHIR     | Patient example validated against FHIR schema  | 3.3 MB      | 2.1 KB        |
 
 Sources:
 - OpenAPI: [Zuora](https://github.com/APIs-guru/openapi-directory/blob/1afd351ddf50e050acdb52937a819ef1927f417a/APIs/zuora.com/2021-04-23/openapi.yaml), [Schema](https://spec.openapis.org/oas/3.0/schema/2021-09-28)
@@ -33,6 +34,7 @@ Sources:
 - GeoJSON: [Schema](https://geojson.org/schema/FeatureCollection.json)
 - CITM: Schema inferred via [infers-jsonschema](https://github.com/Stranger6667/infers-jsonschema)
 - Fast: [fastjsonschema benchmarks](https://github.com/horejsek/python-fastjsonschema/blob/master/performance.py#L15)
+- FHIR: [Schema](http://hl7.org/fhir/R4/fhir.schema.json.zip) (R4 v4.0.1), [Example](http://hl7.org/fhir/R4/patient-example-d.json.html)
 
 ## Results
 
@@ -40,23 +42,13 @@ Sources:
 
 | Benchmark     | jsonschema_valid | valico        | boon          | jsonschema (validate) |
 |---------------|------------------|---------------|---------------|------------------------|
-| OpenAPI       | -                | -             | 6.60 ms (**x3.17**) | 2.0813 ms            |
-| Swagger       | -                | 114.26 ms (**x51.90**)   | 10.06 ms (**x4.57**)     | 2.2021 ms            |
-| GeoJSON       | 19.56 ms (**x23.37**)      | 299.53 ms (**x358.00**)   | 16.59 ms (**x19.82**)  | 836.93 µs            |
-| CITM Catalog  | 2.84 ms (**x7.40**)        | 28.30 ms (**x73.74**)    | 1.11 ms (**x2.89**)     | 383.98 µs            |
-| Fast (Valid)  | 1.11 µs (**x14.67**)       | 3.78 µs (**x49.94**)     | 332.39 ns (**x4.39**)   | 75.748 ns            |
-| Fast (Invalid)| 247.88 ns (**x4.67**)      | 3.82 µs (**x71.93**)     | 383.79 ns (**x7.22**)   | 53.176 ns            |
-
-### jsonschema Performance: `validate` vs `is_valid`
-
-| Benchmark     | validate   | is_valid   | Speedup |
-|---------------|------------|------------|---------|
-| OpenAPI       | 2.0813 ms  | 2.0612 ms  | **1.01x**   |
-| Swagger       | 2.2021 ms  | 2.0729 ms  | **1.06x**   |
-| GeoJSON       | 836.93 µs  | 796.28 µs  | **1.05x**   |
-| CITM Catalog  | 383.98 µs  | 313.13 µs  | **1.23x**   |
-| Fast (Valid)  | 75.748 ns  | 53.642 ns  | **1.41x**   |
-| Fast (Invalid)| 53.176 ns  | 3.4919 ns  | **15.23x**  |
+| OpenAPI       | -                | -             | 6.7333 ms (**x3.58**) | 1.8807 ms            |
+| Swagger       | -                | 105.07 ms (**x49.51**)   | 9.6542 ms (**x4.55**)     | 2.1220 ms            |
+| GeoJSON       | 15.718 ms (**x20.29**)      | 273.29 ms (**x352.93**)   | 16.785 ms (**x21.67**)  | 774.53 µs            |
+| CITM Catalog  | 2.4505 ms (**x2.24**)        | 25.139 ms (**x23.00**)    | 981.26 µs (**x0.90**)     | 1.0928 ms            |
+| Fast (Valid)  | 990.10 ns (**x5.16**)       | 3.1914 µs (**x16.64**)     | 298.32 ns (**x1.56**)   | 191.79 ns            |
+| Fast (Invalid)| 233.43 ns (**x0.85**)      | 3.2628 µs (**x11.87**)     | 422.37 ns (**x1.54**)   | 274.98 ns            |
+| FHIR          | 578.97 ms (**x152930.85**)        | 1.5964 ms (**x421.62**)    | 173.39 µs (**x45.80**)     | 3.7863 µs            |
 
 Notes:
 
@@ -64,7 +56,7 @@ Notes:
 
 2. `jsonschema_valid` fails to resolve local references (e.g. `#/definitions/definitions`).
 
-You can find benchmark code in [benches/](benches/), Rust version is `1.82`.
+You can find benchmark code in [benches/](benches/), Rust version is `1.91.1`.
 
 ## Contributing
 

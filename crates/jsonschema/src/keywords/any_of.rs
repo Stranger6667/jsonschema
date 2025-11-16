@@ -82,7 +82,7 @@ impl Validate for AnyOfValidator {
         }
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         let mut successes = Vec::new();
         let mut failures = Vec::new();
         for node in &self.schemas {

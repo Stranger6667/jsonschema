@@ -11,10 +11,10 @@ license.workspace = true
 proc-macro = true
 
 [dependencies]
-referencing_internal = { package = "jsonschema-referencing-testsuite-internal", path = "../jsonschema-referencing-testsuite-internal/" }
 heck = "0.5"
 proc-macro2 = "1"
 quote = "1"
+referencing_internal = { package = "jsonschema-referencing-testsuite-internal", path = "../jsonschema-referencing-testsuite-internal/" }
 serde_json.workspace = true
 syn = { version = "2", features = ["full"] }
 testsuite_common = { package = "testsuite-common", path = "../testsuite-common/" }

@@ -4,7 +4,6 @@
 mod anchors;
 mod cache;
 mod error;
-mod hasher;
 mod list;
 pub mod meta;
 mod registry;

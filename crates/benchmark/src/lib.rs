@@ -7,6 +7,7 @@ pub static SWAGGER: &[u8] = include_bytes!("../data/swagger.json");
 pub static GEOJSON: &[u8] = include_bytes!("../data/geojson.json");
 pub static CITM_SCHEMA: &[u8] = include_bytes!("../data/citm_catalog_schema.json");
 pub static FAST_SCHEMA: &[u8] = include_bytes!("../data/fast_schema.json");
+pub static FHIR_SCHEMA: &[u8] = include_bytes!("../data/fhir.schema.json");
 
 static ZUORA: &[u8] = include_bytes!("../data/zuora.json");
 static KUBERNETES: &[u8] = include_bytes!("../data/kubernetes.json");
@@ -14,7 +15,13 @@ static CANADA: &[u8] = include_bytes!("../data/canada.json");
 static CITM: &[u8] = include_bytes!("../data/citm_catalog.json");
 static FAST_VALID: &[u8] = include_bytes!("../data/fast_valid.json");
 static FAST_INVALID: &[u8] = include_bytes!("../data/fast_invalid.json");
+static FHIR: &[u8] = include_bytes!("../data/patient-example-d.json");
 
+/// Parses the given JSON fixture slice into a `serde_json::Value`.
+///
+/// # Panics
+///
+/// Panics if `slice` does not contain well-formed JSON (fixtures are trusted).
 #[must_use]
 pub fn read_json(slice: &[u8]) -> Value {
     serde_json::from_slice(slice).expect("Invalid JSON")
@@ -27,6 +34,7 @@ pub enum Benchmark {
     GeoJSON,
     CITM,
     Fast,
+    Fhir,
 }
 
 type BenchFunc<'a> = dyn FnMut(&str, &Value, &[BenchInstance]) + 'a;
@@ -53,7 +61,7 @@ pub struct BenchInstance {
 }
 
 pub struct BenchmarkSuite {
-    benchmarks: [LazyLock<BenchData>; 5],
+    benchmarks: [LazyLock<BenchData>; 6],
 }
 
 impl BenchmarkSuite {
@@ -105,6 +113,14 @@ impl BenchmarkSuite {
                             data: read_json(FAST_INVALID),
                         },
                     ],
+                }),
+                LazyLock::new(|| BenchData {
+                    name: "FHIR",
+                    schema: read_json(FHIR_SCHEMA),
+                    instances: vec![BenchInstance {
+                        name: "Fhir".to_string(),
+                        data: read_json(FHIR),
+                    }],
                 }),
             ],
         }

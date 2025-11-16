@@ -53,7 +53,7 @@ impl Validate for ContainsValidator {
         }
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         if let Value::Array(items) = instance {
             let mut results = Vec::with_capacity(items.len());
             let mut indices = Vec::new();

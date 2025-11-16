@@ -1,4 +1,10 @@
 #![allow(clippy::too_many_arguments)]
+#![allow(unsafe_code)]
+#![allow(unreachable_pub)]
+#![allow(rustdoc::bare_urls)]
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_wrap)]
 use std::{
     any::Any,
     cell::RefCell,
@@ -20,7 +26,6 @@ use ser::to_value;
 #[macro_use]
 extern crate pyo3_built;
 
-mod ffi;
 mod regex;
 mod registry;
 mod retriever;
@@ -33,70 +38,111 @@ const DRAFT4: u8 = 4;
 const DRAFT201909: u8 = 19;
 const DRAFT202012: u8 = 20;
 
-/// An instance is invalid under a provided schema.
-#[pyclass(extends=exceptions::PyValueError, module="jsonschema_rs")]
-#[derive(Debug)]
-struct ValidationError {
-    #[pyo3(get)]
-    message: String,
-    verbose_message: String,
-    #[pyo3(get)]
-    schema_path: Py<PyList>,
-    #[pyo3(get)]
-    instance_path: Py<PyList>,
-    #[pyo3(get)]
-    kind: Py<ValidationErrorKind>,
-    #[pyo3(get)]
-    instance: PyObject,
+fn validation_error_type(py: Python<'_>) -> PyResult<Bound<'_, PyType>> {
+    let module = py.import("jsonschema_rs")?;
+    let exception_class = module.getattr("ValidationError")?;
+    Ok(exception_class.cast_into::<PyType>()?)
 }
 
-#[pymethods]
-impl ValidationError {
-    #[new]
-    fn new(
-        message: String,
-        long_message: String,
-        schema_path: Py<PyList>,
-        instance_path: Py<PyList>,
-        kind: Py<ValidationErrorKind>,
-        instance: PyObject,
-    ) -> Self {
-        ValidationError {
-            message,
-            verbose_message: long_message,
-            schema_path,
-            instance_path,
-            kind,
-            instance,
+fn referencing_error_type(py: Python<'_>) -> PyResult<Bound<'_, PyType>> {
+    let module = py.import("jsonschema_rs")?;
+    let exception_class = module.getattr("ReferencingError")?;
+    Ok(exception_class.cast_into::<PyType>()?)
+}
+
+/// Convert a serde_json::Value to a Python object, properly handling arbitrary precision numbers
+fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
+    match value {
+        serde_json::Value::Null => Ok(py.None()),
+        serde_json::Value::Bool(b) => Ok(pyo3::types::PyBool::new(py, *b)
+            .to_owned()
+            .into_any()
+            .unbind()),
+        serde_json::Value::Number(n) => {
+            // With arbitrary precision, try to parse as integer first, then fall back to float
+            if let Some(i) = n.as_i64() {
+                Ok(pyo3::types::PyInt::new(py, i).into_any().unbind())
+            } else if let Some(u) = n.as_u64() {
+                Ok(pyo3::types::PyInt::new(py, u).into_any().unbind())
+            } else {
+                // For values that don't fit in i64/u64, check the string representation
+                let s = n.as_str();
+                let is_float = s.bytes().any(|b| b == b'.' || b == b'e' || b == b'E');
+                if is_float {
+                    if let Some(f) = n.as_f64() {
+                        Ok(pyo3::types::PyFloat::new(py, f).into_any().unbind())
+                    } else {
+                        // Fall back to decimal.Decimal for values outside f64 range so Python callers
+                        // observe the exact literal from JSON instead of ValueError/inf when numbers
+                        // exceed binary64 limits.
+                        let decimal = py.import("decimal")?.getattr("Decimal")?;
+                        decimal.call1((s,)).map(|obj| obj.into_any().unbind())
+                    }
+                } else {
+                    // Large integer - parse from string representation
+                    let int_type = py.get_type::<pyo3::types::PyInt>();
+                    int_type.call1((s,)).map(|obj| obj.into_any().unbind())
+                }
+            }
+        }
+        serde_json::Value::String(s) => Ok(PyString::new(py, s).into_any().unbind()),
+        serde_json::Value::Array(arr) => {
+            let py_list = PyList::empty(py);
+            for item in arr {
+                py_list.append(value_to_python(py, item)?)?;
+            }
+            Ok(py_list.into_any().unbind())
+        }
+        serde_json::Value::Object(obj) => {
+            let py_dict = PyDict::new(py);
+            for (k, v) in obj {
+                py_dict.set_item(k, value_to_python(py, v)?)?;
+            }
+            Ok(py_dict.into_any().unbind())
         }
     }
-    fn __str__(&self) -> String {
-        self.verbose_message.clone()
-    }
-    fn __repr__(&self) -> String {
-        format!("<ValidationError: '{}'>", self.message)
-    }
 }
 
-/// Errors that can occur during reference resolution and resource handling.
-#[pyclass(extends=exceptions::PyException, module="jsonschema_rs")]
-#[derive(Debug, Clone, PartialEq)]
-struct ReferencingError {
+struct ValidationErrorArgs {
     message: String,
+    verbose_message: String,
+    schema_path: Py<PyList>,
+    instance_path: Py<PyList>,
+    kind: ValidationErrorKind,
+    instance: Py<PyAny>,
 }
 
-#[pymethods]
-impl ReferencingError {
-    #[new]
-    fn new(message: String) -> Self {
-        ReferencingError { message }
-    }
-    fn __str__(&self) -> String {
-        self.message.clone()
-    }
-    fn __repr__(&self) -> String {
-        format!("<ReferencingError: '{}'>", self.message)
-    }
+fn create_validation_error_object(
+    py: Python<'_>,
+    args: ValidationErrorArgs,
+) -> PyResult<Py<PyAny>> {
+    let ty = validation_error_type(py)?;
+    let kind_obj = args.kind.into_pyobject(py)?.unbind();
+    let obj = ty.call1((
+        args.message,
+        args.verbose_message,
+        args.schema_path,
+        args.instance_path,
+        kind_obj,
+        args.instance,
+    ))?;
+    Ok(obj.into())
+}
+
+fn validation_error_pyerr(py: Python<'_>, args: ValidationErrorArgs) -> PyResult<PyErr> {
+    let obj = create_validation_error_object(py, args)?;
+    Ok(PyErr::from_value(obj.into_bound(py)))
+}
+
+fn create_referencing_error_object(py: Python<'_>, message: String) -> PyResult<Py<PyAny>> {
+    let ty = referencing_error_type(py)?;
+    let obj = ty.call1((message,))?;
+    Ok(obj.into())
+}
+
+fn referencing_error_pyerr(py: Python<'_>, message: String) -> PyResult<PyErr> {
+    let obj = create_referencing_error_object(py, message)?;
+    Ok(PyErr::from_value(obj.into_bound(py)))
 }
 
 /// Type of validation failure with its contextual data.
@@ -107,37 +153,37 @@ enum ValidationErrorKind {
     AdditionalProperties { unexpected: Py<PyList> },
     AnyOf { context: Py<PyList> },
     BacktrackLimitExceeded { error: String },
-    Constant { expected_value: PyObject },
+    Constant { expected_value: Py<PyAny> },
     Contains {},
     ContentEncoding { content_encoding: String },
     ContentMediaType { content_media_type: String },
     Custom { message: String },
-    Enum { options: PyObject },
-    ExclusiveMaximum { limit: PyObject },
-    ExclusiveMinimum { limit: PyObject },
+    Enum { options: Py<PyAny> },
+    ExclusiveMaximum { limit: Py<PyAny> },
+    ExclusiveMinimum { limit: Py<PyAny> },
     FalseSchema {},
     Format { format: String },
     FromUtf8 { error: String },
     MaxItems { limit: u64 },
-    Maximum { limit: PyObject },
+    Maximum { limit: Py<PyAny> },
     MaxLength { limit: u64 },
     MaxProperties { limit: u64 },
     MinItems { limit: u64 },
-    Minimum { limit: PyObject },
+    Minimum { limit: Py<PyAny> },
     MinLength { limit: u64 },
     MinProperties { limit: u64 },
-    MultipleOf { multiple_of: f64 },
-    Not { schema: PyObject },
+    MultipleOf { multiple_of: Py<PyAny> },
+    Not { schema: Py<PyAny> },
     OneOfMultipleValid { context: Py<PyList> },
     OneOfNotValid { context: Py<PyList> },
     Pattern { pattern: String },
-    PropertyNames { error: Py<ValidationError> },
-    Required { property: PyObject },
+    PropertyNames { error: Py<PyAny> },
+    Required { property: Py<PyAny> },
     Type { types: Py<PyList> },
     UnevaluatedItems { unexpected: Py<PyList> },
     UnevaluatedProperties { unexpected: Py<PyList> },
     UniqueItems {},
-    Referencing { error: Py<ReferencingError> },
+    Referencing { error: Py<PyAny> },
 }
 
 impl ValidationErrorKind {
@@ -167,7 +213,7 @@ impl ValidationErrorKind {
             }
             jsonschema::error::ValidationErrorKind::Constant { expected_value } => {
                 ValidationErrorKind::Constant {
-                    expected_value: pythonize::pythonize(py, &expected_value)?.unbind(),
+                    expected_value: value_to_python(py, &expected_value)?,
                 }
             }
             jsonschema::error::ValidationErrorKind::Contains => ValidationErrorKind::Contains {},
@@ -181,16 +227,16 @@ impl ValidationErrorKind {
                 ValidationErrorKind::Custom { message }
             }
             jsonschema::error::ValidationErrorKind::Enum { options } => ValidationErrorKind::Enum {
-                options: pythonize::pythonize(py, &options)?.unbind(),
+                options: value_to_python(py, &options)?,
             },
             jsonschema::error::ValidationErrorKind::ExclusiveMaximum { limit } => {
                 ValidationErrorKind::ExclusiveMaximum {
-                    limit: pythonize::pythonize(py, &limit)?.unbind(),
+                    limit: value_to_python(py, &limit)?,
                 }
             }
             jsonschema::error::ValidationErrorKind::ExclusiveMinimum { limit } => {
                 ValidationErrorKind::ExclusiveMinimum {
-                    limit: pythonize::pythonize(py, &limit)?.unbind(),
+                    limit: value_to_python(py, &limit)?,
                 }
             }
             jsonschema::error::ValidationErrorKind::FalseSchema => {
@@ -209,7 +255,7 @@ impl ValidationErrorKind {
             }
             jsonschema::error::ValidationErrorKind::Maximum { limit } => {
                 ValidationErrorKind::Maximum {
-                    limit: pythonize::pythonize(py, &limit)?.unbind(),
+                    limit: value_to_python(py, &limit)?,
                 }
             }
             jsonschema::error::ValidationErrorKind::MaxLength { limit } => {
@@ -223,7 +269,7 @@ impl ValidationErrorKind {
             }
             jsonschema::error::ValidationErrorKind::Minimum { limit } => {
                 ValidationErrorKind::Minimum {
-                    limit: pythonize::pythonize(py, &limit)?.unbind(),
+                    limit: value_to_python(py, &limit)?,
                 }
             }
             jsonschema::error::ValidationErrorKind::MinLength { limit } => {
@@ -233,10 +279,12 @@ impl ValidationErrorKind {
                 ValidationErrorKind::MinProperties { limit }
             }
             jsonschema::error::ValidationErrorKind::MultipleOf { multiple_of } => {
-                ValidationErrorKind::MultipleOf { multiple_of }
+                ValidationErrorKind::MultipleOf {
+                    multiple_of: value_to_python(py, &multiple_of)?,
+                }
             }
             jsonschema::error::ValidationErrorKind::Not { schema } => ValidationErrorKind::Not {
-                schema: pythonize::pythonize(py, &schema)?.unbind(),
+                schema: value_to_python(py, &schema)?,
             },
             jsonschema::error::ValidationErrorKind::OneOfMultipleValid { context } => {
                 ValidationErrorKind::OneOfMultipleValid {
@@ -256,14 +304,14 @@ impl ValidationErrorKind {
                     error: {
                         let (message, verbose_message, schema_path, instance_path, kind, instance) =
                             into_validation_error_args(py, *error, mask)?;
-                        Py::new(
+                        create_validation_error_object(
                             py,
-                            ValidationError {
+                            ValidationErrorArgs {
                                 message,
                                 verbose_message,
                                 schema_path,
                                 instance_path,
-                                kind: kind.into_pyobject(py)?.unbind(),
+                                kind,
                                 instance,
                             },
                         )?
@@ -272,7 +320,7 @@ impl ValidationErrorKind {
             }
             jsonschema::error::ValidationErrorKind::Required { property } => {
                 ValidationErrorKind::Required {
-                    property: pythonize::pythonize(py, &property)?.unbind(),
+                    property: value_to_python(py, &property)?,
                 }
             }
             jsonschema::error::ValidationErrorKind::Type { kind } => ValidationErrorKind::Type {
@@ -302,12 +350,7 @@ impl ValidationErrorKind {
             }
             jsonschema::error::ValidationErrorKind::Referencing(error) => {
                 ValidationErrorKind::Referencing {
-                    error: Py::new(
-                        py,
-                        ReferencingError {
-                            message: error.to_string(),
-                        },
-                    )?,
+                    error: create_referencing_error_object(py, error.to_string())?,
                 }
             }
         })
@@ -322,20 +365,20 @@ fn convert_validation_context(
     let mut py_context: Vec<Py<PyList>> = Vec::with_capacity(context.len());
 
     for errors in context {
-        let mut py_errors: Vec<Py<ValidationError>> = Vec::with_capacity(errors.len());
+        let mut py_errors: Vec<Py<PyAny>> = Vec::with_capacity(errors.len());
 
         for error in errors {
             let (message, verbose_message, schema_path, instance_path, kind, instance) =
                 into_validation_error_args(py, error, mask)?;
 
-            py_errors.push(Py::new(
+            py_errors.push(create_validation_error_object(
                 py,
-                ValidationError {
+                ValidationErrorArgs {
                     message,
                     verbose_message,
                     schema_path,
                     instance_path,
-                    kind: kind.into_pyobject(py)?.unbind(),
+                    kind,
                     instance,
                 },
             )?);
@@ -373,7 +416,7 @@ fn into_validation_error_args(
     Py<PyList>,
     Py<PyList>,
     ValidationErrorKind,
-    PyObject,
+    Py<PyAny>,
 )> {
     let message = if let Some(mask) = mask {
         error.masked_with(mask).to_string()
@@ -383,9 +426,9 @@ fn into_validation_error_args(
     let verbose_message = to_error_message(&error, message.clone(), mask);
     let into_path = |segment: LocationSegment<'_>| match segment {
         LocationSegment::Property(property) => {
-            property.into_pyobject(py).and_then(PyObject::try_from)
+            property.into_pyobject(py).and_then(Py::<PyAny>::try_from)
         }
-        LocationSegment::Index(idx) => idx.into_pyobject(py).and_then(PyObject::try_from),
+        LocationSegment::Index(idx) => idx.into_pyobject(py).and_then(Py::<PyAny>::try_from),
     };
     let elements = error
         .schema_path
@@ -400,7 +443,7 @@ fn into_validation_error_args(
         .collect::<Result<Vec<_>, _>>()?;
     let instance_path = PyList::new(py, elements)?.unbind();
     let kind = ValidationErrorKind::try_new(py, error.kind, mask)?;
-    let instance = pythonize::pythonize(py, error.instance.as_ref())?.unbind();
+    let instance = value_to_python(py, error.instance.as_ref())?;
     Ok((
         message,
         verbose_message,
@@ -417,18 +460,17 @@ fn into_py_err(
 ) -> PyResult<PyErr> {
     let (message, verbose_message, schema_path, instance_path, kind, instance) =
         into_validation_error_args(py, error, mask)?;
-    let pyerror_type = PyType::new::<ValidationError>(py);
-    Ok(PyErr::from_type(
-        pyerror_type,
-        (
+    validation_error_pyerr(
+        py,
+        ValidationErrorArgs {
             message,
             verbose_message,
             schema_path,
             instance_path,
             kind,
             instance,
-        ),
-    ))
+        },
+    )
 }
 
 fn get_draft(draft: u8) -> PyResult<Draft> {
@@ -477,7 +519,7 @@ fn make_options(
             }
             let callback: Py<PyAny> = callback.clone().unbind();
             let call_py_callback = move |value: &str| {
-                Python::with_gil(|py| {
+                Python::attach(|py| {
                     let value = PyString::new(py, value);
                     callback.call(py, (value,), None)?.is_truthy(py)
                 })
@@ -510,7 +552,7 @@ fn make_options(
     }
     if let Some(pattern_options) = pattern_options {
         if let Ok(fancy_options) = pattern_options.extract::<Py<FancyRegexOptions>>() {
-            let pattern_options = Python::with_gil(|py| {
+            let pattern_options = Python::attach(|py| {
                 let fancy_options = fancy_options.borrow(py);
                 let mut pattern_options = jsonschema::PatternOptions::fancy_regex();
 
@@ -527,7 +569,7 @@ fn make_options(
             });
             options = options.with_pattern_options(pattern_options);
         } else if let Ok(regex_opts) = pattern_options.extract::<Py<RegexOptions>>() {
-            let pattern_options = Python::with_gil(|py| {
+            let pattern_options = Python::attach(|py| {
                 let regex_opts = regex_opts.borrow(py);
                 let mut pattern_options = jsonschema::PatternOptions::regex();
 
@@ -666,6 +708,7 @@ impl Write for StringWriter<'_> {
 /// instead.
 #[pyfunction]
 #[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None))]
+#[allow(clippy::needless_pass_by_value)]
 fn is_valid(
     py: Python<'_>,
     schema: &Bound<'_, PyAny>,
@@ -714,6 +757,7 @@ fn is_valid(
 /// instead.
 #[pyfunction]
 #[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None))]
+#[allow(clippy::needless_pass_by_value)]
 fn validate(
     py: Python<'_>,
     schema: &Bound<'_, PyAny>,
@@ -757,6 +801,7 @@ fn validate(
 /// instead.
 #[pyfunction]
 #[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None))]
+#[allow(clippy::needless_pass_by_value)]
 fn iter_errors(
     py: Python<'_>,
     schema: &Bound<'_, PyAny>,
@@ -788,6 +833,7 @@ fn iter_errors(
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn handle_format_checked_panic(err: Box<dyn Any + Send>) -> PyErr {
     LAST_FORMAT_ERROR.with(|last| {
         if let Some(err) = last.borrow_mut().take() {
@@ -859,7 +905,7 @@ fn validator_for_impl(
     let object_type = unsafe { pyo3::ffi::Py_TYPE(obj_ptr) };
     let schema = if unsafe { object_type == types::STR_TYPE } {
         let mut str_size: pyo3::ffi::Py_ssize_t = 0;
-        let ptr = unsafe { PyUnicode_AsUTF8AndSize(obj_ptr, &mut str_size) };
+        let ptr = unsafe { PyUnicode_AsUTF8AndSize(obj_ptr, &raw mut str_size) };
         let slice = unsafe { std::slice::from_raw_parts(ptr.cast::<u8>(), str_size as usize) };
         serde_json::from_slice(slice)
             .map_err(|error| PyValueError::new_err(format!("Invalid string: {error}")))?
@@ -977,7 +1023,7 @@ impl Validator {
 ///     False
 ///
 #[pyclass(module = "jsonschema_rs", extends=Validator, subclass)]
-struct Draft4Validator {}
+struct Draft4Validator;
 
 #[pymethods]
 impl Draft4Validator {
@@ -1023,7 +1069,7 @@ impl Draft4Validator {
 ///     False
 ///
 #[pyclass(module = "jsonschema_rs", extends=Validator, subclass)]
-struct Draft6Validator {}
+struct Draft6Validator;
 
 #[pymethods]
 impl Draft6Validator {
@@ -1069,7 +1115,7 @@ impl Draft6Validator {
 ///     False
 ///
 #[pyclass(module = "jsonschema_rs", extends=Validator, subclass)]
-struct Draft7Validator {}
+struct Draft7Validator;
 
 #[pymethods]
 impl Draft7Validator {
@@ -1115,7 +1161,7 @@ impl Draft7Validator {
 ///     False
 ///
 #[pyclass(module = "jsonschema_rs", extends=Validator, subclass)]
-struct Draft201909Validator {}
+struct Draft201909Validator;
 
 #[pymethods]
 impl Draft201909Validator {
@@ -1161,7 +1207,7 @@ impl Draft201909Validator {
 ///     False
 ///
 #[pyclass(module = "jsonschema_rs", extends=Validator, subclass)]
-struct Draft202012Validator {}
+struct Draft202012Validator;
 
 #[pymethods]
 impl Draft202012Validator {
@@ -1205,51 +1251,100 @@ mod build {
 
 /// Meta-schema validation
 mod meta {
-    use super::ReferencingError;
+    use super::referencing_error_pyerr;
     use pyo3::prelude::*;
 
-    /// is_valid(schema)
+    /// is_valid(schema, registry=None)
     ///
     /// Validate a JSON Schema document against its meta-schema. Draft version is detected automatically.
+    /// Schemas with unknown `$schema` values raise `jsonschema_rs.ReferencingError`.
     ///
     ///     >>> jsonschema_rs.meta.is_valid({"type": "string"})
     ///     True
     ///     >>> jsonschema_rs.meta.is_valid({"type": "invalid_type"})
     ///     False
     ///
+    /// For custom meta-schemas, provide a registry:
+    ///
+    ///     >>> custom_meta = {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object"}
+    ///     >>> registry = Registry([("http://example.com/meta", custom_meta)])
+    ///     >>> schema = {"$schema": "http://example.com/meta", "customKeyword": "value"}
+    ///     >>> jsonschema_rs.meta.is_valid(schema, registry=registry)
+    ///     True
+    ///
     #[pyfunction]
-    #[pyo3(signature = (schema))]
-    pub(crate) fn is_valid(schema: &Bound<'_, PyAny>) -> PyResult<bool> {
+    #[pyo3(signature = (schema, registry=None))]
+    pub(crate) fn is_valid(
+        py: Python<'_>,
+        schema: &Bound<'_, PyAny>,
+        registry: Option<&crate::registry::Registry>,
+    ) -> PyResult<bool> {
         let schema = crate::ser::to_value(schema)?;
-        match jsonschema::meta::try_is_valid(&schema) {
-            Ok(valid) => Ok(valid),
-            Err(err) => Err(PyErr::new::<ReferencingError, _>(err.to_string())),
+        let result = if let Some(registry) = registry {
+            jsonschema::meta::options()
+                .with_registry(registry.inner.clone())
+                .validate(&schema)
+        } else {
+            jsonschema::meta::validate(&schema)
+        };
+
+        match result {
+            Ok(()) => Ok(true),
+            Err(error) => {
+                if let jsonschema::error::ValidationErrorKind::Referencing(err) = &error.kind {
+                    return Err(referencing_error_pyerr(py, err.to_string())?);
+                }
+                Ok(false)
+            }
         }
     }
 
-    /// validate(schema)
+    /// validate(schema, registry=None)
     ///
     /// Validate a JSON Schema document against its meta-schema and raise ValidationError if invalid.
-    /// Draft version is detected automatically.
+    /// Draft version is detected automatically. Schemas with custom/unknown `$schema` values raise `jsonschema_rs.ReferencingError`.
     ///
     ///     >>> jsonschema_rs.meta.validate({"type": "string"})
     ///     >>> jsonschema_rs.meta.validate({"type": "invalid_type"})
-    ///     ...
-    ///     >>> jsonschema_rs.meta.validate({"$schema": "invalid-uri"})
     ///     Traceback (most recent call last):
     ///         ...
-    ///     jsonschema_rs.ReferencingError: Unknown specification: invalid-uri
+    ///     jsonschema_rs.ValidationError: ...
+    ///     >>> jsonschema_rs.meta.validate({"$schema": "http://custom.example.com/schema", "type": "object"})
+    ///     Traceback (most recent call last):
+    ///         ...
+    ///     jsonschema_rs.ReferencingError: Unknown meta-schema: http://custom.example.com/schema
+    ///
+    /// For custom meta-schemas, provide a registry:
+    ///
+    ///     >>> custom_meta = {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object"}
+    ///     >>> registry = Registry([("http://example.com/meta", custom_meta)])
+    ///     >>> schema = {"$schema": "http://example.com/meta", "customKeyword": "value"}
+    ///     >>> jsonschema_rs.meta.validate(schema, registry=registry)
     ///
     #[pyfunction]
-    #[pyo3(signature = (schema))]
-    pub(crate) fn validate(py: Python<'_>, schema: &Bound<'_, PyAny>) -> PyResult<()> {
+    #[pyo3(signature = (schema, registry=None))]
+    pub(crate) fn validate(
+        py: Python<'_>,
+        schema: &Bound<'_, PyAny>,
+        registry: Option<&crate::registry::Registry>,
+    ) -> PyResult<()> {
         let schema = crate::ser::to_value(schema)?;
-        match jsonschema::meta::try_validate(&schema) {
-            Ok(validation_result) => match validation_result {
-                Ok(()) => Ok(()),
-                Err(error) => Err(crate::into_py_err(py, error, None)?),
-            },
-            Err(err) => Err(PyErr::new::<ReferencingError, _>(err.to_string())),
+        let result = if let Some(registry) = registry {
+            jsonschema::meta::options()
+                .with_registry(registry.inner.clone())
+                .validate(&schema)
+        } else {
+            jsonschema::meta::validate(&schema)
+        };
+
+        match result {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                if let jsonschema::error::ValidationErrorKind::Referencing(err) = &error.kind {
+                    return Err(referencing_error_pyerr(py, err.to_string())?);
+                }
+                Err(crate::into_py_err(py, error, None)?)
+            }
         }
     }
 }
@@ -1259,7 +1354,7 @@ mod meta {
 fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     // To provide proper signatures for PyCharm, all the functions have their signatures as the
     // first line in docstrings. The idea is taken from NumPy.
-    types::init();
+    types::init(py);
     module.add_wrapped(wrap_pyfunction!(is_valid))?;
     module.add_wrapped(wrap_pyfunction!(validate))?;
     module.add_wrapped(wrap_pyfunction!(iter_errors))?;
@@ -1272,8 +1367,6 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<registry::Registry>()?;
     module.add_class::<FancyRegexOptions>()?;
     module.add_class::<RegexOptions>()?;
-    module.add("ValidationError", py.get_type::<ValidationError>())?;
-    module.add("ReferencingError", py.get_type::<ReferencingError>())?;
     module.add("ValidationErrorKind", py.get_type::<ValidationErrorKind>())?;
     module.add("Draft4", DRAFT4)?;
     module.add("Draft6", DRAFT6)?;

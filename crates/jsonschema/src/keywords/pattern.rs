@@ -1,17 +1,19 @@
+use std::sync::Arc;
+
 use crate::{
-    compiler, ecma,
+    compiler,
     error::ValidationError,
     keywords::CompilationResult,
     options::PatternEngineOptions,
     paths::{LazyLocation, Location},
-    regex::{build_fancy_regex, build_regex, RegexEngine, RegexError},
+    regex::{RegexEngine, RegexError},
     types::JsonType,
     validator::Validate,
 };
 use serde_json::{Map, Value};
 
 pub(crate) struct PatternValidator<R> {
-    regex: R,
+    regex: Arc<R>,
     location: Location,
 }
 
@@ -62,40 +64,26 @@ pub(crate) fn compile<'a>(
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
     match schema {
-        Value::String(item) => {
-            let Ok(pattern) = ecma::to_rust_regex(item) else {
-                return Some(Err(invalid_regex(ctx, schema)));
-            };
-            match ctx.config().pattern_options() {
-                PatternEngineOptions::FancyRegex {
-                    backtrack_limit,
-                    size_limit,
-                    dfa_size_limit,
-                } => {
-                    let Ok(regex) =
-                        build_fancy_regex(&pattern, backtrack_limit, size_limit, dfa_size_limit)
-                    else {
-                        return Some(Err(invalid_regex(ctx, schema)));
-                    };
-                    Some(Ok(Box::new(PatternValidator {
-                        regex,
-                        location: ctx.location().join("pattern"),
-                    })))
-                }
-                PatternEngineOptions::Regex {
-                    size_limit,
-                    dfa_size_limit,
-                } => {
-                    let Ok(regex) = build_regex(&pattern, size_limit, dfa_size_limit) else {
-                        return Some(Err(invalid_regex(ctx, schema)));
-                    };
-                    Some(Ok(Box::new(PatternValidator {
-                        regex,
-                        location: ctx.location().join("pattern"),
-                    })))
-                }
+        Value::String(item) => match ctx.config().pattern_options() {
+            PatternEngineOptions::FancyRegex { .. } => {
+                let Ok(regex) = ctx.get_or_compile_regex(item) else {
+                    return Some(Err(invalid_regex(ctx, schema)));
+                };
+                Some(Ok(Box::new(PatternValidator {
+                    regex,
+                    location: ctx.location().join("pattern"),
+                })))
             }
-        }
+            PatternEngineOptions::Regex { .. } => {
+                let Ok(regex) = ctx.get_or_compile_standard_regex(item) else {
+                    return Some(Err(invalid_regex(ctx, schema)));
+                };
+                Some(Ok(Box::new(PatternValidator {
+                    regex,
+                    location: ctx.location().join("pattern"),
+                })))
+            }
+        },
         _ => Some(Err(ValidationError::single_type_error(
             Location::new(),
             ctx.location().clone(),

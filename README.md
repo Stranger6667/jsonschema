@@ -54,7 +54,7 @@ See more usage examples in the [documentation](https://docs.rs/jsonschema).
 - 🔧 Custom keywords and format validators
 - 🌐 Blocking & non-blocking remote reference fetching (network/file)
 - 🎨 `Basic` output style as per JSON Schema spec
-- ✨ Meta-schema validation for schema documents
+- ✨ Meta-schema validation for schema documents, including custom metaschemas
 - 🔗 Bindings for [Python](https://github.com/Stranger6667/jsonschema/tree/master/crates/jsonschema-py)
 - 🚀 WebAssembly support
 - 💻 Command Line Interface
@@ -88,7 +88,7 @@ For detailed benchmarks, see our [full performance comparison](https://github.co
 
 ## Minimum Supported Rust Version (MSRV)
 
-This crate requires Rust 1.71.1 or later.
+This crate requires Rust 1.83.0 or later.
 
 ## Acknowledgements
 
@@ -115,4 +115,3 @@ See [CONTRIBUTING.md](https://github.com/Stranger6667/jsonschema/blob/master/CON
 ## License
 
 Licensed under [MIT License](https://github.com/Stranger6667/jsonschema/blob/master/LICENSE).
-

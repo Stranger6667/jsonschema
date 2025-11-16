@@ -1,9 +1,8 @@
 use pyo3::{
     exceptions,
     ffi::{
-        PyDictObject, PyFloat_AS_DOUBLE, PyList_GET_ITEM, PyList_GET_SIZE, PyLong_AsLongLong,
-        PyObject_GetAttr, PyObject_IsInstance, PyTuple_GET_ITEM, PyTuple_GET_SIZE,
-        PyUnicode_AsUTF8AndSize, Py_DECREF, Py_TPFLAGS_DICT_SUBCLASS, Py_TYPE,
+        PyLong_AsLongLong, PyObject_GetAttr, PyObject_GetAttrString, PyObject_IsInstance,
+        PyType_IsSubtype, PyUnicode_AsUTF8AndSize, Py_DECREF, Py_TYPE,
     },
     prelude::*,
     types::PyAny,
@@ -13,8 +12,16 @@ use serde::{
     Serializer,
 };
 
-use crate::{ffi, types};
-use std::ffi::CStr;
+use crate::types;
+use std::{borrow::Cow, str::FromStr};
+
+#[cfg(not(Py_LIMITED_API))]
+use pyo3::ffi::{
+    PyFloat_AS_DOUBLE, PyList_GET_ITEM, PyList_GET_SIZE, PyTuple_GET_ITEM, PyTuple_GET_SIZE,
+};
+
+#[cfg(all(not(Py_LIMITED_API), not(PyPy)))]
+use pyo3::ffi::PyDictObject;
 
 pub const RECURSION_LIMIT: u8 = 255;
 
@@ -63,13 +70,91 @@ impl SerializePyObject {
 }
 
 #[inline]
+unsafe fn pyfloat_as_double(object: *mut pyo3::ffi::PyObject) -> f64 {
+    #[cfg(Py_LIMITED_API)]
+    {
+        pyo3::ffi::PyFloat_AsDouble(object)
+    }
+    #[cfg(not(Py_LIMITED_API))]
+    {
+        PyFloat_AS_DOUBLE(object)
+    }
+}
+
+#[inline]
+unsafe fn pylist_len(object: *mut pyo3::ffi::PyObject) -> usize {
+    #[cfg(Py_LIMITED_API)]
+    {
+        pyo3::ffi::PyList_Size(object) as usize
+    }
+    #[cfg(not(Py_LIMITED_API))]
+    {
+        PyList_GET_SIZE(object) as usize
+    }
+}
+
+#[inline]
+unsafe fn pylist_get_item(
+    object: *mut pyo3::ffi::PyObject,
+    index: pyo3::ffi::Py_ssize_t,
+) -> *mut pyo3::ffi::PyObject {
+    #[cfg(Py_LIMITED_API)]
+    {
+        pyo3::ffi::PyList_GetItem(object, index)
+    }
+    #[cfg(not(Py_LIMITED_API))]
+    {
+        PyList_GET_ITEM(object, index)
+    }
+}
+
+#[inline]
+unsafe fn pytuple_len(object: *mut pyo3::ffi::PyObject) -> usize {
+    #[cfg(Py_LIMITED_API)]
+    {
+        pyo3::ffi::PyTuple_Size(object) as usize
+    }
+    #[cfg(not(Py_LIMITED_API))]
+    {
+        PyTuple_GET_SIZE(object) as usize
+    }
+}
+
+#[inline]
+unsafe fn pytuple_get_item(
+    object: *mut pyo3::ffi::PyObject,
+    index: pyo3::ffi::Py_ssize_t,
+) -> *mut pyo3::ffi::PyObject {
+    #[cfg(Py_LIMITED_API)]
+    {
+        pyo3::ffi::PyTuple_GetItem(object, index)
+    }
+    #[cfg(not(Py_LIMITED_API))]
+    {
+        PyTuple_GET_ITEM(object, index)
+    }
+}
+
+#[inline]
+unsafe fn dict_len(object: *mut pyo3::ffi::PyObject) -> usize {
+    #[cfg(any(Py_LIMITED_API, PyPy))]
+    {
+        pyo3::ffi::PyDict_Size(object) as usize
+    }
+    #[cfg(all(not(Py_LIMITED_API), not(PyPy)))]
+    {
+        (*object.cast::<PyDictObject>()).ma_used as usize
+    }
+}
+
+#[inline]
 fn is_enum_subclass(object_type: *mut pyo3::ffi::PyTypeObject) -> bool {
-    unsafe { (*(object_type.cast::<ffi::PyTypeObject>())).ob_type == types::ENUM_TYPE }
+    unsafe { PyType_IsSubtype(object_type, types::ENUM_BASE) != 0 }
 }
 
 #[inline]
 fn is_dict_subclass(object_type: *mut pyo3::ffi::PyTypeObject) -> bool {
-    unsafe { (*object_type).tp_flags & Py_TPFLAGS_DICT_SUBCLASS != 0 }
+    unsafe { PyType_IsSubtype(object_type, types::DICT_TYPE) != 0 }
 }
 
 fn get_object_type_from_object(object: *mut pyo3::ffi::PyObject) -> ObjectType {
@@ -79,8 +164,26 @@ fn get_object_type_from_object(object: *mut pyo3::ffi::PyObject) -> ObjectType {
     }
 }
 
-fn get_type_name(object_type: *mut pyo3::ffi::PyTypeObject) -> std::borrow::Cow<'static, str> {
-    unsafe { CStr::from_ptr((*object_type).tp_name).to_string_lossy() }
+fn get_type_name(object_type: *mut pyo3::ffi::PyTypeObject) -> Cow<'static, str> {
+    unsafe {
+        let name_obj = PyObject_GetAttrString(
+            object_type.cast::<pyo3::ffi::PyObject>(),
+            c"__name__".as_ptr(),
+        );
+        if name_obj.is_null() {
+            return Cow::Borrowed("<unknown>");
+        }
+        let mut size: pyo3::ffi::Py_ssize_t = 0;
+        let ptr = PyUnicode_AsUTF8AndSize(name_obj, &raw mut size);
+        let cow = if ptr.is_null() {
+            Cow::Borrowed("<unknown>")
+        } else {
+            let slice = std::slice::from_raw_parts(ptr.cast::<u8>(), size as usize);
+            Cow::Owned(std::str::from_utf8_unchecked(slice).to_string())
+        };
+        Py_DECREF(name_obj);
+        cow
+    }
 }
 
 #[inline]
@@ -111,31 +214,6 @@ pub fn get_object_type(object_type: *mut pyo3::ffi::PyTypeObject) -> ObjectType 
     }
 }
 
-macro_rules! bail_on_integer_conversion_error {
-    ($value:expr) => {
-        if !$value.is_null() {
-            let repr = unsafe { pyo3::ffi::PyObject_Str($value) };
-            let mut size = 0;
-            let ptr = unsafe { PyUnicode_AsUTF8AndSize(repr, &mut size) };
-            return if !ptr.is_null() {
-                let slice = unsafe {
-                    std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                        ptr.cast::<u8>(),
-                        size as usize,
-                    ))
-                };
-                let message = String::from(slice);
-                unsafe { Py_DECREF(repr) };
-                Err(ser::Error::custom(message))
-            } else {
-                Err(ser::Error::custom(
-                    "Internal Error: Failed to convert exception to string",
-                ))
-            };
-        }
-    };
-}
-
 macro_rules! tri {
     ($expr:expr) => {
         match $expr {
@@ -143,6 +221,43 @@ macro_rules! tri {
             Err(err) => return Err(err),
         }
     };
+}
+
+/// Helper function to serialize a large integer that doesn't fit in i64
+/// by converting it to a string and parsing as serde_json::Number
+fn serialize_large_int<S>(
+    object: *mut pyo3::ffi::PyObject,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let str_obj = unsafe { pyo3::ffi::PyObject_Str(object) };
+    if str_obj.is_null() {
+        return Err(ser::Error::custom(
+            "Failed to convert large integer to string",
+        ));
+    }
+    let mut str_size: pyo3::ffi::Py_ssize_t = 0;
+    let ptr = unsafe { pyo3::ffi::PyUnicode_AsUTF8AndSize(str_obj, &raw mut str_size) };
+    if ptr.is_null() {
+        unsafe { pyo3::ffi::Py_DecRef(str_obj) };
+        return Err(ser::Error::custom("Failed to get UTF-8 representation"));
+    }
+    let slice = unsafe {
+        std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+            ptr.cast::<u8>(),
+            str_size as usize,
+        ))
+    };
+    // With arbitrary_precision, serde_json can handle this as a number
+    let result = if let Ok(num) = serde_json::Number::from_str(slice) {
+        serializer.serialize_some(&num)
+    } else {
+        Err(ser::Error::custom("Failed to parse large integer"))
+    };
+    unsafe { pyo3::ffi::Py_DecRef(str_obj) };
+    result
 }
 
 /// Convert a Python value to `serde_json::Value`
@@ -154,7 +269,7 @@ impl Serialize for SerializePyObject {
         match self.object_type {
             ObjectType::Str => {
                 let mut str_size: pyo3::ffi::Py_ssize_t = 0;
-                let ptr = unsafe { PyUnicode_AsUTF8AndSize(self.object, &mut str_size) };
+                let ptr = unsafe { PyUnicode_AsUTF8AndSize(self.object, &raw mut str_size) };
                 let slice = unsafe {
                     std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                         ptr.cast::<u8>(),
@@ -169,21 +284,46 @@ impl Serialize for SerializePyObject {
                     #[cfg(Py_3_12)]
                     {
                         let exception = unsafe { pyo3::ffi::PyErr_GetRaisedException() };
-                        bail_on_integer_conversion_error!(exception);
+                        // Check if this is actually an overflow error
+                        if !exception.is_null() {
+                            unsafe { pyo3::ffi::PyErr_Clear() };
+                            return serialize_large_int(self.object, serializer);
+                        }
                     };
                     #[cfg(not(Py_3_12))]
                     {
                         let mut ptype: *mut pyo3::ffi::PyObject = std::ptr::null_mut();
                         let mut pvalue: *mut pyo3::ffi::PyObject = std::ptr::null_mut();
                         let mut ptraceback: *mut pyo3::ffi::PyObject = std::ptr::null_mut();
-                        unsafe { pyo3::ffi::PyErr_Fetch(&mut ptype, &mut pvalue, &mut ptraceback) };
-                        bail_on_integer_conversion_error!(pvalue);
+                        unsafe {
+                            pyo3::ffi::PyErr_Fetch(
+                                &raw mut ptype,
+                                &raw mut pvalue,
+                                &raw mut ptraceback,
+                            );
+                        }
+                        // Check if this is actually an overflow error
+                        let is_overflow = !pvalue.is_null();
+                        if is_overflow {
+                            unsafe {
+                                if !ptype.is_null() {
+                                    pyo3::ffi::Py_DecRef(ptype);
+                                }
+                                if !pvalue.is_null() {
+                                    pyo3::ffi::Py_DecRef(pvalue);
+                                }
+                                if !ptraceback.is_null() {
+                                    pyo3::ffi::Py_DecRef(ptraceback);
+                                }
+                            };
+                            return serialize_large_int(self.object, serializer);
+                        }
                     };
                 }
                 serializer.serialize_i64(value)
             }
             ObjectType::Float => {
-                serializer.serialize_f64(unsafe { PyFloat_AS_DOUBLE(self.object) })
+                serializer.serialize_f64(unsafe { pyfloat_as_double(self.object) })
             }
             ObjectType::Bool => serializer.serialize_bool(self.object == unsafe { types::TRUE }),
             ObjectType::None => serializer.serialize_unit(),
@@ -191,7 +331,7 @@ impl Serialize for SerializePyObject {
                 if self.recursion_depth == RECURSION_LIMIT {
                     return Err(ser::Error::custom("Recursion limit reached"));
                 }
-                let length = unsafe { (*self.object.cast::<PyDictObject>()).ma_used } as usize;
+                let length = unsafe { dict_len(self.object) };
                 if length == 0 {
                     tri!(serializer.serialize_map(Some(0))).end()
                 } else {
@@ -202,7 +342,12 @@ impl Serialize for SerializePyObject {
                     let mut value: *mut pyo3::ffi::PyObject = std::ptr::null_mut();
                     for _ in 0..length {
                         unsafe {
-                            pyo3::ffi::PyDict_Next(self.object, &mut pos, &mut key, &mut value);
+                            pyo3::ffi::PyDict_Next(
+                                self.object,
+                                &raw mut pos,
+                                &raw mut key,
+                                &raw mut value,
+                            );
                         }
                         let object_type = unsafe { Py_TYPE(key) };
                         let key_unicode = if object_type == unsafe { types::STR_TYPE } {
@@ -231,7 +376,8 @@ impl Serialize for SerializePyObject {
                             }
                         };
 
-                        let ptr = unsafe { PyUnicode_AsUTF8AndSize(key_unicode, &mut str_size) };
+                        let ptr =
+                            unsafe { PyUnicode_AsUTF8AndSize(key_unicode, &raw mut str_size) };
                         let slice = unsafe {
                             std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                                 ptr.cast::<u8>(),
@@ -250,7 +396,7 @@ impl Serialize for SerializePyObject {
                 if self.recursion_depth == RECURSION_LIMIT {
                     return Err(ser::Error::custom("Recursion limit reached"));
                 }
-                let length = unsafe { PyList_GET_SIZE(self.object) as usize };
+                let length = unsafe { pylist_len(self.object) };
                 if length == 0 {
                     tri!(serializer.serialize_seq(Some(0))).end()
                 } else {
@@ -258,7 +404,8 @@ impl Serialize for SerializePyObject {
                     let mut ob_type = ObjectType::Str;
                     let mut sequence = tri!(serializer.serialize_seq(Some(length)));
                     for i in 0..length {
-                        let elem = unsafe { PyList_GET_ITEM(self.object, i as isize) };
+                        let elem =
+                            unsafe { pylist_get_item(self.object, i as pyo3::ffi::Py_ssize_t) };
                         let current_ob_type = unsafe { Py_TYPE(elem) };
                         if current_ob_type != type_ptr {
                             type_ptr = current_ob_type;
@@ -277,7 +424,7 @@ impl Serialize for SerializePyObject {
                 if self.recursion_depth == RECURSION_LIMIT {
                     return Err(ser::Error::custom("Recursion limit reached"));
                 }
-                let length = unsafe { PyTuple_GET_SIZE(self.object) as usize };
+                let length = unsafe { pytuple_len(self.object) };
                 if length == 0 {
                     tri!(serializer.serialize_seq(Some(0))).end()
                 } else {
@@ -285,7 +432,8 @@ impl Serialize for SerializePyObject {
                     let mut ob_type = ObjectType::Str;
                     let mut sequence = tri!(serializer.serialize_seq(Some(length)));
                     for i in 0..length {
-                        let elem = unsafe { PyTuple_GET_ITEM(self.object, i as isize) };
+                        let elem =
+                            unsafe { pytuple_get_item(self.object, i as pyo3::ffi::Py_ssize_t) };
                         let current_ob_type = unsafe { Py_TYPE(elem) };
                         if current_ob_type != type_ptr {
                             type_ptr = current_ob_type;
@@ -309,7 +457,7 @@ impl Serialize for SerializePyObject {
                 let object_type = unsafe { Py_TYPE(self.object) };
                 Err(ser::Error::custom(format!(
                     "Unsupported type: '{}'",
-                    unsafe { CStr::from_ptr((*object_type).tp_name).to_string_lossy() }
+                    get_type_name(object_type)
                 )))
             }
         }

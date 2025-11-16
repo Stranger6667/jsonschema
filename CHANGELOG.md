@@ -2,6 +2,55 @@
 
 ## [Unreleased]
 
+### Added
+
+- Support for custom meta-schemas. Schemas with custom `$schema` URIs can now be used by registering their meta-schemas in the `Registry` via `jsonschema::options().with_registry()`. [#664](https://github.com/Stranger6667/jsonschema/issues/664)
+- `arbitrary-precision` feature for exact numeric validation of large integers and decimals beyond standard floating-point limits. [#103](https://github.com/Stranger6667/jsonschema/issues/103)
+
+### Changed
+
+- **BREAKING**: `meta::is_valid` and `meta::validate` now return errors for unknown `$schema` values instead of defaulting to Draft 2020-12. Use `meta::options().with_registry()` to validate schemas against custom meta-schemas.
+- **BREAKING**: `Resource::from_contents` no longer returns `Result` and always succeeds, since draft detection no longer fails for unknown `$schema` values.
+
+### Removed
+
+- **BREAKING**: `meta::try_is_valid` and `meta::try_validate`. Use `meta::is_valid` and `meta::validate` instead.
+- **BREAKING**: `primitive_type` module (deprecated since 0.30.0). Use `jsonschema::types` instead.
+
+### Performance
+
+- `required`: short-circuit when the instance object has fewer properties than required keys.
+
+## [0.34.0] - 2025-11-14
+### Changed
+
+- **BREAKING**: `BasicOutput` and `Annotations` no longer have lifetime parameters. Update type annotations from `BasicOutput<'a>` to `BasicOutput` and `Annotations<'a>` to `Annotations`.
+- `referencing`: URI caching now avoids hash collisions and reduces lock contention.
+- Update `fluent-uri` to `0.4.1`.
+- Bump MSRV to `1.83.0`.
+- Drop the `Send + Sync` bounds from `Retrieve`/`AsyncRetrieve` on `wasm32`.
+- Use the new `draftX::meta::validator()` helper so meta-schema validators lazy-init on `wasm32` while native targets keep borrowing the cached `jsonschema::meta::MetaValidator`.
+
+### Fixed
+
+- Hostname and IDN hostname formats now decode `xn--` labels, reject leading combining marks/uppercase prefixes, and enforce the latest JSON Schema punycode context rules.
+- Restore `wasm32-unknown-unknown` support. [#785](https://github.com/Stranger6667/jsonschema/issues/785)
+
+### Performance
+
+- `apply` now reuses cached schema locations, URI fragments, and buffers for up to ~2.5x faster validation.
+- Recursive and regular `$ref` compilation deduplicates validator nodes, which decreases the memory usage and improves performance.
+- Validator compilation restores the regex cache for faster builds on regex-heavy schemas and precomputes absolute schema locations, trading a bit of compile time for faster `apply` on location-heavy workloads.
+- Large schema compilation is significantly faster. [#755](https://github.com/Stranger6667/jsonschema/issues/755)
+- `unevaluatedProperties` validation is 25-35% faster through optimized property marking and early-exit paths.
+- `unevaluatedProperties` memory usage drastically reduced by eliminating redundant registry clones during compilation.
+- `unevaluatedItems` validation is ~10% faster through early-exit optimizations and eliminating redundant validations in combinators.
+
+### Removed
+
+- **BREAKING**: `Validator::config` to reduce the memory footprint.
+- **BREAKING**: Public `DRAFT4_META_VALIDATOR`, `DRAFT6_META_VALIDATOR`, `DRAFT7_META_VALIDATOR`, `DRAFT201909_META_VALIDATOR`, and `DRAFT202012_META_VALIDATOR` statics. Use `draftX::meta::validator()` helper functions instead (e.g., `draft7::meta::validator()`).
+
 ## [0.33.0] - 2025-08-24
 
 ### Fixed
@@ -952,6 +1001,7 @@ Old names are retained for backward compatibility but will be removed in a futur
 - Initial public release
 
 [Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.33.0...HEAD
+[0.34.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.33.0...rust-v0.34.0
 [0.33.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.32.1...rust-v0.33.0
 [0.32.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.32.0...rust-v0.32.1
 [0.32.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.31.0...rust-v0.32.0

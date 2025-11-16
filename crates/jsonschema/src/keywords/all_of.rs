@@ -58,11 +58,11 @@ impl Validate for AllOfValidator {
         Ok(())
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         self.schemas
             .iter()
             .map(move |node| node.apply_rooted(instance, location))
-            .sum::<BasicOutput<'_>>()
+            .sum::<BasicOutput>()
             .into()
     }
 }
@@ -98,7 +98,7 @@ impl Validate for SingleValueAllOfValidator {
         self.node.validate(instance, location)
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         self.node.apply_rooted(instance, location).into()
     }
 }

@@ -10,3 +10,6 @@ publish = false
 [dependencies]
 codegen = { package = "jsonschema-testsuite-codegen", path = "../jsonschema-testsuite-codegen/" }
 internal = { package = "jsonschema-testsuite-internal", path = "../jsonschema-testsuite-internal/" }
+
+[lints]
+workspace = true

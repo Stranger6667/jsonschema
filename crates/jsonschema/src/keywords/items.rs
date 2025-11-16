@@ -62,7 +62,8 @@ impl Validate for ItemsArrayValidator {
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             for (idx, (item, node)) in items.iter().zip(self.items.iter()).enumerate() {
-                node.validate(item, &location.push(idx))?;
+                let item_location = location.push(idx);
+                node.validate(item, &item_location)?;
             }
         }
         Ok(())
@@ -111,13 +112,14 @@ impl Validate for ItemsObjectValidator {
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             for (idx, item) in items.iter().enumerate() {
-                self.node.validate(item, &location.push(idx))?;
+                let item_location = location.push(idx);
+                self.node.validate(item, &item_location)?;
             }
         }
         Ok(())
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         if let Value::Array(items) = instance {
             let mut results = Vec::with_capacity(items.len());
             for (idx, item) in items.iter().enumerate() {
@@ -197,14 +199,14 @@ impl Validate for ItemsObjectSkipPrefixValidator {
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             for (idx, item) in items.iter().skip(self.skip_prefix).enumerate() {
-                self.node
-                    .validate(item, &location.push(idx + self.skip_prefix))?;
+                let item_location = location.push(idx + self.skip_prefix);
+                self.node.validate(item, &item_location)?;
             }
         }
         Ok(())
     }
 
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         if let Value::Array(items) = instance {
             let mut results = Vec::with_capacity(items.len().saturating_sub(self.skip_prefix));
             for (idx, item) in items.iter().enumerate().skip(self.skip_prefix) {

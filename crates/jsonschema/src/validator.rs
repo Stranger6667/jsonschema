@@ -6,10 +6,10 @@ use crate::{
     node::SchemaNode,
     output::{Annotations, ErrorDescription, Output, OutputUnit},
     paths::LazyLocation,
+    thread::ThreadBound,
     Draft, ValidationError, ValidationOptions,
 };
 use serde_json::Value;
-use std::{collections::VecDeque, sync::Arc};
 
 /// The Validate trait represents a predicate over some JSON value. Some validators are very simple
 /// predicates such as "a value which is a string", whereas others may be much more complex,
@@ -25,7 +25,7 @@ use std::{collections::VecDeque, sync::Arc};
 /// If you are implementing `Validate` it is often sufficient to implement `validate` and
 /// `is_valid`. `apply` is only necessary for validators which compose other validators. See the
 /// documentation for `apply` for more information.
-pub(crate) trait Validate: Send + Sync {
+pub(crate) trait Validate: ThreadBound {
     fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
         match self.validate(instance, location) {
             Ok(()) => no_error(),
@@ -84,9 +84,9 @@ pub(crate) trait Validate: Send + Sync {
     /// }
     /// ```
     ///
-    /// `BasicOutput` also implements `Sum<BasicOutput>` and `FromIterator<BasicOutput<'a>> for PartialApplication<'a>`
+    /// `BasicOutput` also implements `Sum<BasicOutput>` and `FromIterator<BasicOutput>` for `PartialApplication`
     /// so you can use `sum()` and `collect()` in simple cases.
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         let errors: Vec<ErrorDescription> = self
             .iter_errors(instance, location)
             .map(ErrorDescription::from)
@@ -103,41 +103,41 @@ pub(crate) trait Validate: Send + Sync {
 /// `Validate::apply` this is a "partial" result because it does not include information about
 /// where the error or annotation occurred.
 #[derive(Clone, PartialEq)]
-pub(crate) enum PartialApplication<'a> {
+pub(crate) enum PartialApplication {
     Valid {
         /// Annotations produced by this validator
-        annotations: Option<Annotations<'a>>,
+        annotations: Option<Annotations>,
         /// Any outputs produced by validators which are children of this validator
-        child_results: VecDeque<OutputUnit<Annotations<'a>>>,
+        child_results: Vec<OutputUnit<Annotations>>,
     },
     Invalid {
         /// Errors which caused this schema to be invalid
         errors: Vec<ErrorDescription>,
         /// Any error outputs produced by child validators of this validator
-        child_results: VecDeque<OutputUnit<ErrorDescription>>,
+        child_results: Vec<OutputUnit<ErrorDescription>>,
     },
 }
 
-impl<'a> PartialApplication<'a> {
+impl PartialApplication {
     /// Create an empty `PartialApplication` which is valid
-    pub(crate) fn valid_empty() -> PartialApplication<'static> {
+    pub(crate) fn valid_empty() -> PartialApplication {
         PartialApplication::Valid {
             annotations: None,
-            child_results: VecDeque::new(),
+            child_results: Vec::new(),
         }
     }
 
     /// Create an empty `PartialApplication` which is invalid
-    pub(crate) fn invalid_empty(errors: Vec<ErrorDescription>) -> PartialApplication<'static> {
+    pub(crate) fn invalid_empty(errors: Vec<ErrorDescription>) -> PartialApplication {
         PartialApplication::Invalid {
             errors,
-            child_results: VecDeque::new(),
+            child_results: Vec::new(),
         }
     }
 
     /// Set the annotation that will be returned for the current validator. If this
     /// `PartialApplication` is invalid then this method does nothing
-    pub(crate) fn annotate(&mut self, new_annotations: Annotations<'a>) {
+    pub(crate) fn annotate(&mut self, new_annotations: Annotations) {
         match self {
             Self::Valid { annotations, .. } => *annotations = Some(new_annotations),
             Self::Invalid { .. } => {}
@@ -153,7 +153,7 @@ impl<'a> PartialApplication<'a> {
             Self::Valid { .. } => {
                 *self = Self::Invalid {
                     errors: vec![error],
-                    child_results: VecDeque::new(),
+                    child_results: Vec::new(),
                 }
             }
         }
@@ -168,7 +168,7 @@ impl<'a> PartialApplication<'a> {
 #[derive(Debug)]
 pub struct Validator {
     pub(crate) root: SchemaNode,
-    pub(crate) config: Arc<ValidationOptions>,
+    pub(crate) draft: Draft,
 }
 
 impl Validator {
@@ -215,19 +215,31 @@ impl Validator {
     /// For sync validation, use [`options`] instead.
     #[cfg(feature = "resolve-async")]
     #[must_use]
-    pub fn async_options() -> ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
+    pub fn async_options() -> ValidationOptions<std::sync::Arc<dyn referencing::AsyncRetrieve>> {
         ValidationOptions::default()
     }
     /// Create a validator using the default options.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the supplied `schema` is invalid for the selected draft or references cannot be resolved.
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         Self::options().build(schema)
     }
     /// Create a validator using the default async options.
     #[cfg(feature = "resolve-async")]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the supplied `schema` is invalid for the selected draft or references cannot be resolved.
     pub async fn async_new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         Self::async_options().build(schema).await
     }
     /// Validate `instance` against `schema` and return the first error if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`ValidationError`] describing why `instance` does not satisfy the schema.
     #[inline]
     pub fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         self.root.validate(instance, &LazyLocation::new())
@@ -294,13 +306,7 @@ impl Validator {
     /// The [`Draft`] which was used to build this validator.
     #[must_use]
     pub fn draft(&self) -> Draft {
-        self.config.draft()
-    }
-
-    /// The [`ValidationOptions`] that were used to build this validator.
-    #[must_use]
-    pub fn config(&self) -> Arc<ValidationOptions> {
-        Arc::clone(&self.config)
+        self.draft
     }
 }
 
@@ -310,13 +316,14 @@ mod tests {
         error::ValidationError,
         keywords::custom::Keyword,
         paths::{LazyLocation, Location},
+        thread::ThreadBound,
         types::JsonType,
         Validator,
     };
     use fancy_regex::Regex;
     use num_cmp::NumCmp;
-    use once_cell::sync::Lazy;
     use serde_json::{json, Map, Value};
+    use std::sync::LazyLock;
 
     #[cfg(not(target_arch = "wasm32"))]
     fn load(path: &str, idx: usize) -> Value {
@@ -458,7 +465,7 @@ mod tests {
     fn custom_format_and_override_keyword() {
         /// Check that a string has some number of digits followed by a dot followed by exactly 2 digits.
         fn currency_format_checker(s: &str) -> bool {
-            static CURRENCY_RE: Lazy<Regex> = Lazy::new(|| {
+            static CURRENCY_RE: LazyLock<Regex> = LazyLock::new(|| {
                 Regex::new("^(0|([1-9]+[0-9]*))(\\.[0-9]{2})$").expect("Invalid regex")
             });
             CURRENCY_RE.is_match(s).expect("Invalid regex")
@@ -608,7 +615,7 @@ mod tests {
 
     #[test]
     fn test_validator_is_send_and_sync() {
-        fn assert_send_sync<T: Send + Sync>() {}
+        fn assert_send_sync<T: ThreadBound>() {}
         assert_send_sync::<Validator>();
     }
 }

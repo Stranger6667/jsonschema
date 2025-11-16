@@ -16,18 +16,20 @@ concurrency:
 
 env:
   PACKAGE_NAME: jsonschema_rs
+  PYTHON_ABI_VERSION: "3.10"
+  PYPY_VERSION: "pypy3.11"
 
 jobs:
   sdist:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: hynek/setup-cached-uv@v2
+      - uses: astral-sh/setup-uv@v7
 
       - run: uv python install "3.12"
 
@@ -43,116 +45,112 @@ jobs:
         working-directory: crates/jsonschema-py
 
       - name: Upload sdist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: sdist
           path: crates/jsonschema-py/dist
 
   macos-x86_64:
     runs-on: macos-13
-    strategy:
-      matrix:
-        python-version: [ '3.8', '3.9', '3.10', '3.11', '3.12', '3.13' ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ env.PYTHON_ABI_VERSION }}
           architecture: x64
       - uses: dtolnay/rust-toolchain@stable
       - name: Build wheels - x86_64
         uses: messense/maturin-action@v1
         with:
           target: x86_64
-          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ matrix.python-version }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
       - name: Install built wheel - x86_64
         run: |
-          pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
+          uv pip install --python ${{ env.PYTHON_ABI_VERSION }} dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
-          name: wheel-macos-x86_64-py${{ matrix.python-version }}
+          name: wheel-macos-x86_64
           path: dist
 
   macos-universal:
     runs-on: macos-13
-    strategy:
-      matrix:
-        python-version: [ '3.8', '3.9', '3.10', '3.11', '3.12', '3.13' ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ env.PYTHON_ABI_VERSION }}
           architecture: x64
       - uses: dtolnay/rust-toolchain@stable
       - name: Build wheels - universal2
         uses: messense/maturin-action@v1
         with:
-          args: --release -m crates/jsonschema-py/Cargo.toml --target universal2-apple-darwin --out dist --interpreter ${{ matrix.python-version }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --target universal2-apple-darwin --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
       - name: Install built wheel - universal2
         run: |
-          pip install dist/${{ env.PACKAGE_NAME }}-*universal2.whl --force-reinstall
+          uv pip install --python ${{ env.PYTHON_ABI_VERSION }} dist/${{ env.PACKAGE_NAME }}-*universal2.whl --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
-          name: wheel-macos-universal-py${{ matrix.python-version }}
+          name: wheel-macos-universal
           path: dist
 
   windows:
     runs-on: windows-2022
     strategy:
       matrix:
-        python-version: [ '3.8', '3.9', '3.10', '3.11', '3.12', '3.13' ]
         target: [ x64, x86 ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ env.PYTHON_ABI_VERSION }}
           architecture: ${{ matrix.target }}
       - uses: dtolnay/rust-toolchain@stable
       - name: Build wheels
         uses: messense/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ matrix.python-version }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
       - name: Install built wheel
         shell: bash
         run: |
-          python -m pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
+          uv pip install --python ${{ env.PYTHON_ABI_VERSION }} dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
-          name: wheel-windows-${{ matrix.target }}-py${{ matrix.python-version }}
+          name: wheel-windows-${{ matrix.target }}
           path: dist
 
   linux:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        python-version: [ '3.8', '3.9', '3.10', '3.11', '3.12', '3.13' ]
         target: [ x86_64, i686, aarch64 ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ env.PYTHON_ABI_VERSION }}
       - name: Build wheels
         uses: messense/maturin-action@v1
         with:
           target: ${{ matrix.target }}
           manylinux: auto
-          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ matrix.python-version }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
       - name: Install built wheel on native architecture
         if: matrix.target == 'x86_64'
         run: |
-          pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
+          uv pip install --python ${{ env.PYTHON_ABI_VERSION }} dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
       - uses: uraimo/run-on-arch-action@v3
         if: matrix.target == 'aarch64'
         name: Install built wheel on ARM architecture
         with:
-          base_image: '--platform=linux/aarch64 ubuntu:20.04'
+          base_image: '--platform=linux/aarch64 ubuntu:22.04'
           githubToken: ${{ github.token }}
           install: |
             export TZ=UTC
@@ -161,15 +159,76 @@ jobs:
             apt-get install -y --no-install-recommends software-properties-common gpg gpg-agent curl
             add-apt-repository ppa:deadsnakes/ppa
             apt-get update
-            apt-get install -y python${{ matrix.python-version }}-dev python${{ matrix.python-version }}-venv
+            apt-get install -y python${{ env.PYTHON_ABI_VERSION }}-dev python${{ env.PYTHON_ABI_VERSION }}-venv
           run: |
-            python${{ matrix.python-version }} -m venv venv
+            python${{ env.PYTHON_ABI_VERSION }} -m venv venv
             venv/bin/pip install -U pip wheel
             venv/bin/pip install ${{ env.PACKAGE_NAME }} --no-index --find-links dist/ --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
-          name: wheel-linux-${{ matrix.target }}-py${{ matrix.python-version }}
+          name: wheel-linux-${{ matrix.target }}
+          path: dist
+
+  pypy:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-13
+            target: x86_64
+            artifact: wheel-macos-pypy
+            manylinux: ''
+          - os: windows-2022
+            target: x64
+            artifact: wheel-windows-pypy
+            manylinux: ''
+          - os: ubuntu-22.04
+            target: x86_64
+            artifact: wheel-linux-pypy
+            manylinux: auto
+          - os: ubuntu-22.04
+            target: aarch64
+            artifact: wheel-linux-pypy-aarch64
+            manylinux: 2_24
+
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install uv and cache PyPy
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.PYPY_VERSION }}
+          enable-cache: true
+          cache-python: true
+          cache-suffix: pypy-${{ matrix.os }}-${{ matrix.target }}
+      - name: Ensure PyPy interpreter
+        run: |
+          uv python install ${{ env.PYPY_VERSION }}
+          interp=$(uv python find ${{ env.PYPY_VERSION }})
+          echo "PYPY_INTERPRETER=$interp" >> "$GITHUB_ENV"
+          "$interp" --version
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build wheels - PyPy (manylinux)
+        if: ${{ matrix.manylinux != '' }}
+        uses: messense/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYPY_INTERPRETER }}
+      - name: Build wheels - PyPy
+        if: ${{ matrix.manylinux == '' }}
+        uses: messense/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYPY_INTERPRETER }}
+      - name: Install built wheel - PyPy
+        if: ${{ matrix.target != 'aarch64' }}
+        run: |
+          uv pip install --python "${{ env.PYPY_INTERPRETER }}" dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
+      - name: Upload wheels
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.artifact }}
           path: dist
 
   release:
@@ -181,9 +240,10 @@ jobs:
       - macos-universal
       - windows
       - linux
+      - pypy
     if: "startsWith(github.ref, 'refs/tags/')"
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v6
         with:
           path: all
       - name: Merge files

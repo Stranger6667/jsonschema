@@ -333,7 +333,8 @@
 //!
 //! struct HttpRetriever;
 //!
-//! #[async_trait::async_trait]
+//! #[cfg_attr(target_family = "wasm", async_trait::async_trait(?Send))]
+//! #[cfg_attr(not(target_family = "wasm"), async_trait::async_trait)]
 //! impl AsyncRetrieve for HttpRetriever {
 //!     async fn retrieve(
 //!         &self,
@@ -355,6 +356,8 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! On `wasm32` targets, use `async_trait::async_trait(?Send)` so your retriever can rely on `Rc`, `JsFuture`, or other non-thread-safe types.
 //!
 //! # Output Styles
 //!
@@ -402,7 +405,7 @@
 //! regular expression features such as lookaround and backreferences.
 //!
 //! The primary motivation for switching to the `regex` engine is security and performance:
-//! it guarantees linear-time matching, preventing potential DoS attacks from malicious patterns
+//! it guarantees linear-time matching, preventing potential Denial of Service attacks from malicious patterns
 //! in user-provided schemas while offering better performance with a smaller feature set.
 //!
 //! You can configure the engine at **runtime** using the [`PatternOptions`] API:
@@ -626,27 +629,92 @@
 //!   opt in by calling `.should_validate_formats(true)` on your options builder. If you omit
 //!   it, all `format` keywords are ignored at validation time.
 //!
+//! # Arbitrary Precision Numbers
+//!
+//! Enable the `arbitrary-precision` feature for exact validation of numbers beyond standard numeric ranges:
+//!
+//! ```toml
+//! jsonschema = { version = "x.y.z", features = ["arbitrary-precision"] }
+//! ```
+//!
+//! This provides:
+//! - Arbitrarily large integers (e.g., `18446744073709551616`)
+//! - Exact decimal precision without `f64` rounding (e.g., `0.1`, `0.3`)
+//!
+//! **Important**: Precision is only preserved when parsing JSON from strings. Using Rust literals
+//! or the `json!()` macro converts numbers to `f64`, losing precision.
+//!
+//! ```rust
+//! # use jsonschema::Validator;
+//! // Precision preserved - parsed from JSON string
+//! let schema = serde_json::from_str(r#"{"minimum": 0.1}"#)?;
+//! let instance = serde_json::from_str("0.3")?;
+//! let validator = Validator::new(&schema)?;
+//! assert!(validator.is_valid(&instance));
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
 //! # WebAssembly support
 //!
-//! When using `jsonschema` in WASM environments, be aware that external references are
-//! not supported by default due to WASM limitations:
-//!    - No filesystem access (`resolve-file` feature)
-//!    - No direct HTTP requests, at least right now (`resolve-http` feature)
+//! `jsonschema` supports WebAssembly with different capabilities based on the target platform:
 //!
-//! To use `jsonschema` in WASM, disable default features:
+//! ## Browser/JavaScript (`wasm32-unknown-unknown`)
+//!
+//! When targeting browser or JavaScript environments, external reference resolution is not
+//! supported by default due to platform limitations:
+//!    - No filesystem access (`resolve-file` feature is not available)
+//!    - No synchronous HTTP requests (`resolve-http` feature is not available)
+//!
+//! To use `jsonschema` in these environments, disable default features:
 //!
 //! ```toml
 //! jsonschema = { version = "x.y.z", default-features = false }
 //! ```
 //!
-//! For external references in WASM you may want to implement a custom retriever.
-//! See the [External References](#external-references) section for implementation details.
+//! Note: Attempting to compile with `resolve-http` or `resolve-file` features on
+//! `wasm32-unknown-unknown` will result in a compile error.
+//!
+//! For external references in browser environments, implement a custom retriever that uses
+//! browser APIs (like `fetch`). See the [External References](#external-references) section.
+//!
+//! ## WASI (`wasm32-wasip1` / `wasm32-wasip2`)
+//!
+//! WASI environments (preview 1 and preview 2) can compile schemas and run validators, but the bundled
+//! HTTP retriever depends on `reqwest`’s blocking client, which isn't available on these targets. Use
+//! file access and custom retrievers instead.
+//!
+//! **Supported:**
+//! - Blocking file resolution (`resolve-file` feature)
+//! - Custom blocking retrievers (including wrapping async operations)
+//! - Custom async retrievers via the `resolve-async` feature (for example, `jsonschema::async_options`
+//!   together with your own async runtime)
+//!
+//! **Not Supported:**
+//! - The bundled HTTP retriever (depends on `reqwest`’s blocking client)
+//!
+//! ```toml
+//! jsonschema = { version = "x.y.z", default-features = false, features = ["resolve-file"] }
+//! ```
+//!
+//! **Workaround for HTTP:** Implement a custom blocking or async [`Retrieve`] that uses your preferred
+//! HTTP client, and enable `resolve-async` if you want to build validators through [`async_options`]
+//! on WASI.
+
+#[cfg(all(
+    target_arch = "wasm32",
+    target_os = "unknown",
+    any(feature = "resolve-file", feature = "resolve-http")
+))]
+compile_error!(
+    "Features 'resolve-http' and 'resolve-file' are not supported on wasm32-unknown-unknown"
+);
 
 pub(crate) mod compiler;
 mod content_encoding;
 mod content_media_type;
 mod ecma;
 pub mod error;
+#[doc(hidden)]
 pub mod ext;
 mod keywords;
 mod node;
@@ -656,13 +724,9 @@ pub mod paths;
 pub(crate) mod properties;
 pub(crate) mod regex;
 mod retriever;
+pub(crate) mod thread;
 pub mod types;
 mod validator;
-
-#[deprecated(since = "0.30.0", note = "Use `jsonschema::types` instead.")]
-pub mod primitive_type {
-    pub use super::types::*;
-}
 
 pub use error::{ErrorIterator, MaskedValidationError, ValidationError};
 pub use keywords::custom::Keyword;
@@ -678,12 +742,6 @@ pub use validator::Validator;
 pub use referencing::AsyncRetrieve;
 
 use serde_json::Value;
-
-#[cfg(all(
-    target_arch = "wasm32",
-    any(feature = "resolve-http", feature = "resolve-file")
-))]
-compile_error!("Features 'resolve-http' and 'resolve-file' are not supported on WASM.");
 
 /// Validate `instance` against `schema` and get a `true` if the instance is valid and `false`
 /// otherwise. Draft is detected automatically.
@@ -721,6 +779,10 @@ pub fn is_valid(schema: &Value, instance: &Value) -> bool {
 /// assert!(jsonschema::validate(&schema, &instance).is_ok());
 /// ```
 ///
+/// # Errors
+///
+/// Returns the first [`ValidationError`] encountered when `instance` violates `schema`.
+///
 /// # Panics
 ///
 /// This function panics if an invalid schema is passed.
@@ -747,6 +809,10 @@ pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), Validatio
 /// # Ok(())
 /// # }
 /// ```
+///
+/// # Errors
+///
+/// Returns an error if the schema is invalid or external references cannot be resolved.
 pub fn validator_for(schema: &Value) -> Result<Validator, ValidationError<'static>> {
     Validator::new(schema)
 }
@@ -775,6 +841,10 @@ pub fn validator_for(schema: &Value) -> Result<Validator, ValidationError<'stati
 /// # Ok(())
 /// # }
 /// ```
+///
+/// # Errors
+///
+/// Returns an error if the schema is invalid or external references cannot be resolved.
 #[cfg(feature = "resolve-async")]
 pub async fn async_validator_for(schema: &Value) -> Result<Validator, ValidationError<'static>> {
     Validator::async_new(schema).await
@@ -865,7 +935,8 @@ pub fn options() -> ValidationOptions {
 /// // Custom async retriever
 /// struct MyRetriever;
 ///
-/// #[async_trait::async_trait]
+/// #[cfg_attr(target_family = "wasm", async_trait::async_trait(?Send))]
+/// #[cfg_attr(not(target_family = "wasm"), async_trait::async_trait)]
 /// impl AsyncRetrieve for MyRetriever {
 ///     async fn retrieve(&self, uri: &Uri<String>) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
 ///         // Custom retrieval logic
@@ -885,6 +956,8 @@ pub fn options() -> ValidationOptions {
 /// # }
 /// ```
 ///
+/// On `wasm32` targets, annotate your implementation with `async_trait::async_trait(?Send)` to drop the `Send + Sync` requirement.
+///
 /// See [`ValidationOptions`] for all available configuration options.
 #[cfg(feature = "resolve-async")]
 #[must_use]
@@ -894,49 +967,228 @@ pub fn async_options() -> ValidationOptions<std::sync::Arc<dyn AsyncRetrieve>> {
 
 /// Functionality for validating JSON Schema documents against their meta-schemas.
 pub mod meta {
-    use crate::{error::ValidationError, Draft, ReferencingError};
+    use crate::{error::ValidationError, Draft};
+    use ahash::AHashSet;
+    use referencing::{Registry, Retrieve};
     use serde_json::Value;
 
-    use crate::Validator;
+    pub use validator_handle::MetaValidator;
+
+    /// Create a meta-validation options builder.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use serde_json::json;
+    /// use jsonschema::{Registry, Resource};
+    ///
+    /// let custom_meta = Resource::from_contents(json!({
+    ///     "$schema": "https://json-schema.org/draft/2020-12/schema",
+    ///     "type": "object"
+    /// }));
+    ///
+    /// let registry = Registry::try_new(
+    ///     "http://example.com/meta",
+    ///     custom_meta
+    /// ).unwrap();
+    ///
+    /// let schema = json!({
+    ///     "$schema": "http://example.com/meta",
+    ///     "type": "string"
+    /// });
+    ///
+    /// assert!(jsonschema::meta::options()
+    ///     .with_registry(registry)
+    ///     .is_valid(&schema));
+    /// ```
+    #[must_use]
+    pub fn options() -> MetaSchemaOptions {
+        MetaSchemaOptions::default()
+    }
+
+    /// Options for meta-schema validation.
+    #[derive(Clone, Default)]
+    pub struct MetaSchemaOptions {
+        registry: Option<Registry>,
+    }
+
+    impl MetaSchemaOptions {
+        /// Use a registry for resolving custom meta-schemas.
+        ///
+        /// # Examples
+        ///
+        /// ```rust
+        /// use serde_json::json;
+        /// use jsonschema::{Registry, Resource};
+        ///
+        /// let custom_meta = Resource::from_contents(json!({
+        ///     "$schema": "https://json-schema.org/draft/2020-12/schema",
+        ///     "type": "object"
+        /// }));
+        ///
+        /// let registry = Registry::try_new(
+        ///     "http://example.com/meta",
+        ///     custom_meta
+        /// ).unwrap();
+        ///
+        /// let options = jsonschema::meta::options()
+        ///     .with_registry(registry);
+        /// ```
+        #[must_use]
+        pub fn with_registry(mut self, registry: Registry) -> Self {
+            self.registry = Some(registry);
+            self
+        }
+
+        /// Check if a schema is valid according to its meta-schema.
+        ///
+        /// # Panics
+        ///
+        /// Panics if the meta-schema cannot be resolved.
+        #[must_use]
+        pub fn is_valid(&self, schema: &Value) -> bool {
+            match try_meta_validator_for(schema, self.registry.as_ref()) {
+                Ok(validator) => validator.as_ref().is_valid(schema),
+                Err(e) => panic!("Failed to resolve meta-schema: {}", e),
+            }
+        }
+
+        /// Validate a schema according to its meta-schema.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`ValidationError`] if the schema is invalid or if the meta-schema cannot be resolved.
+        pub fn validate<'a>(&self, schema: &'a Value) -> Result<(), ValidationError<'a>> {
+            let validator = try_meta_validator_for(schema, self.registry.as_ref())?;
+            validator.as_ref().validate(schema)
+        }
+    }
+
+    mod validator_handle {
+        use crate::Validator;
+        use std::{marker::PhantomData, ops::Deref};
+
+        /// Handle to a draft-specific meta-schema [`Validator`]. Borrows cached validators on native
+        /// targets and owns validators on `wasm32`.
+        pub struct MetaValidator<'a>(MetaValidatorInner<'a>);
+
+        // Native builds can hand out references to cached validators or own dynamic ones,
+        // while wasm targets need owned instances because the validator type does not implement `Sync` there.
+        enum MetaValidatorInner<'a> {
+            #[cfg(not(target_family = "wasm"))]
+            Borrowed(&'a Validator),
+            Owned(Box<Validator>, PhantomData<&'a Validator>),
+        }
+
+        impl<'a> MetaValidator<'a> {
+            #[cfg(not(target_family = "wasm"))]
+            pub(crate) fn borrowed(validator: &'a Validator) -> Self {
+                Self(MetaValidatorInner::Borrowed(validator))
+            }
+
+            pub(crate) fn owned(validator: Validator) -> Self {
+                Self(MetaValidatorInner::Owned(Box::new(validator), PhantomData))
+            }
+        }
+
+        impl AsRef<Validator> for MetaValidator<'_> {
+            fn as_ref(&self) -> &Validator {
+                match &self.0 {
+                    #[cfg(not(target_family = "wasm"))]
+                    MetaValidatorInner::Borrowed(validator) => validator,
+                    MetaValidatorInner::Owned(validator, _) => validator,
+                }
+            }
+        }
+
+        impl Deref for MetaValidator<'_> {
+            type Target = Validator;
+
+            fn deref(&self) -> &Self::Target {
+                self.as_ref()
+            }
+        }
+    }
 
     pub(crate) mod validators {
         use crate::Validator;
-        use once_cell::sync::Lazy;
+        #[cfg(not(target_family = "wasm"))]
+        use std::sync::LazyLock;
 
-        pub static DRAFT4_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
+        fn build_validator(schema: &serde_json::Value) -> Validator {
             crate::options()
                 .without_schema_validation()
-                .build(&referencing::meta::DRAFT4)
-                .expect("Draft 4 meta-schema should be valid")
-        });
+                .build(schema)
+                .expect("Meta-schema should be valid")
+        }
 
-        pub static DRAFT6_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
-            crate::options()
-                .without_schema_validation()
-                .build(&referencing::meta::DRAFT6)
-                .expect("Draft 6 meta-schema should be valid")
-        });
+        #[cfg(not(target_family = "wasm"))]
+        pub static DRAFT4_META_VALIDATOR: LazyLock<Validator> =
+            LazyLock::new(|| build_validator(&referencing::meta::DRAFT4));
+        #[cfg(target_family = "wasm")]
+        pub fn draft4_meta_validator() -> Validator {
+            build_validator(&referencing::meta::DRAFT4)
+        }
 
-        pub static DRAFT7_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
-            crate::options()
-                .without_schema_validation()
-                .build(&referencing::meta::DRAFT7)
-                .expect("Draft 7 meta-schema should be valid")
-        });
+        #[cfg(not(target_family = "wasm"))]
+        pub static DRAFT6_META_VALIDATOR: LazyLock<Validator> =
+            LazyLock::new(|| build_validator(&referencing::meta::DRAFT6));
+        #[cfg(target_family = "wasm")]
+        pub fn draft6_meta_validator() -> Validator {
+            build_validator(&referencing::meta::DRAFT6)
+        }
 
-        pub static DRAFT201909_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
-            crate::options()
-                .without_schema_validation()
-                .build(&referencing::meta::DRAFT201909)
-                .expect("Draft 2019-09 meta-schema should be valid")
-        });
+        #[cfg(not(target_family = "wasm"))]
+        pub static DRAFT7_META_VALIDATOR: LazyLock<Validator> =
+            LazyLock::new(|| build_validator(&referencing::meta::DRAFT7));
+        #[cfg(target_family = "wasm")]
+        pub fn draft7_meta_validator() -> Validator {
+            build_validator(&referencing::meta::DRAFT7)
+        }
 
-        pub static DRAFT202012_META_VALIDATOR: Lazy<Validator> = Lazy::new(|| {
-            crate::options()
-                .without_schema_validation()
-                .build(&referencing::meta::DRAFT202012)
-                .expect("Draft 2020-12 meta-schema should be valid")
-        });
+        #[cfg(not(target_family = "wasm"))]
+        pub static DRAFT201909_META_VALIDATOR: LazyLock<Validator> =
+            LazyLock::new(|| build_validator(&referencing::meta::DRAFT201909));
+        #[cfg(target_family = "wasm")]
+        pub fn draft201909_meta_validator() -> Validator {
+            build_validator(&referencing::meta::DRAFT201909)
+        }
+
+        #[cfg(not(target_family = "wasm"))]
+        pub static DRAFT202012_META_VALIDATOR: LazyLock<Validator> =
+            LazyLock::new(|| build_validator(&referencing::meta::DRAFT202012));
+        #[cfg(target_family = "wasm")]
+        pub fn draft202012_meta_validator() -> Validator {
+            build_validator(&referencing::meta::DRAFT202012)
+        }
+    }
+
+    pub(crate) fn validator_for_draft(draft: Draft) -> MetaValidator<'static> {
+        #[cfg(not(target_family = "wasm"))]
+        {
+            match draft {
+                Draft::Draft4 => MetaValidator::borrowed(&validators::DRAFT4_META_VALIDATOR),
+                Draft::Draft6 => MetaValidator::borrowed(&validators::DRAFT6_META_VALIDATOR),
+                Draft::Draft7 => MetaValidator::borrowed(&validators::DRAFT7_META_VALIDATOR),
+                Draft::Draft201909 => {
+                    MetaValidator::borrowed(&validators::DRAFT201909_META_VALIDATOR)
+                }
+                // Draft202012, Unknown, or any future draft variants
+                _ => MetaValidator::borrowed(&validators::DRAFT202012_META_VALIDATOR),
+            }
+        }
+        #[cfg(target_family = "wasm")]
+        {
+            let validator = match draft {
+                Draft::Draft4 => validators::draft4_meta_validator(),
+                Draft::Draft6 => validators::draft6_meta_validator(),
+                Draft::Draft7 => validators::draft7_meta_validator(),
+                Draft::Draft201909 => validators::draft201909_meta_validator(),
+                // Draft202012, Unknown, or any future draft variants
+                _ => validators::draft202012_meta_validator(),
+            };
+            MetaValidator::owned(validator)
+        }
     }
 
     /// Validate a JSON Schema document against its meta-schema and get a `true` if the schema is valid
@@ -957,9 +1209,18 @@ pub mod meta {
     /// # Panics
     ///
     /// This function panics if the meta-schema can't be detected.
+    ///
+    /// # Note
+    ///
+    /// This helper only works with the built-in JSON Schema drafts. For schemas that declare a
+    /// custom `$schema`, construct a registry that contains your meta-schema and use
+    /// [`meta::options().with_registry(...)`](crate::meta::options) to validate it.
     #[must_use]
     pub fn is_valid(schema: &Value) -> bool {
-        meta_validator_for(schema).is_valid(schema)
+        match try_meta_validator_for(schema, None) {
+            Ok(validator) => validator.as_ref().is_valid(schema),
+            Err(error) => panic!("Failed to resolve meta-schema: {}", error),
+        }
     }
     /// Validate a JSON Schema document against its meta-schema and return the first error if any.
     /// Draft version is detected automatically.
@@ -982,94 +1243,122 @@ pub mod meta {
     /// assert!(jsonschema::meta::validate(&invalid_schema).is_err());
     /// ```
     ///
+    /// # Errors
+    ///
+    /// Returns the first [`ValidationError`] describing why the schema violates the detected meta-schema.
+    ///
     /// # Panics
     ///
     /// This function panics if the meta-schema can't be detected.
+    ///
+    /// # Note
+    ///
+    /// Like [`meta::is_valid`](self::meta::is_valid), this helper only handles the bundled JSON
+    /// Schema drafts. For custom meta-schemas, use [`meta::options().with_registry(...)`](crate::meta::options)
+    /// so the registry can supply the meta-schema.
     pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
-        meta_validator_for(schema).validate(schema)
+        let validator = try_meta_validator_for(schema, None)?;
+        validator.as_ref().validate(schema)
     }
 
-    fn meta_validator_for(schema: &Value) -> &'static Validator {
-        try_meta_validator_for(schema).expect("Failed to detect meta schema")
-    }
-
-    /// Try to validate a JSON Schema document against its meta-schema.
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(true)` if the schema is valid
-    /// - `Ok(false)` if the schema is invalid
-    /// - `Err(ReferencingError)` if the meta-schema can't be detected
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use serde_json::json;
-    ///
-    /// let schema = json!({
-    ///     "type": "string",
-    ///     "maxLength": 5
-    /// });
-    /// assert!(jsonschema::meta::try_is_valid(&schema).expect("Unknown draft"));
-    ///
-    /// // Invalid $schema URI
-    /// let undetectable_schema = json!({
-    ///     "$schema": "invalid-uri",
-    ///     "type": "string"
-    /// });
-    /// assert!(jsonschema::meta::try_is_valid(&undetectable_schema).is_err());
-    /// ```
-    pub fn try_is_valid(schema: &Value) -> Result<bool, ReferencingError> {
-        Ok(try_meta_validator_for(schema)?.is_valid(schema))
-    }
-
-    /// Try to validate a JSON Schema document against its meta-schema.
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(Ok(()))` if the schema is valid
-    /// - `Ok(Err(ValidationError))` if the schema is invalid
-    /// - `Err(ReferencingError)` if the meta-schema can't be detected
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use serde_json::json;
-    ///
-    /// let schema = json!({
-    ///     "type": "string",
-    ///     "maxLength": 5
-    /// });
-    /// assert!(jsonschema::meta::try_validate(&schema).expect("Invalid schema").is_ok());
-    ///
-    /// // Invalid schema
-    /// let invalid_schema = json!({
-    ///     "type": "invalid_type"
-    /// });
-    /// assert!(jsonschema::meta::try_validate(&invalid_schema).expect("Invalid schema").is_err());
-    ///
-    /// // Invalid $schema URI
-    /// let undetectable_schema = json!({
-    ///     "$schema": "invalid-uri",
-    ///     "type": "string"
-    /// });
-    /// assert!(jsonschema::meta::try_validate(&undetectable_schema).is_err());
-    /// ```
-    pub fn try_validate(
+    fn try_meta_validator_for<'a>(
         schema: &Value,
-    ) -> Result<Result<(), ValidationError<'_>>, ReferencingError> {
-        Ok(try_meta_validator_for(schema)?.validate(schema))
+        registry: Option<&Registry>,
+    ) -> Result<MetaValidator<'a>, ValidationError<'static>> {
+        let draft = Draft::default().detect(schema);
+
+        // For custom meta-schemas (Draft::Unknown), attempt to resolve the meta-schema
+        if draft == Draft::Unknown {
+            if let Some(meta_schema_uri) = schema
+                .as_object()
+                .and_then(|obj| obj.get("$schema"))
+                .and_then(|s| s.as_str())
+            {
+                // Try registry first if available
+                if let Some(registry) = registry {
+                    let (custom_meta_schema, resolved_draft) =
+                        resolve_meta_schema_with_registry(meta_schema_uri, registry)?;
+                    let validator = crate::options()
+                        .with_draft(resolved_draft)
+                        .with_registry(registry.clone())
+                        .without_schema_validation()
+                        .build(&custom_meta_schema)?;
+                    return Ok(MetaValidator::owned(validator));
+                }
+
+                // Use default retriever
+                let (custom_meta_schema, resolved_draft) =
+                    resolve_meta_schema_chain(meta_schema_uri)?;
+                let validator = crate::options()
+                    .with_draft(resolved_draft)
+                    .without_schema_validation()
+                    .build(&custom_meta_schema)?;
+                return Ok(MetaValidator::owned(validator));
+            }
+        }
+
+        Ok(validator_for_draft(draft))
     }
 
-    fn try_meta_validator_for(schema: &Value) -> Result<&'static Validator, ReferencingError> {
-        Ok(match Draft::default().detect(schema)? {
-            Draft::Draft4 => &validators::DRAFT4_META_VALIDATOR,
-            Draft::Draft6 => &validators::DRAFT6_META_VALIDATOR,
-            Draft::Draft7 => &validators::DRAFT7_META_VALIDATOR,
-            Draft::Draft201909 => &validators::DRAFT201909_META_VALIDATOR,
-            Draft::Draft202012 => &validators::DRAFT202012_META_VALIDATOR,
-            _ => unreachable!("Unknown draft"),
-        })
+    fn resolve_meta_schema_with_registry(
+        uri: &str,
+        registry: &Registry,
+    ) -> Result<(Value, Draft), ValidationError<'static>> {
+        let resolver = registry.try_resolver(uri)?;
+        let first_resolved = resolver.lookup("")?;
+        let first_meta_schema = first_resolved.contents().clone();
+
+        let draft = walk_meta_schema_chain(uri, |current_uri| {
+            let resolver = registry.try_resolver(current_uri)?;
+            let resolved = resolver.lookup("")?;
+            Ok(resolved.contents().clone())
+        })?;
+
+        Ok((first_meta_schema, draft))
+    }
+
+    fn resolve_meta_schema_chain(uri: &str) -> Result<(Value, Draft), ValidationError<'static>> {
+        let retriever = crate::retriever::DefaultRetriever;
+        let first_meta_uri = referencing::uri::from_str(uri)?;
+        let first_meta_schema = retriever
+            .retrieve(&first_meta_uri)
+            .map_err(|e| referencing::Error::unretrievable(uri, e))?;
+
+        let draft = walk_meta_schema_chain(uri, |current_uri| {
+            let meta_uri = referencing::uri::from_str(current_uri)?;
+            Ok(retriever
+                .retrieve(&meta_uri)
+                .map_err(|e| referencing::Error::unretrievable(current_uri, e))?)
+        })?;
+
+        Ok((first_meta_schema, draft))
+    }
+
+    pub(crate) fn walk_meta_schema_chain(
+        start_uri: &str,
+        mut fetch: impl FnMut(&str) -> Result<Value, ValidationError<'static>>,
+    ) -> Result<Draft, ValidationError<'static>> {
+        let mut visited = AHashSet::new();
+        let mut current_uri = start_uri.to_string();
+
+        loop {
+            if !visited.insert(current_uri.clone()) {
+                return Err(referencing::Error::circular_metaschema(current_uri).into());
+            }
+
+            let meta_schema = fetch(&current_uri)?;
+            let draft = Draft::default().detect(&meta_schema);
+
+            if draft != Draft::Unknown {
+                return Ok(draft);
+            }
+
+            current_uri = meta_schema
+                .get("$schema")
+                .and_then(|s| s.as_str())
+                .expect("`$schema` must exist when draft is Unknown")
+                .to_string();
+        }
     }
 }
 
@@ -1109,6 +1398,11 @@ pub mod draft4 {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the schema is not a valid Draft 4 document or if referenced resources
+    /// cannot be resolved.
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         options().build(schema)
     }
@@ -1126,6 +1420,10 @@ pub mod draft4 {
     /// assert!(jsonschema::draft4::is_valid(&schema, &valid));
     /// assert!(!jsonschema::draft4::is_valid(&schema, &invalid));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 4 validator.
     #[must_use]
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
@@ -1144,6 +1442,14 @@ pub mod draft4 {
     /// assert!(jsonschema::draft4::validate(&schema, &valid).is_ok());
     /// assert!(jsonschema::draft4::validate(&schema, &invalid).is_err());
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`ValidationError`] when `instance` violates the schema.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 4 validator.
     pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         new(schema).expect("Invalid schema").validate(instance)
     }
@@ -1177,10 +1483,15 @@ pub mod draft4 {
 
     /// Functionality for validating JSON Schema Draft 4 documents.
     pub mod meta {
-        use crate::ValidationError;
+        use crate::{meta::MetaValidator, ValidationError};
         use serde_json::Value;
 
-        pub use crate::meta::validators::DRAFT4_META_VALIDATOR as VALIDATOR;
+        /// Returns a handle to the Draft 4 meta-schema validator. Native targets borrow cached
+        /// statics while `wasm32` builds an owned validator.
+        #[must_use]
+        pub fn validator() -> MetaValidator<'static> {
+            crate::meta::validator_for_draft(super::Draft::Draft4)
+        }
 
         /// Validate a JSON Schema document against Draft 4 meta-schema and get a `true` if the schema is valid
         /// and `false` otherwise.
@@ -1199,7 +1510,7 @@ pub mod draft4 {
         #[must_use]
         #[inline]
         pub fn is_valid(schema: &Value) -> bool {
-            VALIDATOR.is_valid(schema)
+            validator().as_ref().is_valid(schema)
         }
 
         /// Validate a JSON Schema document against Draft 4 meta-schema and return the first error if any.
@@ -1221,9 +1532,13 @@ pub mod draft4 {
         /// });
         /// assert!(jsonschema::draft4::meta::validate(&invalid_schema).is_err());
         /// ```
+        ///
+        /// # Errors
+        ///
+        /// Returns the first [`ValidationError`] describing why the schema violates the Draft 4 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
-            VALIDATOR.validate(schema)
+            validator().as_ref().validate(schema)
         }
     }
 }
@@ -1264,6 +1579,11 @@ pub mod draft6 {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the schema is not a valid Draft 6 document or if referenced resources
+    /// cannot be resolved.
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         options().build(schema)
     }
@@ -1281,6 +1601,10 @@ pub mod draft6 {
     /// assert!(jsonschema::draft6::is_valid(&schema, &valid));
     /// assert!(!jsonschema::draft6::is_valid(&schema, &invalid));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 6 validator.
     #[must_use]
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
@@ -1299,6 +1623,14 @@ pub mod draft6 {
     /// assert!(jsonschema::draft6::validate(&schema, &valid).is_ok());
     /// assert!(jsonschema::draft6::validate(&schema, &invalid).is_err());
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`ValidationError`] when `instance` violates the schema.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 6 validator.
     pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         new(schema).expect("Invalid schema").validate(instance)
     }
@@ -1332,10 +1664,15 @@ pub mod draft6 {
 
     /// Functionality for validating JSON Schema Draft 6 documents.
     pub mod meta {
-        use crate::ValidationError;
+        use crate::{meta::MetaValidator, ValidationError};
         use serde_json::Value;
 
-        pub use crate::meta::validators::DRAFT6_META_VALIDATOR as VALIDATOR;
+        /// Returns a handle to the Draft 6 meta-schema validator. Native targets borrow cached
+        /// statics while `wasm32` builds an owned validator.
+        #[must_use]
+        pub fn validator() -> MetaValidator<'static> {
+            crate::meta::validator_for_draft(super::Draft::Draft6)
+        }
 
         /// Validate a JSON Schema document against Draft 6 meta-schema and get a `true` if the schema is valid
         /// and `false` otherwise.
@@ -1354,7 +1691,7 @@ pub mod draft6 {
         #[must_use]
         #[inline]
         pub fn is_valid(schema: &Value) -> bool {
-            VALIDATOR.is_valid(schema)
+            validator().as_ref().is_valid(schema)
         }
 
         /// Validate a JSON Schema document against Draft 6 meta-schema and return the first error if any.
@@ -1376,9 +1713,13 @@ pub mod draft6 {
         /// });
         /// assert!(jsonschema::draft6::meta::validate(&invalid_schema).is_err());
         /// ```
+        ///
+        /// # Errors
+        ///
+        /// Returns the first [`ValidationError`] describing why the schema violates the Draft 6 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
-            VALIDATOR.validate(schema)
+            validator().as_ref().validate(schema)
         }
     }
 }
@@ -1419,6 +1760,11 @@ pub mod draft7 {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the schema is not a valid Draft 7 document or if referenced resources
+    /// cannot be resolved.
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         options().build(schema)
     }
@@ -1436,6 +1782,10 @@ pub mod draft7 {
     /// assert!(jsonschema::draft7::is_valid(&schema, &valid));
     /// assert!(!jsonschema::draft7::is_valid(&schema, &invalid));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 7 validator.
     #[must_use]
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
@@ -1454,6 +1804,14 @@ pub mod draft7 {
     /// assert!(jsonschema::draft7::validate(&schema, &valid).is_ok());
     /// assert!(jsonschema::draft7::validate(&schema, &invalid).is_err());
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`ValidationError`] when `instance` violates the schema.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 7 validator.
     pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         new(schema).expect("Invalid schema").validate(instance)
     }
@@ -1487,10 +1845,15 @@ pub mod draft7 {
 
     /// Functionality for validating JSON Schema Draft 7 documents.
     pub mod meta {
-        use crate::ValidationError;
+        use crate::{meta::MetaValidator, ValidationError};
         use serde_json::Value;
 
-        pub use crate::meta::validators::DRAFT7_META_VALIDATOR as VALIDATOR;
+        /// Returns a handle to the Draft 7 meta-schema validator. Native targets borrow cached
+        /// statics while `wasm32` builds an owned validator.
+        #[must_use]
+        pub fn validator() -> MetaValidator<'static> {
+            crate::meta::validator_for_draft(super::Draft::Draft7)
+        }
 
         /// Validate a JSON Schema document against Draft 7 meta-schema and get a `true` if the schema is valid
         /// and `false` otherwise.
@@ -1509,7 +1872,7 @@ pub mod draft7 {
         #[must_use]
         #[inline]
         pub fn is_valid(schema: &Value) -> bool {
-            VALIDATOR.is_valid(schema)
+            validator().as_ref().is_valid(schema)
         }
 
         /// Validate a JSON Schema document against Draft 7 meta-schema and return the first error if any.
@@ -1531,9 +1894,13 @@ pub mod draft7 {
         /// });
         /// assert!(jsonschema::draft7::meta::validate(&invalid_schema).is_err());
         /// ```
+        ///
+        /// # Errors
+        ///
+        /// Returns the first [`ValidationError`] describing why the schema violates the Draft 7 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
-            VALIDATOR.validate(schema)
+            validator().as_ref().validate(schema)
         }
     }
 }
@@ -1574,6 +1941,11 @@ pub mod draft201909 {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the schema is not a valid Draft 2019-09 document or if referenced resources
+    /// cannot be resolved.
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         options().build(schema)
     }
@@ -1591,6 +1963,10 @@ pub mod draft201909 {
     /// assert!(jsonschema::draft201909::is_valid(&schema, &valid));
     /// assert!(!jsonschema::draft201909::is_valid(&schema, &invalid));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 2019-09 validator.
     #[must_use]
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
@@ -1609,6 +1985,14 @@ pub mod draft201909 {
     /// assert!(jsonschema::draft201909::validate(&schema, &valid).is_ok());
     /// assert!(jsonschema::draft201909::validate(&schema, &invalid).is_err());
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`ValidationError`] when `instance` violates the schema.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 2019-09 validator.
     pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         new(schema).expect("Invalid schema").validate(instance)
     }
@@ -1642,10 +2026,15 @@ pub mod draft201909 {
 
     /// Functionality for validating JSON Schema Draft 2019-09 documents.
     pub mod meta {
-        use crate::ValidationError;
+        use crate::{meta::MetaValidator, ValidationError};
         use serde_json::Value;
 
-        pub use crate::meta::validators::DRAFT201909_META_VALIDATOR as VALIDATOR;
+        /// Returns a handle to the Draft 2019-09 meta-schema validator. Native targets borrow cached
+        /// statics while `wasm32` builds an owned validator.
+        #[must_use]
+        pub fn validator() -> MetaValidator<'static> {
+            crate::meta::validator_for_draft(super::Draft::Draft201909)
+        }
         /// Validate a JSON Schema document against Draft 2019-09 meta-schema and get a `true` if the schema is valid
         /// and `false` otherwise.
         ///
@@ -1663,7 +2052,7 @@ pub mod draft201909 {
         #[must_use]
         #[inline]
         pub fn is_valid(schema: &Value) -> bool {
-            VALIDATOR.is_valid(schema)
+            validator().as_ref().is_valid(schema)
         }
 
         /// Validate a JSON Schema document against Draft 2019-09 meta-schema and return the first error if any.
@@ -1685,9 +2074,13 @@ pub mod draft201909 {
         /// });
         /// assert!(jsonschema::draft201909::meta::validate(&invalid_schema).is_err());
         /// ```
+        ///
+        /// # Errors
+        ///
+        /// Returns the first [`ValidationError`] describing why the schema violates the Draft 2019-09 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
-            VALIDATOR.validate(schema)
+            validator().as_ref().validate(schema)
         }
     }
 }
@@ -1731,6 +2124,11 @@ pub mod draft202012 {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the schema is not a valid Draft 2020-12 document or if referenced resources
+    /// cannot be resolved.
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         options().build(schema)
     }
@@ -1748,6 +2146,10 @@ pub mod draft202012 {
     /// assert!(jsonschema::draft202012::is_valid(&schema, &valid));
     /// assert!(!jsonschema::draft202012::is_valid(&schema, &invalid));
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 2020-12 validator.
     #[must_use]
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
@@ -1766,6 +2168,14 @@ pub mod draft202012 {
     /// assert!(jsonschema::draft202012::validate(&schema, &valid).is_ok());
     /// assert!(jsonschema::draft202012::validate(&schema, &invalid).is_err());
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`ValidationError`] when `instance` violates the schema.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `schema` cannot be compiled into a Draft 2020-12 validator.
     pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         new(schema).expect("Invalid schema").validate(instance)
     }
@@ -1799,10 +2209,15 @@ pub mod draft202012 {
 
     /// Functionality for validating JSON Schema Draft 2020-12 documents.
     pub mod meta {
-        use crate::ValidationError;
+        use crate::{meta::MetaValidator, ValidationError};
         use serde_json::Value;
 
-        pub use crate::meta::validators::DRAFT202012_META_VALIDATOR as VALIDATOR;
+        /// Returns a handle to the Draft 2020-12 meta-schema validator. Native targets borrow
+        /// cached statics while `wasm32` builds an owned validator.
+        #[must_use]
+        pub fn validator() -> MetaValidator<'static> {
+            crate::meta::validator_for_draft(super::Draft::Draft202012)
+        }
 
         /// Validate a JSON Schema document against Draft 2020-12 meta-schema and get a `true` if the schema is valid
         /// and `false` otherwise.
@@ -1821,7 +2236,7 @@ pub mod draft202012 {
         #[must_use]
         #[inline]
         pub fn is_valid(schema: &Value) -> bool {
-            VALIDATOR.is_valid(schema)
+            validator().as_ref().is_valid(schema)
         }
 
         /// Validate a JSON Schema document against Draft 2020-12 meta-schema and return the first error if any.
@@ -1843,9 +2258,13 @@ pub mod draft202012 {
         /// });
         /// assert!(jsonschema::draft202012::meta::validate(&invalid_schema).is_err());
         /// ```
+        ///
+        /// # Errors
+        ///
+        /// Returns the first [`ValidationError`] describing why the schema violates the Draft 2020-12 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
-            VALIDATOR.validate(schema)
+            validator().as_ref().validate(schema)
         }
     }
 }
@@ -1853,7 +2272,7 @@ pub mod draft202012 {
 #[cfg(test)]
 pub(crate) mod tests_util {
     use super::Validator;
-    use crate::ValidationError;
+    use crate::{output::OutputUnit, BasicOutput, ValidationError};
     use serde_json::Value;
 
     #[track_caller]
@@ -1880,16 +2299,6 @@ pub(crate) mod tests_util {
     pub(crate) fn is_not_valid(schema: &Value, instance: &Value) {
         let validator = crate::options()
             .should_validate_formats(true)
-            .build(schema)
-            .expect("Invalid schema");
-        is_not_valid_with(&validator, instance);
-    }
-
-    #[track_caller]
-    pub(crate) fn is_not_valid_with_draft(draft: crate::Draft, schema: &Value, instance: &Value) {
-        let validator = crate::options()
-            .should_validate_formats(true)
-            .with_draft(draft)
             .build(schema)
             .expect("Invalid schema");
         is_not_valid_with(&validator, instance);
@@ -1938,12 +2347,6 @@ pub(crate) mod tests_util {
     }
 
     #[track_caller]
-    pub(crate) fn is_valid_with_draft(draft: crate::Draft, schema: &Value, instance: &Value) {
-        let validator = crate::options().with_draft(draft).build(schema).unwrap();
-        is_valid_with(&validator, instance);
-    }
-
-    #[track_caller]
     pub(crate) fn validate(schema: &Value, instance: &Value) -> ValidationError<'static> {
         let validator = crate::options()
             .should_validate_formats(true)
@@ -1970,11 +2373,53 @@ pub(crate) mod tests_util {
             assert_eq!(error.schema_path.as_str(), *location);
         }
     }
+
+    #[track_caller]
+    pub(crate) fn assert_keyword_location(
+        validator: &Validator,
+        instance: &Value,
+        instance_pointer: &str,
+        keyword_pointer: &str,
+    ) {
+        fn ensure_location<T>(
+            units: Vec<OutputUnit<T>>,
+            instance_pointer: &str,
+            keyword_pointer: &str,
+        ) -> Result<(), Vec<String>> {
+            let mut available = Vec::new();
+            for unit in units {
+                let instance_location = unit.instance_location().as_str();
+                if instance_location == instance_pointer {
+                    let keyword_location = unit.keyword_location().as_str().to_string();
+                    if keyword_location == keyword_pointer {
+                        return Ok(());
+                    }
+                    available.push(keyword_location);
+                }
+            }
+            Err(available)
+        }
+
+        match validator.apply(instance).basic() {
+            BasicOutput::Valid(units) => {
+                ensure_location(units, instance_pointer, keyword_pointer)
+            }
+            BasicOutput::Invalid(units) => {
+                ensure_location(units, instance_pointer, keyword_pointer)
+            }
+        }
+        .unwrap_or_else(|available| {
+            panic!(
+                "No annotation for instance pointer `{instance_pointer}` with keyword location `{keyword_pointer}`. Available keyword locations for pointer: {available:?}"
+            )
+        });
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{validator_for, ValidationError};
+    use referencing::{Registry, Resource};
 
     use super::Draft;
     use serde_json::json;
@@ -2181,13 +2626,11 @@ mod tests {
             "exclusiveMinimum": exclusive_minimum.into()
         });
 
-        let is_valid_result = crate::meta::try_is_valid(&schema);
-        assert!(is_valid_result.is_ok());
-        assert_eq!(is_valid_result.expect("Unknown draft"), expected);
+        let is_valid_result = crate::meta::is_valid(&schema);
+        assert_eq!(is_valid_result, expected);
 
-        let validate_result = crate::meta::try_validate(&schema);
-        assert!(validate_result.is_ok());
-        assert_eq!(validate_result.expect("Unknown draft").is_ok(), expected);
+        let validate_result = crate::meta::validate(&schema);
+        assert_eq!(validate_result.is_ok(), expected);
     }
 
     #[test]
@@ -2197,8 +2640,12 @@ mod tests {
             "type": "string"
         });
 
-        assert!(crate::meta::try_is_valid(&schema).is_err());
-        assert!(crate::meta::try_validate(&schema).is_err());
+        let result = crate::options().without_schema_validation().build(&schema);
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("Unknown meta-schema"));
+        assert!(error.to_string().contains("invalid-uri"));
     }
 
     #[test]
@@ -2206,12 +2653,18 @@ mod tests {
         let schema = json!({
             // Note `htt`, not `http`
             "$schema": "htt://json-schema.org/draft-07/schema",
+            "type": "string"
         });
-        let error = crate::validator_for(&schema).expect_err("Should fail");
-        assert_eq!(
-            error.to_string(),
-            "Unknown specification: htt://json-schema.org/draft-07/schema"
-        );
+
+        // Without registering the meta-schema, this should fail
+        let result = crate::options().without_schema_validation().build(&schema);
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("Unknown meta-schema"));
+        assert!(error
+            .to_string()
+            .contains("htt://json-schema.org/draft-07/schema"));
     }
 
     #[test_case(Draft::Draft4)]
@@ -2241,18 +2694,948 @@ mod tests {
         }
         let _ = foo();
     }
+
+    #[test]
+    fn test_meta_validation_with_unknown_schema() {
+        let schema = json!({
+            "$schema": "json-schema:///custom",
+            "type": "string"
+        });
+
+        // Meta-validation now errors when the meta-schema is unknown/unregistered
+        assert!(crate::meta::validate(&schema).is_err());
+
+        // Building a validator also fails without registration
+        let result = crate::validator_for(&schema);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "resolve-file"))]
+    fn test_meta_validation_respects_metaschema_draft() {
+        use std::io::Write;
+
+        let mut temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        let meta_schema_draft7 = json!({
+            "$id": "http://example.com/meta/draft7",
+            "$schema": "http://json-schema.org/draft-07/schema",
+            "type": ["object", "boolean"],
+            "properties": {
+                "$schema": { "type": "string" },
+                "type": {},
+                "properties": { "type": "object" }
+            },
+            "additionalProperties": false
+        });
+        write!(temp_file, "{meta_schema_draft7}").expect("Failed to write to temp file");
+
+        let uri = crate::retriever::path_to_uri(temp_file.path());
+
+        let schema_using_draft7_meta = json!({
+            "$schema": uri,
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" }
+            },
+            "unevaluatedProperties": false
+        });
+
+        let schema_valid_for_draft7_meta = json!({
+            "$schema": uri,
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" }
+            }
+        });
+
+        assert!(crate::meta::is_valid(&meta_schema_draft7));
+        assert!(!crate::meta::is_valid(&schema_using_draft7_meta));
+        assert!(crate::meta::is_valid(&schema_valid_for_draft7_meta));
+    }
+
+    #[test]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "resolve-file"))]
+    fn test_meta_schema_chain_resolution() {
+        use std::io::Write;
+
+        // Create intermediate meta-schema pointing to Draft 2020-12
+        let mut intermediate_file =
+            tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        let intermediate_meta = json!({
+            "$id": "http://example.com/meta/intermediate",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object"
+        });
+        write!(intermediate_file, "{intermediate_meta}").expect("Failed to write to temp file");
+        let intermediate_uri = crate::retriever::path_to_uri(intermediate_file.path());
+
+        // Create custom meta-schema with unknown draft that points to intermediate
+        // This triggers the chain resolution code path in resolve_meta_schema_chain
+        let mut custom_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        let custom_meta = json!({
+            "$id": "http://example.com/meta/custom",
+            "$schema": intermediate_uri,
+            "type": "object"
+        });
+        write!(custom_file, "{custom_meta}").expect("Failed to write to temp file");
+        let custom_uri = crate::retriever::path_to_uri(custom_file.path());
+
+        let schema = json!({
+            "$schema": custom_uri,
+            "type": "string"
+        });
+
+        // Should successfully resolve through the chain and detect Draft 2020-12
+        assert!(crate::meta::is_valid(&schema));
+    }
+
+    #[test]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "resolve-file"))]
+    fn test_circular_meta_schema_reference() {
+        use std::io::Write;
+
+        // Create meta-schema A pointing to meta-schema B
+        let mut meta_a_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        let meta_a_uri = crate::retriever::path_to_uri(meta_a_file.path());
+
+        // Create meta-schema B pointing back to meta-schema A
+        let mut meta_b_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        let meta_b_uri = crate::retriever::path_to_uri(meta_b_file.path());
+
+        let meta_a = json!({
+            "$id": "http://example.com/meta/a",
+            "$schema": &meta_b_uri,
+            "type": "object"
+        });
+        write!(meta_a_file, "{meta_a}").expect("Failed to write to temp file");
+
+        let meta_b = json!({
+            "$id": "http://example.com/meta/b",
+            "$schema": &meta_a_uri,
+            "type": "object"
+        });
+        write!(meta_b_file, "{meta_b}").expect("Failed to write to temp file");
+
+        let schema = json!({
+            "$schema": meta_a_uri.clone(),
+            "type": "string"
+        });
+
+        // Should return a circular meta-schema error
+        let result = crate::meta::options().validate(&schema);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Circular meta-schema reference"));
+    }
+
+    #[test]
+    fn simple_schema_with_unknown_draft() {
+        // Define a custom meta-schema
+        let meta_schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "http://custom.example.com/schema",
+            "$vocabulary": {
+                "https://json-schema.org/draft/2020-12/vocab/core": true,
+                "https://json-schema.org/draft/2020-12/vocab/applicator": true,
+                "https://json-schema.org/draft/2020-12/vocab/validation": true,
+            }
+        });
+
+        // Schema using the custom meta-schema
+        let schema = json!({
+            "$schema": "http://custom.example.com/schema",
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" }
+            }
+        });
+
+        // Register the custom meta-schema as a resource
+        let resources = vec![(
+            "http://custom.example.com/schema".to_string(),
+            Resource::from_contents(meta_schema),
+        )];
+
+        let validator = crate::options()
+            .without_schema_validation()
+            .with_resources(resources.into_iter())
+            .build(&schema)
+            .expect("Should build validator");
+
+        // Valid instance
+        assert!(validator.is_valid(&json!({"name": "test"})));
+
+        // Invalid instance - name should be string, not number
+        assert!(!validator.is_valid(&json!({"name": 123})));
+
+        // Also verify type validation works
+        assert!(!validator.is_valid(&json!("not an object")));
+    }
+
+    #[test]
+    fn custom_meta_schema_support() {
+        // Define a custom meta-schema that extends Draft 2020-12
+        let meta_schema = json!({
+            "$id": "http://example.com/meta/schema",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "Core schema definition",
+            "type": "object",
+            "allOf": [
+                {
+                    "$ref": "#/$defs/editable"
+                },
+                {
+                    "$ref": "#/$defs/core"
+                }
+            ],
+            "properties": {
+                "properties": {
+                    "type": "object",
+                    "patternProperties": {
+                        ".*": {
+                            "type": "object",
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "enum": [
+                                        "array",
+                                        "boolean",
+                                        "integer",
+                                        "number",
+                                        "object",
+                                        "string",
+                                        "null"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "propertyNames": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                    }
+                }
+            },
+            "unevaluatedProperties": false,
+            "required": [
+                "properties"
+            ],
+            "$defs": {
+                "core": {
+                    "type": "object",
+                    "properties": {
+                        "$id": {
+                            "type": "string"
+                        },
+                        "$schema": {
+                            "type": "string"
+                        },
+                        "type": {
+                            "const": "object"
+                        },
+                        "title": {
+                            "type": "string"
+                        },
+                        "description": {
+                            "type": "string"
+                        },
+                        "additionalProperties": {
+                            "type": "boolean",
+                            "const": false
+                        }
+                    },
+                    "required": [
+                        "$id",
+                        "$schema",
+                        "type"
+                    ]
+                },
+                "editable": {
+                    "type": "object",
+                    "properties": {
+                        "creationDate": {
+                            "type": "string",
+                            "format": "date-time"
+                        },
+                        "updateDate": {
+                            "type": "string",
+                            "format": "date-time"
+                        }
+                    },
+                    "required": [
+                        "creationDate"
+                    ]
+                }
+            }
+        });
+
+        // A schema that uses the custom meta-schema
+        let element_schema = json!({
+            "$schema": "http://example.com/meta/schema",
+            "$id": "http://example.com/schemas/element",
+            "title": "Element",
+            "description": "An element",
+            "creationDate": "2024-12-31T12:31:53+01:00",
+            "properties": {
+                "value": {
+                    "type": "string"
+                }
+            },
+            "type": "object"
+        });
+
+        // Build the validator with both the meta-schema and the element schema as resources
+        let resources = vec![
+            (
+                "http://example.com/meta/schema".to_string(),
+                referencing::Resource::from_contents(meta_schema),
+            ),
+            (
+                "http://example.com/schemas/element".to_string(),
+                referencing::Resource::from_contents(element_schema.clone()),
+            ),
+        ];
+
+        let validator = crate::options()
+            .without_schema_validation()
+            .with_resources(resources.into_iter())
+            .build(&element_schema)
+            .expect("Should successfully build validator with custom meta-schema");
+
+        let valid_instance = json!({
+            "value": "test string"
+        });
+        assert!(validator.is_valid(&valid_instance));
+
+        let invalid_instance = json!({
+            "value": 123
+        });
+        assert!(!validator.is_valid(&invalid_instance));
+    }
+
+    #[test]
+    fn custom_meta_schema_with_fragment_finds_vocabularies() {
+        // Custom meta-schema URIs with trailing # should be found in registry
+        let custom_meta = json!({
+            "$id": "http://example.com/custom-with-unevaluated",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$vocabulary": {
+                "https://json-schema.org/draft/2020-12/vocab/core": true,
+                "https://json-schema.org/draft/2020-12/vocab/applicator": true,
+                "https://json-schema.org/draft/2020-12/vocab/validation": true,
+                "https://json-schema.org/draft/2020-12/vocab/unevaluated": true
+            }
+        });
+
+        let registry = Registry::try_new(
+            "http://example.com/custom-with-unevaluated",
+            Resource::from_contents(custom_meta),
+        )
+        .expect("Should create registry");
+
+        let schema = json!({
+            "$schema": "http://example.com/custom-with-unevaluated#",
+            "type": "object",
+            "properties": {
+                "foo": { "type": "string" }
+            },
+            "unevaluatedProperties": false
+        });
+
+        let validator = crate::options()
+            .without_schema_validation()
+            .with_registry(registry)
+            .build(&schema)
+            .expect("Should build validator");
+
+        assert!(validator.is_valid(&json!({"foo": "bar"})));
+        assert!(!validator.is_valid(&json!({"foo": "bar", "extra": "value"})));
+    }
+
+    #[test]
+    fn strict_meta_schema_catches_typos() {
+        // Issue #764: Use strict meta-schema with unevaluatedProperties: false
+        // to catch typos in schema keywords
+
+        let strict_meta = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://json-schema.org/draft/2020-12/strict",
+            "$dynamicAnchor": "meta",
+            "$ref": "https://json-schema.org/draft/2020-12/schema",
+            "unevaluatedProperties": false
+        });
+
+        let registry = Registry::try_new(
+            "https://json-schema.org/draft/2020-12/strict",
+            Resource::from_contents(strict_meta),
+        )
+        .expect("Should create registry");
+
+        // Valid schema - all keywords are recognized
+        let valid_schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/strict",
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "minLength": 1}
+            }
+        });
+
+        assert!(crate::meta::options()
+            .with_registry(registry.clone())
+            .is_valid(&valid_schema));
+
+        // Invalid schema - top-level typo "typ" instead of "type"
+        let invalid_schema_top_level = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/strict",
+            "typ": "string"  // Typo
+        });
+
+        assert!(!crate::meta::options()
+            .with_registry(registry.clone())
+            .is_valid(&invalid_schema_top_level));
+
+        // Invalid schema - nested invalid keyword "minSize" (not a real JSON Schema keyword)
+        let invalid_schema_nested = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/strict",
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "minSize": 1}  // Invalid keyword in nested schema
+            }
+        });
+
+        assert!(!crate::meta::options()
+            .with_registry(registry)
+            .is_valid(&invalid_schema_nested));
+    }
+
+    #[test]
+    fn custom_meta_schema_preserves_underlying_draft_behavior() {
+        // Regression test: Custom meta-schemas should preserve the draft-specific
+        // behavior of their underlying draft, not default to Draft 2020-12
+        // Draft 7 specific behavior: $ref siblings are ignored
+
+        let custom_meta_draft7 = json!({
+            "$id": "http://example.com/meta/draft7-custom",
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "customKeyword": {"type": "string"}
+            }
+        });
+
+        let registry = Registry::try_new(
+            "http://example.com/meta/draft7-custom",
+            Resource::from_contents(custom_meta_draft7),
+        )
+        .expect("Should create registry");
+
+        let schema = json!({
+            "$schema": "http://example.com/meta/draft7-custom",
+            "$ref": "#/$defs/positiveNumber",
+            "maximum": 5,
+            "$defs": {
+                "positiveNumber": {
+                    "type": "number",
+                    "minimum": 0
+                }
+            }
+        });
+
+        let validator = crate::options()
+            .without_schema_validation()
+            .with_registry(registry)
+            .build(&schema)
+            .expect("Should build validator");
+
+        // In Draft 7: siblings of $ref are ignored, so maximum: 5 has no effect
+        // In Draft 2020-12: siblings are evaluated, so maximum: 5 would apply
+        assert!(validator.is_valid(&json!(10)));
+    }
+
+    mod meta_options_tests {
+        use super::*;
+        use crate::{Registry, Resource};
+
+        #[test]
+        fn test_meta_options_with_registry_valid_schema() {
+            let custom_meta = Resource::from_contents(json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                    "$schema": { "type": "string" },
+                    "type": { "type": "string" },
+                    "maxLength": { "type": "integer" }
+                },
+                "additionalProperties": false
+            }));
+
+            let registry = Registry::try_new("http://example.com/meta", custom_meta).unwrap();
+
+            let schema = json!({
+                "$schema": "http://example.com/meta",
+                "type": "string",
+                "maxLength": 10
+            });
+
+            assert!(crate::meta::options()
+                .with_registry(registry.clone())
+                .is_valid(&schema));
+
+            assert!(crate::meta::options()
+                .with_registry(registry)
+                .validate(&schema)
+                .is_ok());
+        }
+
+        #[test]
+        fn test_meta_options_with_registry_invalid_schema() {
+            let custom_meta = Resource::from_contents(json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                    "type": { "type": "string" }
+                },
+                "additionalProperties": false
+            }));
+
+            let registry = Registry::try_new("http://example.com/meta", custom_meta).unwrap();
+
+            // Schema has disallowed property
+            let schema = json!({
+                "$schema": "http://example.com/meta",
+                "type": "string",
+                "maxLength": 10  // Not allowed by custom meta-schema
+            });
+
+            assert!(!crate::meta::options()
+                .with_registry(registry.clone())
+                .is_valid(&schema));
+
+            assert!(crate::meta::options()
+                .with_registry(registry)
+                .validate(&schema)
+                .is_err());
+        }
+
+        #[test]
+        fn test_meta_options_with_registry_chain() {
+            // Create a chain: custom-meta -> draft2020-12
+            let custom_meta = Resource::from_contents(json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object"
+            }));
+
+            let registry = Registry::try_new("http://example.com/custom", custom_meta).unwrap();
+
+            let schema = json!({
+                "$schema": "http://example.com/custom",
+                "type": "string"
+            });
+
+            assert!(crate::meta::options()
+                .with_registry(registry)
+                .is_valid(&schema));
+        }
+
+        #[test]
+        fn test_meta_options_with_registry_multi_level_chain() {
+            // Create chain: schema -> meta-level-2 -> meta-level-1 -> draft2020-12
+            let meta_level_1 = Resource::from_contents(json!({
+                "$id": "http://example.com/meta/level1",
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                    "customProp": { "type": "boolean" }
+                }
+            }));
+
+            let meta_level_2 = Resource::from_contents(json!({
+                "$id": "http://example.com/meta/level2",
+                "$schema": "http://example.com/meta/level1",
+                "type": "object",
+                "customProp": true
+            }));
+
+            let registry = Registry::try_from_resources([
+                ("http://example.com/meta/level1", meta_level_1),
+                ("http://example.com/meta/level2", meta_level_2),
+            ])
+            .unwrap();
+
+            let schema = json!({
+                "$schema": "http://example.com/meta/level2",
+                "type": "string",
+                "customProp": true
+            });
+
+            assert!(crate::meta::options()
+                .with_registry(registry)
+                .is_valid(&schema));
+        }
+
+        #[test]
+        fn test_meta_options_with_registry_multi_document_meta_schema() {
+            let shared_constraints = Resource::from_contents(json!({
+                "$id": "http://example.com/meta/shared",
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                    "maxLength": { "type": "integer", "minimum": 0 }
+                }
+            }));
+
+            let root_meta = Resource::from_contents(json!({
+                "$id": "http://example.com/meta/root",
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                    "$schema": { "type": "string" },
+                    "type": { "type": "string" }
+                },
+                "allOf": [
+                    { "$ref": "http://example.com/meta/shared" }
+                ]
+            }));
+
+            let registry = Registry::try_from_resources([
+                ("http://example.com/meta/root", root_meta),
+                ("http://example.com/meta/shared", shared_constraints),
+            ])
+            .unwrap();
+
+            let schema = json!({
+                "$schema": "http://example.com/meta/root",
+                "type": "string",
+                "maxLength": 5
+            });
+
+            let result = crate::meta::options()
+                .with_registry(registry.clone())
+                .validate(&schema);
+
+            assert!(
+                result.is_ok(),
+                "meta validation failed even though registry contains all meta-schemas: {}",
+                result.unwrap_err()
+            );
+
+            assert!(crate::meta::options()
+                .with_registry(registry)
+                .is_valid(&schema));
+        }
+
+        #[test]
+        fn test_meta_options_without_registry_unknown_metaschema() {
+            let schema = json!({
+                "$schema": "http://0.0.0.0/nonexistent",
+                "type": "string"
+            });
+
+            // Without registry, should fail to resolve
+            let result = crate::meta::options().validate(&schema);
+            assert!(result.is_err());
+        }
+
+        #[test]
+        #[should_panic(expected = "Failed to resolve meta-schema")]
+        fn test_meta_options_is_valid_panics_on_missing_metaschema() {
+            let schema = json!({
+                "$schema": "http://0.0.0.0/nonexistent",
+                "type": "string"
+            });
+
+            // is_valid() should panic if meta-schema cannot be resolved
+            let _ = crate::meta::options().is_valid(&schema);
+        }
+
+        #[test]
+        fn test_meta_options_with_registry_missing_metaschema() {
+            let custom_meta = Resource::from_contents(json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object"
+            }));
+
+            let registry = Registry::try_new("http://example.com/meta1", custom_meta).unwrap();
+
+            // Schema references a different meta-schema not in registry
+            let schema = json!({
+                "$schema": "http://example.com/meta2",
+                "type": "string"
+            });
+
+            let result = crate::meta::options()
+                .with_registry(registry)
+                .validate(&schema);
+
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_meta_options_circular_reference_detection() {
+            // Create a circular reference: meta1 -> meta2 -> meta1
+            let meta1 = Resource::from_contents(json!({
+                "$id": "http://example.com/meta1",
+                "$schema": "http://example.com/meta2",
+                "type": "object"
+            }));
+
+            let meta2 = Resource::from_contents(json!({
+                "$id": "http://example.com/meta2",
+                "$schema": "http://example.com/meta1",
+                "type": "object"
+            }));
+
+            let registry = Registry::try_from_resources([
+                ("http://example.com/meta1", meta1),
+                ("http://example.com/meta2", meta2),
+            ])
+            .unwrap();
+
+            let schema = json!({
+                "$schema": "http://example.com/meta1",
+                "type": "string"
+            });
+
+            let result = crate::meta::options()
+                .with_registry(registry)
+                .validate(&schema);
+
+            assert!(result.is_err());
+            // Check it's specifically a circular error
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("Circular"));
+        }
+
+        #[test]
+        fn test_meta_options_standard_drafts_without_registry() {
+            // Standard drafts should work without registry
+            let schemas = vec![
+                json!({ "$schema": "http://json-schema.org/draft-04/schema#", "type": "string" }),
+                json!({ "$schema": "http://json-schema.org/draft-06/schema#", "type": "string" }),
+                json!({ "$schema": "http://json-schema.org/draft-07/schema#", "type": "string" }),
+                json!({ "$schema": "https://json-schema.org/draft/2019-09/schema", "type": "string" }),
+                json!({ "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string" }),
+            ];
+
+            for schema in schemas {
+                assert!(
+                    crate::meta::options().is_valid(&schema),
+                    "Failed for schema: {}",
+                    schema
+                );
+            }
+        }
+
+        #[test]
+        fn test_meta_options_validate_returns_specific_errors() {
+            let custom_meta = Resource::from_contents(json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "required": ["type"]
+            }));
+
+            let registry = Registry::try_new("http://example.com/meta", custom_meta).unwrap();
+
+            // Schema missing required property
+            let schema = json!({
+                "$schema": "http://example.com/meta",
+                "properties": {
+                    "name": { "type": "string" }
+                }
+            });
+
+            let result = crate::meta::options()
+                .with_registry(registry)
+                .validate(&schema);
+
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("required") || err.to_string().contains("type"));
+        }
+
+        #[test]
+        fn test_meta_options_builds_validator_with_resolved_draft() {
+            let custom_meta = Resource::from_contents(json!({
+                "$id": "http://example.com/meta/draft7-based",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {
+                    "$schema": { "type": "string" },
+                    "type": { "type": "string" },
+                    "minLength": { "type": "integer" }
+                },
+                "additionalProperties": false
+            }));
+
+            let registry =
+                Registry::try_new("http://example.com/meta/draft7-based", custom_meta).unwrap();
+
+            let schema = json!({
+                "$schema": "http://example.com/meta/draft7-based",
+                "type": "string",
+                "minLength": 5
+            });
+
+            let result = crate::meta::options()
+                .with_registry(registry)
+                .validate(&schema);
+
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_meta_options_validator_uses_correct_draft() {
+            let custom_meta_draft6 = Resource::from_contents(json!({
+                "$id": "http://example.com/meta/draft6-based",
+                "$schema": "http://json-schema.org/draft-06/schema#",
+                "type": "object",
+                "properties": {
+                    "$schema": { "type": "string" },
+                    "type": { "type": "string" },
+                    "exclusiveMinimum": { "type": "number" }
+                },
+                "additionalProperties": false
+            }));
+
+            let registry =
+                Registry::try_new("http://example.com/meta/draft6-based", custom_meta_draft6)
+                    .unwrap();
+
+            let schema_valid_for_draft6 = json!({
+                "$schema": "http://example.com/meta/draft6-based",
+                "type": "number",
+                "exclusiveMinimum": 0
+            });
+
+            let result = crate::meta::options()
+                .with_registry(registry)
+                .validate(&schema_valid_for_draft6);
+
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_meta_options_without_schema_validation_in_built_validator() {
+            let custom_meta = Resource::from_contents(json!({
+                "$id": "http://example.com/meta/custom",
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                    "$schema": { "type": "string" },
+                    "type": { "type": "string" }
+                },
+                "additionalProperties": false
+            }));
+
+            let registry =
+                Registry::try_new("http://example.com/meta/custom", custom_meta).unwrap();
+
+            let schema = json!({
+                "$schema": "http://example.com/meta/custom",
+                "type": "string"
+            });
+
+            let result = crate::meta::options()
+                .with_registry(registry)
+                .validate(&schema);
+
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_meta_validation_uses_resolved_draft_from_chain() {
+            // Chain: user-schema -> custom-meta -> Draft 4
+            // Validator should use Draft 4 rules to validate the schema
+            let custom_meta = Resource::from_contents(json!({
+                "$id": "http://example.com/meta/draft4-based",
+                "$schema": "http://json-schema.org/draft-04/schema#",
+                "type": "object",
+                "properties": {
+                    "$schema": { "type": "string" },
+                    "type": { "type": "string" },
+                    "enum": { "type": "array" },
+                    "const": { "type": "string" }
+                },
+                "additionalProperties": false
+            }));
+
+            let registry =
+                Registry::try_new("http://example.com/meta/draft4-based", custom_meta).unwrap();
+
+            let schema = json!({
+                "$schema": "http://example.com/meta/draft4-based",
+                "type": "string",
+                "const": "foo"
+            });
+
+            let result = crate::meta::options()
+                .with_registry(registry)
+                .validate(&schema);
+
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_meta_validation_multi_level_chain_uses_resolved_draft() {
+            // Multi-level chain: user-schema -> meta-2 -> meta-1 -> Draft 4
+            let meta_level_1 = Resource::from_contents(json!({
+                "$id": "http://example.com/meta/level1",
+                "$schema": "http://json-schema.org/draft-04/schema#",
+                "type": "object",
+                "properties": {
+                    "customKeyword": { "type": "boolean" }
+                }
+            }));
+
+            let meta_level_2 = Resource::from_contents(json!({
+                "$id": "http://example.com/meta/level2",
+                "$schema": "http://example.com/meta/level1",
+                "type": "object",
+                "properties": {
+                    "$schema": { "type": "string" },
+                    "type": { "type": "string" },
+                    "minimum": { "type": "number" },
+                    "exclusiveMinimum": { "type": "boolean" }
+                },
+                "customKeyword": true,
+                "additionalProperties": false
+            }));
+
+            let registry = Registry::try_from_resources([
+                ("http://example.com/meta/level1", meta_level_1),
+                ("http://example.com/meta/level2", meta_level_2),
+            ])
+            .unwrap();
+
+            let schema = json!({
+                "$schema": "http://example.com/meta/level2",
+                "type": "number",
+                "minimum": 5,
+                "exclusiveMinimum": true
+            });
+
+            let result = crate::meta::options()
+                .with_registry(registry)
+                .validate(&schema);
+
+            assert!(result.is_ok());
+        }
+    }
 }
 
-#[cfg(all(test, feature = "resolve-async"))]
+#[cfg(all(test, feature = "resolve-async", not(target_family = "wasm")))]
 mod async_tests {
     use referencing::Resource;
-    use std::collections::HashMap;
+    use std::{collections::HashMap, sync::Arc};
 
     use serde_json::json;
 
     use crate::{AsyncRetrieve, Draft, Uri};
 
     /// Mock async retriever for testing
+    #[derive(Clone)]
     struct TestRetriever {
         schemas: HashMap<String, serde_json::Value>,
     }
@@ -2275,7 +3658,8 @@ mod async_tests {
         }
     }
 
-    #[async_trait::async_trait]
+    #[cfg_attr(target_family = "wasm", async_trait::async_trait(?Send))]
+    #[cfg_attr(not(target_family = "wasm"), async_trait::async_trait)]
     impl AsyncRetrieve for TestRetriever {
         async fn retrieve(
             &self,
@@ -2405,8 +3789,7 @@ mod async_tests {
                         "age": {"type": "integer", "minimum": 0}
                     },
                     "required": ["name"]
-                }))
-                .unwrap(),
+                })),
             )])
             .await
             .unwrap();
@@ -2438,5 +3821,30 @@ mod async_tests {
 
         assert!(validator.is_valid(&json!(42)));
         assert!(!validator.is_valid(&json!("abc")));
+    }
+
+    #[tokio::test]
+    async fn test_async_build_future_is_send() {
+        let schema = Arc::new(json!({
+            "$ref": "https://example.com/user.json"
+        }));
+        let retriever = TestRetriever::new();
+
+        let handle = tokio::spawn({
+            let schema = Arc::clone(&schema);
+            let retriever = retriever.clone();
+            async move {
+                crate::async_options()
+                    .with_retriever(retriever)
+                    .build(&schema)
+                    .await
+            }
+        });
+
+        let validator = handle.await.unwrap().unwrap();
+        assert!(validator.is_valid(&json!({
+            "name": "John Doe",
+            "age": 30
+        })));
     }
 }

@@ -99,7 +99,7 @@ impl Validate for OneOfValidator {
             ))
         }
     }
-    fn apply<'a>(&'a self, instance: &Value, location: &LazyLocation) -> PartialApplication<'a> {
+    fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         let mut failures = Vec::new();
         let mut successes = Vec::new();
         for node in &self.schemas {
@@ -114,7 +114,7 @@ impl Validate for OneOfValidator {
         } else if successes.len() > 1 {
             PartialApplication::invalid_empty(vec!["more than one subschema succeeded".into()])
         } else if !failures.is_empty() {
-            failures.into_iter().sum::<BasicOutput<'_>>().into()
+            failures.into_iter().sum::<BasicOutput>().into()
         } else {
             unreachable!("compilation should fail for oneOf with no subschemas")
         }

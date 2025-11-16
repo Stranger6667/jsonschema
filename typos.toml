@@ -1,0 +1,12 @@
+[files]
+# Don't check test data, benchmarks, or vendored dependencies
+extend-exclude = [
+    "crates/benchmark/data/",
+    "crates/jsonschema-testsuite/",
+    "tests/suite/",
+    "*.json",
+]
+
+[default.extend-words]
+numer = "numer"
+propert = "propert"

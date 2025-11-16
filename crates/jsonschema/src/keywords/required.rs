@@ -37,6 +37,9 @@ impl RequiredValidator {
 impl Validate for RequiredValidator {
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::Object(item) = instance {
+            if item.len() < self.required.len() {
+                return false;
+            }
             self.required
                 .iter()
                 .all(|property_name| item.contains_key(property_name))
@@ -122,6 +125,9 @@ impl Validate for SingleItemRequiredValidator {
 
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::Object(item) = instance {
+            if item.is_empty() {
+                return false;
+            }
             item.contains_key(&self.value)
         } else {
             true

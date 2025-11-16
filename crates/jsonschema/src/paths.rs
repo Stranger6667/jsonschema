@@ -105,7 +105,7 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
             }
         }
 
-        Location(Arc::new(buffer))
+        Location(Arc::from(buffer))
     }
 }
 
@@ -148,7 +148,7 @@ impl From<usize> for LocationSegment<'_> {
 
 /// A cheap to clone JSON pointer that represents location with a JSON value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Location(Arc<String>);
+pub struct Location(Arc<str>);
 
 impl serde::Serialize for Location {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -163,26 +163,32 @@ impl Location {
     /// Create a new, empty `Location`.
     #[must_use]
     pub fn new() -> Self {
-        Self(Arc::new(String::new()))
+        Self(Arc::from(""))
     }
     #[must_use]
     pub fn join<'a>(&self, segment: impl Into<LocationSegment<'a>>) -> Self {
-        let parent = self.0.as_str();
+        let parent = &self.0;
         match segment.into() {
             LocationSegment::Property(property) => {
                 let mut buffer = String::with_capacity(parent.len() + property.len() + 1);
                 buffer.push_str(parent);
                 buffer.push('/');
                 write_escaped_str(&mut buffer, &property);
-                Self(Arc::new(buffer))
+                Self(Arc::from(buffer))
             }
             LocationSegment::Index(idx) => {
                 let mut buffer = itoa::Buffer::new();
                 let segment = buffer.format(idx);
-                Self(Arc::new(format!("{parent}/{segment}")))
+                Self(Arc::from(format!("{parent}/{segment}")))
             }
         }
     }
+    /// Get a clone of the inner Arc<str> representing the location.
+    #[must_use]
+    pub(crate) fn as_arc(&self) -> Arc<str> {
+        Arc::clone(&self.0)
+    }
+
     /// Get a string slice representing the location.
     #[must_use]
     pub fn as_str(&self) -> &str {
@@ -192,6 +198,11 @@ impl Location {
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         self.0.as_bytes()
+    }
+
+    #[must_use]
+    pub fn iter(&self) -> std::vec::IntoIter<LocationSegment<'_>> {
+        <&Self as IntoIterator>::into_iter(self)
     }
 }
 
@@ -355,7 +366,7 @@ mod tests {
         LocationSegment::Index(2)
     ]; "mixed properties and indices")]
     fn test_into_iter(location: &str, expected_segments: Vec<LocationSegment>) {
-        let loc = Location(Arc::new(location.to_string()));
+        let loc = Location(Arc::from(location.to_string()));
         assert_eq!(loc.into_iter().collect::<Vec<_>>(), expected_segments);
     }
 
@@ -409,7 +420,7 @@ mod tests {
 
         // Traverse instance using the `instance_path`` segments
         let mut current = &instance;
-        for segment in error.instance_path.into_iter() {
+        for segment in &error.instance_path {
             match segment {
                 LocationSegment::Property(property) => {
                     current = &current[property.as_ref()];

@@ -8,24 +8,24 @@ on:
 
 jobs:
 
-  commitsar:
-    name: Verify commit messages
+  check-commits:
+    name: Check commit messages
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - uses: aevea/commitsar@v0.20.2
 
-  msrv:
-    name: MSRV
+  check-msrv:
+    name: Check MSRV
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.71.1"
+          toolchain: "1.83.0"
 
       - uses: Swatinem/rust-cache@v2
 
@@ -42,7 +42,7 @@ jobs:
       - run: cargo update -p zerofrom --precise 0.1.5
       - run: cargo build -p jsonschema
 
-  test-stable:
+  test-native:
     strategy:
       fail-fast: false
       matrix:
@@ -51,7 +51,7 @@ jobs:
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
@@ -62,34 +62,104 @@ jobs:
           cache-all-crates: "true"
           key: ${{ matrix.os }}
 
-      - run: cargo test --no-fail-fast --all-features
+      - run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py
 
   test-wasm:
-    name: Test on WASM
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: wasm32-wasip1
+            needs_wasmtime: true
+            needs_wasm_bindgen: false
+            features: ""
+            display: wasm32-wasip1 (sync)
+          - target: wasm32-wasip1
+            needs_wasmtime: true
+            needs_wasm_bindgen: false
+            features: "resolve-async"
+            display: wasm32-wasip1 (async)
+          - target: wasm32-unknown-unknown
+            needs_wasmtime: false
+            needs_wasm_bindgen: true
+            features: ""
+            display: wasm32-unknown-unknown
+    name: Test on ${{ matrix.display }}
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
-      - name: Setup `wasmtime`
-        uses: bytecodealliance/actions/wasmtime/setup@v1
-
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: 'wasm32-wasip1'
+          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
         with:
           cache-all-crates: "true"
 
-      - run: cargo test --target wasm32-wasip1 --no-default-features -p jsonschema
+      - name: Setup `wasmtime`
+        if: ${{ matrix.needs_wasmtime }}
+        uses: bytecodealliance/actions/wasmtime/setup@v1
 
-  coverage:
-    name: Run test coverage
+      - name: Install wasm-bindgen
+        if: ${{ matrix.needs_wasm_bindgen }}
+        uses: taiki-e/install-action@wasm-bindgen
+        with:
+          tool: 'wasm-bindgen@0.2.105'
+
+      - name: Run tests
+        env:
+          JSONSCHEMA_SUITE_DRAFT_FILTER: draft2020-12
+        run: |
+          if [ -n "${{ matrix.features }}" ]; then
+            cargo test --target ${{ matrix.target }} --no-default-features --features "${{ matrix.features }}" -p jsonschema
+          else
+            cargo test --target ${{ matrix.target }} --no-default-features -p jsonschema
+          fi
+
+  check-wasm-compile-errors:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: wasm32-unknown-unknown
+            feature: resolve-http
+            pattern: "resolve-http.*resolve-file.*not supported.*wasm32-unknown-unknown"
+          - target: wasm32-unknown-unknown
+            feature: resolve-file
+            pattern: "resolve-http.*resolve-file.*not supported.*wasm32-unknown-unknown"
+    name: Check ${{ matrix.feature }} fails on ${{ matrix.target }}
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: "true"
+          key: ${{ matrix.target }}-${{ matrix.feature }}
+
+      - name: Verify compile error
+        run: |
+          output=$(cargo check --target ${{ matrix.target }} --features ${{ matrix.feature }} -p jsonschema 2>&1 || true)
+          echo "$output"
+          if ! echo "$output" | grep -q "${{ matrix.pattern }}"; then
+            echo "Expected compile error not found!"
+            echo "Expected pattern: ${{ matrix.pattern }}"
+            exit 1
+          fi
+          echo "✓ Correctly rejects ${{ matrix.feature }} on ${{ matrix.target }}"
+
+  test-coverage:
+    name: Test coverage
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
@@ -102,10 +172,24 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Run tests
-        run: cargo llvm-cov --no-report --all-features
+      - name: Run tests with all features
+        run: |
+          cargo llvm-cov --no-report --all-features --workspace \
+            --exclude jsonschema-py \
+            --exclude benchmark \
+            --exclude benchmark-suite \
+            --exclude jsonschema-testsuite \
+            --exclude jsonschema-testsuite-codegen \
+            --exclude jsonschema-testsuite-internal \
+            --exclude jsonschema-referencing-testsuite \
+            --exclude jsonschema-referencing-testsuite-codegen \
+            --exclude jsonschema-referencing-testsuite-internal \
+            --exclude testsuite-common
 
-      - name: Generate coverage reports
+      - name: Run tests without arbitrary-precision
+        run: cargo llvm-cov --no-report -p jsonschema
+
+      - name: Generate merged coverage report
         run: cargo llvm-cov report --lcov --output-path lcov.info
 
       - name: Upload coverage to Codecov
@@ -116,11 +200,11 @@ jobs:
           files: lcov.info
           fail_ci_if_error: true
 
-  miri:
+  test-miri:
     name: Test with Miri
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
@@ -135,13 +219,13 @@ jobs:
       - name: Run tests with Miri
         run: cargo miri test -p referencing --lib
 
-  lints-python:
-    name: Python lints
+  lint-python:
+    name: Lint Python
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: hynek/setup-cached-uv@v2
+      - uses: astral-sh/setup-uv@v7
 
       - run: uvx ruff check python tests-py
         working-directory: crates/jsonschema-py
@@ -154,29 +238,29 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, macos-15, windows-2022]
-        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14', 'pypy3.11']
 
-    name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: hynek/setup-cached-uv@v2
+      - uses: astral-sh/setup-uv@v7
 
       - run: uv python install ${{ matrix.python-version }}
 
       - run: uvx --with=".[tests]" --python='${{ matrix.python-version }}' pytest tests-py
         working-directory: crates/jsonschema-py
 
-  fmt:
-    name: Rustfmt
+  lint-fmt:
+    name: Lint formatting
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@nightly
         with:
@@ -184,66 +268,77 @@ jobs:
 
       - run: cargo fmt --all -- --check
 
-  lints-rust:
-    name: Rust lints
+  lint-clippy:
+    name: Lint Clippy
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-
-      - uses: Swatinem/rust-cache@v2
-
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-        working-directory: profiler
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-        working-directory: fuzz
-
-  lints-wasm:
-    name: Rust lints on WASM
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-          targets: 'wasm32-wasip1'
 
       - uses: Swatinem/rust-cache@v2
         with:
           cache-all-crates: "true"
 
-      - run: cargo clippy --target wasm32-wasip1 --no-default-features --all-targets -p jsonschema
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo clippy --all-targets --features arbitrary-precision -p jsonschema -- -D warnings
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+        working-directory: profiler
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+        working-directory: fuzz
 
-  check-releases-rust:
-    name: Check Rust releases
+  lint-clippy-wasm:
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [wasm32-unknown-unknown, wasm32-wasip1]
+    name: Lint Clippy on ${{ matrix.target }}
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: "true"
+          key: ${{ matrix.target }}
+
+      - run: cargo clippy --target ${{ matrix.target }} --all-targets --no-default-features -p jsonschema -- -D warnings
+      - run: cargo clippy --target ${{ matrix.target }} --all-targets --no-default-features -p referencing -- -D warnings
+
+  check-release-rust:
+    name: Check Rust release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: "true"
 
       - run: cargo publish --dry-run -p referencing
       - run: cargo publish --dry-run -p jsonschema
       - run: cargo publish --dry-run -p jsonschema-cli
 
-  check-releases-python:
-    name: Check Python releases
+  check-release-python:
+    name: Check Python release
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
@@ -251,7 +346,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: hynek/setup-cached-uv@v2
+      - uses: astral-sh/setup-uv@v7
 
       - run: uv python install "3.12"
 
@@ -271,31 +366,52 @@ jobs:
           uv pip install dist/*.whl --force-reinstall
         working-directory: crates/jsonschema-py
 
-  features:
-    name: Check features
+  check-features:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            name: native
+            flags: "--feature-powerset"
+          - target: wasm32-unknown-unknown
+            name: wasm32-unknown-unknown
+            flags: "--feature-powerset --exclude-features default,resolve-http,resolve-file,resolve-async,retrieve-async"
+          - target: wasm32-wasip1
+            name: wasm32-wasip1
+            flags: "--feature-powerset --exclude-features retrieve-async"
+    name: Check features on ${{ matrix.name }}
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
 
       - uses: taiki-e/install-action@cargo-hack
 
-      - run: cargo hack check --feature-powerset
+      - name: Check features for jsonschema
+        run: cargo hack check --target ${{ matrix.target }} ${{ matrix.flags }} -p jsonschema
+
+      - name: Check features for referencing
+        run: cargo hack check --target ${{ matrix.target }} ${{ matrix.flags }} -p referencing
 
   fuzz:
-    name: Fuzzing ${{ matrix.target }}
     strategy:
       fail-fast: false
       matrix:
         target: ["builder", "validation", "referencing"]
+    name: Fuzz ${{ matrix.target }}
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
@@ -307,10 +423,10 @@ jobs:
 
       - run: cargo +nightly fuzz run --release ${{ matrix.target }} fuzz/seeds -- -dict=fuzz/dict -max_total_time=60
 
-  spell-check:
-    name: Spell Check
+  lint-spelling:
+    name: Lint spelling
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: crate-ci/typos@master

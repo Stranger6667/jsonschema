@@ -58,10 +58,6 @@ The following drafts are supported:
 
 You can check the current status on the [Bowtie Report](https://bowtie.report/#/implementations/rust-jsonschema).
 
-## Limitations
-
-- No support for arbitrary precision numbers
-
 ## Installation
 
 To install `jsonschema-rs` via `pip` run the following command:
@@ -157,6 +153,35 @@ Failed validating "format" in schema
 
 On instance:
     "unknown"'''
+```
+
+### Arbitrary-Precision Numbers
+
+The Python bindings always include the `arbitrary-precision` support from the Rust validator, so numeric
+values are exposed to Python using the most accurate type available:
+
+- Integers, regardless of size, are returned as regular `int` objects.
+- Floating-point literals that fit into IEEE-754 become Python `float`s.
+- Floating-point literals that don't fit in `float` (for example `1e10000` or extremely precise
+  decimals) fall back to [`decimal.Decimal`](https://docs.python.org/3/library/decimal.html) using
+  their original JSON string representation.
+
+This means `ValidationError.kind` attributes may contain `Decimal` instances for very large numbers.
+Import `Decimal` from the standard library if you need to compare against or serialize those
+values exactly:
+
+```python
+from decimal import Decimal
+from jsonschema_rs import ValidationError, validator_for
+
+validator = validator_for('{"const": 1e10000}')
+try:
+    validator.validate(0)
+except ValidationError as exc:
+    assert exc.kind.expected_value == Decimal("1e10000")
+
+# Extremely large exponents (beyond ~10^1_000_000) are clamped internally to keep parsing
+# predictable, matching the Rust implementation's guardrails.
 ```
 
 ## Meta-Schema Validation
@@ -402,7 +427,7 @@ For detailed benchmarks, see our [full performance comparison](https://github.co
 
 ## Python support
 
-`jsonschema-rs` supports CPython 3.8, 3.9, 3.10, 3.11, 3.12, and 3.13.
+`jsonschema-rs` supports CPython 3.8 through 3.14.
 
 ## Acknowledgements
 
@@ -429,4 +454,3 @@ See [CONTRIBUTING.md](https://github.com/Stranger6667/jsonschema/blob/master/CON
 ## License
 
 Licensed under [MIT License](https://github.com/Stranger6667/jsonschema/blob/master/LICENSE).
-

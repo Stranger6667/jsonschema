@@ -1,6 +1,14 @@
 github_checks:
-    annotations: false
+  annotations: false
+
 coverage:
   status:
     project: off
     patch: off
+
+# Ignore test/benchmark infrastructure from coverage
+ignore:
+  - "crates/benchmark/"
+  - "crates/benchmark-suite/"
+  - "crates/jsonschema-testsuite/"
+  - "crates/jsonschema-referencing-testsuite/"
