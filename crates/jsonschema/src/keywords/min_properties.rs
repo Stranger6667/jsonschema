@@ -1,3 +1,5 @@
+#![allow(clippy::float_cmp, clippy::cast_sign_loss)]
+
 use crate::{
     compiler,
     error::ValidationError,

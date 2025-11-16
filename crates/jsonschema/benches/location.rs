@@ -1,10 +1,10 @@
 #[cfg(not(target_arch = "wasm32"))]
 mod bench {
-    pub use criterion::{criterion_group, BenchmarkId, Criterion};
-    pub use jsonschema::paths::{Location, LocationSegment};
-    pub use std::hint::black_box;
+    pub(crate) use criterion::{criterion_group, BenchmarkId, Criterion};
+    pub(crate) use jsonschema::paths::{Location, LocationSegment};
+    pub(crate) use std::hint::black_box;
 
-    pub fn benchmark_into_iterator(c: &mut Criterion) {
+    pub(crate) fn benchmark_into_iterator(c: &mut Criterion) {
         let empty = Location::new();
         let small = vec!["a", "b", "c"]
             .into_iter()
@@ -25,7 +25,7 @@ mod bench {
         }
     }
 
-    pub fn benchmark_from_iterator(c: &mut Criterion) {
+    pub(crate) fn benchmark_from_iterator(c: &mut Criterion) {
         let empty = vec![];
         let small = vec![
             LocationSegment::from("a"),

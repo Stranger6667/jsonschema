@@ -1,3 +1,5 @@
+#![allow(clippy::float_cmp, clippy::cast_sign_loss)]
+
 use serde_json::{Map, Value};
 
 use crate::{compiler, paths::Location, types::JsonType, ValidationError};

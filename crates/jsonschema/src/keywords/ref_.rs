@@ -345,7 +345,7 @@ mod tests {
     }
 
     #[test_case(
-        json!({
+        &json!({
             "$id": "https://example.com/schema.json",
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "object",
@@ -366,7 +366,7 @@ mod tests {
                 }
             }
         }),
-        json!({
+        &json!({
             "foo": [{"name": "item1", "value": true}]
         }),
         vec![
@@ -376,7 +376,7 @@ mod tests {
         ]
     ; "standard $ref")]
     #[test_case(
-        json!({
+        &json!({
             "$id": "https://example.com/schema.json",
             "$schema": "https://json-schema.org/draft/2019-09/schema",
             "$recursiveAnchor": true,
@@ -386,7 +386,7 @@ mod tests {
                 "child": { "$recursiveRef": "#" }
             }
         }),
-        json!({
+        &json!({
             "name": "parent",
             "child": {
                 "name": "child",
@@ -399,10 +399,10 @@ mod tests {
             ("/child/child", "/properties/child/$recursiveRef/properties"),
         ]
     ; "$recursiveRef")]
-    fn keyword_locations(schema: Value, instance: Value, expected: Vec<(&str, &str)>) {
-        let validator = crate::validator_for(&schema).expect("Invalid schema");
+    fn keyword_locations(schema: &Value, instance: &Value, expected: Vec<(&str, &str)>) {
+        let validator = crate::validator_for(schema).expect("Invalid schema");
         for (pointer, keyword_location) in expected {
-            tests_util::assert_keyword_location(&validator, &instance, pointer, keyword_location);
+            tests_util::assert_keyword_location(&validator, instance, pointer, keyword_location);
         }
     }
 
@@ -420,8 +420,8 @@ mod tests {
     }
 
     #[test_case(
-        json!({"$ref": "/doc#/definitions/foo"}),
-        json!({
+        &json!({"$ref": "/doc#/definitions/foo"}),
+        &json!({
             "$id": "/doc",
             "definitions": {
                 "foo": {"type": "integer"}
@@ -431,8 +431,8 @@ mod tests {
         ; "basic_fragment"
     )]
     #[test_case(
-        json!({"$ref": "/doc1#/definitions/foo"}),
-        json!({
+        &json!({"$ref": "/doc1#/definitions/foo"}),
+        &json!({
             "$id": "/doc1",
             "definitions": {
                 "foo": {"$ref": "#/definitions/bar"},
@@ -443,14 +443,14 @@ mod tests {
         ; "intermediate_reference"
     )]
     #[test_case(
-        json!({"$ref": "/doc2#/refs/first"}),
-        json!({
+        &json!({"$ref": "/doc2#/refs/first"}),
+        &json!({
             "$id": "/doc2",
             "refs": {
                 "first": {"$ref": "/doc3#/refs/second"}
             }
         }),
-        Some(json!({
+        Some(&json!({
             "/doc3": {
                 "$id": "/doc3",
                 "refs": {
@@ -461,8 +461,8 @@ mod tests {
         ; "multiple_documents"
     )]
     #[test_case(
-        json!({"$ref": "/doc4#/defs/foo"}),
-        json!({
+        &json!({"$ref": "/doc4#/defs/foo"}),
+        &json!({
             "$id": "/doc4",
             "defs": {
                 "foo": {
@@ -476,8 +476,8 @@ mod tests {
         ; "id_and_fragment"
     )]
     #[test_case(
-        json!({"$ref": "/doc5#/outer"}),
-        json!({
+        &json!({"$ref": "/doc5#/outer"}),
+        &json!({
             "$id": "/doc5",
             "outer": {
                 "$ref": "#/middle",
@@ -491,7 +491,7 @@ mod tests {
         None
         ; "nested_references"
     )]
-    fn test_fragment_resolution(schema: Value, root: Value, extra: Option<Value>) {
+    fn test_fragment_resolution(schema: &Value, root: &Value, extra: Option<&Value>) {
         let mut storage = HashMap::default();
 
         let doc_path = schema["$ref"]
@@ -499,7 +499,7 @@ mod tests {
             .and_then(|r| r.split('#').next())
             .expect("Invalid $ref");
 
-        storage.insert(doc_path.to_string(), root);
+        storage.insert(doc_path.to_string(), root.clone());
 
         if let Some(extra) = extra {
             for (path, document) in extra.as_object().unwrap() {
@@ -511,7 +511,7 @@ mod tests {
 
         let validator = crate::options()
             .with_retriever(retriever)
-            .build(&schema)
+            .build(schema)
             .expect("Invalid schema");
 
         assert!(validator.is_valid(&json!(42)));

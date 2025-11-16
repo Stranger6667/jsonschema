@@ -357,15 +357,15 @@ mod tests {
         assert_eq!(loc.as_str(), expected);
     }
 
-    #[test_case("/a/b/c", vec![LocationSegment::from("a"), LocationSegment::from("b"), LocationSegment::from("c")]; "location with properties")]
-    #[test_case("/1/2/3", vec![LocationSegment::Index(1), LocationSegment::Index(2), LocationSegment::Index(3)]; "location with indices")]
-    #[test_case("/a/1/b/2", vec![
+    #[test_case("/a/b/c", &[LocationSegment::from("a"), LocationSegment::from("b"), LocationSegment::from("c")]; "location with properties")]
+    #[test_case("/1/2/3", &[LocationSegment::Index(1), LocationSegment::Index(2), LocationSegment::Index(3)]; "location with indices")]
+    #[test_case("/a/1/b/2", &[
         LocationSegment::from("a"),
         LocationSegment::Index(1),
         LocationSegment::from("b"),
         LocationSegment::Index(2)
     ]; "mixed properties and indices")]
-    fn test_into_iter(location: &str, expected_segments: Vec<LocationSegment>) {
+    fn test_into_iter(location: &str, expected_segments: &[LocationSegment]) {
         let loc = Location(Arc::from(location.to_string()));
         assert_eq!(loc.into_iter().collect::<Vec<_>>(), expected_segments);
     }

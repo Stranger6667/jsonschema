@@ -316,7 +316,6 @@ impl SchemaNode {
 
     /// Helper function to apply subschemas which already know their locations.
     fn apply_subschemas<'a, I>(
-        &self,
         instance: &Value,
         location: &LazyLocation,
         subschemas: I,
@@ -492,7 +491,7 @@ impl Validate for SchemaNode {
 
     fn apply(&self, instance: &Value, location: &LazyLocation) -> PartialApplication {
         match self.validators.as_ref() {
-            NodeValidators::Array { ref validators } => self.apply_subschemas(
+            NodeValidators::Array { ref validators } => SchemaNode::apply_subschemas(
                 instance,
                 location,
                 validators.iter().map(|entry| {
@@ -521,7 +520,7 @@ impl Validate for SchemaNode {
                 } = *kvals;
                 let annotations: Option<Annotations> =
                     unmatched_keywords.as_ref().map(Annotations::from);
-                self.apply_subschemas(
+                SchemaNode::apply_subschemas(
                     instance,
                     location,
                     validators.iter().map(|entry| {

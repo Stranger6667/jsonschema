@@ -1,3 +1,11 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    clippy::float_cmp
+)]
+
 use fraction::{BigFraction, One, Zero};
 use serde_json::Number;
 
@@ -127,7 +135,7 @@ pub(crate) mod bignum {
     /// would otherwise force us to append billions of zeros just to materialize the number,
     /// opening the door to denial-of-service attacks. Limiting the exponent adjustment to
     /// one million digits keeps conversions deterministic while still covering realistic
-    /// use-cases (10^1_000_000 is already astronomically large for JSON Schema).
+    /// use-cases (`10^1_000_000` is already astronomically large for JSON Schema).
     const MAX_EXPONENT_ADJUSTMENT: u32 = 1_000_000;
 
     #[derive(Debug, Clone)]
@@ -255,7 +263,7 @@ pub(crate) mod bignum {
         if shift <= 0 {
             return false;
         }
-        shift as u64 > MAX_EXPONENT_ADJUSTMENT as u64
+        shift as u64 > u64::from(MAX_EXPONENT_ADJUSTMENT)
     }
 
     fn exponent_reduction_exceeds_limit(exponent: i64) -> bool {
@@ -263,12 +271,12 @@ pub(crate) mod bignum {
             return false;
         }
         match exponent.checked_abs() {
-            Some(abs) => abs as u64 > MAX_EXPONENT_ADJUSTMENT as u64,
+            Some(abs) => abs as u64 > u64::from(MAX_EXPONENT_ADJUSTMENT),
             None => true,
         }
     }
 
-    /// Try to parse a Number as BigInt if it's outside i64 range or for compile-time
+    /// Try to parse a Number as `BigInt` if it's outside i64 range or for compile-time
     /// schema values that need exact representation
     pub(crate) fn try_parse_bigint(num: &Number) -> Option<BigInt> {
         let num_str = num.as_str();
@@ -328,7 +336,7 @@ pub(crate) mod bignum {
         Some(value)
     }
 
-    /// Try to parse a Number as BigFraction for arbitrary precision decimal support
+    /// Try to parse a Number as `BigFraction` for arbitrary precision decimal support
     ///
     /// Returns Some for numbers requiring exact decimal precision:
     /// - Decimals with a decimal point (e.g., `0.1`, `123.456`)
@@ -336,7 +344,7 @@ pub(crate) mod bignum {
     ///
     /// Returns None for:
     /// - Integers that fit in i64 (handled by standard numeric path)
-    /// - Large integers including u64 beyond i64::MAX (handled by try_parse_bigint)
+    /// - Large integers including u64 beyond `i64::MAX` (handled by `try_parse_bigint`)
     pub(crate) fn try_parse_bigfraction(num: &Number) -> Option<BigFraction> {
         // Skip integers that fit in i64 - they don't need BigFraction
         if num.as_i64().is_some() {
@@ -444,7 +452,7 @@ pub(crate) mod bignum {
         f64_ge_bigint, f64_le_bigint, f64_gt_bigint, f64_lt_bigint, f64, BigInt, bigint_ge_f64, bigint_le_f64, bigint_gt_f64, bigint_lt_f64;
     );
 
-    /// Check if a Number (as BigInt) is a multiple of another BigInt
+    /// Check if a Number (as `BigInt`) is a multiple of another `BigInt`
     pub(crate) fn is_multiple_of_bigint(value: &BigInt, multiple: &BigInt) -> bool {
         // Zero is a multiple of any non-zero number
         // Mathematically: 0 = k * multiple for k = 0
@@ -494,7 +502,7 @@ pub(crate) mod bignum {
         f64_ge_bigfrac, f64_le_bigfrac, f64_gt_bigfrac, f64_lt_bigfrac, f64, BigFraction, bigfrac_ge_f64, bigfrac_le_f64, bigfrac_gt_f64, bigfrac_lt_f64;
     );
 
-    /// Check if a BigFraction is a multiple of another value
+    /// Check if a `BigFraction` is a multiple of another value
     pub(crate) fn is_multiple_of_bigfrac(value: &BigFraction, multiple: &BigFraction) -> bool {
         // Zero is a multiple of any non-zero number
         if value.is_zero() {

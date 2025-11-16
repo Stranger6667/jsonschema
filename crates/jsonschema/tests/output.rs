@@ -595,14 +595,14 @@ fn test_basic_output(
 /// interaction between the properties, patternProperties, and additionalProperties keywords.
 /// Specifically there are these implementations:
 ///
-/// - AdditionalPropertiesValidator
-/// - AdditionalPropertiesFalseValidator
-/// - AdditionalPropertiesNotEmptyFalseValidator
-/// - AdditionalPropertiesNotEmptyValidator
-/// - AdditionalPropertiesWithPatternsValidator
-/// - AdditionalPropertiesWithPatternsFalseValidator
-/// - AdditionalPropertiesWithPatternsNotEmptyValidator
-/// - AdditionalPropertiesWithPatternsNotEmptyFalseValidator
+/// - `AdditionalPropertiesValidator`
+/// - `AdditionalPropertiesFalseValidator`
+/// - `AdditionalPropertiesNotEmptyFalseValidator`
+/// - `AdditionalPropertiesNotEmptyValidator`
+/// - `AdditionalPropertiesWithPatternsValidator`
+/// - `AdditionalPropertiesWithPatternsFalseValidator`
+/// - `AdditionalPropertiesWithPatternsNotEmptyValidator`
+/// - `AdditionalPropertiesWithPatternsNotEmptyFalseValidator`
 ///
 /// For each of these we need two test cases, one for errors and one for annotations
 #[test_case{

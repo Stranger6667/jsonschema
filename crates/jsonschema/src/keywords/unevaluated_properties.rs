@@ -57,7 +57,7 @@ pub(crate) struct PropertyValidators {
     dependent: Vec<(String, PropertyValidators)>,
 }
 
-/// Reference validator - just wraps PropertyValidators
+/// Reference validator - just wraps `PropertyValidators`
 /// Circular references are handled by returning None during compilation
 #[derive(Debug, Clone)]
 struct RefValidator(Box<PropertyValidators>);
@@ -211,7 +211,7 @@ impl ConditionalValidators {
 
 /// Compile all property validators for a schema.
 ///
-/// Recursively builds the PropertyValidators tree by examining all keywords that
+/// Recursively builds the `PropertyValidators` tree by examining all keywords that
 /// can evaluate properties. Handles circular references via pending nodes cached
 /// by location and schema pointer.
 fn compile_property_validators<'a>(
@@ -300,17 +300,14 @@ fn compile_pattern_properties<'a>(
 
     for (pattern, schema) in patterns {
         let schema_ctx = pat_ctx.new_at_location(pattern.as_str());
-        let regex = match ecma::to_rust_regex(pattern).and_then(|p| Regex::new(&p).map_err(|_| ()))
-        {
-            Ok(r) => r,
-            Err(_) => {
-                return Err(ValidationError::format(
-                    Location::new(),
-                    ctx.location().clone(),
-                    schema,
-                    "regex",
-                ))
-            }
+        let Ok(regex) = ecma::to_rust_regex(pattern).and_then(|p| Regex::new(&p).map_err(|_| ()))
+        else {
+            return Err(ValidationError::format(
+                Location::new(),
+                ctx.location().clone(),
+                schema,
+                "regex",
+            ));
         };
         let node = compiler::compile(&schema_ctx, schema_ctx.as_resource_ref(schema))
             .map_err(ValidationError::to_owned)?;

@@ -321,11 +321,13 @@ fn is_valid_idn_email(email: &str) -> bool {
 fn is_valid_hostname(hostname: &str) -> bool {
     const VALID_CHARS: [bool; 256] = {
         let mut table = [false; 256];
-        let mut i = 0;
-        while i < 256 {
-            table[i] = matches!(i as u8, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-');
-            i += 1;
+        let mut byte: u8 = 0;
+        while byte < 255 {
+            table[byte as usize] = matches!(byte, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-');
+            byte += 1;
         }
+        // Handle byte 255 separately to avoid overflow
+        table[255] = matches!(255u8, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-');
         table
     };
 

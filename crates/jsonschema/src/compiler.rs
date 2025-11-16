@@ -48,7 +48,7 @@ struct PropertyValidatorsPendingKey {
 impl PropertyValidatorsPendingKey {
     fn new(schema: &Map<String, Value>) -> Self {
         Self {
-            schema_ptr: schema as *const _ as usize,
+            schema_ptr: std::ptr::from_ref(schema) as usize,
         }
     }
 }
@@ -61,7 +61,7 @@ struct ItemsValidatorsPendingKey {
 impl ItemsValidatorsPendingKey {
     fn new(schema: &Map<String, Value>) -> Self {
         Self {
-            schema_ptr: schema as *const _ as usize,
+            schema_ptr: std::ptr::from_ref(schema) as usize,
         }
     }
 }
@@ -512,7 +512,7 @@ impl<'a> Context<'a> {
                 size_limit,
                 dfa_size_limit,
             } => (backtrack_limit, size_limit, dfa_size_limit),
-            _ => (None, None, None),
+            PatternEngineOptions::Regex { .. } => (None, None, None),
         };
 
         let mut builder = fancy_regex::RegexBuilder::new(translated.as_ref());
@@ -554,7 +554,7 @@ impl<'a> Context<'a> {
                 size_limit,
                 dfa_size_limit,
             } => (size_limit, dfa_size_limit),
-            _ => (None, None),
+            PatternEngineOptions::FancyRegex { .. } => (None, None),
         };
 
         let mut builder = regex::RegexBuilder::new(translated.as_ref());
@@ -778,6 +778,7 @@ pub(crate) fn compile_with_alias<'a>(
     compile_with_internal(ctx, resource, Some(alias))
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn compile_with_internal<'a>(
     ctx: &Context,
     resource: ResourceRef<'a>,
@@ -898,7 +899,7 @@ fn compile_without_cache<'a>(
                     validators.push((keyword, validator.map_err(ValidationError::to_owned)?));
                 } else if !ctx.is_known_keyword(keyword) {
                     // Treat all non-validation keywords as annotations
-                    annotations.insert(keyword.to_string(), value.clone());
+                    annotations.insert(keyword.clone(), value.clone());
                 }
             }
             let annotations = if annotations.is_empty() {

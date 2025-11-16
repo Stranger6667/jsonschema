@@ -84,7 +84,7 @@ pub fn suite(args: TokenStream, input: TokenStream) -> TokenStream {
                 use super::#test_func_ident;
 
                 #[inline]
-                fn inner_test(test: Test) {
+                fn inner_test(test: &Test) {
                     #test_func_ident(test);
                 }
                 #modules

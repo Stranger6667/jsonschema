@@ -57,7 +57,7 @@ pub(crate) struct ItemsValidators {
     one_of: Option<Vec<(SchemaNode, ItemsValidators)>>,
 }
 
-/// Reference validator - wraps ItemsValidators
+/// Reference validator - wraps `ItemsValidators`
 #[derive(Debug, Clone)]
 struct RefValidator(Box<ItemsValidators>);
 
@@ -196,7 +196,7 @@ impl ConditionalValidators {
 
 /// Compile all items validators for a schema.
 ///
-/// Recursively builds the ItemsValidators tree by examining all keywords that
+/// Recursively builds the `ItemsValidators` tree by examining all keywords that
 /// can evaluate items. Handles circular references via pending nodes cached
 /// by location and schema pointer.
 fn compile_items_validators<'a>(
@@ -350,10 +350,7 @@ fn compile_items<'a>(
             let limit = if parent.contains_key("additionalItems") || subschema.is_object() {
                 usize::MAX
             } else {
-                subschema
-                    .as_array()
-                    .map(|arr| arr.len())
-                    .unwrap_or(usize::MAX)
+                subschema.as_array().map_or(usize::MAX, std::vec::Vec::len)
             };
             Ok((Some(limit), false))
         } else {

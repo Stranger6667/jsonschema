@@ -1,3 +1,5 @@
+#![allow(clippy::large_stack_arrays)]
+
 mod tests {
     use jsonschema::{Draft, PatternOptions};
     #[cfg(not(target_arch = "wasm32"))]
@@ -20,7 +22,12 @@ mod tests {
         "draft4::optional::bignum::integer::a_negative_bignum_is_an_integer",
     ]
 )]
-    fn test_suite(test: Test) {
+    fn test_suite(test: &Test) {
+        enum RegexEngine {
+            Regex,
+            FancyRegex,
+        }
+
         let mut options = jsonschema::options();
         match test.draft {
             "draft4" => {
@@ -42,11 +49,6 @@ mod tests {
             options = options.should_validate_formats(true);
         }
         options = options.with_retriever(testsuite_retriever());
-
-        enum RegexEngine {
-            Regex,
-            FancyRegex,
-        }
 
         for engine in [RegexEngine::FancyRegex, RegexEngine::Regex] {
             match engine {
@@ -175,7 +177,8 @@ mod tests {
                 .unwrap_or_else(|_| panic!("Valid file: {filename}"));
             let data: serde_json::Value = serde_json::from_str(&test_file).expect("Valid JSON");
             for item in expected.as_array().expect("Is array") {
-                let suite_id = item["suite_id"].as_u64().expect("Is integer") as usize;
+                let suite_id = usize::try_from(item["suite_id"].as_u64().expect("Is integer"))
+                    .expect("suite_id fits in usize");
                 let schema = &data[suite_id]["schema"];
                 let validator = jsonschema::options()
                     .with_draft(Draft::Draft7)
@@ -187,7 +190,8 @@ mod tests {
                 )
                     });
                 for test_data in item["tests"].as_array().expect("Valid array") {
-                    let test_id = test_data["id"].as_u64().expect("Is integer") as usize;
+                    let test_id = usize::try_from(test_data["id"].as_u64().expect("Is integer"))
+                        .expect("test_id fits in usize");
                     let mut instance_path = String::new();
 
                     for segment in test_data["instance_path"].as_array().expect("Valid array") {

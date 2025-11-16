@@ -173,8 +173,9 @@ impl Validate for MultipleOfBigIntValidator {
                     return false;
                 }
                 // JSON numbers that originate as f64 are only exactly representable if their
-                // absolute value is below 2^53. Within that “safe integer” window we can round-trip
+                // absolute value is below 2^53. Within that "safe integer" window we can round-trip
                 // to i64 without losing bits, so convert and reuse the bigint path.
+                #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
                 if v.is_finite() && v.abs() < (1u64 << 53) as f64 {
                     let v_bigint = BigInt::from(v as i64);
                     numeric::bignum::is_multiple_of_bigint(&v_bigint, &self.multiple_of)
@@ -500,7 +501,7 @@ mod tests {
         #[test_case("3", 400, 7, false; "3 followed by 400 zeros not multiple of 7")]
         #[test_case("2", 100, 2, true; "huge bigint is multiple")]
         fn generated_huge_numbers(prefix: &str, zeros: usize, divisor: u64, expected: bool) {
-            let schema_json = format!(r#"{{"multipleOf": {}}}"#, divisor);
+            let schema_json = format!(r#"{{"multipleOf": {divisor}}}"#);
             let schema = parse_json(&schema_json);
             let huge = prefix.to_string() + &"0".repeat(zeros);
             let instance = parse_json(&huge);
@@ -513,18 +514,18 @@ mod tests {
 
         // Test non-number instances with MultipleOfFloatValidator
         // Use serde_json::json! macro to avoid arbitrary-precision parsing
-        #[test_case(serde_json::json!({"multipleOf": 2.5}), serde_json::json!("string"); "float string")]
-        #[test_case(serde_json::json!({"multipleOf": 2.5}), serde_json::json!(true); "float bool")]
-        #[test_case(serde_json::json!({"multipleOf": 2.5}), serde_json::json!([]); "float array")]
-        #[test_case(serde_json::json!({"multipleOf": 2.5}), serde_json::json!({}); "float object")]
-        fn non_number_with_float_validator(schema: Value, instance: Value) {
-            tests_util::is_valid(&schema, &instance);
+        #[test_case(&serde_json::json!({"multipleOf": 2.5}), &serde_json::json!("string"); "float string")]
+        #[test_case(&serde_json::json!({"multipleOf": 2.5}), &serde_json::json!(true); "float bool")]
+        #[test_case(&serde_json::json!({"multipleOf": 2.5}), &serde_json::json!([]); "float array")]
+        #[test_case(&serde_json::json!({"multipleOf": 2.5}), &serde_json::json!({}); "float object")]
+        fn non_number_with_float_validator(schema: &Value, instance: &Value) {
+            tests_util::is_valid(schema, instance);
         }
 
         // Test non-number instances with BigInt/BigFrac validators (via JSON parsing)
         #[test_case(r#"{"multipleOf": 18446744073709551616}"#, r#""string""#; "bigint string")]
-        #[test_case(r#"{"multipleOf": 0.1}"#, r#"true"#; "bigfrac bool")]
-        #[test_case(r#"{"minimum": 18446744073709551616}"#, r#"[]"#; "bigint min array")]
+        #[test_case(r#"{"multipleOf": 0.1}"#, r"true"; "bigfrac bool")]
+        #[test_case(r#"{"minimum": 18446744073709551616}"#, r"[]"; "bigint min array")]
         fn non_number_with_bignum_validators(schema_json: &str, instance_json: &str) {
             let schema = parse_json(schema_json);
             let instance = parse_json(instance_json);
@@ -596,7 +597,7 @@ mod tests {
             // This number is so large it overflows f64 to infinity (as_f64() returns None)
             // but can still be parsed as BigFraction - hits MultipleOfBigIntValidator else branch
             let divisor = "18446744073709551616"; // 2^64
-            let schema_json = format!(r#"{{"multipleOf": {}}}"#, divisor);
+            let schema_json = format!(r#"{{"multipleOf": {divisor}}}"#);
             let schema = parse_json(&schema_json);
 
             // Valid: 2^64 * 10^400 - parseable as BigFraction
@@ -615,7 +616,7 @@ mod tests {
             // This hits the else branch but CANNOT be parsed as BigFraction (scientific notation)
             // as_f64() returns None (infinity), try_parse_bigfraction returns None (has exponent)
             let divisor = "18446744073709551616"; // 2^64
-            let schema_json = format!(r#"{{"multipleOf": {}}}"#, divisor);
+            let schema_json = format!(r#"{{"multipleOf": {divisor}}}"#);
             let schema = parse_json(&schema_json);
 
             // Scientific notation that overflows to infinity - cannot be parsed as BigFraction

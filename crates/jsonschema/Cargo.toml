@@ -76,8 +76,8 @@ tempfile = "3.13.0"
 test-case = "3"
 tokio = { version = "1", features = ["macros", "rt"] }
 
-[lints.clippy]
-result_large_err = "allow"
+[lints]
+workspace = true
 
 [[bench]]
 harness = false

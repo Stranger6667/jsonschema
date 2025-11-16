@@ -1,23 +1,28 @@
 #[cfg(not(target_arch = "wasm32"))]
 mod bench {
-    pub use benchmark::run_keyword_benchmarks;
-    pub use criterion::{criterion_group, BenchmarkId, Criterion};
-    pub use serde_json::Value;
+    pub(crate) use benchmark::run_keyword_benchmarks;
+    pub(crate) use criterion::{criterion_group, BenchmarkId, Criterion};
+    pub(crate) use serde_json::Value;
 
-    pub fn validator_for(schema: &Value) -> jsonschema::Validator {
+    pub(crate) fn validator_for(schema: &Value) -> jsonschema::Validator {
         jsonschema::options()
             .with_draft(jsonschema::Draft::Draft7)
             .build(schema)
             .expect("Schema used in benchmarks should compile")
     }
 
-    pub fn bench_keyword_build(c: &mut Criterion, name: &str, schema: &Value) {
+    pub(crate) fn bench_keyword_build(c: &mut Criterion, name: &str, schema: &Value) {
         c.bench_function(&format!("keyword/{name}/build"), |b| {
             b.iter_with_large_drop(|| validator_for(schema));
         });
     }
 
-    pub fn bench_keyword_is_valid(c: &mut Criterion, name: &str, schema: &Value, instance: &Value) {
+    pub(crate) fn bench_keyword_is_valid(
+        c: &mut Criterion,
+        name: &str,
+        schema: &Value,
+        instance: &Value,
+    ) {
         let validator = validator_for(schema);
         c.bench_with_input(
             BenchmarkId::new(format!("keyword/{name}"), "is_valid"),
@@ -30,7 +35,12 @@ mod bench {
         );
     }
 
-    pub fn bench_keyword_validate(c: &mut Criterion, name: &str, schema: &Value, instance: &Value) {
+    pub(crate) fn bench_keyword_validate(
+        c: &mut Criterion,
+        name: &str,
+        schema: &Value,
+        instance: &Value,
+    ) {
         let validator = validator_for(schema);
         c.bench_with_input(
             BenchmarkId::new(format!("keyword/{name}"), "validate"),
@@ -43,7 +53,7 @@ mod bench {
         );
     }
 
-    pub fn run_benchmarks(c: &mut Criterion) {
+    pub(crate) fn run_benchmarks(c: &mut Criterion) {
         run_keyword_benchmarks(&mut |name, schema, instances| {
             bench_keyword_build(c, name, schema);
             for instance in instances {

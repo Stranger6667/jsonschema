@@ -7,7 +7,7 @@ mod bench {
     fn large_schema() -> Value {
         let mut properties = serde_json::Map::new();
         for i in 0..50 {
-            properties.insert(format!("prop{}", i), json!({"type": "string"}));
+            properties.insert(format!("prop{i}"), json!({"type": "string"}));
         }
 
         json!({
@@ -63,7 +63,7 @@ mod bench {
     fn large_invalid_instance() -> Value {
         let mut obj = serde_json::Map::new();
         for i in 0..50 {
-            obj.insert(format!("prop{}", i), json!("value"));
+            obj.insert(format!("prop{i}"), json!("value"));
         }
         obj.insert("unexpected".to_string(), json!("property"));
         Value::Object(obj)

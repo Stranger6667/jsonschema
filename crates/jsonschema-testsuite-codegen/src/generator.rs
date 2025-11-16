@@ -62,7 +62,7 @@ fn generate_nested_structure(
                         let is_optional = case_path.iter().any(|segment| segment == "optional");
                         let should_ignore = xfail.iter().any(|x| full_test_path.starts_with(x));
                         let ignore_attr = if should_ignore {
-                            quote! { #[ignore] }
+                            quote! { #[ignore = "known failure listed in xfail"] }
                         } else {
                             quote! {}
                         };
@@ -86,7 +86,7 @@ fn generate_nested_structure(
                                     data: serde_json::from_str(#data).expect("Failed to load JSON"),
                                     valid: #valid,
                                 };
-                                inner_test(test);
+                                inner_test(&test);
                             }
                         }
                     });

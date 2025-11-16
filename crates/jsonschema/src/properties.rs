@@ -114,7 +114,7 @@ pub(crate) fn compile_fancy_regex_patterns<'a>(
     let mut compiled_patterns = Vec::with_capacity(obj.len());
     for (pattern, subschema) in obj {
         let pctx = kctx.new_at_location(pattern.as_str());
-        let compiled_pattern = ctx.get_or_compile_regex(pattern).map_err(|_| {
+        let compiled_pattern = ctx.get_or_compile_regex(pattern).map_err(|()| {
             ValidationError::format(Location::new(), kctx.location().clone(), subschema, "regex")
         })?;
         let node = compiler::compile(&pctx, pctx.as_resource_ref(subschema))?;
@@ -132,7 +132,7 @@ pub(crate) fn compile_regex_patterns<'a>(
     let mut compiled_patterns = Vec::with_capacity(obj.len());
     for (pattern, subschema) in obj {
         let pctx = kctx.new_at_location(pattern.as_str());
-        let compiled_pattern = ctx.get_or_compile_standard_regex(pattern).map_err(|_| {
+        let compiled_pattern = ctx.get_or_compile_standard_regex(pattern).map_err(|()| {
             ValidationError::format(Location::new(), kctx.location().clone(), subschema, "regex")
         })?;
         let node = compiler::compile(&pctx, pctx.as_resource_ref(subschema))?;

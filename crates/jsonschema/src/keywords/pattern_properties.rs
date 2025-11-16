@@ -166,51 +166,50 @@ pub(crate) fn compile<'a>(
     parent: &'a Map<String, Value>,
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
-    match parent.get("additionalProperties") {
+    if matches!(
+        parent.get("additionalProperties"),
+        Some(Value::Bool(false) | Value::Object(_))
+    ) {
         // This type of `additionalProperties` validator handles `patternProperties` logic
-        Some(Value::Bool(false) | Value::Object(_)) => None,
-        _ => {
-            let map = match schema {
-                Value::Object(map) => map,
-                _ => {
-                    return Some(Err(ValidationError::single_type_error(
-                        Location::new(),
-                        ctx.location().clone(),
-                        schema,
-                        JsonType::Object,
-                    )))
-                }
-            };
-            let ctx = ctx.new_at_location("patternProperties");
-            let result = match ctx.config().pattern_options() {
-                PatternEngineOptions::FancyRegex { .. } => {
-                    compile_pattern_entries(&ctx, map, |pctx, pattern, subschema| {
-                        pctx.get_or_compile_regex(pattern)
-                            .map_err(|_| invalid_regex(pctx, subschema))
-                    })
-                    .map(|patterns| {
-                        build_validator_from_entries(patterns, |regex, node| {
-                            Box::new(SingleValuePatternPropertiesValidator { regex, node })
-                                as Box<dyn Validate>
-                        })
-                    })
-                }
-                PatternEngineOptions::Regex { .. } => {
-                    compile_pattern_entries(&ctx, map, |pctx, pattern, subschema| {
-                        pctx.get_or_compile_standard_regex(pattern)
-                            .map_err(|_| invalid_regex(pctx, subschema))
-                    })
-                    .map(|patterns| {
-                        build_validator_from_entries(patterns, |regex, node| {
-                            Box::new(SingleValuePatternPropertiesValidator { regex, node })
-                                as Box<dyn Validate>
-                        })
-                    })
-                }
-            };
-            Some(result)
-        }
+        return None;
     }
+
+    let Value::Object(map) = schema else {
+        return Some(Err(ValidationError::single_type_error(
+            Location::new(),
+            ctx.location().clone(),
+            schema,
+            JsonType::Object,
+        )));
+    };
+    let ctx = ctx.new_at_location("patternProperties");
+    let result = match ctx.config().pattern_options() {
+        PatternEngineOptions::FancyRegex { .. } => {
+            compile_pattern_entries(&ctx, map, |pctx, pattern, subschema| {
+                pctx.get_or_compile_regex(pattern)
+                    .map_err(|()| invalid_regex(pctx, subschema))
+            })
+            .map(|patterns| {
+                build_validator_from_entries(patterns, |regex, node| {
+                    Box::new(SingleValuePatternPropertiesValidator { regex, node })
+                        as Box<dyn Validate>
+                })
+            })
+        }
+        PatternEngineOptions::Regex { .. } => {
+            compile_pattern_entries(&ctx, map, |pctx, pattern, subschema| {
+                pctx.get_or_compile_standard_regex(pattern)
+                    .map_err(|()| invalid_regex(pctx, subschema))
+            })
+            .map(|patterns| {
+                build_validator_from_entries(patterns, |regex, node| {
+                    Box::new(SingleValuePatternPropertiesValidator { regex, node })
+                        as Box<dyn Validate>
+                })
+            })
+        }
+    };
+    Some(result)
 }
 
 fn invalid_regex<'a>(ctx: &compiler::Context, schema: &'a Value) -> ValidationError<'a> {

@@ -1,3 +1,6 @@
+#![allow(clippy::result_large_err)]
+#![allow(clippy::unnecessary_wraps)]
+
 //! A high-performance JSON Schema validator for Rust.
 //!
 //! - 📚 Support for popular JSON Schema drafts
@@ -1049,7 +1052,7 @@ pub mod meta {
         pub fn is_valid(&self, schema: &Value) -> bool {
             match try_meta_validator_for(schema, self.registry.as_ref()) {
                 Ok(validator) => validator.as_ref().is_valid(schema),
-                Err(e) => panic!("Failed to resolve meta-schema: {}", e),
+                Err(e) => panic!("Failed to resolve meta-schema: {e}"),
             }
         }
 
@@ -1080,6 +1083,7 @@ pub mod meta {
             Owned(Box<Validator>, PhantomData<&'a Validator>),
         }
 
+        #[cfg_attr(target_family = "wasm", allow(clippy::elidable_lifetime_names))]
         impl<'a> MetaValidator<'a> {
             #[cfg(not(target_family = "wasm"))]
             pub(crate) fn borrowed(validator: &'a Validator) -> Self {
@@ -1123,42 +1127,42 @@ pub mod meta {
         }
 
         #[cfg(not(target_family = "wasm"))]
-        pub static DRAFT4_META_VALIDATOR: LazyLock<Validator> =
+        pub(crate) static DRAFT4_META_VALIDATOR: LazyLock<Validator> =
             LazyLock::new(|| build_validator(&referencing::meta::DRAFT4));
         #[cfg(target_family = "wasm")]
-        pub fn draft4_meta_validator() -> Validator {
+        pub(crate) fn draft4_meta_validator() -> Validator {
             build_validator(&referencing::meta::DRAFT4)
         }
 
         #[cfg(not(target_family = "wasm"))]
-        pub static DRAFT6_META_VALIDATOR: LazyLock<Validator> =
+        pub(crate) static DRAFT6_META_VALIDATOR: LazyLock<Validator> =
             LazyLock::new(|| build_validator(&referencing::meta::DRAFT6));
         #[cfg(target_family = "wasm")]
-        pub fn draft6_meta_validator() -> Validator {
+        pub(crate) fn draft6_meta_validator() -> Validator {
             build_validator(&referencing::meta::DRAFT6)
         }
 
         #[cfg(not(target_family = "wasm"))]
-        pub static DRAFT7_META_VALIDATOR: LazyLock<Validator> =
+        pub(crate) static DRAFT7_META_VALIDATOR: LazyLock<Validator> =
             LazyLock::new(|| build_validator(&referencing::meta::DRAFT7));
         #[cfg(target_family = "wasm")]
-        pub fn draft7_meta_validator() -> Validator {
+        pub(crate) fn draft7_meta_validator() -> Validator {
             build_validator(&referencing::meta::DRAFT7)
         }
 
         #[cfg(not(target_family = "wasm"))]
-        pub static DRAFT201909_META_VALIDATOR: LazyLock<Validator> =
+        pub(crate) static DRAFT201909_META_VALIDATOR: LazyLock<Validator> =
             LazyLock::new(|| build_validator(&referencing::meta::DRAFT201909));
         #[cfg(target_family = "wasm")]
-        pub fn draft201909_meta_validator() -> Validator {
+        pub(crate) fn draft201909_meta_validator() -> Validator {
             build_validator(&referencing::meta::DRAFT201909)
         }
 
         #[cfg(not(target_family = "wasm"))]
-        pub static DRAFT202012_META_VALIDATOR: LazyLock<Validator> =
+        pub(crate) static DRAFT202012_META_VALIDATOR: LazyLock<Validator> =
             LazyLock::new(|| build_validator(&referencing::meta::DRAFT202012));
         #[cfg(target_family = "wasm")]
-        pub fn draft202012_meta_validator() -> Validator {
+        pub(crate) fn draft202012_meta_validator() -> Validator {
             build_validator(&referencing::meta::DRAFT202012)
         }
     }
@@ -1219,7 +1223,7 @@ pub mod meta {
     pub fn is_valid(schema: &Value) -> bool {
         match try_meta_validator_for(schema, None) {
             Ok(validator) => validator.as_ref().is_valid(schema),
-            Err(error) => panic!("Failed to resolve meta-schema: {}", error),
+            Err(error) => panic!("Failed to resolve meta-schema: {error}"),
         }
     }
     /// Validate a JSON Schema document against its meta-schema and return the first error if any.
@@ -3422,8 +3426,7 @@ mod tests {
             for schema in schemas {
                 assert!(
                     crate::meta::options().is_valid(&schema),
-                    "Failed for schema: {}",
-                    schema
+                    "Failed for schema: {schema}"
                 );
             }
         }

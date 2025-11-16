@@ -1,10 +1,15 @@
 #[cfg(not(target_arch = "wasm32"))]
 mod bench {
-    pub use benchmark::run_error_formatting_benchmarks;
-    pub use criterion::{criterion_group, BenchmarkId, Criterion};
-    pub use serde_json::Value;
+    pub(crate) use benchmark::run_error_formatting_benchmarks;
+    pub(crate) use criterion::{criterion_group, BenchmarkId, Criterion};
+    pub(crate) use serde_json::Value;
 
-    pub fn bench_error_formatting(c: &mut Criterion, name: &str, schema: &Value, instance: &Value) {
+    pub(crate) fn bench_error_formatting(
+        c: &mut Criterion,
+        name: &str,
+        schema: &Value,
+        instance: &Value,
+    ) {
         let validator = jsonschema::validator_for(schema).expect("Valid schema");
         let error = validator.validate(instance).unwrap_err();
 
@@ -15,7 +20,7 @@ mod bench {
         );
     }
 
-    pub fn run_benchmarks(c: &mut Criterion) {
+    pub(crate) fn run_benchmarks(c: &mut Criterion) {
         run_error_formatting_benchmarks(&mut |name, schema, instance| {
             bench_error_formatting(c, name, schema, instance);
         });

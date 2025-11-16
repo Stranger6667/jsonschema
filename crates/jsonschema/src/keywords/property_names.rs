@@ -29,7 +29,7 @@ impl Validate for PropertyNamesObjectValidator {
             let errors: Vec<_> = item
                 .keys()
                 .flat_map(move |key| {
-                    let wrapper = Value::String(key.to_string());
+                    let wrapper = Value::String(key.clone());
                     let errors: Vec<_> = self
                         .node
                         .iter_errors(&wrapper, location)
@@ -54,7 +54,7 @@ impl Validate for PropertyNamesObjectValidator {
     fn is_valid(&self, instance: &Value) -> bool {
         if let Value::Object(item) = &instance {
             item.keys().all(move |key| {
-                let wrapper = Value::String(key.to_string());
+                let wrapper = Value::String(key.clone());
                 self.node.is_valid(&wrapper)
             })
         } else {
@@ -69,7 +69,7 @@ impl Validate for PropertyNamesObjectValidator {
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = &instance {
             for key in item.keys() {
-                let wrapper = Value::String(key.to_string());
+                let wrapper = Value::String(key.clone());
                 match self.node.validate(&wrapper, location) {
                     Ok(()) => {}
                     Err(error) => {
@@ -90,7 +90,7 @@ impl Validate for PropertyNamesObjectValidator {
         if let Value::Object(item) = instance {
             item.keys()
                 .map(|key| {
-                    let wrapper = Value::String(key.to_string());
+                    let wrapper = Value::String(key.clone());
                     self.node.apply_rooted(&wrapper, location)
                 })
                 .collect()

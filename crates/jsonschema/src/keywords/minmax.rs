@@ -72,8 +72,14 @@ define_numeric_keywords!(
 
 #[cfg(feature = "arbitrary-precision")]
 pub(crate) mod bigint_validators {
-    use super::*;
-    use crate::ext::numeric::bignum::*;
+    use super::{numeric, LazyLocation, Location, Validate, ValidationError, Value};
+    use crate::ext::numeric::bignum::{
+        f64_ge_bigfrac, f64_ge_bigint, f64_gt_bigfrac, f64_gt_bigint, f64_le_bigfrac,
+        f64_le_bigint, f64_lt_bigfrac, f64_lt_bigint, i64_ge_bigfrac, i64_ge_bigint,
+        i64_gt_bigfrac, i64_gt_bigint, i64_le_bigfrac, i64_le_bigint, i64_lt_bigfrac,
+        i64_lt_bigint, try_parse_bigfraction, u64_ge_bigfrac, u64_ge_bigint, u64_gt_bigfrac,
+        u64_gt_bigint, u64_le_bigfrac, u64_le_bigint, u64_lt_bigfrac, u64_lt_bigint,
+    };
     use num_bigint::BigInt;
 
     macro_rules! define_bigint_validator {
@@ -361,7 +367,10 @@ fn create_bigint_validator(
     limit: &serde_json::Number,
     schema: &Value,
 ) -> Option<CompilationResult<'static>> {
-    use bigint_validators::*;
+    use bigint_validators::{
+        BigFracExclusiveMaximum, BigFracExclusiveMinimum, BigFracMaximum, BigFracMinimum,
+        BigIntExclusiveMaximum, BigIntExclusiveMinimum, BigIntMaximum, BigIntMinimum,
+    };
 
     // Try BigInt first for large integers
     if let Some(bigint_limit) = numeric::bignum::try_parse_bigint(limit) {
@@ -505,11 +514,11 @@ mod tests {
 
     // Tests for arbitrary-precision feature - valid cases
     #[cfg(feature = "arbitrary-precision")]
-    #[test_case(r#"{"minimum": 18446744073709551616}"#, r#"18446744073709551617"#; "minimum valid above u64_max")]
-    #[test_case(r#"{"minimum": -9223372036854775809}"#, r#"-9223372036854775808"#; "minimum valid below i64_min")]
-    #[test_case(r#"{"maximum": 18446744073709551616}"#, r#"18446744073709551615"#; "maximum valid below limit")]
-    #[test_case(r#"{"exclusiveMinimum": 18446744073709551616}"#, r#"18446744073709551617"#; "exclusive_minimum valid")]
-    #[test_case(r#"{"exclusiveMaximum": 18446744073709551616}"#, r#"18446744073709551615"#; "exclusive_maximum valid")]
+    #[test_case(r#"{"minimum": 18446744073709551616}"#, r"18446744073709551617"; "minimum valid above u64_max")]
+    #[test_case(r#"{"minimum": -9223372036854775809}"#, r"-9223372036854775808"; "minimum valid below i64_min")]
+    #[test_case(r#"{"maximum": 18446744073709551616}"#, r"18446744073709551615"; "maximum valid below limit")]
+    #[test_case(r#"{"exclusiveMinimum": 18446744073709551616}"#, r"18446744073709551617"; "exclusive_minimum valid")]
+    #[test_case(r#"{"exclusiveMaximum": 18446744073709551616}"#, r"18446744073709551615"; "exclusive_maximum valid")]
     #[test_case(r#"{"minimum": 18446744073709551616}"#, "1e20"; "scientific notation above bigint minimum")]
     #[test_case(r#"{"maximum": 18446744073709551616}"#, "1e15"; "scientific notation below bigint maximum")]
     #[test_case(r#"{"minimum": 0}"#, "1e1000"; "minimum with huge positive number")]
@@ -532,10 +541,10 @@ mod tests {
 
     // Tests for arbitrary-precision feature - invalid cases
     #[cfg(feature = "arbitrary-precision")]
-    #[test_case(r#"{"minimum": 18446744073709551616}"#, r#"18446744073709551615"#; "minimum invalid at u64_max")]
-    #[test_case(r#"{"maximum": 18446744073709551616}"#, r#"18446744073709551617"#; "maximum invalid above limit")]
-    #[test_case(r#"{"exclusiveMinimum": 18446744073709551616}"#, r#"18446744073709551616"#; "exclusive_minimum invalid at boundary")]
-    #[test_case(r#"{"exclusiveMaximum": 18446744073709551616}"#, r#"18446744073709551617"#; "exclusive_maximum invalid above limit")]
+    #[test_case(r#"{"minimum": 18446744073709551616}"#, r"18446744073709551615"; "minimum invalid at u64_max")]
+    #[test_case(r#"{"maximum": 18446744073709551616}"#, r"18446744073709551617"; "maximum invalid above limit")]
+    #[test_case(r#"{"exclusiveMinimum": 18446744073709551616}"#, r"18446744073709551616"; "exclusive_minimum invalid at boundary")]
+    #[test_case(r#"{"exclusiveMaximum": 18446744073709551616}"#, r"18446744073709551617"; "exclusive_maximum invalid above limit")]
     #[test_case(r#"{"minimum": 18446744073709551616}"#, "1e10"; "scientific notation below bigint minimum")]
     #[test_case(r#"{"maximum": 18446744073709551616}"#, "1e25"; "scientific notation above bigint maximum")]
     #[test_case(r#"{"maximum": 1e100}"#, "1e1000"; "maximum with huge number above limit")]
@@ -562,7 +571,7 @@ mod tests {
     fn bigint_limit_exceeds_i128_with_fraction() {
         // 10^50 is way beyond i128::MAX (~1.7e38)
         let limit = "1".to_string() + &"0".repeat(50);
-        let schema_min = parse_json(&format!(r#"{{"minimum": {}}}"#, limit));
+        let schema_min = parse_json(&format!(r#"{{"minimum": {limit}}}"#));
 
         // Instance slightly below limit (10^50 - 1), should be INVALID
         let instance_below = "9".to_string() + &"9".repeat(49);
@@ -574,7 +583,7 @@ mod tests {
         tests_util::is_valid(&schema_min, &instance);
 
         // Test maximum as well
-        let schema_max = parse_json(&format!(r#"{{"maximum": {}}}"#, limit));
+        let schema_max = parse_json(&format!(r#"{{"maximum": {limit}}}"#));
 
         // Instance slightly above limit (10^50 + 1), should be INVALID
         let instance_above = "1".to_string() + &"0".repeat(50) + "1";

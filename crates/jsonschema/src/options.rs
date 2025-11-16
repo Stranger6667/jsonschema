@@ -556,7 +556,7 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
                         .and_then(|s| s.as_str())
                     {
                         // Walk the meta-schema chain to find the underlying draft
-                        return self.resolve_draft_from_registry(meta_schema_uri, registry);
+                        return Self::resolve_draft_from_registry(meta_schema_uri, registry);
                     }
                 }
             }
@@ -566,7 +566,6 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
     }
 
     fn resolve_draft_from_registry(
-        &self,
         uri: &str,
         registry: &referencing::Registry,
     ) -> Result<Draft, ValidationError<'static>> {
@@ -609,6 +608,7 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
     ///     .expect("A valid schema");
     /// ```
     #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn with_pattern_options<E>(mut self, options: PatternOptions<E>) -> Self {
         self.pattern_options = options.inner;
         self
@@ -650,6 +650,7 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             pattern_options: self.pattern_options,
         }
     }
+    #[allow(clippy::unused_async)]
     pub(crate) async fn draft_for(
         &self,
         contents: &Value,
