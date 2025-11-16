@@ -57,7 +57,7 @@ impl Draft {
             .and_then(|contents| contents.get("$schema"))
             .and_then(|schema| schema.as_str())
         {
-            Ok(match schema.trim_end_matches('#') {
+            match schema.trim_end_matches('#') {
                 // Accept both HTTPS and HTTP for all known drafts
                 "https://json-schema.org/draft/2020-12/schema"
                 | "http://json-schema.org/draft/2020-12/schema" => Draft::Draft202012,
@@ -72,7 +72,7 @@ impl Draft {
                 // Custom/unknown meta-schemas return Unknown
                 // Validation of custom meta-schemas happens during registry building
                 _ => Draft::Unknown,
-            })
+            }
         } else {
             self
         }
