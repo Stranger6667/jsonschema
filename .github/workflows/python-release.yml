@@ -21,7 +21,7 @@ env:
 
 jobs:
   sdist:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -100,7 +100,7 @@ jobs:
           path: dist
 
   windows:
-    runs-on: windows-2022
+    runs-on: windows-2025
     strategy:
       matrix:
         target: [ x64, x86 ]
@@ -129,7 +129,7 @@ jobs:
           path: dist
 
   linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         target: [ x86_64, i686, aarch64 ]
@@ -154,7 +154,7 @@ jobs:
         if: matrix.target == 'aarch64'
         name: Install built wheel on ARM architecture
         with:
-          base_image: '--platform=linux/aarch64 ubuntu:22.04'
+          base_image: '--platform=linux/aarch64 ubuntu:24.04'
           githubToken: ${{ github.token }}
           install: |
             export TZ=UTC
@@ -183,15 +183,15 @@ jobs:
             target: x86_64
             artifact: wheel-macos-pypy
             manylinux: ''
-          - os: windows-2022
+          - os: windows-2025
             target: x64
             artifact: wheel-windows-pypy
             manylinux: ''
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             target: x86_64
             artifact: wheel-linux-pypy
             manylinux: auto
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             target: aarch64
             artifact: wheel-linux-pypy-aarch64
             manylinux: 2_24
@@ -242,7 +242,7 @@ jobs:
 
   release:
     name: Release
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - sdist
       - macos-x86_64
