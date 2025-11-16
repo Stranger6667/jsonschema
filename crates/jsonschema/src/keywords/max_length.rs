@@ -3,6 +3,7 @@ use crate::{
     error::ValidationError,
     keywords::{helpers::fail_on_non_positive_integer, CompilationResult},
     paths::{LazyLocation, Location},
+    types::JsonTypeSet,
     validator::Validate,
 };
 use serde_json::{Map, Value};
@@ -64,6 +65,10 @@ impl Validate for MaxLengthValidator {
             }
         }
         Ok(())
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::strings()
     }
 }
 

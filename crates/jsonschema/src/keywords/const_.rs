@@ -1,5 +1,10 @@
 use crate::{
-    compiler, error::ValidationError, ext::cmp, keywords::CompilationResult, paths::Location,
+    compiler,
+    error::ValidationError,
+    ext::cmp,
+    keywords::CompilationResult,
+    paths::Location,
+    types::{JsonType, JsonTypeSet},
     validator::Validate,
 };
 use serde_json::{Map, Number, Value};
@@ -45,6 +50,10 @@ impl Validate for ConstArrayValidator {
             false
         }
     }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::empty().insert(JsonType::Array)
+    }
 }
 
 struct ConstBooleanValidator {
@@ -83,6 +92,10 @@ impl Validate for ConstBooleanValidator {
             false
         }
     }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::empty().insert(JsonType::Boolean)
+    }
 }
 
 struct ConstNullValidator {
@@ -113,6 +126,10 @@ impl Validate for ConstNullValidator {
     #[inline]
     fn is_valid(&self, instance: &Value) -> bool {
         instance.is_null()
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::empty().insert(JsonType::Null)
     }
 }
 
@@ -157,6 +174,14 @@ impl Validate for ConstNumberValidator {
             false
         }
     }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        let mut set = JsonTypeSet::empty().insert(JsonType::Number);
+        if self.original_value.is_i64() || self.original_value.is_u64() {
+            set = set.insert(JsonType::Integer);
+        }
+        set
+    }
 }
 
 pub(crate) struct ConstObjectValidator {
@@ -198,6 +223,10 @@ impl Validate for ConstObjectValidator {
             false
         }
     }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::empty().insert(JsonType::Object)
+    }
 }
 
 pub(crate) struct ConstStringValidator {
@@ -238,6 +267,10 @@ impl Validate for ConstStringValidator {
         } else {
             false
         }
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::empty().insert(JsonType::String)
     }
 }
 

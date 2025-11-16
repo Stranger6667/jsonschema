@@ -70,6 +70,10 @@ impl Validate for MultipleTypesValidator {
             ))
         }
     }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        self.types
+    }
 }
 
 pub(crate) struct NullTypeValidator {
@@ -103,6 +107,10 @@ impl Validate for NullTypeValidator {
             ))
         }
     }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::empty().insert(JsonType::Null)
+    }
 }
 
 pub(crate) struct BooleanTypeValidator {
@@ -135,6 +143,10 @@ impl Validate for BooleanTypeValidator {
                 JsonType::Boolean,
             ))
         }
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::empty().insert(JsonType::Boolean)
     }
 }
 
@@ -170,6 +182,10 @@ impl Validate for StringTypeValidator {
             ))
         }
     }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::empty().insert(JsonType::String)
+    }
 }
 
 pub(crate) struct ArrayTypeValidator {
@@ -204,6 +220,10 @@ impl Validate for ArrayTypeValidator {
             ))
         }
     }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::empty().insert(JsonType::Array)
+    }
 }
 
 pub(crate) struct ObjectTypeValidator {
@@ -237,6 +257,10 @@ impl Validate for ObjectTypeValidator {
             ))
         }
     }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::empty().insert(JsonType::Object)
+    }
 }
 
 pub(crate) struct NumberTypeValidator {
@@ -269,6 +293,10 @@ impl Validate for NumberTypeValidator {
                 JsonType::Number,
             ))
         }
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::empty().insert(JsonType::Number)
     }
 }
 
@@ -306,6 +334,10 @@ impl Validate for IntegerTypeValidator {
                 JsonType::Integer,
             ))
         }
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::empty().insert(JsonType::Integer)
     }
 }
 

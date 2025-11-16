@@ -3,7 +3,7 @@ use crate::{
     error::{no_error, ErrorIterator, ValidationError},
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
-    types::JsonType,
+    types::{JsonType, JsonTypeSet},
     validator::Validate,
 };
 use serde_json::{Map, Value};
@@ -88,6 +88,10 @@ impl Validate for RequiredValidator {
         }
         no_error()
     }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::objects()
+    }
 }
 
 pub(crate) struct SingleItemRequiredValidator {
@@ -132,6 +136,10 @@ impl Validate for SingleItemRequiredValidator {
         } else {
             true
         }
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::objects()
     }
 }
 

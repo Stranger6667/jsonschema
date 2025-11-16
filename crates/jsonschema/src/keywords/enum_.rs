@@ -27,7 +27,7 @@ impl EnumValidator {
     ) -> CompilationResult<'a> {
         let mut types = JsonTypeSet::empty();
         for item in items {
-            types = types.insert(JsonType::from(item));
+            types = types.union(JsonTypeSet::from_value(item));
         }
         Ok(Box::new(EnumValidator {
             options: schema.clone(),
@@ -66,6 +66,10 @@ impl Validate for EnumValidator {
             false
         }
     }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        self.types
+    }
 }
 
 #[derive(Debug)]
@@ -73,6 +77,7 @@ pub(crate) struct SingleValueEnumValidator {
     value: Value,
     options: Value,
     location: Location,
+    types: JsonTypeSet,
 }
 
 impl SingleValueEnumValidator {
@@ -86,6 +91,7 @@ impl SingleValueEnumValidator {
             options: schema.clone(),
             value: value.clone(),
             location,
+            types: JsonTypeSet::from_value(value),
         }))
     }
 }
@@ -110,6 +116,10 @@ impl Validate for SingleValueEnumValidator {
 
     fn is_valid(&self, instance: &Value) -> bool {
         cmp::equal(&self.value, instance)
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        self.types
     }
 }
 

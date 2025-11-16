@@ -76,6 +76,14 @@ impl FromStr for JsonType {
 }
 
 /// A set of JSON types.
+const ALL_TYPES_MASK: u8 = (JsonType::Array as u8)
+    | (JsonType::Boolean as u8)
+    | (JsonType::Integer as u8)
+    | (JsonType::Null as u8)
+    | (JsonType::Number as u8)
+    | (JsonType::Object as u8)
+    | (JsonType::String as u8);
+
 #[derive(Clone, Copy, Eq, PartialEq, Hash)]
 pub struct JsonTypeSet(u8);
 
@@ -96,14 +104,34 @@ impl JsonTypeSet {
     #[inline]
     #[must_use]
     pub const fn all() -> Self {
-        JsonTypeSet::empty()
-            .insert(JsonType::Null)
-            .insert(JsonType::Boolean)
-            .insert(JsonType::Integer)
-            .insert(JsonType::Number)
-            .insert(JsonType::String)
-            .insert(JsonType::Array)
-            .insert(JsonType::Object)
+        JsonTypeSet(ALL_TYPES_MASK)
+    }
+    /// Create a set containing a single type.
+    #[inline]
+    #[must_use]
+    pub const fn single(ty: JsonType) -> Self {
+        JsonTypeSet(ty as u8)
+    }
+    /// Convenience helper for validators that accept numeric values.
+    #[inline]
+    #[must_use]
+    pub const fn numbers() -> Self {
+        JsonTypeSet::single(JsonType::Number).insert(JsonType::Integer)
+    }
+    #[inline]
+    #[must_use]
+    pub const fn strings() -> Self {
+        JsonTypeSet::single(JsonType::String)
+    }
+    #[inline]
+    #[must_use]
+    pub const fn arrays() -> Self {
+        JsonTypeSet::single(JsonType::Array)
+    }
+    #[inline]
+    #[must_use]
+    pub const fn objects() -> Self {
+        JsonTypeSet::single(JsonType::Object)
     }
     /// Add a type to this set and return the modified set.
     #[inline]
@@ -116,7 +144,35 @@ impl JsonTypeSet {
     #[inline]
     #[must_use]
     pub fn contains(self, ty: JsonType) -> bool {
-        self.0 & ty as u8 != 0
+        if self.is_any() {
+            true
+        } else {
+            self.0 & ty as u8 != 0
+        }
+    }
+    /// Combine two sets of types.
+    #[inline]
+    #[must_use]
+    pub const fn union(self, other: JsonTypeSet) -> Self {
+        JsonTypeSet(self.0 | other.0)
+    }
+    /// Intersect two sets of types.
+    #[inline]
+    #[must_use]
+    pub const fn intersection(self, other: JsonTypeSet) -> Self {
+        JsonTypeSet(self.0 & other.0)
+    }
+    /// Returns `true` if the set contains no types.
+    #[inline]
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+    /// Returns `true` if the set includes all JSON types.
+    #[inline]
+    #[must_use]
+    pub const fn is_any(self) -> bool {
+        self.0 == ALL_TYPES_MASK
     }
     /// Check if a JSON value's type is allowed by this set.
     #[must_use]
@@ -176,6 +232,24 @@ impl JsonTypeSet {
             }
             Value::Object(_) => self.contains(JsonType::Object),
             Value::String(_) => self.contains(JsonType::String),
+        }
+    }
+    /// Construct a type set from a JSON value.
+    #[must_use]
+    pub fn from_value(value: &Value) -> Self {
+        match value {
+            Value::Array(_) => JsonTypeSet::arrays(),
+            Value::Bool(_) => JsonTypeSet::single(JsonType::Boolean),
+            Value::Null => JsonTypeSet::single(JsonType::Null),
+            Value::Number(number) => {
+                let mut set = JsonTypeSet::single(JsonType::Number);
+                if number.is_i64() || number.is_u64() {
+                    set = set.insert(JsonType::Integer);
+                }
+                set
+            }
+            Value::Object(_) => JsonTypeSet::objects(),
+            Value::String(_) => JsonTypeSet::strings(),
         }
     }
     /// Get an iterator over the types in this set.

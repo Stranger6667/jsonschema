@@ -5,6 +5,7 @@ use crate::{
     output::{Annotations, BasicOutput, ErrorDescription, OutputUnit},
     paths::{LazyLocation, Location},
     thread::{Shared, SharedWeak},
+    types::JsonTypeSet,
     validator::{PartialApplication, Validate},
     ValidationError,
 };
@@ -22,6 +23,7 @@ pub(crate) struct SchemaNode {
     validators: Shared<NodeValidators>,
     location: Location,
     absolute_path: Option<Arc<Uri<String>>>,
+    applicable_types: JsonTypeSet,
 }
 
 // Separate type used only during compilation for handling recursive references
@@ -35,6 +37,7 @@ struct PendingTarget {
     validators: SharedWeak<NodeValidators>,
     location: Location,
     absolute_path: Option<Arc<Uri<String>>>,
+    applicable_types: JsonTypeSet,
 }
 
 enum NodeValidators {
@@ -89,6 +92,15 @@ struct ArrayValidatorEntry {
     absolute_location: Option<Arc<Uri<String>>>,
 }
 
+fn merged_applicable_types<'a, I>(validators: I) -> JsonTypeSet
+where
+    I: Iterator<Item = &'a BoxedValidator>,
+{
+    validators.fold(JsonTypeSet::all(), |acc, validator| {
+        acc.intersection(validator.applicable_types())
+    })
+}
+
 impl PendingSchemaNode {
     pub(crate) fn new() -> Self {
         PendingSchemaNode {
@@ -101,6 +113,7 @@ impl PendingSchemaNode {
             validators: Shared::downgrade(&node.validators),
             location: node.location.clone(),
             absolute_path: node.absolute_path.clone(),
+            applicable_types: node.applicable_types,
         };
         self.cell
             .set(target)
@@ -134,6 +147,7 @@ impl PendingTarget {
             validators,
             location: self.location.clone(),
             absolute_path: self.absolute_path.clone(),
+            applicable_types: self.applicable_types,
         }
     }
 }
@@ -162,9 +176,13 @@ impl Validate for PendingSchemaNode {
 
 impl SchemaNode {
     pub(crate) fn from_boolean(ctx: &Context<'_>, validator: Option<BoxedValidator>) -> SchemaNode {
+        let applicable_types = validator
+            .as_ref()
+            .map_or(JsonTypeSet::all(), |validator| validator.applicable_types());
         SchemaNode {
             location: ctx.location().clone(),
             absolute_path: ctx.base_uri(),
+            applicable_types,
             validators: Shared::new(NodeValidators::Boolean { validator }),
         }
     }
@@ -186,10 +204,13 @@ impl SchemaNode {
                     absolute_location,
                 }
             })
-            .collect();
+            .collect::<Vec<_>>();
+        let applicable_types =
+            merged_applicable_types(validators.iter().map(|entry| &entry.validator));
         SchemaNode {
             location: ctx.location().clone(),
             absolute_path,
+            applicable_types,
             validators: Shared::new(NodeValidators::Keyword(KeywordValidators {
                 unmatched_keywords,
                 validators,
@@ -211,10 +232,13 @@ impl SchemaNode {
                     absolute_location,
                 }
             })
-            .collect();
+            .collect::<Vec<_>>();
+        let applicable_types =
+            merged_applicable_types(validators.iter().map(|entry| &entry.validator));
         SchemaNode {
             location: ctx.location().clone(),
             absolute_path,
+            applicable_types,
             validators: Shared::new(NodeValidators::Array { validators }),
         }
     }
@@ -228,6 +252,7 @@ impl SchemaNode {
             validators: self.validators.clone(),
             location,
             absolute_path,
+            applicable_types: self.applicable_types,
         }
     }
 
@@ -466,6 +491,9 @@ impl Validate for SchemaNode {
     }
 
     fn is_valid(&self, instance: &Value) -> bool {
+        if !self.applicable_types.contains_value_type(instance) {
+            return false;
+        }
         match self.validators.as_ref() {
             // If we only have one validator then calling it's `is_valid` directly does
             // actually save the 20 or so instructions required to call the `slice::Iter::all`

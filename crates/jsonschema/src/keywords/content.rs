@@ -6,7 +6,7 @@ use crate::{
     error::ValidationError,
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
-    types::JsonType,
+    types::{JsonType, JsonTypeSet},
     validator::Validate,
 };
 use serde_json::{Map, Value};
@@ -63,6 +63,10 @@ impl Validate for ContentMediaTypeValidator {
             Ok(())
         }
     }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::strings()
+    }
 }
 
 /// Validator for `contentEncoding` keyword.
@@ -115,6 +119,10 @@ impl Validate for ContentEncodingValidator {
         } else {
             Ok(())
         }
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::strings()
     }
 }
 
@@ -189,6 +197,10 @@ impl Validate for ContentMediaTypeAndEncodingValidator {
         } else {
             Ok(())
         }
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::strings()
     }
 }
 

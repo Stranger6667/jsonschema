@@ -4,7 +4,7 @@ use crate::{
     ext::numeric,
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
-    types::JsonType,
+    types::{JsonType, JsonTypeSet},
     validator::Validate,
 };
 use serde_json::{Map, Value};
@@ -68,6 +68,10 @@ impl Validate for MultipleOfFloatValidator {
         }
         Ok(())
     }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::numbers()
+    }
 }
 
 pub(crate) struct MultipleOfIntegerValidator {
@@ -128,6 +132,10 @@ impl Validate for MultipleOfIntegerValidator {
             }
         }
         Ok(())
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::numbers()
     }
 }
 
@@ -224,6 +232,10 @@ impl Validate for MultipleOfBigIntValidator {
         }
         Ok(())
     }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::numbers()
+    }
 }
 
 #[cfg(feature = "arbitrary-precision")]
@@ -290,6 +302,10 @@ impl Validate for MultipleOfBigFracValidator {
             ));
         }
         Ok(())
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::numbers()
     }
 }
 

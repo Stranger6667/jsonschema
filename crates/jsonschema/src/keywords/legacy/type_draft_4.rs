@@ -68,6 +68,10 @@ impl Validate for MultipleTypesValidator {
             ))
         }
     }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        self.types
+    }
 }
 
 pub(crate) struct IntegerTypeValidator {
@@ -104,6 +108,10 @@ impl Validate for IntegerTypeValidator {
                 JsonType::Integer,
             ))
         }
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::empty().insert(JsonType::Integer)
     }
 }
 

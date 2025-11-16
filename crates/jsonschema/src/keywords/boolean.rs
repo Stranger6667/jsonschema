@@ -1,6 +1,8 @@
 use crate::paths::{LazyLocation, Location};
 
-use crate::{error::ValidationError, keywords::CompilationResult, validator::Validate};
+use crate::{
+    error::ValidationError, keywords::CompilationResult, types::JsonTypeSet, validator::Validate,
+};
 use serde_json::Value;
 
 pub(crate) struct FalseValidator {
@@ -27,6 +29,10 @@ impl Validate for FalseValidator {
             location.into(),
             instance,
         ))
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::empty()
     }
 }
 

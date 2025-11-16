@@ -1,6 +1,6 @@
 use crate::{
     compiler, error::ValidationError, ext::cmp, keywords::CompilationResult, paths::Location,
-    validator::Validate,
+    types::JsonTypeSet, validator::Validate,
 };
 use ahash::{AHashSet, AHasher};
 use serde_json::{Map, Value};
@@ -128,6 +128,10 @@ impl Validate for UniqueItemsValidator {
                 instance,
             ))
         }
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::arrays()
     }
 }
 

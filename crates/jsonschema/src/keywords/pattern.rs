@@ -7,7 +7,7 @@ use crate::{
     options::PatternEngineOptions,
     paths::{LazyLocation, Location},
     regex::{RegexEngine, RegexError},
-    types::JsonType,
+    types::{JsonType, JsonTypeSet},
     validator::Validate,
 };
 use serde_json::{Map, Value};
@@ -54,6 +54,10 @@ impl<R: RegexEngine> Validate for PatternValidator<R> {
             return self.regex.is_match(item).unwrap_or(false);
         }
         true
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::strings()
     }
 }
 

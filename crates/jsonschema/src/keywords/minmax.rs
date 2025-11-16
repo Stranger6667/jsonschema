@@ -5,7 +5,7 @@ use crate::{
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
     thread::ThreadBound,
-    types::JsonType,
+    types::{JsonType, JsonTypeSet},
     validator::Validate,
 };
 use num_cmp::NumCmp;
@@ -57,6 +57,10 @@ macro_rules! define_numeric_keywords {
                     } else {
                         true
                     }
+                }
+
+                fn applicable_types(&self) -> JsonTypeSet {
+                    JsonTypeSet::numbers()
                 }
             }
         )*
@@ -141,6 +145,10 @@ pub(crate) mod bigint_validators {
                     } else {
                         true
                     }
+                }
+
+                fn applicable_types(&self) -> JsonTypeSet {
+                    JsonTypeSet::numbers()
                 }
             }
         };
@@ -241,6 +249,10 @@ pub(crate) mod bigint_validators {
                     } else {
                         true
                     }
+                }
+
+                fn applicable_types(&self) -> JsonTypeSet {
+                    JsonTypeSet::numbers()
                 }
             }
         };

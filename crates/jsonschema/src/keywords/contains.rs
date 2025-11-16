@@ -4,6 +4,7 @@ use crate::{
     keywords::CompilationResult,
     node::SchemaNode,
     paths::LazyLocation,
+    types::JsonTypeSet,
     validator::{PartialApplication, Validate},
     Draft,
 };
@@ -85,6 +86,10 @@ impl Validate for ContainsValidator {
             result
         }
     }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::arrays()
+    }
 }
 
 /// `minContains` validation. Used only if there is no `maxContains` present.
@@ -163,6 +168,10 @@ impl Validate for MinContainsValidator {
         } else {
             true
         }
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::arrays()
     }
 }
 
@@ -246,6 +255,10 @@ impl Validate for MaxContainsValidator {
         } else {
             true
         }
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::arrays()
     }
 }
 
@@ -332,6 +345,10 @@ impl Validate for MinMaxContainsValidator {
         } else {
             true
         }
+    }
+
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::arrays()
     }
 }
 

@@ -7,6 +7,7 @@ use crate::{
     output::{Annotations, ErrorDescription, Output, OutputUnit},
     paths::LazyLocation,
     thread::ThreadBound,
+    types::JsonTypeSet,
     Draft, ValidationError, ValidationOptions,
 };
 use serde_json::Value;
@@ -96,6 +97,12 @@ pub(crate) trait Validate: ThreadBound {
         } else {
             PartialApplication::invalid_empty(errors)
         }
+    }
+
+    /// Return the type hint for this validator. The default implementation imposes no restriction.
+    #[inline]
+    fn applicable_types(&self) -> JsonTypeSet {
+        JsonTypeSet::all()
     }
 }
 
