@@ -10,7 +10,7 @@ jobs:
 
   check-commits:
     name: Check commit messages
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
         with:
@@ -19,7 +19,7 @@ jobs:
 
   check-msrv:
     name: Check MSRV
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -46,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-15, windows-2022]
+        os: [ubuntu-24.04, macos-15, windows-2025]
 
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -85,7 +85,7 @@ jobs:
             features: ""
             display: wasm32-unknown-unknown
     name: Test on ${{ matrix.display }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
         with:
@@ -131,7 +131,7 @@ jobs:
             feature: resolve-file
             pattern: "resolve-http.*resolve-file.*not supported.*wasm32-unknown-unknown"
     name: Check ${{ matrix.feature }} fails on ${{ matrix.target }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -157,7 +157,7 @@ jobs:
 
   test-coverage:
     name: Test coverage
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
         with:
@@ -202,7 +202,7 @@ jobs:
 
   test-miri:
     name: Test with Miri
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
         with:
@@ -221,7 +221,7 @@ jobs:
 
   lint-python:
     name: Lint Python
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -237,7 +237,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-15, windows-2022]
+        os: [ubuntu-24.04, macos-15, windows-2025]
         python-version: ['3.10', '3.11', '3.12', '3.13', '3.14', 'pypy3.11']
 
     name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
@@ -258,7 +258,7 @@ jobs:
 
   lint-fmt:
     name: Lint formatting
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -270,7 +270,7 @@ jobs:
 
   lint-clippy:
     name: Lint Clippy
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
         with:
@@ -297,7 +297,7 @@ jobs:
       matrix:
         target: [wasm32-unknown-unknown, wasm32-wasip1]
     name: Lint Clippy on ${{ matrix.target }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
         with:
@@ -318,7 +318,7 @@ jobs:
 
   check-release-rust:
     name: Check Rust release
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
         with:
@@ -336,7 +336,7 @@ jobs:
 
   check-release-python:
     name: Check Python release
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
         with:
@@ -381,7 +381,7 @@ jobs:
             name: wasm32-wasip1
             flags: "--feature-powerset --exclude-features retrieve-async"
     name: Check features on ${{ matrix.name }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
         with:
@@ -409,7 +409,7 @@ jobs:
       matrix:
         target: ["builder", "validation", "referencing"]
     name: Fuzz ${{ matrix.target }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
         with:
@@ -425,7 +425,7 @@ jobs:
 
   lint-spelling:
     name: Lint spelling
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
