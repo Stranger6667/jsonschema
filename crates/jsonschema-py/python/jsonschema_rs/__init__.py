@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, TypeAlias
 
 from .jsonschema_rs import (
     Draft4,
@@ -22,6 +22,10 @@ from .jsonschema_rs import (
     meta,
     validate,
     validator_for,
+)
+
+Validator: TypeAlias = (
+    Draft4Validator | Draft6Validator | Draft7Validator | Draft201909Validator | Draft202012Validator
 )
 
 
@@ -58,6 +62,18 @@ class ValidationError(ValueError):
     def __repr__(self) -> str:
         return f"<ValidationError: '{self.message}'>"
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ValidationError):
+            return NotImplemented
+        return (
+            self.message == other.message
+            and self.schema_path == other.schema_path
+            and self.instance_path == other.instance_path
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.message, tuple(self.schema_path), tuple(self.instance_path)))
+
 
 class ReferencingError(Exception):
     """Errors that can occur during reference resolution and resource handling."""
@@ -73,6 +89,14 @@ class ReferencingError(Exception):
 
     def __repr__(self) -> str:
         return f"<ReferencingError: '{self.message}'>"
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ReferencingError):
+            return NotImplemented
+        return self.message == other.message
+
+    def __hash__(self) -> int:
+        return hash(self.message)
 
 
 __all__ = [
@@ -95,6 +119,7 @@ __all__ = [
     "Draft7Validator",
     "Draft201909Validator",
     "Draft202012Validator",
+    "Validator",
     "Registry",
     "FancyRegexOptions",
     "RegexOptions",

@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from decimal import Decimal
 from typing import Any, Callable, List, Protocol, TypeAlias, TypeVar, TypedDict, Union
 
 _SchemaT = TypeVar("_SchemaT", bool, dict[str, Any])
@@ -18,21 +19,47 @@ class EvaluationErrorEntry(TypedDict):
     instanceLocation: str
     error: str
 
+class FlagOutput(TypedDict):
+    """JSON Schema Output v1 - Flag format."""
+
+    valid: bool
+
+class OutputUnit(TypedDict, total=False):
+    """A single output unit in list/hierarchical formats."""
+
+    valid: bool
+    evaluationPath: str
+    schemaLocation: str
+    instanceLocation: str
+    errors: dict[str, str]
+    annotations: JSONType
+    droppedAnnotations: JSONType
+    details: List["OutputUnit"]
+
+class ListOutput(TypedDict):
+    """JSON Schema Output v1 - List format."""
+
+    valid: bool
+    details: List[OutputUnit]
+
 class Evaluation:
     valid: bool
-    def flag(self) -> JSONType: ...
-    def list(self) -> JSONType: ...
-    def hierarchical(self) -> JSONType: ...
+    def flag(self) -> FlagOutput: ...
+    def list(self) -> ListOutput: ...
+    def hierarchical(self) -> OutputUnit: ...
     def annotations(self) -> List[EvaluationAnnotation]: ...
     def errors(self) -> List[EvaluationErrorEntry]: ...
+    def __repr__(self) -> str: ...
 
 class FancyRegexOptions:
     def __init__(
         self, backtrack_limit: int | None = None, size_limit: int | None = None, dfa_size_limit: int | None = None
     ) -> None: ...
+    def __repr__(self) -> str: ...
 
 class RegexOptions:
     def __init__(self, size_limit: int | None = None, dfa_size_limit: int | None = None) -> None: ...
+    def __repr__(self) -> str: ...
 
 PatternOptionsType = Union[FancyRegexOptions, RegexOptions]
 
@@ -52,7 +79,13 @@ def is_valid(
     mask: str | None = None,
     base_uri: str | None = None,
     pattern_options: PatternOptionsType | None = None,
-) -> bool: ...
+) -> bool:
+    """Check if a JSON instance is valid against a schema.
+
+    Returns True if valid, False otherwise. Stops at the first error.
+    """
+    ...
+
 def validate(
     schema: _SchemaT,
     instance: Any,
@@ -66,7 +99,13 @@ def validate(
     mask: str | None = None,
     base_uri: str | None = None,
     pattern_options: PatternOptionsType | None = None,
-) -> None: ...
+) -> None:
+    """Validate a JSON instance against a schema.
+
+    Raises ValidationError if invalid. Stops at the first error.
+    """
+    ...
+
 def iter_errors(
     schema: _SchemaT,
     instance: Any,
@@ -80,7 +119,13 @@ def iter_errors(
     mask: str | None = None,
     base_uri: str | None = None,
     pattern_options: PatternOptionsType | None = None,
-) -> Iterator[ValidationError]: ...
+) -> Iterator[ValidationError]:
+    """Iterate over all validation errors.
+
+    Returns an iterator of ValidationError objects for all errors found.
+    """
+    ...
+
 def evaluate(
     schema: _SchemaT,
     instance: Any,
@@ -92,7 +137,12 @@ def evaluate(
     registry: Registry | None = None,
     base_uri: str | None = None,
     pattern_options: PatternOptionsType | None = None,
-) -> Evaluation: ...
+) -> Evaluation:
+    """Evaluate an instance and return structured output.
+
+    Returns an Evaluation object with flag(), list(), and hierarchical() output formats.
+    """
+    ...
 
 class ReferencingError:
     message: str
@@ -166,12 +216,13 @@ class ValidationErrorKind:
         limit: int
 
     class MultipleOf:
-        multiple_of: float
+        multiple_of: int | float | Decimal
 
     class Not:
         schema: JSONType
 
-    class OneOfMultipleValid: ...
+    class OneOfMultipleValid:
+        context: list[list["ValidationError"]]
 
     class OneOfNotValid:
         context: list[list["ValidationError"]]
@@ -201,6 +252,7 @@ class ValidationErrorKind:
 
 class ValidationError(ValueError):
     message: str
+    verbose_message: str
     schema_path: list[str | int]
     instance_path: list[str | int]
     kind: ValidationErrorKind
@@ -229,6 +281,7 @@ class Draft4Validator:
     def validate(self, instance: Any) -> None: ...
     def iter_errors(self, instance: Any) -> Iterator[ValidationError]: ...
     def evaluate(self, instance: Any) -> Evaluation: ...
+    def __repr__(self) -> str: ...
 
 class Draft6Validator:
     def __init__(
@@ -247,6 +300,7 @@ class Draft6Validator:
     def validate(self, instance: Any) -> None: ...
     def iter_errors(self, instance: Any) -> Iterator[ValidationError]: ...
     def evaluate(self, instance: Any) -> Evaluation: ...
+    def __repr__(self) -> str: ...
 
 class Draft7Validator:
     def __init__(
@@ -265,6 +319,7 @@ class Draft7Validator:
     def validate(self, instance: Any) -> None: ...
     def iter_errors(self, instance: Any) -> Iterator[ValidationError]: ...
     def evaluate(self, instance: Any) -> Evaluation: ...
+    def __repr__(self) -> str: ...
 
 class Draft201909Validator:
     def __init__(
@@ -283,6 +338,7 @@ class Draft201909Validator:
     def validate(self, instance: Any) -> None: ...
     def iter_errors(self, instance: Any) -> Iterator[ValidationError]: ...
     def evaluate(self, instance: Any) -> Evaluation: ...
+    def __repr__(self) -> str: ...
 
 class Draft202012Validator:
     def __init__(
@@ -301,6 +357,9 @@ class Draft202012Validator:
     def validate(self, instance: Any) -> None: ...
     def iter_errors(self, instance: Any) -> Iterator[ValidationError]: ...
     def evaluate(self, instance: Any) -> Evaluation: ...
+    def __repr__(self) -> str: ...
+
+Validator: TypeAlias = Draft4Validator | Draft6Validator | Draft7Validator | Draft201909Validator | Draft202012Validator
 
 def validator_for(
     schema: _SchemaT,
@@ -312,7 +371,13 @@ def validator_for(
     mask: str | None = None,
     base_uri: str | None = None,
     pattern_options: PatternOptionsType | None = None,
-) -> Draft4Validator | Draft6Validator | Draft7Validator | Draft201909Validator | Draft202012Validator: ...
+) -> Validator:
+    """Create a validator for the given schema.
+
+    Automatically detects the JSON Schema draft from the $schema keyword.
+    Returns a Draft-specific validator instance.
+    """
+    ...
 
 class Registry:
     def __init__(
@@ -321,6 +386,7 @@ class Registry:
         draft: int | None = None,
         retriever: RetrieverProtocol | None = None,
     ) -> None: ...
+    def __repr__(self) -> str: ...
 
 class _Meta:
     def is_valid(self, schema: _SchemaT, registry: Registry | None = None) -> bool: ...

@@ -5,6 +5,16 @@
 ### Added
 
 - `jsonschema_rs.evaluate()`, `Validator.evaluate()`, and the `Evaluation` type for retrieving JSON Schema Output v1 (flag/list/hierarchical) formats along with annotations and errors.
+- `Validator` type alias for union of all validator types (`Draft4Validator | Draft6Validator | Draft7Validator | Draft201909Validator | Draft202012Validator`).
+- `__eq__` and `__hash__` methods to `ValidationError` and `ReferencingError`.
+- `__repr__` method stubs to all validator classes, `Evaluation`, `Registry`, and regex options classes.
+- Docstrings to functions in type stubs (`is_valid`, `validate`, `iter_errors`, `evaluate`, `validator_for`).
+
+### Fixed
+
+- Missing `verbose_message` attribute in `ValidationError` type stub.
+- Missing `context` field in `ValidationErrorKind.OneOfMultipleValid` type stub.
+- Incorrect type for `ValidationErrorKind.MultipleOf.multiple_of` - now correctly typed as `int | float | Decimal` to support arbitrary precision numbers.
 
 ## [0.35.0] - 2025-11-16
 
