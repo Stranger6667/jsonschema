@@ -16,7 +16,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-/// A node in the schema tree, returned by [`compiler::compile`]
+/// A node in the schema tree, returned by `compiler::compile`
 #[derive(Clone, Debug)]
 pub(crate) struct SchemaNode {
     validators: Shared<NodeValidators>,

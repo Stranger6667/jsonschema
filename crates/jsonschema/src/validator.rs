@@ -212,7 +212,7 @@ impl Validator {
     /// # }
     /// ```
     ///
-    /// For sync validation, use [`options`] instead.
+    /// For sync validation, use [`options()`](crate::options()) instead.
     #[cfg(feature = "resolve-async")]
     #[must_use]
     pub fn async_options() -> ValidationOptions<std::sync::Arc<dyn referencing::AsyncRetrieve>> {

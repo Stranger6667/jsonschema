@@ -700,7 +700,7 @@
 //! ```
 //!
 //! **Workaround for HTTP:** Implement a custom blocking or async [`Retrieve`] that uses your preferred
-//! HTTP client, and enable `resolve-async` if you want to build validators through [`async_options`]
+//! HTTP client, and enable `resolve-async` if you want to build validators through [`async_options()`]
 //! on WASI.
 
 #[cfg(all(
@@ -1257,7 +1257,7 @@ pub mod meta {
     ///
     /// # Note
     ///
-    /// Like [`meta::is_valid`](self::meta::is_valid), this helper only handles the bundled JSON
+    /// Like [`is_valid`], this helper only handles the bundled JSON
     /// Schema drafts. For custom meta-schemas, use [`meta::options().with_registry(...)`](crate::meta::options)
     /// so the registry can supply the meta-schema.
     pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
