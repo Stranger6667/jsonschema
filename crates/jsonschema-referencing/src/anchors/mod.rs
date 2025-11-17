@@ -90,7 +90,7 @@ impl Anchor {
             Anchor::Dynamic { name, resource } => {
                 let mut last = resource;
                 for uri in &resolver.dynamic_scope() {
-                    match resolver.registry.anchor(uri, name.as_str()) {
+                    match resolver.context.anchor(uri, name.as_str()) {
                         Ok(anchor) => {
                             if let Anchor::Dynamic { resource, .. } = anchor {
                                 last = resource;
@@ -216,7 +216,8 @@ mod tests {
         let one = Draft::Draft202012.create_resource(json!({"$dynamicAnchor": "foo"}));
         let registry =
             Registry::try_new("http://example.com", one.clone()).expect("Invalid resources");
-        let resolver = registry
+        let context = registry.context();
+        let resolver = context
             .try_resolver("http://example.com")
             .expect("Invalid base URI");
         let resolved = resolver.lookup("#foo").expect("Lookup failed");
@@ -249,7 +250,8 @@ mod tests {
             ("http://example.com/foo/bar".to_string(), root.clone()),
         ])
         .expect("Invalid resources");
-        let resolver = registry
+        let context = registry.context();
+        let resolver = context
             .try_resolver("http://example.com")
             .expect("Invalid base URI");
 
@@ -290,7 +292,8 @@ mod tests {
             ("http://example.com/foo/bar".to_string(), two.clone()),
         ])
         .expect("Invalid resources");
-        let resolver = registry
+        let context = registry.context();
+        let resolver = context
             .try_resolver("http://example.com")
             .expect("Invalid base URI");
 
@@ -312,7 +315,8 @@ mod tests {
             }
         }));
         let registry = Registry::try_new("http://example.com", schema).expect("Invalid resources");
-        let resolver = registry
+        let context = registry.context();
+        let resolver = context
             .try_resolver("http://example.com")
             .expect("Invalid base URI");
 
@@ -331,7 +335,8 @@ mod tests {
             }
         }));
         let registry = Registry::try_new("http://example.com", schema).expect("Invalid resources");
-        let resolver = registry
+        let context = registry.context();
+        let resolver = context
             .try_resolver("http://example.com")
             .expect("Invalid base URI");
 
@@ -347,7 +352,8 @@ mod tests {
         let one = Draft::Draft201909.create_resource(json!({"$recursiveAnchor": true}));
         let registry =
             Registry::try_new("http://example.com", one.clone()).expect("Invalid resources");
-        let resolver = registry
+        let context = registry.context();
+        let resolver = context
             .try_resolver("http://example.com")
             .expect("Invalid base URI");
         let first = resolver.lookup("").expect("Lookup failed");
@@ -363,7 +369,8 @@ mod tests {
         let true_resource = Draft::Draft201909.create_resource(json!(true));
         let registry = Registry::try_new("http://example.com", true_resource.clone())
             .expect("Invalid resources");
-        let resolver = registry
+        let context = registry.context();
+        let resolver = context
             .try_resolver("http://example.com")
             .expect("Invalid base URI");
         let resolved = resolver.lookup_recursive_ref().expect("Lookup failed");
@@ -398,7 +405,8 @@ mod tests {
         ])
         .expect("Invalid resources");
 
-        let resolver = registry
+        let context = registry.context();
+        let resolver = context
             .try_resolver("http://example.com")
             .expect("Invalid base URI");
         let first = resolver.lookup("").expect("Lookup failed");
@@ -440,7 +448,8 @@ mod tests {
         ])
         .expect("Invalid resources");
 
-        let resolver = registry
+        let context = registry.context();
+        let resolver = context
             .try_resolver("http://example.com")
             .expect("Invalid base URI");
         let first = resolver.lookup("").expect("Lookup failed");

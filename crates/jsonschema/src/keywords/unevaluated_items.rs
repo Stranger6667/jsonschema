@@ -201,7 +201,7 @@ impl ConditionalValidators {
 /// can evaluate items. Handles circular references via pending nodes cached
 /// by location and schema pointer.
 fn compile_items_validators<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<ItemsValidators, ValidationError<'a>> {
     let unevaluated = compile_unevaluated(ctx, parent)?;
@@ -236,7 +236,7 @@ fn compile_items_validators<'a>(
 }
 
 fn compile_unevaluated<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Option<SchemaNode>, ValidationError<'a>> {
     if let Some(subschema) = parent.get("unevaluatedItems") {
@@ -251,7 +251,7 @@ fn compile_unevaluated<'a>(
 }
 
 fn compile_contains<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Option<SchemaNode>, ValidationError<'a>> {
     if let Some(subschema) = parent.get("contains") {
@@ -266,7 +266,7 @@ fn compile_contains<'a>(
 }
 
 fn compile_ref<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Option<RefValidator>, ValidationError<'a>> {
     if let Some(Value::String(reference)) = parent.get("$ref") {
@@ -281,7 +281,7 @@ fn compile_ref<'a>(
 }
 
 fn compile_dynamic_ref<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Option<Box<ItemsValidators>>, ValidationError<'a>> {
     if let Some(Value::String(reference)) = parent.get("$dynamicRef") {
@@ -296,7 +296,7 @@ fn compile_dynamic_ref<'a>(
 }
 
 fn compile_recursive_ref<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &Map<String, Value>,
 ) -> Result<Option<PendingItemsValidators>, ValidationError<'a>> {
     if !parent.contains_key("$recursiveRef") {
@@ -338,7 +338,7 @@ fn compile_recursive_ref<'a>(
 }
 
 fn compile_items<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<(Option<usize>, bool), ValidationError<'a>> {
     if let Some(subschema) = parent.get("items") {
@@ -364,7 +364,7 @@ fn compile_items<'a>(
 }
 
 fn compile_prefix_items<'a>(
-    _ctx: &compiler::Context<'_>,
+    _ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Option<usize>, ValidationError<'a>> {
     if let Some(Some(items)) = parent.get("prefixItems").map(Value::as_array) {
@@ -375,7 +375,7 @@ fn compile_prefix_items<'a>(
 }
 
 fn compile_conditional<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Option<Box<ConditionalValidators>>, ValidationError<'a>> {
     if let Some(subschema) = parent.get("if") {
@@ -414,7 +414,7 @@ fn compile_conditional<'a>(
 }
 
 fn compile_all_of<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Option<Vec<(SchemaNode, ItemsValidators)>>, ValidationError<'a>> {
     if let Some(Some(subschemas)) = parent.get("allOf").map(Value::as_array) {
@@ -440,7 +440,7 @@ fn compile_all_of<'a>(
 }
 
 fn compile_any_of<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Option<Vec<(SchemaNode, ItemsValidators)>>, ValidationError<'a>> {
     if let Some(Some(subschemas)) = parent.get("anyOf").map(Value::as_array) {
@@ -466,7 +466,7 @@ fn compile_any_of<'a>(
 }
 
 fn compile_one_of<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Option<Vec<(SchemaNode, ItemsValidators)>>, ValidationError<'a>> {
     if let Some(Some(subschemas)) = parent.get("oneOf").map(Value::as_array) {

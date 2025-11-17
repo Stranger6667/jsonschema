@@ -6,7 +6,7 @@ use crate::{get_draft, retriever::into_retriever, to_value, Retriever};
 /// A registry of JSON Schema resources, each identified by their canonical URIs.
 #[pyclass]
 pub(crate) struct Registry {
-    pub(crate) inner: jsonschema::Registry,
+    pub(crate) inner: jsonschema::Registry<'static>,
 }
 
 #[pymethods]

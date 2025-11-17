@@ -12,13 +12,13 @@ use crate::{
     Keyword, ValidationError, Validator,
 };
 use ahash::AHashMap;
-use referencing::{Draft, Resource, Retrieve};
+use referencing::{Draft, Retrieve};
 use serde_json::Value;
 use std::{fmt, marker::PhantomData, sync::Arc};
 
 /// Configuration options for JSON Schema validation.
 #[derive(Clone)]
-pub struct ValidationOptions<R = Arc<dyn Retrieve>> {
+pub struct ValidationOptions<'doc, R = Arc<dyn Retrieve>> {
     pub(crate) draft: Option<Draft>,
     content_media_type_checks: AHashMap<&'static str, Option<ContentMediaTypeCheckType>>,
     content_encoding_checks_and_converters:
@@ -26,18 +26,17 @@ pub struct ValidationOptions<R = Arc<dyn Retrieve>> {
     pub(crate) base_uri: Option<String>,
     /// Retriever for external resources
     pub(crate) retriever: R,
-    /// Additional resources that should be addressable during validation.
-    pub(crate) resources: AHashMap<String, Resource>,
-    pub(crate) registry: Option<referencing::Registry>,
+    pub(crate) registry: Option<&'doc referencing::Registry<'doc>>,
     formats: AHashMap<String, Arc<dyn Format>>,
     validate_formats: Option<bool>,
     pub(crate) validate_schema: bool,
     ignore_unknown_formats: bool,
     keywords: AHashMap<String, Arc<dyn KeywordFactory>>,
     pattern_options: PatternEngineOptions,
+    _phantom: PhantomData<&'doc ()>,
 }
 
-impl Default for ValidationOptions<Arc<dyn Retrieve>> {
+impl Default for ValidationOptions<'_, Arc<dyn Retrieve>> {
     fn default() -> Self {
         ValidationOptions {
             draft: None,
@@ -45,7 +44,6 @@ impl Default for ValidationOptions<Arc<dyn Retrieve>> {
             content_encoding_checks_and_converters: AHashMap::default(),
             base_uri: None,
             retriever: Arc::new(DefaultRetriever),
-            resources: AHashMap::default(),
             registry: None,
             formats: AHashMap::default(),
             validate_formats: None,
@@ -53,12 +51,13 @@ impl Default for ValidationOptions<Arc<dyn Retrieve>> {
             ignore_unknown_formats: true,
             keywords: AHashMap::default(),
             pattern_options: PatternEngineOptions::default(),
+            _phantom: PhantomData,
         }
     }
 }
 
 #[cfg(feature = "resolve-async")]
-impl Default for ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
+impl Default for ValidationOptions<'_, Arc<dyn referencing::AsyncRetrieve>> {
     fn default() -> Self {
         ValidationOptions {
             draft: None,
@@ -66,7 +65,6 @@ impl Default for ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             content_encoding_checks_and_converters: AHashMap::default(),
             base_uri: None,
             retriever: Arc::new(DefaultRetriever),
-            resources: AHashMap::default(),
             registry: None,
             formats: AHashMap::default(),
             validate_formats: None,
@@ -74,11 +72,12 @@ impl Default for ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             ignore_unknown_formats: true,
             keywords: AHashMap::default(),
             pattern_options: PatternEngineOptions::default(),
+            _phantom: PhantomData,
         }
     }
 }
 
-impl<R> ValidationOptions<R> {
+impl<'doc, R> ValidationOptions<'doc, R> {
     /// Return the draft version, or the default if not set.
     pub(crate) fn draft(&self) -> Draft {
         self.draft.unwrap_or_default()
@@ -271,70 +270,6 @@ impl<R> ValidationOptions<R> {
         self.base_uri = Some(base_uri.into());
         self
     }
-    /// Add a custom schema, allowing it to be referenced by the specified URI during validation.
-    ///
-    /// This enables the use of additional in-memory schemas alongside the main schema being validated.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use serde_json::json;
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use jsonschema::Resource;
-    ///
-    /// let extra = Resource::from_contents(json!({"minimum": 5}));
-    ///
-    /// let validator = jsonschema::options()
-    ///     .with_resource("urn:minimum-schema", extra)
-    ///     .build(&json!({"$ref": "urn:minimum-schema"}))?;
-    /// assert!(validator.is_valid(&json!(5)));
-    /// assert!(!validator.is_valid(&json!(4)));
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[must_use]
-    pub fn with_resource(mut self, uri: impl Into<String>, resource: Resource) -> Self {
-        self.resources.insert(uri.into(), resource);
-        self
-    }
-    /// Add custom schemas, allowing them to be referenced by the specified URI during validation.
-    ///
-    /// This enables the use of additional in-memory schemas alongside the main schema being validated.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// # use serde_json::json;
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use jsonschema::Resource;
-    ///
-    /// let validator = jsonschema::options()
-    ///     .with_resources([
-    ///         (
-    ///             "urn:minimum-schema",
-    ///             Resource::from_contents(json!({"minimum": 5})),
-    ///         ),
-    ///         (
-    ///             "urn:maximum-schema",
-    ///             Resource::from_contents(json!({"maximum": 10})),
-    ///         ),
-    ///       ].into_iter())
-    ///     .build(&json!({"$ref": "urn:minimum-schema"}))?;
-    /// assert!(validator.is_valid(&json!(5)));
-    /// assert!(!validator.is_valid(&json!(4)));
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[must_use]
-    pub fn with_resources(
-        mut self,
-        pairs: impl Iterator<Item = (impl Into<String>, Resource)>,
-    ) -> Self {
-        for (uri, resource) in pairs {
-            self.resources.insert(uri.into(), resource);
-        }
-        self
-    }
     /// Use external schema resources from the registry, making them accessible via references
     /// during validation.
     ///
@@ -355,7 +290,7 @@ impl<R> ValidationOptions<R> {
     ///     }
     /// });
     /// let validator = jsonschema::options()
-    ///     .with_registry(registry)
+    ///     .with_registry(&registry)
     ///     .build(&schema)?;
     /// assert!(validator.is_valid(&json!({ "name": "Valid String" })));
     /// assert!(!validator.is_valid(&json!({ "name": 123 })));
@@ -363,7 +298,7 @@ impl<R> ValidationOptions<R> {
     /// # }
     /// ```
     #[must_use]
-    pub fn with_registry(mut self, registry: referencing::Registry) -> Self {
+    pub fn with_registry(mut self, registry: &'doc referencing::Registry<'doc>) -> Self {
         self.registry = Some(registry);
         self
     }
@@ -510,32 +445,12 @@ impl<R> ValidationOptions<R> {
     pub(crate) fn get_keyword_factory(&self, name: &str) -> Option<&Arc<dyn KeywordFactory>> {
         self.keywords.get(name)
     }
-}
 
-impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
-    /// Build a JSON Schema validator using the current options.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use serde_json::json;
-    ///
-    /// let schema = json!({"type": "string"});
-    /// let validator = jsonschema::options()
-    ///     .build(&schema)
-    ///     .expect("A valid schema");
-    ///
-    /// assert!(validator.is_valid(&json!("Hello")));
-    /// assert!(!validator.is_valid(&json!(42)));
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `schema` is invalid for the selected draft or if referenced resources
-    /// cannot be retrieved or resolved.
-    pub fn build(&self, schema: &Value) -> Result<Validator, ValidationError<'static>> {
-        compiler::build_validator(self, schema)
+    pub(crate) const fn pattern_options(&self) -> PatternEngineOptions {
+        self.pattern_options
     }
+
+    #[cfg_attr(not(feature = "resolve-async"), allow(dead_code))]
     pub(crate) fn draft_for(&self, contents: &Value) -> Result<Draft, ValidationError<'static>> {
         // Preference:
         //  - Explicitly set
@@ -565,23 +480,38 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
         }
     }
 
-    fn resolve_draft_from_registry(
+    pub(crate) fn resolve_draft_from_registry(
         uri: &str,
-        registry: &referencing::Registry,
+        registry: &referencing::Registry<'_>,
     ) -> Result<Draft, ValidationError<'static>> {
         let uri = uri.trim_end_matches('#');
         crate::meta::walk_meta_schema_chain(uri, |current_uri| {
-            let resolver = registry.try_resolver(current_uri)?;
+            let context = registry.context();
+            let resolver = context.try_resolver(current_uri)?;
             let resolved = resolver.lookup("")?;
             Ok(resolved.contents().clone())
         })
     }
+}
+
+impl ValidationOptions<'_, Arc<dyn Retrieve>> {
+    /// Build a JSON Schema validator using the current options.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `schema` is invalid for the selected draft or if referenced resources
+    /// cannot be retrieved or resolved.
+    pub fn build(&self, schema: &Value) -> Result<Validator, ValidationError<'static>> {
+        compiler::build_validator(self, schema)
+    }
+
     /// Set a retriever to fetch external resources.
     #[must_use]
     pub fn with_retriever(mut self, retriever: impl Retrieve + 'static) -> Self {
         self.retriever = Arc::new(retriever);
         self
     }
+
     /// Configure the regular expression engine used during validation for keywords like `pattern`
     /// or `patternProperties`.
     ///
@@ -613,13 +543,10 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
         self.pattern_options = options.inner;
         self
     }
-    pub(crate) fn pattern_options(&self) -> PatternEngineOptions {
-        self.pattern_options
-    }
 }
 
 #[cfg(feature = "resolve-async")]
-impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
+impl<'doc> ValidationOptions<'doc, Arc<dyn referencing::AsyncRetrieve>> {
     /// Build a JSON Schema validator using the current async options.
     ///
     /// # Errors
@@ -633,14 +560,13 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
     pub fn with_retriever(
         self,
         retriever: impl referencing::AsyncRetrieve + 'static,
-    ) -> ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
+    ) -> ValidationOptions<'doc, Arc<dyn referencing::AsyncRetrieve>> {
         ValidationOptions {
             draft: self.draft,
             retriever: Arc::new(retriever),
             content_media_type_checks: self.content_media_type_checks,
             content_encoding_checks_and_converters: self.content_encoding_checks_and_converters,
             base_uri: None,
-            resources: self.resources,
             registry: self.registry,
             formats: self.formats,
             validate_formats: self.validate_formats,
@@ -648,36 +574,27 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             ignore_unknown_formats: self.ignore_unknown_formats,
             keywords: self.keywords,
             pattern_options: self.pattern_options,
+            _phantom: PhantomData,
         }
     }
     #[allow(clippy::unused_async)]
-    pub(crate) async fn draft_for(
+    pub(crate) async fn draft_for_async(
         &self,
         contents: &Value,
     ) -> Result<Draft, ValidationError<'static>> {
-        // Preference:
-        //  - Explicitly set
-        //  - Autodetected
-        //  - Default
-        if let Some(draft) = self.draft {
-            Ok(draft)
-        } else {
-            let default = Draft::default();
-            Ok(default.detect(contents))
-        }
+        self.draft_for(contents)
     }
     /// Set a retriever to fetch external resources.
     pub(crate) fn with_blocking_retriever(
         self,
         retriever: impl Retrieve + 'static,
-    ) -> ValidationOptions<Arc<dyn Retrieve>> {
+    ) -> ValidationOptions<'doc, Arc<dyn Retrieve>> {
         ValidationOptions {
             draft: self.draft,
             retriever: Arc::new(retriever),
             content_media_type_checks: self.content_media_type_checks,
             content_encoding_checks_and_converters: self.content_encoding_checks_and_converters,
             base_uri: None,
-            resources: self.resources,
             registry: self.registry,
             formats: self.formats,
             validate_formats: self.validate_formats,
@@ -685,11 +602,12 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             ignore_unknown_formats: self.ignore_unknown_formats,
             keywords: self.keywords,
             pattern_options: self.pattern_options,
+            _phantom: PhantomData,
         }
     }
 }
 
-impl fmt::Debug for ValidationOptions {
+impl<R> fmt::Debug for ValidationOptions<'_, R> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("CompilationConfig")
             .field("draft", &self.draft)
@@ -864,7 +782,7 @@ mod tests {
             }
         });
         let validator = crate::options()
-            .with_registry(registry)
+            .with_registry(&registry)
             .build(&schema)
             .expect("Invalid schema");
         assert!(validator.is_valid(&json!({ "name": "Valid String" })));
@@ -957,12 +875,15 @@ mod tests {
         // Create a schema that references the specific definition
         let user_schema = json!({"$ref": "https://example.com/root#/definitions/User"});
 
-        // Build validator with the root schema registered as a resource
+        let registry = referencing::Registry::builder()
+            .with_document("https://example.com/root", root_schema)
+            .expect("Failed to register root schema")
+            .build()
+            .expect("Failed to build registry");
+
+        // Build validator with the root schema registered in the registry
         let validator = crate::options()
-            .with_resource(
-                "https://example.com/root",
-                Resource::from_contents(root_schema),
-            )
+            .with_registry(&registry)
             .build(&user_schema)
             .expect("Valid schema");
 

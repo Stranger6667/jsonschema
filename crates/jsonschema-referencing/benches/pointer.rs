@@ -45,10 +45,13 @@ fn bench_pointers(c: &mut Criterion) {
             BenchmarkId::new("pointer", name),
             &registry,
             |b, registry| {
-                let resolver = registry
-                    .try_resolver("http://example.com/schema.json")
-                    .expect("Invalid base URI");
-                b.iter_with_large_drop(|| resolver.lookup(black_box(pointer)));
+                let context = registry.context();
+                b.iter_with_large_drop(|| {
+                    let resolver = context
+                        .try_resolver("http://example.com/schema.json")
+                        .expect("Invalid base URI");
+                    resolver.lookup(black_box(pointer))
+                });
             },
         );
     }

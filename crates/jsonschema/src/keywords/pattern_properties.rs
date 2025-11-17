@@ -183,7 +183,7 @@ pub(crate) fn compile<'a>(
         )));
     };
     let ctx = ctx.new_at_location("patternProperties");
-    let result = match ctx.config().pattern_options() {
+    let result = match ctx.pattern_options() {
         PatternEngineOptions::FancyRegex { .. } => {
             compile_pattern_entries(&ctx, map, |pctx, pattern, subschema| {
                 pctx.get_or_compile_regex(pattern)

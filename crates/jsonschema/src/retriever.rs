@@ -333,7 +333,7 @@ mod async_tests {
             .expect("Registry creation failed");
 
         let validator = crate::options()
-            .with_registry(registry)
+            .with_registry(&registry)
             .build(&schema)
             .expect("Invalid schema");
 
@@ -406,7 +406,7 @@ mod async_tests {
             .expect("Registry creation failed");
 
         let validator = crate::options()
-            .with_registry(registry)
+            .with_registry(&registry)
             .build(&schema)
             .expect("Invalid schema");
 
