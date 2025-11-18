@@ -181,6 +181,65 @@ fn path_to_uri(path: &std::path::Path) -> String {
     result
 }
 
+fn output_schema_validation(
+    schema_path: &Path,
+    schema_json: &serde_json::Value,
+    output: Output,
+    errors_only: bool,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let meta_validator = jsonschema::meta::validator_for(schema_json)?;
+    let evaluation = meta_validator.evaluate(schema_json);
+    let flag_output = evaluation.flag();
+
+    // Skip valid schemas if errors_only is enabled
+    if !(errors_only && flag_output.valid) {
+        let schema_display = schema_path.to_string_lossy().to_string();
+        let output_format = output.as_str();
+        let payload = match output {
+            Output::Text => unreachable!("text mode should not call this function"),
+            Output::Flag => serde_json::to_value(flag_output)?,
+            Output::List => serde_json::to_value(evaluation.list())?,
+            Output::Hierarchical => serde_json::to_value(evaluation.hierarchical())?,
+        };
+
+        let record = json!({
+            "output": output_format,
+            "schema": &schema_display,
+            "payload": payload,
+        });
+        println!("{}", serde_json::to_string(&record)?);
+    }
+
+    Ok(flag_output.valid)
+}
+
+fn validate_schema_meta(
+    schema_path: &Path,
+    output: Output,
+    errors_only: bool,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let schema_json = read_json(schema_path)??;
+
+    if matches!(output, Output::Text) {
+        // Text output mode
+        match jsonschema::meta::validate(&schema_json) {
+            Ok(()) => {
+                if !errors_only {
+                    println!("Schema is valid");
+                }
+                Ok(true)
+            }
+            Err(error) => {
+                println!("Schema is invalid. Error: {error}");
+                Ok(false)
+            }
+        }
+    } else {
+        // Structured output modes using evaluate API
+        output_schema_validation(schema_path, &schema_json, output, errors_only)
+    }
+}
+
 fn validate_instances(
     instances: &[PathBuf],
     schema_path: &Path,
@@ -255,7 +314,12 @@ fn validate_instances(
             }
         }
         Err(error) => {
-            println!("Schema is invalid. Error: {error}");
+            if matches!(output, Output::Text) {
+                println!("Schema is invalid. Error: {error}");
+            } else {
+                // Schema compilation failed - validate the schema itself to get structured output
+                output_schema_validation(schema_path, &schema_json, output, errors_only)?;
+            }
             success = false;
         }
     }
@@ -274,7 +338,7 @@ fn main() -> ExitCode {
         if let Some(instances) = config.instances {
             // - Some(true)  if --assert-format
             // - Some(false) if --no-assert-format
-            // - None        if neither (use builder’s default)
+            // - None        if neither (use builder's default)
             let assert_format = config.assert_format.or(config.no_assert_format);
             return match validate_instances(
                 &instances,
@@ -292,6 +356,15 @@ fn main() -> ExitCode {
                 }
             };
         }
+        // No instances provided - validate the schema itself
+        return match validate_schema_meta(&schema, config.output, config.errors_only) {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::FAILURE,
+            Err(error) => {
+                println!("Error: {error}");
+                ExitCode::FAILURE
+            }
+        };
     }
     ExitCode::SUCCESS
 }

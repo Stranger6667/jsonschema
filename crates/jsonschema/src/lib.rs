@@ -1447,6 +1447,48 @@ pub mod meta {
         validator.as_ref().validate(schema)
     }
 
+    /// Build a validator for a JSON Schema's meta-schema.
+    /// Draft version is detected automatically.
+    ///
+    /// Returns a [`MetaValidator`] that can be used to validate the schema or access
+    /// structured validation output via the evaluate API.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use serde_json::json;
+    ///
+    /// let schema = json!({
+    ///     "type": "string",
+    ///     "maxLength": 5
+    /// });
+    ///
+    /// let validator = jsonschema::meta::validator_for(&schema)
+    ///     .expect("Valid meta-schema");
+    ///
+    /// // Use evaluate API for structured output
+    /// let evaluation = validator.evaluate(&schema);
+    /// assert!(evaluation.flag().valid);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ValidationError`] if the meta-schema cannot be resolved or built.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the meta-schema can't be detected.
+    ///
+    /// # Note
+    ///
+    /// This helper only handles the bundled JSON Schema drafts. For custom meta-schemas,
+    /// use [`meta::options().with_registry(...)`](crate::meta::options).
+    pub fn validator_for(
+        schema: &Value,
+    ) -> Result<MetaValidator<'static>, ValidationError<'static>> {
+        try_meta_validator_for(schema, None)
+    }
+
     fn try_meta_validator_for<'a>(
         schema: &Value,
         registry: Option<&Registry>,
@@ -3815,6 +3857,83 @@ mod tests {
 
             assert!(result.is_ok());
         }
+    }
+
+    #[test]
+    fn test_meta_validator_for_valid_schema() {
+        let schema = json!({
+            "type": "string",
+            "maxLength": 5
+        });
+
+        let validator = crate::meta::validator_for(&schema).expect("Valid meta-schema");
+        assert!(validator.is_valid(&schema));
+    }
+
+    #[test]
+    fn test_meta_validator_for_invalid_schema() {
+        let schema = json!({
+            "type": "invalid_type"
+        });
+
+        let validator = crate::meta::validator_for(&schema).expect("Valid meta-schema");
+        assert!(!validator.is_valid(&schema));
+    }
+
+    #[test]
+    fn test_meta_validator_for_evaluate_api() {
+        let schema = json!({
+            "type": "string",
+            "maxLength": 5
+        });
+
+        let validator = crate::meta::validator_for(&schema).expect("Valid meta-schema");
+        let evaluation = validator.evaluate(&schema);
+
+        let flag = evaluation.flag();
+        assert!(flag.valid);
+    }
+
+    #[test]
+    fn test_meta_validator_for_evaluate_api_invalid() {
+        let schema = json!({
+            "type": "invalid_type",
+            "minimum": "not a number"
+        });
+
+        let validator = crate::meta::validator_for(&schema).expect("Valid meta-schema");
+        let evaluation = validator.evaluate(&schema);
+
+        let flag = evaluation.flag();
+        assert!(!flag.valid);
+    }
+
+    #[test]
+    fn test_meta_validator_for_all_drafts() {
+        let schemas = vec![
+            json!({ "$schema": "http://json-schema.org/draft-04/schema#", "type": "string" }),
+            json!({ "$schema": "http://json-schema.org/draft-06/schema#", "type": "string" }),
+            json!({ "$schema": "http://json-schema.org/draft-07/schema#", "type": "string" }),
+            json!({ "$schema": "https://json-schema.org/draft/2019-09/schema", "type": "string" }),
+            json!({ "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string" }),
+        ];
+
+        for schema in schemas {
+            let validator = crate::meta::validator_for(&schema).unwrap();
+            assert!(validator.is_valid(&schema));
+        }
+    }
+
+    #[test]
+    fn test_meta_validator_for_iter_errors() {
+        let schema = json!({
+            "type": "invalid_type",
+            "minimum": "not a number"
+        });
+
+        let validator = crate::meta::validator_for(&schema).expect("Valid meta-schema");
+        let errors: Vec<_> = validator.iter_errors(&schema).collect();
+        assert!(!errors.is_empty());
     }
 }
 

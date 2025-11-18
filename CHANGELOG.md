@@ -6,7 +6,9 @@
 
 - **CLI**: Structured `--output flag|list|hierarchical` modes now stream newline-delimited JSON records with schema/instance metadata plus JSON Schema Output v1 payloads (default `text` output remains human-readable).
 - **CLI**: `--errors-only` flag to suppress successful validation output and only show failures.
+- **CLI**: When invoked with only a schema file (no instances), validates the schema against its meta-schema. [#804](https://github.com/Stranger6667/jsonschema/issues/804)
 - New `Validator::evaluate()` API exposes JSON Schema Output v1 (flag/list/hierarchical) reports along with iterator helpers for annotations and errors.
+- `meta::validator_for()` function to build validators for meta-schema validation with full `Validator` API access.
 - `Validator` now implements `Clone`. [#809](https://github.com/Stranger6667/jsonschema/issues/809)
 
 ### Removed

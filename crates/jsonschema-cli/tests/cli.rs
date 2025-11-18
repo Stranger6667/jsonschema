@@ -713,3 +713,174 @@ fn test_errors_only_structured_output() {
     assert_eq!(records[0]["instance"], invalid);
     assert_eq!(records[0]["payload"]["valid"], false);
 }
+
+#[test]
+fn test_validate_valid_schema() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type": "string"}"#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema);
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Schema is valid"));
+}
+
+#[test]
+fn test_validate_invalid_schema() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"type": "invalid_type", "minimum": "not a number"}"#,
+    );
+
+    let mut cmd = cli();
+    cmd.arg(&schema);
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Schema is invalid"));
+}
+
+#[test]
+fn test_instance_validation_with_invalid_schema_structured_output() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"type": "invalid_type", "minimum": "not a number"}"#,
+    );
+    let instance = create_temp_file(&dir, "instance.json", "42");
+
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--instance")
+        .arg(&instance)
+        .arg("--output")
+        .arg("flag");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout).expect("Should be valid JSON");
+
+    assert_eq!(json["output"], "flag");
+    assert_eq!(json["payload"]["valid"], false);
+    assert!(json["schema"].as_str().unwrap().ends_with("schema.json"));
+}
+
+#[test]
+fn test_instance_validation_with_invalid_schema_list_output() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"type": "invalid_type", "minimum": "not a number"}"#,
+    );
+    let instance = create_temp_file(&dir, "instance.json", "42");
+
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--instance")
+        .arg(&instance)
+        .arg("--output")
+        .arg("list");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout).expect("Should be valid JSON");
+
+    assert_eq!(json["output"], "list");
+    assert_eq!(json["payload"]["valid"], false);
+    assert!(json["schema"].as_str().unwrap().ends_with("schema.json"));
+}
+
+#[test]
+fn test_instance_validation_with_invalid_schema_hierarchical_output() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"type": "invalid_type", "minimum": "not a number"}"#,
+    );
+    let instance = create_temp_file(&dir, "instance.json", "42");
+
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--instance")
+        .arg(&instance)
+        .arg("--output")
+        .arg("hierarchical");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout).expect("Should be valid JSON");
+
+    assert_eq!(json["output"], "hierarchical");
+    assert_eq!(json["payload"]["valid"], false);
+    assert!(json["schema"].as_str().unwrap().ends_with("schema.json"));
+}
+
+#[test]
+fn test_validate_invalid_schema_list_output() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"type": "invalid_type", "minimum": "not a number"}"#,
+    );
+
+    let mut cmd = cli();
+    cmd.arg(&schema).arg("--output").arg("list");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout).expect("Should be valid JSON");
+
+    assert_eq!(json["output"], "list");
+    assert_eq!(json["payload"]["valid"], false);
+    assert!(json["schema"].as_str().unwrap().ends_with("schema.json"));
+}
+
+#[test]
+fn test_validate_invalid_schema_hierarchical_output() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"type": "invalid_type", "minimum": "not a number"}"#,
+    );
+
+    let mut cmd = cli();
+    cmd.arg(&schema).arg("--output").arg("hierarchical");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout).expect("Should be valid JSON");
+
+    assert_eq!(json["output"], "hierarchical");
+    assert_eq!(json["payload"]["valid"], false);
+    assert!(json["schema"].as_str().unwrap().ends_with("schema.json"));
+}
+
+#[test]
+fn test_validate_schema_with_json_parse_error() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type": "string"#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema).arg("--output").arg("flag");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Error:"));
+}
