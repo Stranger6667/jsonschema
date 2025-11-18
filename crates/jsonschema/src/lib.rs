@@ -523,6 +523,61 @@
 //!
 //! On `wasm32` targets, use `async_trait::async_trait(?Send)` so your retriever can rely on `Rc`, `JsFuture`, or other non-thread-safe types.
 //!
+//! ## Validating against schema definitions
+//!
+//! When working with large schemas containing multiple definitions (e.g., Open API schemas, DAP schemas),
+//! you may want to validate data against a specific definition rather than the entire schema. This can be
+//! achieved by registering the root schema as a resource and creating a wrapper schema that references
+//! the target definition:
+//!
+//! ```rust
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! use serde_json::json;
+//! use jsonschema::Resource;
+//!
+//! // Root schema with multiple definitions
+//! let root_schema = json!({
+//!     "$id": "https://example.com/root",
+//!     "definitions": {
+//!         "User": {
+//!             "type": "object",
+//!             "properties": {
+//!                 "name": {"type": "string"},
+//!                 "age": {"type": "integer", "minimum": 0}
+//!             },
+//!             "required": ["name"]
+//!         },
+//!         "Product": {
+//!             "type": "object",
+//!             "properties": {
+//!                 "id": {"type": "integer"},
+//!                 "title": {"type": "string"}
+//!             },
+//!             "required": ["id", "title"]
+//!         }
+//!     }
+//! });
+//!
+//! // Create a schema that references the specific definition you want to validate against
+//! let user_schema = json!({"$ref": "https://example.com/root#/definitions/User"});
+//!
+//! // Register the root schema and build validator for the specific definition
+//! let validator = jsonschema::options()
+//!     .with_resource("https://example.com/root", Resource::from_contents(root_schema))
+//!     .build(&user_schema)?;
+//!
+//! // Now validate data against just the User definition
+//! assert!(validator.is_valid(&json!({"name": "Alice", "age": 30})));
+//! assert!(!validator.is_valid(&json!({"age": 25})));  // Missing required "name"
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! This pattern is particularly useful when:
+//! - Working with API schemas that define multiple request/response types
+//! - Validating configuration snippets against specific sections of a larger schema
+//! - Testing individual schema components in isolation
+//!
 //! # Regular Expression Configuration
 //!
 //! The `jsonschema` crate allows configuring the regular expression engine used for validating

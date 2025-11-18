@@ -928,4 +928,52 @@ mod tests {
             panic!("Expected Regex variant");
         }
     }
+
+    #[test]
+    fn test_validate_against_definition() {
+        // Root schema with multiple definitions
+        let root_schema = json!({
+            "$id": "https://example.com/root",
+            "definitions": {
+                "User": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "age": {"type": "integer", "minimum": 0}
+                    },
+                    "required": ["name"]
+                },
+                "Product": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer"},
+                        "title": {"type": "string"}
+                    },
+                    "required": ["id", "title"]
+                }
+            }
+        });
+
+        // Create a schema that references the specific definition
+        let user_schema = json!({"$ref": "https://example.com/root#/definitions/User"});
+
+        // Build validator with the root schema registered as a resource
+        let validator = crate::options()
+            .with_resource(
+                "https://example.com/root",
+                Resource::from_contents(root_schema),
+            )
+            .build(&user_schema)
+            .expect("Valid schema");
+
+        // Valid user
+        assert!(validator.is_valid(&json!({"name": "Alice", "age": 30})));
+        assert!(validator.is_valid(&json!({"name": "Bob"})));
+
+        // Invalid: missing required field
+        assert!(!validator.is_valid(&json!({"age": 25})));
+
+        // Invalid: wrong type for age
+        assert!(!validator.is_valid(&json!({"name": "Charlie", "age": "thirty"})));
+    }
 }
