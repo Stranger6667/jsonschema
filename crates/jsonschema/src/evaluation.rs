@@ -9,12 +9,18 @@ use std::{fmt, sync::Arc};
 
 /// Annotations associated with an output unit.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Annotations(serde_json::Value);
+pub struct Annotations(Arc<serde_json::Value>);
 
 impl Annotations {
     /// Create a new `Annotations` instance.
     #[must_use]
     pub(crate) fn new(v: serde_json::Value) -> Self {
+        Annotations(Arc::new(v))
+    }
+
+    /// Create a new `Annotations` instance from an Arc.
+    #[must_use]
+    pub(crate) fn from_arc(v: Arc<serde_json::Value>) -> Self {
         Annotations(v)
     }
 
@@ -22,7 +28,7 @@ impl Annotations {
     #[inline]
     #[must_use]
     pub fn into_inner(self) -> serde_json::Value {
-        self.0
+        Arc::try_unwrap(self.0).unwrap_or_else(|arc| (*arc).clone())
     }
 
     /// The `serde_json::Value` of the annotation.

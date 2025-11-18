@@ -478,7 +478,7 @@ impl Validate for SchemaNode {
                 } = *kvals;
                 let annotations: Option<Annotations> = unmatched_keywords
                     .as_ref()
-                    .map(|v| Annotations::new((**v).clone()));
+                    .map(|v| Annotations::from_arc(Arc::clone(v)));
                 Self::evaluate_subschemas(
                     instance,
                     location,

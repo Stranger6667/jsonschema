@@ -9,6 +9,7 @@
 ### Performance
 
 - `validate` and other APIs returning `Result<_, ValidationError>` are 5–10% faster in some workloads due to the smaller error handle.
+- `evaluate`: Eliminated deep clones of unmatched keyword values (e.g., `title`, `description`, `examples`) on every schema node evaluation by using `Arc` internally. Can be multiple times faster for schemas with large annotations.
 
 ## [0.36.0] - 2025-11-18
 
