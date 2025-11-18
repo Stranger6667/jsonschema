@@ -5,6 +5,7 @@
 ### Added
 
 - `evaluate()` top-level function for convenient access to structured validation output.
+- **CLI**: Schema-only validation now also validates all referenced schemas. [#804](https://github.com/Stranger6667/jsonschema/issues/804)
 
 ### Changed
 

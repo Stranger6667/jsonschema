@@ -884,3 +884,125 @@ fn test_validate_schema_with_json_parse_error() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Error:"));
 }
+
+#[test]
+fn test_validate_schema_with_invalid_referenced_schema() {
+    // This test verifies that when a schema references another schema via $ref,
+    // and that referenced schema is invalid, the validation should fail.
+    let dir = tempdir().unwrap();
+
+    // Main schema is structurally valid
+    let main_schema = create_temp_file(
+        &dir,
+        "main.json",
+        r#"{
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "user": { "$ref": "user.json" }
+            }
+        }"#,
+    );
+
+    // Referenced schema is structurally INVALID (bad type value)
+    let _ref_schema = create_temp_file(
+        &dir,
+        "user.json",
+        r#"{
+            "type": "invalid_type_here",
+            "properties": {
+                "name": { "type": "string" }
+            }
+        }"#,
+    );
+
+    let mut cmd = cli();
+    cmd.arg(&main_schema);
+    let output = cmd.output().unwrap();
+
+    // Schema validation should fail because the referenced schema is invalid
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Schema is invalid"));
+}
+
+#[test]
+fn test_validate_schema_with_valid_referenced_schema() {
+    // This test verifies that when all referenced schemas are valid, validation succeeds.
+    let dir = tempdir().unwrap();
+
+    let main_schema = create_temp_file(
+        &dir,
+        "main.json",
+        r#"{
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "user": { "$ref": "user.json" }
+            }
+        }"#,
+    );
+
+    // Referenced schema is structurally VALID
+    let _ref_schema = create_temp_file(
+        &dir,
+        "user.json",
+        r#"{
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" }
+            }
+        }"#,
+    );
+
+    let mut cmd = cli();
+    cmd.arg(&main_schema);
+    let output = cmd.output().unwrap();
+
+    // Schema validation should succeed because all schemas are valid
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Schema is valid"));
+}
+
+#[test]
+fn test_validate_schema_with_invalid_ref_structured_output() {
+    // This test verifies structured output when root schema is valid but referenced schema is invalid.
+    // This exercises the code path where flag_output.valid is true, but build fails.
+    let dir = tempdir().unwrap();
+
+    let main_schema = create_temp_file(
+        &dir,
+        "main.json",
+        r#"{
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "user": { "$ref": "user.json" }
+            }
+        }"#,
+    );
+
+    // Referenced schema is structurally INVALID
+    let _ref_schema = create_temp_file(
+        &dir,
+        "user.json",
+        r#"{
+            "type": "invalid_type_here",
+            "properties": {
+                "name": { "type": "string" }
+            }
+        }"#,
+    );
+
+    let mut cmd = cli();
+    cmd.arg(&main_schema).arg("--output").arg("flag");
+    let output = cmd.output().unwrap();
+
+    // Should fail
+    assert!(!output.status.success());
+
+    // Should get an error message (not structured output since build fails before we can output)
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Error:"));
+}

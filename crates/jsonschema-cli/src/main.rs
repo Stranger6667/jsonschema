@@ -187,14 +187,27 @@ fn output_schema_validation(
     output: Output,
     errors_only: bool,
 ) -> Result<bool, Box<dyn std::error::Error>> {
+    // First validate against meta-schema
     let meta_validator = jsonschema::meta::validator_for(schema_json)?;
     let evaluation = meta_validator.evaluate(schema_json);
     let flag_output = evaluation.flag();
+
+    // If meta-schema validation passed, also try to build the validator
+    // to check that all referenced schemas are valid
+    if flag_output.valid {
+        let base_uri = path_to_uri(schema_path);
+        let base_uri = referencing::uri::from_str(&base_uri)?;
+        // Just try to build - if it fails, the error propagates naturally
+        jsonschema::options()
+            .with_base_uri(base_uri)
+            .build(schema_json)?;
+    }
 
     // Skip valid schemas if errors_only is enabled
     if !(errors_only && flag_output.valid) {
         let schema_display = schema_path.to_string_lossy().to_string();
         let output_format = output.as_str();
+
         let payload = match output {
             Output::Text => unreachable!("text mode should not call this function"),
             Output::Flag => serde_json::to_value(flag_output)?,
@@ -222,8 +235,20 @@ fn validate_schema_meta(
 
     if matches!(output, Output::Text) {
         // Text output mode
-        match jsonschema::meta::validate(&schema_json) {
-            Ok(()) => {
+        // First validate the schema structure against its meta-schema
+        if let Err(error) = jsonschema::meta::validate(&schema_json) {
+            println!("Schema is invalid. Error: {error}");
+            return Ok(false);
+        }
+
+        // Then try to build a validator to check that all referenced schemas are also valid
+        let base_uri = path_to_uri(schema_path);
+        let base_uri = referencing::uri::from_str(&base_uri)?;
+        match jsonschema::options()
+            .with_base_uri(base_uri)
+            .build(&schema_json)
+        {
+            Ok(_) => {
                 if !errors_only {
                     println!("Schema is valid");
                 }
