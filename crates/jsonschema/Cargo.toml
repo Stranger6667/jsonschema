@@ -39,8 +39,8 @@ tokio = { version = "1.0", features = ["rt"], optional = true }
 [dependencies]
 ahash.workspace = true
 async-trait = { version = "0.1.86", optional = true }
-base64 = "0.22"
 bytecount = { version = "0.6", features = ["runtime-dispatch-simd"] }
+data-encoding = "2.9"
 email_address = "0.2.9"
 fancy-regex = "0.16"
 fraction = { version = "0.15", default-features = false, features = [

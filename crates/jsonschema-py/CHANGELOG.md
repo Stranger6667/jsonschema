@@ -5,6 +5,7 @@
 ### Added
 
 - Support for `decimal.Decimal` type in both schemas and instances. [#319](https://github.com/Stranger6667/jsonschema/issues/319)
+- Support for additional `contentEncoding` values per RFC 4648: `base64url`, `base32`, `base32hex`, and `base16`. These encodings are now validated alongside the existing `base64` support in Draft 6 and 7. [#26](https://github.com/Stranger6667/jsonschema/issues/26)
 
 ### Performance
 
