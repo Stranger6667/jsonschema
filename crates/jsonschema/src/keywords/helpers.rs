@@ -1,6 +1,7 @@
 #![allow(clippy::float_cmp, clippy::cast_sign_loss)]
 
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 use crate::{compiler, paths::Location, types::JsonType, ValidationError};
 
@@ -18,6 +19,7 @@ pub(crate) fn map_get_u64<'a>(
             ctx.location().clone(),
             value,
             0.into(),
+            ctx.base_uri(),
         ))),
         None => {
             if let Some(value) = value.as_f64() {
@@ -32,6 +34,7 @@ pub(crate) fn map_get_u64<'a>(
                 ctx.location().clone(),
                 value,
                 JsonType::Integer,
+                ctx.base_uri(),
             )))
         }
     }
@@ -41,10 +44,23 @@ pub(crate) fn map_get_u64<'a>(
 pub(crate) fn fail_on_non_positive_integer(
     value: &Value,
     instance_path: Location,
+    absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
 ) -> ValidationError<'_> {
     if value.is_i64() {
-        ValidationError::minimum(Location::new(), instance_path, value, 0.into())
+        ValidationError::minimum(
+            Location::new(),
+            instance_path,
+            value,
+            0.into(),
+            absolute_keyword_location,
+        )
     } else {
-        ValidationError::single_type_error(Location::new(), instance_path, value, JsonType::Integer)
+        ValidationError::single_type_error(
+            Location::new(),
+            instance_path,
+            value,
+            JsonType::Integer,
+            absolute_keyword_location,
+        )
     }
 }

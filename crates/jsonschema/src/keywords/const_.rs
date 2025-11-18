@@ -3,19 +3,26 @@ use crate::{
     validator::Validate,
 };
 use serde_json::{Map, Number, Value};
+use std::sync::Arc;
 
 use crate::paths::LazyLocation;
 
 struct ConstArrayValidator {
     value: Vec<Value>,
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 impl ConstArrayValidator {
     #[inline]
-    pub(crate) fn compile(value: &[Value], location: Location) -> CompilationResult<'_> {
+    pub(crate) fn compile(
+        value: &[Value],
+        location: Location,
+        absolute_path: Option<Arc<referencing::Uri<String>>>,
+    ) -> CompilationResult<'_> {
         Ok(Box::new(ConstArrayValidator {
             value: value.to_vec(),
             location,
+            absolute_path,
         }))
     }
 }
@@ -33,6 +40,7 @@ impl Validate for ConstArrayValidator {
                 location.into(),
                 instance,
                 &self.value,
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -50,11 +58,20 @@ impl Validate for ConstArrayValidator {
 struct ConstBooleanValidator {
     value: bool,
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 impl ConstBooleanValidator {
     #[inline]
-    pub(crate) fn compile<'a>(value: bool, location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(ConstBooleanValidator { value, location }))
+    pub(crate) fn compile<'a>(
+        value: bool,
+        location: Location,
+        absolute_path: Option<Arc<referencing::Uri<String>>>,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(ConstBooleanValidator {
+            value,
+            location,
+            absolute_path,
+        }))
     }
 }
 impl Validate for ConstBooleanValidator {
@@ -71,6 +88,7 @@ impl Validate for ConstBooleanValidator {
                 location.into(),
                 instance,
                 self.value,
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -87,11 +105,18 @@ impl Validate for ConstBooleanValidator {
 
 struct ConstNullValidator {
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 impl ConstNullValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(ConstNullValidator { location }))
+    pub(crate) fn compile<'a>(
+        location: Location,
+        absolute_path: Option<Arc<referencing::Uri<String>>>,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(ConstNullValidator {
+            location,
+            absolute_path,
+        }))
     }
 }
 impl Validate for ConstNullValidator {
@@ -107,6 +132,7 @@ impl Validate for ConstNullValidator {
                 self.location.clone(),
                 location.into(),
                 instance,
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -120,14 +146,20 @@ struct ConstNumberValidator {
     // This is saved in order to ensure that the error message is not altered by precision loss
     original_value: Number,
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 
 impl ConstNumberValidator {
     #[inline]
-    pub(crate) fn compile(original_value: &Number, location: Location) -> CompilationResult<'_> {
+    pub(crate) fn compile(
+        original_value: &Number,
+        location: Location,
+        absolute_path: Option<Arc<referencing::Uri<String>>>,
+    ) -> CompilationResult<'_> {
         Ok(Box::new(ConstNumberValidator {
             original_value: original_value.clone(),
             location,
+            absolute_path,
         }))
     }
 }
@@ -146,6 +178,7 @@ impl Validate for ConstNumberValidator {
                 location.into(),
                 instance,
                 &self.original_value,
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -162,14 +195,20 @@ impl Validate for ConstNumberValidator {
 pub(crate) struct ConstObjectValidator {
     value: Map<String, Value>,
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 
 impl ConstObjectValidator {
     #[inline]
-    pub(crate) fn compile(value: &Map<String, Value>, location: Location) -> CompilationResult<'_> {
+    pub(crate) fn compile(
+        value: &Map<String, Value>,
+        location: Location,
+        absolute_path: Option<Arc<referencing::Uri<String>>>,
+    ) -> CompilationResult<'_> {
         Ok(Box::new(ConstObjectValidator {
             value: value.clone(),
             location,
+            absolute_path,
         }))
     }
 }
@@ -188,6 +227,7 @@ impl Validate for ConstObjectValidator {
                 location.into(),
                 instance,
                 &self.value,
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -203,14 +243,20 @@ impl Validate for ConstObjectValidator {
 pub(crate) struct ConstStringValidator {
     value: String,
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 
 impl ConstStringValidator {
     #[inline]
-    pub(crate) fn compile(value: &str, location: Location) -> CompilationResult<'_> {
+    pub(crate) fn compile(
+        value: &str,
+        location: Location,
+        absolute_path: Option<Arc<referencing::Uri<String>>>,
+    ) -> CompilationResult<'_> {
         Ok(Box::new(ConstStringValidator {
             value: value.to_string(),
             location,
+            absolute_path,
         }))
     }
 }
@@ -229,6 +275,7 @@ impl Validate for ConstStringValidator {
                 location.into(),
                 instance,
                 &self.value,
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -247,14 +294,24 @@ pub(crate) fn compile<'a>(
     _: &'a Map<String, Value>,
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
-    let location = ctx.location().join("const");
+    let kctx = ctx.new_at_location("const");
+    let location = kctx.location().clone();
+    let absolute_path = kctx.base_uri();
     match schema {
-        Value::Array(items) => Some(ConstArrayValidator::compile(items, location)),
-        Value::Bool(item) => Some(ConstBooleanValidator::compile(*item, location)),
-        Value::Null => Some(ConstNullValidator::compile(location)),
-        Value::Number(item) => Some(ConstNumberValidator::compile(item, location)),
-        Value::Object(map) => Some(ConstObjectValidator::compile(map, location)),
-        Value::String(string) => Some(ConstStringValidator::compile(string, location)),
+        Value::Array(items) => Some(ConstArrayValidator::compile(items, location, absolute_path)),
+        Value::Bool(item) => Some(ConstBooleanValidator::compile(
+            *item,
+            location,
+            absolute_path,
+        )),
+        Value::Null => Some(ConstNullValidator::compile(location, absolute_path)),
+        Value::Number(item) => Some(ConstNumberValidator::compile(item, location, absolute_path)),
+        Value::Object(map) => Some(ConstObjectValidator::compile(map, location, absolute_path)),
+        Value::String(string) => Some(ConstStringValidator::compile(
+            string,
+            location,
+            absolute_path,
+        )),
     }
 }
 

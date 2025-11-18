@@ -7,11 +7,14 @@ use crate::{
     paths::{LazyLocation, Location},
     validator::Validate,
 };
+use referencing::Uri;
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 pub(crate) struct MaxItemsValidator {
     limit: u64,
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl MaxItemsValidator {
@@ -21,8 +24,13 @@ impl MaxItemsValidator {
         schema: &'a Value,
         location: Location,
     ) -> CompilationResult<'a> {
+        let absolute_path = ctx.base_uri();
         if let Some(limit) = schema.as_u64() {
-            return Ok(Box::new(MaxItemsValidator { limit, location }));
+            return Ok(Box::new(MaxItemsValidator {
+                limit,
+                location,
+                absolute_path,
+            }));
         }
         if ctx.supports_integer_valued_numbers() {
             if let Some(limit) = schema.as_f64() {
@@ -32,11 +40,16 @@ impl MaxItemsValidator {
                         // NOTE: Imprecise cast as big integers are not supported yet
                         limit: limit as u64,
                         location,
+                        absolute_path,
                     }));
                 }
             }
         }
-        Err(fail_on_non_positive_integer(schema, location))
+        Err(fail_on_non_positive_integer(
+            schema,
+            location,
+            ctx.base_uri(),
+        ))
     }
 }
 
@@ -62,6 +75,7 @@ impl Validate for MaxItemsValidator {
                     location.into(),
                     instance,
                     self.limit,
+                    self.absolute_path.clone(),
                 ));
             }
         }

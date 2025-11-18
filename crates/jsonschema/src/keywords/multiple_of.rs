@@ -8,12 +8,14 @@ use crate::{
     validator::Validate,
 };
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 pub(crate) struct MultipleOfFloatValidator {
     multiple_of: f64,
     #[cfg(feature = "arbitrary-precision")]
     original_value: serde_json::Number,
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 
 impl MultipleOfFloatValidator {
@@ -22,12 +24,14 @@ impl MultipleOfFloatValidator {
         multiple_of: f64,
         #[cfg(feature = "arbitrary-precision")] original_value: &serde_json::Number,
         location: Location,
+        absolute_path: Option<Arc<referencing::Uri<String>>>,
     ) -> CompilationResult<'a> {
         Ok(Box::new(MultipleOfFloatValidator {
             multiple_of,
             #[cfg(feature = "arbitrary-precision")]
             original_value: original_value.clone(),
             location,
+            absolute_path,
         }))
     }
 }
@@ -54,6 +58,7 @@ impl Validate for MultipleOfFloatValidator {
                     location.into(),
                     instance,
                     Value::Number(self.original_value.clone()),
+                    self.absolute_path.clone(),
                 ));
             }
             #[cfg(not(feature = "arbitrary-precision"))]
@@ -63,6 +68,7 @@ impl Validate for MultipleOfFloatValidator {
                     location.into(),
                     instance,
                     self.multiple_of,
+                    self.absolute_path.clone(),
                 ));
             }
         }
@@ -75,6 +81,7 @@ pub(crate) struct MultipleOfIntegerValidator {
     #[cfg(feature = "arbitrary-precision")]
     original_value: serde_json::Number,
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 
 impl MultipleOfIntegerValidator {
@@ -83,12 +90,14 @@ impl MultipleOfIntegerValidator {
         multiple_of: f64,
         #[cfg(feature = "arbitrary-precision")] original_value: &serde_json::Number,
         location: Location,
+        absolute_path: Option<Arc<referencing::Uri<String>>>,
     ) -> CompilationResult<'a> {
         Ok(Box::new(MultipleOfIntegerValidator {
             multiple_of,
             #[cfg(feature = "arbitrary-precision")]
             original_value: original_value.clone(),
             location,
+            absolute_path,
         }))
     }
 }
@@ -115,6 +124,7 @@ impl Validate for MultipleOfIntegerValidator {
                     location.into(),
                     instance,
                     Value::Number(self.original_value.clone()),
+                    self.absolute_path.clone(),
                 ));
             }
             #[cfg(not(feature = "arbitrary-precision"))]
@@ -124,6 +134,7 @@ impl Validate for MultipleOfIntegerValidator {
                     location.into(),
                     instance,
                     self.multiple_of,
+                    self.absolute_path.clone(),
                 ));
             }
         }
@@ -136,6 +147,7 @@ pub(crate) struct MultipleOfBigIntValidator {
     multiple_of: num_bigint::BigInt,
     original_value: serde_json::Number,
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 
 #[cfg(feature = "arbitrary-precision")]
@@ -145,11 +157,13 @@ impl MultipleOfBigIntValidator {
         multiple_of: num_bigint::BigInt,
         original_value: &serde_json::Number,
         location: Location,
+        absolute_path: Option<Arc<referencing::Uri<String>>>,
     ) -> CompilationResult<'a> {
         Ok(Box::new(MultipleOfBigIntValidator {
             multiple_of,
             original_value: original_value.clone(),
             location,
+            absolute_path,
         }))
     }
 }
@@ -221,6 +235,7 @@ impl Validate for MultipleOfBigIntValidator {
                 location.into(),
                 instance,
                 Value::Number(self.original_value.clone()),
+                self.absolute_path.clone(),
             ));
         }
         Ok(())
@@ -232,6 +247,7 @@ pub(crate) struct MultipleOfBigFracValidator {
     multiple_of: fraction::BigFraction,
     original_value: serde_json::Number,
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 
 #[cfg(feature = "arbitrary-precision")]
@@ -241,11 +257,13 @@ impl MultipleOfBigFracValidator {
         multiple_of: fraction::BigFraction,
         original_value: &serde_json::Number,
         location: Location,
+        absolute_path: Option<Arc<referencing::Uri<String>>>,
     ) -> CompilationResult<'a> {
         Ok(Box::new(MultipleOfBigFracValidator {
             multiple_of,
             original_value: original_value.clone(),
             location,
+            absolute_path,
         }))
     }
 }
@@ -288,6 +306,7 @@ impl Validate for MultipleOfBigFracValidator {
                 location.into(),
                 instance,
                 Value::Number(self.original_value.clone()),
+                self.absolute_path.clone(),
             ));
         }
         Ok(())
@@ -302,6 +321,7 @@ pub(crate) fn compile<'a>(
 ) -> Option<CompilationResult<'a>> {
     if let Value::Number(multiple_of) = schema {
         let location = ctx.location().join("multipleOf");
+        let absolute_path = ctx.absolute_location(&location);
 
         #[cfg(feature = "arbitrary-precision")]
         {
@@ -311,6 +331,7 @@ pub(crate) fn compile<'a>(
                     bigint_multiple,
                     multiple_of,
                     location,
+                    absolute_path,
                 ));
             }
             // Then try BigFraction for exact decimal precision
@@ -319,6 +340,7 @@ pub(crate) fn compile<'a>(
                     bigfrac_multiple,
                     multiple_of,
                     location,
+                    absolute_path,
                 ));
             }
         }
@@ -333,21 +355,31 @@ pub(crate) fn compile<'a>(
                         f64_value,
                         multiple_of,
                         location,
+                        absolute_path,
                     ))
                 } else {
                     Some(MultipleOfFloatValidator::compile(
                         f64_value,
                         multiple_of,
                         location,
+                        absolute_path,
                     ))
                 }
             }
             #[cfg(not(feature = "arbitrary-precision"))]
             {
                 if f64_value.fract() == 0. {
-                    Some(MultipleOfIntegerValidator::compile(f64_value, location))
+                    Some(MultipleOfIntegerValidator::compile(
+                        f64_value,
+                        location,
+                        absolute_path,
+                    ))
                 } else {
-                    Some(MultipleOfFloatValidator::compile(f64_value, location))
+                    Some(MultipleOfFloatValidator::compile(
+                        f64_value,
+                        location,
+                        absolute_path,
+                    ))
                 }
             }
         } else {
@@ -361,6 +393,7 @@ pub(crate) fn compile<'a>(
             ctx.location().clone(),
             schema,
             JsonType::Number,
+            ctx.base_uri(),
         )))
     }
 }

@@ -167,11 +167,18 @@ impl Validate for AdditionalPropertiesValidator {
 /// ```
 pub(crate) struct AdditionalPropertiesFalseValidator {
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 impl AdditionalPropertiesFalseValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(AdditionalPropertiesFalseValidator { location }))
+    pub(crate) fn compile<'a>(
+        location: Location,
+        absolute_path: Option<Arc<referencing::Uri<String>>>,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(AdditionalPropertiesFalseValidator {
+            location,
+            absolute_path,
+        }))
     }
 }
 impl Validate for AdditionalPropertiesFalseValidator {
@@ -194,6 +201,7 @@ impl Validate for AdditionalPropertiesFalseValidator {
                     self.location.clone(),
                     location.into(),
                     value,
+                    self.absolute_path.clone(),
                 ));
             }
         }
@@ -222,6 +230,7 @@ impl Validate for AdditionalPropertiesFalseValidator {
 pub(crate) struct AdditionalPropertiesNotEmptyFalseValidator<M: PropertiesValidatorsMap> {
     properties: M,
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 impl AdditionalPropertiesNotEmptyFalseValidator<SmallValidatorsMap> {
     #[inline]
@@ -229,9 +238,12 @@ impl AdditionalPropertiesNotEmptyFalseValidator<SmallValidatorsMap> {
         map: &'a Map<String, Value>,
         ctx: &compiler::Context,
     ) -> CompilationResult<'a> {
+        let location = ctx.location().join("additionalProperties");
+        let absolute_path = ctx.absolute_location(&location);
         Ok(Box::new(AdditionalPropertiesNotEmptyFalseValidator {
             properties: compile_small_map(ctx, map)?,
-            location: ctx.location().join("additionalProperties"),
+            location,
+            absolute_path,
         }))
     }
 }
@@ -241,9 +253,12 @@ impl AdditionalPropertiesNotEmptyFalseValidator<BigValidatorsMap> {
         map: &'a Map<String, Value>,
         ctx: &compiler::Context,
     ) -> CompilationResult<'a> {
+        let location = ctx.location().join("additionalProperties");
+        let absolute_path = ctx.absolute_location(&location);
         Ok(Box::new(AdditionalPropertiesNotEmptyFalseValidator {
             properties: compile_big_map(ctx, map)?,
-            location: ctx.location().join("additionalProperties"),
+            location,
+            absolute_path,
         }))
     }
 }
@@ -267,6 +282,7 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
                     location.into(),
                     instance,
                     unexpected,
+                    self.absolute_path.clone(),
                 ));
             }
             ErrorIterator::from_iterator(errors.into_iter())
@@ -298,6 +314,7 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
                         location.into(),
                         instance,
                         vec![property.clone()],
+                        self.absolute_path.clone(),
                     ));
                 }
             }
@@ -325,6 +342,7 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
                         location.into(),
                         instance,
                         unexpected,
+                        self.absolute_path.clone(),
                     ),
                 ));
             }
@@ -657,6 +675,7 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsFalseValidator
                     location.into(),
                     instance,
                     unexpected,
+                    self.pattern_keyword_absolute_location.clone(),
                 ));
             }
             ErrorIterator::from_iterator(errors.into_iter())
@@ -696,6 +715,7 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsFalseValidator
                         location.into(),
                         instance,
                         vec![property.clone()],
+                        self.pattern_keyword_absolute_location.clone(),
                     ));
                 }
             }
@@ -745,6 +765,7 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsFalseValidator
                         location.into(),
                         instance,
                         unexpected,
+                        self.pattern_keyword_absolute_location.clone(),
                     ),
                 ));
             }
@@ -962,6 +983,7 @@ pub(crate) struct AdditionalPropertiesWithPatternsNotEmptyFalseValidator<
     properties: M,
     patterns: Vec<(R, SchemaNode)>,
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 
 impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
@@ -1003,6 +1025,7 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
                     location.into(),
                     instance,
                     unexpected,
+                    self.absolute_path.clone(),
                 ));
             }
             ErrorIterator::from_iterator(errors.into_iter())
@@ -1067,6 +1090,7 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
                             location.into(),
                             instance,
                             vec![property.clone()],
+                            self.absolute_path.clone(),
                         ));
                     }
                 }
@@ -1110,6 +1134,7 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
                         location.into(),
                         instance,
                         unexpected,
+                        self.absolute_path.clone(),
                     ),
                 ));
             }
@@ -1167,12 +1192,14 @@ where
     R: RegexEngine + 'static,
 {
     let kctx = ctx.new_at_location("additionalProperties");
+    let absolute_path = kctx.base_uri();
     if map.len() < 40 {
         Some(Ok(Box::new(
             AdditionalPropertiesWithPatternsNotEmptyFalseValidator::<SmallValidatorsMap, R> {
                 properties: try_compile!(compile_small_map(ctx, map)),
                 patterns,
                 location: kctx.location().clone(),
+                absolute_path,
             },
         )))
     } else {
@@ -1181,6 +1208,7 @@ where
                 properties: try_compile!(compile_big_map(ctx, map)),
                 patterns,
                 location: kctx.location().clone(),
+                absolute_path,
             },
         )))
     }
@@ -1338,6 +1366,7 @@ pub(crate) fn compile<'a>(
                 ctx.location().clone(),
                 schema,
                 JsonType::Object,
+                ctx.base_uri(),
             )))
         }
     } else {
@@ -1352,7 +1381,11 @@ pub(crate) fn compile<'a>(
                     )
                 } else {
                     let location = ctx.location().join("additionalProperties");
-                    Some(AdditionalPropertiesFalseValidator::compile(location))
+                    let absolute_path = ctx.absolute_location(&location);
+                    Some(AdditionalPropertiesFalseValidator::compile(
+                        location,
+                        absolute_path,
+                    ))
                 }
             }
             _ => {

@@ -6,9 +6,9 @@
 //!
 //! The implementation eagerly compiles a recursive `ItemsValidators` structure during
 //! schema compilation, using `Shared<OnceLock>` for circular reference handling.
-use referencing::Draft;
+use referencing::{Draft, Uri};
 use serde_json::{Map, Value};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use crate::{
     compiler,
@@ -495,6 +495,7 @@ fn compile_one_of<'a>(
 pub(crate) struct UnevaluatedItemsValidator {
     location: Location,
     validators: ItemsValidators,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl UnevaluatedItemsValidator {
@@ -504,10 +505,13 @@ impl UnevaluatedItemsValidator {
     ) -> CompilationResult<'a> {
         let validators =
             compile_items_validators(ctx, parent).map_err(ValidationError::to_owned)?;
+        let location = ctx.location().join("unevaluatedItems");
+        let absolute_path = ctx.absolute_location(&location);
 
         Ok(Box::new(UnevaluatedItemsValidator {
-            location: ctx.location().join("unevaluatedItems"),
+            location,
             validators,
+            absolute_path,
         }))
     }
 }
@@ -566,6 +570,7 @@ impl Validate for UnevaluatedItemsValidator {
                     location.into(),
                     instance,
                     unevaluated,
+                    self.absolute_path.clone(),
                 ));
             }
         }
@@ -606,6 +611,7 @@ impl Validate for UnevaluatedItemsValidator {
                         location.into(),
                         instance,
                         unevaluated,
+                        self.absolute_path.clone(),
                     ),
                 ));
             }

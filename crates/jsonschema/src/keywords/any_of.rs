@@ -7,12 +7,14 @@ use crate::{
     validator::{EvaluationResult, Validate},
 };
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 use super::CompilationResult;
 
 pub(crate) struct AnyOfValidator {
     schemas: Vec<SchemaNode>,
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 
 impl AnyOfValidator {
@@ -29,6 +31,7 @@ impl AnyOfValidator {
             Ok(Box::new(AnyOfValidator {
                 schemas,
                 location: ctx.location().clone(),
+                absolute_path: ctx.base_uri(),
             }))
         } else {
             Err(ValidationError::single_type_error(
@@ -36,6 +39,7 @@ impl AnyOfValidator {
                 ctx.location().clone(),
                 schema,
                 JsonType::Array,
+                ctx.base_uri(),
             ))
         }
     }
@@ -54,6 +58,7 @@ impl Validate for AnyOfValidator {
                     .iter()
                     .map(|schema| schema.iter_errors(instance, location).collect())
                     .collect(),
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -78,6 +83,7 @@ impl Validate for AnyOfValidator {
                     .iter()
                     .map(|schema| schema.iter_errors(instance, location).collect())
                     .collect(),
+                self.absolute_path.clone(),
             ))
         }
     }

@@ -6,7 +6,9 @@ use crate::{
     paths::{LazyLocation, Location},
     validator::{EvaluationResult, Validate},
 };
+use referencing::Uri;
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 pub(crate) struct PropertyNamesObjectValidator {
     node: SchemaNode,
@@ -39,6 +41,7 @@ impl Validate for PropertyNamesObjectValidator {
                                 location.into(),
                                 instance,
                                 error.to_owned(),
+                                self.node.absolute_path(),
                             )
                         })
                         .collect();
@@ -78,6 +81,7 @@ impl Validate for PropertyNamesObjectValidator {
                             location.into(),
                             instance,
                             error.to_owned(),
+                            self.node.absolute_path(),
                         ))
                     }
                 }
@@ -102,13 +106,18 @@ impl Validate for PropertyNamesObjectValidator {
 
 pub(crate) struct PropertyNamesBooleanValidator {
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl PropertyNamesBooleanValidator {
     #[inline]
     pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
         let location = ctx.location().join("propertyNames");
-        Ok(Box::new(PropertyNamesBooleanValidator { location }))
+        let absolute_path = ctx.absolute_location(&location);
+        Ok(Box::new(PropertyNamesBooleanValidator {
+            location,
+            absolute_path,
+        }))
     }
 }
 
@@ -134,6 +143,7 @@ impl Validate for PropertyNamesBooleanValidator {
                 self.location.clone(),
                 location.into(),
                 instance,
+                self.absolute_path.clone(),
             ))
         }
     }

@@ -38,6 +38,7 @@ class ValidationError(ValueError):
     instance_path: list[str | int]
     kind: ValidationErrorKind
     instance: Any
+    absolute_keyword_location: str | None
 
     def __init__(
         self,
@@ -47,6 +48,7 @@ class ValidationError(ValueError):
         instance_path: list[str | int],
         kind: ValidationErrorKind,
         instance: Any,
+        absolute_keyword_location: str | None = None,
     ) -> None:
         super().__init__(verbose_message)
         self.message = message
@@ -55,6 +57,7 @@ class ValidationError(ValueError):
         self.instance_path = instance_path
         self.kind = kind
         self.instance = instance
+        self.absolute_keyword_location = absolute_keyword_location
 
     def __str__(self) -> str:
         return self.verbose_message

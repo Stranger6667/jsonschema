@@ -48,6 +48,7 @@ impl Validate for ContainsValidator {
                 self.node.location().clone(),
                 location.into(),
                 instance,
+                self.node.absolute_path(),
             ))
         } else {
             Ok(())
@@ -73,6 +74,7 @@ impl Validate for ContainsValidator {
                             self.node.location().clone(),
                             location.into(),
                             instance,
+                            self.node.absolute_path(),
                         ),
                     )],
                     children: Vec::new(),
@@ -140,6 +142,7 @@ impl Validate for MinContainsValidator {
                     self.node.location().clone(),
                     location.into(),
                     instance,
+                    self.node.absolute_path(),
                 ))
             } else {
                 Ok(())
@@ -214,6 +217,7 @@ impl Validate for MaxContainsValidator {
                             self.node.location().clone(),
                             location.into(),
                             instance,
+                            self.node.absolute_path(),
                         ));
                     }
                 }
@@ -225,6 +229,7 @@ impl Validate for MaxContainsValidator {
                     self.node.location().clone(),
                     location.into(),
                     instance,
+                    self.node.absolute_path(),
                 ))
             }
         } else {
@@ -301,6 +306,7 @@ impl Validate for MinMaxContainsValidator {
                             self.node.location().join("maxContains"),
                             location.into(),
                             instance,
+                            self.node.absolute_path(),
                         ));
                     }
                 }
@@ -310,6 +316,7 @@ impl Validate for MinMaxContainsValidator {
                     self.node.location().join("minContains"),
                     location.into(),
                     instance,
+                    self.node.absolute_path(),
                 ))
             } else {
                 Ok(())

@@ -7,11 +7,14 @@ use crate::{
     paths::{LazyLocation, Location},
     validator::Validate,
 };
+use referencing::Uri;
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 pub(crate) struct MinItemsValidator {
     limit: u64,
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl MinItemsValidator {
@@ -20,9 +23,14 @@ impl MinItemsValidator {
         ctx: &compiler::Context,
         schema: &'a Value,
         location: Location,
+        absolute_path: Option<Arc<Uri<String>>>,
     ) -> CompilationResult<'a> {
         if let Some(limit) = schema.as_u64() {
-            return Ok(Box::new(MinItemsValidator { limit, location }));
+            return Ok(Box::new(MinItemsValidator {
+                limit,
+                location,
+                absolute_path,
+            }));
         }
         if ctx.supports_integer_valued_numbers() {
             if let Some(limit) = schema.as_f64() {
@@ -32,11 +40,16 @@ impl MinItemsValidator {
                         // NOTE: Imprecise cast as big integers are not supported yet
                         limit: limit as u64,
                         location,
+                        absolute_path,
                     }));
                 }
             }
         }
-        Err(fail_on_non_positive_integer(schema, location))
+        Err(fail_on_non_positive_integer(
+            schema,
+            location,
+            absolute_path,
+        ))
     }
 }
 
@@ -62,6 +75,7 @@ impl Validate for MinItemsValidator {
                     location.into(),
                     instance,
                     self.limit,
+                    self.absolute_path.clone(),
                 ));
             }
         }
@@ -76,7 +90,13 @@ pub(crate) fn compile<'a>(
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
     let location = ctx.location().join("minItems");
-    Some(MinItemsValidator::compile(ctx, schema, location))
+    let absolute_path = ctx.absolute_location(&location);
+    Some(MinItemsValidator::compile(
+        ctx,
+        schema,
+        location,
+        absolute_path,
+    ))
 }
 
 #[cfg(test)]

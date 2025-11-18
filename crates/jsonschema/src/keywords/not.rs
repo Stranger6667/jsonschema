@@ -39,6 +39,7 @@ impl Validate for NotValidator {
                 location.into(),
                 instance,
                 self.original.clone(),
+                self.node.absolute_path(),
             ))
         }
     }

@@ -102,6 +102,7 @@ fn invalid_reference<'a>(ctx: &compiler::Context, schema: &'a Value) -> Validati
         ctx.location().clone(),
         schema,
         JsonType::String,
+        ctx.base_uri(),
     )
 }
 

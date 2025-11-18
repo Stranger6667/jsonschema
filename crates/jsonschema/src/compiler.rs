@@ -123,6 +123,10 @@ pub(crate) struct Context<'a> {
     resolver: Resolver<'a>,
     vocabularies: VocabularySet,
     location: Location,
+    /// Lexical location within the current schema resource, used for absoluteKeywordLocation.
+    /// This resets when crossing $ref boundaries, unlike `location` which tracks the full
+    /// dynamic traversal path.
+    lexical_location: Location,
     pub(crate) draft: Draft,
     shared: SharedContextState,
 }
@@ -140,6 +144,7 @@ impl<'a> Context<'a> {
             config,
             registry,
             resolver,
+            lexical_location: location.clone(),
             location,
             vocabularies,
             draft,
@@ -166,6 +171,7 @@ impl<'a> Context<'a> {
             vocabularies: self.vocabularies.clone(),
             draft: resource.draft(),
             location: self.location.clone(),
+            lexical_location: self.lexical_location.clone(),
             shared: self.shared.clone(),
         })
     }
@@ -175,13 +181,16 @@ impl<'a> Context<'a> {
 
     #[inline]
     pub(crate) fn new_at_location(&'a self, chunk: impl Into<LocationSegment<'a>>) -> Self {
-        let location = self.location.join(chunk);
+        let chunk = chunk.into();
+        let location = self.location.join(chunk.clone());
+        let lexical_location = self.lexical_location.join(chunk);
         Context {
             config: self.config,
             registry: self.registry,
             resolver: self.resolver.clone(),
             vocabularies: self.vocabularies.clone(),
             location,
+            lexical_location,
             draft: self.draft,
             shared: self.shared.clone(),
         }
@@ -265,6 +274,8 @@ impl<'a> Context<'a> {
         vocabularies: VocabularySet,
         location: Location,
     ) -> Context<'a> {
+        // Reset lexical_location when crossing schema resource boundaries
+        // The dynamic location continues through $ref, but lexical location resets
         Context {
             config: self.config,
             registry: self.registry,
@@ -272,6 +283,7 @@ impl<'a> Context<'a> {
             draft,
             vocabularies,
             location,
+            lexical_location: Location::new(),
             shared: self.shared.clone(),
         }
     }
@@ -598,6 +610,12 @@ impl<'a> Context<'a> {
         &self.location
     }
 
+    /// Returns the lexical location within the current schema resource.
+    /// Used for computing absoluteKeywordLocation (without $ref segments).
+    pub(crate) fn lexical_location(&self) -> &Location {
+        &self.lexical_location
+    }
+
     pub(crate) fn has_vocabulary(&self, vocabulary: &Vocabulary) -> bool {
         if self.draft() < Draft::Draft201909 || vocabulary == &Vocabulary::Core {
             true
@@ -845,8 +863,11 @@ fn compile_without_cache<'a>(
             false => Ok(SchemaNode::from_boolean(
                 ctx,
                 Some(
-                    keywords::boolean::FalseValidator::compile(ctx.location().clone())
-                        .expect("Should always compile"),
+                    keywords::boolean::FalseValidator::compile(
+                        ctx.location().clone(),
+                        ctx.base_uri(),
+                    )
+                    .expect("Should always compile"),
                 ),
             )),
         },
@@ -916,6 +937,7 @@ fn compile_without_cache<'a>(
             JsonTypeSet::empty()
                 .insert(JsonType::Boolean)
                 .insert(JsonType::Object),
+            ctx.base_uri(),
         )),
     }
 }

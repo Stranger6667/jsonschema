@@ -9,7 +9,9 @@ use crate::{
     validator::Validate,
 };
 use num_cmp::NumCmp;
+use referencing::Uri;
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 macro_rules! define_numeric_keywords {
     ($($struct_name:ident => $fn_name:path => $error_fn_name:ident),* $(,)?) => {
@@ -19,11 +21,12 @@ macro_rules! define_numeric_keywords {
                 pub(super) limit: T,
                 limit_val: Value,
                 location: Location,
+                absolute_path: Option<Arc<Uri<String>>>,
             }
 
-            impl<T> From<(T, Value, Location)> for $struct_name<T> {
-                fn from((limit, limit_val, location): (T, Value, Location)) -> Self {
-                    Self { limit, limit_val, location }
+            impl<T> From<(T, Value, Location, Option<Arc<Uri<String>>>)> for $struct_name<T> {
+                fn from((limit, limit_val, location, absolute_path): (T, Value, Location, Option<Arc<Uri<String>>>)) -> Self {
+                    Self { limit, limit_val, location, absolute_path }
                 }
             }
 
@@ -47,6 +50,7 @@ macro_rules! define_numeric_keywords {
                             location.into(),
                             instance,
                             self.limit_val.clone(),
+                            self.absolute_path.clone(),
                         ))
                     }
                 }
@@ -89,11 +93,12 @@ pub(crate) mod bigint_validators {
                 pub(super) limit: BigInt,
                 pub(super) limit_val: Value,
                 pub(super) location: Location,
+                pub(super) absolute_path: Option<std::sync::Arc<referencing::Uri<String>>>,
             }
 
             impl $struct_name {
-                pub(crate) fn new(limit: BigInt, limit_val: Value, location: Location) -> Self {
-                    Self { limit, limit_val, location }
+                pub(crate) fn new(limit: BigInt, limit_val: Value, location: Location, absolute_path: Option<std::sync::Arc<referencing::Uri<String>>>) -> Self {
+                    Self { limit, limit_val, location, absolute_path }
                 }
             }
 
@@ -111,6 +116,7 @@ pub(crate) mod bigint_validators {
                             location.into(),
                             instance,
                             self.limit_val.clone(),
+                            self.absolute_path.clone(),
                         ))
                     }
                 }
@@ -199,11 +205,12 @@ pub(crate) mod bigint_validators {
                 pub(super) limit: BigFraction,
                 pub(super) limit_val: Value,
                 pub(super) location: Location,
+                pub(super) absolute_path: Option<std::sync::Arc<referencing::Uri<String>>>,
             }
 
             impl $struct_name {
-                pub(crate) fn new(limit: BigFraction, limit_val: Value, location: Location) -> Self {
-                    Self { limit, limit_val, location }
+                pub(crate) fn new(limit: BigFraction, limit_val: Value, location: Location, absolute_path: Option<std::sync::Arc<referencing::Uri<String>>>) -> Self {
+                    Self { limit, limit_val, location, absolute_path }
                 }
             }
 
@@ -221,6 +228,7 @@ pub(crate) mod bigint_validators {
                             location.into(),
                             instance,
                             self.limit_val.clone(),
+                            self.absolute_path.clone(),
                         ))
                     }
                 }
@@ -294,10 +302,16 @@ fn create_validator<T, V>(
     schema: &Value,
 ) -> CompilationResult<'static>
 where
-    V: From<(T, Value, Location)> + Validate + 'static,
+    V: From<(T, Value, Location, Option<Arc<Uri<String>>>)> + Validate + 'static,
 {
     let location = ctx.location().join(keyword);
-    Ok(Box::new(V::from((limit, schema.clone(), location))))
+    let absolute_path = ctx.base_uri();
+    Ok(Box::new(V::from((
+        limit,
+        schema.clone(),
+        location,
+        absolute_path,
+    ))))
 }
 
 fn number_type_error<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
@@ -306,6 +320,7 @@ fn number_type_error<'a>(ctx: &compiler::Context, schema: &'a Value) -> Compilat
         ctx.location().clone(),
         schema,
         JsonType::Number,
+        ctx.base_uri(),
     ))
 }
 
@@ -375,18 +390,31 @@ fn create_bigint_validator(
     // Try BigInt first for large integers
     if let Some(bigint_limit) = numeric::bignum::try_parse_bigint(limit) {
         let location = ctx.location().join(keyword);
+        let absolute_path = ctx.base_uri();
         let validator: Box<dyn Validate> = match keyword {
-            "minimum" => Box::new(BigIntMinimum::new(bigint_limit, schema.clone(), location)),
-            "maximum" => Box::new(BigIntMaximum::new(bigint_limit, schema.clone(), location)),
+            "minimum" => Box::new(BigIntMinimum::new(
+                bigint_limit,
+                schema.clone(),
+                location,
+                absolute_path,
+            )),
+            "maximum" => Box::new(BigIntMaximum::new(
+                bigint_limit,
+                schema.clone(),
+                location,
+                absolute_path.clone(),
+            )),
             "exclusiveMinimum" => Box::new(BigIntExclusiveMinimum::new(
                 bigint_limit,
                 schema.clone(),
                 location,
+                absolute_path.clone(),
             )),
             "exclusiveMaximum" => Box::new(BigIntExclusiveMaximum::new(
                 bigint_limit,
                 schema.clone(),
                 location,
+                absolute_path.clone(),
             )),
             _ => return None,
         };
@@ -396,18 +424,31 @@ fn create_bigint_validator(
     // If not a BigInt, try BigFraction for exact decimal precision
     if let Some(bigfrac_limit) = numeric::bignum::try_parse_bigfraction(limit) {
         let location = ctx.location().join(keyword);
+        let absolute_path = ctx.base_uri();
         let validator: Box<dyn Validate> = match keyword {
-            "minimum" => Box::new(BigFracMinimum::new(bigfrac_limit, schema.clone(), location)),
-            "maximum" => Box::new(BigFracMaximum::new(bigfrac_limit, schema.clone(), location)),
+            "minimum" => Box::new(BigFracMinimum::new(
+                bigfrac_limit,
+                schema.clone(),
+                location,
+                absolute_path,
+            )),
+            "maximum" => Box::new(BigFracMaximum::new(
+                bigfrac_limit,
+                schema.clone(),
+                location,
+                absolute_path.clone(),
+            )),
             "exclusiveMinimum" => Box::new(BigFracExclusiveMinimum::new(
                 bigfrac_limit,
                 schema.clone(),
                 location,
+                absolute_path.clone(),
             )),
             "exclusiveMaximum" => Box::new(BigFracExclusiveMaximum::new(
                 bigfrac_limit,
                 schema.clone(),
                 location,
+                absolute_path.clone(),
             )),
             _ => return None,
         };

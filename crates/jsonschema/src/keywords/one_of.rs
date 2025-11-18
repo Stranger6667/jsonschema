@@ -8,11 +8,14 @@ use crate::{
     types::JsonType,
     validator::{EvaluationResult, Validate},
 };
+use referencing::Uri;
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 pub(crate) struct OneOfValidator {
     schemas: Vec<SchemaNode>,
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl OneOfValidator {
@@ -22,13 +25,16 @@ impl OneOfValidator {
             let ctx = ctx.new_at_location("oneOf");
             let mut schemas = Vec::with_capacity(items.len());
             for (idx, item) in items.iter().enumerate() {
-                let ctx = ctx.new_at_location(idx);
-                let node = compiler::compile(&ctx, ctx.as_resource_ref(item))?;
+                let ictx = ctx.new_at_location(idx);
+                let node = compiler::compile(&ictx, ictx.as_resource_ref(item))?;
                 schemas.push(node);
             }
+            let location = ctx.location().clone();
+            let absolute_path = ctx.base_uri();
             Ok(Box::new(OneOfValidator {
                 schemas,
-                location: ctx.location().clone(),
+                location,
+                absolute_path,
             }))
         } else {
             Err(ValidationError::single_type_error(
@@ -36,6 +42,7 @@ impl OneOfValidator {
                 ctx.location().clone(),
                 schema,
                 JsonType::Array,
+                ctx.base_uri(),
             ))
         }
     }
@@ -84,6 +91,7 @@ impl Validate for OneOfValidator {
                         .iter()
                         .map(|schema| schema.iter_errors(instance, location).collect())
                         .collect(),
+                    self.absolute_path.clone(),
                 ));
             }
             Ok(())
@@ -96,6 +104,7 @@ impl Validate for OneOfValidator {
                     .iter()
                     .map(|schema| schema.iter_errors(instance, location).collect())
                     .collect(),
+                self.absolute_path.clone(),
             ))
         }
     }

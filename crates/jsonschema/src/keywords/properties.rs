@@ -35,6 +35,7 @@ impl PropertiesValidator {
                 ctx.location().clone(),
                 schema,
                 JsonType::Object,
+                ctx.base_uri(),
             )),
         }
     }

@@ -218,6 +218,7 @@ struct ValidationErrorArgs {
     instance_path: Py<PyList>,
     kind: ValidationErrorKind,
     instance: Py<PyAny>,
+    absolute_keyword_location: Option<String>,
 }
 
 fn create_validation_error_object(
@@ -233,6 +234,7 @@ fn create_validation_error_object(
         args.instance_path,
         kind_obj,
         args.instance,
+        args.absolute_keyword_location,
     ))?;
     Ok(obj.into())
 }
@@ -410,8 +412,15 @@ impl ValidationErrorKind {
             jsonschema::error::ValidationErrorKind::PropertyNames { error } => {
                 ValidationErrorKind::PropertyNames {
                     error: {
-                        let (message, verbose_message, schema_path, instance_path, kind, instance) =
-                            into_validation_error_args(py, *error, mask)?;
+                        let (
+                            message,
+                            verbose_message,
+                            schema_path,
+                            instance_path,
+                            kind,
+                            instance,
+                            absolute_keyword_location,
+                        ) = into_validation_error_args(py, *error, mask)?;
                         create_validation_error_object(
                             py,
                             ValidationErrorArgs {
@@ -421,6 +430,7 @@ impl ValidationErrorKind {
                                 instance_path,
                                 kind,
                                 instance,
+                                absolute_keyword_location,
                             },
                         )?
                     },
@@ -476,8 +486,15 @@ fn convert_validation_context(
         let mut py_errors: Vec<Py<PyAny>> = Vec::with_capacity(errors.len());
 
         for error in errors {
-            let (message, verbose_message, schema_path, instance_path, kind, instance) =
-                into_validation_error_args(py, error, mask)?;
+            let (
+                message,
+                verbose_message,
+                schema_path,
+                instance_path,
+                kind,
+                instance,
+                absolute_keyword_location,
+            ) = into_validation_error_args(py, error, mask)?;
 
             py_errors.push(create_validation_error_object(
                 py,
@@ -488,6 +505,7 @@ fn convert_validation_context(
                     instance_path,
                     kind,
                     instance,
+                    absolute_keyword_location,
                 },
             )?);
         }
@@ -525,6 +543,7 @@ fn into_validation_error_args(
     Py<PyList>,
     ValidationErrorKind,
     Py<PyAny>,
+    Option<String>,
 )> {
     let message = if let Some(mask) = mask {
         error.masked_with(mask).to_string()
@@ -532,7 +551,10 @@ fn into_validation_error_args(
         error.to_string()
     };
     let verbose_message = to_error_message(&error, message.clone(), mask);
-    let (instance, kind, instance_path, schema_path) = error.into_parts();
+    let absolute_keyword_location = error
+        .absolute_keyword_location()
+        .map(|uri| uri.as_str().to_string());
+    let (instance, kind, instance_path, schema_path, _) = error.into_parts();
     let into_path = |segment: LocationSegment<'_>| match segment {
         LocationSegment::Property(property) => {
             property.into_pyobject(py).and_then(Py::<PyAny>::try_from)
@@ -558,6 +580,7 @@ fn into_validation_error_args(
         instance_path,
         kind,
         instance,
+        absolute_keyword_location,
     ))
 }
 fn into_py_err(
@@ -565,8 +588,15 @@ fn into_py_err(
     error: jsonschema::ValidationError<'_>,
     mask: Option<&str>,
 ) -> PyResult<PyErr> {
-    let (message, verbose_message, schema_path, instance_path, kind, instance) =
-        into_validation_error_args(py, error, mask)?;
+    let (
+        message,
+        verbose_message,
+        schema_path,
+        instance_path,
+        kind,
+        instance,
+        absolute_keyword_location,
+    ) = into_validation_error_args(py, error, mask)?;
     validation_error_pyerr(
         py,
         ValidationErrorArgs {
@@ -576,6 +606,7 @@ fn into_py_err(
             instance_path,
             kind,
             instance,
+            absolute_keyword_location,
         },
     )
 }

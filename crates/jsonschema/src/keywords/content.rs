@@ -9,13 +9,16 @@ use crate::{
     types::JsonType,
     validator::Validate,
 };
+use referencing::Uri;
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 /// Validator for `contentMediaType` keyword.
 pub(crate) struct ContentMediaTypeValidator {
     media_type: String,
     func: ContentMediaTypeCheckType,
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl ContentMediaTypeValidator {
@@ -24,11 +27,13 @@ impl ContentMediaTypeValidator {
         media_type: &str,
         func: ContentMediaTypeCheckType,
         location: Location,
+        absolute_path: Option<Arc<Uri<String>>>,
     ) -> CompilationResult<'_> {
         Ok(Box::new(ContentMediaTypeValidator {
             media_type: media_type.to_string(),
             func,
             location,
+            absolute_path,
         }))
     }
 }
@@ -57,6 +62,7 @@ impl Validate for ContentMediaTypeValidator {
                     location.into(),
                     instance,
                     &self.media_type,
+                    self.absolute_path.clone(),
                 ))
             }
         } else {
@@ -70,6 +76,7 @@ pub(crate) struct ContentEncodingValidator {
     encoding: String,
     func: ContentEncodingCheckType,
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl ContentEncodingValidator {
@@ -78,11 +85,13 @@ impl ContentEncodingValidator {
         encoding: &str,
         func: ContentEncodingCheckType,
         location: Location,
+        absolute_path: Option<Arc<Uri<String>>>,
     ) -> CompilationResult<'_> {
         Ok(Box::new(ContentEncodingValidator {
             encoding: encoding.to_string(),
             func,
             location,
+            absolute_path,
         }))
     }
 }
@@ -110,6 +119,7 @@ impl Validate for ContentEncodingValidator {
                     location.into(),
                     instance,
                     &self.encoding,
+                    self.absolute_path.clone(),
                 ))
             }
         } else {
@@ -125,6 +135,7 @@ pub(crate) struct ContentMediaTypeAndEncodingValidator {
     func: ContentMediaTypeCheckType,
     converter: ContentEncodingConverterType,
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl ContentMediaTypeAndEncodingValidator {
@@ -135,6 +146,7 @@ impl ContentMediaTypeAndEncodingValidator {
         func: ContentMediaTypeCheckType,
         converter: ContentEncodingConverterType,
         location: Location,
+        absolute_path: Option<Arc<Uri<String>>>,
     ) -> CompilationResult<'a> {
         Ok(Box::new(ContentMediaTypeAndEncodingValidator {
             media_type: media_type.to_string(),
@@ -142,6 +154,7 @@ impl ContentMediaTypeAndEncodingValidator {
             func,
             converter,
             location,
+            absolute_path,
         }))
     }
 }
@@ -171,6 +184,7 @@ impl Validate for ContentMediaTypeAndEncodingValidator {
                     location.into(),
                     instance,
                     &self.encoding,
+                    self.absolute_path.clone(),
                 )),
                 Ok(Some(converted)) => {
                     if (self.func)(&converted) {
@@ -181,6 +195,7 @@ impl Validate for ContentMediaTypeAndEncodingValidator {
                             location.into(),
                             instance,
                             &self.media_type,
+                            self.absolute_path.clone(),
                         ))
                     }
                 }
@@ -211,6 +226,7 @@ pub(crate) fn compile_media_type<'a>(
                             func,
                             converter,
                             ctx.location().clone(),
+                            ctx.base_uri(),
                         ))
                     }
                     _ => Some(Err(ValidationError::single_type_error(
@@ -218,13 +234,17 @@ pub(crate) fn compile_media_type<'a>(
                         ctx.location().clone(),
                         content_encoding,
                         JsonType::String,
+                        ctx.base_uri(),
                     ))),
                 }
             } else {
+                let location = ctx.location().join("contentMediaType");
+                let absolute_path = ctx.absolute_location(&location);
                 Some(ContentMediaTypeValidator::compile(
                     media_type,
                     func,
-                    ctx.location().join("contentMediaType"),
+                    location.clone(),
+                    absolute_path,
                 ))
             }
         }
@@ -233,6 +253,7 @@ pub(crate) fn compile_media_type<'a>(
             ctx.location().clone(),
             subschema,
             JsonType::String,
+            ctx.base_uri(),
         ))),
     }
 }
@@ -251,10 +272,13 @@ pub(crate) fn compile_content_encoding<'a>(
     match subschema {
         Value::String(content_encoding) => {
             let func = ctx.get_content_encoding_check(content_encoding)?;
+            let location = ctx.location().join("contentEncoding");
+            let absolute_path = ctx.absolute_location(&location);
             Some(ContentEncodingValidator::compile(
                 content_encoding,
                 func,
-                ctx.location().join("contentEncoding"),
+                location.clone(),
+                absolute_path,
             ))
         }
         _ => Some(Err(ValidationError::single_type_error(
@@ -262,6 +286,7 @@ pub(crate) fn compile_content_encoding<'a>(
             ctx.location().clone(),
             subschema,
             JsonType::String,
+            ctx.base_uri(),
         ))),
     }
 }

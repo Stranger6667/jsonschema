@@ -6,16 +6,23 @@ use crate::{
     types::JsonType,
     validator::Validate,
 };
+use referencing::Uri;
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 pub(crate) struct RequiredValidator {
     required: Vec<String>,
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl RequiredValidator {
     #[inline]
-    pub(crate) fn compile(items: &[Value], location: Location) -> CompilationResult<'_> {
+    pub(crate) fn compile(
+        items: &[Value],
+        location: Location,
+        absolute_path: Option<Arc<Uri<String>>>,
+    ) -> CompilationResult<'_> {
         let mut required = Vec::with_capacity(items.len());
         for item in items {
             match item {
@@ -26,11 +33,16 @@ impl RequiredValidator {
                         location,
                         item,
                         JsonType::String,
+                        absolute_path.clone(),
                     ))
                 }
             }
         }
-        Ok(Box::new(RequiredValidator { required, location }))
+        Ok(Box::new(RequiredValidator {
+            required,
+            location,
+            absolute_path,
+        }))
     }
 }
 
@@ -62,6 +74,7 @@ impl Validate for RequiredValidator {
                         instance,
                         // Value enum is needed for proper string escaping
                         Value::String(property_name.clone()),
+                        self.absolute_path.clone(),
                     ));
                 }
             }
@@ -79,6 +92,7 @@ impl Validate for RequiredValidator {
                         instance,
                         // Value enum is needed for proper string escaping
                         Value::String(property_name.clone()),
+                        self.absolute_path.clone(),
                     ));
                 }
             }
@@ -93,14 +107,20 @@ impl Validate for RequiredValidator {
 pub(crate) struct SingleItemRequiredValidator {
     value: String,
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl SingleItemRequiredValidator {
     #[inline]
-    pub(crate) fn compile(value: &str, location: Location) -> CompilationResult<'_> {
+    pub(crate) fn compile(
+        value: &str,
+        location: Location,
+        absolute_path: Option<Arc<Uri<String>>>,
+    ) -> CompilationResult<'_> {
         Ok(Box::new(SingleItemRequiredValidator {
             value: value.to_string(),
             location,
+            absolute_path,
         }))
     }
 }
@@ -118,6 +138,7 @@ impl Validate for SingleItemRequiredValidator {
                 instance,
                 // Value enum is needed for proper string escaping
                 Value::String(self.value.clone()),
+                self.absolute_path.clone(),
             ));
         }
         Ok(())
@@ -142,13 +163,15 @@ pub(crate) fn compile<'a>(
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
     let location = ctx.location().join("required");
-    compile_with_path(schema, location)
+    let absolute_path = ctx.absolute_location(&location);
+    compile_with_path(schema, location, absolute_path)
 }
 
 #[inline]
 pub(crate) fn compile_with_path(
     schema: &Value,
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 ) -> Option<CompilationResult<'_>> {
     // IMPORTANT: If this function will ever return `None`, adjust `dependencies.rs` accordingly
     match schema {
@@ -156,17 +179,22 @@ pub(crate) fn compile_with_path(
             if items.len() == 1 {
                 let item = &items[0];
                 if let Value::String(item) = item {
-                    Some(SingleItemRequiredValidator::compile(item, location))
+                    Some(SingleItemRequiredValidator::compile(
+                        item,
+                        location,
+                        absolute_path.clone(),
+                    ))
                 } else {
                     Some(Err(ValidationError::single_type_error(
                         Location::new(),
                         location,
                         item,
                         JsonType::String,
+                        absolute_path,
                     )))
                 }
             } else {
-                Some(RequiredValidator::compile(items, location))
+                Some(RequiredValidator::compile(items, location, absolute_path))
             }
         }
         _ => Some(Err(ValidationError::single_type_error(
@@ -174,6 +202,7 @@ pub(crate) fn compile_with_path(
             location,
             schema,
             JsonType::Array,
+            absolute_path,
         ))),
     }
 }

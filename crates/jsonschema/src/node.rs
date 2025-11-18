@@ -179,7 +179,9 @@ impl SchemaNode {
             .into_iter()
             .map(|(keyword, validator)| {
                 let location = ctx.location().join(&keyword);
-                let absolute_location = ctx.absolute_location(&location);
+                // Use lexical location for absolute_keyword_location (without $ref segments)
+                let lexical_location = ctx.lexical_location().join(&keyword);
+                let absolute_location = ctx.absolute_location(&lexical_location);
                 KeywordValidatorEntry {
                     validator,
                     location,
@@ -204,7 +206,9 @@ impl SchemaNode {
             .enumerate()
             .map(|(index, validator)| {
                 let location = ctx.location().join(index);
-                let absolute_location = ctx.absolute_location(&location);
+                // Use lexical location for absolute_keyword_location (without $ref segments)
+                let lexical_location = ctx.lexical_location().join(index);
+                let absolute_location = ctx.absolute_location(&lexical_location);
                 ArrayValidatorEntry {
                     validator,
                     location,
@@ -363,6 +367,10 @@ impl SchemaNode {
     pub(crate) fn location(&self) -> &Location {
         &self.location
     }
+
+    pub(crate) fn absolute_path(&self) -> Option<Arc<Uri<String>>> {
+        self.absolute_path.clone()
+    }
 }
 
 impl Validate for SchemaNode {
@@ -415,6 +423,7 @@ impl Validate for SchemaNode {
                     self.location.clone(),
                     location.into(),
                     instance,
+                    self.absolute_path(),
                 ));
             }
             NodeValidators::Boolean { validator: None } => return Ok(()),

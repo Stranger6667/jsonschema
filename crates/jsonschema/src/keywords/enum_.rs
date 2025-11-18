@@ -8,6 +8,7 @@ use crate::{
     validator::Validate,
 };
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub(crate) struct EnumValidator {
@@ -16,6 +17,7 @@ pub(crate) struct EnumValidator {
     types: JsonTypeSet,
     items: Vec<Value>,
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 
 impl EnumValidator {
@@ -24,6 +26,7 @@ impl EnumValidator {
         schema: &'a Value,
         items: &'a [Value],
         location: Location,
+        absolute_path: Option<Arc<referencing::Uri<String>>>,
     ) -> CompilationResult<'a> {
         let mut types = JsonTypeSet::empty();
         for item in items {
@@ -34,6 +37,7 @@ impl EnumValidator {
             items: items.to_vec(),
             types,
             location,
+            absolute_path,
         }))
     }
 }
@@ -52,6 +56,7 @@ impl Validate for EnumValidator {
                 location.into(),
                 instance,
                 &self.options,
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -73,6 +78,7 @@ pub(crate) struct SingleValueEnumValidator {
     value: Value,
     options: Value,
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 
 impl SingleValueEnumValidator {
@@ -81,11 +87,13 @@ impl SingleValueEnumValidator {
         schema: &'a Value,
         value: &'a Value,
         location: Location,
+        absolute_path: Option<Arc<referencing::Uri<String>>>,
     ) -> CompilationResult<'a> {
         Ok(Box::new(SingleValueEnumValidator {
             options: schema.clone(),
             value: value.clone(),
             location,
+            absolute_path,
         }))
     }
 }
@@ -104,6 +112,7 @@ impl Validate for SingleValueEnumValidator {
                 location.into(),
                 instance,
                 &self.options,
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -121,11 +130,22 @@ pub(crate) fn compile<'a>(
 ) -> Option<CompilationResult<'a>> {
     if let Value::Array(items) = schema {
         let location = ctx.location().join("enum");
+        let absolute_path = ctx.absolute_location(&location);
         if items.len() == 1 {
             let value = items.iter().next().expect("Vec is not empty");
-            Some(SingleValueEnumValidator::compile(schema, value, location))
+            Some(SingleValueEnumValidator::compile(
+                schema,
+                value,
+                location,
+                absolute_path,
+            ))
         } else {
-            Some(EnumValidator::compile(schema, items, location))
+            Some(EnumValidator::compile(
+                schema,
+                items,
+                location,
+                absolute_path,
+            ))
         }
     } else {
         Some(Err(ValidationError::single_type_error(
@@ -133,6 +153,7 @@ pub(crate) fn compile<'a>(
             ctx.location().clone(),
             schema,
             JsonType::Array,
+            ctx.base_uri(),
         )))
     }
 }

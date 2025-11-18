@@ -8,6 +8,7 @@ use crate::{
     validator::Validate,
 };
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 pub(crate) struct AdditionalItemsObjectValidator {
     node: SchemaNode,
@@ -72,13 +73,19 @@ impl Validate for AdditionalItemsObjectValidator {
 pub(crate) struct AdditionalItemsBooleanValidator {
     items_count: usize,
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 impl AdditionalItemsBooleanValidator {
     #[inline]
-    pub(crate) fn compile<'a>(items_count: usize, location: Location) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a>(
+        items_count: usize,
+        location: Location,
+        absolute_path: Option<Arc<referencing::Uri<String>>>,
+    ) -> CompilationResult<'a> {
         Ok(Box::new(AdditionalItemsBooleanValidator {
             items_count,
             location,
+            absolute_path,
         }))
     }
 }
@@ -104,6 +111,7 @@ impl Validate for AdditionalItemsBooleanValidator {
                     location.into(),
                     instance,
                     self.items_count,
+                    self.absolute_path.clone(),
                 ));
             }
         }
@@ -132,6 +140,7 @@ pub(crate) fn compile<'a>(
                     Value::Bool(false) => Some(AdditionalItemsBooleanValidator::compile(
                         items_count,
                         kctx.location().clone(),
+                        kctx.base_uri(),
                     )),
                     _ => None,
                 }
@@ -140,8 +149,11 @@ pub(crate) fn compile<'a>(
                 if *value {
                     None
                 } else {
-                    let location = ctx.location().join("additionalItems");
-                    Some(FalseValidator::compile(location))
+                    let kctx = ctx.new_at_location("additionalItems");
+                    Some(FalseValidator::compile(
+                        kctx.location().clone(),
+                        kctx.base_uri(),
+                    ))
                 }
             }
             _ => Some(Err(ValidationError::multiple_type_error(
@@ -152,6 +164,7 @@ pub(crate) fn compile<'a>(
                     .insert(JsonType::Object)
                     .insert(JsonType::Array)
                     .insert(JsonType::Boolean),
+                ctx.base_uri(),
             ))),
         }
     } else {

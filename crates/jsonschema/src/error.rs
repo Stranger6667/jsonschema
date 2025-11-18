@@ -48,6 +48,7 @@ use std::{
     iter::{empty, once},
     slice,
     string::FromUtf8Error,
+    sync::Arc,
     vec,
 };
 
@@ -63,6 +64,7 @@ struct ValidationErrorRepr<'a> {
     kind: ValidationErrorKind,
     instance_path: Location,
     schema_path: Location,
+    absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
 }
 
 /// An iterator over instances of [`ValidationError`] that represent validation error for the
@@ -380,6 +382,7 @@ impl<'a> ValidationError<'a> {
         kind: ValidationErrorKind,
         instance_path: Location,
         schema_path: Location,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> Self {
         Self {
             repr: Box::new(ValidationErrorRepr {
@@ -387,6 +390,7 @@ impl<'a> ValidationError<'a> {
                 kind,
                 instance_path,
                 schema_path,
+                absolute_keyword_location,
             }),
         }
     }
@@ -419,16 +423,39 @@ impl<'a> ValidationError<'a> {
         &self.repr.schema_path
     }
 
+    /// Returns the absolute URI of the schema keyword that failed validation.
+    ///
+    /// This is the base URI where the failing schema keyword is located, useful for
+    /// linking to the exact schema file in error reports.
+    ///
+    /// Returns `None` if no base URI was provided during validation or if the schema
+    /// didn't specify an `$id`.
+    #[inline]
+    #[must_use]
+    pub fn absolute_keyword_location(&self) -> Option<&referencing::Uri<String>> {
+        self.repr.absolute_keyword_location.as_deref()
+    }
+
     /// Decomposes the error into owned parts.
     #[inline]
     #[must_use]
-    pub fn into_parts(self) -> (Cow<'a, Value>, ValidationErrorKind, Location, Location) {
+    #[allow(clippy::type_complexity)]
+    pub fn into_parts(
+        self,
+    ) -> (
+        Cow<'a, Value>,
+        ValidationErrorKind,
+        Location,
+        Location,
+        Option<Arc<referencing::Uri<String>>>,
+    ) {
         let repr = *self.repr;
         (
             repr.instance,
             repr.kind,
             repr.instance_path,
             repr.schema_path,
+            repr.absolute_keyword_location,
         )
     }
 
@@ -438,8 +465,15 @@ impl<'a> ValidationError<'a> {
         kind: ValidationErrorKind,
         instance_path: Location,
         schema_path: Location,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> Self {
-        Self::new(Cow::Borrowed(instance), kind, instance_path, schema_path)
+        Self::new(
+            Cow::Borrowed(instance),
+            kind,
+            instance_path,
+            schema_path,
+            absolute_keyword_location,
+        )
     }
 
     /// Returns a wrapper that masks instance values in error messages.
@@ -462,13 +496,16 @@ impl<'a> ValidationError<'a> {
     /// Converts the `ValidationError` into an owned version with `'static` lifetime.
     #[must_use]
     pub fn to_owned(self) -> ValidationError<'static> {
-        let (instance, kind, instance_path, schema_path) = self.into_parts();
-        ValidationError::new(
-            Cow::Owned(instance.into_owned()),
-            kind,
-            instance_path,
-            schema_path,
-        )
+        let repr = *self.repr;
+        ValidationError {
+            repr: Box::new(ValidationErrorRepr {
+                instance: Cow::Owned(repr.instance.into_owned()),
+                kind: repr.kind,
+                instance_path: repr.instance_path,
+                schema_path: repr.schema_path,
+                absolute_keyword_location: repr.absolute_keyword_location,
+            }),
+        }
     }
 
     pub(crate) fn additional_items(
@@ -476,12 +513,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         limit: usize,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::AdditionalItems { limit },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn additional_properties(
@@ -489,12 +528,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         unexpected: Vec<String>,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::AdditionalProperties { unexpected },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn any_of(
@@ -502,6 +543,7 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         context: Vec<Vec<ValidationError<'a>>>,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         let context = context
             .into_iter()
@@ -513,6 +555,7 @@ impl<'a> ValidationError<'a> {
             ValidationErrorKind::AnyOf { context },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn backtrack_limit(
@@ -520,12 +563,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         error: fancy_regex::Error,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::BacktrackLimitExceeded { error },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn constant_array(
@@ -533,6 +578,7 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         expected_value: &[Value],
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
@@ -541,6 +587,7 @@ impl<'a> ValidationError<'a> {
             },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn constant_boolean(
@@ -548,6 +595,7 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         expected_value: bool,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
@@ -556,12 +604,14 @@ impl<'a> ValidationError<'a> {
             },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn constant_null(
         location: Location,
         instance_path: Location,
         instance: &'a Value,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
@@ -570,6 +620,7 @@ impl<'a> ValidationError<'a> {
             },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn constant_number(
@@ -577,6 +628,7 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         expected_value: &Number,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
@@ -585,6 +637,7 @@ impl<'a> ValidationError<'a> {
             },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn constant_object(
@@ -592,6 +645,7 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         expected_value: &Map<String, Value>,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
@@ -600,6 +654,7 @@ impl<'a> ValidationError<'a> {
             },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn constant_string(
@@ -607,6 +662,7 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         expected_value: &str,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
@@ -615,18 +671,21 @@ impl<'a> ValidationError<'a> {
             },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn contains(
         location: Location,
         instance_path: Location,
         instance: &'a Value,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::Contains,
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn content_encoding(
@@ -634,6 +693,7 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         encoding: &str,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
@@ -642,6 +702,7 @@ impl<'a> ValidationError<'a> {
             },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn content_media_type(
@@ -649,6 +710,7 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         media_type: &str,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
@@ -657,6 +719,7 @@ impl<'a> ValidationError<'a> {
             },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn enumeration(
@@ -664,6 +727,7 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         options: &Value,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
@@ -672,6 +736,7 @@ impl<'a> ValidationError<'a> {
             },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn exclusive_maximum(
@@ -679,12 +744,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         limit: Value,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::ExclusiveMaximum { limit },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn exclusive_minimum(
@@ -692,24 +759,28 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         limit: Value,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::ExclusiveMinimum { limit },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn false_schema(
         location: Location,
         instance_path: Location,
         instance: &'a Value,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::FalseSchema,
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn format(
@@ -717,6 +788,7 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         format: impl Into<String>,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
@@ -725,6 +797,7 @@ impl<'a> ValidationError<'a> {
             },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn from_utf8(error: FromUtf8Error) -> ValidationError<'a> {
@@ -733,6 +806,7 @@ impl<'a> ValidationError<'a> {
             ValidationErrorKind::FromUtf8 { error },
             Location::new(),
             Location::new(),
+            None,
         )
     }
     pub(crate) fn max_items(
@@ -740,12 +814,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         limit: u64,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::MaxItems { limit },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn maximum(
@@ -753,12 +829,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         limit: Value,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::Maximum { limit },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn max_length(
@@ -766,12 +844,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         limit: u64,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::MaxLength { limit },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn max_properties(
@@ -779,12 +859,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         limit: u64,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::MaxProperties { limit },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn min_items(
@@ -792,12 +874,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         limit: u64,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::MinItems { limit },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn minimum(
@@ -805,12 +889,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         limit: Value,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::Minimum { limit },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn min_length(
@@ -818,12 +904,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         limit: u64,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::MinLength { limit },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn min_properties(
@@ -831,12 +919,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         limit: u64,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::MinProperties { limit },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     #[cfg(feature = "arbitrary-precision")]
@@ -845,12 +935,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         multiple_of: Value,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::MultipleOf { multiple_of },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
 
@@ -860,12 +952,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         multiple_of: f64,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::MultipleOf { multiple_of },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn not(
@@ -873,12 +967,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         schema: Value,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::Not { schema },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn one_of_multiple_valid(
@@ -886,6 +982,7 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         context: Vec<Vec<ValidationError<'a>>>,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         let context = context
             .into_iter()
@@ -897,6 +994,7 @@ impl<'a> ValidationError<'a> {
             ValidationErrorKind::OneOfMultipleValid { context },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn one_of_not_valid(
@@ -904,6 +1002,7 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         context: Vec<Vec<ValidationError<'a>>>,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         let context = context
             .into_iter()
@@ -915,6 +1014,7 @@ impl<'a> ValidationError<'a> {
             ValidationErrorKind::OneOfNotValid { context },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn pattern(
@@ -922,12 +1022,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         pattern: String,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::Pattern { pattern },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn property_names(
@@ -935,6 +1037,7 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         error: ValidationError<'a>,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
@@ -943,6 +1046,7 @@ impl<'a> ValidationError<'a> {
             },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn required(
@@ -950,12 +1054,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         property: Value,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::Required { property },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
 
@@ -964,6 +1070,7 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         type_name: JsonType,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
@@ -972,6 +1079,7 @@ impl<'a> ValidationError<'a> {
             },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn multiple_type_error(
@@ -979,6 +1087,7 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         types: JsonTypeSet,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
@@ -987,6 +1096,7 @@ impl<'a> ValidationError<'a> {
             },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn unevaluated_items(
@@ -994,12 +1104,14 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         unexpected: Vec<String>,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::UnevaluatedItems { unexpected },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn unevaluated_properties(
@@ -1007,24 +1119,28 @@ impl<'a> ValidationError<'a> {
         instance_path: Location,
         instance: &'a Value,
         unexpected: Vec<String>,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::UnevaluatedProperties { unexpected },
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     pub(crate) fn unique_items(
         location: Location,
         instance_path: Location,
         instance: &'a Value,
+        absolute_keyword_location: Option<Arc<referencing::Uri<String>>>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::UniqueItems,
             instance_path,
             location,
+            absolute_keyword_location,
         )
     }
     /// Create a new custom validation error.
@@ -1041,6 +1157,7 @@ impl<'a> ValidationError<'a> {
             },
             instance_path,
             location,
+            None,
         )
     }
 }
@@ -1054,6 +1171,7 @@ impl From<referencing::Error> for ValidationError<'_> {
             ValidationErrorKind::Referencing(err),
             Location::new(),
             Location::new(),
+            None,
         )
     }
 }
@@ -1528,7 +1646,13 @@ mod tests {
     use test_case::test_case;
 
     fn owned_error(instance: Value, kind: ValidationErrorKind) -> ValidationError<'static> {
-        ValidationError::new(Cow::Owned(instance), kind, Location::new(), Location::new())
+        ValidationError::new(
+            Cow::Owned(instance),
+            kind,
+            Location::new(),
+            Location::new(),
+            None,
+        )
     }
 
     #[test]
@@ -1695,6 +1819,7 @@ mod tests {
             Location::new(),
             &instance,
             JsonType::String,
+            None,
         );
         assert_eq!(err.to_string(), r#"42 is not of type "string""#);
     }
@@ -1710,6 +1835,7 @@ mod tests {
             Location::new(),
             &instance,
             types,
+            None,
         );
         assert_eq!(err.to_string(), r#"42 is not of types "number", "string""#);
     }
@@ -1873,8 +1999,13 @@ mod tests {
         "value is not of type \"string\""
     )]
     fn test_masked_error_messages(instance: Value, kind: ValidationErrorKind, expected: &str) {
-        let error =
-            ValidationError::new(Cow::Owned(instance), kind, Location::new(), Location::new());
+        let error = ValidationError::new(
+            Cow::Owned(instance),
+            kind,
+            Location::new(),
+            Location::new(),
+            None,
+        );
         assert_eq!(error.masked().to_string(), expected);
     }
 
@@ -1898,8 +2029,125 @@ mod tests {
         placeholder: &str,
         expected: &str,
     ) {
-        let error =
-            ValidationError::new(Cow::Owned(instance), kind, Location::new(), Location::new());
+        let error = ValidationError::new(
+            Cow::Owned(instance),
+            kind,
+            Location::new(),
+            Location::new(),
+            None,
+        );
         assert_eq!(error.masked_with(placeholder).to_string(), expected);
+    }
+
+    #[test]
+    fn test_absolute_keyword_location_none() {
+        // When no absolute URI is provided, absolute_keyword_location should return None
+        let error = ValidationError::new(
+            Cow::Owned(json!(42)),
+            ValidationErrorKind::Type {
+                kind: TypeKind::Single(JsonType::String),
+            },
+            Location::new(), // instance_path
+            Location::new(), // schema_path
+            None,            // absolute_keyword_location
+        );
+        assert_eq!(error.absolute_keyword_location(), None);
+    }
+
+    #[test]
+    fn test_absolute_keyword_location_some() {
+        // When an absolute URI is provided, it should be returned correctly
+        use std::sync::Arc;
+        let uri = Arc::new(
+            referencing::Uri::parse("https://example.com/schema.json")
+                .unwrap()
+                .to_owned(),
+        );
+        let error = ValidationError::new(
+            Cow::Owned(json!(42)),
+            ValidationErrorKind::Type {
+                kind: TypeKind::Single(JsonType::String),
+            },
+            Location::new(),   // instance_path
+            Location::new(),   // schema_path
+            Some(uri.clone()), // absolute_keyword_location
+        );
+        assert_eq!(
+            error
+                .absolute_keyword_location()
+                .map(referencing::Uri::as_str),
+            Some("https://example.com/schema.json")
+        );
+    }
+
+    #[test]
+    fn test_absolute_keyword_location_with_nested_id() {
+        // Test that absolute_keyword_location correctly handles nested $id
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/schema.json",
+            "definitions": {
+                "address": {
+                    "$id": "address",
+                    "type": "object",
+                    "properties": {
+                        "street": {
+                            "type": "number"
+                        }
+                    }
+                }
+            },
+            "$ref": "address"
+        });
+
+        let instance = json!({"street": "not a number"});
+
+        let validator = crate::validator_for(&schema).unwrap();
+        let error = validator.validate(&instance).unwrap_err();
+
+        // The error should point to the nested schema's location
+        // Base URI should be https://example.com/address (resolved from relative "address" $id)
+        // Full location should be https://example.com/address#/properties/street/type
+        let abs_loc = error.absolute_keyword_location();
+
+        assert!(abs_loc.is_some());
+        let uri_str = abs_loc.unwrap().as_str();
+        // Should contain the path to the failing keyword
+        assert!(uri_str.contains("/properties/street/type") || uri_str.contains("address"));
+    }
+
+    #[test]
+    fn test_into_parts_includes_absolute_keyword_location() {
+        // Verify that into_parts returns absolute_keyword_location
+        use std::sync::Arc;
+        let uri = Arc::new(
+            referencing::Uri::parse("https://example.com/schema.json")
+                .unwrap()
+                .to_owned(),
+        );
+        let error = ValidationError::new(
+            Cow::Owned(json!(42)),
+            ValidationErrorKind::Type {
+                kind: TypeKind::Single(JsonType::String),
+            },
+            Location::new().join("field"), // instance_path
+            Location::new().join("type"),  // schema_path
+            Some(uri.clone()),             // absolute_keyword_location
+        );
+        let (instance, kind, instance_path, schema_path, absolute_keyword_location) =
+            error.into_parts();
+        assert_eq!(instance.as_ref(), &json!(42));
+        assert!(matches!(
+            kind,
+            ValidationErrorKind::Type {
+                kind: TypeKind::Single(JsonType::String)
+            }
+        ));
+        assert_eq!(instance_path.as_str(), "/field");
+        assert_eq!(schema_path.as_str(), "/type");
+        assert_eq!(
+            absolute_keyword_location.as_ref().map(|u| u.as_str()),
+            Some("https://example.com/schema.json")
+        );
     }
 }

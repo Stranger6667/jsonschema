@@ -6,19 +6,25 @@ use crate::{
     types::{JsonType, JsonTypeSet},
     validator::Validate,
 };
+use referencing::Uri;
 use serde_json::{json, Map, Number, Value};
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 
 use crate::paths::LazyLocation;
 
 pub(crate) struct MultipleTypesValidator {
     types: JsonTypeSet,
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl MultipleTypesValidator {
     #[inline]
-    pub(crate) fn compile(items: &[Value], location: Location) -> CompilationResult<'_> {
+    pub(crate) fn compile(
+        items: &[Value],
+        location: Location,
+        absolute_path: Option<Arc<Uri<String>>>,
+    ) -> CompilationResult<'_> {
         let mut types = JsonTypeSet::empty();
         for item in items {
             match item {
@@ -33,6 +39,7 @@ impl MultipleTypesValidator {
                             &json!([
                                 "array", "boolean", "integer", "null", "number", "object", "string"
                             ]),
+                            absolute_path.clone(),
                         ));
                     }
                 }
@@ -42,11 +49,16 @@ impl MultipleTypesValidator {
                         Location::new(),
                         item,
                         JsonType::String,
+                        absolute_path.clone(),
                     ))
                 }
             }
         }
-        Ok(Box::new(MultipleTypesValidator { types, location }))
+        Ok(Box::new(MultipleTypesValidator {
+            types,
+            location,
+            absolute_path,
+        }))
     }
 }
 
@@ -67,6 +79,7 @@ impl Validate for MultipleTypesValidator {
                 location.into(),
                 instance,
                 self.types,
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -74,12 +87,19 @@ impl Validate for MultipleTypesValidator {
 
 pub(crate) struct NullTypeValidator {
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl NullTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(NullTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        location: Location,
+        absolute_path: Option<Arc<Uri<String>>>,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(NullTypeValidator {
+            location,
+            absolute_path,
+        }))
     }
 }
 
@@ -100,6 +120,7 @@ impl Validate for NullTypeValidator {
                 location.into(),
                 instance,
                 JsonType::Null,
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -107,12 +128,19 @@ impl Validate for NullTypeValidator {
 
 pub(crate) struct BooleanTypeValidator {
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl BooleanTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(BooleanTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        location: Location,
+        absolute_path: Option<Arc<Uri<String>>>,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(BooleanTypeValidator {
+            location,
+            absolute_path,
+        }))
     }
 }
 
@@ -133,6 +161,7 @@ impl Validate for BooleanTypeValidator {
                 location.into(),
                 instance,
                 JsonType::Boolean,
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -140,12 +169,19 @@ impl Validate for BooleanTypeValidator {
 
 pub(crate) struct StringTypeValidator {
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl StringTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(StringTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        location: Location,
+        absolute_path: Option<Arc<Uri<String>>>,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(StringTypeValidator {
+            location,
+            absolute_path,
+        }))
     }
 }
 
@@ -167,6 +203,7 @@ impl Validate for StringTypeValidator {
                 location.into(),
                 instance,
                 JsonType::String,
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -174,12 +211,19 @@ impl Validate for StringTypeValidator {
 
 pub(crate) struct ArrayTypeValidator {
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl ArrayTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(ArrayTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        location: Location,
+        absolute_path: Option<Arc<Uri<String>>>,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(ArrayTypeValidator {
+            location,
+            absolute_path,
+        }))
     }
 }
 
@@ -201,6 +245,7 @@ impl Validate for ArrayTypeValidator {
                 location.into(),
                 instance,
                 JsonType::Array,
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -208,12 +253,19 @@ impl Validate for ArrayTypeValidator {
 
 pub(crate) struct ObjectTypeValidator {
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl ObjectTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(ObjectTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        location: Location,
+        absolute_path: Option<Arc<Uri<String>>>,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(ObjectTypeValidator {
+            location,
+            absolute_path,
+        }))
     }
 }
 
@@ -234,6 +286,7 @@ impl Validate for ObjectTypeValidator {
                 location.into(),
                 instance,
                 JsonType::Object,
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -241,12 +294,19 @@ impl Validate for ObjectTypeValidator {
 
 pub(crate) struct NumberTypeValidator {
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl NumberTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(NumberTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        location: Location,
+        absolute_path: Option<Arc<Uri<String>>>,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(NumberTypeValidator {
+            location,
+            absolute_path,
+        }))
     }
 }
 
@@ -267,6 +327,7 @@ impl Validate for NumberTypeValidator {
                 location.into(),
                 instance,
                 JsonType::Number,
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -274,12 +335,19 @@ impl Validate for NumberTypeValidator {
 
 pub(crate) struct IntegerTypeValidator {
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl IntegerTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(IntegerTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        location: Location,
+        absolute_path: Option<Arc<Uri<String>>>,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(IntegerTypeValidator {
+            location,
+            absolute_path,
+        }))
     }
 }
 
@@ -304,6 +372,7 @@ impl Validate for IntegerTypeValidator {
                 location.into(),
                 instance,
                 JsonType::Integer,
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -352,23 +421,39 @@ pub(crate) fn compile<'a>(
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
     let location = ctx.location().join("type");
+    let absolute_path = ctx.absolute_location(&location);
     match schema {
-        Value::String(item) => Some(compile_single_type(item.as_str(), location, schema)),
+        Value::String(item) => Some(compile_single_type(
+            item.as_str(),
+            location,
+            schema,
+            absolute_path.as_ref(),
+        )),
         Value::Array(items) => {
             if items.len() == 1 {
                 let item = &items[0];
                 if let Value::String(ty) = item {
-                    Some(compile_single_type(ty.as_str(), location, item))
+                    Some(compile_single_type(
+                        ty.as_str(),
+                        location,
+                        item,
+                        absolute_path.as_ref(),
+                    ))
                 } else {
                     Some(Err(ValidationError::single_type_error(
                         Location::new(),
                         location,
                         item,
                         JsonType::String,
+                        absolute_path,
                     )))
                 }
             } else {
-                Some(MultipleTypesValidator::compile(items, location))
+                Some(MultipleTypesValidator::compile(
+                    items,
+                    location,
+                    absolute_path,
+                ))
             }
         }
         _ => Some(Err(ValidationError::multiple_type_error(
@@ -378,6 +463,7 @@ pub(crate) fn compile<'a>(
             JsonTypeSet::empty()
                 .insert(JsonType::String)
                 .insert(JsonType::Array),
+            ctx.base_uri(),
         ))),
     }
 }
@@ -386,15 +472,16 @@ fn compile_single_type<'a>(
     item: &str,
     location: Location,
     instance: &'a Value,
+    absolute_path: Option<&Arc<Uri<String>>>,
 ) -> CompilationResult<'a> {
     match JsonType::from_str(item) {
-        Ok(JsonType::Array) => ArrayTypeValidator::compile(location),
-        Ok(JsonType::Boolean) => BooleanTypeValidator::compile(location),
-        Ok(JsonType::Integer) => IntegerTypeValidator::compile(location),
-        Ok(JsonType::Null) => NullTypeValidator::compile(location),
-        Ok(JsonType::Number) => NumberTypeValidator::compile(location),
-        Ok(JsonType::Object) => ObjectTypeValidator::compile(location),
-        Ok(JsonType::String) => StringTypeValidator::compile(location),
+        Ok(JsonType::Array) => ArrayTypeValidator::compile(location, absolute_path.cloned()),
+        Ok(JsonType::Boolean) => BooleanTypeValidator::compile(location, absolute_path.cloned()),
+        Ok(JsonType::Integer) => IntegerTypeValidator::compile(location, absolute_path.cloned()),
+        Ok(JsonType::Null) => NullTypeValidator::compile(location, absolute_path.cloned()),
+        Ok(JsonType::Number) => NumberTypeValidator::compile(location, absolute_path.cloned()),
+        Ok(JsonType::Object) => ObjectTypeValidator::compile(location, absolute_path.cloned()),
+        Ok(JsonType::String) => StringTypeValidator::compile(location, absolute_path.cloned()),
         Err(()) => Err(ValidationError::custom(
             Location::new(),
             location,

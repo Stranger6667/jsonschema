@@ -117,6 +117,7 @@ pub(crate) fn compile<'a>(
             ctx.location().clone(),
             schema,
             JsonType::Array,
+            ctx.base_uri(),
         )))
     }
 }

@@ -702,12 +702,14 @@ macro_rules! format_validators {
         $(
             struct $validator {
                 location: Location,
+                absolute_path: Option<Arc<referencing::Uri<String>>>,
             }
 
             impl $validator {
                 pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
                     let location = ctx.location().join("format");
-                    Ok(Box::new($validator { location }))
+                    let absolute_path = ctx.base_uri();
+                    Ok(Box::new($validator { location, absolute_path }))
                 }
             }
 
@@ -732,6 +734,7 @@ macro_rules! format_validators {
                                 location.into(),
                                 instance,
                                 $format,
+                                self.absolute_path.clone(),
                             ));
                         }
                     }
@@ -779,6 +782,7 @@ struct CustomFormatValidator {
     location: Location,
     format_name: String,
     check: Arc<dyn Format>,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 impl CustomFormatValidator {
     pub(crate) fn compile<'a>(
@@ -787,10 +791,12 @@ impl CustomFormatValidator {
         check: Arc<dyn Format>,
     ) -> CompilationResult<'a> {
         let location = ctx.location().join("format");
+        let absolute_path = ctx.base_uri();
         Ok(Box::new(CustomFormatValidator {
             location,
             format_name,
             check,
+            absolute_path,
         }))
     }
 }
@@ -809,6 +815,7 @@ impl Validate for CustomFormatValidator {
                 location.into(),
                 instance,
                 self.format_name.clone(),
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -896,6 +903,7 @@ pub(crate) fn compile<'a>(
             ctx.location().clone(),
             schema,
             JsonType::String,
+            ctx.base_uri(),
         )))
     }
 }

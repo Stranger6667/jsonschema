@@ -312,7 +312,7 @@ mod tests {
     use fancy_regex::Regex;
     use num_cmp::NumCmp;
     use serde_json::{json, Map, Value};
-    use std::sync::LazyLock;
+    use std::sync::{Arc, LazyLock};
 
     #[cfg(not(target_arch = "wasm32"))]
     fn load(path: &str, idx: usize) -> Value {
@@ -421,6 +421,7 @@ mod tests {
                     path,
                     schema,
                     EXPECTED,
+                    None,
                 ))
             }
         }
@@ -466,6 +467,7 @@ mod tests {
             limit_val: Value,
             with_currency_format: bool,
             location: Location,
+            absolute_path: Option<Arc<referencing::Uri<String>>>,
         }
 
         impl Keyword for CustomMinimumValidator {
@@ -482,6 +484,7 @@ mod tests {
                         location.into(),
                         instance,
                         self.limit_val.clone(),
+                        self.absolute_path.clone(),
                     ))
                 }
             }
@@ -532,6 +535,7 @@ mod tests {
                     location,
                     schema,
                     JsonType::Number,
+                    None,
                 ));
             };
             let with_currency_format = parent
@@ -542,6 +546,7 @@ mod tests {
                 limit_val: schema.clone(),
                 with_currency_format,
                 location,
+                absolute_path: None,
             }))
         }
 

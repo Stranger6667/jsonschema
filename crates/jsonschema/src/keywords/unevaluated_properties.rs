@@ -8,8 +8,9 @@
 //! schema compilation, using `Shared<OnceLock>` for circular reference handling.
 use ahash::AHashSet;
 use fancy_regex::Regex;
+use referencing::Uri;
 use serde_json::{Map, Value};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use crate::{
     compiler, ecma,
@@ -308,6 +309,7 @@ fn compile_pattern_properties<'a>(
                 ctx.location().clone(),
                 schema,
                 "regex",
+                ctx.base_uri(),
             ));
         };
         let node = compiler::compile(&schema_ctx, schema_ctx.as_resource_ref(schema))
@@ -559,6 +561,7 @@ fn compile_dependent<'a>(
 pub(crate) struct UnevaluatedPropertiesValidator {
     location: Location,
     validators: PropertyValidators,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl UnevaluatedPropertiesValidator {
@@ -568,10 +571,13 @@ impl UnevaluatedPropertiesValidator {
     ) -> CompilationResult<'a> {
         let validators =
             compile_property_validators(ctx, parent).map_err(ValidationError::to_owned)?;
+        let location = ctx.location().join("unevaluatedProperties");
+        let absolute_path = ctx.absolute_location(&location);
 
         Ok(Box::new(UnevaluatedPropertiesValidator {
-            location: ctx.location().join("unevaluatedProperties"),
+            location,
             validators,
+            absolute_path,
         }))
     }
 }
@@ -617,6 +623,7 @@ impl Validate for UnevaluatedPropertiesValidator {
                     location.into(),
                     instance,
                     unevaluated,
+                    self.absolute_path.clone(),
                 ));
             }
         }
@@ -683,6 +690,7 @@ impl Validate for UnevaluatedPropertiesValidator {
                         location.into(),
                         instance,
                         unevaluated,
+                        self.absolute_path.clone(),
                     ),
                 ));
             }

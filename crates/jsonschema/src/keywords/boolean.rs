@@ -2,14 +2,22 @@ use crate::paths::{LazyLocation, Location};
 
 use crate::{error::ValidationError, keywords::CompilationResult, validator::Validate};
 use serde_json::Value;
+use std::sync::Arc;
 
 pub(crate) struct FalseValidator {
     location: Location,
+    absolute_path: Option<Arc<referencing::Uri<String>>>,
 }
 impl FalseValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(FalseValidator { location }))
+    pub(crate) fn compile<'a>(
+        location: Location,
+        absolute_path: Option<Arc<referencing::Uri<String>>>,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(FalseValidator {
+            location,
+            absolute_path,
+        }))
     }
 }
 impl Validate for FalseValidator {
@@ -26,6 +34,7 @@ impl Validate for FalseValidator {
             self.location.clone(),
             location.into(),
             instance,
+            self.absolute_path.clone(),
         ))
     }
 }

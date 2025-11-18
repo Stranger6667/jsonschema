@@ -6,6 +6,7 @@
 
 - Support for `decimal.Decimal` type in both schemas and instances. [#319](https://github.com/Stranger6667/jsonschema/issues/319)
 - Support for additional `contentEncoding` values per RFC 4648: `base64url`, `base32`, `base32hex`, and `base16`. These encodings are now validated alongside the existing `base64` support in Draft 6 and 7. [#26](https://github.com/Stranger6667/jsonschema/issues/26)
+- `ValidationError.absolute_keyword_location` property returns the absolute URI with fragment pointing to the exact keyword location (e.g., `https://example.com/schema.json#/properties/name/type`). [#737](https://github.com/Stranger6667/jsonschema/issues/737)
 
 ### Performance
 

@@ -3,10 +3,14 @@ use crate::{
     validator::Validate,
 };
 use ahash::{AHashSet, AHasher};
+use referencing::Uri;
 use serde_json::{Map, Value};
 
 use crate::paths::LazyLocation;
-use std::hash::{Hash, Hasher};
+use std::{
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 // Based on implementation proposed by Sven Marnach:
 // https://stackoverflow.com/questions/60882381/what-is-the-fastest-correct-way-to-detect-that-there-are-no-duplicates-in-a-json
@@ -95,12 +99,19 @@ pub(crate) fn is_unique(items: &[Value]) -> bool {
 
 pub(crate) struct UniqueItemsValidator {
     location: Location,
+    absolute_path: Option<Arc<Uri<String>>>,
 }
 
 impl UniqueItemsValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(UniqueItemsValidator { location }))
+    pub(crate) fn compile<'a>(
+        location: Location,
+        absolute_path: Option<Arc<Uri<String>>>,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(UniqueItemsValidator {
+            location,
+            absolute_path,
+        }))
     }
 }
 
@@ -126,6 +137,7 @@ impl Validate for UniqueItemsValidator {
                 self.location.clone(),
                 location.into(),
                 instance,
+                self.absolute_path.clone(),
             ))
         }
     }
@@ -140,7 +152,8 @@ pub(crate) fn compile<'a>(
     if let Value::Bool(value) = schema {
         if *value {
             let location = ctx.location().join("uniqueItems");
-            Some(UniqueItemsValidator::compile(location))
+            let absolute_path = ctx.absolute_location(&location);
+            Some(UniqueItemsValidator::compile(location, absolute_path))
         } else {
             None
         }

@@ -180,6 +180,7 @@ pub(crate) fn compile<'a>(
             ctx.location().clone(),
             schema,
             JsonType::Object,
+            ctx.base_uri(),
         )));
     };
     let ctx = ctx.new_at_location("patternProperties");
@@ -213,7 +214,13 @@ pub(crate) fn compile<'a>(
 }
 
 fn invalid_regex<'a>(ctx: &compiler::Context, schema: &'a Value) -> ValidationError<'a> {
-    ValidationError::format(Location::new(), ctx.location().clone(), schema, "regex")
+    ValidationError::format(
+        Location::new(),
+        ctx.location().clone(),
+        schema,
+        "regex",
+        ctx.base_uri(),
+    )
 }
 
 /// Compile every `(pattern, subschema)` pair into `(regex, node)` tuples.
