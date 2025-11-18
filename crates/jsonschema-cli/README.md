@@ -7,7 +7,29 @@ A fast command-line tool for JSON Schema validation, powered by the `jsonschema`
 
 ## Installation
 
+### Pre-built Binaries
+
+Download the latest binary for your platform from the [releases page](https://github.com/Stranger6667/jsonschema-rs/releases):
+
+- **Linux (x86_64)**: `jsonschema-cli-x86_64-unknown-linux-gnu.tar.gz`
+- **Linux (ARM64)**: `jsonschema-cli-aarch64-unknown-linux-gnu.tar.gz`
+- **macOS (Intel)**: `jsonschema-cli-x86_64-apple-darwin.tar.gz`
+- **macOS (Apple Silicon)**: `jsonschema-cli-aarch64-apple-darwin.tar.gz`
+- **Windows**: `jsonschema-cli-x86_64-pc-windows-msvc.zip`
+
+Example installation on Linux/macOS:
+```bash
+# Download and extract (replace VERSION with actual version, e.g., cli-v0.36.0)
+curl -LO https://github.com/Stranger6667/jsonschema-rs/releases/download/VERSION/jsonschema-cli-x86_64-unknown-linux-gnu.tar.gz
+tar xzf jsonschema-cli-x86_64-unknown-linux-gnu.tar.gz
+
+# Move to a directory in your PATH
+sudo mv jsonschema-cli /usr/local/bin/
 ```
+
+### From Source (requires Rust)
+
+```bash
 cargo install jsonschema-cli
 ```
 
