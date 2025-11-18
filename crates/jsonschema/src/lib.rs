@@ -976,6 +976,33 @@ pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), Validatio
         .validate(instance)
 }
 
+/// Evaluate `instance` against `schema` and return structured validation output. Draft is detected automatically.
+///
+/// Returns an [`Evaluation`] containing detailed validation results in JSON Schema Output v1 format,
+/// including annotations and errors across the entire validation tree.
+///
+/// # Examples
+///
+/// ```rust
+/// use serde_json::json;
+///
+/// let schema = json!({"type": "string", "minLength": 3});
+/// let instance = json!("foo");
+/// let evaluation = jsonschema::evaluate(&schema, &instance);
+/// assert!(evaluation.flag().valid);
+/// ```
+///
+/// # Panics
+///
+/// This function panics if an invalid schema is passed.
+#[must_use]
+#[inline]
+pub fn evaluate(schema: &Value, instance: &Value) -> Evaluation {
+    validator_for(schema)
+        .expect("Invalid schema")
+        .evaluate(instance)
+}
+
 /// Create a validator for the input schema with automatic draft detection and default options.
 ///
 /// # Examples
@@ -2722,6 +2749,35 @@ mod tests {
 
         assert!(validate_fn(&schema, &valid_instance).is_ok());
         assert!(validate_fn(&schema, &invalid_instance).is_err());
+    }
+
+    #[test]
+    fn test_evaluate() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "integer", "minimum": 0}
+            },
+            "required": ["name"]
+        });
+
+        let valid_instance = json!({
+            "name": "John Doe",
+            "age": 30
+        });
+
+        let invalid_instance = json!({
+            "age": -5
+        });
+
+        let valid_eval = crate::evaluate(&schema, &valid_instance);
+        assert!(valid_eval.flag().valid);
+
+        let invalid_eval = crate::evaluate(&schema, &invalid_instance);
+        assert!(!invalid_eval.flag().valid);
+        let errors: Vec<_> = invalid_eval.iter_errors().collect();
+        assert!(!errors.is_empty());
     }
 
     #[test_case(crate::meta::validate, crate::meta::is_valid ; "autodetect")]

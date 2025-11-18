@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `evaluate()` top-level function for convenient access to structured validation output.
+
 ### Changed
 
 - **BREAKING**: `ValidationError` fields are private; use `instance()`, `kind()`, `instance_path()`, and `schema_path()` instead of accessing struct fields directly.

@@ -18,9 +18,7 @@ mod bench {
             BenchmarkId::new("is_valid", name),
             instance,
             |b, instance| {
-                b.iter(|| {
-                    let _ = validator.is_valid(instance);
-                });
+                b.iter(|| black_box(validator.is_valid(instance)));
             },
         );
     }
@@ -31,9 +29,7 @@ mod bench {
             BenchmarkId::new("validate", name),
             instance,
             |b, instance| {
-                b.iter(|| {
-                    let _ = validator.validate(instance);
-                });
+                b.iter(|| black_box(validator.validate(instance)));
             },
         );
     }
