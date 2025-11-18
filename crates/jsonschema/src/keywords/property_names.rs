@@ -35,7 +35,7 @@ impl Validate for PropertyNamesObjectValidator {
                         .iter_errors(&wrapper, location)
                         .map(|error| {
                             ValidationError::property_names(
-                                error.schema_path.clone(),
+                                error.schema_path().clone(),
                                 location.into(),
                                 instance,
                                 error.to_owned(),
@@ -74,7 +74,7 @@ impl Validate for PropertyNamesObjectValidator {
                     Ok(()) => {}
                     Err(error) => {
                         return Err(ValidationError::property_names(
-                            error.schema_path.clone(),
+                            error.schema_path().clone(),
                             location.into(),
                             instance,
                             error.to_owned(),

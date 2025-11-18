@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING**: `ValidationError` fields are private; use `instance()`, `kind()`, `instance_path()`, and `schema_path()` instead of accessing struct fields directly.
+
+### Performance
+
+- `validate` and other APIs returning `Result<_, ValidationError>` are 5–10% faster in some workloads due to the smaller error handle.
+
 ## [0.36.0] - 2025-11-18
 
 ### Added

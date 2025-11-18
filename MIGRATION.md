@@ -1,5 +1,18 @@
 # Migration Guide
 
+## Upgrading from 0.36.x to 0.37.0
+
+### `ValidationError` is now opaque
+
+All `ValidationError` fields are private. Replace `error.instance`, `error.instance_path`, `error.schema_path`, and `error.kind` with the corresponding accessor calls:
+
+```rust
+let instance = error.instance();
+let kind = error.kind();
+let instance_path = error.instance_path();
+let schema_path = error.schema_path();
+```
+
 ## Upgrading from 0.35.x to 0.36.0
 
 ### Removal of `Validator::apply`, `Output`, and `BasicOutput`

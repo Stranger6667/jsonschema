@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- `jsonschema_rs.validate()` and `Validator.validate()` run 5–10% faster in some workloads thanks to slimmer `ValidationError` objects.
+
 ## [0.36.0] - 2025-11-18
 
 ### Added

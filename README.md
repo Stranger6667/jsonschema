@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Iterate over errors
     for error in validator.iter_errors(&instance) {
         eprintln!("Error: {error}");
-        eprintln!("Location: {}", error.instance_path);
+        eprintln!("Location: {}", error.instance_path());
     }
 
     // Boolean result

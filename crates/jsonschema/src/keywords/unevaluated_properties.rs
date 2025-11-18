@@ -756,9 +756,10 @@ mod tests {
 
         let errors: Vec<_> = validator.iter_errors(&invalid).collect();
         assert!(
-            errors
-                .iter()
-                .any(|err| matches!(err.kind, ValidationErrorKind::UnevaluatedProperties { .. })),
+            errors.iter().any(|err| matches!(
+                err.kind(),
+                ValidationErrorKind::UnevaluatedProperties { .. }
+            )),
             "expected unevaluatedProperties error, got {errors:?}"
         );
     }

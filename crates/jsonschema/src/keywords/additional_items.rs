@@ -174,6 +174,6 @@ mod tests {
             .build(schema)
             .expect("Invalid schema");
         let error = validator.validate(instance).expect_err("Should fail");
-        assert_eq!(error.schema_path.as_str(), expected);
+        assert_eq!(error.schema_path().as_str(), expected);
     }
 }

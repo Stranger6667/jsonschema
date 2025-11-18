@@ -1,6 +1,4 @@
-#![allow(clippy::result_large_err)]
 #![allow(clippy::unnecessary_wraps)]
-
 //! A high-performance JSON Schema validator for Rust.
 //!
 //! - 📚 Support for popular JSON Schema drafts
@@ -65,7 +63,7 @@
 //! let instance = json!(42);
 //! for error in validator.iter_errors(&instance) {
 //!     eprintln!("Error: {}", error);
-//!     eprintln!("Location: {}", error.instance_path);
+//!     eprintln!("Location: {}", error.instance_path());
 //! }
 //! # Ok(())
 //! # }
@@ -2549,7 +2547,9 @@ pub(crate) mod tests_util {
         if let Some(first) = validator.iter_errors(instance).next() {
             panic!(
                 "{} should be valid (via validate). Error: {} at {}",
-                instance, first, first.instance_path
+                instance,
+                first,
+                first.instance_path()
             );
         }
         assert!(
@@ -2592,7 +2592,7 @@ pub(crate) mod tests_util {
     #[track_caller]
     pub(crate) fn assert_schema_location(schema: &Value, instance: &Value, expected: &str) {
         let error = validate(schema, instance);
-        assert_eq!(error.schema_path.as_str(), expected);
+        assert_eq!(error.schema_path().as_str(), expected);
     }
 
     #[track_caller]
@@ -2600,7 +2600,7 @@ pub(crate) mod tests_util {
         let validator = crate::validator_for(schema).unwrap();
         let errors = validator.iter_errors(instance);
         for (error, location) in errors.zip(expected) {
-            assert_eq!(error.schema_path.as_str(), *location);
+            assert_eq!(error.schema_path().as_str(), *location);
         }
     }
 

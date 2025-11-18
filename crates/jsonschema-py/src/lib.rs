@@ -467,7 +467,7 @@ impl ValidationErrorKind {
 
 fn convert_validation_context(
     py: Python<'_>,
-    context: Vec<Vec<jsonschema::error::ValidationError>>,
+    context: Vec<Vec<jsonschema::error::ValidationError<'static>>>,
     mask: Option<&str>,
 ) -> PyResult<Py<PyList>> {
     let mut py_context: Vec<Py<PyList>> = Vec::with_capacity(context.len());
@@ -532,26 +532,25 @@ fn into_validation_error_args(
         error.to_string()
     };
     let verbose_message = to_error_message(&error, message.clone(), mask);
+    let (instance, kind, instance_path, schema_path) = error.into_parts();
     let into_path = |segment: LocationSegment<'_>| match segment {
         LocationSegment::Property(property) => {
             property.into_pyobject(py).and_then(Py::<PyAny>::try_from)
         }
         LocationSegment::Index(idx) => idx.into_pyobject(py).and_then(Py::<PyAny>::try_from),
     };
-    let elements = error
-        .schema_path
+    let elements = schema_path
         .into_iter()
         .map(into_path)
         .collect::<Result<Vec<_>, _>>()?;
     let schema_path = PyList::new(py, elements)?.unbind();
-    let elements = error
-        .instance_path
+    let elements = instance_path
         .into_iter()
         .map(into_path)
         .collect::<Result<Vec<_>, _>>()?;
     let instance_path = PyList::new(py, elements)?.unbind();
-    let kind = ValidationErrorKind::try_new(py, error.kind, mask)?;
-    let instance = value_to_python(py, error.instance.as_ref())?;
+    let kind = ValidationErrorKind::try_new(py, kind, mask)?;
+    let instance = value_to_python(py, instance.as_ref())?;
     Ok((
         message,
         verbose_message,
@@ -758,7 +757,7 @@ fn to_error_message(
         }
     };
 
-    let mut schema_path = error.schema_path.as_str();
+    let mut schema_path = error.schema_path().as_str();
 
     if let Some((rest, last)) = schema_path.rsplit_once('/') {
         message.push(' ');
@@ -774,7 +773,7 @@ fn to_error_message(
     message.push('\n');
     message.push('\n');
     message.push_str("On instance");
-    for segment in error.instance_path.as_str().split('/').skip(1) {
+    for segment in error.instance_path().as_str().split('/').skip(1) {
         message.push('[');
         push_segment(&mut message, segment);
         message.push(']');
@@ -785,7 +784,7 @@ fn to_error_message(
         message.push_str(mask);
     } else {
         let mut writer = StringWriter(&mut message);
-        serde_json::to_writer(&mut writer, &error.instance).expect("Failed to serialize JSON");
+        serde_json::to_writer(&mut writer, error.instance()).expect("Failed to serialize JSON");
     }
     message
 }
@@ -1549,7 +1548,7 @@ mod meta {
         match result {
             Ok(()) => Ok(true),
             Err(error) => {
-                if let jsonschema::error::ValidationErrorKind::Referencing(err) = &error.kind {
+                if let jsonschema::error::ValidationErrorKind::Referencing(err) = error.kind() {
                     return Err(referencing_error_pyerr(py, err.to_string())?);
                 }
                 Ok(false)
@@ -1598,7 +1597,7 @@ mod meta {
         match result {
             Ok(()) => Ok(()),
             Err(error) => {
-                if let jsonschema::error::ValidationErrorKind::Referencing(err) = &error.kind {
+                if let jsonschema::error::ValidationErrorKind::Referencing(err) = error.kind() {
                     return Err(referencing_error_pyerr(py, err.to_string())?);
                 }
                 Err(crate::into_py_err(py, error, None)?)

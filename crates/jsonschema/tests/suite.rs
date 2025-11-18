@@ -113,15 +113,15 @@ mod tests {
                 pretty_json(&test.data),
             );
                 for error in errors {
-                    let pointer = error.instance_path.as_str();
+                    let pointer = error.instance_path().as_str();
                     assert_eq!(
-                    test.data.pointer(pointer), Some(&*error.instance),
+                    test.data.pointer(pointer), Some(error.instance().as_ref()),
                     "Expected error instance did not match actual error instance:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}\nExpected pointer: {:#?}\nActual pointer: {:#?}",
                     test.case,
                     test.description,
                     pretty_json(&test.schema),
                     pretty_json(&test.data),
-                    &*error.instance,
+                    error.instance().as_ref(),
                     &pointer,
                 );
                 }
@@ -142,15 +142,15 @@ mod tests {
                     pretty_json(&test.data),
                 );
                 };
-                let pointer = error.instance_path.as_str();
+                let pointer = error.instance_path().as_str();
                 assert_eq!(
-                test.data.pointer(pointer), Some(&*error.instance),
+                test.data.pointer(pointer), Some(error.instance().as_ref()),
                 "Expected error instance did not match actual error instance:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}\nExpected pointer: {:#?}\nActual pointer: {:#?}",
                 test.case,
                 test.description,
                 pretty_json(&test.schema),
                 pretty_json(&test.data),
-                &*error.instance,
+                error.instance().as_ref(),
                 &pointer,
             );
                 let evaluation = validator.evaluate(&test.data);
@@ -213,7 +213,7 @@ mod tests {
                         &data[suite_id]["tests"][test_id]["description"],
                     ));
                     assert_eq!(
-                        error.instance_path.as_str(),
+                        error.instance_path().as_str(),
                         instance_path,
                         "\nFile: {}\nSuite: {}\nTest: {}\nError: {}",
                         filename,

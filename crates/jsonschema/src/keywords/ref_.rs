@@ -312,14 +312,14 @@ mod tests {
         assert_eq!(
             iter.next()
                 .expect("Should be present")
-                .schema_path
+                .schema_path()
                 .to_string(),
             expected
         );
         assert_eq!(
             iter.next()
                 .expect("Should be present")
-                .schema_path
+                .schema_path()
                 .to_string(),
             expected
         );

@@ -60,7 +60,7 @@ impl ErrorDescription {
     #[must_use]
     pub(crate) fn from_validation_error(e: &ValidationError<'_>) -> Self {
         ErrorDescription {
-            keyword: e.kind.keyword(),
+            keyword: e.kind().keyword(),
             message: e.to_string(),
         }
     }
