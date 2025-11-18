@@ -662,3 +662,54 @@ fn test_output_hierarchical_multiple_instances() {
     assert_eq!(results.get(&valid), Some(&true));
     assert_eq!(results.get(&invalid), Some(&false));
 }
+
+#[test]
+fn test_errors_only_text_output() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type": "integer"}"#);
+    let valid = create_temp_file(&dir, "valid.json", "42");
+    let invalid = create_temp_file(&dir, "invalid.json", r#""not an integer""#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--instance")
+        .arg(&valid)
+        .arg("--instance")
+        .arg(&invalid)
+        .arg("--errors-only");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Should contain "INVALID"
+    assert!(stdout.contains("INVALID"));
+    assert!(stdout.contains(&invalid));
+    // Should not show the valid file at all (should not contain " - VALID")
+    assert!(!stdout.contains(" - VALID"));
+}
+
+#[test]
+fn test_errors_only_structured_output() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type": "integer"}"#);
+    let valid = create_temp_file(&dir, "valid.json", "42");
+    let invalid = create_temp_file(&dir, "invalid.json", r#""not an integer""#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--instance")
+        .arg(&valid)
+        .arg("--instance")
+        .arg(&invalid)
+        .arg("--output")
+        .arg("flag")
+        .arg("--errors-only");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+
+    let records = parse_ndjson(&String::from_utf8_lossy(&output.stdout));
+    // Should only have 1 record (the invalid one)
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["instance"], invalid);
+    assert_eq!(records[0]["payload"]["valid"], false);
+}

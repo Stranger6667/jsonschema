@@ -60,6 +60,10 @@ struct Cli {
     /// Show program's version number and exit.
     #[arg(short = 'v', long = "version")]
     version: bool,
+
+    /// Only output validation failures, suppress successful validations.
+    #[arg(long = "errors-only", help = "Only show validation errors")]
+    errors_only: bool,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -183,6 +187,7 @@ fn validate_instances(
     draft: Option<Draft>,
     assert_format: Option<bool>,
     output: Output,
+    errors_only: bool,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let mut success = true;
 
@@ -210,7 +215,7 @@ fn validate_instances(
                         for (i, error) in errors.enumerate() {
                             println!("{}. {error}", i + 2);
                         }
-                    } else {
+                    } else if !errors_only {
                         println!("{filename} - VALID");
                     }
                 }
@@ -221,6 +226,12 @@ fn validate_instances(
                     let instance_json = read_json(instance)??;
                     let evaluation = validator.evaluate(&instance_json);
                     let flag_output = evaluation.flag();
+
+                    // Skip valid instances if errors_only is enabled
+                    if errors_only && flag_output.valid {
+                        continue;
+                    }
+
                     let payload = match output {
                         Output::Text => unreachable!("handled above"),
                         Output::Flag => serde_json::to_value(flag_output)?,
@@ -271,6 +282,7 @@ fn main() -> ExitCode {
                 config.draft,
                 assert_format,
                 config.output,
+                config.errors_only,
             ) {
                 Ok(true) => ExitCode::SUCCESS,
                 Ok(false) => ExitCode::FAILURE,
