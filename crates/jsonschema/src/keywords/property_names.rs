@@ -45,7 +45,7 @@ impl Validate for PropertyNamesObjectValidator {
                     errors.into_iter()
                 })
                 .collect();
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }

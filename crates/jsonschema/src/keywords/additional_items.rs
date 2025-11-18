@@ -37,7 +37,7 @@ impl Validate for AdditionalItemsObjectValidator {
                 .skip(self.items_count)
                 .flat_map(|(idx, item)| self.node.iter_errors(item, &location.push(idx)))
                 .collect();
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }

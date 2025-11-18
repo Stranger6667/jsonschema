@@ -34,7 +34,7 @@ impl<R: RegexEngine> Validate for PatternPropertiesValidator<R> {
                         })
                 })
                 .collect();
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }
@@ -109,7 +109,7 @@ impl<R: RegexEngine> Validate for SingleValuePatternPropertiesValidator<R> {
                     self.node.iter_errors(value, &instance_path)
                 })
                 .collect();
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }

@@ -7,10 +7,12 @@
 - `evaluate()` top-level function for convenient access to structured validation output.
 - **CLI**: Schema-only validation now also validates all referenced schemas. [#804](https://github.com/Stranger6667/jsonschema/issues/804)
 - Support for additional `contentEncoding` values per RFC 4648: `base64url`, `base32`, `base32hex`, and `base16`. These encodings are now validated alongside the existing `base64` support in Draft 6 and 7. [#26](https://github.com/Stranger6667/jsonschema/issues/26)
+- `validator.iter_errors(instance).into_errors()`. It returns a `ValidationErrors` type that collects validation errors and implements `std::error::Error`. [#451](https://github.com/Stranger6667/jsonschema/issues/451)
 
 ### Changed
 
 - **BREAKING**: `ValidationError` fields are private; use `instance()`, `kind()`, `instance_path()`, and `schema_path()` instead of accessing struct fields directly.
+- **BREAKING**: `ErrorIterator` is now a newtype wrapper instead of `Box<dyn ValidationErrorIterator>`.
 
 ### Performance
 

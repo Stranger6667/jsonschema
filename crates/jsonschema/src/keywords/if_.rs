@@ -39,7 +39,7 @@ impl Validate for IfThenValidator {
     fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
         if self.schema.is_valid(instance) {
             let errors: Vec<_> = self.then_schema.iter_errors(instance, location).collect();
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }
@@ -108,7 +108,7 @@ impl Validate for IfElseValidator {
             no_error()
         } else {
             let errors: Vec<_> = self.else_schema.iter_errors(instance, location).collect();
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         }
     }
 
@@ -179,10 +179,10 @@ impl Validate for IfThenElseValidator {
     fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
         if self.schema.is_valid(instance) {
             let errors: Vec<_> = self.then_schema.iter_errors(instance, location).collect();
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             let errors: Vec<_> = self.else_schema.iter_errors(instance, location).collect();
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         }
     }
 

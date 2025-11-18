@@ -39,7 +39,7 @@ impl Validate for AllOfValidator {
             .iter()
             .flat_map(move |node| node.iter_errors(instance, location))
             .collect();
-        Box::new(errors.into_iter())
+        ErrorIterator::from_iterator(errors.into_iter())
     }
 
     fn is_valid(&self, instance: &Value) -> bool {

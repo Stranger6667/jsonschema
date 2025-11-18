@@ -371,7 +371,7 @@ impl Validate for SchemaNode {
             NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
                 kvs.validators[0].validator.iter_errors(instance, location)
             }
-            NodeValidators::Keyword(kvs) => Box::new(
+            NodeValidators::Keyword(kvs) => ErrorIterator::from_iterator(
                 kvs.validators
                     .iter()
                     .flat_map(|entry| entry.validator.iter_errors(instance, location))
@@ -383,8 +383,8 @@ impl Validate for SchemaNode {
             } => v.iter_errors(instance, location),
             NodeValidators::Boolean {
                 validator: None, ..
-            } => Box::new(std::iter::empty()),
-            NodeValidators::Array { validators } => Box::new(
+            } => ErrorIterator::from_iterator(std::iter::empty()),
+            NodeValidators::Array { validators } => ErrorIterator::from_iterator(
                 validators
                     .iter()
                     .flat_map(move |entry| entry.validator.iter_errors(instance, location))

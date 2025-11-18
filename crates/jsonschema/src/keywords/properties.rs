@@ -55,7 +55,7 @@ impl Validate for PropertiesValidator {
                     })
                 })
                 .collect();
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }

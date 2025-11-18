@@ -13,6 +13,10 @@ let instance_path = error.instance_path();
 let schema_path = error.schema_path();
 ```
 
+### `ErrorIterator` is now a struct
+
+`ErrorIterator` used to be a `type` alias to `Box<dyn ValidationErrorIterator<'_>>` and is now a struct wrapping that iterator.
+
 ## Upgrading from 0.35.x to 0.36.0
 
 ### Removal of `Validator::apply`, `Output`, and `BasicOutput`

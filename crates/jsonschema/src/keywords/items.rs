@@ -39,7 +39,7 @@ impl Validate for ItemsArrayValidator {
                 .enumerate()
                 .flat_map(move |(idx, (item, node))| node.iter_errors(item, &location.push(idx)))
                 .collect();
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }
@@ -105,7 +105,7 @@ impl Validate for ItemsObjectValidator {
                 .enumerate()
                 .flat_map(move |(idx, item)| self.node.iter_errors(item, &location.push(idx)))
                 .collect();
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }
@@ -189,7 +189,7 @@ impl Validate for ItemsObjectSkipPrefixValidator {
                         .iter_errors(item, &location.push(idx + self.skip_prefix))
                 })
                 .collect();
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }

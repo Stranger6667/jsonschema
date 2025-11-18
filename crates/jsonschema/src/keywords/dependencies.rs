@@ -69,7 +69,7 @@ impl Validate for DependenciesValidator {
                 .flat_map(move |(_, node)| node.iter_errors(instance, location))
                 .collect();
             // TODO. custom error message for "required" case
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }
@@ -162,7 +162,7 @@ impl Validate for DependentRequiredValidator {
                 .filter(|(property, _)| item.contains_key(property))
                 .flat_map(move |(_, node)| node.iter_errors(instance, location))
                 .collect();
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }
@@ -244,7 +244,7 @@ impl Validate for DependentSchemasValidator {
                 .filter(|(property, _)| item.contains_key(property))
                 .flat_map(move |(_, node)| node.iter_errors(instance, location))
                 .collect();
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }

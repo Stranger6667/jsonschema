@@ -46,7 +46,9 @@ use std::{
     error,
     fmt::{self, Formatter, Write},
     iter::{empty, once},
+    slice,
     string::FromUtf8Error,
+    vec,
 };
 
 /// An error that can occur during validation.
@@ -88,15 +90,145 @@ impl<'a, T> ValidationErrorIterator<'a> for T where
 {
 }
 
-pub type ErrorIterator<'a> = Box<dyn ValidationErrorIterator<'a> + 'a>;
+/// A lazily-evaluated iterator over validation errors.
+///
+/// Use [`into_errors()`](Self::into_errors) to convert into [`ValidationErrors`],
+/// which implements [`std::error::Error`] for integration with error handling libraries.
+pub struct ErrorIterator<'a> {
+    iter: Box<dyn ValidationErrorIterator<'a> + 'a>,
+}
+
+impl<'a> ErrorIterator<'a> {
+    #[inline]
+    pub(crate) fn from_iterator<T>(iterator: T) -> Self
+    where
+        T: ValidationErrorIterator<'a> + 'a,
+    {
+        Self {
+            iter: Box::new(iterator),
+        }
+    }
+
+    /// Collects all errors into [`ValidationErrors`], which implements [`std::error::Error`].
+    #[inline]
+    #[must_use]
+    pub fn into_errors(self) -> ValidationErrors<'a> {
+        ValidationErrors {
+            errors: self.collect(),
+        }
+    }
+}
+
+/// An owned collection of validation errors that implements [`std::error::Error`].
+///
+/// Obtain this by calling [`ErrorIterator::into_errors()`].
+pub struct ValidationErrors<'a> {
+    errors: Vec<ValidationError<'a>>,
+}
+
+impl<'a> ValidationErrors<'a> {
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.errors.len()
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    /// Returns the errors as a slice.
+    #[inline]
+    #[must_use]
+    pub fn as_slice(&self) -> &[ValidationError<'a>] {
+        &self.errors
+    }
+
+    #[inline]
+    pub fn iter(&self) -> slice::Iter<'_, ValidationError<'a>> {
+        self.errors.iter()
+    }
+
+    #[inline]
+    pub fn iter_mut(&mut self) -> slice::IterMut<'_, ValidationError<'a>> {
+        self.errors.iter_mut()
+    }
+}
+
+impl fmt::Display for ValidationErrors<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if self.errors.is_empty() {
+            f.write_str("Validation succeeded")
+        } else {
+            writeln!(f, "Validation errors:")?;
+            for (idx, error) in self.errors.iter().enumerate() {
+                writeln!(f, "{:02}: {error}", idx + 1)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+impl fmt::Debug for ValidationErrors<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ValidationErrors")
+            .field("errors", &self.errors)
+            .finish()
+    }
+}
+
+impl error::Error for ValidationErrors<'_> {}
+
+impl<'a> Iterator for ErrorIterator<'a> {
+    type Item = ValidationError<'a>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.as_mut().next()
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
+}
+
+impl<'a> IntoIterator for ValidationErrors<'a> {
+    type Item = ValidationError<'a>;
+    type IntoIter = vec::IntoIter<ValidationError<'a>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.errors.into_iter()
+    }
+}
+
+impl<'a, 'b> IntoIterator for &'b ValidationErrors<'a> {
+    type Item = &'b ValidationError<'a>;
+    type IntoIter = slice::Iter<'b, ValidationError<'a>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.errors.iter()
+    }
+}
+
+impl<'a, 'b> IntoIterator for &'b mut ValidationErrors<'a> {
+    type Item = &'b mut ValidationError<'a>;
+    type IntoIter = slice::IterMut<'b, ValidationError<'a>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.errors.iter_mut()
+    }
+}
 
 // Empty iterator means no error happened
 pub(crate) fn no_error<'a>() -> ErrorIterator<'a> {
-    Box::new(empty())
+    ErrorIterator::from_iterator(empty())
 }
 // A wrapper for one error
 pub(crate) fn error(instance: ValidationError) -> ErrorIterator {
-    Box::new(once(instance))
+    ErrorIterator::from_iterator(once(instance))
 }
 
 /// Kinds of errors that may happen during validation
@@ -1394,6 +1526,166 @@ mod tests {
     use serde_json::json;
 
     use test_case::test_case;
+
+    fn owned_error(instance: Value, kind: ValidationErrorKind) -> ValidationError<'static> {
+        ValidationError::new(Cow::Owned(instance), kind, Location::new(), Location::new())
+    }
+
+    #[test]
+    fn error_iterator_into_errors_collects_all_errors() {
+        let iterator = ErrorIterator::from_iterator(
+            vec![
+                owned_error(json!(1), ValidationErrorKind::Minimum { limit: json!(2) }),
+                owned_error(json!(3), ValidationErrorKind::Maximum { limit: json!(2) }),
+            ]
+            .into_iter(),
+        );
+        let validation_errors = iterator.into_errors();
+        let collected: Vec<_> = validation_errors.into_iter().collect();
+        assert_eq!(collected.len(), 2);
+        assert_eq!(collected[0].to_string(), "1 is less than the minimum of 2");
+        assert_eq!(
+            collected[1].to_string(),
+            "3 is greater than the maximum of 2"
+        );
+    }
+
+    #[test]
+    fn validation_errors_display_reports_success() {
+        let errors = ValidationErrors { errors: Vec::new() };
+        assert_eq!(format!("{errors}"), "Validation succeeded");
+    }
+
+    #[test]
+    fn validation_errors_display_lists_messages() {
+        let errors = ValidationErrors {
+            errors: vec![
+                owned_error(json!(1), ValidationErrorKind::Minimum { limit: json!(2) }),
+                owned_error(json!(3), ValidationErrorKind::Maximum { limit: json!(2) }),
+            ],
+        };
+        let rendered = format!("{errors}");
+        assert!(rendered.contains("Validation errors:"));
+        assert!(rendered.contains("01: 1 is less than the minimum of 2"));
+        assert!(rendered.contains("02: 3 is greater than the maximum of 2"));
+    }
+
+    #[test]
+    fn validation_errors_len_and_is_empty() {
+        let empty = ValidationErrors { errors: vec![] };
+        assert_eq!(empty.len(), 0);
+        assert!(empty.is_empty());
+
+        let errors = ValidationErrors {
+            errors: vec![owned_error(
+                json!(1),
+                ValidationErrorKind::Minimum { limit: json!(2) },
+            )],
+        };
+        assert_eq!(errors.len(), 1);
+        assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn validation_errors_as_slice() {
+        let errors = ValidationErrors {
+            errors: vec![
+                owned_error(json!(1), ValidationErrorKind::Minimum { limit: json!(2) }),
+                owned_error(json!(3), ValidationErrorKind::Maximum { limit: json!(2) }),
+            ],
+        };
+
+        let slice = errors.as_slice();
+        assert_eq!(slice.len(), 2);
+        assert_eq!(slice[0].to_string(), "1 is less than the minimum of 2");
+        assert_eq!(slice[1].to_string(), "3 is greater than the maximum of 2");
+    }
+
+    #[test]
+    fn validation_errors_iter() {
+        let errors = ValidationErrors {
+            errors: vec![
+                owned_error(json!(1), ValidationErrorKind::Minimum { limit: json!(2) }),
+                owned_error(json!(3), ValidationErrorKind::Maximum { limit: json!(2) }),
+            ],
+        };
+
+        let collected: Vec<_> = errors.iter().map(ValidationError::to_string).collect();
+        assert_eq!(collected.len(), 2);
+        assert_eq!(collected[0], "1 is less than the minimum of 2");
+        assert_eq!(collected[1], "3 is greater than the maximum of 2");
+    }
+
+    #[test]
+    #[allow(clippy::explicit_iter_loop)]
+    fn validation_errors_iter_mut() {
+        let mut errors = ValidationErrors {
+            errors: vec![owned_error(
+                json!(1),
+                ValidationErrorKind::Minimum { limit: json!(2) },
+            )],
+        };
+
+        // Verify we can get mutable references via iter_mut()
+        for error in errors.iter_mut() {
+            let _ = error.to_string();
+        }
+    }
+
+    #[test]
+    fn validation_errors_into_iterator_by_ref() {
+        let errors = ValidationErrors {
+            errors: vec![owned_error(
+                json!(1),
+                ValidationErrorKind::Minimum { limit: json!(2) },
+            )],
+        };
+
+        let collected: Vec<_> = (&errors).into_iter().collect();
+        assert_eq!(collected.len(), 1);
+        // Verify errors is still usable
+        assert_eq!(errors.len(), 1);
+    }
+
+    #[test]
+    fn validation_errors_into_iterator_by_mut_ref() {
+        let mut errors = ValidationErrors {
+            errors: vec![owned_error(
+                json!(1),
+                ValidationErrorKind::Minimum { limit: json!(2) },
+            )],
+        };
+
+        let collected: Vec<_> = (&mut errors).into_iter().collect();
+        assert_eq!(collected.len(), 1);
+        // Verify errors is still usable
+        assert_eq!(errors.len(), 1);
+    }
+
+    #[test]
+    fn error_iterator_size_hint() {
+        let vec = vec![
+            owned_error(json!(1), ValidationErrorKind::Minimum { limit: json!(2) }),
+            owned_error(json!(3), ValidationErrorKind::Maximum { limit: json!(2) }),
+        ];
+        let iterator = ErrorIterator::from_iterator(vec.into_iter());
+        let (lower, upper) = iterator.size_hint();
+        assert_eq!(lower, 2);
+        assert_eq!(upper, Some(2));
+    }
+
+    #[test]
+    fn validation_errors_debug() {
+        let errors = ValidationErrors {
+            errors: vec![owned_error(
+                json!(1),
+                ValidationErrorKind::Minimum { limit: json!(2) },
+            )],
+        };
+        let debug_output = format!("{errors:?}");
+        assert!(debug_output.contains("ValidationErrors"));
+        assert!(debug_output.contains("errors"));
+    }
 
     #[test]
     fn single_type_error() {

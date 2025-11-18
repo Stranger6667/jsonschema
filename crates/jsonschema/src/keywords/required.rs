@@ -83,7 +83,7 @@ impl Validate for RequiredValidator {
                 }
             }
             if !errors.is_empty() {
-                return Box::new(errors.into_iter());
+                return ErrorIterator::from_iterator(errors.into_iter());
             }
         }
         no_error()

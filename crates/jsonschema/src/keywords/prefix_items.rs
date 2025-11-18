@@ -43,7 +43,7 @@ impl Validate for PrefixItemsValidator {
                 .enumerate()
                 .flat_map(|(idx, (n, i))| n.iter_errors(i, &location.push(idx)))
                 .collect();
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }

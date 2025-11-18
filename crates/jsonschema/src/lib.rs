@@ -909,7 +909,7 @@ pub(crate) mod thread;
 pub mod types;
 mod validator;
 
-pub use error::{ErrorIterator, MaskedValidationError, ValidationError};
+pub use error::{ErrorIterator, MaskedValidationError, ValidationError, ValidationErrors};
 pub use evaluation::{
     AnnotationEntry, ErrorEntry, Evaluation, FlagOutput, HierarchicalOutput, ListOutput,
 };
@@ -2626,7 +2626,7 @@ pub(crate) mod tests_util {
     pub(crate) fn assert_locations(schema: &Value, instance: &Value, expected: &[&str]) {
         let validator = crate::validator_for(schema).unwrap();
         let errors = validator.iter_errors(instance);
-        for (error, location) in errors.zip(expected) {
+        for (error, location) in errors.into_iter().zip(expected) {
             assert_eq!(error.schema_path().as_str(), *location);
         }
     }

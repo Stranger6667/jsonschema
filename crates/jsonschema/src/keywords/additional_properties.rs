@@ -104,7 +104,7 @@ impl Validate for AdditionalPropertiesValidator {
                 .iter()
                 .flat_map(|(name, value)| iter_errors!(self.node, value, location, name))
                 .collect();
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }
@@ -269,7 +269,7 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
                     unexpected,
                 ));
             }
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }
@@ -399,7 +399,7 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyValida
                     errors.extend(iter_errors!(self.node, value, location, property));
                 }
             }
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }
@@ -510,7 +510,7 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsValidator<R> {
                     errors.extend(iter_errors!(self.node, value, location, property));
                 }
             }
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }
@@ -659,7 +659,7 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsFalseValidator
                     unexpected,
                 ));
             }
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }
@@ -818,7 +818,7 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
                     }
                 }
             }
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }
@@ -1005,7 +1005,7 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
                     unexpected,
                 ));
             }
-            Box::new(errors.into_iter())
+            ErrorIterator::from_iterator(errors.into_iter())
         } else {
             no_error()
         }
