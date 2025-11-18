@@ -192,7 +192,7 @@ impl From<EvaluationNode> for EvaluationResult {
 /// This structure represents a JSON Schema that has been parsed and compiled into
 /// an efficient internal representation for validation. It contains the root node
 /// of the schema tree and the configuration options used during compilation.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Validator {
     pub(crate) root: SchemaNode,
     pub(crate) draft: Draft,
@@ -606,5 +606,27 @@ mod tests {
     fn test_validator_is_send_and_sync() {
         fn assert_send_sync<T: ThreadBound>() {}
         assert_send_sync::<Validator>();
+    }
+
+    #[test]
+    fn test_validator_clone() {
+        let schema = json!({"type": "string", "minLength": 3});
+        let validator = crate::validator_for(&schema).expect("Valid schema");
+
+        // Clone the validator
+        let cloned = validator.clone();
+
+        // Both validators should work independently
+        assert!(validator.is_valid(&json!("hello")));
+        assert!(!validator.is_valid(&json!("hi")));
+
+        assert!(cloned.is_valid(&json!("hello")));
+        assert!(!cloned.is_valid(&json!("hi")));
+
+        // Verify they validate the same way
+        assert_eq!(
+            validator.is_valid(&json!("test")),
+            cloned.is_valid(&json!("test"))
+        );
     }
 }

@@ -824,7 +824,7 @@
 //! ```
 //!
 //! **Workaround for HTTP:** Implement a custom blocking or async [`Retrieve`] that uses your preferred
-//! HTTP client, and enable `resolve-async` if you want to build validators through [`async_options()`]
+//! HTTP client, and enable `resolve-async` if you want to build validators through `async_options()`
 //! on WASI.
 
 #[cfg(all(

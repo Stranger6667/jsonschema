@@ -4,12 +4,13 @@
 
 ### Added
 
-- `jsonschema`: New `Validator::evaluate()` API exposes JSON Schema Output v1 (flag/list/hierarchical) reports along with iterator helpers for annotations and errors.
-- `jsonschema-cli`: Structured `--output flag|list|hierarchical` modes now stream newline-delimited JSON records with schema/instance metadata plus JSON Schema Output v1 payloads (default `text` output remains human-readable).
+- **CLI**: Structured `--output flag|list|hierarchical` modes now stream newline-delimited JSON records with schema/instance metadata plus JSON Schema Output v1 payloads (default `text` output remains human-readable).
+- New `Validator::evaluate()` API exposes JSON Schema Output v1 (flag/list/hierarchical) reports along with iterator helpers for annotations and errors.
+- `Validator` now implements `Clone`. [#809](https://github.com/Stranger6667/jsonschema/issues/809)
 
 ### Removed
 
-- `jsonschema`: The legacy `Validator::apply()`, `Output`, and `BasicOutput` types have been removed in favor of the richer `evaluate()` API.
+- `Validator::apply()`, `Output`, and `BasicOutput` types have been removed in favor of the richer `evaluate()` API.
 
 ## [0.35.0] - 2025-11-16
 

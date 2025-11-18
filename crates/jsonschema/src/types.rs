@@ -1,3 +1,8 @@
+//! JSON type representations for schema validation.
+//!
+//! Provides [`JsonType`] for individual types and [`JsonTypeSet`] for efficient
+//! bitset-based type checking in validation hot paths.
+
 use core::fmt;
 use std::str::FromStr;
 
