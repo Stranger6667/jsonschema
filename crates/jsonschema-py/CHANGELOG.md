@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Support for `decimal.Decimal` type in both schemas and instances. [#319](https://github.com/Stranger6667/jsonschema/issues/319)
+
 ### Performance
 
 - `jsonschema_rs.validate()` and `Validator.validate()` run 5–10% faster in some workloads thanks to slimmer `ValidationError` objects.

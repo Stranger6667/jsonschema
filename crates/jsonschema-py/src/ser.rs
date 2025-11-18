@@ -36,6 +36,7 @@ pub enum ObjectType {
     Dict,
     Tuple,
     Enum,
+    Decimal,
     Unknown,
 }
 
@@ -203,6 +204,8 @@ pub fn get_object_type(object_type: *mut pyo3::ffi::PyTypeObject) -> ObjectType 
         ObjectType::Float
     } else if object_type == unsafe { types::NONE_TYPE } {
         ObjectType::None
+    } else if object_type == unsafe { types::DECIMAL_TYPE } {
+        ObjectType::Decimal
     } else if is_dict_subclass(object_type) {
         ObjectType::Dict
     } else if object_type == unsafe { types::TUPLE_TYPE } {
@@ -447,6 +450,33 @@ impl Serialize for SerializePyObject {
                     }
                     sequence.end()
                 }
+            }
+            ObjectType::Decimal => {
+                // Convert Decimal to string and parse as serde_json::Number
+                // With arbitrary_precision enabled, this preserves exact decimal precision
+                let str_obj = unsafe { pyo3::ffi::PyObject_Str(self.object) };
+                if str_obj.is_null() {
+                    return Err(ser::Error::custom("Failed to convert Decimal to string"));
+                }
+                let mut str_size: pyo3::ffi::Py_ssize_t = 0;
+                let ptr = unsafe { pyo3::ffi::PyUnicode_AsUTF8AndSize(str_obj, &raw mut str_size) };
+                if ptr.is_null() {
+                    unsafe { pyo3::ffi::Py_DecRef(str_obj) };
+                    return Err(ser::Error::custom("Failed to get UTF-8 representation"));
+                }
+                let slice = unsafe {
+                    std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                        ptr.cast::<u8>(),
+                        str_size as usize,
+                    ))
+                };
+                let result = if let Ok(num) = serde_json::Number::from_str(slice) {
+                    serializer.serialize_some(&num)
+                } else {
+                    Err(ser::Error::custom("Failed to parse Decimal as number"))
+                };
+                unsafe { pyo3::ffi::Py_DecRef(str_obj) };
+                result
             }
             ObjectType::Enum => {
                 let value = unsafe { PyObject_GetAttr(self.object, types::VALUE_STR) };

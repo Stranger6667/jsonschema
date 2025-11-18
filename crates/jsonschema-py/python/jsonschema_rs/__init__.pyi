@@ -4,8 +4,8 @@ from typing import Any, Callable, List, Protocol, TypeAlias, TypeVar, TypedDict,
 
 _SchemaT = TypeVar("_SchemaT", bool, dict[str, Any])
 _FormatFunc = TypeVar("_FormatFunc", bound=Callable[[str], bool])
-JSONType: TypeAlias = dict[str, Any] | list | str | int | float | bool | None
-JSONPrimitive: TypeAlias = str | int | float | bool | None
+JSONType: TypeAlias = dict[str, Any] | list | str | int | float | Decimal | bool | None
+JSONPrimitive: TypeAlias = str | int | float | Decimal | bool | None
 
 class EvaluationAnnotation(TypedDict):
     schemaLocation: str

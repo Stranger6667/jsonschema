@@ -20,6 +20,7 @@ pub static mut DICT_TYPE: *mut PyTypeObject = std::ptr::null_mut::<PyTypeObject>
 pub static mut TUPLE_TYPE: *mut PyTypeObject = std::ptr::null_mut::<PyTypeObject>();
 pub static mut ENUM_TYPE: *mut PyTypeObject = std::ptr::null_mut::<PyTypeObject>();
 pub static mut ENUM_BASE: *mut PyTypeObject = std::ptr::null_mut::<PyTypeObject>();
+pub static mut DECIMAL_TYPE: *mut PyTypeObject = std::ptr::null_mut::<PyTypeObject>();
 pub static mut VALUE_STR: *mut PyObject = std::ptr::null_mut::<PyObject>();
 
 static INIT: PyOnceLock<()> = PyOnceLock::new();
@@ -41,6 +42,18 @@ fn look_up_enum_types(py: Python<'_>) -> (*mut PyTypeObject, *mut PyTypeObject) 
     (enum_meta.as_type_ptr(), enum_base.as_type_ptr())
 }
 
+fn look_up_decimal_type(py: Python<'_>) -> *mut PyTypeObject {
+    let module = py
+        .import("decimal")
+        .expect("failed to import the stdlib decimal module");
+    let decimal_type = module
+        .getattr("Decimal")
+        .expect("decimal.Decimal is missing")
+        .cast_into::<PyType>()
+        .expect("decimal.Decimal is not a type");
+    decimal_type.as_type_ptr()
+}
+
 /// Set empty type object pointers with their actual values.
 /// We need these Python-side type objects for direct comparison during conversion to serde types
 /// NOTE. This function should be called before any serialization logic
@@ -58,6 +71,7 @@ pub fn init(py: Python<'_>) {
         let (enum_meta, enum_base) = look_up_enum_types(py);
         ENUM_TYPE = enum_meta;
         ENUM_BASE = enum_base;
+        DECIMAL_TYPE = look_up_decimal_type(py);
         VALUE_STR = ffi::PyUnicode_InternFromString(c"value".as_ptr());
     });
 }

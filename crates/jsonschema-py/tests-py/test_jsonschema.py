@@ -848,3 +848,25 @@ def test_float_precision_from_string_schema(instance, expected):
     # Schema values are no longer converted to f64, maintaining better precision
     validator = validator_for('{"multipleOf": 0.01}')
     assert validator.is_valid(instance) == expected
+
+
+@pytest.mark.parametrize(
+    "instance, expected",
+    [
+        (Decimal("10.5"), True),
+        (Decimal("5.5"), False),
+        (Decimal("99999999999999999999.123456789"), True),
+    ],
+)
+def test_decimal_support(instance, expected):
+    # Python's Decimal type should be supported, preserving precision
+    validator = validator_for({"type": "number", "minimum": 10})
+    assert validator.is_valid(instance) == expected
+
+
+def test_decimal_in_schema():
+    # Test that Decimal can be used in schema definitions too
+    validator = validator_for({"type": "number", "minimum": Decimal("10.5")})
+    assert validator.is_valid(11) is True
+    assert validator.is_valid(10) is False
+    assert validator.is_valid(Decimal("10.6")) is True
