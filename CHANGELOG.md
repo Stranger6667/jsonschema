@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `jsonschema::value_format` helper lets `ValidationOptions::with_format` register value-aware checkers that inspect non-string instances.
+
 ## [0.37.1] - 2025-11-19
 
 ### Fixed

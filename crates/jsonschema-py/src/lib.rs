@@ -17,8 +17,8 @@ use pyo3::{
     exceptions::{self, PyValueError},
     ffi::PyUnicode_AsUTF8AndSize,
     prelude::*,
-    types::{PyAny, PyDict, PyList, PyString, PyType},
-    wrap_pyfunction,
+    types::{PyAny, PyDict, PyList, PyString, PyTuple, PyType},
+    wrap_pyfunction, PyRef,
 };
 use regex::{FancyRegexOptions, RegexOptions};
 use retriever::{into_retriever, Retriever};
@@ -102,6 +102,51 @@ fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyA
             Ok(py_dict.into_any().unbind())
         }
     }
+}
+
+#[pyclass(module = "jsonschema_rs", name = "ValueFormat")]
+struct PyValueFormat {
+    callback: Py<PyAny>,
+}
+
+impl PyValueFormat {
+    fn new(callback: Py<PyAny>) -> Self {
+        PyValueFormat { callback }
+    }
+}
+
+#[pymethods]
+impl PyValueFormat {
+    #[pyo3(name = "__call__")]
+    fn call(
+        &self,
+        py: Python<'_>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        self.callback
+            .bind(py)
+            .call(args, kwargs)
+            .map(pyo3::Bound::unbind)
+    }
+}
+
+#[pyfunction]
+fn value_format(py: Python<'_>, callback: &Bound<'_, PyAny>) -> PyResult<Py<PyValueFormat>> {
+    if !callback.is_callable() {
+        return Err(exceptions::PyValueError::new_err(
+            "value_format decorator requires a callable",
+        ));
+    }
+    let wrapper = Py::new(py, PyValueFormat::new(callback.clone().unbind()))?;
+    wrapper.bind(py).setattr("__wrapped__", callback)?;
+    if let Ok(update_wrapper) = py
+        .import("functools")
+        .and_then(|module| module.getattr("update_wrapper"))
+    {
+        let _ = update_wrapper.call1((wrapper.bind(py), callback));
+    }
+    Ok(wrapper)
 }
 
 fn evaluation_output_to_python<T>(py: Python<'_>, output: &T) -> PyResult<Py<PyAny>>
@@ -619,6 +664,33 @@ fn make_options(
     }
     if let Some(formats) = formats {
         for (name, callback) in formats.iter() {
+            if let Ok(wrapper) = callback.extract::<PyRef<PyValueFormat>>() {
+                let py = wrapper.py();
+                let callback = wrapper.callback.clone_ref(py);
+                let call_py_callback = move |value: &serde_json::Value| {
+                    Python::attach(|py| {
+                        let value = value_to_python(py, value)?;
+                        callback.bind(py).call((value.bind(py),), None)?.is_truthy()
+                    })
+                };
+                options = options.with_format(
+                    name.to_string(),
+                    jsonschema::value_format(
+                        move |value: &serde_json::Value| match call_py_callback(value) {
+                            Ok(r) => r,
+                            Err(e) => {
+                                LAST_FORMAT_ERROR.with(|last| {
+                                    *last.borrow_mut() = Some(e);
+                                });
+                                std::panic::set_hook(Box::new(|_| {}));
+                                panic!("Format checker failed")
+                            }
+                        },
+                    ),
+                );
+                continue;
+            }
+
             if !callback.is_callable() {
                 return Err(exceptions::PyValueError::new_err(format!(
                     "Format checker for '{name}' must be a callable",
@@ -1617,6 +1689,7 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_wrapped(wrap_pyfunction!(iter_errors))?;
     module.add_wrapped(wrap_pyfunction!(evaluate))?;
     module.add_wrapped(wrap_pyfunction!(validator_for))?;
+    module.add_wrapped(wrap_pyfunction!(value_format))?;
     module.add_class::<Draft4Validator>()?;
     module.add_class::<Draft6Validator>()?;
     module.add_class::<Draft7Validator>()?;
@@ -1626,6 +1699,7 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<registry::Registry>()?;
     module.add_class::<FancyRegexOptions>()?;
     module.add_class::<RegexOptions>()?;
+    module.add_class::<PyValueFormat>()?;
     module.add("ValidationErrorKind", py.get_type::<ValidationErrorKind>())?;
     module.add("Draft4", DRAFT4)?;
     module.add("Draft6", DRAFT6)?;

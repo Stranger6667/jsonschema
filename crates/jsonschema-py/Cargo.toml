@@ -19,7 +19,6 @@ crate-type = ["cdylib"]
 jsonschema = { path = "../jsonschema/", features = ["arbitrary-precision"] }
 pyo3 = { version = "0.27", features = ["extension-module", "abi3-py310"] }
 pyo3-built = "0.6"
-pythonize = "0.27"
 serde.workspace = true
 serde_json.workspace = true
 

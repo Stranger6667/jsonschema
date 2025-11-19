@@ -3,9 +3,13 @@ from decimal import Decimal
 from typing import Any, Callable, List, Protocol, TypeAlias, TypeVar, TypedDict, Union
 
 _SchemaT = TypeVar("_SchemaT", bool, dict[str, Any])
-_FormatFunc = TypeVar("_FormatFunc", bound=Callable[[str], bool])
 JSONType: TypeAlias = dict[str, Any] | list | str | int | float | Decimal | bool | None
 JSONPrimitive: TypeAlias = str | int | float | Decimal | bool | None
+
+class ValueFormat:
+    def __call__(self, instance: JSONType) -> bool: ...
+
+FormatChecker: TypeAlias = Callable[[str], bool] | ValueFormat
 
 class EvaluationAnnotation(TypedDict):
     schemaLocation: str
@@ -66,12 +70,14 @@ PatternOptionsType = Union[FancyRegexOptions, RegexOptions]
 class RetrieverProtocol(Protocol):
     def __call__(self, uri: str) -> JSONType: ...
 
+def value_format(func: Callable[[JSONType], bool]) -> ValueFormat: ...
+
 def is_valid(
     schema: _SchemaT,
     instance: Any,
     draft: int | None = None,
     with_meta_schemas: bool | None = None,
-    formats: dict[str, _FormatFunc] | None = None,
+    formats: dict[str, FormatChecker] | None = None,
     validate_formats: bool | None = None,
     ignore_unknown_formats: bool = True,
     retriever: RetrieverProtocol | None = None,
@@ -91,7 +97,7 @@ def validate(
     instance: Any,
     draft: int | None = None,
     with_meta_schemas: bool | None = None,
-    formats: dict[str, _FormatFunc] | None = None,
+    formats: dict[str, FormatChecker] | None = None,
     validate_formats: bool | None = None,
     ignore_unknown_formats: bool = True,
     retriever: RetrieverProtocol | None = None,
@@ -111,7 +117,7 @@ def iter_errors(
     instance: Any,
     draft: int | None = None,
     with_meta_schemas: bool | None = None,
-    formats: dict[str, _FormatFunc] | None = None,
+    formats: dict[str, FormatChecker] | None = None,
     validate_formats: bool | None = None,
     ignore_unknown_formats: bool = True,
     retriever: RetrieverProtocol | None = None,
@@ -130,7 +136,7 @@ def evaluate(
     schema: _SchemaT,
     instance: Any,
     draft: int | None = None,
-    formats: dict[str, _FormatFunc] | None = None,
+    formats: dict[str, FormatChecker] | None = None,
     validate_formats: bool | None = None,
     ignore_unknown_formats: bool = True,
     retriever: RetrieverProtocol | None = None,
@@ -268,7 +274,7 @@ class Draft4Validator:
     def __init__(
         self,
         schema: _SchemaT | str,
-        formats: dict[str, _FormatFunc] | None = None,
+        formats: dict[str, FormatChecker] | None = None,
         validate_formats: bool | None = None,
         ignore_unknown_formats: bool = True,
         retriever: RetrieverProtocol | None = None,
@@ -287,7 +293,7 @@ class Draft6Validator:
     def __init__(
         self,
         schema: _SchemaT | str,
-        formats: dict[str, _FormatFunc] | None = None,
+        formats: dict[str, FormatChecker] | None = None,
         validate_formats: bool | None = None,
         ignore_unknown_formats: bool = True,
         retriever: RetrieverProtocol | None = None,
@@ -306,7 +312,7 @@ class Draft7Validator:
     def __init__(
         self,
         schema: _SchemaT | str,
-        formats: dict[str, _FormatFunc] | None = None,
+        formats: dict[str, FormatChecker] | None = None,
         validate_formats: bool | None = None,
         ignore_unknown_formats: bool = True,
         retriever: RetrieverProtocol | None = None,
@@ -325,7 +331,7 @@ class Draft201909Validator:
     def __init__(
         self,
         schema: _SchemaT | str,
-        formats: dict[str, _FormatFunc] | None = None,
+        formats: dict[str, FormatChecker] | None = None,
         validate_formats: bool | None = None,
         ignore_unknown_formats: bool = True,
         retriever: RetrieverProtocol | None = None,
@@ -344,7 +350,7 @@ class Draft202012Validator:
     def __init__(
         self,
         schema: _SchemaT | str,
-        formats: dict[str, _FormatFunc] | None = None,
+        formats: dict[str, FormatChecker] | None = None,
         validate_formats: bool | None = None,
         ignore_unknown_formats: bool = True,
         retriever: RetrieverProtocol | None = None,
@@ -363,7 +369,7 @@ Validator: TypeAlias = Draft4Validator | Draft6Validator | Draft7Validator | Dra
 
 def validator_for(
     schema: _SchemaT,
-    formats: dict[str, _FormatFunc] | None = None,
+    formats: dict[str, FormatChecker] | None = None,
     validate_formats: bool | None = None,
     ignore_unknown_formats: bool = True,
     retriever: RetrieverProtocol | None = None,

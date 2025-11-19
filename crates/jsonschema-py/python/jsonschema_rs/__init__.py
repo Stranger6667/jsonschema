@@ -20,8 +20,10 @@ from .jsonschema_rs import (
     is_valid,
     iter_errors,
     meta,
+    value_format,
     validate,
     validator_for,
+    ValueFormat,
 )
 
 Validator: TypeAlias = (
@@ -109,6 +111,7 @@ __all__ = [
     "iter_errors",
     "evaluate",
     "validator_for",
+    "value_format",
     "Draft4",
     "Draft6",
     "Draft7",
@@ -124,4 +127,5 @@ __all__ = [
     "FancyRegexOptions",
     "RegexOptions",
     "meta",
+    "ValueFormat",
 ]

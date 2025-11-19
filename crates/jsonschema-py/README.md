@@ -119,6 +119,27 @@ validator.is_valid("USD")  # True
 validator.is_valid("invalid")  # False
 ```
 
+If you need to inspect instances that are not strings (for example integers or entire objects),
+wrap your callable with `jsonschema_rs.value_format` or use it as a decorator:
+
+```python
+import jsonschema_rs
+
+@jsonschema_rs.value_format
+def is_answer(instance):
+    return not isinstance(instance, int) or instance == 42
+
+
+validator = jsonschema_rs.validator_for(
+    {"format": "knows-answer"},
+    formats={"knows-answer": is_answer},
+    validate_formats=True,
+)
+validator.is_valid(42)  # True
+validator.is_valid(41)  # False
+validator.is_valid("still a string")  # True
+```
+
 Additional configuration options are available for fine-tuning the validation process:
 
 - `validate_formats`: Override the draft-specific default behavior for format validation.
