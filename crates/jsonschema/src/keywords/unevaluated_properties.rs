@@ -216,7 +216,7 @@ impl ConditionalValidators {
 /// can evaluate properties. Handles circular references via pending nodes cached
 /// by location and schema pointer.
 fn compile_property_validators<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<PropertyValidators, ValidationError<'a>> {
     // Create a pending node and cache it before compiling to handle circular refs
@@ -254,7 +254,7 @@ fn compile_property_validators<'a>(
 }
 
 fn compile_properties<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Vec<(String, SchemaNode)>, ValidationError<'a>> {
     let Some(Value::Object(map)) = parent.get("properties") else {
@@ -275,7 +275,7 @@ fn compile_properties<'a>(
 }
 
 fn compile_additional<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Option<SchemaNode>, ValidationError<'a>> {
     let Some(subschema) = parent.get("additionalProperties") else {
@@ -289,7 +289,7 @@ fn compile_additional<'a>(
 }
 
 fn compile_pattern_properties<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Vec<(Regex, SchemaNode)>, ValidationError<'a>> {
     let Some(Value::Object(patterns)) = parent.get("patternProperties") else {
@@ -319,7 +319,7 @@ fn compile_pattern_properties<'a>(
 }
 
 fn compile_unevaluated<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Option<SchemaNode>, ValidationError<'a>> {
     let Some(subschema) = parent.get("unevaluatedProperties") else {
@@ -333,7 +333,7 @@ fn compile_unevaluated<'a>(
 }
 
 fn compile_all_of<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Vec<(SchemaNode, PropertyValidators)>, ValidationError<'a>> {
     let Some(Some(subschemas)) = parent.get("allOf").map(Value::as_array) else {
@@ -358,7 +358,7 @@ fn compile_all_of<'a>(
 }
 
 fn compile_any_of<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Vec<(SchemaNode, PropertyValidators)>, ValidationError<'a>> {
     let Some(Some(subschemas)) = parent.get("anyOf").map(Value::as_array) else {
@@ -383,7 +383,7 @@ fn compile_any_of<'a>(
 }
 
 fn compile_one_of<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Vec<(SchemaNode, PropertyValidators)>, ValidationError<'a>> {
     let Some(Some(subschemas)) = parent.get("oneOf").map(Value::as_array) else {
@@ -408,7 +408,7 @@ fn compile_one_of<'a>(
 }
 
 fn compile_conditional<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Option<Box<ConditionalValidators>>, ValidationError<'a>> {
     let Some(Value::Object(if_schema)) = parent.get("if") else {
@@ -446,7 +446,7 @@ fn compile_conditional<'a>(
 }
 
 fn compile_ref<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &Map<String, Value>,
 ) -> Result<Option<RefValidator>, ValidationError<'a>> {
     let Some(Value::String(reference)) = parent.get("$ref") else {
@@ -469,7 +469,7 @@ fn compile_ref<'a>(
 }
 
 fn compile_dynamic_ref<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &Map<String, Value>,
 ) -> Result<Option<Box<PropertyValidators>>, ValidationError<'a>> {
     let Some(Value::String(reference)) = parent.get("$dynamicRef") else {
@@ -492,7 +492,7 @@ fn compile_dynamic_ref<'a>(
 }
 
 fn compile_recursive_ref<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &Map<String, Value>,
 ) -> Result<Option<PendingPropertyValidators>, ValidationError<'a>> {
     if !parent.contains_key("$recursiveRef") {
@@ -534,7 +534,7 @@ fn compile_recursive_ref<'a>(
 }
 
 fn compile_dependent<'a>(
-    ctx: &compiler::Context<'_>,
+    ctx: &compiler::Context<'_, '_>,
     parent: &'a Map<String, Value>,
 ) -> Result<Vec<(String, PropertyValidators)>, ValidationError<'a>> {
     let Some(Value::Object(map)) = parent.get("dependentSchemas") else {

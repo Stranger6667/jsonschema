@@ -161,7 +161,10 @@ impl Validate for PendingSchemaNode {
 }
 
 impl SchemaNode {
-    pub(crate) fn from_boolean(ctx: &Context<'_>, validator: Option<BoxedValidator>) -> SchemaNode {
+    pub(crate) fn from_boolean(
+        ctx: &Context<'_, '_>,
+        validator: Option<BoxedValidator>,
+    ) -> SchemaNode {
         SchemaNode {
             location: ctx.location().clone(),
             absolute_path: ctx.base_uri(),
@@ -170,7 +173,7 @@ impl SchemaNode {
     }
 
     pub(crate) fn from_keywords(
-        ctx: &Context<'_>,
+        ctx: &Context<'_, '_>,
         validators: Vec<(Keyword, BoxedValidator)>,
         unmatched_keywords: Option<Arc<Value>>,
     ) -> SchemaNode {
@@ -197,7 +200,7 @@ impl SchemaNode {
         }
     }
 
-    pub(crate) fn from_array(ctx: &Context<'_>, validators: Vec<BoxedValidator>) -> SchemaNode {
+    pub(crate) fn from_array(ctx: &Context<'_, '_>, validators: Vec<BoxedValidator>) -> SchemaNode {
         let absolute_path = ctx.base_uri();
         let validators = validators
             .into_iter()

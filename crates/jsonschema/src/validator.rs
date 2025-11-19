@@ -213,7 +213,7 @@ impl Validator {
     ///     .build(&schema);
     /// ```
     #[must_use]
-    pub fn options() -> ValidationOptions {
+    pub fn options<'doc>() -> ValidationOptions<'doc> {
         ValidationOptions::default()
     }
     /// Create a default [`ValidationOptions`] configured for async validation.
@@ -242,7 +242,8 @@ impl Validator {
     /// For sync validation, use [`options()`](crate::options()) instead.
     #[cfg(feature = "resolve-async")]
     #[must_use]
-    pub fn async_options() -> ValidationOptions<std::sync::Arc<dyn referencing::AsyncRetrieve>> {
+    pub fn async_options<'doc>(
+    ) -> ValidationOptions<'doc, std::sync::Arc<dyn referencing::AsyncRetrieve>> {
         ValidationOptions::default()
     }
     /// Create a validator using the default options.

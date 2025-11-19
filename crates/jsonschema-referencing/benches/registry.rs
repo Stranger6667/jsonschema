@@ -23,16 +23,20 @@ fn bench_subresources(c: &mut Criterion) {
     for (draft, data, name) in &drafts {
         let schema = benchmark::read_json(data);
 
-        group.bench_with_input(BenchmarkId::new("try_new", name), &schema, |b, schema| {
-            b.iter_batched(
-                || draft.create_resource(schema.clone()),
-                |resource| {
-                    Registry::try_new("http://example.com/schema.json", resource)
-                        .expect("Invalid registry input")
-                },
-                BatchSize::SmallInput,
-            );
-        });
+        let schema_ref = draft.create_resource_ref(&schema);
+        group.bench_with_input(
+            BenchmarkId::new("try_new", name),
+            &schema_ref,
+            |b, schema_ref| {
+                b.iter(|| {
+                    Registry::try_new(
+                        "http://example.com/schema.json",
+                        (schema_ref.contents(), schema_ref.draft()),
+                    )
+                    .expect("Invalid registry input")
+                });
+            },
+        );
     }
     let drafts = [
         (Draft::Draft4, benchmark::GEOJSON, "GeoJSON"),
@@ -50,14 +54,10 @@ fn bench_subresources(c: &mut Criterion) {
             &schema,
             |b, schema| {
                 b.iter_batched(
-                    || {
-                        (
-                            draft.create_resource(schema.clone()),
-                            SPECIFICATIONS.clone(),
-                        )
-                    },
-                    |(resource, registry)| {
-                        registry.try_with_resource("http://example.com/schema.json", resource)
+                    || SPECIFICATIONS.clone(),
+                    |registry| {
+                        registry
+                            .try_with_resource("http://example.com/schema.json", (schema, *draft))
                     },
                     BatchSize::SmallInput,
                 );

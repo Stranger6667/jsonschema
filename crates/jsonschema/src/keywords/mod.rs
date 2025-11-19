@@ -172,7 +172,7 @@ impl fmt::Display for Keyword {
 }
 
 pub(crate) fn get_for_draft<'a>(
-    ctx: &compiler::Context<'a>,
+    ctx: &compiler::Context<'a, 'a>,
     keyword: &'a str,
 ) -> Option<(Keyword, CompileFunc<'a>)> {
     match (ctx.draft(), keyword) {

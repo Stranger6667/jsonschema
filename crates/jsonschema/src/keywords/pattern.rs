@@ -64,7 +64,7 @@ pub(crate) fn compile<'a>(
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
     match schema {
-        Value::String(item) => match ctx.config().pattern_options() {
+        Value::String(item) => match ctx.pattern_options() {
             PatternEngineOptions::FancyRegex { .. } => {
                 let Ok(regex) = ctx.get_or_compile_regex(item) else {
                     return Some(Err(invalid_regex(ctx, schema)));

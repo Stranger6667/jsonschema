@@ -16,8 +16,9 @@ fuzz_target!(|data: (&[u8], &[u8], &[u8])| {
                 ] {
                     let resource = draft.create_resource(schema.clone());
                     if let Ok(registry) = Registry::try_new(base, resource) {
+                        let context = registry.context();
                         if let Ok(resolver) =
-                            registry.try_resolver("http://example.com/schema.json")
+                            context.try_resolver("http://example.com/schema.json")
                         {
                             let _resolved = resolver.lookup(reference);
                         }
