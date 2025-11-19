@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `jsonschema_rs.value_format()` decorator allows for registering value-aware checkers that inspect non-string instances.
+
 ## [0.37.1] - 2025-11-19
 
 ### Fixed

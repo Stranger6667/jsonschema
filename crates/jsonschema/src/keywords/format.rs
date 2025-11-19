@@ -814,27 +814,92 @@ impl Validate for CustomFormatValidator {
     }
 
     fn is_valid(&self, instance: &Value) -> bool {
-        if let Value::String(item) = instance {
-            self.check.is_valid(item)
+        self.check.is_valid(instance)
+    }
+}
+
+#[doc(hidden)]
+pub trait Format: ThreadBound + 'static {
+    fn is_valid(&self, value: &Value) -> bool;
+}
+
+mod private {
+    pub trait Sealed {}
+}
+
+#[doc(hidden)]
+pub trait IntoFormat: private::Sealed + ThreadBound + 'static {
+    fn into_format(self) -> Arc<dyn Format>;
+}
+
+#[doc(hidden)]
+pub struct ValueFormat<F> {
+    func: F,
+}
+
+/// Wrap a custom format validator that should receive the entire [`serde_json::Value`].
+pub fn value_format<F>(func: F) -> ValueFormat<F>
+where
+    F: Fn(&Value) -> bool + ThreadBound + 'static,
+{
+    ValueFormat { func }
+}
+
+struct StringFormatAdapter<F> {
+    func: F,
+}
+
+impl<F> Format for StringFormatAdapter<F>
+where
+    F: Fn(&str) -> bool + ThreadBound + 'static,
+{
+    #[inline]
+    fn is_valid(&self, value: &Value) -> bool {
+        if let Value::String(value) = value {
+            (self.func)(value)
         } else {
             true
         }
     }
 }
 
-pub(crate) trait Format: ThreadBound + 'static {
-    fn is_valid(&self, value: &str) -> bool;
+struct ValueFormatAdapter<F> {
+    func: F,
 }
 
-impl<F> Format for F
+impl<F> Format for ValueFormatAdapter<F>
+where
+    F: Fn(&Value) -> bool + ThreadBound + 'static,
+{
+    #[inline]
+    fn is_valid(&self, value: &Value) -> bool {
+        (self.func)(value)
+    }
+}
+
+impl<F> IntoFormat for F
 where
     F: Fn(&str) -> bool + ThreadBound + 'static,
 {
     #[inline]
-    fn is_valid(&self, value: &str) -> bool {
-        self(value)
+    fn into_format(self) -> Arc<dyn Format> {
+        Arc::new(StringFormatAdapter { func: self })
     }
 }
+
+impl<F> private::Sealed for F where F: Fn(&str) -> bool + ThreadBound + 'static {}
+
+impl<F> IntoFormat for ValueFormat<F>
+where
+    F: Fn(&Value) -> bool + ThreadBound + 'static,
+{
+    #[inline]
+    fn into_format(self) -> Arc<dyn Format> {
+        Arc::new(ValueFormatAdapter { func: self.func })
+    }
+}
+
+impl<F> private::Sealed for ValueFormat<F> where F: Fn(&Value) -> bool + ThreadBound + 'static {}
 
 #[inline]
 pub(crate) fn compile<'a>(
@@ -903,7 +968,7 @@ pub(crate) fn compile<'a>(
 #[cfg(test)]
 mod tests {
     use referencing::Draft;
-    use serde_json::json;
+    use serde_json::{json, Value};
     use test_case::test_case;
 
     use crate::tests_util;
@@ -937,6 +1002,26 @@ mod tests {
         assert!(!with_validation.is_valid(&not_email_instance));
         assert!(without_validation.is_valid(&email_instance));
         assert!(without_validation.is_valid(&not_email_instance));
+    }
+
+    #[test]
+    fn custom_format_can_inspect_full_value() {
+        let schema = json!({"format": "magic-number"});
+        let validator = crate::options()
+            .should_validate_formats(true)
+            .with_format(
+                "magic-number",
+                crate::value_format(|instance: &Value| match instance {
+                    Value::Number(number) => number.as_i64() == Some(42),
+                    _ => true,
+                }),
+            )
+            .build(&schema)
+            .unwrap();
+
+        assert!(validator.is_valid(&json!(42)));
+        assert!(!validator.is_valid(&json!(41)));
+        assert!(validator.is_valid(&json!("still string")));
     }
 
     #[test]

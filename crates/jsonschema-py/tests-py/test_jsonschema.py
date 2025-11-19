@@ -23,6 +23,7 @@ from jsonschema_rs import (
     iter_errors,
     validate,
     validator_for,
+    value_format,
 )
 
 json = st.recursive(
@@ -482,6 +483,30 @@ def test_custom_format_with_exception():
     with pytest.raises(ValueError, match="Invalid currency"):
         for _ in iter_errors(schema, "USD", formats=formats, validate_formats=True):
             pass
+
+
+def test_value_format_allows_non_strings():
+    formats = {
+        "magic-number": value_format(lambda instance: not isinstance(instance, int) or instance == 42)
+    }
+    validator = validator_for({"format": "magic-number"}, formats=formats, validate_formats=True)
+
+    assert validator.is_valid(42)
+    assert not validator.is_valid(41)
+    assert validator.is_valid("still a string")
+
+
+def test_value_format_decorator_keeps_callable():
+    @value_format
+    def is_answer(instance):
+        return isinstance(instance, dict) and instance.get("answer") == 42
+
+    schema = {"format": "knows-answer"}
+    validator = validator_for(schema, formats={"knows-answer": is_answer}, validate_formats=True)
+
+    assert validator.is_valid({"answer": 42})
+    assert not validator.is_valid({"answer": 41})
+    assert is_answer({"answer": 42}) is True
 
 
 @pytest.mark.parametrize(

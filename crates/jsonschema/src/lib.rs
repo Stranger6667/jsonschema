@@ -765,11 +765,12 @@
 //!
 //! JSON Schema allows for format validation through the `format` keyword. While `jsonschema`
 //! provides built-in validators for standard formats, you can also define custom format validators
-//! for domain-specific string formats.
+//! for domain-specific formats.
 //!
 //! To implement a custom format validator:
 //!
-//! 1. Define a function or a closure that takes a `&str` and returns a `bool`.
+//! 1. Define a function or a closure that takes either a `&str` (string-only) or a `&serde_json::Value`
+//!    (any instance type) and returns a `bool`. Use [`jsonschema::value_format`] to wrap the latter.
 //! 2. Register the function with `jsonschema::options().with_format()`.
 //!
 //! ```rust
@@ -791,6 +792,10 @@
 //! let validator = jsonschema::options()
 //!     .with_format("ends-with-42", ends_with_42)
 //!     .with_format("ends-with-43", |s| s.ends_with("43!"))
+//!     .with_format(
+//!         "is-answer",
+//!         jsonschema::value_format(|value| value == &json!(42)),
+//!     )
 //!     .should_validate_formats(true)
 //!     .build(&schema)?;
 //!
@@ -804,7 +809,9 @@
 //!
 //! ### Notes on Custom Format Validators
 //!
-//! - Custom format validators are only called for string instances.
+//! - Validators that take a `&str` are only called for string instances. To validate other types,
+//!   wrap your function or closure with [`jsonschema::value_format`] so it can inspect the entire
+//!   `serde_json::Value`.
 //! - In newer drafts, `format` is purely an annotation and won’t do any checking unless you
 //!   opt in by calling `.should_validate_formats(true)` on your options builder. If you omit
 //!   it, all `format` keywords are ignored at validation time.
@@ -913,7 +920,7 @@ pub use error::{ErrorIterator, MaskedValidationError, ValidationError, Validatio
 pub use evaluation::{
     AnnotationEntry, ErrorEntry, Evaluation, FlagOutput, HierarchicalOutput, ListOutput,
 };
-pub use keywords::custom::Keyword;
+pub use keywords::{custom::Keyword, format::value_format};
 pub use options::{FancyRegex, PatternOptions, Regex, ValidationOptions};
 pub use referencing::{
     Draft, Error as ReferencingError, Registry, RegistryOptions, Resource, Retrieve, Uri,

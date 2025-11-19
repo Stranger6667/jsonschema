@@ -5,7 +5,10 @@ use crate::{
         DEFAULT_CONTENT_ENCODING_CHECKS_AND_CONVERTERS,
     },
     content_media_type::{ContentMediaTypeCheckType, DEFAULT_CONTENT_MEDIA_TYPE_CHECKS},
-    keywords::{custom::KeywordFactory, format::Format},
+    keywords::{
+        custom::KeywordFactory,
+        format::{Format, IntoFormat},
+    },
     paths::Location,
     retriever::DefaultRetriever,
     thread::ThreadBound,
@@ -372,29 +375,40 @@ impl<R> ValidationOptions<R> {
     /// # Example
     ///
     /// ```rust
-    /// # use serde_json::json;
+    /// # use serde_json::{json, Value};
     /// fn my_format(s: &str) -> bool {
     ///    // Your awesome format check!
     ///    s.ends_with("42!")
     /// }
+    /// fn my_value_format(value: &Value) -> bool {
+    ///    value == &json!(1337)
+    /// }
     /// # fn foo() {
-    /// let schema = json!({"type": "string", "format": "custom"});
+    /// let string_schema = json!({"type": "string", "format": "custom"});
+    /// let number_schema = json!({"format": "leet-number"});
     /// let validator = jsonschema::options()
     ///     .with_format("custom", my_format)
-    ///     .build(&schema)
+    ///     .with_format("leet-number", jsonschema::value_format(my_value_format))
+    ///     .should_validate_formats(true)
+    ///     .build(&json!({"allOf": [string_schema, number_schema]}))
     ///     .expect("Valid schema");
     ///
     /// assert!(!validator.is_valid(&json!("foo")));
     /// assert!(validator.is_valid(&json!("foo42!")));
+    /// assert!(!validator.is_valid(&json!(42)));
+    /// assert!(validator.is_valid(&json!(1337)));
     /// # }
     /// ```
+    ///
+    /// Use [`jsonschema::value_format`] to wrap functions or closures that operate on the entire
+    /// [`serde_json::Value`]; string-based closures continue to work without any extra adapters.
     #[must_use]
     pub fn with_format<N, F>(mut self, name: N, format: F) -> Self
     where
         N: Into<String>,
-        F: Fn(&str) -> bool + ThreadBound + 'static,
+        F: IntoFormat,
     {
-        self.formats.insert(name.into(), Arc::new(format));
+        self.formats.insert(name.into(), format.into_format());
         self
     }
     pub(crate) fn get_format(&self, format: &str) -> Option<(&String, &Arc<dyn Format>)> {
