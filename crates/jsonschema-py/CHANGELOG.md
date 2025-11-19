@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Stack overflow on empty `$ref` value. [#886](https://github.com/Stranger6667/jsonschema/issues/886)
+
 ## [0.37.0] - 2025-11-19
 
 ### Added

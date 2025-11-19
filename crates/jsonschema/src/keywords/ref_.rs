@@ -21,8 +21,11 @@ fn compile_reference_validator<'a>(
         Err(error) => return Some(Err(error)),
     };
 
-    if alias == current_location {
+    if alias == current_location
+        || (reference.is_empty() && alias.strip_fragment() == current_location.strip_fragment())
+    {
         // Direct self-reference would recurse indefinitely, treat it as an annotation-only schema.
+        // Empty string $ref ("") is a same-document reference per RFC 3986, equivalent to "#"
         return None;
     }
 
@@ -572,5 +575,16 @@ mod tests {
             error.to_string(),
             "Resource './virtualNetwork.json' is not present in a registry and retrieving it failed: No base URI is available"
         );
+    }
+
+    #[test]
+    fn test_empty_ref_no_stack_overflow() {
+        // Empty string is a same-document reference per RFC 3986, should behave like $ref: "#"
+        let schema = json!({"$ref": ""});
+        let instance = json!(-1);
+
+        // Should compile without error and validate without stack overflow
+        let validator = crate::validator_for(&schema).expect("Should compile");
+        assert!(validator.is_valid(&instance));
     }
 }
