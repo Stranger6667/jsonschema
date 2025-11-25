@@ -117,6 +117,25 @@ impl JsonTypeSet {
         self.0 |= ty as u8;
         self
     }
+    /// Remove a type from this set and return the modified set.
+    #[inline]
+    #[must_use]
+    pub const fn remove(mut self, ty: JsonType) -> Self {
+        self.0 &= !(ty as u8);
+        self
+    }
+    /// Return the number of types in this set.
+    #[inline]
+    #[must_use]
+    pub const fn len(self) -> usize {
+        self.0.count_ones() as usize
+    }
+    /// Return `true` if the set contains no types.
+    #[inline]
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
     /// Check if this set includes the specified type.
     #[inline]
     #[must_use]
@@ -326,6 +345,29 @@ mod tests {
     #[test_case(&json!(1.23), JsonTypeSet::empty().insert(JsonType::Integer) => false ; "float doesn't match integer")]
     fn test_contains_value_type(value: &Value, set: JsonTypeSet) -> bool {
         set.contains_value_type(value)
+    }
+
+    #[test]
+    fn test_remove_types() {
+        let set = JsonTypeSet::all().remove(JsonType::Number);
+        assert!(!set.contains(JsonType::Number));
+        assert!(set.contains(JsonType::Integer));
+        assert_eq!(set.len(), 6);
+
+        let empty = JsonTypeSet::empty();
+        assert_eq!(empty.remove(JsonType::Boolean), empty);
+    }
+
+    #[test]
+    fn test_len() {
+        let empty = JsonTypeSet::empty();
+        assert!(empty.is_empty());
+        assert_eq!(empty.len(), 0);
+
+        let with_string = empty.insert(JsonType::String);
+        assert!(!with_string.is_empty());
+        assert_eq!(with_string.len(), 1);
+        assert_eq!(JsonTypeSet::all().len(), 7);
     }
 
     #[test]

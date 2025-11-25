@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `JsonTypeSet::len()` and `JsonTypeSet::remove()` helpers for managing type sets.
+
 ## [0.37.1] - 2025-11-19
 
 ### Fixed
