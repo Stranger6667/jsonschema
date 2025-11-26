@@ -17,6 +17,60 @@ pub(crate) trait JsonSchemaResource {
     }
 }
 
+/// Trait for types that can be converted into a document for registry storage.
+///
+/// This trait provides a unified interface for adding documents to a registry,
+/// supporting both borrowed and owned schemas with optional draft specification.
+pub trait IntoDocument<'doc> {
+    /// Convert this type into a `Cow<'doc, Value>` and detect or use the provided draft.
+    fn into_document(self) -> (Cow<'doc, Value>, Draft);
+}
+
+// Borrowed schema - auto-detect draft
+impl<'doc> IntoDocument<'doc> for &'doc Value {
+    fn into_document(self) -> (Cow<'doc, Value>, Draft) {
+        let draft = Draft::default().detect(self);
+        (Cow::Borrowed(self), draft)
+    }
+}
+
+// Owned schema - auto-detect draft
+impl<'doc> IntoDocument<'doc> for Value {
+    fn into_document(self) -> (Cow<'doc, Value>, Draft) {
+        let draft = Draft::default().detect(&self);
+        (Cow::Owned(self), draft)
+    }
+}
+
+// Borrowed schema with explicit draft
+impl<'doc> IntoDocument<'doc> for (&'doc Value, Draft) {
+    fn into_document(self) -> (Cow<'doc, Value>, Draft) {
+        (Cow::Borrowed(self.0), self.1)
+    }
+}
+
+// Owned schema with explicit draft
+impl<'doc> IntoDocument<'doc> for (Value, Draft) {
+    fn into_document(self) -> (Cow<'doc, Value>, Draft) {
+        (Cow::Owned(self.0), self.1)
+    }
+}
+
+// Existing Resource type
+impl<'doc> IntoDocument<'doc> for Resource {
+    fn into_document(self) -> (Cow<'doc, Value>, Draft) {
+        let (draft, contents) = self.into_inner();
+        (Cow::Owned(contents), draft)
+    }
+}
+
+// Implementation for re-adding documents from an existing registry
+impl<'doc> IntoDocument<'doc> for (&'doc Cow<'doc, Value>, Draft) {
+    fn into_document(self) -> (Cow<'doc, Value>, Draft) {
+        (Cow::Borrowed(self.0.as_ref()), self.1)
+    }
+}
+
 /// An owned document with a concrete interpretation under a JSON Schema specification.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resource {
@@ -292,7 +346,7 @@ mod tests {
         assert_eq!(unescaped, double_replaced, "Failed for: {input}");
     }
 
-    fn create_test_registry() -> Registry {
+    fn create_test_registry() -> Registry<'static> {
         let schema = Draft::Draft202012.create_resource(json!({
             "type": "object",
             "properties": {
@@ -313,7 +367,8 @@ mod tests {
         }));
         let registry =
             Registry::try_new("http://example.com", schema.clone()).expect("Invalid resources");
-        let resolver = registry
+        let context = registry.context();
+        let resolver = context
             .try_resolver("http://example.com")
             .expect("Invalid base URI");
 
@@ -340,7 +395,8 @@ mod tests {
     #[test]
     fn test_percent_encoded_non_utf8() {
         let registry = create_test_registry();
-        let resolver = registry
+        let context = registry.context();
+        let resolver = context
             .try_resolver("http://example.com")
             .expect("Invalid base URI");
 
@@ -356,7 +412,8 @@ mod tests {
     #[test]
     fn test_array_index_as_string() {
         let registry = create_test_registry();
-        let resolver = registry
+        let context = registry.context();
+        let resolver = context
             .try_resolver("http://example.com")
             .expect("Invalid base URI");
 
@@ -372,7 +429,8 @@ mod tests {
     #[test]
     fn test_array_index_out_of_bounds() {
         let registry = create_test_registry();
-        let resolver = registry
+        let context = registry.context();
+        let resolver = context
             .try_resolver("http://example.com")
             .expect("Invalid base URI");
 
@@ -386,7 +444,8 @@ mod tests {
     #[test]
     fn test_unknown_property() {
         let registry = create_test_registry();
-        let resolver = registry
+        let context = registry.context();
+        let resolver = context
             .try_resolver("http://example.com")
             .expect("Invalid base URI");
 

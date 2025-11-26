@@ -1196,7 +1196,7 @@ pub(crate) fn compile<'a>(
     if let Some(patterns) = parent.get("patternProperties") {
         if let Value::Object(obj) = patterns {
             // Compile all patterns & their validators to avoid doing work in the `patternProperties` validator
-            match ctx.config().pattern_options() {
+            match ctx.pattern_options() {
                 PatternEngineOptions::FancyRegex { .. } => {
                     let patterns = match compile_fancy_regex_patterns(ctx, obj) {
                         Ok(patterns) => patterns,

@@ -49,7 +49,8 @@ fn test_suite(draft: &'static str, test: Test) {
             .map(|(uri, content)| (uri, draft.create_resource(content))),
     )
     .expect("Invalid registry");
-    let resolver = registry
+    let context = registry.context();
+    let resolver = context
         .try_resolver(test.base_uri.unwrap_or_default())
         .expect("Invalid base URI");
     if test.error.is_some() {

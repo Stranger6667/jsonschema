@@ -19,11 +19,10 @@ use crate::{
 };
 use ahash::{AHashMap, AHashSet};
 use referencing::{
-    uri, Draft, List, Registry, Resolved, Resolver, Resource, ResourceRef, Uri, Vocabulary,
-    VocabularySet,
+    uri, Draft, List, Registry, Resolved, Resolver, ResourceRef, Uri, Vocabulary, VocabularySet,
 };
 use serde_json::{Map, Value};
-use std::{borrow::Cow, cell::RefCell, iter::once, rc::Rc, sync::Arc};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 const DEFAULT_SCHEME: &str = "json-schema";
 pub(crate) const DEFAULT_BASE_URI: &str = "json-schema:///";
@@ -117,24 +116,26 @@ impl SharedContextState {
 
 /// Per-location view used while compiling schemas into validators.
 #[derive(Debug, Clone)]
-pub(crate) struct Context<'a> {
-    config: &'a ValidationOptions,
-    pub(crate) registry: &'a Registry,
-    resolver: Resolver<'a>,
+pub(crate) struct Context<'a, 'doc> {
+    config: &'a ValidationOptions<'doc>,
+    pub(crate) registry: &'doc Registry<'doc>,
+    resolver: Resolver<'doc>,
     vocabularies: VocabularySet,
     location: Location,
     pub(crate) draft: Draft,
     shared: SharedContextState,
+    pattern_options: PatternEngineOptions,
 }
 
-impl<'a> Context<'a> {
+impl<'a, 'doc> Context<'a, 'doc> {
     pub(crate) fn new(
-        config: &'a ValidationOptions,
-        registry: &'a Registry,
-        resolver: Resolver<'a>,
+        config: &'a ValidationOptions<'doc>,
+        registry: &'doc Registry<'doc>,
+        resolver: Resolver<'doc>,
         vocabularies: VocabularySet,
         draft: Draft,
         location: Location,
+        pattern_options: PatternEngineOptions,
     ) -> Self {
         Context {
             config,
@@ -144,20 +145,25 @@ impl<'a> Context<'a> {
             vocabularies,
             draft,
             shared: SharedContextState::new(),
+            pattern_options,
         }
     }
     pub(crate) fn draft(&self) -> Draft {
         self.draft
     }
-    pub(crate) fn config(&self) -> &ValidationOptions {
+    #[allow(dead_code)]
+    pub(crate) fn config(&self) -> &ValidationOptions<'doc> {
         self.config
+    }
+    pub(crate) const fn pattern_options(&self) -> PatternEngineOptions {
+        self.pattern_options
     }
 
     /// Create a context for this schema.
     pub(crate) fn in_subresource(
         &'a self,
         resource: ResourceRef<'_>,
-    ) -> Result<Context<'a>, referencing::Error> {
+    ) -> Result<Context<'a, 'a>, referencing::Error> {
         let resolver = self.resolver.in_subresource(resource)?;
         Ok(Context {
             config: self.config,
@@ -167,6 +173,7 @@ impl<'a> Context<'a> {
             draft: resource.draft(),
             location: self.location.clone(),
             shared: self.shared.clone(),
+            pattern_options: self.pattern_options,
         })
     }
     pub(crate) fn as_resource_ref<'r>(&'a self, contents: &'r Value) -> ResourceRef<'r> {
@@ -184,6 +191,7 @@ impl<'a> Context<'a> {
             location,
             draft: self.draft,
             shared: self.shared.clone(),
+            pattern_options: self.pattern_options,
         }
     }
     pub(crate) fn lookup(&'a self, reference: &str) -> Result<Resolved<'a>, referencing::Error> {
@@ -264,7 +272,7 @@ impl<'a> Context<'a> {
         draft: Draft,
         vocabularies: VocabularySet,
         location: Location,
-    ) -> Context<'a> {
+    ) -> Context<'a, 'a> {
         Context {
             config: self.config,
             registry: self.registry,
@@ -273,6 +281,7 @@ impl<'a> Context<'a> {
             vocabularies,
             location,
             shared: self.shared.clone(),
+            pattern_options: self.pattern_options,
         }
     }
     pub(crate) fn get_content_media_type_check(
@@ -506,7 +515,7 @@ impl<'a> Context<'a> {
             }
         }
 
-        let (backtrack_limit, size_limit, dfa_size_limit) = match self.config.pattern_options() {
+        let (backtrack_limit, size_limit, dfa_size_limit) = match self.pattern_options {
             PatternEngineOptions::FancyRegex {
                 backtrack_limit,
                 size_limit,
@@ -549,7 +558,7 @@ impl<'a> Context<'a> {
             }
         }
 
-        let (size_limit, dfa_size_limit) = match self.config.pattern_options() {
+        let (size_limit, dfa_size_limit) = match self.pattern_options {
             PatternEngineOptions::Regex {
                 size_limit,
                 dfa_size_limit,
@@ -608,46 +617,80 @@ impl<'a> Context<'a> {
 }
 
 pub(crate) fn build_validator(
-    config: &ValidationOptions,
+    config: &ValidationOptions<'_>,
     schema: &Value,
 ) -> Result<Validator, ValidationError<'static>> {
-    let draft = config.draft_for(schema)?;
+    // Detect draft inline to avoid lifetime issues
+    // Preference: Explicitly set -> Autodetected (with registry resolution) -> Default
+    let draft = if let Some(draft) = config.draft {
+        draft
+    } else {
+        let default = Draft::default();
+        let detected = default.detect(schema);
+
+        // If detected draft is Unknown (custom meta-schema), try to resolve it
+        if detected == Draft::Unknown {
+            if let Some(registry) = config.registry {
+                if let Some(meta_schema_uri) = schema
+                    .as_object()
+                    .and_then(|obj| obj.get("$schema"))
+                    .and_then(|s| s.as_str())
+                {
+                    // Walk the meta-schema chain to find the underlying draft
+                    ValidationOptions::<Arc<dyn referencing::Retrieve>>::resolve_draft_from_registry(meta_schema_uri, registry)?
+                } else {
+                    detected
+                }
+            } else {
+                detected
+            }
+        } else {
+            detected
+        }
+    };
+
     let resource_ref = draft.create_resource_ref(schema);
-    let resource = draft.create_resource(schema.clone());
     let base_uri = if let Some(base_uri) = config.base_uri.as_ref() {
         uri::from_str(base_uri)?
     } else {
         uri::from_str(resource_ref.id().unwrap_or(DEFAULT_BASE_URI))?
     };
 
-    // Build a registry & resolver needed for validator compilation
-    // Clone resources to drain them without mutating the original config
-    let pairs = collect_resource_pairs(base_uri.as_str(), resource, config.resources.clone());
-
-    let registry = if let Some(ref registry) = config.registry {
-        Arc::new(registry.clone().try_with_resources_and_retriever(
-            pairs,
-            &*config.retriever,
-            draft,
-        )?)
+    // Build registry with retriever if not provided
+    let owned_registry;
+    let (registry, needs_root_document): (&Registry, bool) = if let Some(registry) = config.registry
+    {
+        (registry, true)
     } else {
-        Arc::new(
-            Registry::options()
-                .draft(draft)
-                .retriever(Arc::clone(&config.retriever))
-                .build(pairs)?,
-        )
+        // Build a registry with the root schema and retriever
+        // (SPECIFICATIONS meta-schemas are included automatically)
+        owned_registry = Registry::builder()
+            .with_document(base_uri.as_str(), (schema, draft))?
+            .with_retriever(config.retriever.clone())
+            .build()?;
+        (&owned_registry, false)
     };
     let vocabularies = registry.find_vocabularies(draft, schema);
-    let resolver = registry.resolver(base_uri);
 
+    // Create resolution context with root document
+    let context = if needs_root_document {
+        registry
+            .context()
+            .with_root_document(base_uri.clone(), schema, draft)?
+    } else {
+        registry.context()
+    };
+    let resolver = context.resolver(base_uri);
+
+    let pattern_options = config.pattern_options();
     let ctx = Context::new(
         config,
-        &registry,
+        registry,
         resolver,
         vocabularies,
         draft,
         Location::new(),
+        pattern_options,
     );
 
     // Validate the schema itself
@@ -663,53 +706,55 @@ pub(crate) fn build_validator(
 
 #[cfg(feature = "resolve-async")]
 pub(crate) async fn build_validator_async(
-    config: &ValidationOptions<Arc<dyn referencing::AsyncRetrieve>>,
+    config: &ValidationOptions<'_, Arc<dyn referencing::AsyncRetrieve>>,
     schema: &Value,
 ) -> Result<Validator, ValidationError<'static>> {
-    let draft = config.draft_for(schema).await?;
+    let draft = config.draft_for_async(schema).await?;
     let resource_ref = draft.create_resource_ref(schema);
-    let resource = draft.create_resource(schema.clone());
     let base_uri = if let Some(base_uri) = config.base_uri.as_ref() {
         uri::from_str(base_uri)?
     } else {
         uri::from_str(resource_ref.id().unwrap_or(DEFAULT_BASE_URI))?
     };
 
-    // Clone resources to drain them without mutating the original config
-    let pairs = collect_resource_pairs(base_uri.as_str(), resource, config.resources.clone());
-
-    let registry = if let Some(ref registry) = config.registry {
-        Arc::new(
-            registry
-                .clone()
-                .try_with_resources_and_retriever_async(pairs, &*config.retriever, draft)
-                .await?,
-        )
+    let owned_registry;
+    let (registry, needs_root_document): (&Registry, bool) = if let Some(registry) = config.registry
+    {
+        (registry, true)
     } else {
-        Arc::new(
-            Registry::options()
-                .async_retriever(Arc::clone(&config.retriever))
-                .draft(draft)
-                .build(pairs)
-                .await?,
-        )
+        owned_registry = Registry::builder()
+            .with_document(base_uri.as_str(), (schema, draft))?
+            .with_async_retriever(Arc::clone(&config.retriever))
+            .build_async()
+            .await?;
+        (&owned_registry, false)
     };
-
     let vocabularies = registry.find_vocabularies(draft, schema);
-    let resolver = registry.resolver(base_uri);
+
+    // Create resolution context with root document
+    let context = if needs_root_document {
+        registry
+            .context()
+            .with_root_document(base_uri.clone(), schema, draft)?
+    } else {
+        registry.context()
+    };
+    let resolver = context.resolver(base_uri);
     // HACK: `ValidationOptions` struct has a default type parameter as `Arc<dyn Retrieve>` and to
     //       avoid propagating types everywhere in `Context`, it is easier to just replace the
     //       retriever to one that implements `Retrieve`, as it is not used anymore anyway.
     let config_with_blocking_retriever = config
         .clone()
         .with_blocking_retriever(crate::retriever::DefaultRetriever);
+    let pattern_options = config.pattern_options();
     let ctx = Context::new(
         &config_with_blocking_retriever,
-        &registry,
+        registry,
         resolver,
         vocabularies,
         draft,
         Location::new(),
+        pattern_options,
     );
 
     if config.validate_schema {
@@ -727,18 +772,6 @@ fn annotations_to_value(annotations: AHashMap<String, Value>) -> Arc<Value> {
         object.insert(key, value);
     }
     Arc::new(Value::Object(object))
-}
-
-fn collect_resource_pairs(
-    base_uri: &str,
-    resource: Resource,
-    resources: AHashMap<String, Resource>,
-) -> impl IntoIterator<Item = (Cow<'_, str>, Resource)> {
-    once((Cow::Borrowed(base_uri), resource)).chain(
-        resources
-            .into_iter()
-            .map(|(uri, resource)| (Cow::Owned(uri), resource)),
-    )
 }
 
 fn validate_schema(draft: Draft, schema: &Value) -> Result<(), ValidationError<'static>> {
