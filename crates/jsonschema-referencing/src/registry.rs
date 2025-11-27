@@ -724,6 +724,7 @@ fn process_queue(
         collect_external_resources(
             &base,
             resource.contents(),
+            resource.contents(),
             &mut state.external,
             &mut state.seen,
             resolution_cache,
@@ -982,6 +983,7 @@ fn validate_custom_metaschemas(
 
 fn collect_external_resources(
     base: &Arc<Uri<String>>,
+    root: &Value,
     contents: &Value,
     collected: &mut AHashSet<(String, Uri<String>, ReferenceKind)>,
     seen: &mut ReferenceTracker,
@@ -1008,11 +1010,14 @@ fn collect_external_resources(
                 if mark_reference(seen, base, $reference) {
                     // Handle local references separately as they may have nested references to external resources
                     if $reference.starts_with('#') {
+                        // Use the root document for pointer resolution since local refs are always
+                        // relative to the document root, not the current subschema
                         if let Some(referenced) =
-                            pointer(contents, $reference.trim_start_matches('#'))
+                            pointer(root, $reference.trim_start_matches('#'))
                         {
                             collect_external_resources(
                                 base,
+                                root,
                                 referenced,
                                 collected,
                                 seen,

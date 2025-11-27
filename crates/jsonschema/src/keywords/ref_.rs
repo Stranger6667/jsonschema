@@ -587,4 +587,59 @@ mod tests {
         let validator = crate::validator_for(&schema).expect("Should compile");
         assert!(validator.is_valid(&instance));
     }
+
+    struct IndirectExternalRetrieve;
+
+    impl Retrieve for IndirectExternalRetrieve {
+        fn retrieve(
+            &self,
+            uri: &Uri<String>,
+        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+            match uri.as_str() {
+                "file:///ext.yaml" => Ok(json!({
+                    "components": {
+                        "schemas": {
+                            "c3": {
+                                "type": "integer"
+                            }
+                        }
+                    }
+                })),
+                _ => Err(format!("Unexpected URI: {uri}").into()),
+            }
+        }
+    }
+
+    #[test]
+    fn test_indirect_local_refs_to_external_resource() {
+        // GH-892: Chained local $refs where the final ref points to an external resource
+        // should properly discover and retrieve the external resource.
+        //
+        // The chain is:
+        //   root $ref -> #/components/schemas/c1
+        //   c1 $ref   -> #/components/schemas/c2
+        //   c2 $ref   -> ext.yaml#/components/schemas/c3  (EXTERNAL)
+        let schema = json!({
+            "$id": "file:///tmp",
+            "$ref": "#/components/schemas/c1",
+            "components": {
+                "schemas": {
+                    "c1": {
+                        "$ref": "#/components/schemas/c2"
+                    },
+                    "c2": {
+                        "$ref": "ext.yaml#/components/schemas/c3"
+                    }
+                }
+            }
+        });
+
+        let validator = crate::options()
+            .with_retriever(IndirectExternalRetrieve)
+            .build(&schema)
+            .expect("Failed to build validator - external resource was not discovered");
+
+        assert!(validator.is_valid(&json!(42)));
+        assert!(!validator.is_valid(&json!("string")));
+    }
 }

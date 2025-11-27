@@ -6,6 +6,10 @@
 
 - `JsonTypeSet::len()` and `JsonTypeSet::remove()` helpers for managing type sets.
 
+### Fixed
+
+- External resources not discovered through chained local `$ref` references. [#892](https://github.com/Stranger6667/jsonschema/issues/892)
+
 ## [0.37.1] - 2025-11-19
 
 ### Fixed
