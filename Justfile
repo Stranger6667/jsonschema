@@ -37,7 +37,7 @@ miri:
 
 install-wasm-deps:
   rustup target add wasm32-wasip1 wasm32-unknown-unknown
-  cargo install wasm-bindgen-cli --vers 0.2.105
+  cargo install wasm-bindgen-cli --vers 0.2.106
 
 test-wasm32-wasip1:
   cargo test --target wasm32-wasip1 --no-default-features -p jsonschema
