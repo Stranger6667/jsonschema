@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- External resources not discovered within subresources of local `$ref` targets. [#892](https://github.com/Stranger6667/jsonschema/issues/892)
+
 ## [0.37.2] - 2025-11-27
 
 ### Fixed

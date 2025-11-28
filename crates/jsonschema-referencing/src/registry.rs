@@ -730,6 +730,7 @@ fn process_queue(
             resolution_cache,
             &mut state.scratch,
             &mut state.refers_metaschemas,
+            resource.draft(),
         )?;
 
         for contents in resource.draft().subresources_of(resource.contents()) {
@@ -990,6 +991,7 @@ fn collect_external_resources(
     resolution_cache: &mut UriCache,
     scratch: &mut String,
     refers_metaschemas: &mut bool,
+    draft: Draft,
 ) -> Result<(), Error> {
     // URN schemes are not supported for external resolution
     if base.scheme().as_str() == "urn" {
@@ -1015,7 +1017,8 @@ fn collect_external_resources(
                         if let Some(referenced) =
                             pointer(root, $reference.trim_start_matches('#'))
                         {
-                            collect_external_resources(
+                            // Recursively collect from the referenced schema and all its subresources
+                            collect_external_resources_recursive(
                                 base,
                                 root,
                                 referenced,
@@ -1024,6 +1027,7 @@ fn collect_external_resources(
                                 resolution_cache,
                                 scratch,
                                 refers_metaschemas,
+                                draft,
                             )?;
                         }
                     } else {
@@ -1093,6 +1097,48 @@ fn collect_external_resources(
                 on_reference!(reference, "$schema");
             }
         }
+    }
+    Ok(())
+}
+
+/// Recursively collect external resources from a schema and all its subresources.
+fn collect_external_resources_recursive(
+    base: &Arc<Uri<String>>,
+    root: &Value,
+    contents: &Value,
+    collected: &mut AHashSet<(String, Uri<String>, ReferenceKind)>,
+    seen: &mut ReferenceTracker,
+    resolution_cache: &mut UriCache,
+    scratch: &mut String,
+    refers_metaschemas: &mut bool,
+    draft: Draft,
+) -> Result<(), Error> {
+    // First, collect from the current schema
+    collect_external_resources(
+        base,
+        root,
+        contents,
+        collected,
+        seen,
+        resolution_cache,
+        scratch,
+        refers_metaschemas,
+        draft,
+    )?;
+
+    // Then recursively process all subresources
+    for subresource in draft.subresources_of(contents) {
+        collect_external_resources_recursive(
+            base,
+            root,
+            subresource,
+            collected,
+            seen,
+            resolution_cache,
+            scratch,
+            refers_metaschemas,
+            draft,
+        )?;
     }
     Ok(())
 }

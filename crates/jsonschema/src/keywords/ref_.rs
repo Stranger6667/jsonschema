@@ -642,4 +642,39 @@ mod tests {
         assert!(validator.is_valid(&json!(42)));
         assert!(!validator.is_valid(&json!("string")));
     }
+
+    #[test]
+    fn test_local_ref_with_nested_external_ref_in_properties() {
+        // GH-892 follow-up: Local $ref points to a schema that has an external $ref
+        // nested within properties (not a direct $ref chain).
+        //
+        // The structure is:
+        //   root $ref -> #/components/schemas/c1
+        //   c1 is a full schema with type/properties
+        //   c1.properties.p contains an external $ref
+        let schema = json!({
+            "$id": "file:///tmp",
+            "$ref": "#/components/schemas/c1",
+            "components": {
+                "schemas": {
+                    "c1": {
+                        "type": "object",
+                        "properties": {
+                            "p": {
+                                "$ref": "ext.yaml#/components/schemas/c3"
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        let validator = crate::options()
+            .with_retriever(IndirectExternalRetrieve)
+            .build(&schema)
+            .expect("Failed to build validator - external resource was not discovered");
+
+        assert!(validator.is_valid(&json!({"p": 42})));
+        assert!(!validator.is_valid(&json!({"p": "string"})));
+    }
 }
