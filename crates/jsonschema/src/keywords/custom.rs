@@ -1,7 +1,7 @@
 use crate::{
     paths::{LazyLocation, Location},
     thread::ThreadBound,
-    validator::Validate,
+    validator::{Validate, ValidationContext},
     ValidationError,
 };
 use serde_json::{Map, Value};
@@ -21,11 +21,12 @@ impl Validate for CustomKeyword {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         self.inner.validate(instance, location)
     }
 
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         self.inner.is_valid(instance)
     }
 }

@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Stack overflow during validation of schemas with circular `$ref` chains (e.g., `a` → `b` → `a`).
 - Local `$ref` resolution within fragment-extracted external resources. [#892](https://github.com/Stranger6667/jsonschema/issues/892)
 
 ## [0.37.3] - 2025-11-28

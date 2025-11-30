@@ -10,7 +10,7 @@ use crate::{
     paths::{LazyLocation, Location},
     regex::RegexEngine,
     types::JsonType,
-    validator::{EvaluationResult, Validate},
+    validator::{EvaluationResult, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -19,34 +19,16 @@ pub(crate) struct PatternPropertiesValidator<R> {
 }
 
 impl<R: RegexEngine> Validate for PatternPropertiesValidator<R> {
-    #[allow(clippy::needless_collect)]
-    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
-            let errors: Vec<_> = self
-                .patterns
-                .iter()
-                .flat_map(move |(re, node)| {
-                    item.iter()
-                        .filter(move |(key, _)| re.is_match(key).unwrap_or(false))
-                        .flat_map(move |(key, value)| {
-                            let location = location.push(key.as_str());
-                            node.iter_errors(value, &location)
-                        })
-                })
-                .collect();
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
-        }
-    }
-
-    fn is_valid(&self, instance: &Value) -> bool {
-        if let Value::Object(item) = instance {
-            self.patterns.iter().all(move |(re, node)| {
-                item.iter()
-                    .filter(move |(key, _)| re.is_match(key).unwrap_or(false))
-                    .all(move |(_key, value)| node.is_valid(value))
-            })
+            for (re, node) in &self.patterns {
+                for (key, value) in item {
+                    if re.is_match(key).unwrap_or(false) && !node.is_valid(value, ctx) {
+                        return false;
+                    }
+                }
+            }
+            true
         } else {
             true
         }
@@ -56,13 +38,13 @@ impl<R: RegexEngine> Validate for PatternPropertiesValidator<R> {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
             for (key, value) in item {
-                let key_location = location.push(key);
                 for (re, node) in &self.patterns {
                     if re.is_match(key).unwrap_or(false) {
-                        node.validate(value, &key_location)?;
+                        node.validate(value, &location.push(key), ctx)?;
                     }
                 }
             }
@@ -70,16 +52,45 @@ impl<R: RegexEngine> Validate for PatternPropertiesValidator<R> {
         Ok(())
     }
 
-    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Object(item) = instance {
+            let mut errors = Vec::new();
+            for (re, node) in &self.patterns {
+                for (key, value) in item {
+                    if re.is_match(key).unwrap_or(false) {
+                        errors.extend(node.iter_errors(value, &location.push(key.as_str()), ctx));
+                    }
+                }
+            }
+            ErrorIterator::from_iterator(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
         if let Value::Object(item) = instance {
             let mut matched_propnames = Vec::with_capacity(item.len());
             let mut children = Vec::new();
             for (pattern, node) in &self.patterns {
                 for (key, value) in item {
                     if pattern.is_match(key).unwrap_or(false) {
-                        let path = location.push(key.as_str());
                         matched_propnames.push(key.clone());
-                        children.push(node.evaluate_instance(value, &path));
+                        children.push(node.evaluate_instance(
+                            value,
+                            &location.push(key.as_str()),
+                            ctx,
+                        ));
                     }
                 }
             }
@@ -98,28 +109,14 @@ pub(crate) struct SingleValuePatternPropertiesValidator<R> {
 }
 
 impl<R: RegexEngine> Validate for SingleValuePatternPropertiesValidator<R> {
-    #[allow(clippy::needless_collect)]
-    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
-            let errors: Vec<_> = item
-                .iter()
-                .filter(move |(key, _)| self.regex.is_match(key).unwrap_or(false))
-                .flat_map(move |(key, value)| {
-                    let instance_path = location.push(key.as_str());
-                    self.node.iter_errors(value, &instance_path)
-                })
-                .collect();
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
-        }
-    }
-
-    fn is_valid(&self, instance: &Value) -> bool {
-        if let Value::Object(item) = instance {
-            item.iter()
-                .filter(move |(key, _)| self.regex.is_match(key).unwrap_or(false))
-                .all(move |(_key, value)| self.node.is_valid(value))
+            for (key, value) in item {
+                if self.regex.is_match(key).unwrap_or(false) && !self.node.is_valid(value, ctx) {
+                    return false;
+                }
+            }
+            true
         } else {
             true
         }
@@ -129,26 +126,57 @@ impl<R: RegexEngine> Validate for SingleValuePatternPropertiesValidator<R> {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
             for (key, value) in item {
                 if self.regex.is_match(key).unwrap_or(false) {
-                    self.node.validate(value, &location.push(key))?;
+                    self.node.validate(value, &location.push(key), ctx)?;
                 }
             }
         }
         Ok(())
     }
 
-    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Object(item) = instance {
+            let mut errors = Vec::new();
+            for (key, value) in item {
+                if self.regex.is_match(key).unwrap_or(false) {
+                    errors.extend(
+                        self.node
+                            .iter_errors(value, &location.push(key.as_str()), ctx),
+                    );
+                }
+            }
+            ErrorIterator::from_iterator(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
         if let Value::Object(item) = instance {
             let mut matched_propnames = Vec::with_capacity(item.len());
             let mut children = Vec::new();
             for (key, value) in item {
                 if self.regex.is_match(key).unwrap_or(false) {
-                    let path = location.push(key.as_str());
                     matched_propnames.push(key.clone());
-                    children.push(self.node.evaluate_instance(value, &path));
+                    children.push(self.node.evaluate_instance(
+                        value,
+                        &location.push(key.as_str()),
+                        ctx,
+                    ));
                 }
             }
             let mut result = EvaluationResult::from_children(children);

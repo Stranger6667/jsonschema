@@ -11,6 +11,39 @@ use crate::{
 };
 use serde_json::Value;
 
+/// Tracks `(node_id, instance_ptr)` pairs to detect cycles in circular `$ref` chains.
+#[derive(Default)]
+pub(crate) struct ValidationContext {
+    validating: Vec<(usize, usize)>,
+}
+
+impl ValidationContext {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns `true` if cycle detected, `false` otherwise (and adds pair to stack).
+    #[inline]
+    pub(crate) fn enter(&mut self, node_id: usize, instance: &Value) -> bool {
+        let key = (node_id, std::ptr::from_ref::<Value>(instance) as usize);
+        if self.validating.contains(&key) {
+            return true;
+        }
+        self.validating.push(key);
+        false
+    }
+
+    #[inline]
+    pub(crate) fn exit(&mut self, node_id: usize, instance: &Value) {
+        let popped = self.validating.pop();
+        debug_assert_eq!(
+            popped,
+            Some((node_id, std::ptr::from_ref::<Value>(instance) as usize)),
+            "ValidationContext::exit called out of order"
+        );
+    }
+}
+
 /// The Validate trait represents a predicate over some JSON value. Some validators are very simple
 /// predicates such as "a value which is a string", whereas others may be much more complex,
 /// consisting of several other validators composed together in various ways.
@@ -25,58 +58,39 @@ use serde_json::Value;
 /// If you are implementing `Validate` it is often sufficient to implement `validate` and
 /// `is_valid`. `evaluate` is only necessary for validators which compose other validators. See the
 /// documentation for `evaluate` for more information.
+///
+/// All methods accept a `ValidationContext` parameter for cycle detection in circular `$ref`
+/// chains. Simple validators that don't recurse into child schemas can ignore this parameter.
 pub(crate) trait Validate: ThreadBound {
-    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
-        match self.validate(instance, location) {
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        match self.validate(instance, location, ctx) {
             Ok(()) => no_error(),
             Err(err) => error(err),
         }
     }
-    // The same as above, but does not construct ErrorIterator.
-    // It is faster for cases when the result is not needed (like anyOf), since errors are
-    // not constructed
-    fn is_valid(&self, instance: &Value) -> bool;
+
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool;
 
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>>;
 
-    /// `evaluate` applies this validator and any sub-validators it is composed of to the value in
-    /// question and collects the resulting annotations or errors. Note that the result of this
-    /// method is a `EvaluationResult`.
-    ///
-    /// What does "partial" mean in this context? Each validator can produce annotations or errors
-    /// in the case of successful or unsuccessful validation respectively. The evaluation layer is
-    /// responsible for attaching schema/instance locations to those annotations and errors to build
-    /// the final evaluation tree. Most validators don't know where they are in the schema tree so we
-    /// allow them to return the errors or annotations they produce directly and leave it up to the
-    /// parent validator (or [`SchemaNode::evaluate_instance`](crate::node::SchemaNode::evaluate_instance))
-    /// to fill in the path information. This means that only validators which are composed of other
-    /// validators must implement `evaluate`; for validators on the leaves of the validator tree the
-    /// default implementation which is defined in terms of `validate` will suffice.
-    ///
-    /// If you are writing a validator which is composed of other validators then your validator will
-    /// need to store references to the `SchemaNode`s which contain those other validators.
-    /// `SchemaNode` stores information about where it is in the schema tree and therefore provides an
-    /// `evaluate_instance` method which returns an [`EvaluationNode`].
-    /// A typical pattern is to evaluate the subschemas and combine their resulting nodes, e.g. the
-    /// `if`/`then` composition can be implemented as follows:
-    ///
-    /// ```rust,ignore
-    /// let if_node = self.schema.evaluate_instance(instance, instance_path);
-    /// if if_node.valid {
-    ///     let then_node = self.then_schema.evaluate_instance(instance, instance_path);
-    ///     EvaluationResult::from_children(vec![if_node, then_node])
-    /// } else {
-    ///     let else_node = self.else_schema.evaluate_instance(instance, instance_path);
-    ///     EvaluationResult::from_children(vec![else_node])
-    /// }
-    /// ```
-    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
         let errors: Vec<ErrorDescription> = self
-            .iter_errors(instance, location)
+            .iter_errors(instance, location, ctx)
             .map(|e| ErrorDescription::from_validation_error(&e))
             .collect();
         if errors.is_empty() {
@@ -269,13 +283,16 @@ impl Validator {
     /// Returns the first [`ValidationError`] describing why `instance` does not satisfy the schema.
     #[inline]
     pub fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
-        self.root.validate(instance, &LazyLocation::new())
+        let mut ctx = ValidationContext::new();
+        self.root.validate(instance, &LazyLocation::new(), &mut ctx)
     }
     /// Run validation against `instance` and return an iterator over [`ValidationError`] in the error case.
     #[inline]
     #[must_use]
     pub fn iter_errors<'i>(&'i self, instance: &'i Value) -> ErrorIterator<'i> {
-        self.root.iter_errors(instance, &LazyLocation::new())
+        let mut ctx = ValidationContext::new();
+        self.root
+            .iter_errors(instance, &LazyLocation::new(), &mut ctx)
     }
     /// Run validation against `instance` but return a boolean result instead of an iterator.
     /// It is useful for cases, where it is important to only know the fact if the data is valid or not.
@@ -283,13 +300,17 @@ impl Validator {
     #[must_use]
     #[inline]
     pub fn is_valid(&self, instance: &Value) -> bool {
-        self.root.is_valid(instance)
+        let mut ctx = ValidationContext::new();
+        self.root.is_valid(instance, &mut ctx)
     }
     /// Evaluate the schema and expose structured output formats.
     #[must_use]
     #[inline]
     pub fn evaluate(&self, instance: &Value) -> Evaluation {
-        let root = self.root.evaluate_instance(instance, &LazyLocation::new());
+        let mut ctx = ValidationContext::new();
+        let root = self
+            .root
+            .evaluate_instance(instance, &LazyLocation::new(), &mut ctx);
         Evaluation::new(root)
     }
     /// The [`Draft`] which was used to build this validator.

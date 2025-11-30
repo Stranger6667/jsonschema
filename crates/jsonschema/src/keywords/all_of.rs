@@ -4,7 +4,7 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, Location},
     types::JsonType,
-    validator::{EvaluationResult, Validate},
+    validator::{EvaluationResult, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -32,36 +32,47 @@ impl AllOfValidator {
 }
 
 impl Validate for AllOfValidator {
-    #[allow(clippy::needless_collect)]
-    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
-        let errors: Vec<_> = self
-            .schemas
-            .iter()
-            .flat_map(move |node| node.iter_errors(instance, location))
-            .collect();
-        ErrorIterator::from_iterator(errors.into_iter())
-    }
-
-    fn is_valid(&self, instance: &Value) -> bool {
-        self.schemas.iter().all(|n| n.is_valid(instance))
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        self.schemas.iter().all(|n| n.is_valid(instance, ctx))
     }
 
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         for schema in &self.schemas {
-            schema.validate(instance, location)?;
+            schema.validate(instance, location, ctx)?;
         }
         Ok(())
     }
 
-    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+    #[allow(clippy::needless_collect)]
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        let errors: Vec<_> = self
+            .schemas
+            .iter()
+            .flat_map(move |node| node.iter_errors(instance, location, ctx))
+            .collect();
+        ErrorIterator::from_iterator(errors.into_iter())
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
         let children = self
             .schemas
             .iter()
-            .map(move |node| node.evaluate_instance(instance, location))
+            .map(move |node| node.evaluate_instance(instance, location, ctx))
             .collect();
         EvaluationResult::from_children(children)
     }
@@ -82,24 +93,35 @@ impl SingleValueAllOfValidator {
 }
 
 impl Validate for SingleValueAllOfValidator {
-    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
-        self.node.iter_errors(instance, location)
-    }
-
-    fn is_valid(&self, instance: &Value) -> bool {
-        self.node.is_valid(instance)
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        self.node.is_valid(instance, ctx)
     }
 
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        self.node.validate(instance, location)
+        self.node.validate(instance, location, ctx)
     }
 
-    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
-        EvaluationResult::from(self.node.evaluate_instance(instance, location))
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        self.node.iter_errors(instance, location, ctx)
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        EvaluationResult::from(self.node.evaluate_instance(instance, location, ctx))
     }
 }
 

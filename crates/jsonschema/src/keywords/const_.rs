@@ -1,6 +1,10 @@
 use crate::{
-    compiler, error::ValidationError, ext::cmp, keywords::CompilationResult, paths::Location,
-    validator::Validate,
+    compiler,
+    error::ValidationError,
+    ext::cmp,
+    keywords::CompilationResult,
+    paths::Location,
+    validator::{Validate, ValidationContext},
 };
 use serde_json::{Map, Number, Value};
 
@@ -24,8 +28,9 @@ impl Validate for ConstArrayValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::constant_array(
@@ -38,7 +43,7 @@ impl Validate for ConstArrayValidator {
     }
 
     #[inline]
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(instance_value) = instance {
             cmp::equal_arrays(&self.value, instance_value)
         } else {
@@ -62,8 +67,9 @@ impl Validate for ConstBooleanValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::constant_boolean(
@@ -76,7 +82,7 @@ impl Validate for ConstBooleanValidator {
     }
 
     #[inline]
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Bool(instance_value) = instance {
             &self.value == instance_value
         } else {
@@ -99,8 +105,9 @@ impl Validate for ConstNullValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::constant_null(
@@ -111,7 +118,7 @@ impl Validate for ConstNullValidator {
         }
     }
     #[inline]
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         instance.is_null()
     }
 }
@@ -137,8 +144,9 @@ impl Validate for ConstNumberValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::constant_number(
@@ -150,7 +158,8 @@ impl Validate for ConstNumberValidator {
         }
     }
 
-    fn is_valid(&self, instance: &Value) -> bool {
+    #[inline]
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Number(item) = instance {
             crate::ext::cmp::equal_numbers(item, &self.original_value)
         } else {
@@ -179,8 +188,9 @@ impl Validate for ConstObjectValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::constant_object(
@@ -191,7 +201,9 @@ impl Validate for ConstObjectValidator {
             ))
         }
     }
-    fn is_valid(&self, instance: &Value) -> bool {
+
+    #[inline]
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
             cmp::equal_objects(&self.value, item)
         } else {
@@ -220,8 +232,9 @@ impl Validate for ConstStringValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::constant_string(
@@ -232,7 +245,9 @@ impl Validate for ConstStringValidator {
             ))
         }
     }
-    fn is_valid(&self, instance: &Value) -> bool {
+
+    #[inline]
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::String(item) = instance {
             &self.value == item
         } else {

@@ -5,7 +5,7 @@ use crate::{
     keywords::{BoxedValidator, Keyword},
     paths::{LazyLocation, Location},
     thread::{Shared, SharedWeak},
-    validator::{EvaluationResult, Validate},
+    validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
 use referencing::Uri;
@@ -122,6 +122,13 @@ impl PendingSchemaNode {
             .materialize();
         f(node)
     }
+
+    /// Get a unique identifier for this pending node.
+    /// Uses the address of the inner cell as a stable identifier.
+    #[inline]
+    fn node_id(&self) -> usize {
+        Shared::as_ptr(&self.cell) as usize
+    }
 }
 
 impl PendingTarget {
@@ -139,24 +146,57 @@ impl PendingTarget {
 }
 
 impl Validate for PendingSchemaNode {
-    fn is_valid(&self, instance: &Value) -> bool {
-        self.with_node(|node| node.is_valid(instance))
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        if ctx.enter(self.node_id(), instance) {
+            // Cycle detected - this (node, instance) pair is already being validated.
+            // A pure reference cycle is equivalent to `true` schema.
+            return true;
+        }
+        let result = self.with_node(|node| node.is_valid(instance, ctx));
+        ctx.exit(self.node_id(), instance);
+        result
     }
 
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        self.with_node(|node| node.validate(instance, location))
+        if ctx.enter(self.node_id(), instance) {
+            return Ok(());
+        }
+        let result = self.with_node(|node| node.validate(instance, location, ctx));
+        ctx.exit(self.node_id(), instance);
+        result
     }
 
-    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
-        self.with_node(|node| node.iter_errors(instance, location))
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if ctx.enter(self.node_id(), instance) {
+            return crate::error::no_error();
+        }
+        let result = self.with_node(|node| node.iter_errors(instance, location, ctx));
+        ctx.exit(self.node_id(), instance);
+        result
     }
 
-    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
-        self.with_node(|node| node.evaluate(instance, location))
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if ctx.enter(self.node_id(), instance) {
+            return EvaluationResult::valid_empty();
+        }
+        let result = self.with_node(|node| node.evaluate(instance, location, ctx));
+        ctx.exit(self.node_id(), instance);
+        result
     }
 }
 
@@ -253,10 +293,11 @@ impl SchemaNode {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> EvaluationNode {
         let instance_location: Location = location.into();
         let schema_location = format_schema_location(&self.location, self.absolute_path.as_ref());
-        match self.evaluate(instance, location) {
+        match self.evaluate(instance, location, ctx) {
             EvaluationResult::Valid {
                 annotations,
                 children,
@@ -290,6 +331,7 @@ impl SchemaNode {
         location: &LazyLocation,
         subschemas: I,
         annotations: Option<Annotations>,
+        ctx: &mut ValidationContext,
     ) -> EvaluationResult
     where
         I: Iterator<
@@ -306,9 +348,8 @@ impl SchemaNode {
         let instance_location: OnceCell<Location> = OnceCell::new();
 
         for (child_location, absolute_location, validator) in subschemas {
-            let child_result = validator.evaluate(instance, location);
+            let child_result = validator.evaluate(instance, location, ctx);
 
-            // Only materialize locations and format strings when actually needed
             let schema_location = child_location.clone();
             let absolute_location = absolute_location.cloned();
             let instance_loc = instance_location.get_or_init(|| location.into()).clone();
@@ -366,31 +407,28 @@ impl SchemaNode {
 }
 
 impl Validate for SchemaNode {
-    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         match self.validators.as_ref() {
+            // If we only have one validator then calling it's `is_valid` directly does
+            // actually save the 20 or so instructions required to call the `slice::Iter::all`
+            // implementation. Validators at the leaf of a tree are all single node validators so
+            // this optimization can have significant cumulative benefits
             NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
-                kvs.validators[0].validator.iter_errors(instance, location)
+                kvs.validators[0].validator.is_valid(instance, ctx)
             }
-            NodeValidators::Keyword(kvs) => ErrorIterator::from_iterator(
-                kvs.validators
-                    .iter()
-                    .flat_map(|entry| entry.validator.iter_errors(instance, location))
-                    .collect::<Vec<_>>()
-                    .into_iter(),
-            ),
-            NodeValidators::Boolean {
-                validator: Some(v), ..
-            } => v.iter_errors(instance, location),
-            NodeValidators::Boolean {
-                validator: None, ..
-            } => ErrorIterator::from_iterator(std::iter::empty()),
-            NodeValidators::Array { validators } => ErrorIterator::from_iterator(
-                validators
-                    .iter()
-                    .flat_map(move |entry| entry.validator.iter_errors(instance, location))
-                    .collect::<Vec<_>>()
-                    .into_iter(),
-            ),
+            NodeValidators::Keyword(kvs) => {
+                for entry in &kvs.validators {
+                    if !entry.validator.is_valid(instance, ctx) {
+                        return false;
+                    }
+                }
+                true
+            }
+            NodeValidators::Array { validators } => validators
+                .iter()
+                .all(|entry| entry.validator.is_valid(instance, ctx)),
+            NodeValidators::Boolean { validator: Some(_) } => false,
+            NodeValidators::Boolean { validator: None } => true,
         }
     }
 
@@ -398,16 +436,17 @@ impl Validate for SchemaNode {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         match self.validators.as_ref() {
             NodeValidators::Keyword(kvs) => {
                 for entry in &kvs.validators {
-                    entry.validator.validate(instance, location)?;
+                    entry.validator.validate(instance, location, ctx)?;
                 }
             }
             NodeValidators::Array { validators } => {
                 for entry in validators {
-                    entry.validator.validate(instance, location)?;
+                    entry.validator.validate(instance, location, ctx)?;
                 }
             }
             NodeValidators::Boolean { validator: Some(_) } => {
@@ -422,32 +461,45 @@ impl Validate for SchemaNode {
         Ok(())
     }
 
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
         match self.validators.as_ref() {
-            // If we only have one validator then calling it's `is_valid` directly does
-            // actually save the 20 or so instructions required to call the `slice::Iter::all`
-            // implementation. Validators at the leaf of a tree are all single node validators so
-            // this optimization can have significant cumulative benefits
-            NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
-                kvs.validators[0].validator.is_valid(instance)
-            }
-            NodeValidators::Keyword(kvs) => {
-                for entry in &kvs.validators {
-                    if !entry.validator.is_valid(instance) {
-                        return false;
-                    }
-                }
-                true
-            }
-            NodeValidators::Array { validators } => validators
-                .iter()
-                .all(|entry| entry.validator.is_valid(instance)),
-            NodeValidators::Boolean { validator: Some(_) } => false,
-            NodeValidators::Boolean { validator: None } => true,
+            NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => kvs.validators[0]
+                .validator
+                .iter_errors(instance, location, ctx),
+            NodeValidators::Keyword(kvs) => ErrorIterator::from_iterator(
+                kvs.validators
+                    .iter()
+                    .flat_map(|entry| entry.validator.iter_errors(instance, location, ctx))
+                    .collect::<Vec<_>>()
+                    .into_iter(),
+            ),
+            NodeValidators::Boolean {
+                validator: Some(v), ..
+            } => v.iter_errors(instance, location, ctx),
+            NodeValidators::Boolean {
+                validator: None, ..
+            } => ErrorIterator::from_iterator(std::iter::empty()),
+            NodeValidators::Array { validators } => ErrorIterator::from_iterator(
+                validators
+                    .iter()
+                    .flat_map(move |entry| entry.validator.iter_errors(instance, location, ctx))
+                    .collect::<Vec<_>>()
+                    .into_iter(),
+            ),
         }
     }
 
-    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
         match self.validators.as_ref() {
             NodeValidators::Array { ref validators } => Self::evaluate_subschemas(
                 instance,
@@ -460,10 +512,11 @@ impl Validate for SchemaNode {
                     )
                 }),
                 None,
+                ctx,
             ),
             NodeValidators::Boolean { ref validator } => {
                 if let Some(validator) = validator {
-                    validator.evaluate(instance, location)
+                    validator.evaluate(instance, location, ctx)
                 } else {
                     EvaluationResult::Valid {
                         annotations: None,
@@ -490,6 +543,7 @@ impl Validate for SchemaNode {
                         )
                     }),
                     annotations,
+                    ctx,
                 )
             }
         }

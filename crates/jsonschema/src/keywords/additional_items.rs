@@ -5,7 +5,7 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, Location},
     types::{JsonType, JsonTypeSet},
-    validator::Validate,
+    validator::{Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -28,27 +28,12 @@ impl AdditionalItemsObjectValidator {
     }
 }
 impl Validate for AdditionalItemsObjectValidator {
-    #[allow(clippy::needless_collect)]
-    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
-        if let Value::Array(items) = instance {
-            let errors: Vec<_> = items
-                .iter()
-                .enumerate()
-                .skip(self.items_count)
-                .flat_map(|(idx, item)| self.node.iter_errors(item, &location.push(idx)))
-                .collect();
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
-        }
-    }
-
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
             items
                 .iter()
                 .skip(self.items_count)
-                .all(|item| self.node.is_valid(item))
+                .all(|item| self.node.is_valid(item, ctx))
         } else {
             true
         }
@@ -58,14 +43,31 @@ impl Validate for AdditionalItemsObjectValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             for (idx, item) in items.iter().enumerate().skip(self.items_count) {
-                let item_location = location.push(idx);
-                self.node.validate(item, &item_location)?;
+                self.node.validate(item, &location.push(idx), ctx)?;
             }
         }
         Ok(())
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Array(items) = instance {
+            let mut errors = Vec::new();
+            for (idx, item) in items.iter().enumerate().skip(self.items_count) {
+                errors.extend(self.node.iter_errors(item, &location.push(idx), ctx));
+            }
+            ErrorIterator::from_iterator(errors.into_iter())
+        } else {
+            no_error()
+        }
     }
 }
 
@@ -83,7 +85,7 @@ impl AdditionalItemsBooleanValidator {
     }
 }
 impl Validate for AdditionalItemsBooleanValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
             if items.len() > self.items_count {
                 return false;
@@ -96,6 +98,7 @@ impl Validate for AdditionalItemsBooleanValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             if items.len() > self.items_count {

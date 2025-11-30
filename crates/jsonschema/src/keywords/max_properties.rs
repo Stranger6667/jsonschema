@@ -5,7 +5,7 @@ use crate::{
     error::ValidationError,
     keywords::{helpers::fail_on_non_positive_integer, CompilationResult},
     paths::{LazyLocation, Location},
-    validator::Validate,
+    validator::{Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -41,7 +41,7 @@ impl MaxPropertiesValidator {
 }
 
 impl Validate for MaxPropertiesValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
             if (item.len() as u64) > self.limit {
                 return false;
@@ -54,6 +54,7 @@ impl Validate for MaxPropertiesValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
             if (item.len() as u64) > self.limit {

@@ -16,7 +16,7 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, Location},
     thread::Shared,
-    validator::{EvaluationResult, Validate},
+    validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
 
@@ -73,7 +73,12 @@ struct ConditionalValidators {
 
 impl ItemsValidators {
     /// Mark all items that are evaluated by this schema.
-    fn mark_evaluated_indexes(&self, instance: &Value, indexes: &mut Vec<bool>) {
+    fn mark_evaluated_indexes(
+        &self,
+        instance: &Value,
+        indexes: &mut Vec<bool>,
+        ctx: &mut ValidationContext,
+    ) {
         // Early return optimization: if items marks ALL items, no need to check anything else
         if self.items_all {
             // Draft 2020-12+: items keyword marks ALL items as evaluated
@@ -85,19 +90,19 @@ impl ItemsValidators {
 
         // Handle $ref first
         if let Some(ref_) = &self.ref_ {
-            ref_.0.mark_evaluated_indexes(instance, indexes);
+            ref_.0.mark_evaluated_indexes(instance, indexes, ctx);
         }
 
         // Handle $recursiveRef (Draft 2019-09 only)
         if let Some(recursive_ref) = &self.recursive_ref {
             if let Some(validators) = recursive_ref.get() {
-                validators.mark_evaluated_indexes(instance, indexes);
+                validators.mark_evaluated_indexes(instance, indexes, ctx);
             }
         }
 
         // Handle $dynamicRef (Draft 2020-12+)
         if let Some(dynamic_ref) = &self.dynamic_ref {
-            dynamic_ref.mark_evaluated_indexes(instance, indexes);
+            dynamic_ref.mark_evaluated_indexes(instance, indexes, ctx);
         }
 
         // Mark items based on items/prefixItems keywords
@@ -128,14 +133,14 @@ impl ItemsValidators {
                 }
                 // contains marks items that match
                 if let Some(validator) = &self.contains {
-                    if validator.is_valid(item) {
+                    if validator.is_valid(item, ctx) {
                         *is_evaluated = true;
                         continue;
                     }
                 }
                 // unevaluatedItems itself can mark items
                 if let Some(validator) = &self.unevaluated {
-                    if validator.is_valid(item) {
+                    if validator.is_valid(item, ctx) {
                         *is_evaluated = true;
                     }
                 }
@@ -144,14 +149,14 @@ impl ItemsValidators {
 
         // Handle conditional
         if let Some(conditional) = &self.conditional {
-            conditional.mark_evaluated_indexes(instance, indexes);
+            conditional.mark_evaluated_indexes(instance, indexes, ctx);
         }
 
         // Handle allOf - each schema that validates successfully marks items
         if let Some(all_of) = &self.all_of {
             for (validator, item_validators) in all_of {
-                if validator.is_valid(instance) {
-                    item_validators.mark_evaluated_indexes(instance, indexes);
+                if validator.is_valid(instance, ctx) {
+                    item_validators.mark_evaluated_indexes(instance, indexes, ctx);
                 }
             }
         }
@@ -159,8 +164,8 @@ impl ItemsValidators {
         // Handle anyOf - each schema that validates successfully marks items
         if let Some(any_of) = &self.any_of {
             for (validator, item_validators) in any_of {
-                if validator.is_valid(instance) {
-                    item_validators.mark_evaluated_indexes(instance, indexes);
+                if validator.is_valid(instance, ctx) {
+                    item_validators.mark_evaluated_indexes(instance, indexes, ctx);
                 }
             }
         }
@@ -168,12 +173,15 @@ impl ItemsValidators {
         // Handle oneOf - only mark if exactly one schema validates
         // Optimization: cache validation results to avoid double validation
         if let Some(one_of) = &self.one_of {
-            let results: Vec<_> = one_of.iter().map(|(v, _)| v.is_valid(instance)).collect();
+            let results: Vec<_> = one_of
+                .iter()
+                .map(|(v, _)| v.is_valid(instance, ctx))
+                .collect();
 
             if results.iter().filter(|&&valid| valid).count() == 1 {
                 for ((_, validators), &is_valid) in one_of.iter().zip(&results) {
                     if is_valid {
-                        validators.mark_evaluated_indexes(instance, indexes);
+                        validators.mark_evaluated_indexes(instance, indexes, ctx);
                         break;
                     }
                 }
@@ -183,14 +191,19 @@ impl ItemsValidators {
 }
 
 impl ConditionalValidators {
-    fn mark_evaluated_indexes(&self, instance: &Value, indexes: &mut Vec<bool>) {
-        if self.condition.is_valid(instance) {
-            self.if_.mark_evaluated_indexes(instance, indexes);
+    fn mark_evaluated_indexes(
+        &self,
+        instance: &Value,
+        indexes: &mut Vec<bool>,
+        ctx: &mut ValidationContext,
+    ) {
+        if self.condition.is_valid(instance, ctx) {
+            self.if_.mark_evaluated_indexes(instance, indexes, ctx);
             if let Some(then_) = &self.then_ {
-                then_.mark_evaluated_indexes(instance, indexes);
+                then_.mark_evaluated_indexes(instance, indexes, ctx);
             }
         } else if let Some(else_) = &self.else_ {
-            else_.mark_evaluated_indexes(instance, indexes);
+            else_.mark_evaluated_indexes(instance, indexes, ctx);
         }
     }
 }
@@ -513,16 +526,16 @@ impl UnevaluatedItemsValidator {
 }
 
 impl Validate for UnevaluatedItemsValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
             let mut indexes = vec![false; items.len()];
             self.validators
-                .mark_evaluated_indexes(instance, &mut indexes);
+                .mark_evaluated_indexes(instance, &mut indexes, ctx);
 
             for (item, is_evaluated) in items.iter().zip(indexes) {
                 if !is_evaluated {
                     if let Some(validator) = &self.validators.unevaluated {
-                        if !validator.is_valid(item) {
+                        if !validator.is_valid(item, ctx) {
                             return false;
                         }
                     } else {
@@ -539,17 +552,18 @@ impl Validate for UnevaluatedItemsValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             let mut indexes = vec![false; items.len()];
             self.validators
-                .mark_evaluated_indexes(instance, &mut indexes);
+                .mark_evaluated_indexes(instance, &mut indexes, ctx);
             let mut unevaluated = vec![];
 
             for (item, is_evaluated) in items.iter().zip(indexes) {
                 if !is_evaluated {
                     let is_valid = if let Some(validator) = &self.validators.unevaluated {
-                        validator.is_valid(item)
+                        validator.is_valid(item, ctx)
                     } else {
                         false
                     };
@@ -572,11 +586,16 @@ impl Validate for UnevaluatedItemsValidator {
         Ok(())
     }
 
-    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
         if let Value::Array(items) = instance {
             let mut indexes = vec![false; items.len()];
             self.validators
-                .mark_evaluated_indexes(instance, &mut indexes);
+                .mark_evaluated_indexes(instance, &mut indexes, ctx);
             let mut children = Vec::new();
             let mut unevaluated = Vec::new();
             let mut invalid = false;
@@ -586,7 +605,7 @@ impl Validate for UnevaluatedItemsValidator {
                     continue;
                 }
                 if let Some(validator) = &self.validators.unevaluated {
-                    let child = validator.evaluate_instance(item, &location.push(idx));
+                    let child = validator.evaluate_instance(item, &location.push(idx), ctx);
                     if !child.valid {
                         invalid = true;
                         unevaluated.push(item.to_string());

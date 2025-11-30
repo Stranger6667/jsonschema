@@ -5,7 +5,7 @@ use crate::{
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
     types::{JsonType, JsonTypeSet},
-    validator::Validate,
+    validator::{Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -43,8 +43,9 @@ impl Validate for EnumValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::enumeration(
@@ -56,7 +57,7 @@ impl Validate for EnumValidator {
         }
     }
 
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         // If the input value type is not in the types present among the enum options, then there
         // is no reason to compare it against all items - we know that
         // there are no items with such type at all
@@ -95,8 +96,9 @@ impl Validate for SingleValueEnumValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::enumeration(
@@ -108,7 +110,7 @@ impl Validate for SingleValueEnumValidator {
         }
     }
 
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         cmp::equal(&self.value, instance)
     }
 }

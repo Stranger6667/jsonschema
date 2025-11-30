@@ -1,6 +1,10 @@
 use crate::{
-    compiler, error::ValidationError, ext::cmp, keywords::CompilationResult, paths::Location,
-    validator::Validate,
+    compiler,
+    error::ValidationError,
+    ext::cmp,
+    keywords::CompilationResult,
+    paths::Location,
+    validator::{Validate, ValidationContext},
 };
 use ahash::{AHashSet, AHasher};
 use serde_json::{Map, Value};
@@ -105,7 +109,7 @@ impl UniqueItemsValidator {
 }
 
 impl Validate for UniqueItemsValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
             if !is_unique(items) {
                 return false;
@@ -118,8 +122,9 @@ impl Validate for UniqueItemsValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::unique_items(

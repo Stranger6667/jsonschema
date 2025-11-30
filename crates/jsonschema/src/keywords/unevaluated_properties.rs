@@ -17,7 +17,7 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, Location},
     thread::Shared,
-    validator::{EvaluationResult, Validate},
+    validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
 
@@ -79,23 +79,24 @@ impl PropertyValidators {
         &self,
         instance: &'i Value,
         properties: &mut AHashSet<&'i String>,
+        ctx: &mut ValidationContext,
     ) {
         // Handle $ref first
         if let Some(ref_) = &self.ref_ {
-            ref_.0.mark_evaluated_properties(instance, properties);
+            ref_.0.mark_evaluated_properties(instance, properties, ctx);
         }
 
         // Handle $recursiveRef (Draft 2019-09 only)
         // Skip if not yet initialized (circular reference) - properties will be tracked by parent
         if let Some(recursive_ref) = &self.recursive_ref {
             if let Some(validators) = recursive_ref.get() {
-                validators.mark_evaluated_properties(instance, properties);
+                validators.mark_evaluated_properties(instance, properties, ctx);
             }
         }
 
         // Handle $dynamicRef (Draft 2020-12+)
         if let Some(dynamic_ref) = &self.dynamic_ref {
-            dynamic_ref.mark_evaluated_properties(instance, properties);
+            dynamic_ref.mark_evaluated_properties(instance, properties, ctx);
         }
 
         // Process properties on the instance
@@ -142,7 +143,7 @@ impl PropertyValidators {
                     if properties.contains(property) {
                         continue;
                     }
-                    if unevaluated.is_valid(value) {
+                    if unevaluated.is_valid(value, ctx) {
                         properties.insert(property);
                     }
                 }
@@ -151,27 +152,27 @@ impl PropertyValidators {
             // Check "dependentSchemas" keyword
             for (dep_property, dep_validators) in &self.dependent {
                 if obj.contains_key(dep_property) {
-                    dep_validators.mark_evaluated_properties(instance, properties);
+                    dep_validators.mark_evaluated_properties(instance, properties, ctx);
                 }
             }
         }
 
         // Handle "if/then/else" keywords
         if let Some(conditional) = &self.conditional {
-            conditional.mark_evaluated_properties(instance, properties);
+            conditional.mark_evaluated_properties(instance, properties, ctx);
         }
 
         // Handle "allOf" keyword
         for (node, validators) in &self.all_of {
-            if node.is_valid(instance) {
-                validators.mark_evaluated_properties(instance, properties);
+            if node.is_valid(instance, ctx) {
+                validators.mark_evaluated_properties(instance, properties, ctx);
             }
         }
 
         // Handle "anyOf" keyword
         for (node, validators) in &self.any_of {
-            if node.is_valid(instance) {
-                validators.mark_evaluated_properties(instance, properties);
+            if node.is_valid(instance, ctx) {
+                validators.mark_evaluated_properties(instance, properties, ctx);
             }
         }
 
@@ -179,13 +180,13 @@ impl PropertyValidators {
         let one_of_matches: Vec<bool> = self
             .one_of
             .iter()
-            .map(|(node, _)| node.is_valid(instance))
+            .map(|(node, _)| node.is_valid(instance, ctx))
             .collect();
 
         if one_of_matches.iter().filter(|&&v| v).count() == 1 {
             for ((_node, validators), &is_valid) in self.one_of.iter().zip(one_of_matches.iter()) {
                 if is_valid {
-                    validators.mark_evaluated_properties(instance, properties);
+                    validators.mark_evaluated_properties(instance, properties, ctx);
                     break;
                 }
             }
@@ -198,14 +199,16 @@ impl ConditionalValidators {
         &self,
         instance: &'i Value,
         properties: &mut AHashSet<&'i String>,
+        ctx: &mut ValidationContext,
     ) {
-        if self.condition.is_valid(instance) {
-            self.if_.mark_evaluated_properties(instance, properties);
+        if self.condition.is_valid(instance, ctx) {
+            self.if_
+                .mark_evaluated_properties(instance, properties, ctx);
             if let Some(then_) = &self.then_ {
-                then_.mark_evaluated_properties(instance, properties);
+                then_.mark_evaluated_properties(instance, properties, ctx);
             }
         } else if let Some(else_) = &self.else_ {
-            else_.mark_evaluated_properties(instance, properties);
+            else_.mark_evaluated_properties(instance, properties, ctx);
         }
     }
 }
@@ -581,13 +584,14 @@ impl Validate for UnevaluatedPropertiesValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(properties) = instance {
             let mut evaluated = AHashSet::with_capacity(properties.len());
 
             // Mark all evaluated properties
             self.validators
-                .mark_evaluated_properties(instance, &mut evaluated);
+                .mark_evaluated_properties(instance, &mut evaluated, ctx);
 
             // Early return if all properties are evaluated
             if evaluated.len() == properties.len() {
@@ -602,7 +606,7 @@ impl Validate for UnevaluatedPropertiesValidator {
                 }
                 // Check against unevaluatedProperties schema
                 if let Some(unevaluated_schema) = &self.validators.unevaluated {
-                    if !unevaluated_schema.is_valid(value) {
+                    if !unevaluated_schema.is_valid(value, ctx) {
                         unevaluated.push(property.clone());
                     }
                 } else {
@@ -623,11 +627,11 @@ impl Validate for UnevaluatedPropertiesValidator {
         Ok(())
     }
 
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Object(properties) = instance {
             let mut evaluated = AHashSet::with_capacity(properties.len());
             self.validators
-                .mark_evaluated_properties(instance, &mut evaluated);
+                .mark_evaluated_properties(instance, &mut evaluated, ctx);
 
             // Early return if all properties are evaluated
             if evaluated.len() == properties.len() {
@@ -639,7 +643,7 @@ impl Validate for UnevaluatedPropertiesValidator {
                     continue;
                 }
                 if let Some(unevaluated_schema) = &self.validators.unevaluated {
-                    if !unevaluated_schema.is_valid(value) {
+                    if !unevaluated_schema.is_valid(value, ctx) {
                         return false;
                     }
                 } else {
@@ -649,11 +653,17 @@ impl Validate for UnevaluatedPropertiesValidator {
         }
         true
     }
-    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
         if let Value::Object(properties) = instance {
             let mut evaluated = AHashSet::with_capacity(properties.len());
             self.validators
-                .mark_evaluated_properties(instance, &mut evaluated);
+                .mark_evaluated_properties(instance, &mut evaluated, ctx);
             let mut children = Vec::new();
             let mut unevaluated = Vec::new();
             let mut invalid = false;
@@ -663,7 +673,7 @@ impl Validate for UnevaluatedPropertiesValidator {
                     continue;
                 }
                 if let Some(validator) = &self.validators.unevaluated {
-                    let child = validator.evaluate_instance(value, &location.push(property));
+                    let child = validator.evaluate_instance(value, &location.push(property), ctx);
                     if !child.valid {
                         invalid = true;
                         unevaluated.push(property.clone());

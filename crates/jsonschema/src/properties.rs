@@ -90,18 +90,26 @@ pub(crate) fn compile_big_map<'a>(
     Ok(properties)
 }
 
-pub(crate) fn are_properties_valid<M, F>(prop_map: &M, props: &Map<String, Value>, check: F) -> bool
+pub(crate) fn are_properties_valid<M, F>(
+    prop_map: &M,
+    props: &Map<String, Value>,
+    ctx: &mut crate::validator::ValidationContext,
+    check: F,
+) -> bool
 where
     M: PropertiesValidatorsMap,
-    F: Fn(&Value) -> bool,
+    F: Fn(&Value, &mut crate::validator::ValidationContext) -> bool,
 {
-    props.iter().all(|(property, instance)| {
+    for (property, instance) in props {
         if let Some(validator) = prop_map.get_validator(property) {
-            validator.is_valid(instance)
-        } else {
-            check(instance)
+            if !validator.is_valid(instance, ctx) {
+                return false;
+            }
+        } else if !check(instance, ctx) {
+            return false;
         }
-    })
+    }
+    true
 }
 
 /// Create a vector of pattern-validators pairs.

@@ -6,7 +6,7 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, Location},
     types::JsonType,
-    validator::{EvaluationResult, Validate},
+    validator::{EvaluationResult, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -41,32 +41,16 @@ impl PropertiesValidator {
 }
 
 impl Validate for PropertiesValidator {
-    #[allow(clippy::needless_collect)]
-    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
-            let errors: Vec<_> = self
-                .properties
-                .iter()
-                .flat_map(move |(name, node)| {
-                    let option = item.get(name);
-                    option.into_iter().flat_map(move |item| {
-                        let instance_path = location.push(name.as_str());
-                        node.iter_errors(item, &instance_path)
-                    })
-                })
-                .collect();
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
-        }
-    }
-
-    fn is_valid(&self, instance: &Value) -> bool {
-        if let Value::Object(item) = instance {
-            self.properties.iter().all(move |(name, node)| {
-                let option = item.get(name);
-                option.into_iter().all(move |item| node.is_valid(item))
-            })
+            for (name, node) in &self.properties {
+                if let Some(prop) = item.get(name) {
+                    if !node.is_valid(prop, ctx) {
+                        return false;
+                    }
+                }
+            }
+            true
         } else {
             true
         }
@@ -76,18 +60,45 @@ impl Validate for PropertiesValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
             for (name, node) in &self.properties {
                 if let Some(item) = item.get(name) {
-                    node.validate(item, &location.push(name))?;
+                    node.validate(item, &location.push(name), ctx)?;
                 }
             }
         }
         Ok(())
     }
 
-    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+    #[allow(clippy::needless_collect)]
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Object(item) = instance {
+            let mut errors = Vec::new();
+            for (name, node) in &self.properties {
+                if let Some(prop) = item.get(name) {
+                    let instance_path = location.push(name.as_str());
+                    errors.extend(node.iter_errors(prop, &instance_path, ctx));
+                }
+            }
+            ErrorIterator::from_iterator(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
         if let Value::Object(props) = instance {
             let mut matched_props = Vec::with_capacity(props.len());
             let mut children = Vec::new();
@@ -95,7 +106,7 @@ impl Validate for PropertiesValidator {
                 if let Some(prop) = props.get(prop_name) {
                     let path = location.push(prop_name.as_str());
                     matched_props.push(prop_name.clone());
-                    children.push(node.evaluate_instance(prop, &path));
+                    children.push(node.evaluate_instance(prop, &path, ctx));
                 }
             }
             let mut application = EvaluationResult::from_children(children);

@@ -7,7 +7,7 @@ use crate::{
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
     types::JsonType,
-    validator::Validate,
+    validator::{Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -35,7 +35,7 @@ impl ContentMediaTypeValidator {
 
 /// Validator delegates validation to the stored function.
 impl Validate for ContentMediaTypeValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::String(item) = instance {
             (self.func)(item)
         } else {
@@ -47,18 +47,17 @@ impl Validate for ContentMediaTypeValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::String(item) = instance {
-            if (self.func)(item) {
-                Ok(())
-            } else {
-                Err(ValidationError::content_media_type(
-                    self.location.clone(),
-                    location.into(),
-                    instance,
-                    &self.media_type,
-                ))
-            }
+        if self.is_valid(instance, ctx) {
+            Ok(())
+        } else if let Value::String(_) = instance {
+            Err(ValidationError::content_media_type(
+                self.location.clone(),
+                location.into(),
+                instance,
+                &self.media_type,
+            ))
         } else {
             Ok(())
         }
@@ -88,7 +87,7 @@ impl ContentEncodingValidator {
 }
 
 impl Validate for ContentEncodingValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::String(item) = instance {
             (self.func)(item)
         } else {
@@ -100,18 +99,17 @@ impl Validate for ContentEncodingValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::String(item) = instance {
-            if (self.func)(item) {
-                Ok(())
-            } else {
-                Err(ValidationError::content_encoding(
-                    self.location.clone(),
-                    location.into(),
-                    instance,
-                    &self.encoding,
-                ))
-            }
+        if self.is_valid(instance, ctx) {
+            Ok(())
+        } else if let Value::String(_) = instance {
+            Err(ValidationError::content_encoding(
+                self.location.clone(),
+                location.into(),
+                instance,
+                &self.encoding,
+            ))
         } else {
             Ok(())
         }
@@ -148,7 +146,7 @@ impl ContentMediaTypeAndEncodingValidator {
 
 /// Decode the input value & check media type
 impl Validate for ContentMediaTypeAndEncodingValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::String(item) = instance {
             match (self.converter)(item) {
                 Ok(None) | Err(_) => false,
@@ -163,6 +161,7 @@ impl Validate for ContentMediaTypeAndEncodingValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::String(item) = instance {
             match (self.converter)(item) {

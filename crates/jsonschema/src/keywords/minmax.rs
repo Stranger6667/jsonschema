@@ -6,7 +6,7 @@ use crate::{
     paths::{LazyLocation, Location},
     thread::ThreadBound,
     types::JsonType,
-    validator::Validate,
+    validator::{Validate, ValidationContext},
 };
 use num_cmp::NumCmp;
 use serde_json::{Map, Value};
@@ -38,8 +38,9 @@ macro_rules! define_numeric_keywords {
                     &self,
                     instance: &'i Value,
                     location: &LazyLocation,
+                    ctx: &mut ValidationContext,
                 ) -> Result<(), ValidationError<'i>> {
-                    if self.is_valid(instance) {
+                    if self.is_valid(instance, ctx) {
                         Ok(())
                     } else {
                         Err(ValidationError::$error_fn_name(
@@ -51,7 +52,7 @@ macro_rules! define_numeric_keywords {
                     }
                 }
 
-                fn is_valid(&self, instance: &Value) -> bool {
+                fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
                     if let Value::Number(item) = instance {
                         $fn_name(item, self.limit)
                     } else {
@@ -72,7 +73,9 @@ define_numeric_keywords!(
 
 #[cfg(feature = "arbitrary-precision")]
 pub(crate) mod bigint_validators {
-    use super::{numeric, LazyLocation, Location, Validate, ValidationError, Value};
+    use super::{
+        numeric, LazyLocation, Location, Validate, ValidationContext, ValidationError, Value,
+    };
     use crate::ext::numeric::bignum::{
         f64_ge_bigfrac, f64_ge_bigint, f64_gt_bigfrac, f64_gt_bigint, f64_le_bigfrac,
         f64_le_bigint, f64_lt_bigfrac, f64_lt_bigint, i64_ge_bigfrac, i64_ge_bigint,
@@ -102,8 +105,9 @@ pub(crate) mod bigint_validators {
                     &self,
                     instance: &'i Value,
                     location: &LazyLocation,
+                    ctx: &mut ValidationContext,
                 ) -> Result<(), ValidationError<'i>> {
-                    if self.is_valid(instance) {
+                    if self.is_valid(instance, ctx) {
                         Ok(())
                     } else {
                         Err(ValidationError::$error_fn(
@@ -115,7 +119,7 @@ pub(crate) mod bigint_validators {
                     }
                 }
 
-                fn is_valid(&self, instance: &Value) -> bool {
+                fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
                     use fraction::BigFraction;
                     if let Value::Number(item) = instance {
                         // Try to parse instance as BigInt first
@@ -212,8 +216,9 @@ pub(crate) mod bigint_validators {
                     &self,
                     instance: &'i Value,
                     location: &LazyLocation,
+                    ctx: &mut ValidationContext,
                 ) -> Result<(), ValidationError<'i>> {
-                    if self.is_valid(instance) {
+                    if self.is_valid(instance, ctx) {
                         Ok(())
                     } else {
                         Err(ValidationError::$error_fn(
@@ -225,7 +230,7 @@ pub(crate) mod bigint_validators {
                     }
                 }
 
-                fn is_valid(&self, instance: &Value) -> bool {
+                fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
                     if let Value::Number(item) = instance {
                         // Try to parse instance as BigFraction for exact precision
                         if let Some(instance_bigfrac) = try_parse_bigfraction(item) {

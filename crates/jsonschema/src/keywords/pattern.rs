@@ -8,7 +8,7 @@ use crate::{
     paths::{LazyLocation, Location},
     regex::{RegexEngine, RegexError},
     types::JsonType,
-    validator::Validate,
+    validator::{Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -22,6 +22,7 @@ impl<R: RegexEngine> Validate for PatternValidator<R> {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::String(item) = instance {
             match self.regex.is_match(item) {
@@ -49,7 +50,7 @@ impl<R: RegexEngine> Validate for PatternValidator<R> {
         Ok(())
     }
 
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::String(item) = instance {
             return self.regex.is_match(item).unwrap_or(false);
         }

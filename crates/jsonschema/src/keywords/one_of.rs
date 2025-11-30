@@ -6,7 +6,7 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, Location},
     types::JsonType,
-    validator::{EvaluationResult, Validate},
+    validator::{EvaluationResult, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -40,10 +40,10 @@ impl OneOfValidator {
         }
     }
 
-    fn get_first_valid(&self, instance: &Value) -> Option<usize> {
+    fn get_first_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> Option<usize> {
         let mut first_valid_idx = None;
         for (idx, node) in self.schemas.iter().enumerate() {
-            if node.is_valid(instance) {
+            if node.is_valid(instance, ctx) {
                 first_valid_idx = Some(idx);
                 break;
             }
@@ -52,37 +52,36 @@ impl OneOfValidator {
     }
 
     #[allow(clippy::arithmetic_side_effects)]
-    fn are_others_valid(&self, instance: &Value, idx: usize) -> bool {
-        // `idx + 1` will not overflow, because the maximum possible value there is `usize::MAX - 1`
-        // For example we have `usize::MAX` schemas and only the last one is valid, then
-        // in `get_first_valid` we enumerate from `0`, and on the last index will be `usize::MAX - 1`
+    fn are_others_valid(&self, instance: &Value, idx: usize, ctx: &mut ValidationContext) -> bool {
         self.schemas
             .iter()
             .skip(idx + 1)
-            .any(|n| n.is_valid(instance))
+            .any(|n| n.is_valid(instance, ctx))
     }
 }
 
 impl Validate for OneOfValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
-        let first_valid_idx = self.get_first_valid(instance);
-        first_valid_idx.is_some_and(|idx| !self.are_others_valid(instance, idx))
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        let first_valid_idx = self.get_first_valid(instance, ctx);
+        first_valid_idx.is_some_and(|idx| !self.are_others_valid(instance, idx, ctx))
     }
+
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        let first_valid_idx = self.get_first_valid(instance);
+        let first_valid_idx = self.get_first_valid(instance, ctx);
         if let Some(idx) = first_valid_idx {
-            if self.are_others_valid(instance, idx) {
+            if self.are_others_valid(instance, idx, ctx) {
                 return Err(ValidationError::one_of_multiple_valid(
                     self.location.clone(),
                     location.into(),
                     instance,
                     self.schemas
                         .iter()
-                        .map(|schema| schema.iter_errors(instance, location).collect())
+                        .map(|schema| schema.iter_errors(instance, location, ctx).collect())
                         .collect(),
                 ));
             }
@@ -94,22 +93,28 @@ impl Validate for OneOfValidator {
                 instance,
                 self.schemas
                     .iter()
-                    .map(|schema| schema.iter_errors(instance, location).collect())
+                    .map(|schema| schema.iter_errors(instance, location, ctx).collect())
                     .collect(),
             ))
         }
     }
-    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
         let total = self.schemas.len();
         let mut failures = Vec::with_capacity(total);
         let mut iter = self.schemas.iter();
         while let Some(node) = iter.next() {
-            let child = node.evaluate_instance(instance, location);
+            let child = node.evaluate_instance(instance, location, ctx);
             if child.valid {
                 let mut successes = Vec::with_capacity(total.saturating_sub(failures.len()));
                 successes.push(child);
                 for node in iter {
-                    let next = node.evaluate_instance(instance, location);
+                    let next = node.evaluate_instance(instance, location, ctx);
                     if next.valid {
                         successes.push(next);
                     }

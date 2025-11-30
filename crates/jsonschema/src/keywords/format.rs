@@ -19,7 +19,7 @@ use crate::{
     paths::{LazyLocation, Location},
     thread::ThreadBound,
     types::JsonType,
-    validator::Validate,
+    validator::{Validate, ValidationContext},
     Draft,
 };
 
@@ -712,7 +712,7 @@ macro_rules! format_validators {
             }
 
             impl Validate for $validator {
-                fn is_valid(&self, instance: &Value) -> bool {
+                fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
                     if let Value::String(item) = instance {
                         $validation_fn(item)
                     } else {
@@ -724,9 +724,10 @@ macro_rules! format_validators {
                     &self,
                     instance: &'i Value,
                     location: &LazyLocation,
+                    ctx: &mut ValidationContext,
                 ) -> Result<(), ValidationError<'i>> {
                     if let Value::String(_item) = instance {
-                        if !self.is_valid(instance) {
+                        if !self.is_valid(instance, ctx) {
                             return Err(ValidationError::format(
                                 self.location.clone(),
                                 location.into(),
@@ -800,8 +801,9 @@ impl Validate for CustomFormatValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::format(
@@ -813,7 +815,7 @@ impl Validate for CustomFormatValidator {
         }
     }
 
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::String(item) = instance {
             self.check.is_valid(item)
         } else {

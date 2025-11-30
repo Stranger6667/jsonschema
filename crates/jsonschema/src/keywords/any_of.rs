@@ -4,7 +4,7 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, Location},
     types::JsonType,
-    validator::{EvaluationResult, Validate},
+    validator::{EvaluationResult, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -42,32 +42,17 @@ impl AnyOfValidator {
 }
 
 impl Validate for AnyOfValidator {
-    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
-        if self.is_valid(instance) {
-            no_error()
-        } else {
-            error(ValidationError::any_of(
-                self.location.clone(),
-                location.into(),
-                instance,
-                self.schemas
-                    .iter()
-                    .map(|schema| schema.iter_errors(instance, location).collect())
-                    .collect(),
-            ))
-        }
-    }
-
-    fn is_valid(&self, instance: &Value) -> bool {
-        self.schemas.iter().any(|s| s.is_valid(instance))
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        self.schemas.iter().any(|s| s.is_valid(instance, ctx))
     }
 
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::any_of(
@@ -76,24 +61,50 @@ impl Validate for AnyOfValidator {
                 instance,
                 self.schemas
                     .iter()
-                    .map(|schema| schema.iter_errors(instance, location).collect())
+                    .map(|schema| schema.iter_errors(instance, location, ctx).collect())
                     .collect(),
             ))
         }
     }
 
-    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if self.is_valid(instance, ctx) {
+            no_error()
+        } else {
+            error(ValidationError::any_of(
+                self.location.clone(),
+                location.into(),
+                instance,
+                self.schemas
+                    .iter()
+                    .map(|schema| schema.iter_errors(instance, location, ctx).collect())
+                    .collect(),
+            ))
+        }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
         let total = self.schemas.len();
         let mut failures = Vec::with_capacity(total);
         let mut iter = self.schemas.iter();
         while let Some(node) = iter.next() {
-            let result = node.evaluate_instance(instance, location);
+            let result = node.evaluate_instance(instance, location, ctx);
             if result.valid {
                 let remaining = total.saturating_sub(failures.len() + 1);
                 let mut successes = Vec::with_capacity(remaining + 1);
                 successes.push(result);
                 for node in iter {
-                    let tail = node.evaluate_instance(instance, location);
+                    let tail = node.evaluate_instance(instance, location, ctx);
                     if tail.valid {
                         successes.push(tail);
                     }

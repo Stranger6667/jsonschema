@@ -4,7 +4,7 @@ use crate::{
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
     types::JsonType,
-    validator::Validate,
+    validator::{Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -35,7 +35,7 @@ impl RequiredValidator {
 }
 
 impl Validate for RequiredValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
             if item.len() < self.required.len() {
                 return false;
@@ -52,6 +52,7 @@ impl Validate for RequiredValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
             for property_name in &self.required {
@@ -68,7 +69,12 @@ impl Validate for RequiredValidator {
         }
         Ok(())
     }
-    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        _ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
         if let Value::Object(item) = instance {
             let mut errors = vec![];
             for property_name in &self.required {
@@ -110,8 +116,9 @@ impl Validate for SingleItemRequiredValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if !self.is_valid(instance) {
+        if !self.is_valid(instance, ctx) {
             return Err(ValidationError::required(
                 self.location.clone(),
                 location.into(),
@@ -123,7 +130,7 @@ impl Validate for SingleItemRequiredValidator {
         Ok(())
     }
 
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
             if item.is_empty() {
                 return false;

@@ -4,7 +4,7 @@ use crate::{
     keywords::CompilationResult,
     paths::Location,
     types::{JsonType, JsonTypeSet},
-    validator::Validate,
+    validator::{Validate, ValidationContext},
 };
 use serde_json::{json, Map, Number, Value};
 use std::str::FromStr;
@@ -51,15 +51,16 @@ impl MultipleTypesValidator {
 }
 
 impl Validate for MultipleTypesValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         self.types.contains_value_type(instance)
     }
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::multiple_type_error(
@@ -84,15 +85,16 @@ impl NullTypeValidator {
 }
 
 impl Validate for NullTypeValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         instance.is_null()
     }
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::single_type_error(
@@ -117,15 +119,16 @@ impl BooleanTypeValidator {
 }
 
 impl Validate for BooleanTypeValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         instance.is_boolean()
     }
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::single_type_error(
@@ -150,7 +153,7 @@ impl StringTypeValidator {
 }
 
 impl Validate for StringTypeValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         instance.is_string()
     }
 
@@ -158,8 +161,9 @@ impl Validate for StringTypeValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::single_type_error(
@@ -184,7 +188,7 @@ impl ArrayTypeValidator {
 }
 
 impl Validate for ArrayTypeValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         instance.is_array()
     }
 
@@ -192,8 +196,9 @@ impl Validate for ArrayTypeValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::single_type_error(
@@ -218,15 +223,16 @@ impl ObjectTypeValidator {
 }
 
 impl Validate for ObjectTypeValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         instance.is_object()
     }
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::single_type_error(
@@ -251,15 +257,16 @@ impl NumberTypeValidator {
 }
 
 impl Validate for NumberTypeValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         instance.is_number()
     }
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::single_type_error(
@@ -284,7 +291,7 @@ impl IntegerTypeValidator {
 }
 
 impl Validate for IntegerTypeValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Number(num) = instance {
             is_integer(num)
         } else {
@@ -295,8 +302,9 @@ impl Validate for IntegerTypeValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance) {
+        if self.is_valid(instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::single_type_error(

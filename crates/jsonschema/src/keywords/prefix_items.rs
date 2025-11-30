@@ -5,7 +5,7 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, Location},
     types::JsonType,
-    validator::{EvaluationResult, Validate},
+    validator::{EvaluationResult, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -33,28 +33,14 @@ impl PrefixItemsValidator {
 }
 
 impl Validate for PrefixItemsValidator {
-    #[allow(clippy::needless_collect)]
-    fn iter_errors<'i>(&self, instance: &'i Value, location: &LazyLocation) -> ErrorIterator<'i> {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
-            let errors: Vec<_> = self
-                .schemas
-                .iter()
-                .zip(items.iter())
-                .enumerate()
-                .flat_map(|(idx, (n, i))| n.iter_errors(i, &location.push(idx)))
-                .collect();
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
-        }
-    }
-
-    fn is_valid(&self, instance: &Value) -> bool {
-        if let Value::Array(items) = instance {
-            self.schemas
-                .iter()
-                .zip(items.iter())
-                .all(|(n, i)| n.is_valid(i))
+            for (schema, item) in self.schemas.iter().zip(items.iter()) {
+                if !schema.is_valid(item, ctx) {
+                    return false;
+                }
+            }
+            true
         } else {
             true
         }
@@ -64,31 +50,48 @@ impl Validate for PrefixItemsValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             for (idx, (schema, item)) in self.schemas.iter().zip(items.iter()).enumerate() {
-                let item_location = location.push(idx);
-                schema.validate(item, &item_location)?;
+                schema.validate(item, &location.push(idx), ctx)?;
             }
         }
         Ok(())
     }
 
-    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Array(items) = instance {
+            let mut errors = Vec::new();
+            for (idx, (schema, item)) in self.schemas.iter().zip(items.iter()).enumerate() {
+                errors.extend(schema.iter_errors(item, &location.push(idx), ctx));
+            }
+            ErrorIterator::from_iterator(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
         if let Value::Array(items) = instance {
             if !items.is_empty() {
                 let mut children = Vec::with_capacity(self.schemas.len().min(items.len()));
                 let mut max_index_applied = 0usize;
                 for (idx, (schema_node, item)) in self.schemas.iter().zip(items.iter()).enumerate()
                 {
-                    let path = location.push(idx);
-                    children.push(schema_node.evaluate_instance(item, &path));
+                    children.push(schema_node.evaluate_instance(item, &location.push(idx), ctx));
                     max_index_applied = idx;
                 }
-                // Per draft 2020-12 section https://json-schema.org/draft/2020-12/json-schema-core.html#rfc.section.10.3.1.1
-                // we must produce an annotation with the largest index of the underlying
-                // array which the subschema was applied. The value MAY be a boolean true if
-                // a subschema was applied to every index of the instance.
                 let annotation = if children.len() == items.len() {
                     Value::Bool(true)
                 } else {

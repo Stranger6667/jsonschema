@@ -5,7 +5,7 @@ use crate::{
     keywords::CompilationResult,
     node::SchemaNode,
     paths::LazyLocation,
-    validator::{EvaluationResult, Validate},
+    validator::{EvaluationResult, Validate, ValidationContext},
     Draft,
 };
 use serde_json::{Map, Value};
@@ -27,9 +27,9 @@ impl ContainsValidator {
 }
 
 impl Validate for ContainsValidator {
-    fn is_valid(&self, instance: &Value) -> bool {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
-            items.iter().any(|i| self.node.is_valid(i))
+            items.iter().any(|i| self.node.is_valid(i, ctx))
         } else {
             true
         }
@@ -39,9 +39,10 @@ impl Validate for ContainsValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
-            if items.iter().any(|i| self.node.is_valid(i)) {
+            if items.iter().any(|i| self.node.is_valid(i, ctx)) {
                 return Ok(());
             }
             Err(ValidationError::contains(
@@ -54,13 +55,18 @@ impl Validate for ContainsValidator {
         }
     }
 
-    fn evaluate(&self, instance: &Value, location: &LazyLocation) -> EvaluationResult {
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
         if let Value::Array(items) = instance {
             let mut results = Vec::with_capacity(items.len());
             let mut indices = Vec::with_capacity(items.len());
             for (idx, item) in items.iter().enumerate() {
                 let path = location.push(idx);
-                let result = self.node.evaluate_instance(item, &path);
+                let result = self.node.evaluate_instance(item, &path, ctx);
                 if result.valid {
                     indices.push(idx);
                     results.push(result);
@@ -116,10 +122,32 @@ impl MinContainsValidator {
 }
 
 impl Validate for MinContainsValidator {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        if let Value::Array(items) = instance {
+            let mut matches = 0;
+            for item in items {
+                if self
+                    .node
+                    .validators()
+                    .all(|validator| validator.is_valid(item, ctx))
+                {
+                    matches += 1;
+                    if matches >= self.min_contains {
+                        return true;
+                    }
+                }
+            }
+            self.min_contains == 0
+        } else {
+            true
+        }
+    }
+
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             let mut matches = 0;
@@ -127,7 +155,7 @@ impl Validate for MinContainsValidator {
                 if self
                     .node
                     .validators()
-                    .all(|validator| validator.is_valid(item))
+                    .all(|validator| validator.is_valid(item, ctx))
                 {
                     matches += 1;
                     if matches >= self.min_contains {
@@ -146,27 +174,6 @@ impl Validate for MinContainsValidator {
             }
         } else {
             Ok(())
-        }
-    }
-
-    fn is_valid(&self, instance: &Value) -> bool {
-        if let Value::Array(items) = instance {
-            let mut matches = 0;
-            for item in items {
-                if self
-                    .node
-                    .validators()
-                    .all(|validator| validator.is_valid(item))
-                {
-                    matches += 1;
-                    if matches >= self.min_contains {
-                        return true;
-                    }
-                }
-            }
-            self.min_contains == 0
-        } else {
-            true
         }
     }
 }
@@ -195,10 +202,32 @@ impl MaxContainsValidator {
 }
 
 impl Validate for MaxContainsValidator {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        if let Value::Array(items) = instance {
+            let mut matches = 0;
+            for item in items {
+                if self
+                    .node
+                    .validators()
+                    .all(|validator| validator.is_valid(item, ctx))
+                {
+                    matches += 1;
+                    if matches > self.max_contains {
+                        return false;
+                    }
+                }
+            }
+            matches != 0
+        } else {
+            true
+        }
+    }
+
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             let mut matches = 0;
@@ -206,7 +235,7 @@ impl Validate for MaxContainsValidator {
                 if self
                     .node
                     .validators()
-                    .all(|validator| validator.is_valid(item))
+                    .all(|validator| validator.is_valid(item, ctx))
                 {
                     matches += 1;
                     if matches > self.max_contains {
@@ -229,27 +258,6 @@ impl Validate for MaxContainsValidator {
             }
         } else {
             Ok(())
-        }
-    }
-
-    fn is_valid(&self, instance: &Value) -> bool {
-        if let Value::Array(items) = instance {
-            let mut matches = 0;
-            for item in items {
-                if self
-                    .node
-                    .validators()
-                    .all(|validator| validator.is_valid(item))
-                {
-                    matches += 1;
-                    if matches > self.max_contains {
-                        return false;
-                    }
-                }
-            }
-            matches != 0
-        } else {
-            true
         }
     }
 }
@@ -282,10 +290,32 @@ impl MinMaxContainsValidator {
 }
 
 impl Validate for MinMaxContainsValidator {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        if let Value::Array(items) = instance {
+            let mut matches = 0;
+            for item in items {
+                if self
+                    .node
+                    .validators()
+                    .all(|validator| validator.is_valid(item, ctx))
+                {
+                    matches += 1;
+                    if matches > self.max_contains {
+                        return false;
+                    }
+                }
+            }
+            matches <= self.max_contains && matches >= self.min_contains
+        } else {
+            true
+        }
+    }
+
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             let mut matches = 0;
@@ -293,7 +323,7 @@ impl Validate for MinMaxContainsValidator {
                 if self
                     .node
                     .validators()
-                    .all(|validator| validator.is_valid(item))
+                    .all(|validator| validator.is_valid(item, ctx))
                 {
                     matches += 1;
                     if matches > self.max_contains {
@@ -316,26 +346,6 @@ impl Validate for MinMaxContainsValidator {
             }
         } else {
             Ok(())
-        }
-    }
-    fn is_valid(&self, instance: &Value) -> bool {
-        if let Value::Array(items) = instance {
-            let mut matches = 0;
-            for item in items {
-                if self
-                    .node
-                    .validators()
-                    .all(|validator| validator.is_valid(item))
-                {
-                    matches += 1;
-                    if matches > self.max_contains {
-                        return false;
-                    }
-                }
-            }
-            matches <= self.max_contains && matches >= self.min_contains
-        } else {
-            true
         }
     }
 }

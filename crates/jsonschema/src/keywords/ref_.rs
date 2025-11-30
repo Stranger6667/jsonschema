@@ -741,9 +741,6 @@ mod tests {
 
     #[test]
     fn test_circular_local_refs_compile() {
-        // Circular local refs should not cause infinite recursion during schema compilation
-        // or external resource discovery.
-        // TODO: Fix infinite recursion during validation
         let schema = json!({
             "$defs": {
                 "a": {"$ref": "#/$defs/b"},
@@ -751,9 +748,116 @@ mod tests {
             },
             "$ref": "#/$defs/a"
         });
+        let validator = crate::validator_for(&schema).expect("Should compile");
 
-        // Compilation should succeed without infinite loop
-        let _validator =
-            crate::validator_for(&schema).expect("Should compile without infinite loop");
+        // A pure $ref cycle is equivalent to `true` schema
+        for instance in [
+            json!(42),
+            json!("string"),
+            json!(null),
+            json!({"nested": [1, 2, 3]}),
+        ] {
+            assert!(validator.is_valid(&instance));
+            assert!(validator.validate(&instance).is_ok());
+            assert_eq!(validator.iter_errors(&instance).count(), 0);
+            assert!(validator.evaluate(&instance).flag().valid);
+        }
+    }
+
+    #[test]
+    fn test_circular_refs_with_constraints() {
+        let schema = json!({
+            "$defs": {
+                "node": {
+                    "type": "object",
+                    "properties": {
+                        "value": {"type": "integer"},
+                        "next": {"$ref": "#/$defs/node"}
+                    }
+                }
+            },
+            "$ref": "#/$defs/node"
+        });
+        let validator = crate::validator_for(&schema).expect("Should compile");
+
+        let valid = json!({"value": 1, "next": {"value": 2, "next": {"value": 3}}});
+        assert!(validator.is_valid(&valid));
+        assert!(validator.validate(&valid).is_ok());
+        assert_eq!(validator.iter_errors(&valid).count(), 0);
+
+        let invalid = json!({"value": "not an int"});
+        assert!(!validator.is_valid(&invalid));
+        assert!(validator.validate(&invalid).is_err());
+        assert!(validator.iter_errors(&invalid).count() > 0);
+
+        let invalid_nested = json!({"value": 1, "next": {"value": "bad"}});
+        assert!(!validator.is_valid(&invalid_nested));
+        assert!(validator.validate(&invalid_nested).is_err());
+        assert!(validator.iter_errors(&invalid_nested).count() > 0);
+    }
+
+    #[test]
+    fn test_longer_circular_chain() {
+        let schema = json!({
+            "$defs": {
+                "a": {"$ref": "#/$defs/b"},
+                "b": {"$ref": "#/$defs/c"},
+                "c": {"$ref": "#/$defs/a"}
+            },
+            "$ref": "#/$defs/a"
+        });
+        let validator = crate::validator_for(&schema).expect("Should compile");
+
+        let instance = json!({"any": "value"});
+        assert!(validator.is_valid(&instance));
+        assert!(validator.validate(&instance).is_ok());
+        assert_eq!(validator.iter_errors(&instance).count(), 0);
+        assert!(validator.evaluate(&instance).flag().valid);
+    }
+
+    #[test]
+    fn test_dependencies_with_array_form() {
+        // Tests NodeValidators::Array branch via dependencies with array form
+        let schema = json!({
+            "dependencies": {
+                "foo": ["bar", "baz"]
+            }
+        });
+        let validator = crate::validator_for(&schema).expect("Should compile");
+
+        let valid = json!({"foo": 1, "bar": 2, "baz": 3});
+        assert!(validator.is_valid(&valid));
+        assert!(validator.validate(&valid).is_ok());
+        assert_eq!(validator.iter_errors(&valid).count(), 0);
+        assert!(validator.evaluate(&valid).flag().valid);
+
+        let invalid = json!({"foo": 1});
+        assert!(!validator.is_valid(&invalid));
+        assert!(validator.validate(&invalid).is_err());
+        assert!(validator.iter_errors(&invalid).count() > 0);
+        assert!(!validator.evaluate(&invalid).flag().valid);
+    }
+
+    #[test]
+    fn test_dependent_required_array_form() {
+        // Tests NodeValidators::Array branch via dependentRequired (Draft 2019-09+)
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2019-09/schema",
+            "dependentRequired": {
+                "foo": ["bar"]
+            }
+        });
+        let validator = crate::validator_for(&schema).expect("Should compile");
+
+        let valid = json!({"foo": 1, "bar": 2});
+        assert!(validator.is_valid(&valid));
+        assert!(validator.validate(&valid).is_ok());
+        assert_eq!(validator.iter_errors(&valid).count(), 0);
+        assert!(validator.evaluate(&valid).flag().valid);
+
+        let invalid = json!({"foo": 1});
+        assert!(!validator.is_valid(&invalid));
+        assert!(validator.validate(&invalid).is_err());
+        assert!(validator.iter_errors(&invalid).count() > 0);
     }
 }
