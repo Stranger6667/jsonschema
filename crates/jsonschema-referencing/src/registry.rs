@@ -6,7 +6,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use fluent_uri::Uri;
+use fluent_uri::{pct_enc::EStr, Uri};
 use serde_json::Value;
 
 use crate::{
@@ -653,13 +653,22 @@ enum ReferenceKind {
     Schema,
 }
 
+/// An entry in the processing queue.
+/// The optional third element is the document root URI, used when the resource
+/// was extracted from a fragment of a larger document. Local `$ref`s need to be
+/// resolved against the document root, not just the fragment content.
+type QueueEntry = (Arc<Uri<String>>, InnerResourcePtr, Option<Arc<Uri<String>>>);
+
 struct ProcessingState {
-    queue: VecDeque<(Arc<Uri<String>>, InnerResourcePtr)>,
+    queue: VecDeque<QueueEntry>,
     seen: ReferenceTracker,
     external: AHashSet<(String, Uri<String>, ReferenceKind)>,
     scratch: String,
     refers_metaschemas: bool,
     custom_metaschemas: Vec<Arc<Uri<String>>>,
+    /// Tracks schema pointers we've visited during recursive external resource collection.
+    /// This prevents infinite recursion when schemas reference each other.
+    visited_schemas: AHashSet<usize>,
 }
 
 impl ProcessingState {
@@ -671,6 +680,7 @@ impl ProcessingState {
             scratch: String::new(),
             refers_metaschemas: false,
             custom_metaschemas: Vec::new(),
+            visited_schemas: AHashSet::new(),
         }
     }
 }
@@ -697,7 +707,7 @@ fn process_input_resources(
                     state.custom_metaschemas.push(Arc::clone(&key));
                 }
 
-                state.queue.push_back((key, resource));
+                state.queue.push_back((key, resource, None));
                 entry.insert(wrapped_value);
             }
         }
@@ -711,9 +721,9 @@ fn process_queue(
     anchors: &mut AHashMap<AnchorKey, Anchor>,
     resolution_cache: &mut UriCache,
 ) -> Result<(), Error> {
-    while let Some((mut base, resource)) = state.queue.pop_front() {
+    while let Some((mut base, resource, document_root_uri)) = state.queue.pop_front() {
         if let Some(id) = resource.id() {
-            base = resolution_cache.resolve_against(&base.borrow(), id)?;
+            base = resolve_id(&base, id, resolution_cache)?;
             resources.insert(base.clone(), resource.clone());
         }
 
@@ -721,21 +731,38 @@ fn process_queue(
             anchors.insert(AnchorKey::new(base.clone(), anchor.name()), anchor);
         }
 
-        collect_external_resources(
-            &base,
-            resource.contents(),
-            resource.contents(),
-            &mut state.external,
-            &mut state.seen,
-            resolution_cache,
-            &mut state.scratch,
-            &mut state.refers_metaschemas,
-            resource.draft(),
-        )?;
+        // Determine the document root for resolving local $refs.
+        // If document_root_uri is set (e.g., for fragment-extracted resources),
+        // look up the full document. Otherwise, this resource IS the document root.
+        let root = document_root_uri
+            .as_ref()
+            .and_then(|uri| resources.get(uri))
+            .map_or_else(|| resource.contents(), InnerResourcePtr::contents);
 
+        // Skip if already visited during local $ref resolution
+        let contents_ptr = std::ptr::from_ref::<Value>(resource.contents()) as usize;
+        if state.visited_schemas.insert(contents_ptr) {
+            collect_external_resources(
+                &base,
+                root,
+                resource.contents(),
+                &mut state.external,
+                &mut state.seen,
+                resolution_cache,
+                &mut state.scratch,
+                &mut state.refers_metaschemas,
+                resource.draft(),
+                &mut state.visited_schemas,
+            )?;
+        }
+
+        // Subresources inherit the document root URI, or use the current base if none set
+        let subresource_root_uri = document_root_uri.or_else(|| Some(base.clone()));
         for contents in resource.draft().subresources_of(resource.contents()) {
             let subresource = InnerResourcePtr::new(contents, resource.draft());
-            state.queue.push_back((base.clone(), subresource));
+            state
+                .queue
+                .push_back((base.clone(), subresource, subresource_root_uri.clone()));
         }
     }
     Ok(())
@@ -746,14 +773,15 @@ fn handle_fragment(
     resource: &InnerResourcePtr,
     key: &Arc<Uri<String>>,
     default_draft: Draft,
-    queue: &mut VecDeque<(Arc<Uri<String>>, InnerResourcePtr)>,
+    queue: &mut VecDeque<QueueEntry>,
+    document_root_uri: Arc<Uri<String>>,
 ) {
     if let Some(fragment) = uri.fragment() {
         if let Some(resolved) = pointer(resource.contents(), fragment.as_str()) {
             let draft = default_draft.detect(resolved);
             let contents = std::ptr::addr_of!(*resolved);
             let resource = InnerResourcePtr::new(contents, draft);
-            queue.push_back((Arc::clone(key), resource));
+            queue.push_back((Arc::clone(key), resource, Some(document_root_uri)));
         }
     }
 }
@@ -841,8 +869,15 @@ fn process_resources(
                     resources,
                     &mut state.custom_metaschemas,
                 );
-                handle_fragment(&uri, &resource, &key, default_draft, &mut state.queue);
-                state.queue.push_back((key, resource));
+                handle_fragment(
+                    &uri,
+                    &resource,
+                    &key,
+                    default_draft,
+                    &mut state.queue,
+                    Arc::clone(&key),
+                );
+                state.queue.push_back((key, resource, None));
             }
         }
     }
@@ -911,8 +946,15 @@ async fn process_resources_async(
                     resources,
                     &mut state.custom_metaschemas,
                 );
-                handle_fragment(uri, &resource, &key, default_draft, &mut state.queue);
-                state.queue.push_back((key, resource));
+                handle_fragment(
+                    uri,
+                    &resource,
+                    &key,
+                    default_draft,
+                    &mut state.queue,
+                    Arc::clone(&key),
+                );
+                state.queue.push_back((key, resource, None));
             }
         }
     }
@@ -992,6 +1034,7 @@ fn collect_external_resources(
     scratch: &mut String,
     refers_metaschemas: &mut bool,
     draft: Draft,
+    visited: &mut AHashSet<usize>,
 ) -> Result<(), Error> {
     // URN schemes are not supported for external resolution
     if base.scheme().as_str() == "urn" {
@@ -1013,13 +1056,18 @@ fn collect_external_resources(
                     // Handle local references separately as they may have nested references to external resources
                     if $reference.starts_with('#') {
                         // Use the root document for pointer resolution since local refs are always
-                        // relative to the document root, not the current subschema
-                        if let Some(referenced) =
-                            pointer(root, $reference.trim_start_matches('#'))
-                        {
+                        // relative to the document root, not the current subschema.
+                        // Also track $id changes along the path to get the correct base URI.
+                        if let Some((referenced, resolved_base)) = pointer_with_base(
+                            root,
+                            $reference.trim_start_matches('#'),
+                            base,
+                            resolution_cache,
+                            draft,
+                        )? {
                             // Recursively collect from the referenced schema and all its subresources
                             collect_external_resources_recursive(
-                                base,
+                                &resolved_base,
                                 root,
                                 referenced,
                                 collected,
@@ -1028,6 +1076,7 @@ fn collect_external_resources(
                                 scratch,
                                 refers_metaschemas,
                                 draft,
+                                visited,
                             )?;
                         }
                     } else {
@@ -1102,6 +1151,9 @@ fn collect_external_resources(
 }
 
 /// Recursively collect external resources from a schema and all its subresources.
+///
+/// The `visited` set tracks schema pointers we've already processed to avoid infinite
+/// recursion when schemas reference each other (directly or through subresources).
 fn collect_external_resources_recursive(
     base: &Arc<Uri<String>>,
     root: &Value,
@@ -1112,10 +1164,22 @@ fn collect_external_resources_recursive(
     scratch: &mut String,
     refers_metaschemas: &mut bool,
     draft: Draft,
+    visited: &mut AHashSet<usize>,
 ) -> Result<(), Error> {
+    // Track by pointer address to avoid processing the same schema twice
+    let ptr = std::ptr::from_ref::<Value>(contents) as usize;
+    if !visited.insert(ptr) {
+        return Ok(());
+    }
+
+    let current_base = match draft.id_of(contents) {
+        Some(id) => resolve_id(base, id, resolution_cache)?,
+        None => Arc::clone(base),
+    };
+
     // First, collect from the current schema
     collect_external_resources(
-        base,
+        &current_base,
         root,
         contents,
         collected,
@@ -1124,12 +1188,13 @@ fn collect_external_resources_recursive(
         scratch,
         refers_metaschemas,
         draft,
+        visited,
     )?;
 
     // Then recursively process all subresources
     for subresource in draft.subresources_of(contents) {
         collect_external_resources_recursive(
-            base,
+            &current_base,
             root,
             subresource,
             collected,
@@ -1138,6 +1203,7 @@ fn collect_external_resources_recursive(
             scratch,
             refers_metaschemas,
             draft,
+            visited,
         )?;
     }
     Ok(())
@@ -1145,6 +1211,25 @@ fn collect_external_resources_recursive(
 
 fn mark_reference(seen: &mut ReferenceTracker, base: &Arc<Uri<String>>, reference: &str) -> bool {
     seen.insert(ReferenceKey::new(base, reference))
+}
+
+/// Resolve an `$id` against a base URI, handling anchor-style IDs and empty fragments.
+///
+/// Anchor-style `$id` values (starting with `#`) don't change the base URI.
+/// Empty fragments are stripped from the resolved URI.
+fn resolve_id(
+    base: &Arc<Uri<String>>,
+    id: &str,
+    resolution_cache: &mut UriCache,
+) -> Result<Arc<Uri<String>>, Error> {
+    if id.starts_with('#') {
+        return Ok(Arc::clone(base));
+    }
+    let mut resolved = (*resolution_cache.resolve_against(&base.borrow(), id)?).clone();
+    if resolved.fragment().is_some_and(EStr::is_empty) {
+        resolved.set_fragment(None);
+    }
+    Ok(Arc::new(resolved))
 }
 
 /// Look up a value by a JSON Pointer.
@@ -1165,6 +1250,53 @@ pub fn pointer<'a>(document: &'a Value, pointer: &str) -> Option<&'a Value> {
             _ => None,
         },
     )
+}
+
+/// Look up a value by a JSON Pointer, tracking `$id` changes along the path.
+///
+/// Returns both the resolved value and the accumulated base URI after processing
+/// any `$id` declarations encountered along the path. Note that anchor-style `$id`
+/// values (starting with `#`) don't change the base URI.
+#[allow(clippy::type_complexity)]
+fn pointer_with_base<'a>(
+    document: &'a Value,
+    pointer: &str,
+    base: &Arc<Uri<String>>,
+    resolution_cache: &mut UriCache,
+    draft: Draft,
+) -> Result<Option<(&'a Value, Arc<Uri<String>>)>, Error> {
+    if pointer.is_empty() {
+        return Ok(Some((document, Arc::clone(base))));
+    }
+    if !pointer.starts_with('/') {
+        return Ok(None);
+    }
+
+    let mut current = document;
+    let mut current_base = Arc::clone(base);
+
+    for token in pointer.split('/').skip(1).map(unescape_segment) {
+        // Check for $id in the current value before traversing deeper
+        if let Some(id) = draft.id_of(current) {
+            current_base = resolve_id(&current_base, id, resolution_cache)?;
+        }
+
+        current = match current {
+            Value::Object(map) => match map.get(&*token) {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+            Value::Array(list) => match parse_index(&token).and_then(|x| list.get(x)) {
+                Some(v) => v,
+                None => return Ok(None),
+            },
+            _ => return Ok(None),
+        };
+    }
+
+    // Note: We don't check $id in the final value here because
+    // `collect_external_resources_recursive` will handle it
+    Ok(Some((current, current_base)))
 }
 
 // Taken from `serde_json`.

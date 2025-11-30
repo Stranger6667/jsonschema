@@ -677,4 +677,83 @@ mod tests {
         assert!(validator.is_valid(&json!({"p": 42})));
         assert!(!validator.is_valid(&json!({"p": "string"})));
     }
+
+    struct CrossFileRetrieve;
+
+    impl Retrieve for CrossFileRetrieve {
+        fn retrieve(
+            &self,
+            uri: &Uri<String>,
+        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+            match uri.as_str() {
+                "file:///tmp/json" => Ok(json!({
+                    "components": {
+                        "schemas": {
+                            "c1": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/c2"
+                                }
+                            },
+                            "c2": {
+                                "$ref": "ext.json#/components/schemas/c3"
+                            }
+                        }
+                    }
+                })),
+                "file:///tmp/ext.json" => Ok(json!({
+                    "components": {
+                        "schemas": {
+                            "c3": {
+                                "type": "integer"
+                            }
+                        }
+                    }
+                })),
+                _ => Err(format!("Unexpected URI: {uri}").into()),
+            }
+        }
+    }
+
+    #[test]
+    fn test_cross_file_local_ref_resolution() {
+        // GH-892: External ref with fragment pointing to a schema that has local refs.
+        // The local refs within the external file need to resolve against that file's
+        // document root, not the original schema's root.
+        //
+        // Structure:
+        //   root $ref -> file:///tmp/json#/components/schemas/c1
+        //   /tmp/json has:
+        //     c1.items.$ref -> #/components/schemas/c2 (local ref within /tmp/json)
+        //     c2.$ref -> ext.json#/components/schemas/c3 (external ref)
+        let schema = json!({
+            "$ref": "file:///tmp/json#/components/schemas/c1"
+        });
+
+        let validator = crate::options()
+            .with_retriever(CrossFileRetrieve)
+            .build(&schema)
+            .expect("Failed to build validator - external resource was not discovered");
+
+        assert!(validator.is_valid(&json!([1, 2, 3])));
+        assert!(!validator.is_valid(&json!(["a", "b"])));
+    }
+
+    #[test]
+    fn test_circular_local_refs_compile() {
+        // Circular local refs should not cause infinite recursion during schema compilation
+        // or external resource discovery.
+        // TODO: Fix infinite recursion during validation
+        let schema = json!({
+            "$defs": {
+                "a": {"$ref": "#/$defs/b"},
+                "b": {"$ref": "#/$defs/a"}
+            },
+            "$ref": "#/$defs/a"
+        });
+
+        // Compilation should succeed without infinite loop
+        let _validator =
+            crate::validator_for(&schema).expect("Should compile without infinite loop");
+    }
 }
