@@ -275,12 +275,6 @@ impl Iterator for JsonTypeSetIterator {
 
 impl ExactSizeIterator for JsonTypeSetIterator {}
 
-#[deprecated(since = "0.30.0", note = "Use `jsonschema::JsonType` instead.")]
-pub type PrimitiveType = JsonType;
-
-#[deprecated(since = "0.30.0", note = "Use `jsonschema::JsonTypeSet` instead.")]
-pub type PrimitiveTypesBitMap = JsonTypeSet;
-
 #[cfg(test)]
 mod tests {
     use super::*;
