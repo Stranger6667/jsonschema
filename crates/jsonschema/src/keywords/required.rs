@@ -99,6 +99,12 @@ impl Validate for RequiredValidator {
         }
         no_error()
     }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct SingleItemRequiredValidator {
@@ -146,6 +152,12 @@ impl Validate for SingleItemRequiredValidator {
             true
         }
     }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 /// Specialized validator for exactly 2 required properties.
@@ -172,6 +184,14 @@ impl Required2Validator {
 }
 
 impl Validate for Required2Validator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
@@ -274,6 +294,14 @@ impl Required3Validator {
 }
 
 impl Validate for Required3Validator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {

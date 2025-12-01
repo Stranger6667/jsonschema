@@ -14,6 +14,7 @@ use serde_json::{Map, Value};
 
 pub(crate) struct ItemsArrayValidator {
     items: Vec<SchemaNode>,
+    location: Location,
 }
 impl ItemsArrayValidator {
     #[inline]
@@ -28,10 +29,50 @@ impl ItemsArrayValidator {
             let validators = compiler::compile(&ictx, ictx.as_resource_ref(item))?;
             items.push(validators);
         }
-        Ok(Box::new(ItemsArrayValidator { items }))
+        Ok(Box::new(ItemsArrayValidator {
+            items,
+            location: kctx.location().clone(),
+        }))
     }
 }
 impl Validate for ItemsArrayValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Array(items) = instance {
+            let mut is_valid = true;
+            for (idx, (item, node)) in items.iter().zip(self.items.iter()).enumerate() {
+                let schema_is_valid = node.trace(item, &instance_path.push(idx), callback, ctx);
+                crate::tracing::TracingContext::new(
+                    instance_path,
+                    node.schema_path(),
+                    schema_is_valid,
+                )
+                .call(callback);
+                is_valid &= schema_is_valid;
+            }
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
+
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
             for (item, node) in items.iter().zip(self.items.iter()) {
@@ -110,6 +151,38 @@ impl ItemsObjectValidator {
     }
 }
 impl Validate for ItemsObjectValidator {
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Array(items) = instance {
+            let mut is_valid = true;
+            for (idx, item) in items.iter().enumerate() {
+                is_valid &= self
+                    .node
+                    .trace(item, &instance_path.push(idx), callback, ctx);
+            }
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
+
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
             items.iter().all(|i| self.node.is_valid(i, ctx))
@@ -202,6 +275,41 @@ impl ItemsObjectSkipPrefixValidator {
 }
 
 impl Validate for ItemsObjectSkipPrefixValidator {
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Array(items) = instance {
+            let mut is_valid = true;
+            for (idx, item) in items.iter().skip(self.skip_prefix).enumerate() {
+                is_valid &= self.node.trace(
+                    item,
+                    &instance_path.push(idx + self.skip_prefix),
+                    callback,
+                    ctx,
+                );
+            }
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
+
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
             items
@@ -292,6 +400,14 @@ impl ItemsNumberTypeValidator {
 }
 
 impl Validate for ItemsNumberTypeValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
@@ -399,6 +515,14 @@ impl ItemsStringTypeValidator {
 }
 
 impl Validate for ItemsStringTypeValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
@@ -506,6 +630,14 @@ impl ItemsIntegerTypeValidator {
 }
 
 impl Validate for ItemsIntegerTypeValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
@@ -637,6 +769,14 @@ impl ItemsIntegerTypeValidatorDraft4 {
 }
 
 impl Validate for ItemsIntegerTypeValidatorDraft4 {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
@@ -767,6 +907,14 @@ impl ItemsBooleanTypeValidator {
 }
 
 impl Validate for ItemsBooleanTypeValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {

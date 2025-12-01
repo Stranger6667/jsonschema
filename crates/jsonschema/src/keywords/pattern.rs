@@ -23,6 +23,14 @@ pub(crate) struct PrefixPatternValidator {
 }
 
 impl Validate for PrefixPatternValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
+
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::String(item) = instance {
             item.starts_with(&self.prefix)
@@ -231,6 +239,12 @@ impl<R: RegexEngine> Validate for PatternValidator<R> {
             return self.regex.is_match(item).unwrap_or(false);
         }
         true
+    }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 

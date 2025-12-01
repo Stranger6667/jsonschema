@@ -930,6 +930,7 @@ pub mod paths;
 pub(crate) mod properties;
 pub(crate) mod regex;
 mod retriever;
+mod tracing;
 pub mod types;
 mod validator;
 
@@ -950,6 +951,7 @@ pub use referencing::{
 };
 #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
 pub use retriever::{HttpRetriever, HttpRetrieverError};
+pub use tracing::{NodeEvaluationResult, TracingCallback, TracingContext};
 pub use types::{JsonType, JsonTypeSet, JsonTypeSetIterator};
 pub use validator::{ValidationContext, Validator, ValidatorMap};
 

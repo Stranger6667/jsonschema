@@ -1,6 +1,7 @@
 use crate::{
     error::ErrorIterator,
     paths::{LazyLocation, Location, RefTracker},
+    tracing::{TracingCallback, TracingContext},
     validator::{Validate, ValidationContext},
     ValidationError,
 };
@@ -52,6 +53,34 @@ impl Validate for CustomKeyword {
             .map(|err| err.with_context(instance, instance_path, &self.location, &self.keyword))
             .collect();
         ErrorIterator::from_iterator(errors.into_iter())
+    }
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn trace(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        let result = self.inner.is_valid(instance);
+        let rv = if self.matches_type(instance) {
+            Some(result)
+        } else {
+            None
+        };
+        TracingContext::new(location, self.schema_path(), rv).call(callback);
+        if self.inner.is_informational() {
+            // Keyword does not affect validation results
+            true
+        } else {
+            result
+        }
     }
 }
 
@@ -105,6 +134,10 @@ pub trait Keyword: Send + Sync {
         instance: &'i Value,
     ) -> Box<dyn Iterator<Item = ValidationError<'i>> + 'i> {
         Box::new(self.validate(instance).err().into_iter())
+    }
+
+    fn is_informational(&self) -> bool {
+        false
     }
 }
 
