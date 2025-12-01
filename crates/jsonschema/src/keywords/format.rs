@@ -1091,6 +1091,14 @@ macro_rules! format_validators {
                 }
 
                 impl_format_evaluate!();
+
+                fn schema_path(&self) -> &Location {
+                    &self.location
+                }
+
+                fn matches_type(&self, instance: &Value) -> bool {
+                    matches!(instance, Value::String(_))
+                }
             }
         )+
     };
@@ -1232,6 +1240,10 @@ impl Validate for EmailValidator {
     }
 
     impl_format_evaluate!();
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 // Custom IdnEmailValidator that supports email options
@@ -1285,6 +1297,10 @@ impl Validate for IdnEmailValidator {
     }
 
     impl_format_evaluate!();
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 struct CustomFormatValidator {
@@ -1340,6 +1356,14 @@ impl Validate for CustomFormatValidator {
     }
 
     impl_format_evaluate!();
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
 }
 
 /// Format annotation-only validator used when format assertion is disabled.

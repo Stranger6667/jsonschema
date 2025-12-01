@@ -122,6 +122,10 @@ impl Validate for SingleOneOfValidator {
                 .evaluate_instance(instance, location, tracker, ctx),
         )
     }
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 impl Validate for OneOfValidator {
@@ -219,6 +223,12 @@ impl Validate for OneOfValidator {
             let child = self.schemas[first_idx].evaluate_instance(instance, location, tracker, ctx);
             EvaluationResult::from(child)
         }
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
