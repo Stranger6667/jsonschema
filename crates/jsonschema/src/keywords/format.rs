@@ -923,32 +923,53 @@ impl Validate for CustomFormatValidator {
     }
 
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-        if let Value::String(item) = instance {
-            self.check.is_valid(item)
-        } else {
-            true
-        }
+        self.check.is_valid(instance)
     }
     fn schema_path(&self) -> &Location {
         &self.location
     }
 
     fn matches_type(&self, instance: &Value) -> bool {
-        matches!(instance, Value::String(_))
+        self.check.matches_type(instance)
     }
 }
 
 pub(crate) trait Format: Send + Sync + 'static {
-    fn is_valid(&self, value: &str) -> bool;
+    fn is_valid(&self, value: &Value) -> bool;
+    fn matches_type(&self, instance: &Value) -> bool;
 }
 
-impl<F> Format for F
+pub(crate) struct StringFormat<F>(pub F);
+
+impl<F> Format for StringFormat<F>
 where
     F: Fn(&str) -> bool + Send + Sync + 'static,
 {
     #[inline]
-    fn is_valid(&self, value: &str) -> bool {
-        self(value)
+    fn is_valid(&self, value: &Value) -> bool {
+        if let Some(s) = value.as_str() {
+            (self.0)(s)
+        } else {
+            true
+        }
+    }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
+}
+
+pub(crate) struct ValueFormat<F>(pub F);
+
+impl<F> Format for ValueFormat<F>
+where
+    F: Fn(&Value) -> bool + Send + Sync + 'static,
+{
+    #[inline]
+    fn is_valid(&self, value: &Value) -> bool {
+        (self.0)(value)
+    }
+    fn matches_type(&self, _instance: &Value) -> bool {
+        true
     }
 }
 

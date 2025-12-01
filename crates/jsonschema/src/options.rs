@@ -5,7 +5,10 @@ use crate::{
         DEFAULT_CONTENT_ENCODING_CHECKS_AND_CONVERTERS,
     },
     content_media_type::{ContentMediaTypeCheckType, DEFAULT_CONTENT_MEDIA_TYPE_CHECKS},
-    keywords::{custom::KeywordFactory, format::Format},
+    keywords::{
+        custom::KeywordFactory,
+        format::{Format, StringFormat, ValueFormat},
+    },
     paths::Location,
     retriever::DefaultRetriever,
     Keyword, ValidationError, Validator,
@@ -397,7 +400,42 @@ impl<R> ValidationOptions<R> {
         N: Into<String>,
         F: Fn(&str) -> bool + Send + Sync + 'static,
     {
-        self.formats.insert(name.into(), Arc::new(format));
+        self.formats
+            .insert(name.into(), Arc::new(StringFormat(format)));
+        self
+    }
+    /// Register a custom format validator that receives the full JSON value.
+    ///
+    /// Unlike [`with_format`], which only validates string values, this method allows
+    /// validating any JSON value type.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use serde_json::{json, Value};
+    /// fn positive_number(v: &Value) -> bool {
+    ///    v.as_f64().map(|n| n > 0.0).unwrap_or(false)
+    /// }
+    /// # fn foo() {
+    /// let schema = json!({"format": "positive"});
+    /// let validator = jsonschema::options()
+    ///     .with_format_value("positive", positive_number)
+    ///     .should_validate_formats(true)
+    ///     .build(&schema)
+    ///     .expect("Valid schema");
+    ///
+    /// assert!(!validator.is_valid(&json!(-5)));
+    /// assert!(validator.is_valid(&json!(42)));
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn with_format_value<N, F>(mut self, name: N, format: F) -> Self
+    where
+        N: Into<String>,
+        F: Fn(&Value) -> bool + ThreadBound + 'static,
+    {
+        self.formats
+            .insert(name.into(), Arc::new(ValueFormat(format)));
         self
     }
     pub(crate) fn get_format(&self, format: &str) -> Option<(&String, &Arc<dyn Format>)> {
@@ -1113,6 +1151,26 @@ mod tests {
             .expect("Valid schema");
         assert!(!validator.is_valid(&json!("foo")));
         assert!(validator.is_valid(&json!("foo42!")));
+    }
+
+    #[test]
+    fn custom_format_value() {
+        fn positive_number(v: &Value) -> bool {
+            v.as_f64().is_some_and(|n| n > 0.0)
+        }
+
+        let schema = json!({"format": "positive"});
+        let validator = crate::options()
+            .with_format_value("positive", positive_number)
+            .should_validate_formats(true)
+            .build(&schema)
+            .expect("Valid schema");
+        assert!(!validator.is_valid(&json!(-5)));
+        assert!(!validator.is_valid(&json!(0)));
+        assert!(validator.is_valid(&json!(42)));
+        assert!(validator.is_valid(&json!(1.5)));
+        // Non-numbers should fail format check
+        assert!(!validator.is_valid(&json!("hello")));
     }
 
     #[test]
