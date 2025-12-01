@@ -72,6 +72,12 @@ impl Validate for MultipleOfFloatValidator {
         }
         Ok(())
     }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Number(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct MultipleOfIntegerValidator {
@@ -136,6 +142,12 @@ impl Validate for MultipleOfIntegerValidator {
             }
         }
         Ok(())
+    }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Number(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
@@ -209,7 +221,7 @@ impl Validate for MultipleOfBigIntValidator {
                         }
                     }
                 }
-                // If we made it here we encountered scientific notation that can’t be normalized, or
+                // If we made it here we encountered scientific notation that can't be normalized, or
                 // a decimal with a fractional part. Either way it cannot be an integer multiple.
                 false
             }
@@ -235,6 +247,14 @@ impl Validate for MultipleOfBigIntValidator {
             ));
         }
         Ok(())
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Number(_))
+    }
+
+    fn schema_path(&self) -> &crate::paths::Location {
+        &self.location
     }
 }
 
@@ -305,6 +325,14 @@ impl Validate for MultipleOfBigFracValidator {
             ));
         }
         Ok(())
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Number(_))
+    }
+
+    fn schema_path(&self) -> &crate::paths::Location {
+        &self.location
     }
 }
 

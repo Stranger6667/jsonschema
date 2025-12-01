@@ -52,6 +52,12 @@ impl Validate for ConstArrayValidator {
             false
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 struct ConstBooleanValidator {
@@ -93,6 +99,12 @@ impl Validate for ConstBooleanValidator {
             false
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 struct ConstNullValidator {
@@ -126,6 +138,12 @@ impl Validate for ConstNullValidator {
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         instance.is_null()
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
@@ -174,6 +192,12 @@ impl Validate for ConstNumberValidator {
             false
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct ConstObjectValidator {
@@ -220,6 +244,12 @@ impl Validate for ConstObjectValidator {
             false
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct ConstStringValidator {
@@ -265,6 +295,12 @@ impl Validate for ConstStringValidator {
         } else {
             false
         }
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 

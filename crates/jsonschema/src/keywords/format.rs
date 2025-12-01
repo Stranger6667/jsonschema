@@ -971,6 +971,13 @@ macro_rules! format_validators {
                 }
 
                 impl_format_evaluate!();
+                fn schema_path(&self) -> &Location {
+                    &self.location
+                }
+
+                fn matches_type(&self, instance: &Value) -> bool {
+                    matches!(instance, Value::String(_))
+                }
             }
         )+
     };

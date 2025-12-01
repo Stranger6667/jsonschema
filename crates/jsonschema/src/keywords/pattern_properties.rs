@@ -17,9 +17,18 @@ use serde_json::{Map, Value};
 /// Validator for multiple patterns using compiled regex.
 pub(crate) struct PatternPropertiesValidator<R> {
     patterns: Vec<(Arc<R>, SchemaNode)>,
+    location: Location,
 }
 
 impl<R: RegexEngine> Validate for PatternPropertiesValidator<R> {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
             for (re, node) in &self.patterns {
@@ -119,6 +128,14 @@ pub(crate) struct SingleValuePatternPropertiesValidator<R> {
 }
 
 impl<R: RegexEngine> Validate for SingleValuePatternPropertiesValidator<R> {
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
             for (key, value) in item {
@@ -230,9 +247,10 @@ pub(crate) fn compile<'a>(
         )));
     };
     let ctx = ctx.new_at_location("patternProperties");
+    let location = ctx.location().clone();
 
     // Try to compile all patterns as literal matches first (optimized path)
-    if let Some(validator) = try_compile_as_literals(&ctx, map) {
+    if let Some(validator) = try_compile_as_literals(&ctx, map, location.clone()) {
         return Some(validator);
     }
 
@@ -244,7 +262,7 @@ pub(crate) fn compile<'a>(
                     .map_err(|()| invalid_regex(pctx, subschema))
             })
             .map(|patterns| {
-                build_validator_from_entries(patterns, |regex, node| {
+                build_validator_from_entries(patterns, location, |regex, node| {
                     Box::new(SingleValuePatternPropertiesValidator { regex, node })
                         as Box<dyn Validate>
                 })
@@ -256,7 +274,7 @@ pub(crate) fn compile<'a>(
                     .map_err(|()| invalid_regex(pctx, subschema))
             })
             .map(|patterns| {
-                build_validator_from_entries(patterns, |regex, node| {
+                build_validator_from_entries(patterns, location, |regex, node| {
                     Box::new(SingleValuePatternPropertiesValidator { regex, node })
                         as Box<dyn Validate>
                 })
@@ -271,6 +289,7 @@ pub(crate) fn compile<'a>(
 fn try_compile_as_literals<'a>(
     ctx: &compiler::Context,
     map: &'a Map<String, Value>,
+    location: Location,
 ) -> Option<CompilationResult<'a>> {
     let mut entries = Vec::with_capacity(map.len());
     for (pattern, subschema) in map {
@@ -298,7 +317,7 @@ fn try_compile_as_literals<'a>(
         };
         entries.push((Arc::new(matcher), node));
     }
-    Some(Ok(build_validator_from_entries(entries, |regex, node| {
+    Some(Ok(build_validator_from_entries(entries, location, |regex, node| {
         Box::new(SingleValuePatternPropertiesValidator { regex, node }) as Box<dyn Validate>
     })))
 }
@@ -335,6 +354,7 @@ where
 /// Pick the optimal validator representation for the compiled pattern entries.
 fn build_validator_from_entries<R>(
     mut entries: Vec<(Arc<R>, SchemaNode)>,
+    location: Location,
     single_factory: impl FnOnce(Arc<R>, SchemaNode) -> Box<dyn Validate>,
 ) -> Box<dyn Validate>
 where
@@ -344,7 +364,10 @@ where
         let (regex, node) = entries.pop().expect("len checked");
         single_factory(regex, node)
     } else {
-        Box::new(PatternPropertiesValidator { patterns: entries })
+        Box::new(PatternPropertiesValidator {
+            patterns: entries,
+            location,
+        })
     }
 }
 

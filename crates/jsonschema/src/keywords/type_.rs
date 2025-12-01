@@ -90,6 +90,12 @@ impl Validate for MultipleTypesValidator {
             EvaluationResult::invalid_empty(vec![ErrorDescription::new("type", message)])
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct NullTypeValidator {
@@ -142,6 +148,12 @@ impl Validate for NullTypeValidator {
             )])
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct BooleanTypeValidator {
@@ -193,6 +205,12 @@ impl Validate for BooleanTypeValidator {
                 format!(r#"{instance} is not of type "boolean""#),
             )])
         }
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
@@ -247,6 +265,12 @@ impl Validate for StringTypeValidator {
             )])
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct ArrayTypeValidator {
@@ -300,6 +324,12 @@ impl Validate for ArrayTypeValidator {
             )])
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct ObjectTypeValidator {
@@ -352,6 +382,12 @@ impl Validate for ObjectTypeValidator {
             )])
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct NumberTypeValidator {
@@ -403,6 +439,12 @@ impl Validate for NumberTypeValidator {
                 format!(r#"{instance} is not of type "number""#),
             )])
         }
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
@@ -459,6 +501,12 @@ impl Validate for IntegerTypeValidator {
                 format!(r#"{instance} is not of type "integer""#),
             )])
         }
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 

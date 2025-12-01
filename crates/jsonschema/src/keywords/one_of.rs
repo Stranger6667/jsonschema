@@ -220,6 +220,12 @@ impl Validate for OneOfValidator {
             EvaluationResult::from(child)
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 #[inline]

@@ -70,6 +70,12 @@ impl Validate for MaxLengthValidator {
         }
         Ok(())
     }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 #[inline]

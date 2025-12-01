@@ -4,6 +4,7 @@ use crate::{
     evaluation::{Annotations, EvaluationNode},
     keywords::{BoxedValidator, Keyword},
     paths::{LazyLocation, Location, RefTracker},
+    tracing::TracingCallback,
     validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
@@ -160,6 +161,10 @@ impl PendingTarget {
             }
         })
     }
+
+    fn location_ref(&self) -> &Location {
+        &self.location
+    }
 }
 
 impl Validate for PendingSchemaNode {
@@ -220,6 +225,29 @@ impl Validate for PendingSchemaNode {
             return EvaluationResult::valid_empty();
         }
         let result = self.with_node(|node| node.evaluate(instance, location, tracker, ctx));
+        ctx.exit(self.node_id(), instance);
+        result
+    }
+
+    fn schema_path(&self) -> &Location {
+        self.cell
+            .get()
+            .expect("pending node accessed before initialization")
+            .location_ref()
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if ctx.enter(self.node_id(), instance) {
+            // Cycle detected - a pure reference cycle is equivalent to `true` schema.
+            return true;
+        }
+        let result = self.with_node(|node| node.trace(instance, location, callback, ctx));
         ctx.exit(self.node_id(), instance);
         result
     }
@@ -617,6 +645,39 @@ impl Validate for SchemaNode {
                     ctx,
                 )
             }
+        }
+    }
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        match self.validators.as_ref() {
+            NodeValidators::Array { ref validators } => {
+                let mut is_valid = true;
+                // Walk through all validators without short-circuiting
+                for entry in validators {
+                    is_valid &= entry.validator.trace(instance, location, callback, ctx);
+                }
+                is_valid
+            }
+            NodeValidators::Keyword(ref kvals) => {
+                let mut is_valid = true;
+                // Walk through all validators without short-circuiting
+                for entry in &kvals.validators {
+                    is_valid &= entry.validator.trace(instance, location, callback, ctx);
+                }
+                is_valid
+            }
+            NodeValidators::Boolean { validator: Some(_) } => false,
+            NodeValidators::Boolean { validator: None } => true,
         }
     }
 }

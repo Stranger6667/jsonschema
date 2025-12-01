@@ -72,6 +72,12 @@ impl Validate for EnumValidator {
             false
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 #[derive(Debug)]
@@ -119,6 +125,12 @@ impl Validate for SingleValueEnumValidator {
 
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         cmp::equal(&self.value, instance)
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
