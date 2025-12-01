@@ -11,6 +11,7 @@ use serde_json::{Map, Value};
 
 pub(crate) struct DependenciesValidator {
     dependencies: Vec<(String, SchemaNode)>,
+    location: Location,
 }
 
 impl DependenciesValidator {
@@ -35,7 +36,10 @@ impl DependenciesValidator {
                     };
                 dependencies.push((key.clone(), s));
             }
-            Ok(Box::new(DependenciesValidator { dependencies }))
+            Ok(Box::new(DependenciesValidator {
+                dependencies,
+                location: kctx.location().clone(),
+            }))
         } else {
             Err(ValidationError::single_type_error(
                 Location::new(),
@@ -48,6 +52,14 @@ impl DependenciesValidator {
 }
 
 impl Validate for DependenciesValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
             for (property, node) in &self.dependencies {
@@ -118,6 +130,7 @@ impl Validate for DependenciesValidator {
 
 pub(crate) struct DependentRequiredValidator {
     dependencies: Vec<(String, SchemaNode)>,
+    location: Location,
 }
 
 impl DependentRequiredValidator {
@@ -153,7 +166,10 @@ impl DependentRequiredValidator {
                     ));
                 }
             }
-            Ok(Box::new(DependentRequiredValidator { dependencies }))
+            Ok(Box::new(DependentRequiredValidator {
+                dependencies,
+                location: kctx.location().clone(),
+            }))
         } else {
             Err(ValidationError::single_type_error(
                 Location::new(),
@@ -165,6 +181,14 @@ impl DependentRequiredValidator {
     }
 }
 impl Validate for DependentRequiredValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
             for (property, node) in &self.dependencies {
@@ -235,6 +259,7 @@ impl Validate for DependentRequiredValidator {
 
 pub(crate) struct DependentSchemasValidator {
     dependencies: Vec<(String, SchemaNode)>,
+    location: Location,
 }
 impl DependentSchemasValidator {
     #[inline]
@@ -247,7 +272,10 @@ impl DependentSchemasValidator {
                 let schema_nodes = compiler::compile(&ctx, ctx.as_resource_ref(subschema))?;
                 dependencies.push((key.clone(), schema_nodes));
             }
-            Ok(Box::new(DependentSchemasValidator { dependencies }))
+            Ok(Box::new(DependentSchemasValidator {
+                dependencies,
+                location: ctx.location().clone(),
+            }))
         } else {
             Err(ValidationError::single_type_error(
                 Location::new(),
@@ -259,6 +287,14 @@ impl DependentSchemasValidator {
     }
 }
 impl Validate for DependentSchemasValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
             for (property, node) in &self.dependencies {

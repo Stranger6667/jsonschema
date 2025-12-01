@@ -3,6 +3,7 @@ use crate::{
     error::{error, no_error, ErrorIterator, ValidationError},
     node::SchemaNode,
     paths::{LazyLocation, Location},
+    tracing::{TracingCallback, TracingContext},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
 };
@@ -114,6 +115,28 @@ impl Validate for AnyOfValidator {
             failures.push(result);
         }
         EvaluationResult::from_children(failures)
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let mut is_valid = false;
+        for node in &self.schemas {
+            let schema_is_valid = node.trace(instance, instance_path, callback, ctx);
+            TracingContext::new(instance_path, node.schema_path(), schema_is_valid).call(callback);
+            is_valid |= schema_is_valid;
+        }
+        TracingContext::new(instance_path, self.schema_path(), is_valid).call(callback);
+        is_valid
     }
 }
 

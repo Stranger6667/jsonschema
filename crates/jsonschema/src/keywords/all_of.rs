@@ -3,6 +3,7 @@ use crate::{
     error::{ErrorIterator, ValidationError},
     node::SchemaNode,
     paths::{LazyLocation, Location},
+    tracing::{TracingCallback, TracingContext},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
 };
@@ -12,6 +13,7 @@ use super::CompilationResult;
 
 pub(crate) struct AllOfValidator {
     schemas: Vec<SchemaNode>,
+    location: Location,
 }
 
 impl AllOfValidator {
@@ -27,7 +29,10 @@ impl AllOfValidator {
             let validators = compiler::compile(&ctx, ctx.as_resource_ref(item))?;
             schemas.push(validators);
         }
-        Ok(Box::new(AllOfValidator { schemas }))
+        Ok(Box::new(AllOfValidator {
+            schemas,
+            location: ctx.location().clone(),
+        }))
     }
 }
 
@@ -76,6 +81,28 @@ impl Validate for AllOfValidator {
             .collect();
         EvaluationResult::from_children(children)
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let mut is_valid = true;
+        for node in &self.schemas {
+            let schema_is_valid = node.trace(instance, instance_path, callback, ctx);
+            TracingContext::new(instance_path, node.schema_path(), schema_is_valid).call(callback);
+            is_valid &= schema_is_valid;
+        }
+        TracingContext::new(instance_path, self.schema_path(), is_valid).call(callback);
+        is_valid
+    }
 }
 
 pub(crate) struct SingleValueAllOfValidator {
@@ -122,6 +149,23 @@ impl Validate for SingleValueAllOfValidator {
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         EvaluationResult::from(self.node.evaluate_instance(instance, location, ctx))
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let is_valid = self.node.trace(instance, instance_path, callback, ctx);
+        TracingContext::new(instance_path, self.schema_path(), is_valid).call(callback);
+        is_valid
     }
 }
 

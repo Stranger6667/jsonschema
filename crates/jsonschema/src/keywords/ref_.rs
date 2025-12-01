@@ -1,8 +1,69 @@
 use crate::{
-    compiler, keywords::CompilationResult, paths::Location, types::JsonType, validator::Validate,
+    compiler,
+    error::ErrorIterator,
+    keywords::{BoxedValidator, CompilationResult},
+    paths::{LazyLocation, Location},
+    tracing::{TracingCallback, TracingContext},
+    types::JsonType,
+    validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
 use serde_json::{Map, Value};
+
+/// Wrapper validator for `$ref` that ensures the reference keyword is reported during tracing.
+struct RefValidator {
+    inner: BoxedValidator,
+    location: Location,
+}
+
+impl Validate for RefValidator {
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        self.inner.iter_errors(instance, location, ctx)
+    }
+
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        self.inner.is_valid(instance, ctx)
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        self.inner.validate(instance, location, ctx)
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        self.inner.evaluate(instance, location, ctx)
+    }
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let is_valid = self.inner.trace(instance, location, callback, ctx);
+        TracingContext::new(location, self.schema_path(), Some(is_valid)).call(callback);
+        is_valid
+    }
+}
 
 fn compile_reference_validator<'a>(
     ctx: &compiler::Context,
@@ -29,8 +90,14 @@ fn compile_reference_validator<'a>(
         return None;
     }
 
+    let location = ctx.location().join(keyword);
     match ctx.lookup_maybe_recursive(reference) {
-        Ok(Some(validator)) => return Some(Ok(validator)),
+        Ok(Some(validator)) => {
+            return Some(Ok(Box::new(RefValidator {
+                inner: validator,
+                location,
+            })))
+        }
         Ok(None) => {}
         Err(error) => return Some(Err(error)),
     }
@@ -49,13 +116,15 @@ fn compile_reference_validator<'a>(
         resolver,
         resource_ref.draft(),
         vocabularies,
-        ctx.location().join(keyword),
+        location.clone(),
     );
     Some(
         compiler::compile_with_alias(&ctx, resource_ref, alias)
             .map(|node| {
-                Box::new(node.clone_with_location(ctx.location().clone(), ctx.base_uri()))
-                    as Box<dyn Validate>
+                Box::new(RefValidator {
+                    inner: Box::new(node),
+                    location,
+                }) as Box<dyn Validate>
             })
             .map_err(ValidationError::to_owned),
     )
@@ -65,9 +134,15 @@ fn compile_recursive_validator<'a>(
     ctx: &compiler::Context,
     reference: &str,
 ) -> CompilationResult<'a> {
+    let location = ctx.location().join("$recursiveRef");
     // Check if this is a circular reference first
     match ctx.lookup_maybe_recursive(reference) {
-        Ok(Some(validator)) => return Ok(validator),
+        Ok(Some(validator)) => {
+            return Ok(Box::new(RefValidator {
+                inner: validator,
+                location,
+            }))
+        }
         Ok(None) => {}
         Err(error) => return Err(error),
     }
@@ -89,12 +164,14 @@ fn compile_recursive_validator<'a>(
         resolver,
         resource_ref.draft(),
         vocabularies,
-        ctx.location().join("$recursiveRef"),
+        location.clone(),
     );
     compiler::compile_with_alias(&ctx, resource_ref, alias)
         .map(|node| {
-            Box::new(node.clone_with_location(ctx.location().clone(), ctx.base_uri()))
-                as Box<dyn Validate>
+            Box::new(RefValidator {
+                inner: Box::new(node),
+                location,
+            }) as Box<dyn Validate>
         })
         .map_err(ValidationError::to_owned)
 }

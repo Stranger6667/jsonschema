@@ -139,6 +139,12 @@ impl Validate for OneOfValidator {
             annotations: None,
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 #[inline]

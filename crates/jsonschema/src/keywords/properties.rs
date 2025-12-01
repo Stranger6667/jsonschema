@@ -12,6 +12,7 @@ use serde_json::{Map, Value};
 
 pub(crate) struct PropertiesValidator {
     pub(crate) properties: Vec<(String, SchemaNode)>,
+    location: Location,
 }
 
 impl PropertiesValidator {
@@ -28,7 +29,10 @@ impl PropertiesValidator {
                         compiler::compile(&ctx, ctx.as_resource_ref(subschema))?,
                     ));
                 }
-                Ok(Box::new(PropertiesValidator { properties }))
+                Ok(Box::new(PropertiesValidator {
+                    properties,
+                    location: ctx.location().clone(),
+                }))
             }
             _ => Err(ValidationError::single_type_error(
                 Location::new(),
@@ -41,6 +45,53 @@ impl PropertiesValidator {
 }
 
 impl Validate for PropertiesValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Object(object) = instance {
+            let mut is_valid = true;
+            let mut at_least_one = false;
+            for (name, node) in &self.properties {
+                let path = instance_path.push(name);
+                let schema_path = node.schema_path();
+                if let Some(item) = object.get(name) {
+                    at_least_one = true;
+                    let schema_is_valid = node.trace(item, &path, callback, ctx);
+                    crate::tracing::TracingContext::new(
+                        instance_path,
+                        schema_path,
+                        schema_is_valid,
+                    )
+                    .call(callback);
+                    is_valid &= schema_is_valid;
+                } else {
+                    crate::tracing::TracingContext::new(instance_path, schema_path, None)
+                        .call(callback);
+                }
+            }
+            let rv = if at_least_one { Some(is_valid) } else { None };
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), rv)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
+
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
             for (name, node) in &self.properties {

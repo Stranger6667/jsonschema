@@ -68,6 +68,13 @@ impl Validate for MaxPropertiesValidator {
         }
         Ok(())
     }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
 }
 
 #[inline]

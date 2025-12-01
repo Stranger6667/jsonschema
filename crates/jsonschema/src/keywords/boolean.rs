@@ -33,6 +33,12 @@ impl Validate for FalseValidator {
             instance,
         ))
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 #[cfg(test)]
