@@ -56,6 +56,12 @@ impl<R: RegexEngine> Validate for PatternValidator<R> {
         }
         true
     }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 #[inline]

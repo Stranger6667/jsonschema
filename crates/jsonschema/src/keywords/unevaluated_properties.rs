@@ -579,6 +579,14 @@ impl UnevaluatedPropertiesValidator {
 }
 
 impl Validate for UnevaluatedPropertiesValidator {
+    fn schema_path(&self) -> &crate::paths::Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+
     fn validate<'i>(
         &self,
         instance: &'i Value,

@@ -1,5 +1,6 @@
 use crate::{
     paths::{LazyLocation, Location},
+    tracing::{TracingCallback, TracingContext},
     validator::{Validate, ValidationContext},
     ValidationError,
 };
@@ -7,11 +8,12 @@ use serde_json::{Map, Value};
 
 pub(crate) struct CustomKeyword {
     inner: Box<dyn Keyword>,
+    location: Location,
 }
 
 impl CustomKeyword {
-    pub(crate) fn new(inner: Box<dyn Keyword>) -> Self {
-        Self { inner }
+    pub(crate) fn new(inner: Box<dyn Keyword>, location: Location) -> Self {
+        Self { inner, location }
     }
 }
 
@@ -27,6 +29,33 @@ impl Validate for CustomKeyword {
 
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         self.inner.is_valid(instance)
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn trace(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        let result = self.inner.is_valid(instance);
+        let rv = if self.matches_type(instance) {
+            Some(result)
+        } else {
+            None
+        };
+        TracingContext::new(location, self.schema_path(), rv).call(callback);
+        if self.inner.is_informational() {
+            // Keyword does not affect validation results
+            true
+        } else {
+            result
+        }
     }
 }
 
@@ -51,6 +80,9 @@ pub trait Keyword: Send + Sync {
     ///
     /// Could be potentilly faster than [`Keyword::validate`] method.
     fn is_valid(&self, instance: &Value) -> bool;
+    fn is_informational(&self) -> bool {
+        false
+    }
 }
 
 pub(crate) trait KeywordFactory: Send + Sync {

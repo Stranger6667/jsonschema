@@ -35,6 +35,14 @@ impl Validate for ContainsValidator {
         }
     }
 
+    fn schema_path(&self) -> &crate::paths::Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
     fn validate<'i>(
         &self,
         instance: &'i Value,
@@ -122,6 +130,14 @@ impl MinContainsValidator {
 }
 
 impl Validate for MinContainsValidator {
+    fn schema_path(&self) -> &crate::paths::Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
             let mut matches = 0;
@@ -202,6 +218,14 @@ impl MaxContainsValidator {
 }
 
 impl Validate for MaxContainsValidator {
+    fn schema_path(&self) -> &crate::paths::Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
             let mut matches = 0;
@@ -290,6 +314,14 @@ impl MinMaxContainsValidator {
 }
 
 impl Validate for MinMaxContainsValidator {
+    fn schema_path(&self) -> &crate::paths::Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
             let mut matches = 0;

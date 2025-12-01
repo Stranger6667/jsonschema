@@ -3,7 +3,7 @@ use crate::{
     error::{no_error, ErrorIterator},
     keywords::CompilationResult,
     node::SchemaNode,
-    paths::LazyLocation,
+    paths::{LazyLocation, Location},
     validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
@@ -88,6 +88,13 @@ impl Validate for IfThenValidator {
             EvaluationResult::valid_empty()
         }
     }
+    fn schema_path(&self) -> &Location {
+        self.schema.location()
+    }
+
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
 }
 
 pub(crate) struct IfElseValidator {
@@ -168,6 +175,13 @@ impl Validate for IfElseValidator {
             let else_node = self.else_schema.evaluate_instance(instance, location, ctx);
             EvaluationResult::from_children(vec![else_node])
         }
+    }
+    fn schema_path(&self) -> &Location {
+        self.schema.location()
+    }
+
+    fn matches_type(&self, _: &Value) -> bool {
+        true
     }
 }
 
@@ -260,6 +274,13 @@ impl Validate for IfThenElseValidator {
             let else_node = self.else_schema.evaluate_instance(instance, location, ctx);
             EvaluationResult::from_children(vec![else_node])
         }
+    }
+    fn schema_path(&self) -> &Location {
+        self.schema.location()
+    }
+
+    fn matches_type(&self, _: &Value) -> bool {
+        true
     }
 }
 

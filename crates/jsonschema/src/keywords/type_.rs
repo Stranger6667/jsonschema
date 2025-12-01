@@ -71,6 +71,12 @@ impl Validate for MultipleTypesValidator {
             ))
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct NullTypeValidator {
@@ -105,6 +111,12 @@ impl Validate for NullTypeValidator {
             ))
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct BooleanTypeValidator {
@@ -138,6 +150,12 @@ impl Validate for BooleanTypeValidator {
                 JsonType::Boolean,
             ))
         }
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
@@ -174,6 +192,12 @@ impl Validate for StringTypeValidator {
             ))
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct ArrayTypeValidator {
@@ -209,6 +233,12 @@ impl Validate for ArrayTypeValidator {
             ))
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct ObjectTypeValidator {
@@ -243,6 +273,12 @@ impl Validate for ObjectTypeValidator {
             ))
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct NumberTypeValidator {
@@ -276,6 +312,12 @@ impl Validate for NumberTypeValidator {
                 JsonType::Number,
             ))
         }
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
@@ -314,6 +356,12 @@ impl Validate for IntegerTypeValidator {
                 JsonType::Integer,
             ))
         }
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 

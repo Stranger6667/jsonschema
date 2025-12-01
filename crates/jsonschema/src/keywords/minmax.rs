@@ -58,6 +58,12 @@ macro_rules! define_numeric_keywords {
                         true
                     }
                 }
+                fn matches_type(&self, instance: &Value) -> bool {
+                    matches!(instance, Value::Number(_))
+                }
+                fn schema_path(&self) -> &Location {
+                    &self.location
+                }
             }
         )*
     };
@@ -150,6 +156,14 @@ pub(crate) mod bigint_validators {
                     } else {
                         true
                     }
+                }
+
+                fn matches_type(&self, instance: &Value) -> bool {
+                    matches!(instance, Value::Number(_))
+                }
+
+                fn schema_path(&self) -> &Location {
+                    &self.location
                 }
             }
         };
@@ -251,6 +265,14 @@ pub(crate) mod bigint_validators {
                     } else {
                         true
                     }
+                }
+
+                fn matches_type(&self, instance: &Value) -> bool {
+                    matches!(instance, Value::Number(_))
+                }
+
+                fn schema_path(&self) -> &Location {
+                    &self.location
                 }
             }
         };

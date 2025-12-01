@@ -28,6 +28,14 @@ impl AdditionalItemsObjectValidator {
     }
 }
 impl Validate for AdditionalItemsObjectValidator {
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
             items
@@ -85,6 +93,14 @@ impl AdditionalItemsBooleanValidator {
     }
 }
 impl Validate for AdditionalItemsBooleanValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
             if items.len() > self.items_count {

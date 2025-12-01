@@ -525,6 +525,14 @@ impl UnevaluatedItemsValidator {
 }
 
 impl Validate for UnevaluatedItemsValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
             let mut indexes = vec![false; items.len()];
