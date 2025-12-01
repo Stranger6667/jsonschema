@@ -4,23 +4,27 @@ use crate::{
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
+    tracing::{TracingCallback, TracingContext},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
 use serde_json::{Map, Value};
 
-/// Tracks `$ref` traversals for recursive references where the target is behind `Box<dyn Validate>`
-/// (either a `PendingSchemaNode` or a cached node returned by `lookup_maybe_recursive`).
+/// Wrapper validator for `$ref` used for recursive references where the target is behind
+/// `Box<dyn Validate>` (a `PendingSchemaNode` or a cached node returned by
+/// `lookup_maybe_recursive`). Also:
+/// - tracks `$ref` traversals for the evaluation_path tracker (JSON Schema 2020-12 Core 12.4.2),
+/// - ensures the `$ref` keyword is reported during tracing.
 struct RefValidator {
     inner: Box<dyn Validate>,
     /// Path of this `$ref` keyword relative to its resource base.
     /// E.g., `/properties/foo/$ref` (not the full canonical path).
-    /// Used for building the `tracker` prefix.
+    /// Used both as the tracker prefix and as the schema_path for tracing.
     ref_suffix: Location,
     /// The resource base of the `$ref` target.
     /// E.g., `/$defs/Item` when `$ref` points to `#/$defs/Item`.
-    /// Used for computing validator suffixes at runtime.
+    /// Used as the canonical location (schemaLocation per spec) and for runtime suffixes.
     ref_target_base: Location,
 }
 
@@ -71,6 +75,22 @@ impl Validate for RefValidator {
     /// by-reference applicators such as `$ref` or `$dynamicRef`".
     fn canonical_location(&self) -> Option<&Location> {
         Some(&self.ref_target_base)
+    }
+
+    fn schema_path(&self) -> &Location {
+        &self.ref_suffix
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let is_valid = self.inner.trace(instance, location, callback, ctx);
+        TracingContext::new(location, self.schema_path(), Some(is_valid)).call(callback);
+        is_valid
     }
 }
 
