@@ -879,34 +879,18 @@ impl Default for PatternEngineOptions {
 ///     .build(&schema)
 ///     .expect("A valid schema");
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct EmailOptions {
     pub(crate) inner: EmailAddressOptions,
 }
 
 impl EmailOptions {
-    /// Create email validation options with default settings.
-    #[must_use]
-    pub fn default() -> Self {
-        Self {
-            inner: EmailAddressOptions::default(),
-        }
-    }
-
     /// Create email validation options from `email_address::Options`.
     ///
     /// This allows full access to all options provided by the `email_address` crate.
     #[must_use]
     pub fn from_options(options: EmailAddressOptions) -> Self {
         Self { inner: options }
-    }
-}
-
-impl Default for EmailOptions {
-    fn default() -> Self {
-        Self {
-            inner: EmailAddressOptions::default(),
-        }
     }
 }
 

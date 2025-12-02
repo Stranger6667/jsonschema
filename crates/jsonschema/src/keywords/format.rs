@@ -299,7 +299,7 @@ where
     F: Fn(&str) -> bool,
 {
     let parsed = if let Some(opts) = options {
-        EmailAddress::parse_with_options(email, opts.clone())
+        EmailAddress::parse_with_options(email, *opts)
     } else {
         EmailAddress::from_str(email)
     };
@@ -793,7 +793,7 @@ struct EmailValidator {
 impl EmailValidator {
     pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
         let location = ctx.location().join("format");
-        let email_options = ctx.config().email_options().cloned();
+        let email_options = ctx.config().email_options().copied();
         Ok(Box::new(EmailValidator {
             location,
             email_options,
