@@ -201,6 +201,7 @@ def test_validation_error_kinds(schema, instance, kind, attrs):
                         "",
                         ["anyOf", 0, "type"],
                         [],
+                        ["anyOf", 0, "type"],
                         ValidationErrorKind.Type(["string"]),
                         True,
                     )
@@ -211,6 +212,7 @@ def test_validation_error_kinds(schema, instance, kind, attrs):
                         "",
                         ["anyOf", 1, "type"],
                         [],
+                        ["anyOf", 1, "type"],
                         ValidationErrorKind.Type(["number"]),
                         True,
                     )
@@ -228,6 +230,7 @@ def test_validation_error_kinds(schema, instance, kind, attrs):
                         "",
                         ["oneOf", 0, "type"],
                         [],
+                        ["oneOf", 0, "type"],
                         ValidationErrorKind.Type(["number"]),
                         "1",
                     )
@@ -238,6 +241,7 @@ def test_validation_error_kinds(schema, instance, kind, attrs):
                         "",
                         ["oneOf", 1, "type"],
                         [],
+                        ["oneOf", 1, "type"],
                         ValidationErrorKind.Type(["number"]),
                         "1",
                     )

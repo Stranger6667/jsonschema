@@ -268,6 +268,7 @@ class ValidationError(ValueError):
     verbose_message: str
     schema_path: list[str | int]
     instance_path: list[str | int]
+    evaluation_path: list[str | int]
     kind: ValidationErrorKind
     instance: JSONType
 

@@ -1,5 +1,5 @@
 use crate::{
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, Location, RefTracker},
     validator::{Validate, ValidationContext},
     ValidationError,
 };
@@ -7,11 +7,12 @@ use serde_json::{Map, Value};
 
 pub(crate) struct CustomKeyword {
     inner: Box<dyn Keyword>,
+    location: Location,
 }
 
 impl CustomKeyword {
-    pub(crate) fn new(inner: Box<dyn Keyword>) -> Self {
-        Self { inner }
+    pub(crate) fn new(inner: Box<dyn Keyword>, location: Location) -> Self {
+        Self { inner, location }
     }
 }
 
@@ -19,10 +20,13 @@ impl Validate for CustomKeyword {
     fn validate<'i>(
         &self,
         instance: &'i Value,
-        location: &LazyLocation,
+        instance_path: &LazyLocation,
+        _tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        self.inner.validate(instance, location)
+        self.inner
+            .validate(instance)
+            .map_err(|err| err.with_context(instance, instance_path, &self.location))
     }
 
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
@@ -30,26 +34,45 @@ impl Validate for CustomKeyword {
     }
 }
 
-/// Trait that allows implementing custom validation for keywords.
+/// Trait for implementing custom keyword validators.
+///
+/// Custom keywords extend JSON Schema validation with domain-specific rules.
+///
+/// # Example
+///
+/// ```rust
+/// use jsonschema::{Keyword, ValidationError};
+/// use serde_json::Value;
+///
+/// struct EvenNumberValidator;
+///
+/// impl Keyword for EvenNumberValidator {
+///     fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+///         if let Some(n) = instance.as_u64() {
+///             if n % 2 != 0 {
+///                 return Err(ValidationError::custom("number must be even"));
+///             }
+///         }
+///         Ok(())
+///     }
+///
+///     fn is_valid(&self, instance: &Value) -> bool {
+///         instance.as_u64().map_or(true, |n| n % 2 == 0)
+///     }
+/// }
+/// ```
 pub trait Keyword: Send + Sync {
-    /// Validate instance according to a custom specification.
+    /// Validate an instance against this custom keyword.
     ///
-    /// A custom keyword validator may be used when a validation that cannot be
-    /// easily or efficiently expressed in JSON schema.
-    ///
-    /// The custom validation is applied in addition to the JSON schema validation.
+    /// Use [`ValidationError::custom`] for error messages. Path information
+    /// (`instance_path` and `schema_path`) is filled in automatically.
     ///
     /// # Errors
     ///
-    /// Returns an error describing why `instance` violates the custom keyword semantics.
-    fn validate<'i>(
-        &self,
-        instance: &'i Value,
-        location: &LazyLocation,
-    ) -> Result<(), ValidationError<'i>>;
-    /// Validate instance and return a boolean result.
-    ///
-    /// Could be potentilly faster than [`Keyword::validate`] method.
+    /// Returns a [`ValidationError`] if the instance is invalid.
+    fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>>;
+
+    /// Check validity without collecting error details.
     fn is_valid(&self, instance: &Value) -> bool;
 }
 
@@ -58,7 +81,7 @@ pub(crate) trait KeywordFactory: Send + Sync {
         &self,
         parent: &'a Map<String, Value>,
         schema: &'a Value,
-        path: Location,
+        schema_path: Location,
     ) -> Result<Box<dyn Keyword>, ValidationError<'a>>;
 }
 
@@ -76,8 +99,9 @@ where
         &self,
         parent: &'a Map<String, Value>,
         schema: &'a Value,
-        path: Location,
+        schema_path: Location,
     ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
-        self(parent, schema, path)
+        self(parent, schema, schema_path.clone())
+            .map_err(|err| err.with_schema_context(schema, schema_path))
     }
 }

@@ -3,7 +3,7 @@ use crate::{
     error::{no_error, ErrorIterator, ValidationError},
     keywords::CompilationResult,
     node::SchemaNode,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, Location, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
@@ -38,20 +38,23 @@ impl Validate for PropertyNamesObjectValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = &instance {
             for key in item.keys() {
                 let wrapper = Value::String(key.clone());
-                match self.node.validate(&wrapper, location, ctx) {
+                match self.node.validate(&wrapper, location, tracker, ctx) {
                     Ok(()) => {}
                     Err(error) => {
+                        let schema_path = error.schema_path().clone();
                         return Err(ValidationError::property_names(
-                            error.schema_path().clone(),
+                            schema_path.clone(),
+                            crate::paths::capture_evaluation_path(tracker, &schema_path),
                             location.into(),
                             instance,
                             error.to_owned(),
-                        ))
+                        ));
                     }
                 }
             }
@@ -63,20 +66,23 @@ impl Validate for PropertyNamesObjectValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if let Value::Object(item) = &instance {
             let mut errors = Vec::new();
             for key in item.keys() {
                 let wrapper = Value::String(key.clone());
-                errors.extend(self.node.iter_errors(&wrapper, location, ctx).map(|error| {
-                    ValidationError::property_names(
-                        error.schema_path().clone(),
+                for error in self.node.iter_errors(&wrapper, location, tracker, ctx) {
+                    let schema_path = error.schema_path().clone();
+                    errors.push(ValidationError::property_names(
+                        schema_path.clone(),
+                        crate::paths::capture_evaluation_path(tracker, &schema_path),
                         location.into(),
                         instance,
                         error.to_owned(),
-                    )
-                }));
+                    ));
+                }
             }
             ErrorIterator::from_iterator(errors.into_iter())
         } else {
@@ -88,13 +94,17 @@ impl Validate for PropertyNamesObjectValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Object(item) = instance {
             let mut children = Vec::with_capacity(item.len());
             for key in item.keys() {
                 let wrapper = Value::String(key.clone());
-                children.push(self.node.evaluate_instance(&wrapper, location, ctx));
+                children.push(
+                    self.node
+                        .evaluate_instance(&wrapper, location, tracker, ctx),
+                );
             }
             EvaluationResult::from_children(children)
         } else {
@@ -129,6 +139,7 @@ impl Validate for PropertyNamesBooleanValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -136,6 +147,7 @@ impl Validate for PropertyNamesBooleanValidator {
         } else {
             Err(ValidationError::false_schema(
                 self.location.clone(),
+                crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
                 instance,
             ))

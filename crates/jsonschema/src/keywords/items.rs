@@ -4,7 +4,7 @@ use crate::{
     evaluation::Annotations,
     keywords::CompilationResult,
     node::SchemaNode,
-    paths::LazyLocation,
+    paths::{LazyLocation, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
@@ -47,11 +47,12 @@ impl Validate for ItemsArrayValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             for (idx, (item, node)) in items.iter().zip(self.items.iter()).enumerate() {
-                node.validate(item, &location.push(idx), ctx)?;
+                node.validate(item, &location.push(idx), tracker, ctx)?;
             }
         }
         Ok(())
@@ -61,12 +62,13 @@ impl Validate for ItemsArrayValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if let Value::Array(items) = instance {
             let mut errors = Vec::new();
             for (idx, (item, node)) in items.iter().zip(self.items.iter()).enumerate() {
-                errors.extend(node.iter_errors(item, &location.push(idx), ctx));
+                errors.extend(node.iter_errors(item, &location.push(idx), tracker, ctx));
             }
             ErrorIterator::from_iterator(errors.into_iter())
         } else {
@@ -78,12 +80,13 @@ impl Validate for ItemsArrayValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Array(items) = instance {
             let mut children = Vec::with_capacity(self.items.len().min(items.len()));
             for (idx, (item, node)) in items.iter().zip(self.items.iter()).enumerate() {
-                children.push(node.evaluate_instance(item, &location.push(idx), ctx));
+                children.push(node.evaluate_instance(item, &location.push(idx), tracker, ctx));
             }
             EvaluationResult::from_children(children)
         } else {
@@ -117,11 +120,13 @@ impl Validate for ItemsObjectValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             for (idx, item) in items.iter().enumerate() {
-                self.node.validate(item, &location.push(idx), ctx)?;
+                self.node
+                    .validate(item, &location.push(idx), tracker, ctx)?;
             }
         }
         Ok(())
@@ -131,12 +136,16 @@ impl Validate for ItemsObjectValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if let Value::Array(items) = instance {
             let mut errors = Vec::new();
             for (idx, item) in items.iter().enumerate() {
-                errors.extend(self.node.iter_errors(item, &location.push(idx), ctx));
+                errors.extend(
+                    self.node
+                        .iter_errors(item, &location.push(idx), tracker, ctx),
+                );
             }
             ErrorIterator::from_iterator(errors.into_iter())
         } else {
@@ -148,12 +157,16 @@ impl Validate for ItemsObjectValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Array(items) = instance {
             let mut children = Vec::with_capacity(items.len());
             for (idx, item) in items.iter().enumerate() {
-                children.push(self.node.evaluate_instance(item, &location.push(idx), ctx));
+                children.push(
+                    self.node
+                        .evaluate_instance(item, &location.push(idx), tracker, ctx),
+                );
             }
             let schema_was_applied = !items.is_empty();
             let mut result = EvaluationResult::from_children(children);
@@ -202,12 +215,13 @@ impl Validate for ItemsObjectSkipPrefixValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             for (idx, item) in items.iter().skip(self.skip_prefix).enumerate() {
                 self.node
-                    .validate(item, &location.push(idx + self.skip_prefix), ctx)?;
+                    .validate(item, &location.push(idx + self.skip_prefix), tracker, ctx)?;
             }
         }
         Ok(())
@@ -217,6 +231,7 @@ impl Validate for ItemsObjectSkipPrefixValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if let Value::Array(items) = instance {
@@ -225,6 +240,7 @@ impl Validate for ItemsObjectSkipPrefixValidator {
                 errors.extend(self.node.iter_errors(
                     item,
                     &location.push(idx + self.skip_prefix),
+                    tracker,
                     ctx,
                 ));
             }
@@ -238,12 +254,16 @@ impl Validate for ItemsObjectSkipPrefixValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Array(items) = instance {
             let mut children = Vec::with_capacity(items.len().saturating_sub(self.skip_prefix));
             for (idx, item) in items.iter().enumerate().skip(self.skip_prefix) {
-                children.push(self.node.evaluate_instance(item, &location.push(idx), ctx));
+                children.push(
+                    self.node
+                        .evaluate_instance(item, &location.push(idx), tracker, ctx),
+                );
             }
             let schema_was_applied = items.len() > self.skip_prefix;
             let mut result = EvaluationResult::from_children(children);

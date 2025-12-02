@@ -14,7 +14,7 @@ use crate::{
     compiler,
     evaluation::ErrorDescription,
     node::SchemaNode,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, Location, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
@@ -551,6 +551,7 @@ impl Validate for UnevaluatedItemsValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
@@ -576,6 +577,7 @@ impl Validate for UnevaluatedItemsValidator {
             if !unevaluated.is_empty() {
                 return Err(ValidationError::unevaluated_items(
                     self.location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
                     instance,
                     unevaluated,
@@ -589,6 +591,7 @@ impl Validate for UnevaluatedItemsValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Array(items) = instance {
@@ -604,7 +607,8 @@ impl Validate for UnevaluatedItemsValidator {
                     continue;
                 }
                 if let Some(validator) = &self.validators.unevaluated {
-                    let child = validator.evaluate_instance(item, &location.push(idx), ctx);
+                    let child =
+                        validator.evaluate_instance(item, &location.push(idx), tracker, ctx);
                     if !child.valid {
                         invalid = true;
                         unevaluated.push(item.to_string());
@@ -621,6 +625,7 @@ impl Validate for UnevaluatedItemsValidator {
                 errors.push(ErrorDescription::from_validation_error(
                     &ValidationError::unevaluated_items(
                         self.location.clone(),
+                        crate::paths::capture_evaluation_path(tracker, &self.location),
                         location.into(),
                         instance,
                         unevaluated,

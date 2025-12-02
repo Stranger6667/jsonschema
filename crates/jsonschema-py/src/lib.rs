@@ -218,6 +218,7 @@ struct ValidationErrorArgs {
     verbose_message: String,
     schema_path: Py<PyList>,
     instance_path: Py<PyList>,
+    evaluation_path: Py<PyList>,
     kind: ValidationErrorKind,
     instance: Py<PyAny>,
 }
@@ -233,6 +234,7 @@ fn create_validation_error_object(
         args.verbose_message,
         args.schema_path,
         args.instance_path,
+        args.evaluation_path,
         kind_obj,
         args.instance,
     ))?;
@@ -412,8 +414,15 @@ impl ValidationErrorKind {
             jsonschema::error::ValidationErrorKind::PropertyNames { error } => {
                 ValidationErrorKind::PropertyNames {
                     error: {
-                        let (message, verbose_message, schema_path, instance_path, kind, instance) =
-                            into_validation_error_args(py, *error, mask)?;
+                        let (
+                            message,
+                            verbose_message,
+                            schema_path,
+                            instance_path,
+                            evaluation_path,
+                            kind,
+                            instance,
+                        ) = into_validation_error_args(py, *error, mask)?;
                         create_validation_error_object(
                             py,
                             ValidationErrorArgs {
@@ -421,6 +430,7 @@ impl ValidationErrorKind {
                                 verbose_message,
                                 schema_path,
                                 instance_path,
+                                evaluation_path,
                                 kind,
                                 instance,
                             },
@@ -478,8 +488,15 @@ fn convert_validation_context(
         let mut py_errors: Vec<Py<PyAny>> = Vec::with_capacity(errors.len());
 
         for error in errors {
-            let (message, verbose_message, schema_path, instance_path, kind, instance) =
-                into_validation_error_args(py, error, mask)?;
+            let (
+                message,
+                verbose_message,
+                schema_path,
+                instance_path,
+                evaluation_path,
+                kind,
+                instance,
+            ) = into_validation_error_args(py, error, mask)?;
 
             py_errors.push(create_validation_error_object(
                 py,
@@ -488,6 +505,7 @@ fn convert_validation_context(
                     verbose_message,
                     schema_path,
                     instance_path,
+                    evaluation_path,
                     kind,
                     instance,
                 },
@@ -525,6 +543,7 @@ fn into_validation_error_args(
     String,
     Py<PyList>,
     Py<PyList>,
+    Py<PyList>,
     ValidationErrorKind,
     Py<PyAny>,
 )> {
@@ -534,7 +553,7 @@ fn into_validation_error_args(
         error.to_string()
     };
     let verbose_message = to_error_message(&error, message.clone(), mask);
-    let (instance, kind, instance_path, schema_path) = error.into_parts();
+    let (instance, kind, instance_path, schema_path, evaluation_path) = error.into_parts();
     let into_path = |segment: LocationSegment<'_>| match segment {
         LocationSegment::Property(property) => {
             property.into_pyobject(py).and_then(Py::<PyAny>::try_from)
@@ -551,6 +570,11 @@ fn into_validation_error_args(
         .map(into_path)
         .collect::<Result<Vec<_>, _>>()?;
     let instance_path = PyList::new(py, elements)?.unbind();
+    let elements = evaluation_path
+        .into_iter()
+        .map(into_path)
+        .collect::<Result<Vec<_>, _>>()?;
+    let evaluation_path = PyList::new(py, elements)?.unbind();
     let kind = ValidationErrorKind::try_new(py, kind, mask)?;
     let instance = value_to_python(py, instance.as_ref())?;
     Ok((
@@ -558,6 +582,7 @@ fn into_validation_error_args(
         verbose_message,
         schema_path,
         instance_path,
+        evaluation_path,
         kind,
         instance,
     ))
@@ -567,7 +592,7 @@ fn into_py_err(
     error: jsonschema::ValidationError<'_>,
     mask: Option<&str>,
 ) -> PyResult<PyErr> {
-    let (message, verbose_message, schema_path, instance_path, kind, instance) =
+    let (message, verbose_message, schema_path, instance_path, evaluation_path, kind, instance) =
         into_validation_error_args(py, error, mask)?;
     validation_error_pyerr(
         py,
@@ -576,6 +601,7 @@ fn into_py_err(
             verbose_message,
             schema_path,
             instance_path,
+            evaluation_path,
             kind,
             instance,
         },

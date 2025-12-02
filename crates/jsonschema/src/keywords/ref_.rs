@@ -1,8 +1,92 @@
 use crate::{
-    compiler, keywords::CompilationResult, paths::Location, types::JsonType, validator::Validate,
+    compiler,
+    error::ErrorIterator,
+    keywords::CompilationResult,
+    paths::{LazyLocation, Location, RefTracker},
+    types::JsonType,
+    validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
 use serde_json::{Map, Value};
+
+/// Tracks `$ref` traversals for `tracker` (JSON Schema 2020-12 Core, Section 12.4.2).
+///
+/// Pushes the `$ref` location onto the tracker before delegating to the inner validator.
+struct RefValidator {
+    inner: Box<dyn Validate>,
+    /// Path of this `$ref` keyword relative to its resource base.
+    /// E.g., `/properties/foo/$ref` (not the full canonical path).
+    /// Used for building the `tracker` prefix.
+    ref_suffix: Location,
+    /// The resource base of the `$ref` target.
+    /// E.g., `/$defs/Item` when `$ref` points to `#/$defs/Item`.
+    /// Used for computing validator suffixes at runtime.
+    ref_target_base: Location,
+}
+
+impl Validate for RefValidator {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        self.inner.is_valid(instance, ctx)
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        let child_tracker = RefTracker::new(&self.ref_suffix, &self.ref_target_base, tracker);
+        self.inner
+            .validate(instance, location, Some(&child_tracker), ctx)
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        let child_tracker = RefTracker::new(&self.ref_suffix, &self.ref_target_base, tracker);
+        self.inner
+            .iter_errors(instance, location, Some(&child_tracker), ctx)
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        let child_tracker = RefTracker::new(&self.ref_suffix, &self.ref_target_base, tracker);
+        self.inner
+            .evaluate(instance, location, Some(&child_tracker), ctx)
+    }
+
+    /// Returns `ref_target_base` for `schema_path` output.
+    ///
+    /// Per JSON Schema 2020-12 Core Section 12.4.2, `schema_path` "MUST NOT include
+    /// by-reference applicators such as `$ref` or `$dynamicRef`".
+    fn canonical_location(&self) -> Option<&Location> {
+        Some(&self.ref_target_base)
+    }
+}
+
+/// Extract `ref_target_base` from a resolved URI fragment.
+///
+/// JSON Pointer fragments (starting with `/`) become the location path.
+/// Anchor fragments (plain names like `#node`) resolve to root.
+fn extract_ref_target_base(alias: &referencing::Uri<String>) -> Location {
+    if let Some(fragment) = alias.fragment() {
+        let fragment = fragment.as_str();
+        if fragment.starts_with('/') {
+            return Location::from_escaped(fragment);
+        }
+    }
+    Location::new()
+}
 
 fn compile_reference_validator<'a>(
     ctx: &compiler::Context,
@@ -21,16 +105,24 @@ fn compile_reference_validator<'a>(
         Err(error) => return Some(Err(error)),
     };
 
+    // Direct self-reference or empty string ref ("" per RFC 3986) - skip to avoid infinite recursion
     if alias == current_location
         || (reference.is_empty() && alias.strip_fragment() == current_location.strip_fragment())
     {
-        // Direct self-reference would recurse indefinitely, treat it as an annotation-only schema.
-        // Empty string $ref ("") is a same-document reference per RFC 3986, equivalent to "#"
         return None;
     }
 
+    let ref_suffix = ctx.suffix().join(keyword);
+    let ref_target_base = extract_ref_target_base(&alias);
+
     match ctx.lookup_maybe_recursive(reference) {
-        Ok(Some(validator)) => return Some(Ok(validator)),
+        Ok(Some(validator)) => {
+            return Some(Ok(Box::new(RefValidator {
+                inner: validator,
+                ref_suffix,
+                ref_target_base,
+            })));
+        }
         Ok(None) => {}
         Err(error) => return Some(Err(error)),
     }
@@ -45,17 +137,20 @@ fn compile_reference_validator<'a>(
     };
     let vocabularies = ctx.registry.find_vocabularies(draft, contents);
     let resource_ref = draft.create_resource_ref(contents);
-    let ctx = ctx.with_resolver_and_draft(
+    let inner_ctx = ctx.with_resolver_and_draft(
         resolver,
         resource_ref.draft(),
         vocabularies,
-        ctx.location().join(keyword),
+        ref_target_base.clone(),
     );
     Some(
-        compiler::compile_with_alias(&ctx, resource_ref, alias)
+        compiler::compile_with_alias(&inner_ctx, resource_ref, alias)
             .map(|node| {
-                Box::new(node.clone_with_location(ctx.location().clone(), ctx.base_uri()))
-                    as Box<dyn Validate>
+                Box::new(RefValidator {
+                    inner: Box::new(node),
+                    ref_suffix,
+                    ref_target_base,
+                }) as Box<dyn Validate>
             })
             .map_err(ValidationError::to_owned),
     )
@@ -65,9 +160,20 @@ fn compile_recursive_validator<'a>(
     ctx: &compiler::Context,
     reference: &str,
 ) -> CompilationResult<'a> {
-    // Check if this is a circular reference first
+    let ref_suffix = ctx.suffix().join("$recursiveRef");
+    let alias = ctx
+        .resolve_reference_uri(reference)
+        .map_err(ValidationError::from)?;
+    let ref_target_base = extract_ref_target_base(&alias);
+
     match ctx.lookup_maybe_recursive(reference) {
-        Ok(Some(validator)) => return Ok(validator),
+        Ok(Some(validator)) => {
+            return Ok(Box::new(RefValidator {
+                inner: validator,
+                ref_suffix,
+                ref_target_base,
+            }));
+        }
         Ok(None) => {}
         Err(error) => return Err(error),
     }
@@ -76,33 +182,39 @@ fn compile_recursive_validator<'a>(
         return Err(ValidationError::from(error));
     }
 
-    let alias = ctx
-        .resolve_reference_uri(reference)
-        .map_err(ValidationError::from)?;
     let resolved = ctx
         .lookup_recursive_reference()
         .map_err(ValidationError::from)?;
     let (contents, resolver, draft) = resolved.into_inner();
     let vocabularies = ctx.registry.find_vocabularies(draft, contents);
     let resource_ref = draft.create_resource_ref(contents);
-    let ctx = ctx.with_resolver_and_draft(
+    let inner_ctx = ctx.with_resolver_and_draft(
         resolver,
         resource_ref.draft(),
         vocabularies,
-        ctx.location().join("$recursiveRef"),
+        ref_target_base.clone(),
     );
-    compiler::compile_with_alias(&ctx, resource_ref, alias)
+    compiler::compile_with_alias(&inner_ctx, resource_ref, alias)
         .map(|node| {
-            Box::new(node.clone_with_location(ctx.location().clone(), ctx.base_uri()))
-                as Box<dyn Validate>
+            Box::new(RefValidator {
+                inner: Box::new(node),
+                ref_suffix,
+                ref_target_base,
+            }) as Box<dyn Validate>
         })
         .map_err(ValidationError::to_owned)
 }
 
-fn invalid_reference<'a>(ctx: &compiler::Context, schema: &'a Value) -> ValidationError<'a> {
+fn invalid_reference<'a>(
+    ctx: &compiler::Context,
+    keyword: &str,
+    schema: &'a Value,
+) -> ValidationError<'a> {
+    let location = ctx.location().join(keyword);
     ValidationError::single_type_error(
-        Location::new(),
-        ctx.location().clone(),
+        location.clone(),
+        location.clone(),
+        location,
         schema,
         JsonType::String,
     )
@@ -118,7 +230,7 @@ pub(crate) fn compile_impl<'a>(
     if let Some(reference) = schema.as_str() {
         compile_reference_validator(ctx, reference, keyword)
     } else {
-        Some(Err(invalid_reference(ctx, schema)))
+        Some(Err(invalid_reference(ctx, keyword, schema)))
     }
 }
 
@@ -149,7 +261,7 @@ pub(crate) fn compile_recursive_ref<'a>(
     Some(
         schema
             .as_str()
-            .ok_or_else(|| invalid_reference(ctx, schema))
+            .ok_or_else(|| invalid_reference(ctx, "$recursiveRef", schema))
             .and_then(|reference| compile_recursive_validator(ctx, reference)),
     )
 }
@@ -278,7 +390,8 @@ mod tests {
         "/properties/foo/$ref/type"
     )]
     fn location(schema: &Value, instance: &Value, expected: &str) {
-        tests_util::assert_schema_location(schema, instance, expected);
+        // For $ref tests, check tracker (includes $ref traversals)
+        tests_util::assert_evaluation_path(schema, instance, expected);
     }
 
     #[test]
@@ -311,18 +424,19 @@ mod tests {
         });
         let validator = crate::validator_for(&schema).expect("Invalid schema");
         let mut iter = validator.iter_errors(&instance);
+        // tracker includes $ref traversals
         let expected = "/properties/things/items/properties/code/$ref/enum";
         assert_eq!(
             iter.next()
                 .expect("Should be present")
-                .schema_path()
+                .evaluation_path()
                 .to_string(),
             expected
         );
         assert_eq!(
             iter.next()
                 .expect("Should be present")
-                .schema_path()
+                .evaluation_path()
                 .to_string(),
             expected
         );
@@ -375,7 +489,9 @@ mod tests {
         vec![
             ("", "/properties"),
             ("/foo", "/properties/foo/items"),
-            ("/foo/0", "/properties/foo/items/$ref/properties"),
+            // schemaLocation is the canonical location WITHOUT $ref (per JSON Schema spec)
+            // The $ref resolves to $defs/item, so properties keyword is at /$defs/item/properties
+            ("/foo/0", "/$defs/item/properties"),
         ]
     ; "standard $ref")]
     #[test_case(
@@ -398,8 +514,11 @@ mod tests {
         }),
         vec![
             ("", "/properties"),
-            ("/child", "/properties/child/$recursiveRef/properties"),
-            ("/child/child", "/properties/child/$recursiveRef/properties"),
+            // schemaLocation is the canonical location WITHOUT $recursiveRef (per JSON Schema spec)
+            // $recursiveRef resolves to root (where $recursiveAnchor is), so properties is at /properties
+            ("/child", "/properties"),
+            // Same for nested - still resolves to root's /properties
+            ("/child/child", "/properties"),
         ]
     ; "$recursiveRef")]
     fn keyword_locations(schema: &Value, instance: &Value, expected: Vec<(&str, &str)>) {
@@ -859,5 +978,410 @@ mod tests {
         assert!(!validator.is_valid(&invalid));
         assert!(validator.validate(&invalid).is_err());
         assert!(validator.iter_errors(&invalid).count() > 0);
+    }
+
+    #[test]
+    fn evaluation_path_through_ref() {
+        // Test that tracker correctly includes $ref traversals
+        let schema = json!({
+            "properties": {
+                "foo": {"$ref": "#/$defs/item"}
+            },
+            "$defs": {
+                "item": {"type": "string"}
+            }
+        });
+        let instance = json!({"foo": 42});
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        let error = validator.validate(&instance).expect_err("Should fail");
+
+        // schema_path is the canonical location (where the keyword actually is)
+        assert_eq!(error.schema_path().as_str(), "/$defs/item/type");
+
+        // tracker includes the $ref traversal
+        assert_eq!(
+            error.evaluation_path().as_str(),
+            "/properties/foo/$ref/type"
+        );
+    }
+
+    #[test]
+    fn evaluation_path_nested_refs() {
+        // Test nested $ref traversals
+        let schema = json!({
+            "$ref": "#/$defs/wrapper",
+            "$defs": {
+                "wrapper": {
+                    "properties": {
+                        "value": {"$ref": "#/$defs/item"}
+                    }
+                },
+                "item": {"type": "integer"}
+            }
+        });
+        let instance = json!({"value": "not an integer"});
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        let error = validator.validate(&instance).expect_err("Should fail");
+
+        // schema_path is canonical
+        assert_eq!(error.schema_path().as_str(), "/$defs/item/type");
+
+        // tracker shows full traversal through both $refs
+        assert_eq!(
+            error.evaluation_path().as_str(),
+            "/$ref/properties/value/$ref/type"
+        );
+    }
+
+    #[test]
+    fn evaluation_path_recursive_ref() {
+        // $recursiveRef should appear in evaluation path
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2019-09/schema",
+            "$recursiveAnchor": true,
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "child": {"$recursiveRef": "#"}
+            }
+        });
+        let instance = json!({
+            "name": "parent",
+            "child": {
+                "name": 42
+            }
+        });
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        let error = validator.validate(&instance).expect_err("Should fail");
+
+        // schema_path is canonical (at root, since $recursiveRef resolves to root)
+        assert_eq!(error.schema_path().as_str(), "/properties/name/type");
+
+        // tracker includes the $recursiveRef traversal
+        assert_eq!(
+            error.evaluation_path().as_str(),
+            "/properties/child/$recursiveRef/properties/name/type"
+        );
+    }
+
+    #[test]
+    fn evaluation_path_recursive_ref_deep() {
+        // Multiple levels of $recursiveRef
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2019-09/schema",
+            "$recursiveAnchor": true,
+            "type": "object",
+            "properties": {
+                "value": {"type": "integer"},
+                "child": {"$recursiveRef": "#"}
+            }
+        });
+        let instance = json!({
+            "value": 1,
+            "child": {
+                "value": 2,
+                "child": {
+                    "value": "not an int"
+                }
+            }
+        });
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        let error = validator.validate(&instance).expect_err("Should fail");
+
+        // schema_path is canonical (at root, since $recursiveRef resolves to root)
+        assert_eq!(error.schema_path().as_str(), "/properties/value/type");
+
+        // tracker shows the full traversal through both $recursiveRef
+        assert_eq!(
+            error.evaluation_path().as_str(),
+            "/properties/child/$recursiveRef/properties/child/$recursiveRef/properties/value/type"
+        );
+    }
+
+    #[test]
+    fn evaluation_path_dynamic_ref() {
+        // $dynamicRef should appear in evaluation path but NOT in schema_path
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$dynamicAnchor": "node",
+            "type": "object",
+            "properties": {
+                "data": {"type": "string"},
+                "child": {"$dynamicRef": "#node"}
+            }
+        });
+        let instance = json!({
+            "data": "parent",
+            "child": {
+                "data": 123
+            }
+        });
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        let error = validator.validate(&instance).expect_err("Should fail");
+
+        // schema_path is the canonical location (at root, since #node anchor is at root)
+        assert_eq!(error.schema_path().as_str(), "/properties/data/type");
+
+        // tracker includes the $dynamicRef traversal
+        assert_eq!(
+            error.evaluation_path().as_str(),
+            "/properties/child/$dynamicRef/properties/data/type"
+        );
+    }
+
+    #[test]
+    fn evaluation_path_triple_nested_ref() {
+        // Three levels of $ref
+        let schema = json!({
+            "$ref": "#/$defs/level1",
+            "$defs": {
+                "level1": {
+                    "$ref": "#/$defs/level2"
+                },
+                "level2": {
+                    "$ref": "#/$defs/level3"
+                },
+                "level3": {
+                    "type": "boolean"
+                }
+            }
+        });
+        let instance = json!("not a boolean");
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        let error = validator.validate(&instance).expect_err("Should fail");
+
+        assert_eq!(error.schema_path().as_str(), "/$defs/level3/type");
+        assert_eq!(error.evaluation_path().as_str(), "/$ref/$ref/$ref/type");
+    }
+
+    #[test]
+    fn evaluation_path_ref_in_allof() {
+        // $ref inside allOf
+        let schema = json!({
+            "allOf": [
+                {"$ref": "#/$defs/stringType"},
+                {"minLength": 5}
+            ],
+            "$defs": {
+                "stringType": {"type": "string"}
+            }
+        });
+        let instance = json!(42);
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        let error = validator.validate(&instance).expect_err("Should fail");
+
+        assert_eq!(error.evaluation_path().as_str(), "/allOf/0/$ref/type");
+    }
+
+    #[test]
+    fn evaluation_path_ref_in_anyof() {
+        // $ref inside anyOf - all branches fail
+        let schema = json!({
+            "anyOf": [
+                {"$ref": "#/$defs/intType"},
+                {"$ref": "#/$defs/boolType"}
+            ],
+            "$defs": {
+                "intType": {"type": "integer"},
+                "boolType": {"type": "boolean"}
+            }
+        });
+        let instance = json!("string");
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+
+        // anyOf produces a single error containing nested errors
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].evaluation_path().as_str(), "/anyOf");
+    }
+
+    #[test_case(
+        "age", "positiveInt",
+        json!({"type": "integer", "minimum": 0}),
+        json!(-5),
+        "minimum"
+        ; "minimum"
+    )]
+    #[test_case(
+        "email", "emailPattern",
+        json!({"type": "string", "pattern": "^.+@.+$"}),
+        json!("not-an-email"),
+        "pattern"
+        ; "pattern"
+    )]
+    #[test_case(
+        "user", "userType",
+        json!({"type": "object", "required": ["name"]}),
+        json!({}),
+        "required"
+        ; "required"
+    )]
+    #[test_case(
+        "status", "statusEnum",
+        json!({"enum": ["active", "inactive"]}),
+        json!("unknown"),
+        "enum"
+        ; "enum_keyword"
+    )]
+    #[test_case(
+        "version", "versionConst",
+        json!({"const": "1.0"}),
+        json!("2.0"),
+        "const"
+        ; "const_keyword"
+    )]
+    #[test_case(
+        "code", "shortString",
+        json!({"type": "string", "maxLength": 3}),
+        json!("toolong"),
+        "maxLength"
+        ; "maxLength"
+    )]
+    #[test_case(
+        "tags", "uniqueArray",
+        json!({"type": "array", "uniqueItems": true}),
+        json!(["a", "b", "a"]),
+        "uniqueItems"
+        ; "uniqueItems"
+    )]
+    #[allow(clippy::needless_pass_by_value)]
+    fn evaluation_path_ref_keyword(
+        prop: &str,
+        def_name: &str,
+        definition: Value,
+        instance_value: Value,
+        expected_keyword: &str,
+    ) {
+        let schema = json!({
+            "properties": {
+                (prop): {"$ref": format!("#/$defs/{def_name}")}
+            },
+            "$defs": {
+                (def_name): definition
+            }
+        });
+        let instance = json!({ (prop): instance_value });
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        let error = validator.validate(&instance).expect_err("Should fail");
+
+        assert_eq!(
+            error.evaluation_path().as_str(),
+            format!("/properties/{prop}/$ref/{expected_keyword}")
+        );
+    }
+
+    #[test]
+    fn evaluation_path_multiple_errors_different_refs() {
+        // Multiple errors through different $refs
+        let schema = json!({
+            "properties": {
+                "name": {"$ref": "#/$defs/stringType"},
+                "age": {"$ref": "#/$defs/intType"}
+            },
+            "$defs": {
+                "stringType": {"type": "string"},
+                "intType": {"type": "integer"}
+            }
+        });
+        let instance = json!({"name": 123, "age": "not an int"});
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+
+        assert_eq!(errors.len(), 2);
+
+        let paths: Vec<_> = errors
+            .iter()
+            .map(|e| e.evaluation_path().to_string())
+            .collect();
+
+        assert!(paths.contains(&"/properties/name/$ref/type".to_string()));
+        assert!(paths.contains(&"/properties/age/$ref/type".to_string()));
+    }
+
+    #[test]
+    fn evaluation_path_ref_with_anchor() {
+        // $ref using $anchor
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+                "data": {"$ref": "#myAnchor"}
+            },
+            "$defs": {
+                "myDef": {
+                    "$anchor": "myAnchor",
+                    "type": "number"
+                }
+            }
+        });
+        let instance = json!({"data": "not a number"});
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        let error = validator.validate(&instance).expect_err("Should fail");
+
+        assert_eq!(
+            error.evaluation_path().as_str(),
+            "/properties/data/$ref/type"
+        );
+    }
+
+    #[test]
+    fn evaluation_path_items_with_ref() {
+        // $ref inside items
+        let schema = json!({
+            "type": "array",
+            "items": {"$ref": "#/$defs/itemType"},
+            "$defs": {
+                "itemType": {"type": "string"}
+            }
+        });
+        let instance = json!([1, 2, 3]);
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+
+        assert_eq!(errors.len(), 3);
+        for error in &errors {
+            assert_eq!(error.evaluation_path().as_str(), "/items/$ref/type");
+        }
+    }
+
+    #[test]
+    fn evaluation_path_additional_properties_with_ref() {
+        // additionalProperties with $ref
+        let schema = json!({
+            "type": "object",
+            "additionalProperties": {"$ref": "#/$defs/valueType"},
+            "$defs": {
+                "valueType": {"type": "integer"}
+            }
+        });
+        let instance = json!({"a": "not int", "b": "also not int"});
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+
+        assert_eq!(errors.len(), 2);
+        for error in &errors {
+            assert_eq!(
+                error.evaluation_path().as_str(),
+                "/additionalProperties/$ref/type"
+            );
+        }
+    }
+
+    #[test]
+    fn schema_path_with_json_pointer_escaped_key() {
+        // $defs key contains special chars that need JSON Pointer escaping
+        let schema = json!({
+            "properties": {
+                "data": {"$ref": "#/$defs/type~1name"}
+            },
+            "$defs": {
+                "type/name": {"type": "string"}
+            }
+        });
+        let instance = json!({"data": 42});
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        let error = validator.validate(&instance).expect_err("Should fail");
+
+        // schema_path should have the unescaped key (type/name), re-escaped properly
+        assert_eq!(error.schema_path().as_str(), "/$defs/type~1name/type");
     }
 }

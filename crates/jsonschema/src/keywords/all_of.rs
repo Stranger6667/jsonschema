@@ -2,7 +2,7 @@ use crate::{
     compiler,
     error::{ErrorIterator, ValidationError},
     node::SchemaNode,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
 };
@@ -40,10 +40,11 @@ impl Validate for AllOfValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         for schema in &self.schemas {
-            schema.validate(instance, location, ctx)?;
+            schema.validate(instance, location, tracker, ctx)?;
         }
         Ok(())
     }
@@ -53,12 +54,13 @@ impl Validate for AllOfValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         let errors: Vec<_> = self
             .schemas
             .iter()
-            .flat_map(move |node| node.iter_errors(instance, location, ctx))
+            .flat_map(move |node| node.iter_errors(instance, location, tracker, ctx))
             .collect();
         ErrorIterator::from_iterator(errors.into_iter())
     }
@@ -67,13 +69,13 @@ impl Validate for AllOfValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        let children = self
-            .schemas
-            .iter()
-            .map(move |node| node.evaluate_instance(instance, location, ctx))
-            .collect();
+        let mut children = Vec::with_capacity(self.schemas.len());
+        for node in &self.schemas {
+            children.push(node.evaluate_instance(instance, location, tracker, ctx));
+        }
         EvaluationResult::from_children(children)
     }
 }
@@ -101,27 +103,33 @@ impl Validate for SingleValueAllOfValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        self.node.validate(instance, location, ctx)
+        self.node.validate(instance, location, tracker, ctx)
     }
 
     fn iter_errors<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        self.node.iter_errors(instance, location, ctx)
+        self.node.iter_errors(instance, location, tracker, ctx)
     }
 
     fn evaluate(
         &self,
         instance: &Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        EvaluationResult::from(self.node.evaluate_instance(instance, location, ctx))
+        EvaluationResult::from(
+            self.node
+                .evaluate_instance(instance, location, tracker, ctx),
+        )
     }
 }
 
@@ -139,9 +147,11 @@ pub(crate) fn compile<'a>(
             Some(AllOfValidator::compile(ctx, items))
         }
     } else {
+        let location = ctx.location().join("allOf");
         Some(Err(ValidationError::single_type_error(
+            location.clone(),
+            location,
             Location::new(),
-            ctx.location().clone(),
             schema,
             JsonType::Array,
         )))

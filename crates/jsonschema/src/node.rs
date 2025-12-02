@@ -1,16 +1,15 @@
 use crate::{
     compiler::Context,
     error::ErrorIterator,
-    evaluation::{format_schema_location, Annotations, EvaluationNode},
+    evaluation::{Annotations, EvaluationNode},
     keywords::{BoxedValidator, Keyword},
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, Location, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
 use referencing::Uri;
 use serde_json::Value;
 use std::{
-    cell::OnceCell,
     fmt,
     sync::{Arc, OnceLock, Weak},
 };
@@ -160,12 +159,13 @@ impl Validate for PendingSchemaNode {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if ctx.enter(self.node_id(), instance) {
             return Ok(());
         }
-        let result = self.with_node(|node| node.validate(instance, location, ctx));
+        let result = self.with_node(|node| node.validate(instance, location, tracker, ctx));
         ctx.exit(self.node_id(), instance);
         result
     }
@@ -174,12 +174,13 @@ impl Validate for PendingSchemaNode {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if ctx.enter(self.node_id(), instance) {
             return crate::error::no_error();
         }
-        let result = self.with_node(|node| node.iter_errors(instance, location, ctx));
+        let result = self.with_node(|node| node.iter_errors(instance, location, tracker, ctx));
         ctx.exit(self.node_id(), instance);
         result
     }
@@ -188,12 +189,13 @@ impl Validate for PendingSchemaNode {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if ctx.enter(self.node_id(), instance) {
             return EvaluationResult::valid_empty();
         }
-        let result = self.with_node(|node| node.evaluate(instance, location, ctx));
+        let result = self.with_node(|node| node.evaluate(instance, location, tracker, ctx));
         ctx.exit(self.node_id(), instance);
         result
     }
@@ -258,18 +260,6 @@ impl SchemaNode {
         }
     }
 
-    pub(crate) fn clone_with_location(
-        &self,
-        location: Location,
-        absolute_path: Option<Arc<Uri<String>>>,
-    ) -> SchemaNode {
-        SchemaNode {
-            validators: self.validators.clone(),
-            location,
-            absolute_path,
-        }
-    }
-
     pub(crate) fn validators(&self) -> impl ExactSizeIterator<Item = &BoxedValidator> {
         match self.validators.as_ref() {
             NodeValidators::Boolean { validator } => {
@@ -292,16 +282,22 @@ impl SchemaNode {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationNode {
         let instance_location: Location = location.into();
-        let schema_location = format_schema_location(&self.location, self.absolute_path.as_ref());
-        match self.evaluate(instance, location, ctx) {
+
+        let keyword_location = crate::paths::evaluation_path(tracker, &self.location);
+
+        let schema_location =
+            crate::evaluation::format_schema_location(&self.location, self.absolute_path.as_ref());
+
+        match self.evaluate(instance, location, tracker, ctx) {
             EvaluationResult::Valid {
                 annotations,
                 children,
             } => EvaluationNode::valid(
-                self.location.clone(),
+                keyword_location,
                 self.absolute_path.clone(),
                 schema_location,
                 instance_location,
@@ -313,7 +309,7 @@ impl SchemaNode {
                 children,
                 annotations,
             } => EvaluationNode::invalid(
-                self.location.clone(),
+                keyword_location,
                 self.absolute_path.clone(),
                 schema_location,
                 instance_location,
@@ -328,6 +324,7 @@ impl SchemaNode {
     fn evaluate_subschemas<'a, I>(
         instance: &Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         subschemas: I,
         annotations: Option<Annotations>,
         ctx: &mut ValidationContext,
@@ -344,26 +341,35 @@ impl SchemaNode {
         let (lower_bound, _) = subschemas.size_hint();
         let mut children: Vec<EvaluationNode> = Vec::with_capacity(lower_bound);
         let mut invalid = false;
-        let instance_location: OnceCell<Location> = OnceCell::new();
+
+        let instance_loc: Location = location.into();
 
         for (child_location, absolute_location, validator) in subschemas {
-            let child_result = validator.evaluate(instance, location, ctx);
+            let child_result = validator.evaluate(instance, location, tracker, ctx);
 
-            let schema_location = child_location.clone();
             let absolute_location = absolute_location.cloned();
-            let instance_loc = instance_location.get_or_init(|| location.into()).clone();
-            let formatted_schema_location =
-                format_schema_location(&schema_location, absolute_location.as_ref());
+
+            let eval_path = crate::paths::evaluation_path(tracker, child_location);
+
+            // schemaLocation: The canonical location WITHOUT $ref traversals.
+            // Per JSON Schema spec: "MUST NOT include by-reference applicators such as $ref"
+            // For by-reference validators like $ref, use the target's canonical location.
+            // For regular validators, use the keyword's location.
+            let schema_location = validator.canonical_location().unwrap_or(child_location);
+            let formatted_schema_location = crate::evaluation::format_schema_location(
+                schema_location,
+                absolute_location.as_ref(),
+            );
 
             let child_node = match child_result {
                 EvaluationResult::Valid {
                     annotations,
                     children,
                 } => EvaluationNode::valid(
-                    schema_location,
+                    eval_path,
                     absolute_location,
                     formatted_schema_location,
-                    instance_loc,
+                    instance_loc.clone(),
                     annotations,
                     children,
                 ),
@@ -374,10 +380,10 @@ impl SchemaNode {
                 } => {
                     invalid = true;
                     EvaluationNode::invalid(
-                        schema_location,
+                        eval_path,
                         absolute_location,
                         formatted_schema_location,
-                        instance_loc,
+                        instance_loc.clone(),
                         annotations,
                         errors,
                         children,
@@ -435,22 +441,29 @@ impl Validate for SchemaNode {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         match self.validators.as_ref() {
+            NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
+                return kvs.validators[0]
+                    .validator
+                    .validate(instance, location, tracker, ctx);
+            }
             NodeValidators::Keyword(kvs) => {
                 for entry in &kvs.validators {
-                    entry.validator.validate(instance, location, ctx)?;
+                    entry.validator.validate(instance, location, tracker, ctx)?;
                 }
             }
             NodeValidators::Array { validators } => {
                 for entry in validators {
-                    entry.validator.validate(instance, location, ctx)?;
+                    entry.validator.validate(instance, location, tracker, ctx)?;
                 }
             }
             NodeValidators::Boolean { validator: Some(_) } => {
                 return Err(ValidationError::false_schema(
                     self.location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
                     instance,
                 ));
@@ -464,29 +477,38 @@ impl Validate for SchemaNode {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         match self.validators.as_ref() {
             NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => kvs.validators[0]
                 .validator
-                .iter_errors(instance, location, ctx),
+                .iter_errors(instance, location, tracker, ctx),
             NodeValidators::Keyword(kvs) => ErrorIterator::from_iterator(
                 kvs.validators
                     .iter()
-                    .flat_map(|entry| entry.validator.iter_errors(instance, location, ctx))
+                    .flat_map(|entry| {
+                        entry
+                            .validator
+                            .iter_errors(instance, location, tracker, ctx)
+                    })
                     .collect::<Vec<_>>()
                     .into_iter(),
             ),
             NodeValidators::Boolean {
                 validator: Some(v), ..
-            } => v.iter_errors(instance, location, ctx),
+            } => v.iter_errors(instance, location, tracker, ctx),
             NodeValidators::Boolean {
                 validator: None, ..
             } => ErrorIterator::from_iterator(std::iter::empty()),
             NodeValidators::Array { validators } => ErrorIterator::from_iterator(
                 validators
                     .iter()
-                    .flat_map(move |entry| entry.validator.iter_errors(instance, location, ctx))
+                    .flat_map(move |entry| {
+                        entry
+                            .validator
+                            .iter_errors(instance, location, tracker, ctx)
+                    })
                     .collect::<Vec<_>>()
                     .into_iter(),
             ),
@@ -497,12 +519,14 @@ impl Validate for SchemaNode {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         match self.validators.as_ref() {
             NodeValidators::Array { ref validators } => Self::evaluate_subschemas(
                 instance,
                 location,
+                tracker,
                 validators.iter().map(|entry| {
                     (
                         &entry.location,
@@ -515,7 +539,7 @@ impl Validate for SchemaNode {
             ),
             NodeValidators::Boolean { ref validator } => {
                 if let Some(validator) = validator {
-                    validator.evaluate(instance, location, ctx)
+                    validator.evaluate(instance, location, tracker, ctx)
                 } else {
                     EvaluationResult::Valid {
                         annotations: None,
@@ -534,6 +558,7 @@ impl Validate for SchemaNode {
                 Self::evaluate_subschemas(
                     instance,
                     location,
+                    tracker,
                     validators.iter().map(|entry| {
                         (
                             &entry.location,

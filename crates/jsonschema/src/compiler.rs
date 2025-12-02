@@ -123,6 +123,22 @@ pub(crate) struct Context<'a> {
     resolver: Resolver<'a>,
     vocabularies: VocabularySet,
     location: Location,
+    /// The location where the current resource starts.
+    ///
+    /// When compiling a schema reached via `$ref`, this is set to the `$ref` target location.
+    /// Used to compute the "suffix" (path relative to resource root) for evaluation paths.
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// Schema: { "$ref": "#/$defs/Item", "$defs": { "Item": { "type": "string" } } }
+    ///
+    /// When compiling the "type" keyword inside "Item":
+    ///   location      = /$defs/Item/type
+    ///   resource_base = /$defs/Item
+    ///   suffix()      = /type
+    /// ```
+    resource_base: Location,
     pub(crate) draft: Draft,
     shared: SharedContextState,
 }
@@ -140,6 +156,7 @@ impl<'a> Context<'a> {
             config,
             registry,
             resolver,
+            resource_base: location.clone(),
             location,
             vocabularies,
             draft,
@@ -165,6 +182,7 @@ impl<'a> Context<'a> {
             resolver,
             vocabularies: self.vocabularies.clone(),
             draft: resource.draft(),
+            resource_base: self.resource_base.clone(),
             location: self.location.clone(),
             shared: self.shared.clone(),
         })
@@ -181,6 +199,7 @@ impl<'a> Context<'a> {
             registry: self.registry,
             resolver: self.resolver.clone(),
             vocabularies: self.vocabularies.clone(),
+            resource_base: self.resource_base.clone(),
             location,
             draft: self.draft,
             shared: self.shared.clone(),
@@ -263,7 +282,7 @@ impl<'a> Context<'a> {
         resolver: Resolver<'a>,
         draft: Draft,
         vocabularies: VocabularySet,
-        location: Location,
+        resource_base: Location,
     ) -> Context<'a> {
         Context {
             config: self.config,
@@ -271,7 +290,8 @@ impl<'a> Context<'a> {
             resolver,
             draft,
             vocabularies,
-            location,
+            location: resource_base.clone(),
+            resource_base,
             shared: self.shared.clone(),
         }
     }
@@ -598,6 +618,47 @@ impl<'a> Context<'a> {
         &self.location
     }
 
+    /// Returns the current location relative to the resource base.
+    ///
+    /// This "suffix" is used for evaluation path computation. When an error occurs
+    /// inside a `$ref` target, we combine the `$ref` traversal chain (prefix) with
+    /// this suffix to form the complete evaluation path.
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// Schema:
+    /// {
+    ///   "properties": {
+    ///     "user": { "$ref": "#/$defs/Person" }
+    ///   },
+    ///   "$defs": {
+    ///     "Person": {
+    ///       "properties": {
+    ///         "age": { "type": "integer" }
+    ///       }
+    ///     }
+    ///   }
+    /// }
+    ///
+    /// When compiling the "type" keyword inside "Person":
+    ///   location()      = /$defs/Person/properties/age/type
+    ///   resource_base   = /$defs/Person
+    ///   suffix()        = /properties/age/type
+    ///
+    /// At validation time, if reached via /properties/user/$ref:
+    ///   tracker = /properties/user/$ref + /properties/age/type
+    ///                   = /properties/user/$ref/properties/age/type
+    /// ```
+    pub(crate) fn suffix(&self) -> Location {
+        let suffix = self
+            .location
+            .as_str()
+            .strip_prefix(self.resource_base.as_str())
+            .expect("location must start with resource_base");
+        Location::from_escaped(suffix)
+    }
+
     pub(crate) fn has_vocabulary(&self, vocabulary: &Vocabulary) -> bool {
         if self.draft() < Draft::Draft201909 || vocabulary == &Vocabulary::Core {
             true
@@ -890,7 +951,8 @@ fn compile_without_cache<'a>(
                 // Check if this keyword is overridden, then check the standard definitions
                 if let Some(factory) = ctx.get_keyword_factory(keyword) {
                     let path = ctx.location().join(keyword);
-                    let validator = CustomKeyword::new(factory.init(schema, value, path)?);
+                    let validator =
+                        CustomKeyword::new(factory.init(schema, value, path.clone())?, path);
                     let validator: BoxedValidator = Box::new(validator);
                     validators.push((Keyword::custom(keyword), validator));
                 } else if let Some((keyword, validator)) = keywords::get_for_draft(ctx, keyword)
@@ -909,13 +971,17 @@ fn compile_without_cache<'a>(
             };
             Ok(SchemaNode::from_keywords(ctx, validators, annotations))
         }
-        _ => Err(ValidationError::multiple_type_error(
-            Location::new(),
-            ctx.location().clone(),
-            resource.contents(),
-            JsonTypeSet::empty()
-                .insert(JsonType::Boolean)
-                .insert(JsonType::Object),
-        )),
+        _ => {
+            let location = ctx.location().clone();
+            Err(ValidationError::multiple_type_error(
+                location.clone(),
+                location,
+                Location::new(),
+                resource.contents(),
+                JsonTypeSet::empty()
+                    .insert(JsonType::Boolean)
+                    .insert(JsonType::Object),
+            ))
+        }
     }
 }

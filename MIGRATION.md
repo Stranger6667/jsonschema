@@ -1,5 +1,61 @@
 # Migration Guide
 
+## Upgrading from 0.38.x to 0.39.0
+
+### Custom keyword API simplified
+
+The `Keyword::validate` signature has been simplified. Path information (`instance_path` and `schema_path`)
+is now filled in automatically, so you only need to provide the error message.
+
+**`Keyword::validate` signature:**
+
+```rust
+// Old (0.38.x)
+fn validate<'i>(
+    &self,
+    instance: &'i Value,
+    location: &LazyLocation,
+) -> Result<(), ValidationError<'i>>;
+
+// New (0.39.0)
+fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>>;
+```
+
+**Creating errors:**
+
+```rust
+// Old (0.38.x)
+ValidationError::custom(schema_path, instance_path, instance, message)
+
+// New (0.39.0) - just the message, paths are filled in automatically
+ValidationError::custom("expected a string")
+
+// For factory errors (invalid schema values)
+ValidationError::schema("expected true")
+```
+
+**Updated implementation example:**
+
+```rust
+use jsonschema::{Keyword, ValidationError};
+use serde_json::Value;
+
+struct MyValidator;
+
+impl Keyword for MyValidator {
+    fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+        if !instance.is_string() {
+            return Err(ValidationError::custom("expected a string"));
+        }
+        Ok(())
+    }
+
+    fn is_valid(&self, instance: &Value) -> bool {
+        instance.is_string()
+    }
+}
+```
+
 ## Upgrading from 0.37.x to 0.38.0
 
 ### WASM: `Validator` is now `Send + Sync`

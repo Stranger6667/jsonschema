@@ -3,7 +3,7 @@ use crate::{
     error::{no_error, ErrorIterator, ValidationError},
     evaluation::Annotations,
     node::SchemaNode,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
 };
@@ -50,11 +50,12 @@ impl Validate for PrefixItemsValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             for (idx, (schema, item)) in self.schemas.iter().zip(items.iter()).enumerate() {
-                schema.validate(item, &location.push(idx), ctx)?;
+                schema.validate(item, &location.push(idx), tracker, ctx)?;
             }
         }
         Ok(())
@@ -64,12 +65,13 @@ impl Validate for PrefixItemsValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if let Value::Array(items) = instance {
             let mut errors = Vec::new();
             for (idx, (schema, item)) in self.schemas.iter().zip(items.iter()).enumerate() {
-                errors.extend(schema.iter_errors(item, &location.push(idx), ctx));
+                errors.extend(schema.iter_errors(item, &location.push(idx), tracker, ctx));
             }
             ErrorIterator::from_iterator(errors.into_iter())
         } else {
@@ -81,6 +83,7 @@ impl Validate for PrefixItemsValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Array(items) = instance {
@@ -89,7 +92,12 @@ impl Validate for PrefixItemsValidator {
                 let mut max_index_applied = 0usize;
                 for (idx, (schema_node, item)) in self.schemas.iter().zip(items.iter()).enumerate()
                 {
-                    children.push(schema_node.evaluate_instance(item, &location.push(idx), ctx));
+                    children.push(schema_node.evaluate_instance(
+                        item,
+                        &location.push(idx),
+                        tracker,
+                        ctx,
+                    ));
                     max_index_applied = idx;
                 }
                 let annotation = if children.len() == items.len() {
@@ -115,9 +123,11 @@ pub(crate) fn compile<'a>(
     if let Value::Array(items) = schema {
         Some(PrefixItemsValidator::compile(ctx, items))
     } else {
+        let location = ctx.location().join("prefixItems");
         Some(Err(ValidationError::single_type_error(
+            location.clone(),
+            location,
             Location::new(),
-            ctx.location().clone(),
             schema,
             JsonType::Array,
         )))

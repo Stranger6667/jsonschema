@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ValidationError::evaluation_path()` for the dynamic path including `$ref` traversals.
+
+### Changed
+
+- **BREAKING**: Simplified custom keyword API - `Keyword::validate` no longer receives path parameters, and `ValidationError::custom` only takes a message.
+
+### Fixed
+
+- `schemaLocation` in evaluation output now excludes `$ref`/`$dynamicRef`/`$recursiveRef` per JSON Schema spec.
+
+### Performance
+
+- `evaluate()`: 4.5-30x faster on complex schemas, 12-89% faster overall.
+
 ## [0.38.1] - 2025-12-25
 
 ### Fixed

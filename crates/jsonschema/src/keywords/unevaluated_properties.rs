@@ -15,7 +15,7 @@ use crate::{
     compiler, ecma,
     evaluation::ErrorDescription,
     node::SchemaNode,
-    paths::{LazyLocation, Location},
+    paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
@@ -306,8 +306,9 @@ fn compile_pattern_properties<'a>(
         let Ok(regex) = ecma::to_rust_regex(pattern).and_then(|p| Regex::new(&p).map_err(|_| ()))
         else {
             return Err(ValidationError::format(
+                schema_ctx.location().clone(),
+                LazyEvaluationPath::SameAsSchemaPath,
                 Location::new(),
-                ctx.location().clone(),
                 schema,
                 "regex",
             ));
@@ -583,6 +584,7 @@ impl Validate for UnevaluatedPropertiesValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(properties) = instance {
@@ -617,6 +619,7 @@ impl Validate for UnevaluatedPropertiesValidator {
             if !unevaluated.is_empty() {
                 return Err(ValidationError::unevaluated_properties(
                     self.location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
                     instance,
                     unevaluated,
@@ -657,6 +660,7 @@ impl Validate for UnevaluatedPropertiesValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Object(properties) = instance {
@@ -672,7 +676,8 @@ impl Validate for UnevaluatedPropertiesValidator {
                     continue;
                 }
                 if let Some(validator) = &self.validators.unevaluated {
-                    let child = validator.evaluate_instance(value, &location.push(property), ctx);
+                    let child =
+                        validator.evaluate_instance(value, &location.push(property), tracker, ctx);
                     if !child.valid {
                         invalid = true;
                         unevaluated.push(property.clone());
@@ -689,6 +694,7 @@ impl Validate for UnevaluatedPropertiesValidator {
                 errors.push(ErrorDescription::from_validation_error(
                     &ValidationError::unevaluated_properties(
                         self.location.clone(),
+                        crate::paths::capture_evaluation_path(tracker, &self.location),
                         location.into(),
                         instance,
                         unevaluated,

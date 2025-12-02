@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ValidationError.evaluation_path` attribute for the dynamic path including `$ref` traversals.
+
+### Fixed
+
+- `schemaLocation` in evaluation output now excludes `$ref`/`$dynamicRef`/`$recursiveRef` per JSON Schema spec.
+
+### Performance
+
+- `evaluate()`: 4.5-30x faster on complex schemas, 12-89% faster overall.
+
 ## [0.38.1] - 2025-12-25
 
 ### Fixed

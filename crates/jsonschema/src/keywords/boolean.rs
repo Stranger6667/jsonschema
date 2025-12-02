@@ -1,4 +1,4 @@
-use crate::paths::{LazyLocation, Location};
+use crate::paths::{LazyLocation, Location, RefTracker};
 
 use crate::{
     error::ValidationError,
@@ -25,10 +25,12 @@ impl Validate for FalseValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         Err(ValidationError::false_schema(
             self.location.clone(),
+            crate::paths::capture_evaluation_path(tracker, &self.location),
             location.into(),
             instance,
         ))

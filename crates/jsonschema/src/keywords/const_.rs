@@ -8,7 +8,7 @@ use crate::{
 };
 use serde_json::{Map, Number, Value};
 
-use crate::paths::LazyLocation;
+use crate::paths::{LazyLocation, RefTracker};
 
 struct ConstArrayValidator {
     value: Vec<Value>,
@@ -28,6 +28,7 @@ impl Validate for ConstArrayValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -35,6 +36,7 @@ impl Validate for ConstArrayValidator {
         } else {
             Err(ValidationError::constant_array(
                 self.location.clone(),
+                crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
                 instance,
                 &self.value,
@@ -67,6 +69,7 @@ impl Validate for ConstBooleanValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -74,6 +77,7 @@ impl Validate for ConstBooleanValidator {
         } else {
             Err(ValidationError::constant_boolean(
                 self.location.clone(),
+                crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
                 instance,
                 self.value,
@@ -105,6 +109,7 @@ impl Validate for ConstNullValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -112,6 +117,7 @@ impl Validate for ConstNullValidator {
         } else {
             Err(ValidationError::constant_null(
                 self.location.clone(),
+                crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
                 instance,
             ))
@@ -144,6 +150,7 @@ impl Validate for ConstNumberValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -151,6 +158,7 @@ impl Validate for ConstNumberValidator {
         } else {
             Err(ValidationError::constant_number(
                 self.location.clone(),
+                crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
                 instance,
                 &self.original_value,
@@ -188,6 +196,7 @@ impl Validate for ConstObjectValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -195,6 +204,7 @@ impl Validate for ConstObjectValidator {
         } else {
             Err(ValidationError::constant_object(
                 self.location.clone(),
+                crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
                 instance,
                 &self.value,
@@ -232,6 +242,7 @@ impl Validate for ConstStringValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -239,6 +250,7 @@ impl Validate for ConstStringValidator {
         } else {
             Err(ValidationError::constant_string(
                 self.location.clone(),
+                crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
                 instance,
                 &self.value,

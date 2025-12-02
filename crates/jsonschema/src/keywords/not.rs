@@ -3,7 +3,7 @@ use crate::{
     error::ValidationError,
     keywords::CompilationResult,
     node::SchemaNode,
-    paths::LazyLocation,
+    paths::{LazyLocation, RefTracker},
     validator::{Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
@@ -34,6 +34,7 @@ impl Validate for NotValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -41,6 +42,7 @@ impl Validate for NotValidator {
         } else {
             Err(ValidationError::not(
                 self.node.location().clone(),
+                crate::paths::capture_evaluation_path(tracker, self.node.location()),
                 location.into(),
                 instance,
                 self.original.clone(),

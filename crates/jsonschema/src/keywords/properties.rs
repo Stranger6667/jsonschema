@@ -4,7 +4,7 @@ use crate::{
     evaluation::Annotations,
     keywords::CompilationResult,
     node::SchemaNode,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
 };
@@ -17,25 +17,26 @@ pub(crate) struct PropertiesValidator {
 impl PropertiesValidator {
     #[inline]
     pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
-        match schema {
-            Value::Object(map) => {
-                let ctx = ctx.new_at_location("properties");
-                let mut properties = Vec::with_capacity(map.len());
-                for (key, subschema) in map {
-                    let ctx = ctx.new_at_location(key.as_str());
-                    properties.push((
-                        key.clone(),
-                        compiler::compile(&ctx, ctx.as_resource_ref(subschema))?,
-                    ));
-                }
-                Ok(Box::new(PropertiesValidator { properties }))
+        if let Value::Object(map) = schema {
+            let ctx = ctx.new_at_location("properties");
+            let mut properties = Vec::with_capacity(map.len());
+            for (key, subschema) in map {
+                let ctx = ctx.new_at_location(key.as_str());
+                properties.push((
+                    key.clone(),
+                    compiler::compile(&ctx, ctx.as_resource_ref(subschema))?,
+                ));
             }
-            _ => Err(ValidationError::single_type_error(
+            Ok(Box::new(PropertiesValidator { properties }))
+        } else {
+            let location = ctx.location().join("properties");
+            Err(ValidationError::single_type_error(
+                location.clone(),
+                location,
                 Location::new(),
-                ctx.location().clone(),
                 schema,
                 JsonType::Object,
-            )),
+            ))
         }
     }
 }
@@ -60,12 +61,13 @@ impl Validate for PropertiesValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
             for (name, node) in &self.properties {
                 if let Some(item) = item.get(name) {
-                    node.validate(item, &location.push(name), ctx)?;
+                    node.validate(item, &location.push(name), tracker, ctx)?;
                 }
             }
         }
@@ -77,6 +79,7 @@ impl Validate for PropertiesValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if let Value::Object(item) = instance {
@@ -84,7 +87,7 @@ impl Validate for PropertiesValidator {
             for (name, node) in &self.properties {
                 if let Some(prop) = item.get(name) {
                     let instance_path = location.push(name.as_str());
-                    errors.extend(node.iter_errors(prop, &instance_path, ctx));
+                    errors.extend(node.iter_errors(prop, &instance_path, tracker, ctx));
                 }
             }
             ErrorIterator::from_iterator(errors.into_iter())
@@ -97,6 +100,7 @@ impl Validate for PropertiesValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Object(props) = instance {
@@ -106,7 +110,7 @@ impl Validate for PropertiesValidator {
                 if let Some(prop) = props.get(prop_name) {
                     let path = location.push(prop_name.as_str());
                     matched_props.push(prop_name.clone());
-                    children.push(node.evaluate_instance(prop, &path, ctx));
+                    children.push(node.evaluate_instance(prop, &path, tracker, ctx));
                 }
             }
             let mut application = EvaluationResult::from_children(children);

@@ -1,5 +1,9 @@
 //! Facilities for working with paths within schemas or validated instances.
-use std::{borrow::Cow, fmt, sync::Arc};
+use std::{
+    borrow::Cow,
+    fmt,
+    sync::{Arc, OnceLock},
+};
 
 use referencing::unescape_segment;
 
@@ -61,8 +65,54 @@ impl<'a> LazyLocation<'a, '_> {
     }
 }
 
+/// Cached empty location - very common for root-level errors.
+static EMPTY_LOCATION: OnceLock<Location> = OnceLock::new();
+
+/// Cached single-index paths for indices 0-15.
+/// Cloning these is just an atomic increment (Arc clone).
+static CACHED_INDEX_PATHS: OnceLock<[Location; 16]> = OnceLock::new();
+
+#[inline]
+fn get_cached_index_paths() -> &'static [Location; 16] {
+    CACHED_INDEX_PATHS.get_or_init(|| {
+        std::array::from_fn(|i| {
+            let mut itoa_buf = itoa::Buffer::new();
+            let s = itoa_buf.format(i);
+            let mut buffer = String::with_capacity(1 + s.len());
+            buffer.push('/');
+            buffer.push_str(s);
+            Location(Arc::from(buffer))
+        })
+    })
+}
+
 impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
     fn from(value: &'a LazyLocation<'_, '_>) -> Self {
+        const STACK_CAPACITY: usize = 16;
+
+        // Fast path: empty location
+        if value.parent.is_none() {
+            return Location::new();
+        }
+
+        // Fast path: single index segment (very common for array validation)
+        // Use cached locations for indices 0-15 to avoid allocation
+        if let Some(parent) = value.parent {
+            if parent.parent.is_none() {
+                if let LocationSegment::Index(idx) = &value.segment {
+                    if *idx < 16 {
+                        return get_cached_index_paths()[*idx].clone();
+                    }
+                    // Single index > 15: compute directly
+                    let mut buf = itoa::Buffer::new();
+                    return Location(Arc::from(format!("/{}", buf.format(*idx))));
+                }
+            }
+        }
+
+        // General path: multi-segment
+
+        // First pass: count segments and calculate string capacity
         let mut capacity = 0;
         let mut string_capacity = 0;
         let mut head = value;
@@ -78,34 +128,407 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
 
         let mut buffer = String::with_capacity(string_capacity);
 
-        let mut segments = Vec::with_capacity(capacity);
-        head = value;
+        if capacity <= STACK_CAPACITY {
+            // Stack-allocated storage with references - no cloning needed
+            let mut stack_segments: [Option<&LocationSegment<'_>>; STACK_CAPACITY] =
+                [None; STACK_CAPACITY];
+            let mut idx = 0;
+            head = value;
 
-        if head.parent.is_some() {
-            segments.push(head.segment.clone());
-        }
-
-        while let Some(next) = head.parent {
-            head = next;
             if head.parent.is_some() {
-                segments.push(head.segment.clone());
+                stack_segments[idx] = Some(&head.segment);
+                idx += 1;
             }
-        }
 
-        for segment in segments.iter().rev() {
-            buffer.push('/');
-            match segment {
-                LocationSegment::Property(property) => {
-                    write_escaped_str(&mut buffer, property);
+            while let Some(next) = head.parent {
+                head = next;
+                if head.parent.is_some() {
+                    stack_segments[idx] = Some(&head.segment);
+                    idx += 1;
                 }
-                LocationSegment::Index(idx) => {
-                    let mut itoa_buffer = itoa::Buffer::new();
-                    buffer.push_str(itoa_buffer.format(*idx));
+            }
+
+            // Format in reverse order
+            for segment in stack_segments[..idx].iter().rev().flatten() {
+                buffer.push('/');
+                match segment {
+                    LocationSegment::Property(property) => {
+                        write_escaped_str(&mut buffer, property);
+                    }
+                    LocationSegment::Index(idx) => {
+                        let mut itoa_buffer = itoa::Buffer::new();
+                        buffer.push_str(itoa_buffer.format(*idx));
+                    }
+                }
+            }
+        } else {
+            // Heap-allocated fallback for deep paths (>16 segments)
+            let mut segments: Vec<&LocationSegment<'_>> = Vec::with_capacity(capacity);
+            head = value;
+
+            if head.parent.is_some() {
+                segments.push(&head.segment);
+            }
+
+            while let Some(next) = head.parent {
+                head = next;
+                if head.parent.is_some() {
+                    segments.push(&head.segment);
+                }
+            }
+
+            for segment in segments.iter().rev() {
+                buffer.push('/');
+                match segment {
+                    LocationSegment::Property(property) => {
+                        write_escaped_str(&mut buffer, property);
+                    }
+                    LocationSegment::Index(idx) => {
+                        let mut itoa_buffer = itoa::Buffer::new();
+                        buffer.push_str(itoa_buffer.format(*idx));
+                    }
                 }
             }
         }
 
         Location(Arc::from(buffer))
+    }
+}
+
+/// Tracks `$ref` traversals during validation for evaluation path computation.
+///
+/// This is a stack-allocated linked list that gets pushed when crossing `$ref` boundaries.
+/// Each entry stores the **suffix** of the `$ref` location (path relative to its resource base),
+/// which is precomputed at compile time.
+///
+/// Use `Option<&RefTracker>` throughout the validation code:
+/// - `None` means no `$ref` has been traversed yet
+/// - `Some(&tracker)` means at least one `$ref` has been crossed
+///
+/// # Example: Single $ref
+///
+/// ```text
+/// Schema:
+/// {
+///   "properties": {
+///     "user": { "$ref": "#/$defs/Person" }
+///   },
+///   "$defs": {
+///     "Person": { "type": "object" }
+///   }
+/// }
+///
+/// Instance: { "user": "not-an-object" }
+///
+/// At the "type" validator:
+///   tracker.prefix() = /properties/user/$ref
+///   validator.suffix = /type
+///   tracker  = /properties/user/$ref/type
+/// ```
+///
+/// # Example: Nested $refs
+///
+/// ```text
+/// Schema:
+/// {
+///   "properties": {
+///     "order": { "$ref": "#/$defs/Order" }
+///   },
+///   "$defs": {
+///     "Order": {
+///       "properties": {
+///         "item": { "$ref": "#/$defs/Item" }
+///       }
+///     },
+///     "Item": { "type": "string" }
+///   }
+/// }
+///
+/// Instance: { "order": { "item": 123 } }
+///
+/// At the "type" validator:
+///   tracker has two entries:
+///     1. suffix = /properties/order/$ref (from root resource)
+///     2. suffix = /properties/item/$ref  (from $defs/Order resource)
+///   tracker.prefix() = /properties/order/$ref/properties/item/$ref
+///   validator.suffix = /type
+///   tracker  = /properties/order/$ref/properties/item/$ref/type
+/// ```
+#[derive(Debug)]
+pub(crate) struct RefTracker<'a> {
+    /// Path of the `$ref` keyword relative to its resource base.
+    /// E.g., `/properties/user/$ref` (not the full canonical path).
+    suffix: &'a Location,
+    /// The resource base of the `$ref` target.
+    /// Used to compute validator suffixes at runtime.
+    /// E.g., `/$defs/Person` when `$ref` points to `#/$defs/Person`.
+    target_base: &'a Location,
+    /// Parent tracker for nested `$ref`s. `None` for the first `$ref` in the chain.
+    parent: Option<&'a RefTracker<'a>>,
+    /// Cached joined prefix (computed once on first access).
+    cached_prefix: std::sync::OnceLock<Location>,
+}
+
+impl<'a> RefTracker<'a> {
+    /// Create a new tracker for a `$ref` traversal.
+    ///
+    /// # Arguments
+    /// - `suffix`: The `$ref` keyword's path relative to its resource base
+    ///   (precomputed at compile time via `ctx.suffix()`)
+    /// - `target_base`: The resource base of the `$ref` target
+    ///   (e.g., `/$defs/Person` when `$ref` points to `#/$defs/Person`)
+    /// - `parent`: The parent tracker, or `None` if this is the first `$ref`
+    #[inline]
+    #[must_use]
+    pub(crate) fn new(
+        suffix: &'a Location,
+        target_base: &'a Location,
+        parent: Option<&'a RefTracker<'a>>,
+    ) -> Self {
+        RefTracker {
+            suffix,
+            target_base,
+            parent,
+            cached_prefix: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// Get the joined prefix of all `$ref` suffixes.
+    ///
+    /// Computed once on first access, then cached.
+    #[inline]
+    pub(crate) fn prefix(&self) -> &Location {
+        self.cached_prefix.get_or_init(|| self.compute_prefix())
+    }
+
+    /// Compute the suffix for a canonical location by stripping the `target_base`.
+    ///
+    /// E.g., for location `/$defs/Person/type` with `target_base` `/$defs/Person`,
+    /// returns `/type`.
+    #[inline]
+    pub(crate) fn compute_suffix(&self, location: &Location) -> Location {
+        let suffix = location
+            .as_str()
+            .strip_prefix(self.target_base.as_str())
+            .unwrap_or(location.as_str());
+        Location::from_escaped(suffix)
+    }
+
+    /// Compute the evaluation path for a validator with the given canonical location.
+    ///
+    /// This is: `prefix() + (location - target_base)`
+    #[inline]
+    pub(crate) fn evaluation_path(&self, location: &Location) -> Location {
+        let suffix = location
+            .as_str()
+            .strip_prefix(self.target_base.as_str())
+            .unwrap_or(location.as_str());
+        self.prefix().join_raw_suffix(suffix)
+    }
+
+    fn compute_prefix(&self) -> Location {
+        match self.parent {
+            None => self.suffix.clone(),
+            Some(parent) => parent.prefix().join_raw_suffix(self.suffix.as_str()),
+        }
+    }
+
+    /// Capture evaluation path state at error creation time.
+    ///
+    /// Returns a lazy evaluation path that defers computation until needed.
+    #[inline]
+    pub(crate) fn capture(&self, location: &Location) -> LazyEvaluationPath {
+        LazyEvaluationPath::Deferred {
+            prefix: self.prefix().clone(),
+            suffix: self.compute_suffix(location),
+            cached: OnceLock::new(),
+        }
+    }
+}
+
+/// Compute the evaluation path, using the tracker if present.
+#[inline]
+pub(crate) fn evaluation_path(tracker: Option<&RefTracker<'_>>, location: &Location) -> Location {
+    match tracker {
+        None => location.clone(),
+        Some(t) => t.evaluation_path(location),
+    }
+}
+
+/// Capture evaluation path state at error creation time.
+#[inline]
+pub(crate) fn capture_evaluation_path(
+    tracker: Option<&RefTracker<'_>>,
+    location: &Location,
+) -> LazyEvaluationPath {
+    match tracker {
+        None => LazyEvaluationPath::SameAsSchemaPath,
+        Some(t) => t.capture(location),
+    }
+}
+
+/// Lazily-computed evaluation path stored in validation errors.
+///
+/// # Why lazy?
+///
+/// Validators like `anyOf` collect errors from all branches but discard them
+/// if any branch succeeds. Eagerly computing evaluation paths for discarded
+/// errors wastes CPU cycles. We defer the string join until the error is
+/// actually displayed.
+///
+/// # Example 1: No $ref traversal
+///
+/// ```text
+/// Schema: { "properties": { "name": { "type": "string" } } }
+/// Instance: { "name": 123 }
+///
+/// schema_path = tracker = /properties/name/type
+///
+/// We store: SameAsSchemaPath (zero extra allocation)
+/// ```
+///
+/// # Example 2: Single $ref
+///
+/// ```text
+/// Schema:
+/// {
+///   "properties": {
+///     "user": { "$ref": "#/$defs/Person" }
+///   },
+///   "$defs": {
+///     "Person": { "type": "object" }
+///   }
+/// }
+/// Instance: { "user": "not-an-object" }
+///
+/// schema_path     = /$defs/Person/type  (canonical location, no $ref)
+/// tracker = /properties/user/$ref/type (actual traversal path)
+///
+/// We store:
+///   - prefix: /properties/user/$ref  (from RefTracker)
+///   - suffix: /type                  (precomputed at compile time)
+///
+/// On access: tracker = prefix + suffix
+/// ```
+///
+/// # Example 3: Nested $refs
+///
+/// ```text
+/// Schema:
+/// {
+///   "properties": {
+///     "order": { "$ref": "#/$defs/Order" }
+///   },
+///   "$defs": {
+///     "Order": {
+///       "properties": {
+///         "item": { "$ref": "#/$defs/Item" }
+///       }
+///     },
+///     "Item": {
+///       "properties": {
+///         "price": { "type": "number" }
+///       }
+///     }
+///   }
+/// }
+/// Instance: { "order": { "item": { "price": "free" } } }
+///
+/// schema_path     = /$defs/Item/properties/price/type
+/// tracker = /properties/order/$ref/properties/item/$ref/properties/price/type
+///
+/// We store:
+///   - prefix: /properties/order/$ref/properties/item/$ref  (from RefTracker chain)
+///   - suffix: /properties/price/type                       (computed at error creation)
+/// ```
+#[derive(Debug)]
+pub(crate) enum LazyEvaluationPath {
+    /// No `$ref` traversal - `tracker` equals `schema_path`.
+    /// Zero extra storage; we reference `ValidationError::schema_path` directly.
+    SameAsSchemaPath,
+
+    /// Already computed evaluation path (e.g., from `into_owned`).
+    Computed(Location),
+
+    /// `$ref` was traversed - lazily compute `prefix + suffix`.
+    Deferred {
+        /// Chain of `$ref` locations (e.g., `/properties/user/$ref`)
+        prefix: Location,
+        /// Path relative to innermost `$ref` target (e.g., `/type`)
+        suffix: Location,
+        /// Cached result of `prefix.join_raw_suffix(&suffix)`
+        cached: OnceLock<Location>,
+    },
+}
+
+impl Clone for LazyEvaluationPath {
+    fn clone(&self) -> Self {
+        match self {
+            LazyEvaluationPath::SameAsSchemaPath => LazyEvaluationPath::SameAsSchemaPath,
+            LazyEvaluationPath::Computed(loc) => LazyEvaluationPath::Computed(loc.clone()),
+            LazyEvaluationPath::Deferred {
+                prefix,
+                suffix,
+                cached,
+            } => {
+                let new_cached = OnceLock::new();
+                if let Some(val) = cached.get() {
+                    let _ = new_cached.set(val.clone());
+                }
+                LazyEvaluationPath::Deferred {
+                    prefix: prefix.clone(),
+                    suffix: suffix.clone(),
+                    cached: new_cached,
+                }
+            }
+        }
+    }
+}
+
+impl From<Location> for LazyEvaluationPath {
+    /// Convert a computed Location to `LazyEvaluationPath`.
+    ///
+    /// Used when an evaluation path has been computed (e.g., via `into_owned`) and needs
+    /// to be preserved when creating a new error.
+    #[inline]
+    fn from(location: Location) -> Self {
+        LazyEvaluationPath::Computed(location)
+    }
+}
+
+impl LazyEvaluationPath {
+    /// Resolve the evaluation path, computing it if necessary.
+    ///
+    /// For `SameAsSchemaPath`, caller must pass the `schema_path` reference.
+    #[inline]
+    #[must_use]
+    pub(crate) fn resolve<'a>(&'a self, schema_path: &'a Location) -> &'a Location {
+        match self {
+            LazyEvaluationPath::SameAsSchemaPath => schema_path,
+            LazyEvaluationPath::Computed(loc) => loc,
+            LazyEvaluationPath::Deferred {
+                prefix,
+                suffix,
+                cached,
+            } => cached.get_or_init(|| prefix.join_raw_suffix(suffix.as_str())),
+        }
+    }
+
+    /// Consume self and return the owned evaluation path.
+    #[inline]
+    #[must_use]
+    pub(crate) fn into_owned(self, schema_path: Location) -> Location {
+        match self {
+            LazyEvaluationPath::SameAsSchemaPath => schema_path,
+            LazyEvaluationPath::Computed(loc) => loc,
+            LazyEvaluationPath::Deferred {
+                prefix,
+                suffix,
+                cached,
+            } => cached
+                .into_inner()
+                .unwrap_or_else(|| prefix.join_raw_suffix(suffix.as_str())),
+        }
     }
 }
 
@@ -161,10 +584,30 @@ impl serde::Serialize for Location {
 
 impl Location {
     /// Create a new, empty `Location`.
+    ///
+    /// Returns a cached instance to avoid allocation.
     #[must_use]
     pub fn new() -> Self {
-        Self(Arc::from(""))
+        EMPTY_LOCATION.get_or_init(|| Self(Arc::from(""))).clone()
     }
+
+    pub(crate) fn from_escaped(escaped: &str) -> Self {
+        Self(Arc::from(escaped))
+    }
+
+    /// Append a raw JSON pointer suffix (already escaped).
+    /// This is more efficient than multiple `join` calls when the suffix
+    /// is already a valid JSON pointer path.
+    #[must_use]
+    pub(crate) fn join_raw_suffix(&self, suffix: &str) -> Self {
+        debug_assert!(!suffix.is_empty(), "suffix should never be empty");
+        let parent = &self.0;
+        let mut buffer = String::with_capacity(parent.len() + suffix.len());
+        buffer.push_str(parent);
+        buffer.push_str(suffix);
+        Self(Arc::from(buffer))
+    }
+
     #[must_use]
     pub fn join<'a>(&self, segment: impl Into<LocationSegment<'a>>) -> Self {
         let parent = &self.0;
@@ -177,9 +620,9 @@ impl Location {
                 Self(Arc::from(buffer))
             }
             LocationSegment::Index(idx) => {
-                let mut buffer = itoa::Buffer::new();
-                let segment = buffer.format(idx);
-                Self(Arc::from(format!("{parent}/{segment}")))
+                let mut itoa_buf = itoa::Buffer::new();
+                let segment = itoa_buf.format(idx);
+                Self(format!("{parent}/{segment}").into())
             }
         }
     }
@@ -328,6 +771,17 @@ mod tests {
         assert_eq!(loc.as_str(), "/0");
     }
 
+    #[test_case(0, "/0"; "cached index 0")]
+    #[test_case(15, "/15"; "cached index 15")]
+    #[test_case(16, "/16"; "uncached index 16")]
+    #[test_case(100, "/100"; "uncached index 100")]
+    fn test_lazy_location_single_index(idx: usize, expected: &str) {
+        let root = LazyLocation::new();
+        let loc = root.push(idx);
+        let location: Location = (&loc).into();
+        assert_eq!(location.as_str(), expected);
+    }
+
     #[test]
     fn test_location_join_multiple() {
         let loc = Location::new();
@@ -435,6 +889,126 @@ mod tests {
             instance
                 .pointer("/table-node/0/~0")
                 .expect("Pointer is valid")
+        );
+    }
+
+    #[test]
+    fn test_deep_path_heap_allocation() {
+        // Create a schema with >16 levels of nesting to exercise heap allocation path
+        const DEPTH: usize = 20;
+
+        let mut schema = json!({"type": "integer"});
+        for i in (0..DEPTH).rev() {
+            schema = json!({
+                "type": "object",
+                "properties": {
+                    format!("level{i}"): schema
+                }
+            });
+        }
+
+        let mut instance = json!("not an integer");
+        for i in (0..DEPTH).rev() {
+            instance = json!({
+                format!("level{i}"): instance
+            });
+        }
+
+        let error = crate::validate(&schema, &instance).expect_err("Should fail");
+
+        // Verify instance_path has correct depth (>16 exercises heap allocation)
+        let instance_path = error.instance_path();
+        assert_eq!(instance_path.into_iter().count(), DEPTH);
+        let expected_instance_path = (0..DEPTH).fold(String::new(), |mut acc, i| {
+            use std::fmt::Write;
+            write!(acc, "/level{i}").unwrap();
+            acc
+        });
+        assert_eq!(instance_path.as_str(), expected_instance_path);
+
+        // Verify schema_path also has correct depth
+        let schema_path = error.schema_path();
+        let expected_schema_path = (0..DEPTH).fold(String::new(), |mut acc, i| {
+            use std::fmt::Write;
+            write!(acc, "/properties/level{i}").unwrap();
+            acc
+        }) + "/type";
+        assert_eq!(schema_path.as_str(), expected_schema_path);
+    }
+
+    #[test]
+    fn test_dynamic_ref_evaluation_path() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$dynamicAnchor": "node",
+            "type": "object",
+            "properties": {
+                "data": {"type": "string"},
+                "child": {"$dynamicRef": "#node"}
+            }
+        });
+        let instance = json!({
+            "data": "parent",
+            "child": {
+                "data": 123
+            }
+        });
+
+        let error = crate::validate(&schema, &instance).expect_err("Should fail");
+
+        // schema_path is canonical (anchor resolves to root)
+        assert_eq!(error.schema_path().as_str(), "/properties/data/type");
+        // evaluation_path includes $dynamicRef traversal
+        assert_eq!(
+            error.evaluation_path().as_str(),
+            "/properties/child/$dynamicRef/properties/data/type"
+        );
+        assert_eq!(error.instance_path().as_str(), "/child/data");
+    }
+
+    #[test]
+    fn test_nested_ref_evaluation_path() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+                "order": { "$ref": "#/$defs/Order" }
+            },
+            "$defs": {
+                "Order": {
+                    "properties": {
+                        "item": { "$ref": "#/$defs/Item" }
+                    }
+                },
+                "Item": { "type": "string" }
+            }
+        });
+        let instance = json!({ "order": { "item": 123 } });
+
+        let error = crate::validate(&schema, &instance).expect_err("Should fail");
+
+        assert_eq!(error.schema_path().as_str(), "/$defs/Item/type");
+        assert_eq!(
+            error.evaluation_path().as_str(),
+            "/properties/order/$ref/properties/item/$ref/type"
+        );
+        assert_eq!(error.instance_path().as_str(), "/order/item");
+    }
+
+    #[test]
+    fn test_no_ref_evaluation_path_equals_schema_path() {
+        let schema = json!({
+            "properties": {
+                "name": { "type": "string" }
+            }
+        });
+        let instance = json!({ "name": 123 });
+
+        let error = crate::validate(&schema, &instance).expect_err("Should fail");
+
+        assert_eq!(error.schema_path().as_str(), "/properties/name/type");
+        assert_eq!(
+            error.evaluation_path().as_str(),
+            error.schema_path().as_str()
         );
     }
 }

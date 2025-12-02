@@ -4,7 +4,7 @@ use crate::{
     evaluation::ErrorDescription,
     keywords::CompilationResult,
     node::SchemaNode,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
 };
@@ -31,9 +31,11 @@ impl OneOfValidator {
                 location: ctx.location().clone(),
             }))
         } else {
+            let location = ctx.location().join("oneOf");
             Err(ValidationError::single_type_error(
+                location.clone(),
+                location,
                 Location::new(),
-                ctx.location().clone(),
                 schema,
                 JsonType::Array,
             ))
@@ -60,6 +62,68 @@ impl OneOfValidator {
     }
 }
 
+/// Optimized validator for `oneOf` with a single subschema.
+/// With exactly one schema, `oneOf` behaves identically to `anyOf`.
+pub(crate) struct SingleOneOfValidator {
+    node: SchemaNode,
+    location: Location,
+}
+
+impl SingleOneOfValidator {
+    #[inline]
+    pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
+        let one_of_ctx = ctx.new_at_location("oneOf");
+        let item_ctx = one_of_ctx.new_at_location(0);
+        let node = compiler::compile(&item_ctx, item_ctx.as_resource_ref(schema))?;
+        Ok(Box::new(SingleOneOfValidator {
+            node,
+            location: one_of_ctx.location().clone(),
+        }))
+    }
+}
+
+impl Validate for SingleOneOfValidator {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        self.node.is_valid(instance, ctx)
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if self.node.is_valid(instance, ctx) {
+            Ok(())
+        } else {
+            Err(ValidationError::one_of_not_valid(
+                self.location.clone(),
+                crate::paths::capture_evaluation_path(tracker, &self.location),
+                location.into(),
+                instance,
+                vec![self
+                    .node
+                    .iter_errors(instance, location, tracker, ctx)
+                    .collect()],
+            ))
+        }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        EvaluationResult::from(
+            self.node
+                .evaluate_instance(instance, location, tracker, ctx),
+        )
+    }
+}
+
 impl Validate for OneOfValidator {
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         let first_valid_idx = self.get_first_valid(instance, ctx);
@@ -70,6 +134,7 @@ impl Validate for OneOfValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         let first_valid_idx = self.get_first_valid(instance, ctx);
@@ -77,11 +142,16 @@ impl Validate for OneOfValidator {
             if self.are_others_valid(instance, idx, ctx) {
                 return Err(ValidationError::one_of_multiple_valid(
                     self.location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
                     instance,
                     self.schemas
                         .iter()
-                        .map(|schema| schema.iter_errors(instance, location, ctx).collect())
+                        .map(|schema| {
+                            schema
+                                .iter_errors(instance, location, tracker, ctx)
+                                .collect()
+                        })
                         .collect(),
                 ));
             }
@@ -89,11 +159,16 @@ impl Validate for OneOfValidator {
         } else {
             Err(ValidationError::one_of_not_valid(
                 self.location.clone(),
+                crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
                 instance,
                 self.schemas
                     .iter()
-                    .map(|schema| schema.iter_errors(instance, location, ctx).collect())
+                    .map(|schema| {
+                        schema
+                            .iter_errors(instance, location, tracker, ctx)
+                            .collect()
+                    })
                     .collect(),
             ))
         }
@@ -103,40 +178,46 @@ impl Validate for OneOfValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        let total = self.schemas.len();
-        let mut failures = Vec::with_capacity(total);
-        let mut iter = self.schemas.iter();
-        while let Some(node) = iter.next() {
-            let child = node.evaluate_instance(instance, location, ctx);
-            if child.valid {
-                let mut successes = Vec::with_capacity(total.saturating_sub(failures.len()));
-                successes.push(child);
-                for node in iter {
-                    let next = node.evaluate_instance(instance, location, ctx);
-                    if next.valid {
-                        successes.push(next);
+        // Use cheap `is_valid` first, then run full `evaluate` only on matching schemas.
+        let first_valid_idx = self.get_first_valid(instance, ctx);
+
+        let Some(first_idx) = first_valid_idx else {
+            let failures: Vec<_> = self
+                .schemas
+                .iter()
+                .map(|node| node.evaluate_instance(instance, location, tracker, ctx))
+                .collect();
+            return EvaluationResult::Invalid {
+                errors: Vec::new(),
+                children: failures,
+                annotations: None,
+            };
+        };
+
+        if self.are_others_valid(instance, first_idx, ctx) {
+            let mut successes = Vec::new();
+            for (idx, node) in self.schemas.iter().enumerate() {
+                if idx == first_idx || node.is_valid(instance, ctx) {
+                    let child = node.evaluate_instance(instance, location, tracker, ctx);
+                    if child.valid {
+                        successes.push(child);
                     }
                 }
-                return match successes.len() {
-                    1 => EvaluationResult::from(successes.remove(0)),
-                    _ => EvaluationResult::Invalid {
-                        errors: vec![ErrorDescription::new(
-                            "oneOf",
-                            "more than one subschema succeeded".to_string(),
-                        )],
-                        children: successes,
-                        annotations: None,
-                    },
-                };
             }
-            failures.push(child);
-        }
-        EvaluationResult::Invalid {
-            errors: Vec::new(),
-            children: failures,
-            annotations: None,
+            EvaluationResult::Invalid {
+                errors: vec![ErrorDescription::new(
+                    "oneOf",
+                    "more than one subschema succeeded".to_string(),
+                )],
+                children: successes,
+                annotations: None,
+            }
+        } else {
+            let child = self.schemas[first_idx].evaluate_instance(instance, location, tracker, ctx);
+            EvaluationResult::from(child)
         }
     }
 }
@@ -147,7 +228,13 @@ pub(crate) fn compile<'a>(
     _: &'a Map<String, Value>,
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
-    Some(OneOfValidator::compile(ctx, schema))
+    match schema {
+        Value::Array(items) => match items.as_slice() {
+            [item] => Some(SingleOneOfValidator::compile(ctx, item)),
+            _ => Some(OneOfValidator::compile(ctx, schema)),
+        },
+        _ => Some(OneOfValidator::compile(ctx, schema)),
+    }
 }
 
 #[cfg(test)]

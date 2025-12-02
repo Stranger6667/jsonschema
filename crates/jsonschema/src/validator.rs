@@ -5,14 +5,19 @@ use crate::{
     error::{error, no_error, ErrorIterator},
     evaluation::{Annotations, ErrorDescription, Evaluation, EvaluationNode},
     node::SchemaNode,
-    paths::LazyLocation,
+    paths::{LazyLocation, Location, RefTracker},
     Draft, ValidationError, ValidationOptions,
 };
 use serde_json::Value;
 
-/// Tracks `(node_id, instance_ptr)` pairs to detect cycles in circular `$ref` chains.
+// Re-export LazyEvaluationPath from paths module
+pub(crate) use crate::paths::LazyEvaluationPath;
+
+/// Context for `validate()`, `iter_errors()`, and `evaluate()` operations.
+///
+/// Tracks cycle detection during validation.
 #[derive(Default)]
-pub(crate) struct ValidationContext {
+pub struct ValidationContext {
     validating: Vec<(usize, usize)>,
 }
 
@@ -58,16 +63,19 @@ impl ValidationContext {
 /// `is_valid`. `evaluate` is only necessary for validators which compose other validators. See the
 /// documentation for `evaluate` for more information.
 ///
-/// All methods accept a `ValidationContext` parameter for cycle detection in circular `$ref`
-/// chains. Simple validators that don't recurse into child schemas can ignore this parameter.
+/// # Context Types
+///
+/// - `is_valid` takes `LightweightContext`: Only cycle detection, zero path tracking overhead.
+/// - `validate`, `iter_errors`, `evaluate` take `ValidationContext`: Cycle detection + evaluation path tracking.
 pub(crate) trait Validate: Send + Sync {
     fn iter_errors<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        match self.validate(instance, location, ctx) {
+        match self.validate(instance, location, tracker, ctx) {
             Ok(()) => no_error(),
             Err(err) => error(err),
         }
@@ -79,6 +87,7 @@ pub(crate) trait Validate: Send + Sync {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>>;
 
@@ -86,10 +95,11 @@ pub(crate) trait Validate: Send + Sync {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         let errors: Vec<ErrorDescription> = self
-            .iter_errors(instance, location, ctx)
+            .iter_errors(instance, location, tracker, ctx)
             .map(|e| ErrorDescription::from_validation_error(&e))
             .collect();
         if errors.is_empty() {
@@ -97,6 +107,19 @@ pub(crate) trait Validate: Send + Sync {
         } else {
             EvaluationResult::invalid_empty(errors)
         }
+    }
+
+    /// Returns the canonical location for this validator's schemaLocation output.
+    ///
+    /// Per JSON Schema spec, schemaLocation "MUST NOT include by-reference applicators
+    /// such as `$ref` or `$dynamicRef`". For most validators, the keyword location is the
+    /// canonical location, so this returns `None` by default.
+    ///
+    /// `RefValidator` and similar by-reference validators override this to return
+    /// the target schema's canonical location (e.g., `/$defs/item` instead of
+    /// `/properties/foo/$ref`).
+    fn canonical_location(&self) -> Option<&Location> {
+        None
     }
 }
 
@@ -283,7 +306,8 @@ impl Validator {
     #[inline]
     pub fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         let mut ctx = ValidationContext::new();
-        self.root.validate(instance, &LazyLocation::new(), &mut ctx)
+        self.root
+            .validate(instance, &LazyLocation::new(), None, &mut ctx)
     }
     /// Run validation against `instance` and return an iterator over [`ValidationError`] in the error case.
     #[inline]
@@ -291,7 +315,7 @@ impl Validator {
     pub fn iter_errors<'i>(&'i self, instance: &'i Value) -> ErrorIterator<'i> {
         let mut ctx = ValidationContext::new();
         self.root
-            .iter_errors(instance, &LazyLocation::new(), &mut ctx)
+            .iter_errors(instance, &LazyLocation::new(), None, &mut ctx)
     }
     /// Run validation against `instance` but return a boolean result instead of an iterator.
     /// It is useful for cases, where it is important to only know the fact if the data is valid or not.
@@ -309,7 +333,7 @@ impl Validator {
         let mut ctx = ValidationContext::new();
         let root = self
             .root
-            .evaluate_instance(instance, &LazyLocation::new(), &mut ctx);
+            .evaluate_instance(instance, &LazyLocation::new(), None, &mut ctx);
         Evaluation::new(root)
     }
     /// The [`Draft`] which was used to build this validator.
@@ -321,13 +345,7 @@ impl Validator {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        error::ValidationError,
-        keywords::custom::Keyword,
-        paths::{LazyLocation, Location},
-        types::JsonType,
-        Validator,
-    };
+    use crate::{error::ValidationError, keywords::custom::Keyword, paths::Location, Validator};
     use fancy_regex::Regex;
     use num_cmp::NumCmp;
     use serde_json::{json, Map, Value};
@@ -392,25 +410,16 @@ mod tests {
 
     #[test]
     fn custom_keyword_definition() {
-        /// Define a custom validator that verifies the object's keys consist of
-        /// only ASCII representable characters.
-        /// NOTE: This could be done with `propertyNames` + `pattern` but will be slower due to
-        /// regex usage.
+        // Define a custom validator that verifies the object's keys consist of
+        // only ASCII representable characters.
+        // NOTE: This could be done with `propertyNames` + `pattern` but will be slower due to
+        // regex usage.
         struct CustomObjectValidator;
         impl Keyword for CustomObjectValidator {
-            fn validate<'i>(
-                &self,
-                instance: &'i Value,
-                location: &LazyLocation,
-            ) -> Result<(), ValidationError<'i>> {
+            fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
                 for key in instance.as_object().unwrap().keys() {
                     if !key.is_ascii() {
-                        return Err(ValidationError::custom(
-                            Location::new(),
-                            location.into(),
-                            instance,
-                            "Key is not ASCII",
-                        ));
+                        return Err(ValidationError::custom("Key is not ASCII"));
                     }
                 }
                 Ok(())
@@ -429,18 +438,15 @@ mod tests {
         fn custom_object_type_factory<'a>(
             _: &'a Map<String, Value>,
             schema: &'a Value,
-            path: Location,
+            _path: Location,
         ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
             const EXPECTED: &str = "ascii-keys";
             if schema.as_str() == Some(EXPECTED) {
                 Ok(Box::new(CustomObjectValidator))
             } else {
-                Err(ValidationError::constant_string(
-                    Location::new(),
-                    path,
-                    schema,
-                    EXPECTED,
-                ))
+                Err(ValidationError::schema(format!(
+                    "Expected '{EXPECTED}', got {schema}"
+                )))
             }
         }
 
@@ -471,37 +477,29 @@ mod tests {
 
     #[test]
     fn custom_format_and_override_keyword() {
-        /// Check that a string has some number of digits followed by a dot followed by exactly 2 digits.
+        // Check that a string has some number of digits followed by a dot followed by exactly 2 digits.
         fn currency_format_checker(s: &str) -> bool {
             static CURRENCY_RE: LazyLock<Regex> = LazyLock::new(|| {
                 Regex::new("^(0|([1-9]+[0-9]*))(\\.[0-9]{2})$").expect("Invalid regex")
             });
             CURRENCY_RE.is_match(s).expect("Invalid regex")
         }
-        /// A custom keyword validator that overrides "minimum"
-        /// so that "minimum" may apply to "currency"-formatted strings as well.
+        // A custom keyword validator that overrides "minimum"
+        // so that "minimum" may apply to "currency"-formatted strings as well.
         struct CustomMinimumValidator {
             limit: f64,
-            limit_val: Value,
             with_currency_format: bool,
-            location: Location,
         }
 
         impl Keyword for CustomMinimumValidator {
-            fn validate<'i>(
-                &self,
-                instance: &'i Value,
-                location: &LazyLocation,
-            ) -> Result<(), ValidationError<'i>> {
+            fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
                 if self.is_valid(instance) {
                     Ok(())
                 } else {
-                    Err(ValidationError::minimum(
-                        self.location.clone(),
-                        location.into(),
-                        instance,
-                        self.limit_val.clone(),
-                    ))
+                    Err(ValidationError::custom(format!(
+                        "value is less than the minimum of {}",
+                        self.limit
+                    )))
                 }
             }
 
@@ -536,31 +534,23 @@ mod tests {
             }
         }
 
-        /// Build a validator that overrides the standard `minimum` keyword
+        // Build a validator that overrides the standard `minimum` keyword
         fn custom_minimum_factory<'a>(
             parent: &'a Map<String, Value>,
             schema: &'a Value,
-            location: Location,
+            _path: Location,
         ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
             let limit = if let Value::Number(limit) = schema {
                 limit.as_f64().expect("Always valid")
             } else {
-                return Err(ValidationError::single_type_error(
-                    // There is no metaschema definition for a custom keyword, hence empty `schema` pointer
-                    Location::new(),
-                    location,
-                    schema,
-                    JsonType::Number,
-                ));
+                return Err(ValidationError::schema("minimum must be a number"));
             };
             let with_currency_format = parent
                 .get("format")
                 .is_some_and(|format| format == "currency");
             Ok(Box::new(CustomMinimumValidator {
                 limit,
-                limit_val: schema.clone(),
                 with_currency_format,
-                location,
             }))
         }
 
@@ -612,13 +602,77 @@ mod tests {
         assert!(validator.validate(&instance).is_err());
         assert!(!validator.is_valid(&instance));
 
-        // Invalid `minimum` value
+        // Invalid `minimum` value - meta-schema validation catches this first
         let schema = json!({ "minimum": "foo" });
         let error = crate::options()
             .with_keyword("minimum", custom_minimum_factory)
             .build(&schema)
             .expect_err("Should fail");
+        // The meta-schema validates before our factory runs, so we get a type error
         assert_eq!(error.to_string(), "\"foo\" is not of type \"number\"");
+    }
+
+    #[test]
+    fn custom_keyword_validation_error_paths() {
+        struct AlwaysFailValidator;
+        impl Keyword for AlwaysFailValidator {
+            fn validate<'i>(&self, _instance: &'i Value) -> Result<(), ValidationError<'i>> {
+                Err(ValidationError::custom("always fails"))
+            }
+            fn is_valid(&self, _instance: &Value) -> bool {
+                false
+            }
+        }
+
+        fn always_fail_factory<'a>(
+            _: &'a Map<String, Value>,
+            _: &'a Value,
+            _: Location,
+        ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
+            Ok(Box::new(AlwaysFailValidator))
+        }
+
+        let schema = json!({
+            "properties": {
+                "name": { "alwaysFail": true }
+            }
+        });
+        let validator = crate::options()
+            .with_keyword("alwaysFail", always_fail_factory)
+            .build(&schema)
+            .expect("Valid schema");
+
+        let instance = json!({"name": "test"});
+        let error = validator.validate(&instance).expect_err("Should fail");
+        assert_eq!(error.instance_path().as_str(), "/name");
+        assert_eq!(error.schema_path().as_str(), "/properties/name/alwaysFail");
+        assert_eq!(
+            error.evaluation_path().as_str(),
+            "/properties/name/alwaysFail"
+        );
+    }
+
+    #[test]
+    fn custom_keyword_factory_error_schema_path() {
+        fn failing_factory<'a>(
+            _: &'a Map<String, Value>,
+            _: &'a Value,
+            _: Location,
+        ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
+            Err(ValidationError::schema("invalid schema value"))
+        }
+
+        let schema = json!({
+            "properties": {
+                "field": { "myKeyword": "bad-value" }
+            }
+        });
+        let error = crate::options()
+            .with_keyword("myKeyword", failing_factory)
+            .build(&schema)
+            .expect_err("Should fail");
+        assert_eq!(error.to_string(), "invalid schema value");
+        assert_eq!(error.schema_path().as_str(), "/properties/field/myKeyword");
     }
 
     #[test]
@@ -647,5 +701,34 @@ mod tests {
             validator.is_valid(&json!("test")),
             cloned.is_valid(&json!("test"))
         );
+    }
+
+    #[test]
+    fn ref_with_required_multiple_missing_clones_deferred_eval_path() {
+        // Tests the Deferred branch of LazyEvaluationPath::clone()
+        // When $ref is involved and multiple required properties are missing,
+        // the eval_path is cloned for each error
+        let schema = json!({
+            "$defs": {
+                "Person": {
+                    "type": "object",
+                    "required": ["name", "age", "email"]
+                }
+            },
+            "$ref": "#/$defs/Person"
+        });
+        let validator = crate::validator_for(&schema).expect("Valid schema");
+        let instance = json!({});
+
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+
+        // Should have 3 errors for the 3 missing required properties
+        assert_eq!(errors.len(), 3);
+
+        // All errors should have evaluation paths that include the $ref traversal
+        for error in &errors {
+            assert_eq!(error.schema_path().as_str(), "/$defs/Person/required");
+            assert_eq!(error.evaluation_path().as_str(), "/$ref/required");
+        }
     }
 }
