@@ -647,39 +647,26 @@
 //! ```rust
 //! use jsonschema::{
 //!     paths::{LazyLocation, Location},
-//!     Keyword, ValidationError,
+//!     Keyword, ValidationContext, ValidationError,
 //! };
 //! use serde_json::{json, Map, Value};
-//! use std::iter::once;
 //!
-//! // Step 1: Implement the Keyword trait
 //! struct EvenNumberValidator;
 //!
 //! impl Keyword for EvenNumberValidator {
 //!     fn validate<'i>(
 //!         &self,
 //!         instance: &'i Value,
-//!         location: &LazyLocation,
+//!         instance_path: &LazyLocation,
+//!         ctx: &mut ValidationContext,
+//!         schema_path: &Location,
 //!     ) -> Result<(), ValidationError<'i>> {
-//!         if let Value::Number(n) = instance {
-//!             if n.as_u64().map_or(false, |n| n % 2 == 0) {
-//!                 Ok(())
-//!             } else {
-//!                 return Err(ValidationError::custom(
-//!                     Location::new(),
-//!                     location.into(),
-//!                     instance,
-//!                     "Number must be even",
-//!                 ));
+//!         if let Some(n) = instance.as_u64() {
+//!             if n % 2 == 0 {
+//!                 return Ok(());
 //!             }
-//!         } else {
-//!             Err(ValidationError::custom(
-//!                 Location::new(),
-//!                 location.into(),
-//!                 instance,
-//!                 "Value must be a number",
-//!             ))
 //!         }
+//!         Err(ctx.custom_error(schema_path, instance_path, instance, "value must be an even integer"))
 //!     }
 //!
 //!     fn is_valid(&self, instance: &Value) -> bool {
@@ -687,38 +674,27 @@
 //!     }
 //! }
 //!
-//! // Step 2: Create a factory function
-//! fn even_number_validator_factory<'a>(
+//! fn even_number_factory<'a>(
 //!     _parent: &'a Map<String, Value>,
 //!     value: &'a Value,
-//!     path: Location,
+//!     schema_path: Location,
 //! ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
-//!     // You can use the `value` parameter to configure your validator if needed
 //!     if value.as_bool() == Some(true) {
 //!         Ok(Box::new(EvenNumberValidator))
 //!     } else {
-//!         Err(ValidationError::custom(
-//!             Location::new(),
-//!             path,
-//!             value,
-//!             "The 'even-number' keyword must be set to true",
-//!         ))
+//!         Err(ValidationError::schema(schema_path, value, "The 'even-number' keyword must be set to true"))
 //!     }
 //! }
 //!
-//! // Step 3: Use the custom keyword
-//! fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let schema = json!({"even-number": true, "type": "integer"});
-//!     let validator = jsonschema::options()
-//!         .with_keyword("even-number", even_number_validator_factory)
-//!         .build(&schema)?;
+//! let schema = json!({"even-number": true, "type": "integer"});
+//! let validator = jsonschema::options()
+//!     .with_keyword("even-number", even_number_factory)
+//!     .build(&schema)
+//!     .expect("Invalid schema");
 //!
-//!     assert!(validator.is_valid(&json!(2)));
-//!     assert!(!validator.is_valid(&json!(3)));
-//!     assert!(!validator.is_valid(&json!("not a number")));
-//!
-//!     Ok(())
-//! }
+//! assert!(validator.is_valid(&json!(2)));
+//! assert!(!validator.is_valid(&json!(3)));
+//! assert!(!validator.is_valid(&json!("not a number")));
 //! ```
 //!
 //! In this example, we've created a custom `even-number` keyword that validates whether a number is even.
@@ -729,11 +705,10 @@
 //!
 //! ```rust
 //! # use jsonschema::{
-//! #     paths::LazyLocation,
-//! #     Keyword, ValidationError,
+//! #     paths::{LazyLocation, Location},
+//! #     Keyword, ValidationContext, ValidationError,
 //! # };
 //! # use serde_json::{json, Map, Value};
-//! # use std::iter::once;
 //! #
 //! # struct EvenNumberValidator;
 //! #
@@ -741,7 +716,9 @@
 //! #     fn validate<'i>(
 //! #         &self,
 //! #         instance: &'i Value,
-//! #         location: &LazyLocation,
+//! #         instance_path: &LazyLocation,
+//! #         ctx: &mut ValidationContext,
+//! #         schema_path: &Location,
 //! #     ) -> Result<(), ValidationError<'i>> {
 //! #         Ok(())
 //! #     }
@@ -750,15 +727,13 @@
 //! #         true
 //! #     }
 //! # }
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let schema = json!({"even-number": true, "type": "integer"});
 //! let validator = jsonschema::options()
 //!     .with_keyword("even-number", |_, _, _| {
 //!         Ok(Box::new(EvenNumberValidator))
 //!     })
-//!     .build(&schema)?;
-//! # Ok(())
-//! # }
+//!     .build(&schema)
+//!     .expect("Invalid schema");
 //! ```
 //!
 //! # Custom Formats
@@ -919,7 +894,7 @@ pub use referencing::{
     Draft, Error as ReferencingError, Registry, RegistryOptions, Resource, Retrieve, Uri,
 };
 pub use types::{JsonType, JsonTypeSet, JsonTypeSetIterator};
-pub use validator::Validator;
+pub use validator::{ValidationContext, Validator};
 
 #[cfg(feature = "resolve-async")]
 pub use referencing::AsyncRetrieve;
@@ -2620,6 +2595,12 @@ pub(crate) mod tests_util {
     pub(crate) fn assert_schema_location(schema: &Value, instance: &Value, expected: &str) {
         let error = validate(schema, instance);
         assert_eq!(error.schema_path().as_str(), expected);
+    }
+
+    #[track_caller]
+    pub(crate) fn assert_evaluation_path(schema: &Value, instance: &Value, expected: &str) {
+        let error = validate(schema, instance);
+        assert_eq!(error.evaluation_path().as_str(), expected);
     }
 
     #[track_caller]

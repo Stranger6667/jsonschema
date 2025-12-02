@@ -4,9 +4,9 @@ use crate::{
     evaluation::ErrorDescription,
     keywords::CompilationResult,
     node::SchemaNode,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, LazyRefPath, Location},
     types::JsonType,
-    validator::{EvaluationResult, Validate, ValidationContext},
+    validator::{capture_evaluation_path, EvaluationResult, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -31,9 +31,11 @@ impl OneOfValidator {
                 location: ctx.location().clone(),
             }))
         } else {
+            let location = ctx.location().join("oneOf");
             Err(ValidationError::single_type_error(
+                location.clone(),
+                location,
                 Location::new(),
-                ctx.location().clone(),
                 schema,
                 JsonType::Array,
             ))
@@ -70,6 +72,7 @@ impl Validate for OneOfValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        evaluation_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         let first_valid_idx = self.get_first_valid(instance, ctx);
@@ -77,11 +80,16 @@ impl Validate for OneOfValidator {
             if self.are_others_valid(instance, idx, ctx) {
                 return Err(ValidationError::one_of_multiple_valid(
                     self.location.clone(),
+                    capture_evaluation_path(&self.location, evaluation_path),
                     location.into(),
                     instance,
                     self.schemas
                         .iter()
-                        .map(|schema| schema.iter_errors(instance, location, ctx).collect())
+                        .map(|schema| {
+                            schema
+                                .iter_errors(instance, location, evaluation_path, ctx)
+                                .collect()
+                        })
                         .collect(),
                 ));
             }
@@ -89,11 +97,16 @@ impl Validate for OneOfValidator {
         } else {
             Err(ValidationError::one_of_not_valid(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, evaluation_path),
                 location.into(),
                 instance,
                 self.schemas
                     .iter()
-                    .map(|schema| schema.iter_errors(instance, location, ctx).collect())
+                    .map(|schema| {
+                        schema
+                            .iter_errors(instance, location, evaluation_path, ctx)
+                            .collect()
+                    })
                     .collect(),
             ))
         }
@@ -103,40 +116,70 @@ impl Validate for OneOfValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        evaluation_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        let total = self.schemas.len();
-        let mut failures = Vec::with_capacity(total);
-        let mut iter = self.schemas.iter();
-        while let Some(node) = iter.next() {
-            let child = node.evaluate_instance(instance, location, ctx);
-            if child.valid {
-                let mut successes = Vec::with_capacity(total.saturating_sub(failures.len()));
-                successes.push(child);
-                for node in iter {
-                    let next = node.evaluate_instance(instance, location, ctx);
-                    if next.valid {
-                        successes.push(next);
+        // In most cases it is much faster to use cheap `is_valid` that does not build evaluation path and then
+        // re-run slower `evaluate` on a subset. It assumes that validation more often succeeds
+        // than not in real use cases.
+        let mut valid_indices: Vec<usize> = Vec::new();
+        for (idx, node) in self.schemas.iter().enumerate() {
+            if node.is_valid(instance, ctx) {
+                valid_indices.push(idx);
+                // Early exit if we find more than one valid - we know it's invalid
+                if valid_indices.len() > 1 {
+                    break;
+                }
+            }
+        }
+
+        match valid_indices.len() {
+            0 => {
+                // No valid schemas - need to evaluate all for error details
+                let failures: Vec<_> = self
+                    .schemas
+                    .iter()
+                    .map(|node| node.evaluate_instance(instance, location, evaluation_path, ctx))
+                    .collect();
+                EvaluationResult::Invalid {
+                    errors: Vec::new(),
+                    children: failures,
+                    annotations: None,
+                }
+            }
+            1 => {
+                // Exactly one valid - only evaluate that one for output
+                let child = self.schemas[valid_indices[0]].evaluate_instance(
+                    instance,
+                    location,
+                    evaluation_path,
+                    ctx,
+                );
+                EvaluationResult::from(child)
+            }
+            _ => {
+                // Multiple valid - evaluate all valid ones for error output
+                // We already found at least 2, but there may be more
+                let mut successes = Vec::with_capacity(valid_indices.len());
+                for (idx, node) in self.schemas.iter().enumerate() {
+                    // Check indices we already know, or test remaining schemas
+                    if valid_indices.contains(&idx) || node.is_valid(instance, ctx) {
+                        let child =
+                            node.evaluate_instance(instance, location, evaluation_path, ctx);
+                        if child.valid {
+                            successes.push(child);
+                        }
                     }
                 }
-                return match successes.len() {
-                    1 => EvaluationResult::from(successes.remove(0)),
-                    _ => EvaluationResult::Invalid {
-                        errors: vec![ErrorDescription::new(
-                            "oneOf",
-                            "more than one subschema succeeded".to_string(),
-                        )],
-                        children: successes,
-                        annotations: None,
-                    },
-                };
+                EvaluationResult::Invalid {
+                    errors: vec![ErrorDescription::new(
+                        "oneOf",
+                        "more than one subschema succeeded".to_string(),
+                    )],
+                    children: successes,
+                    annotations: None,
+                }
             }
-            failures.push(child);
-        }
-        EvaluationResult::Invalid {
-            errors: Vec::new(),
-            children: failures,
-            annotations: None,
         }
     }
 }

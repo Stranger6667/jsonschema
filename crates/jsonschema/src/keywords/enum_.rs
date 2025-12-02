@@ -3,9 +3,9 @@ use crate::{
     error::ValidationError,
     ext::cmp,
     keywords::CompilationResult,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, LazyRefPath, Location},
     types::{JsonType, JsonTypeSet},
-    validator::{Validate, ValidationContext},
+    validator::{capture_evaluation_path, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -43,6 +43,7 @@ impl Validate for EnumValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        evaluation_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -50,6 +51,7 @@ impl Validate for EnumValidator {
         } else {
             Err(ValidationError::enumeration(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, evaluation_path),
                 location.into(),
                 instance,
                 &self.options,
@@ -96,6 +98,7 @@ impl Validate for SingleValueEnumValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        evaluation_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -103,6 +106,7 @@ impl Validate for SingleValueEnumValidator {
         } else {
             Err(ValidationError::enumeration(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, evaluation_path),
                 location.into(),
                 instance,
                 &self.options,
@@ -130,9 +134,11 @@ pub(crate) fn compile<'a>(
             Some(EnumValidator::compile(schema, items, location))
         }
     } else {
+        let location = ctx.location().join("enum");
         Some(Err(ValidationError::single_type_error(
+            location.clone(),
+            location,
             Location::new(),
-            ctx.location().clone(),
             schema,
             JsonType::Array,
         )))

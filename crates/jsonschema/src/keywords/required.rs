@@ -2,9 +2,9 @@ use crate::{
     compiler,
     error::{no_error, ErrorIterator, ValidationError},
     keywords::CompilationResult,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, LazyRefPath, Location},
     types::JsonType,
-    validator::{Validate, ValidationContext},
+    validator::{capture_evaluation_path, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -22,8 +22,9 @@ impl RequiredValidator {
                 Value::String(string) => required.push(string.clone()),
                 _ => {
                     return Err(ValidationError::single_type_error(
-                        Location::new(),
+                        location.clone(),
                         location,
+                        Location::new(),
                         item,
                         JsonType::String,
                     ))
@@ -52,6 +53,7 @@ impl Validate for RequiredValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        evaluation_path: &LazyRefPath,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
@@ -59,9 +61,9 @@ impl Validate for RequiredValidator {
                 if !item.contains_key(property_name) {
                     return Err(ValidationError::required(
                         self.location.clone(),
+                        capture_evaluation_path(&self.location, evaluation_path),
                         location.into(),
                         instance,
-                        // Value enum is needed for proper string escaping
                         Value::String(property_name.clone()),
                     ));
                 }
@@ -73,17 +75,19 @@ impl Validate for RequiredValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        evaluation_path: &LazyRefPath,
         _ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if let Value::Object(item) = instance {
             let mut errors = vec![];
+            let evaluation_path = capture_evaluation_path(&self.location, evaluation_path);
             for property_name in &self.required {
                 if !item.contains_key(property_name) {
                     errors.push(ValidationError::required(
                         self.location.clone(),
+                        evaluation_path.clone(),
                         location.into(),
                         instance,
-                        // Value enum is needed for proper string escaping
                         Value::String(property_name.clone()),
                     ));
                 }
@@ -116,14 +120,15 @@ impl Validate for SingleItemRequiredValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        evaluation_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if !self.is_valid(instance, ctx) {
             return Err(ValidationError::required(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, evaluation_path),
                 location.into(),
                 instance,
-                // Value enum is needed for proper string escaping
                 Value::String(self.value.clone()),
             ));
         }
@@ -166,8 +171,9 @@ pub(crate) fn compile_with_path(
                     Some(SingleItemRequiredValidator::compile(item, location))
                 } else {
                     Some(Err(ValidationError::single_type_error(
-                        Location::new(),
+                        location.clone(),
                         location,
+                        Location::new(),
                         item,
                         JsonType::String,
                     )))
@@ -177,8 +183,9 @@ pub(crate) fn compile_with_path(
             }
         }
         _ => Some(Err(ValidationError::single_type_error(
-            Location::new(),
+            location.clone(),
             location,
+            Location::new(),
             schema,
             JsonType::Array,
         ))),

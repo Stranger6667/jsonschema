@@ -1,5 +1,6 @@
 use crate::{
     compiler, node::SchemaNode, paths::Location, thread::ThreadBound, validator::Validate as _,
+    ValidationContext,
 };
 use ahash::AHashMap;
 use serde_json::{Map, Value};
@@ -93,12 +94,12 @@ pub(crate) fn compile_big_map<'a>(
 pub(crate) fn are_properties_valid<M, F>(
     prop_map: &M,
     props: &Map<String, Value>,
-    ctx: &mut crate::validator::ValidationContext,
+    ctx: &mut ValidationContext,
     check: F,
 ) -> bool
 where
     M: PropertiesValidatorsMap,
-    F: Fn(&Value, &mut crate::validator::ValidationContext) -> bool,
+    F: Fn(&Value, &mut ValidationContext) -> bool,
 {
     for (property, instance) in props {
         if let Some(validator) = prop_map.get_validator(property) {
@@ -123,7 +124,14 @@ pub(crate) fn compile_fancy_regex_patterns<'a>(
     for (pattern, subschema) in obj {
         let pctx = kctx.new_at_location(pattern.as_str());
         let compiled_pattern = ctx.get_or_compile_regex(pattern).map_err(|()| {
-            ValidationError::format(Location::new(), kctx.location().clone(), subschema, "regex")
+            let location = kctx.location().clone();
+            ValidationError::format(
+                location.clone(),
+                location,
+                Location::new(),
+                subschema,
+                "regex",
+            )
         })?;
         let node = compiler::compile(&pctx, pctx.as_resource_ref(subschema))?;
         compiled_patterns.push(((*compiled_pattern).clone(), node));
@@ -141,7 +149,14 @@ pub(crate) fn compile_regex_patterns<'a>(
     for (pattern, subschema) in obj {
         let pctx = kctx.new_at_location(pattern.as_str());
         let compiled_pattern = ctx.get_or_compile_standard_regex(pattern).map_err(|()| {
-            ValidationError::format(Location::new(), kctx.location().clone(), subschema, "regex")
+            let location = kctx.location().clone();
+            ValidationError::format(
+                location.clone(),
+                location,
+                Location::new(),
+                subschema,
+                "regex",
+            )
         })?;
         let node = compiler::compile(&pctx, pctx.as_resource_ref(subschema))?;
         compiled_patterns.push(((*compiled_pattern).clone(), node));
@@ -150,20 +165,22 @@ pub(crate) fn compile_regex_patterns<'a>(
 }
 
 macro_rules! compile_dynamic_prop_map_validator {
-    ($validator:tt, $properties:ident, $( $arg:expr ),* $(,)*) => {{
+    ($validator:tt, $properties:ident, $ctx:expr, $( $arg:expr ),* $(,)*) => {{
         if let Value::Object(map) = $properties {
             if map.len() < 40 {
                 Some($validator::<SmallValidatorsMap>::compile(
-                    map, $($arg, )*
+                    map, $ctx, $($arg, )*
                 ))
             } else {
                 Some($validator::<BigValidatorsMap>::compile(
-                    map, $($arg, )*
+                    map, $ctx, $($arg, )*
                 ))
             }
         } else {
+            let location = $ctx.location().clone();
             Some(Err(ValidationError::custom(
-                Location::new(),
+                location.clone(),
+                location,
                 Location::new(),
                 $properties,
                 "Unexpected type",

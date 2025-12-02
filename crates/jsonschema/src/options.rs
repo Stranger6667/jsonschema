@@ -447,10 +447,9 @@ impl<R> ValidationOptions<R> {
     /// ```rust
     /// # use jsonschema::{
     /// #    paths::{LazyLocation, Location},
-    /// #    ErrorIterator, Keyword, ValidationError,
+    /// #    Keyword, ValidationContext, ValidationError,
     /// # };
     /// # use serde_json::{json, Map, Value};
-    /// # use std::iter::once;
     ///
     /// struct MyCustomValidator;
     ///
@@ -458,31 +457,25 @@ impl<R> ValidationOptions<R> {
     ///     fn validate<'i>(
     ///         &self,
     ///         instance: &'i Value,
-    ///         location: &LazyLocation,
+    ///         instance_path: &LazyLocation,
+    ///         ctx: &mut ValidationContext,
+    ///         schema_path: &Location,
     ///     ) -> Result<(), ValidationError<'i>> {
-    ///         // ... validate instance ...
     ///         if !instance.is_object() {
-    ///             return Err(ValidationError::custom(
-    ///                 Location::new(),
-    ///                 location.into(),
-    ///                 instance,
-    ///                 "Boom!",
-    ///             ));
-    ///         } else {
-    ///             Ok(())
+    ///             return Err(ctx.custom_error(schema_path, instance_path, instance, "expected an object"));
     ///         }
+    ///         Ok(())
     ///     }
+    ///
     ///     fn is_valid(&self, instance: &Value) -> bool {
-    ///         // ... determine if instance is valid ...
-    ///         true
+    ///         instance.is_object()
     ///     }
     /// }
     ///
-    /// // You can create a factory function, or use a closure to create new validator instances.
     /// fn custom_validator_factory<'a>(
-    ///     parent: &'a Map<String, Value>,
-    ///     value: &'a Value,
-    ///     path: Location,
+    ///     _parent: &'a Map<String, Value>,
+    ///     _value: &'a Value,
+    ///     _schema_path: Location,
     /// ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
     ///     Ok(Box::new(MyCustomValidator))
     /// }

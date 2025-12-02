@@ -14,9 +14,9 @@ use crate::{
     compiler,
     evaluation::ErrorDescription,
     node::SchemaNode,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, LazyRefPath, Location},
     thread::Shared,
-    validator::{EvaluationResult, Validate, ValidationContext},
+    validator::{capture_evaluation_path, EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
 
@@ -552,6 +552,7 @@ impl Validate for UnevaluatedItemsValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        evaluation_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
@@ -577,6 +578,7 @@ impl Validate for UnevaluatedItemsValidator {
             if !unevaluated.is_empty() {
                 return Err(ValidationError::unevaluated_items(
                     self.location.clone(),
+                    capture_evaluation_path(&self.location, evaluation_path),
                     location.into(),
                     instance,
                     unevaluated,
@@ -590,6 +592,7 @@ impl Validate for UnevaluatedItemsValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        evaluation_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Array(items) = instance {
@@ -605,7 +608,12 @@ impl Validate for UnevaluatedItemsValidator {
                     continue;
                 }
                 if let Some(validator) = &self.validators.unevaluated {
-                    let child = validator.evaluate_instance(item, &location.push(idx), ctx);
+                    let child = validator.evaluate_instance(
+                        item,
+                        &location.push(idx),
+                        evaluation_path,
+                        ctx,
+                    );
                     if !child.valid {
                         invalid = true;
                         unevaluated.push(item.to_string());
@@ -622,6 +630,7 @@ impl Validate for UnevaluatedItemsValidator {
                 errors.push(ErrorDescription::from_validation_error(
                     &ValidationError::unevaluated_items(
                         self.location.clone(),
+                        capture_evaluation_path(&self.location, evaluation_path),
                         location.into(),
                         instance,
                         unevaluated,

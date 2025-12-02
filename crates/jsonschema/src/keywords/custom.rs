@@ -1,5 +1,5 @@
 use crate::{
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, LazyRefPath, Location},
     thread::ThreadBound,
     validator::{Validate, ValidationContext},
     ValidationError,
@@ -8,11 +8,12 @@ use serde_json::{Map, Value};
 
 pub(crate) struct CustomKeyword {
     inner: Box<dyn Keyword>,
+    location: Location,
 }
 
 impl CustomKeyword {
-    pub(crate) fn new(inner: Box<dyn Keyword>) -> Self {
-        Self { inner }
+    pub(crate) fn new(inner: Box<dyn Keyword>, location: Location) -> Self {
+        Self { inner, location }
     }
 }
 
@@ -20,10 +21,12 @@ impl Validate for CustomKeyword {
     fn validate<'i>(
         &self,
         instance: &'i Value,
-        location: &LazyLocation,
-        _ctx: &mut ValidationContext,
+        instance_path: &LazyLocation,
+        _evaluation_path: &LazyRefPath,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        self.inner.validate(instance, location)
+        self.inner
+            .validate(instance, instance_path, ctx, &self.location)
     }
 
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
@@ -31,26 +34,64 @@ impl Validate for CustomKeyword {
     }
 }
 
-/// Trait that allows implementing custom validation for keywords.
+/// Trait for implementing custom keyword validators.
+///
+/// Custom keywords extend JSON Schema validation with domain-specific rules.
+///
+/// # Example
+///
+/// ```rust
+/// use jsonschema::{
+///     paths::{LazyLocation, Location},
+///     Keyword, ValidationContext, ValidationError,
+/// };
+/// use serde_json::Value;
+///
+/// struct EvenNumberValidator;
+///
+/// impl Keyword for EvenNumberValidator {
+///     fn validate<'i>(
+///         &self,
+///         instance: &'i Value,
+///         instance_path: &LazyLocation,
+///         ctx: &mut ValidationContext,
+///         schema_path: &Location,
+///     ) -> Result<(), ValidationError<'i>> {
+///         if let Some(n) = instance.as_u64() {
+///             if n % 2 != 0 {
+///                 return Err(ctx.custom_error(
+///                     schema_path,
+///                     instance_path,
+///                     instance,
+///                     "number must be even",
+///                 ));
+///             }
+///         }
+///         Ok(())
+///     }
+///
+///     fn is_valid(&self, instance: &Value) -> bool {
+///         instance.as_u64().map_or(true, |n| n % 2 == 0)
+///     }
+/// }
+/// ```
 pub trait Keyword: ThreadBound {
-    /// Validate instance according to a custom specification.
+    /// Validate an instance against this custom keyword.
     ///
-    /// A custom keyword validator may be used when a validation that cannot be
-    /// easily or efficiently expressed in JSON schema.
-    ///
-    /// The custom validation is applied in addition to the JSON schema validation.
+    /// Use `ctx.custom_error()` to create errors with correct `evaluation_path`.
     ///
     /// # Errors
     ///
-    /// Returns an error describing why `instance` violates the custom keyword semantics.
+    /// Returns a [`ValidationError`] if the instance fails validation.
     fn validate<'i>(
         &self,
         instance: &'i Value,
-        location: &LazyLocation,
+        instance_path: &LazyLocation,
+        ctx: &mut ValidationContext,
+        schema_path: &Location,
     ) -> Result<(), ValidationError<'i>>;
-    /// Validate instance and return a boolean result.
-    ///
-    /// Could be potentilly faster than [`Keyword::validate`] method.
+
+    /// Check validity without collecting error details.
     fn is_valid(&self, instance: &Value) -> bool;
 }
 
@@ -59,7 +100,7 @@ pub(crate) trait KeywordFactory: ThreadBound {
         &self,
         parent: &'a Map<String, Value>,
         schema: &'a Value,
-        path: Location,
+        schema_path: Location,
     ) -> Result<Box<dyn Keyword>, ValidationError<'a>>;
 }
 
@@ -76,8 +117,8 @@ where
         &self,
         parent: &'a Map<String, Value>,
         schema: &'a Value,
-        path: Location,
+        schema_path: Location,
     ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
-        self(parent, schema, path)
+        self(parent, schema, schema_path)
     }
 }

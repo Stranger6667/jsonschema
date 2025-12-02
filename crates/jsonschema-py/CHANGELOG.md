@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ValidationError.evaluation_path` attribute returning the path including `$ref` traversals.
+
+### Fixed
+
+- `schemaLocation` in evaluation output now excludes `$ref`/`$dynamicRef`/`$recursiveRef` per JSON Schema spec.
+
 ## [0.37.4] - 2025-11-30
 
 ### Fixed
