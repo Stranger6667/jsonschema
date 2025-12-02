@@ -3,9 +3,9 @@ use crate::{
     error::ValidationError,
     ext::numeric,
     keywords::CompilationResult,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, LazyRefPath, Location},
     types::JsonType,
-    validator::{Validate, ValidationContext},
+    validator::{capture_evaluation_path, LightweightContext, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -33,7 +33,7 @@ impl MultipleOfFloatValidator {
 }
 
 impl Validate for MultipleOfFloatValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         if let Value::Number(item) = instance {
             numeric::is_multiple_of_float(item, self.multiple_of)
         } else {
@@ -45,13 +45,15 @@ impl Validate for MultipleOfFloatValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if !self.is_valid(instance, ctx) {
+        if !self.is_valid(instance, ctx.lightweight()) {
             #[cfg(feature = "arbitrary-precision")]
             {
                 return Err(ValidationError::multiple_of(
                     self.location.clone(),
+                    capture_evaluation_path(&self.location, ref_path),
                     location.into(),
                     instance,
                     Value::Number(self.original_value.clone()),
@@ -61,6 +63,7 @@ impl Validate for MultipleOfFloatValidator {
             {
                 return Err(ValidationError::multiple_of(
                     self.location.clone(),
+                    capture_evaluation_path(&self.location, ref_path),
                     location.into(),
                     instance,
                     self.multiple_of,
@@ -95,7 +98,7 @@ impl MultipleOfIntegerValidator {
 }
 
 impl Validate for MultipleOfIntegerValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         if let Value::Number(item) = instance {
             numeric::is_multiple_of_integer(item, self.multiple_of)
         } else {
@@ -107,13 +110,15 @@ impl Validate for MultipleOfIntegerValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if !self.is_valid(instance, ctx) {
+        if !self.is_valid(instance, ctx.lightweight()) {
             #[cfg(feature = "arbitrary-precision")]
             {
                 return Err(ValidationError::multiple_of(
                     self.location.clone(),
+                    capture_evaluation_path(&self.location, ref_path),
                     location.into(),
                     instance,
                     Value::Number(self.original_value.clone()),
@@ -123,6 +128,7 @@ impl Validate for MultipleOfIntegerValidator {
             {
                 return Err(ValidationError::multiple_of(
                     self.location.clone(),
+                    capture_evaluation_path(&self.location, ref_path),
                     location.into(),
                     instance,
                     self.multiple_of,
@@ -158,7 +164,7 @@ impl MultipleOfBigIntValidator {
 
 #[cfg(feature = "arbitrary-precision")]
 impl Validate for MultipleOfBigIntValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         use num_bigint::BigInt;
         use num_traits::One;
         if let Value::Number(item) = instance {
@@ -216,11 +222,13 @@ impl Validate for MultipleOfBigIntValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if !self.is_valid(instance, ctx) {
+        if !self.is_valid(instance, ctx.lightweight()) {
             return Err(ValidationError::multiple_of(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 Value::Number(self.original_value.clone()),
@@ -255,7 +263,7 @@ impl MultipleOfBigFracValidator {
 
 #[cfg(feature = "arbitrary-precision")]
 impl Validate for MultipleOfBigFracValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         use num_traits::ToPrimitive;
         if let Value::Number(item) = instance {
             // Try to parse instance as BigFraction for exact precision
@@ -284,11 +292,13 @@ impl Validate for MultipleOfBigFracValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if !self.is_valid(instance, ctx) {
+        if !self.is_valid(instance, ctx.lightweight()) {
             return Err(ValidationError::multiple_of(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 Value::Number(self.original_value.clone()),
@@ -360,9 +370,11 @@ pub(crate) fn compile<'a>(
             None
         }
     } else {
+        let location = ctx.location().join("multipleOf");
         Some(Err(ValidationError::single_type_error(
+            location.clone(),
+            location,
             Location::new(),
-            ctx.location().clone(),
             schema,
             JsonType::Number,
         )))

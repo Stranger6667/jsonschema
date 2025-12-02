@@ -16,10 +16,10 @@ use crate::{
     compiler, ecma,
     error::ValidationError,
     keywords::CompilationResult,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, LazyRefPath, Location},
     thread::ThreadBound,
     types::JsonType,
-    validator::{Validate, ValidationContext},
+    validator::{capture_evaluation_path, LightweightContext, Validate, ValidationContext},
     Draft,
 };
 
@@ -722,7 +722,7 @@ macro_rules! format_validators {
             }
 
             impl Validate for $validator {
-                fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+                fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
                     if let Value::String(item) = instance {
                         $validation_fn(item)
                     } else {
@@ -734,12 +734,14 @@ macro_rules! format_validators {
                     &self,
                     instance: &'i Value,
                     location: &LazyLocation,
+        ref_path: &LazyRefPath,
                     ctx: &mut ValidationContext,
                 ) -> Result<(), ValidationError<'i>> {
                     if let Value::String(_item) = instance {
-                        if !self.is_valid(instance, ctx) {
+                        if !self.is_valid(instance, ctx.lightweight()) {
                             return Err(ValidationError::format(
                                 self.location.clone(),
+                                capture_evaluation_path(&self.location, ref_path),
                                 location.into(),
                                 instance,
                                 $format,
@@ -802,7 +804,7 @@ impl EmailValidator {
 }
 
 impl Validate for EmailValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         if let Value::String(item) = instance {
             is_valid_email(item, self.email_options.as_ref())
         } else {
@@ -814,12 +816,14 @@ impl Validate for EmailValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::String(_item) = instance {
-            if !self.is_valid(instance, ctx) {
+            if !self.is_valid(instance, ctx.lightweight()) {
                 return Err(ValidationError::format(
                     self.location.clone(),
+                    capture_evaluation_path(&self.location, ref_path),
                     location.into(),
                     instance,
                     "email",
@@ -848,7 +852,7 @@ impl IdnEmailValidator {
 }
 
 impl Validate for IdnEmailValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         if let Value::String(item) = instance {
             is_valid_idn_email(item, self.email_options.as_ref())
         } else {
@@ -860,12 +864,14 @@ impl Validate for IdnEmailValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::String(_item) = instance {
-            if !self.is_valid(instance, ctx) {
+            if !self.is_valid(instance, ctx.lightweight()) {
                 return Err(ValidationError::format(
                     self.location.clone(),
+                    capture_evaluation_path(&self.location, ref_path),
                     location.into(),
                     instance,
                     "idn-email",
@@ -901,13 +907,15 @@ impl Validate for CustomFormatValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::format(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 self.format_name.clone(),
@@ -915,7 +923,7 @@ impl Validate for CustomFormatValidator {
         }
     }
 
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         if let Value::String(item) = instance {
             self.check.is_valid(item)
         } else {
@@ -983,9 +991,11 @@ pub(crate) fn compile<'a>(
                 if ctx.are_unknown_formats_ignored() {
                     None
                 } else {
+                    let location = ctx.location().join("format");
                     Some(Err(ValidationError::custom(
-                        Location::new().join("format"),
-                        ctx.location().clone(),
+                        location.clone(),
+                        location,
+                        Location::new(),
                         schema,
                         format!("Unknown format: '{name}'. Adjust configuration to ignore unrecognized formats"),
                     )))
@@ -993,9 +1003,11 @@ pub(crate) fn compile<'a>(
             }
         }
     } else {
+        let location = ctx.location().join("format");
         Some(Err(ValidationError::single_type_error(
+            location.clone(),
+            location,
             Location::new(),
-            ctx.location().clone(),
             schema,
             JsonType::String,
         )))

@@ -4,11 +4,11 @@ use crate::{
     ext::cmp,
     keywords::CompilationResult,
     paths::Location,
-    validator::{Validate, ValidationContext},
+    validator::{capture_evaluation_path, LightweightContext, Validate, ValidationContext},
 };
 use serde_json::{Map, Number, Value};
 
-use crate::paths::LazyLocation;
+use crate::paths::{LazyLocation, LazyRefPath};
 
 struct ConstArrayValidator {
     value: Vec<Value>,
@@ -28,13 +28,15 @@ impl Validate for ConstArrayValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::constant_array(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 &self.value,
@@ -43,7 +45,7 @@ impl Validate for ConstArrayValidator {
     }
 
     #[inline]
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         if let Value::Array(instance_value) = instance {
             cmp::equal_arrays(&self.value, instance_value)
         } else {
@@ -67,13 +69,15 @@ impl Validate for ConstBooleanValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::constant_boolean(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 self.value,
@@ -82,7 +86,7 @@ impl Validate for ConstBooleanValidator {
     }
 
     #[inline]
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         if let Value::Bool(instance_value) = instance {
             &self.value == instance_value
         } else {
@@ -105,20 +109,22 @@ impl Validate for ConstNullValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::constant_null(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
             ))
         }
     }
     #[inline]
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         instance.is_null()
     }
 }
@@ -144,13 +150,15 @@ impl Validate for ConstNumberValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::constant_number(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 &self.original_value,
@@ -159,7 +167,7 @@ impl Validate for ConstNumberValidator {
     }
 
     #[inline]
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         if let Value::Number(item) = instance {
             crate::ext::cmp::equal_numbers(item, &self.original_value)
         } else {
@@ -188,13 +196,15 @@ impl Validate for ConstObjectValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::constant_object(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 &self.value,
@@ -203,7 +213,7 @@ impl Validate for ConstObjectValidator {
     }
 
     #[inline]
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         if let Value::Object(item) = instance {
             cmp::equal_objects(&self.value, item)
         } else {
@@ -232,13 +242,15 @@ impl Validate for ConstStringValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::constant_string(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 &self.value,
@@ -247,7 +259,7 @@ impl Validate for ConstStringValidator {
     }
 
     #[inline]
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         if let Value::String(item) = instance {
             &self.value == item
         } else {

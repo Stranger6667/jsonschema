@@ -3,9 +3,9 @@ use crate::{
     error::{no_error, ErrorIterator, ValidationError},
     keywords::{boolean::FalseValidator, CompilationResult},
     node::SchemaNode,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, LazyRefPath, Location},
     types::{JsonType, JsonTypeSet},
-    validator::{Validate, ValidationContext},
+    validator::{capture_evaluation_path, LightweightContext, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -28,7 +28,7 @@ impl AdditionalItemsObjectValidator {
     }
 }
 impl Validate for AdditionalItemsObjectValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, ctx: &mut LightweightContext) -> bool {
         if let Value::Array(items) = instance {
             items
                 .iter()
@@ -43,11 +43,13 @@ impl Validate for AdditionalItemsObjectValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             for (idx, item) in items.iter().enumerate().skip(self.items_count) {
-                self.node.validate(item, &location.push(idx), ctx)?;
+                self.node
+                    .validate(item, &location.push(idx), ref_path, ctx)?;
             }
         }
         Ok(())
@@ -57,12 +59,16 @@ impl Validate for AdditionalItemsObjectValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if let Value::Array(items) = instance {
             let mut errors = Vec::new();
             for (idx, item) in items.iter().enumerate().skip(self.items_count) {
-                errors.extend(self.node.iter_errors(item, &location.push(idx), ctx));
+                errors.extend(
+                    self.node
+                        .iter_errors(item, &location.push(idx), ref_path, ctx),
+                );
             }
             ErrorIterator::from_iterator(errors.into_iter())
         } else {
@@ -85,7 +91,7 @@ impl AdditionalItemsBooleanValidator {
     }
 }
 impl Validate for AdditionalItemsBooleanValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         if let Value::Array(items) = instance {
             if items.len() > self.items_count {
                 return false;
@@ -98,12 +104,14 @@ impl Validate for AdditionalItemsBooleanValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
             if items.len() > self.items_count {
                 return Err(ValidationError::additional_items(
                     self.location.clone(),
+                    capture_evaluation_path(&self.location, ref_path),
                     location.into(),
                     instance,
                     self.items_count,
@@ -147,15 +155,19 @@ pub(crate) fn compile<'a>(
                     Some(FalseValidator::compile(location))
                 }
             }
-            _ => Some(Err(ValidationError::multiple_type_error(
-                Location::new(),
-                ctx.location().clone(),
-                schema,
-                JsonTypeSet::empty()
-                    .insert(JsonType::Object)
-                    .insert(JsonType::Array)
-                    .insert(JsonType::Boolean),
-            ))),
+            _ => {
+                let location = ctx.location().join("additionalItems");
+                Some(Err(ValidationError::multiple_type_error(
+                    location.clone(),
+                    location,
+                    Location::new(),
+                    schema,
+                    JsonTypeSet::empty()
+                        .insert(JsonType::Object)
+                        .insert(JsonType::Array)
+                        .insert(JsonType::Boolean),
+                )))
+            }
         }
     } else {
         None

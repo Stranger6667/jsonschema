@@ -3,8 +3,8 @@ use crate::{
     error::{no_error, ErrorIterator},
     keywords::CompilationResult,
     node::SchemaNode,
-    paths::LazyLocation,
-    validator::{EvaluationResult, Validate, ValidationContext},
+    paths::{LazyLocation, LazyRefPath},
+    validator::{EvaluationResult, LightweightContext, Validate, ValidationContext},
     ValidationError,
 };
 use serde_json::{Map, Value};
@@ -35,9 +35,9 @@ impl IfThenValidator {
 }
 
 impl Validate for IfThenValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if self.schema.is_valid(instance, ctx) {
-            self.then_schema.is_valid(instance, ctx)
+    fn is_valid(&self, instance: &Value, ctx: &mut LightweightContext) -> bool {
+        if self.schema.is_valid(instance, ctx.lightweight()) {
+            self.then_schema.is_valid(instance, ctx.lightweight())
         } else {
             true
         }
@@ -47,10 +47,11 @@ impl Validate for IfThenValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.schema.is_valid(instance, ctx) {
-            self.then_schema.validate(instance, location, ctx)
+        if self.schema.is_valid(instance, ctx.lightweight()) {
+            self.then_schema.validate(instance, location, ref_path, ctx)
         } else {
             Ok(())
         }
@@ -61,12 +62,13 @@ impl Validate for IfThenValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if self.schema.is_valid(instance, ctx) {
+        if self.schema.is_valid(instance, ctx.lightweight()) {
             let errors: Vec<_> = self
                 .then_schema
-                .iter_errors(instance, location, ctx)
+                .iter_errors(instance, location, ref_path, ctx)
                 .collect();
             ErrorIterator::from_iterator(errors.into_iter())
         } else {
@@ -78,11 +80,16 @@ impl Validate for IfThenValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        let if_node = self.schema.evaluate_instance(instance, location, ctx);
+        let if_node = self
+            .schema
+            .evaluate_instance(instance, location, ref_path, ctx);
         if if_node.valid {
-            let then_node = self.then_schema.evaluate_instance(instance, location, ctx);
+            let then_node = self
+                .then_schema
+                .evaluate_instance(instance, location, ref_path, ctx);
             EvaluationResult::from_children(vec![if_node, then_node])
         } else {
             EvaluationResult::valid_empty()
@@ -116,11 +123,11 @@ impl IfElseValidator {
 }
 
 impl Validate for IfElseValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if self.schema.is_valid(instance, ctx) {
+    fn is_valid(&self, instance: &Value, ctx: &mut LightweightContext) -> bool {
+        if self.schema.is_valid(instance, ctx.lightweight()) {
             true
         } else {
-            self.else_schema.is_valid(instance, ctx)
+            self.else_schema.is_valid(instance, ctx.lightweight())
         }
     }
 
@@ -128,12 +135,13 @@ impl Validate for IfElseValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.schema.is_valid(instance, ctx) {
+        if self.schema.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
-            self.else_schema.validate(instance, location, ctx)
+            self.else_schema.validate(instance, location, ref_path, ctx)
         }
     }
 
@@ -142,14 +150,15 @@ impl Validate for IfElseValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if self.schema.is_valid(instance, ctx) {
+        if self.schema.is_valid(instance, ctx.lightweight()) {
             no_error()
         } else {
             let errors: Vec<_> = self
                 .else_schema
-                .iter_errors(instance, location, ctx)
+                .iter_errors(instance, location, ref_path, ctx)
                 .collect();
             ErrorIterator::from_iterator(errors.into_iter())
         }
@@ -159,13 +168,18 @@ impl Validate for IfElseValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        let if_node = self.schema.evaluate_instance(instance, location, ctx);
+        let if_node = self
+            .schema
+            .evaluate_instance(instance, location, ref_path, ctx);
         if if_node.valid {
             EvaluationResult::from_children(vec![if_node])
         } else {
-            let else_node = self.else_schema.evaluate_instance(instance, location, ctx);
+            let else_node = self
+                .else_schema
+                .evaluate_instance(instance, location, ref_path, ctx);
             EvaluationResult::from_children(vec![else_node])
         }
     }
@@ -203,11 +217,11 @@ impl IfThenElseValidator {
 }
 
 impl Validate for IfThenElseValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if self.schema.is_valid(instance, ctx) {
-            self.then_schema.is_valid(instance, ctx)
+    fn is_valid(&self, instance: &Value, ctx: &mut LightweightContext) -> bool {
+        if self.schema.is_valid(instance, ctx.lightweight()) {
+            self.then_schema.is_valid(instance, ctx.lightweight())
         } else {
-            self.else_schema.is_valid(instance, ctx)
+            self.else_schema.is_valid(instance, ctx.lightweight())
         }
     }
 
@@ -215,12 +229,13 @@ impl Validate for IfThenElseValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.schema.is_valid(instance, ctx) {
-            self.then_schema.validate(instance, location, ctx)
+        if self.schema.is_valid(instance, ctx.lightweight()) {
+            self.then_schema.validate(instance, location, ref_path, ctx)
         } else {
-            self.else_schema.validate(instance, location, ctx)
+            self.else_schema.validate(instance, location, ref_path, ctx)
         }
     }
 
@@ -229,18 +244,19 @@ impl Validate for IfThenElseValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if self.schema.is_valid(instance, ctx) {
+        if self.schema.is_valid(instance, ctx.lightweight()) {
             let errors: Vec<_> = self
                 .then_schema
-                .iter_errors(instance, location, ctx)
+                .iter_errors(instance, location, ref_path, ctx)
                 .collect();
             ErrorIterator::from_iterator(errors.into_iter())
         } else {
             let errors: Vec<_> = self
                 .else_schema
-                .iter_errors(instance, location, ctx)
+                .iter_errors(instance, location, ref_path, ctx)
                 .collect();
             ErrorIterator::from_iterator(errors.into_iter())
         }
@@ -250,14 +266,21 @@ impl Validate for IfThenElseValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        let if_node = self.schema.evaluate_instance(instance, location, ctx);
+        let if_node = self
+            .schema
+            .evaluate_instance(instance, location, ref_path, ctx);
         if if_node.valid {
-            let then_node = self.then_schema.evaluate_instance(instance, location, ctx);
+            let then_node = self
+                .then_schema
+                .evaluate_instance(instance, location, ref_path, ctx);
             EvaluationResult::from_children(vec![if_node, then_node])
         } else {
-            let else_node = self.else_schema.evaluate_instance(instance, location, ctx);
+            let else_node = self
+                .else_schema
+                .evaluate_instance(instance, location, ref_path, ctx);
             EvaluationResult::from_children(vec![else_node])
         }
     }

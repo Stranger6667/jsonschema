@@ -4,12 +4,12 @@ use crate::{
     ext::cmp,
     keywords::CompilationResult,
     paths::Location,
-    validator::{Validate, ValidationContext},
+    validator::{capture_evaluation_path, LightweightContext, Validate, ValidationContext},
 };
 use ahash::{AHashSet, AHasher};
 use serde_json::{Map, Value};
 
-use crate::paths::LazyLocation;
+use crate::paths::{LazyLocation, LazyRefPath};
 use std::hash::{Hash, Hasher};
 
 // Based on implementation proposed by Sven Marnach:
@@ -109,7 +109,7 @@ impl UniqueItemsValidator {
 }
 
 impl Validate for UniqueItemsValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         if let Value::Array(items) = instance {
             if !is_unique(items) {
                 return false;
@@ -122,13 +122,15 @@ impl Validate for UniqueItemsValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::unique_items(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
             ))

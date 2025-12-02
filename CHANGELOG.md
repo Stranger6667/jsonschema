@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ValidationError::evaluation_path()` returning the path including `$ref` traversals.
+- `ValidationContext::custom_error()` for creating validation errors with correct `evaluation_path`.
+- `ValidationError::schema()` for creating errors in keyword factory functions.
+
+### Changed
+
+- **BREAKING**: `Keyword::validate` now receives `ValidationContext` and `schema_path` parameters.
+- **BREAKING**: `ValidationError::custom` is now internal. Use `ctx.custom_error()` or `ValidationError::schema()` instead.
+
+### Fixed
+
+- `schemaLocation` in evaluation output now excludes `$ref`/`$dynamicRef`/`$recursiveRef` per JSON Schema spec.
+
 ## [0.37.4] - 2025-11-30
 
 ### Fixed
