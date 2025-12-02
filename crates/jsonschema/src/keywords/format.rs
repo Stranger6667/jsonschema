@@ -839,7 +839,7 @@ struct IdnEmailValidator {
 impl IdnEmailValidator {
     pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
         let location = ctx.location().join("format");
-        let email_options = ctx.config().email_options().cloned();
+        let email_options = ctx.config().email_options().copied();
         Ok(Box::new(IdnEmailValidator {
             location,
             email_options,
@@ -1008,7 +1008,7 @@ mod tests {
     use serde_json::json;
     use test_case::test_case;
 
-    use crate::tests_util;
+    use crate::{tests_util, EmailOptions};
 
     use super::*;
 
@@ -1323,15 +1323,11 @@ mod tests {
 
     #[test]
     fn email_options_custom() {
-        use crate::EmailOptions;
-        use email_address::Options as EmailAddressOptions;
-
         let schema = json!({"format": "email", "type": "string"});
 
         // Test with custom email options
-        let custom_options = EmailAddressOptions::default();
         let validator = crate::options()
-            .with_email_options(EmailOptions::from_options(custom_options))
+            .with_email_options(EmailOptions::default())
             .should_validate_formats(true)
             .build(&schema)
             .expect("Schema should compile");
@@ -1343,8 +1339,6 @@ mod tests {
 
     #[test]
     fn email_options_default() {
-        use crate::EmailOptions;
-
         let schema = json!({"format": "email", "type": "string"});
         let validator = crate::options()
             .with_email_options(EmailOptions::default())
@@ -1358,8 +1352,6 @@ mod tests {
 
     #[test]
     fn idn_email_options() {
-        use crate::EmailOptions;
-
         let schema = json!({"format": "idn-email", "type": "string"});
         let validator = crate::options()
             .with_email_options(EmailOptions::default())
@@ -1373,16 +1365,11 @@ mod tests {
 
     #[test]
     fn email_options_minimum_sub_domains() {
-        use crate::EmailOptions;
-        use email_address::Options as EmailAddressOptions;
-
         let schema = json!({"format": "email", "type": "string"});
 
         // Test with no minimum sub domains - localhost should be valid
         let validator = crate::options()
-            .with_email_options(EmailOptions::from_options(
-                EmailAddressOptions::default().with_no_minimum_sub_domains(),
-            ))
+            .with_email_options(EmailOptions::default().with_no_minimum_sub_domains())
             .should_validate_formats(true)
             .build(&schema)
             .expect("Schema should compile");
@@ -1392,9 +1379,7 @@ mod tests {
 
         // Test with required TLD - localhost should be invalid
         let validator = crate::options()
-            .with_email_options(EmailOptions::from_options(
-                EmailAddressOptions::default().with_required_tld(),
-            ))
+            .with_email_options(EmailOptions::default().with_required_tld())
             .should_validate_formats(true)
             .build(&schema)
             .expect("Schema should compile");
@@ -1404,9 +1389,7 @@ mod tests {
 
         // Test with custom minimum sub domains
         let validator = crate::options()
-            .with_email_options(EmailOptions::from_options(
-                EmailAddressOptions::default().with_minimum_sub_domains(3),
-            ))
+            .with_email_options(EmailOptions::default().with_minimum_sub_domains(3))
             .should_validate_formats(true)
             .build(&schema)
             .expect("Schema should compile");
@@ -1417,16 +1400,11 @@ mod tests {
 
     #[test]
     fn email_options_domain_literal() {
-        use crate::EmailOptions;
-        use email_address::Options as EmailAddressOptions;
-
         let schema = json!({"format": "email", "type": "string"});
 
         // Test with domain literal allowed (default)
         let validator = crate::options()
-            .with_email_options(EmailOptions::from_options(
-                EmailAddressOptions::default().with_domain_literal(),
-            ))
+            .with_email_options(EmailOptions::default().with_domain_literal())
             .should_validate_formats(true)
             .build(&schema)
             .expect("Schema should compile");
@@ -1437,9 +1415,7 @@ mod tests {
 
         // Test without domain literal - should reject domain literals
         let validator = crate::options()
-            .with_email_options(EmailOptions::from_options(
-                EmailAddressOptions::default().without_domain_literal(),
-            ))
+            .with_email_options(EmailOptions::default().without_domain_literal())
             .should_validate_formats(true)
             .build(&schema)
             .expect("Schema should compile");
@@ -1451,16 +1427,11 @@ mod tests {
 
     #[test]
     fn email_options_display_text() {
-        use crate::EmailOptions;
-        use email_address::Options as EmailAddressOptions;
-
         let schema = json!({"format": "email", "type": "string"});
 
         // Test with display text allowed (default)
         let validator = crate::options()
-            .with_email_options(EmailOptions::from_options(
-                EmailAddressOptions::default().with_display_text(),
-            ))
+            .with_email_options(EmailOptions::default().with_display_text())
             .should_validate_formats(true)
             .build(&schema)
             .expect("Schema should compile");
@@ -1472,9 +1443,7 @@ mod tests {
 
         // Test without display text - should reject display text formats
         let validator = crate::options()
-            .with_email_options(EmailOptions::from_options(
-                EmailAddressOptions::default().without_display_text(),
-            ))
+            .with_email_options(EmailOptions::default().without_display_text())
             .should_validate_formats(true)
             .build(&schema)
             .expect("Schema should compile");
@@ -1486,19 +1455,16 @@ mod tests {
 
     #[test]
     fn email_options_combined() {
-        use crate::EmailOptions;
-        use email_address::Options as EmailAddressOptions;
-
         let schema = json!({"format": "email", "type": "string"});
 
         // Test combining multiple options - strict validation
-        let strict_options = EmailAddressOptions::default()
-            .with_required_tld()
-            .without_domain_literal()
-            .without_display_text();
-
         let validator = crate::options()
-            .with_email_options(EmailOptions::from_options(strict_options))
+            .with_email_options(
+                EmailOptions::default()
+                    .with_required_tld()
+                    .without_domain_literal()
+                    .without_display_text(),
+            )
             .should_validate_formats(true)
             .build(&schema)
             .expect("Schema should compile");
