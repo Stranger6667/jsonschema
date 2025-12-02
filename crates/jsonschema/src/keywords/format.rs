@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use email_address::EmailAddress;
+use email_address::{EmailAddress, Options as EmailAddressOptions};
 use fancy_regex::Regex;
 use serde_json::{Map, Value};
 use std::sync::LazyLock;
@@ -290,11 +290,21 @@ fn is_valid_datetime(datetime: &str) -> bool {
     is_valid_date(date_part) && is_valid_time(&time_part[1..])
 }
 
-fn is_valid_email_impl<F>(email: &str, is_valid_hostname_impl: F) -> bool
+fn is_valid_email_impl<F>(
+    email: &str,
+    is_valid_hostname_impl: F,
+    options: Option<&EmailAddressOptions>,
+) -> bool
 where
     F: Fn(&str) -> bool,
 {
-    if let Ok(parsed) = EmailAddress::from_str(email) {
+    let parsed = if let Some(opts) = options {
+        EmailAddress::parse_with_options(email, opts.clone())
+    } else {
+        EmailAddress::from_str(email)
+    };
+
+    if let Ok(parsed) = parsed {
         let domain = parsed.domain();
         if let Some(domain) = domain.strip_prefix('[').and_then(|d| d.strip_suffix(']')) {
             if let Some(domain) = domain.strip_prefix("IPv6:") {
@@ -310,12 +320,12 @@ where
     }
 }
 
-fn is_valid_email(email: &str) -> bool {
-    is_valid_email_impl(email, is_valid_hostname)
+fn is_valid_email(email: &str, options: Option<&EmailAddressOptions>) -> bool {
+    is_valid_email_impl(email, is_valid_hostname, options)
 }
 
-fn is_valid_idn_email(email: &str) -> bool {
-    is_valid_email_impl(email, is_valid_idn_hostname)
+fn is_valid_idn_email(email: &str, options: Option<&EmailAddressOptions>) -> bool {
+    is_valid_email_impl(email, is_valid_idn_hostname, options)
 }
 
 fn is_valid_hostname(hostname: &str) -> bool {
@@ -746,9 +756,7 @@ format_validators!(
     (DateValidator, "date", is_valid_date),
     (DateTimeValidator, "date-time", is_valid_datetime),
     (DurationValidator, "duration", is_valid_duration),
-    (EmailValidator, "email", is_valid_email),
     (HostnameValidator, "hostname", is_valid_hostname),
-    (IdnEmailValidator, "idn-email", is_valid_idn_email),
     (IdnHostnameValidator, "idn-hostname", is_valid_idn_hostname),
     (IpV4Validator, "ipv4", is_valid_ipv4),
     (IpV6Validator, "ipv6", is_valid_ipv6),
@@ -775,6 +783,98 @@ format_validators!(
     (UriTemplateValidator, "uri-template", is_valid_uri_template),
     (UuidValidator, "uuid", is_valid_uuid),
 );
+
+// Custom EmailValidator that supports email options
+struct EmailValidator {
+    location: Location,
+    email_options: Option<EmailAddressOptions>,
+}
+
+impl EmailValidator {
+    pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
+        let location = ctx.location().join("format");
+        let email_options = ctx.config().email_options().cloned();
+        Ok(Box::new(EmailValidator {
+            location,
+            email_options,
+        }))
+    }
+}
+
+impl Validate for EmailValidator {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+        if let Value::String(item) = instance {
+            is_valid_email(item, self.email_options.as_ref())
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::String(_item) = instance {
+            if !self.is_valid(instance, ctx) {
+                return Err(ValidationError::format(
+                    self.location.clone(),
+                    location.into(),
+                    instance,
+                    "email",
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+// Custom IdnEmailValidator that supports email options
+struct IdnEmailValidator {
+    location: Location,
+    email_options: Option<EmailAddressOptions>,
+}
+
+impl IdnEmailValidator {
+    pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
+        let location = ctx.location().join("format");
+        let email_options = ctx.config().email_options().cloned();
+        Ok(Box::new(IdnEmailValidator {
+            location,
+            email_options,
+        }))
+    }
+}
+
+impl Validate for IdnEmailValidator {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+        if let Value::String(item) = instance {
+            is_valid_idn_email(item, self.email_options.as_ref())
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::String(_item) = instance {
+            if !self.is_valid(instance, ctx) {
+                return Err(ValidationError::format(
+                    self.location.clone(),
+                    location.into(),
+                    instance,
+                    "idn-email",
+                ));
+            }
+        }
+        Ok(())
+    }
+}
 
 struct CustomFormatValidator {
     location: Location,
@@ -1204,5 +1304,212 @@ mod tests {
     #[test_case("1/~"; "incomplete escape in json pointer")]
     fn test_invalid_relative_json_pointer(pointer: &str) {
         assert!(!is_valid_relative_json_pointer(pointer));
+    }
+
+    #[test]
+    fn email_options_backward_compatibility() {
+        // Test that default behavior is unchanged (backward compatibility)
+        let schema = json!({"format": "email", "type": "string"});
+        let validator = crate::options()
+            .should_validate_formats(true)
+            .build(&schema)
+            .expect("Schema should compile");
+
+        // "missing@domain" should validate as valid with default options (per spec)
+        assert!(validator.is_valid(&json!("missing@domain")));
+        assert!(validator.is_valid(&json!("user@example.com")));
+        assert!(!validator.is_valid(&json!("not-an-email")));
+    }
+
+    #[test]
+    fn email_options_custom() {
+        use crate::EmailOptions;
+        use email_address::Options as EmailAddressOptions;
+
+        let schema = json!({"format": "email", "type": "string"});
+
+        // Test with custom email options
+        let custom_options = EmailAddressOptions::default();
+        let validator = crate::options()
+            .with_email_options(EmailOptions::from_options(custom_options))
+            .should_validate_formats(true)
+            .build(&schema)
+            .expect("Schema should compile");
+
+        // Should still work with custom options (same as default for now)
+        assert!(validator.is_valid(&json!("user@example.com")));
+        assert!(!validator.is_valid(&json!("not-an-email")));
+    }
+
+    #[test]
+    fn email_options_default() {
+        use crate::EmailOptions;
+
+        let schema = json!({"format": "email", "type": "string"});
+        let validator = crate::options()
+            .with_email_options(EmailOptions::default())
+            .should_validate_formats(true)
+            .build(&schema)
+            .expect("Schema should compile");
+
+        assert!(validator.is_valid(&json!("user@example.com")));
+        assert!(!validator.is_valid(&json!("not-an-email")));
+    }
+
+    #[test]
+    fn idn_email_options() {
+        use crate::EmailOptions;
+
+        let schema = json!({"format": "idn-email", "type": "string"});
+        let validator = crate::options()
+            .with_email_options(EmailOptions::default())
+            .should_validate_formats(true)
+            .build(&schema)
+            .expect("Schema should compile");
+
+        assert!(validator.is_valid(&json!("user@example.com")));
+        assert!(!validator.is_valid(&json!("not-an-email")));
+    }
+
+    #[test]
+    fn email_options_minimum_sub_domains() {
+        use crate::EmailOptions;
+        use email_address::Options as EmailAddressOptions;
+
+        let schema = json!({"format": "email", "type": "string"});
+
+        // Test with no minimum sub domains - localhost should be valid
+        let validator = crate::options()
+            .with_email_options(EmailOptions::from_options(
+                EmailAddressOptions::default().with_no_minimum_sub_domains(),
+            ))
+            .should_validate_formats(true)
+            .build(&schema)
+            .expect("Schema should compile");
+
+        assert!(validator.is_valid(&json!("simon@localhost")));
+        assert!(validator.is_valid(&json!("user@example.com")));
+
+        // Test with required TLD - localhost should be invalid
+        let validator = crate::options()
+            .with_email_options(EmailOptions::from_options(
+                EmailAddressOptions::default().with_required_tld(),
+            ))
+            .should_validate_formats(true)
+            .build(&schema)
+            .expect("Schema should compile");
+
+        assert!(!validator.is_valid(&json!("simon@localhost")));
+        assert!(validator.is_valid(&json!("user@example.com")));
+
+        // Test with custom minimum sub domains
+        let validator = crate::options()
+            .with_email_options(EmailOptions::from_options(
+                EmailAddressOptions::default().with_minimum_sub_domains(3),
+            ))
+            .should_validate_formats(true)
+            .build(&schema)
+            .expect("Schema should compile");
+
+        assert!(!validator.is_valid(&json!("user@example.com")));
+        assert!(validator.is_valid(&json!("user@sub.example.com")));
+    }
+
+    #[test]
+    fn email_options_domain_literal() {
+        use crate::EmailOptions;
+        use email_address::Options as EmailAddressOptions;
+
+        let schema = json!({"format": "email", "type": "string"});
+
+        // Test with domain literal allowed (default)
+        let validator = crate::options()
+            .with_email_options(EmailOptions::from_options(
+                EmailAddressOptions::default().with_domain_literal(),
+            ))
+            .should_validate_formats(true)
+            .build(&schema)
+            .expect("Schema should compile");
+
+        // Domain literal format is allowed (even if IPv4 is invalid)
+        assert!(validator.is_valid(&json!("email@[127.0.0.1]")));
+        assert!(validator.is_valid(&json!("email@[IPv6:2001:db8::1]")));
+
+        // Test without domain literal - should reject domain literals
+        let validator = crate::options()
+            .with_email_options(EmailOptions::from_options(
+                EmailAddressOptions::default().without_domain_literal(),
+            ))
+            .should_validate_formats(true)
+            .build(&schema)
+            .expect("Schema should compile");
+
+        assert!(!validator.is_valid(&json!("email@[127.0.0.1]")));
+        assert!(!validator.is_valid(&json!("email@[IPv6:2001:db8::1]")));
+        assert!(validator.is_valid(&json!("user@example.com")));
+    }
+
+    #[test]
+    fn email_options_display_text() {
+        use crate::EmailOptions;
+        use email_address::Options as EmailAddressOptions;
+
+        let schema = json!({"format": "email", "type": "string"});
+
+        // Test with display text allowed (default)
+        let validator = crate::options()
+            .with_email_options(EmailOptions::from_options(
+                EmailAddressOptions::default().with_display_text(),
+            ))
+            .should_validate_formats(true)
+            .build(&schema)
+            .expect("Schema should compile");
+
+        // Display text format with actual display name should be allowed
+        assert!(validator.is_valid(&json!("Simon <simon@example.com>")));
+        // Plain email should always be valid
+        assert!(validator.is_valid(&json!("simon@example.com")));
+
+        // Test without display text - should reject display text formats
+        let validator = crate::options()
+            .with_email_options(EmailOptions::from_options(
+                EmailAddressOptions::default().without_display_text(),
+            ))
+            .should_validate_formats(true)
+            .build(&schema)
+            .expect("Schema should compile");
+
+        assert!(!validator.is_valid(&json!("Simon <simon@example.com>")));
+        assert!(!validator.is_valid(&json!("<simon@example.com>")));
+        assert!(validator.is_valid(&json!("simon@example.com")));
+    }
+
+    #[test]
+    fn email_options_combined() {
+        use crate::EmailOptions;
+        use email_address::Options as EmailAddressOptions;
+
+        let schema = json!({"format": "email", "type": "string"});
+
+        // Test combining multiple options - strict validation
+        let strict_options = EmailAddressOptions::default()
+            .with_required_tld()
+            .without_domain_literal()
+            .without_display_text();
+
+        let validator = crate::options()
+            .with_email_options(EmailOptions::from_options(strict_options))
+            .should_validate_formats(true)
+            .build(&schema)
+            .expect("Schema should compile");
+
+        // Should reject addresses without TLD
+        assert!(!validator.is_valid(&json!("user@localhost")));
+        // Should reject domain literals
+        assert!(!validator.is_valid(&json!("user@[127.0.0.1]")));
+        // Should reject display text
+        assert!(!validator.is_valid(&json!("Name <user@example.com>")));
+        // Should accept valid email with TLD
+        assert!(validator.is_valid(&json!("user@example.com")));
     }
 }

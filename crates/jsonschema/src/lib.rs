@@ -914,7 +914,7 @@ pub use evaluation::{
     AnnotationEntry, ErrorEntry, Evaluation, FlagOutput, HierarchicalOutput, ListOutput,
 };
 pub use keywords::custom::Keyword;
-pub use options::{FancyRegex, PatternOptions, Regex, ValidationOptions};
+pub use options::{EmailOptions, FancyRegex, PatternOptions, Regex, ValidationOptions};
 pub use referencing::{
     Draft, Error as ReferencingError, Registry, RegistryOptions, Resource, Retrieve, Uri,
 };

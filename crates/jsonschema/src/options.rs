@@ -12,6 +12,7 @@ use crate::{
     Keyword, ValidationError, Validator,
 };
 use ahash::AHashMap;
+use email_address::Options as EmailAddressOptions;
 use referencing::{Draft, Resource, Retrieve};
 use serde_json::Value;
 use std::{fmt, marker::PhantomData, sync::Arc};
@@ -35,6 +36,7 @@ pub struct ValidationOptions<R = Arc<dyn Retrieve>> {
     ignore_unknown_formats: bool,
     keywords: AHashMap<String, Arc<dyn KeywordFactory>>,
     pattern_options: PatternEngineOptions,
+    email_options: Option<EmailAddressOptions>,
 }
 
 impl Default for ValidationOptions<Arc<dyn Retrieve>> {
@@ -53,6 +55,7 @@ impl Default for ValidationOptions<Arc<dyn Retrieve>> {
             ignore_unknown_formats: true,
             keywords: AHashMap::default(),
             pattern_options: PatternEngineOptions::default(),
+            email_options: None,
         }
     }
 }
@@ -74,6 +77,7 @@ impl Default for ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             ignore_unknown_formats: true,
             keywords: AHashMap::default(),
             pattern_options: PatternEngineOptions::default(),
+            email_options: None,
         }
     }
 }
@@ -616,6 +620,31 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
     pub(crate) fn pattern_options(&self) -> PatternEngineOptions {
         self.pattern_options
     }
+
+    /// Set email validation options to customize email format validation behavior.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use jsonschema::EmailOptions;
+    ///
+    /// let schema = serde_json::json!({"format": "email", "type": "string"});
+    /// let validator = jsonschema::options()
+    ///     .with_email_options(EmailOptions::default())
+    ///     .should_validate_formats(true)
+    ///     .build(&schema)
+    ///     .expect("A valid schema");
+    /// ```
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn with_email_options(mut self, options: EmailOptions) -> Self {
+        self.email_options = Some(options.inner);
+        self
+    }
+
+    pub(crate) fn email_options(&self) -> Option<&EmailAddressOptions> {
+        self.email_options.as_ref()
+    }
 }
 
 #[cfg(feature = "resolve-async")]
@@ -648,6 +677,7 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             ignore_unknown_formats: self.ignore_unknown_formats,
             keywords: self.keywords,
             pattern_options: self.pattern_options,
+            email_options: self.email_options,
         }
     }
     #[allow(clippy::unused_async)]
@@ -685,6 +715,7 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             ignore_unknown_formats: self.ignore_unknown_formats,
             keywords: self.keywords,
             pattern_options: self.pattern_options,
+            email_options: self.email_options,
         }
     }
 }
@@ -825,6 +856,56 @@ impl Default for PatternEngineOptions {
             backtrack_limit: None,
             size_limit: None,
             dfa_size_limit: None,
+        }
+    }
+}
+
+/// Configuration for email validation options.
+///
+/// This allows customization of email format validation behavior beyond the default
+/// JSON Schema spec requirements. For example, you can configure stricter validation
+/// that rejects addresses like "missing@domain" which are technically valid per the
+/// spec but may not be desirable in real-world usage.
+///
+/// # Example
+///
+/// ```rust
+/// use jsonschema::EmailOptions;
+///
+/// let schema = serde_json::json!({"format": "email", "type": "string"});
+/// let validator = jsonschema::options()
+///     .with_email_options(EmailOptions::default())
+///     .should_validate_formats(true)
+///     .build(&schema)
+///     .expect("A valid schema");
+/// ```
+#[derive(Debug, Clone)]
+pub struct EmailOptions {
+    pub(crate) inner: EmailAddressOptions,
+}
+
+impl EmailOptions {
+    /// Create email validation options with default settings.
+    #[must_use]
+    pub fn default() -> Self {
+        Self {
+            inner: EmailAddressOptions::default(),
+        }
+    }
+
+    /// Create email validation options from `email_address::Options`.
+    ///
+    /// This allows full access to all options provided by the `email_address` crate.
+    #[must_use]
+    pub fn from_options(options: EmailAddressOptions) -> Self {
+        Self { inner: options }
+    }
+}
+
+impl Default for EmailOptions {
+    fn default() -> Self {
+        Self {
+            inner: EmailAddressOptions::default(),
         }
     }
 }
