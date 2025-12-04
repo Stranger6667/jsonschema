@@ -1,5 +1,86 @@
 # Migration Guide
 
+## Upgrading from 0.37.x to 0.38.0
+
+### Custom keyword API changes
+
+The custom keyword API now tracks `$ref` traversals to provide correct `evaluation_path` values in errors.
+When a custom keyword is reached via `$ref`, the error's `evaluation_path` will include the `$ref` location,
+while `schema_path` remains the canonical schema location.
+
+**`Keyword::validate` signature:**
+
+```rust
+// Old (0.37.x)
+fn validate<'i>(
+    &self,
+    instance: &'i Value,
+    location: &LazyLocation,
+) -> Result<(), ValidationError<'i>>;
+
+// New (0.38.0)
+fn validate<'i>(
+    &self,
+    instance: &'i Value,
+    instance_path: &LazyLocation,
+    ctx: &mut ValidationContext,
+    schema_path: &Location,
+) -> Result<(), ValidationError<'i>>;
+```
+
+**Creating errors:**
+
+```rust
+// Old (0.37.x)
+ValidationError::custom(schema_path, instance_path, instance, message)
+
+// New (0.38.0) - for validation errors
+ctx.custom_error(schema_path, instance_path, instance, message)
+
+// New (0.38.0) - for factory errors (invalid schema values)
+ValidationError::schema(schema_path, schema_value, message)
+```
+
+**Updated implementation example:**
+
+```rust
+use jsonschema::{Keyword, ValidationContext, ValidationError, paths::{LazyLocation, Location}};
+use serde_json::{Map, Value};
+
+struct MyValidator;
+
+impl Keyword for MyValidator {
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        instance_path: &LazyLocation,
+        ctx: &mut ValidationContext,
+        schema_path: &Location,
+    ) -> Result<(), ValidationError<'i>> {
+        if !instance.is_string() {
+            return Err(ctx.custom_error(schema_path, instance_path, instance, "expected a string"));
+        }
+        Ok(())
+    }
+
+    fn is_valid(&self, instance: &Value) -> bool {
+        instance.is_string()
+    }
+}
+
+fn my_keyword_factory<'a>(
+    _parent: &'a Map<String, Value>,
+    value: &'a Value,
+    schema_path: Location,
+) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
+    if value.as_bool() == Some(true) {
+        Ok(Box::new(MyValidator))
+    } else {
+        Err(ValidationError::schema(schema_path, value, "expected true"))
+    }
+}
+```
+
 ## Upgrading from 0.36.x to 0.37.0
 
 ### `ValidationError` is now opaque

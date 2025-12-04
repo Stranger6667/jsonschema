@@ -39,6 +39,7 @@ use crate::{
     paths::Location,
     thread::ThreadBound,
     types::{JsonType, JsonTypeSet},
+    validator::LazyEvaluationPath,
 };
 use serde_json::{Map, Number, Value};
 use std::{
@@ -62,7 +63,11 @@ struct ValidationErrorRepr<'a> {
     instance: Cow<'a, Value>,
     kind: ValidationErrorKind,
     instance_path: Location,
+    /// Canonical schema location without $ref traversals (JSON Schema "keywordLocation")
     schema_path: Location,
+    /// Dynamic path including $ref traversals (JSON Schema "evaluationPath").
+    /// Stored as lazy to defer expensive computation until error is displayed.
+    evaluation_path: LazyEvaluationPath,
 }
 
 /// An iterator over instances of [`ValidationError`] that represent validation error for the
@@ -380,6 +385,7 @@ impl<'a> ValidationError<'a> {
         kind: ValidationErrorKind,
         instance_path: Location,
         schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
     ) -> Self {
         Self {
             repr: Box::new(ValidationErrorRepr {
@@ -387,6 +393,7 @@ impl<'a> ValidationError<'a> {
                 kind,
                 instance_path,
                 schema_path,
+                evaluation_path: evaluation_path.into(),
             }),
         }
     }
@@ -412,23 +419,52 @@ impl<'a> ValidationError<'a> {
         &self.repr.instance_path
     }
 
-    /// Returns the JSON Pointer to the schema keyword that failed validation.
+    /// Returns the canonical schema location without `$ref` traversals.
+    ///
+    /// This corresponds to JSON Schema's "keywordLocation" in output formats.
+    /// See JSON Schema 2020-12 Core, Section 12.4.2.
     #[inline]
     #[must_use]
     pub fn schema_path(&self) -> &Location {
         &self.repr.schema_path
     }
 
-    /// Decomposes the error into owned parts.
+    /// Returns the dynamic evaluation path including `$ref` traversals.
+    ///
+    /// This corresponds to JSON Schema's "evaluationPath" - the actual path taken
+    /// through the schema including by-reference applicators (`$ref`, `$dynamicRef`).
+    /// See JSON Schema 2020-12 Core, Section 12.4.2.
+    ///
+    /// Note: For errors created inside `$ref` traversals, this performs lazy
+    /// computation on first call and caches the result for subsequent accesses.
     #[inline]
     #[must_use]
-    pub fn into_parts(self) -> (Cow<'a, Value>, ValidationErrorKind, Location, Location) {
+    pub fn evaluation_path(&self) -> &Location {
+        self.repr.evaluation_path.resolve()
+    }
+
+    /// Decomposes the error into owned parts.
+    /// Returns (instance, kind, `instance_path`, `schema_path`, `evaluation_path`).
+    ///
+    /// Note: The `evaluation_path` is resolved (computed) during this call if needed.
+    #[inline]
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        Cow<'a, Value>,
+        ValidationErrorKind,
+        Location,
+        Location,
+        Location,
+    ) {
         let repr = *self.repr;
         (
             repr.instance,
             repr.kind,
             repr.instance_path,
             repr.schema_path,
+            repr.evaluation_path.resolve().clone(),
         )
     }
 
@@ -438,8 +474,15 @@ impl<'a> ValidationError<'a> {
         kind: ValidationErrorKind,
         instance_path: Location,
         schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
     ) -> Self {
-        Self::new(Cow::Borrowed(instance), kind, instance_path, schema_path)
+        Self::new(
+            Cow::Borrowed(instance),
+            kind,
+            instance_path,
+            schema_path,
+            evaluation_path,
+        )
     }
 
     /// Returns a wrapper that masks instance values in error messages.
@@ -462,17 +505,19 @@ impl<'a> ValidationError<'a> {
     /// Converts the `ValidationError` into an owned version with `'static` lifetime.
     #[must_use]
     pub fn to_owned(self) -> ValidationError<'static> {
-        let (instance, kind, instance_path, schema_path) = self.into_parts();
+        let (instance, kind, instance_path, schema_path, evaluation_path) = self.into_parts();
         ValidationError::new(
             Cow::Owned(instance.into_owned()),
             kind,
             instance_path,
             schema_path,
+            evaluation_path,
         )
     }
 
     pub(crate) fn additional_items(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         limit: usize,
@@ -481,11 +526,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::AdditionalItems { limit },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn additional_properties(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         unexpected: Vec<String>,
@@ -494,11 +541,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::AdditionalProperties { unexpected },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn any_of(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         context: Vec<Vec<ValidationError<'a>>>,
@@ -512,11 +561,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::AnyOf { context },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn backtrack_limit(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         error: fancy_regex::Error,
@@ -525,11 +576,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::BacktrackLimitExceeded { error },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn constant_array(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         expected_value: &[Value],
@@ -540,11 +593,13 @@ impl<'a> ValidationError<'a> {
                 expected_value: Value::Array(expected_value.to_vec()),
             },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn constant_boolean(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         expected_value: bool,
@@ -555,11 +610,13 @@ impl<'a> ValidationError<'a> {
                 expected_value: Value::Bool(expected_value),
             },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn constant_null(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
     ) -> ValidationError<'a> {
@@ -569,11 +626,13 @@ impl<'a> ValidationError<'a> {
                 expected_value: Value::Null,
             },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn constant_number(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         expected_value: &Number,
@@ -584,11 +643,13 @@ impl<'a> ValidationError<'a> {
                 expected_value: Value::Number(expected_value.clone()),
             },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn constant_object(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         expected_value: &Map<String, Value>,
@@ -599,11 +660,13 @@ impl<'a> ValidationError<'a> {
                 expected_value: Value::Object(expected_value.clone()),
             },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn constant_string(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         expected_value: &str,
@@ -614,11 +677,13 @@ impl<'a> ValidationError<'a> {
                 expected_value: Value::String(expected_value.to_string()),
             },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn contains(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
     ) -> ValidationError<'a> {
@@ -626,11 +691,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::Contains,
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn content_encoding(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         encoding: &str,
@@ -641,11 +708,13 @@ impl<'a> ValidationError<'a> {
                 content_encoding: encoding.to_string(),
             },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn content_media_type(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         media_type: &str,
@@ -656,11 +725,13 @@ impl<'a> ValidationError<'a> {
                 content_media_type: media_type.to_string(),
             },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn enumeration(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         options: &Value,
@@ -671,11 +742,13 @@ impl<'a> ValidationError<'a> {
                 options: options.clone(),
             },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn exclusive_maximum(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         limit: Value,
@@ -684,11 +757,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::ExclusiveMaximum { limit },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn exclusive_minimum(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         limit: Value,
@@ -697,11 +772,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::ExclusiveMinimum { limit },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn false_schema(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
     ) -> ValidationError<'a> {
@@ -709,11 +786,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::FalseSchema,
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn format(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         format: impl Into<String>,
@@ -724,7 +803,8 @@ impl<'a> ValidationError<'a> {
                 format: format.into(),
             },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn from_utf8(error: FromUtf8Error) -> ValidationError<'a> {
@@ -733,10 +813,12 @@ impl<'a> ValidationError<'a> {
             ValidationErrorKind::FromUtf8 { error },
             Location::new(),
             Location::new(),
+            Location::new(),
         )
     }
     pub(crate) fn max_items(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         limit: u64,
@@ -745,11 +827,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::MaxItems { limit },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn maximum(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         limit: Value,
@@ -758,11 +842,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::Maximum { limit },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn max_length(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         limit: u64,
@@ -771,11 +857,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::MaxLength { limit },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn max_properties(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         limit: u64,
@@ -784,11 +872,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::MaxProperties { limit },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn min_items(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         limit: u64,
@@ -797,11 +887,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::MinItems { limit },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn minimum(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         limit: Value,
@@ -810,11 +902,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::Minimum { limit },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn min_length(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         limit: u64,
@@ -823,11 +917,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::MinLength { limit },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn min_properties(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         limit: u64,
@@ -836,12 +932,14 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::MinProperties { limit },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     #[cfg(feature = "arbitrary-precision")]
     pub(crate) fn multiple_of(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         multiple_of: Value,
@@ -850,13 +948,15 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::MultipleOf { multiple_of },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
 
     #[cfg(not(feature = "arbitrary-precision"))]
     pub(crate) fn multiple_of(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         multiple_of: f64,
@@ -865,11 +965,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::MultipleOf { multiple_of },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn not(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         schema: Value,
@@ -878,11 +980,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::Not { schema },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn one_of_multiple_valid(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         context: Vec<Vec<ValidationError<'a>>>,
@@ -896,11 +1000,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::OneOfMultipleValid { context },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn one_of_not_valid(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         context: Vec<Vec<ValidationError<'a>>>,
@@ -914,11 +1020,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::OneOfNotValid { context },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn pattern(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         pattern: String,
@@ -927,11 +1035,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::Pattern { pattern },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn property_names(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         error: ValidationError<'a>,
@@ -942,11 +1052,13 @@ impl<'a> ValidationError<'a> {
                 error: Box::new(error.to_owned()),
             },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn required(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         property: Value,
@@ -955,12 +1067,14 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::Required { property },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
 
     pub(crate) fn single_type_error(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         type_name: JsonType,
@@ -971,11 +1085,13 @@ impl<'a> ValidationError<'a> {
                 kind: TypeKind::Single(type_name),
             },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn multiple_type_error(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         types: JsonTypeSet,
@@ -986,11 +1102,13 @@ impl<'a> ValidationError<'a> {
                 kind: TypeKind::Multiple(types),
             },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn unevaluated_items(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         unexpected: Vec<String>,
@@ -999,11 +1117,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::UnevaluatedItems { unexpected },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn unevaluated_properties(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         unexpected: Vec<String>,
@@ -1012,11 +1132,13 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::UnevaluatedProperties { unexpected },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
     pub(crate) fn unique_items(
-        location: Location,
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
     ) -> ValidationError<'a> {
@@ -1024,12 +1146,33 @@ impl<'a> ValidationError<'a> {
             instance,
             ValidationErrorKind::UniqueItems,
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
-    /// Create a new custom validation error.
-    pub fn custom(
-        location: Location,
+    /// Create a custom error for invalid schema values in keyword factories.
+    ///
+    /// Use this in factory functions when the schema value is invalid.
+    /// For validation errors, use [`crate::ValidationContext::custom_error`] instead.
+    pub fn schema(
+        schema_path: Location,
+        schema_value: &'a Value,
+        message: impl Into<String>,
+    ) -> ValidationError<'a> {
+        Self::borrowed(
+            schema_value,
+            ValidationErrorKind::Custom {
+                message: message.into(),
+            },
+            Location::new(),
+            schema_path.clone(),
+            schema_path,
+        )
+    }
+
+    pub(crate) fn custom(
+        schema_path: Location,
+        evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: &'a Value,
         message: impl Into<String>,
@@ -1040,7 +1183,8 @@ impl<'a> ValidationError<'a> {
                 message: message.into(),
             },
             instance_path,
-            location,
+            schema_path,
+            evaluation_path,
         )
     }
 }
@@ -1052,6 +1196,7 @@ impl From<referencing::Error> for ValidationError<'_> {
         ValidationError::new(
             Cow::Owned(Value::Null),
             ValidationErrorKind::Referencing(err),
+            Location::new(),
             Location::new(),
             Location::new(),
         )
@@ -1528,7 +1673,13 @@ mod tests {
     use test_case::test_case;
 
     fn owned_error(instance: Value, kind: ValidationErrorKind) -> ValidationError<'static> {
-        ValidationError::new(Cow::Owned(instance), kind, Location::new(), Location::new())
+        ValidationError::new(
+            Cow::Owned(instance),
+            kind,
+            Location::new(),
+            Location::new(),
+            Location::new(),
+        )
     }
 
     #[test]
@@ -1693,6 +1844,7 @@ mod tests {
         let err = ValidationError::single_type_error(
             Location::new(),
             Location::new(),
+            Location::new(),
             &instance,
             JsonType::String,
         );
@@ -1706,6 +1858,7 @@ mod tests {
             .insert(JsonType::String)
             .insert(JsonType::Number);
         let err = ValidationError::multiple_type_error(
+            Location::new(),
             Location::new(),
             Location::new(),
             &instance,
@@ -1873,8 +2026,13 @@ mod tests {
         "value is not of type \"string\""
     )]
     fn test_masked_error_messages(instance: Value, kind: ValidationErrorKind, expected: &str) {
-        let error =
-            ValidationError::new(Cow::Owned(instance), kind, Location::new(), Location::new());
+        let error = ValidationError::new(
+            Cow::Owned(instance),
+            kind,
+            Location::new(),
+            Location::new(),
+            Location::new(),
+        );
         assert_eq!(error.masked().to_string(), expected);
     }
 
@@ -1898,8 +2056,13 @@ mod tests {
         placeholder: &str,
         expected: &str,
     ) {
-        let error =
-            ValidationError::new(Cow::Owned(instance), kind, Location::new(), Location::new());
+        let error = ValidationError::new(
+            Cow::Owned(instance),
+            kind,
+            Location::new(),
+            Location::new(),
+            Location::new(),
+        );
         assert_eq!(error.masked_with(placeholder).to_string(), expected);
     }
 }

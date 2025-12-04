@@ -3,9 +3,9 @@ use crate::{
     error::ValidationError,
     ext::cmp,
     keywords::CompilationResult,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, LazyRefPath, Location},
     types::{JsonType, JsonTypeSet},
-    validator::{Validate, ValidationContext},
+    validator::{capture_evaluation_path, LightweightContext, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -43,13 +43,15 @@ impl Validate for EnumValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::enumeration(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 &self.options,
@@ -57,7 +59,7 @@ impl Validate for EnumValidator {
         }
     }
 
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         // If the input value type is not in the types present among the enum options, then there
         // is no reason to compare it against all items - we know that
         // there are no items with such type at all
@@ -96,13 +98,15 @@ impl Validate for SingleValueEnumValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::enumeration(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 &self.options,
@@ -110,7 +114,7 @@ impl Validate for SingleValueEnumValidator {
         }
     }
 
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         cmp::equal(&self.value, instance)
     }
 }
@@ -130,9 +134,11 @@ pub(crate) fn compile<'a>(
             Some(EnumValidator::compile(schema, items, location))
         }
     } else {
+        let location = ctx.location().join("enum");
         Some(Err(ValidationError::single_type_error(
+            location.clone(),
+            location,
             Location::new(),
-            ctx.location().clone(),
             schema,
             JsonType::Array,
         )))

@@ -4,8 +4,10 @@ use crate::{
     evaluation::{Annotations, ErrorDescription},
     keywords::CompilationResult,
     node::SchemaNode,
-    paths::LazyLocation,
-    validator::{EvaluationResult, Validate, ValidationContext},
+    paths::{LazyLocation, LazyRefPath},
+    validator::{
+        capture_evaluation_path, EvaluationResult, LightweightContext, Validate, ValidationContext,
+    },
     Draft,
 };
 use serde_json::{Map, Value};
@@ -27,7 +29,7 @@ impl ContainsValidator {
 }
 
 impl Validate for ContainsValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, ctx: &mut LightweightContext) -> bool {
         if let Value::Array(items) = instance {
             items.iter().any(|i| self.node.is_valid(i, ctx))
         } else {
@@ -39,14 +41,19 @@ impl Validate for ContainsValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
-            if items.iter().any(|i| self.node.is_valid(i, ctx)) {
+            if items
+                .iter()
+                .any(|i| self.node.is_valid(i, ctx.lightweight()))
+            {
                 return Ok(());
             }
             Err(ValidationError::contains(
                 self.node.location().clone(),
+                capture_evaluation_path(self.node.location(), ref_path),
                 location.into(),
                 instance,
             ))
@@ -59,6 +66,7 @@ impl Validate for ContainsValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Array(items) = instance {
@@ -66,17 +74,19 @@ impl Validate for ContainsValidator {
             let mut indices = Vec::with_capacity(items.len());
             for (idx, item) in items.iter().enumerate() {
                 let path = location.push(idx);
-                let result = self.node.evaluate_instance(item, &path, ctx);
+                let result = self.node.evaluate_instance(item, &path, ref_path, ctx);
                 if result.valid {
                     indices.push(idx);
                     results.push(result);
                 }
             }
             if indices.is_empty() {
+                let evaluation_path = capture_evaluation_path(self.node.location(), ref_path);
                 EvaluationResult::Invalid {
                     errors: vec![ErrorDescription::from_validation_error(
                         &ValidationError::contains(
                             self.node.location().clone(),
+                            evaluation_path,
                             location.into(),
                             instance,
                         ),
@@ -122,7 +132,7 @@ impl MinContainsValidator {
 }
 
 impl Validate for MinContainsValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, ctx: &mut LightweightContext) -> bool {
         if let Value::Array(items) = instance {
             let mut matches = 0;
             for item in items {
@@ -147,6 +157,7 @@ impl Validate for MinContainsValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
@@ -155,7 +166,7 @@ impl Validate for MinContainsValidator {
                 if self
                     .node
                     .validators()
-                    .all(|validator| validator.is_valid(item, ctx))
+                    .all(|validator| validator.is_valid(item, ctx.lightweight()))
                 {
                     matches += 1;
                     if matches >= self.min_contains {
@@ -166,6 +177,7 @@ impl Validate for MinContainsValidator {
             if self.min_contains > 0 {
                 Err(ValidationError::contains(
                     self.node.location().clone(),
+                    capture_evaluation_path(self.node.location(), ref_path),
                     location.into(),
                     instance,
                 ))
@@ -202,7 +214,7 @@ impl MaxContainsValidator {
 }
 
 impl Validate for MaxContainsValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, ctx: &mut LightweightContext) -> bool {
         if let Value::Array(items) = instance {
             let mut matches = 0;
             for item in items {
@@ -227,6 +239,7 @@ impl Validate for MaxContainsValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
@@ -235,12 +248,13 @@ impl Validate for MaxContainsValidator {
                 if self
                     .node
                     .validators()
-                    .all(|validator| validator.is_valid(item, ctx))
+                    .all(|validator| validator.is_valid(item, ctx.lightweight()))
                 {
                     matches += 1;
                     if matches > self.max_contains {
                         return Err(ValidationError::contains(
                             self.node.location().clone(),
+                            capture_evaluation_path(self.node.location(), ref_path),
                             location.into(),
                             instance,
                         ));
@@ -252,6 +266,7 @@ impl Validate for MaxContainsValidator {
             } else {
                 Err(ValidationError::contains(
                     self.node.location().clone(),
+                    capture_evaluation_path(self.node.location(), ref_path),
                     location.into(),
                     instance,
                 ))
@@ -290,7 +305,7 @@ impl MinMaxContainsValidator {
 }
 
 impl Validate for MinMaxContainsValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, ctx: &mut LightweightContext) -> bool {
         if let Value::Array(items) = instance {
             let mut matches = 0;
             for item in items {
@@ -315,6 +330,7 @@ impl Validate for MinMaxContainsValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
@@ -323,12 +339,14 @@ impl Validate for MinMaxContainsValidator {
                 if self
                     .node
                     .validators()
-                    .all(|validator| validator.is_valid(item, ctx))
+                    .all(|validator| validator.is_valid(item, ctx.lightweight()))
                 {
                     matches += 1;
                     if matches > self.max_contains {
+                        let max_location = self.node.location().join("maxContains");
                         return Err(ValidationError::contains(
-                            self.node.location().join("maxContains"),
+                            max_location.clone(),
+                            capture_evaluation_path(&max_location, ref_path),
                             location.into(),
                             instance,
                         ));
@@ -336,8 +354,10 @@ impl Validate for MinMaxContainsValidator {
                 }
             }
             if matches < self.min_contains {
+                let min_location = self.node.location().join("minContains");
                 Err(ValidationError::contains(
-                    self.node.location().join("minContains"),
+                    min_location.clone(),
+                    capture_evaluation_path(&min_location, ref_path),
                     location.into(),
                     instance,
                 ))

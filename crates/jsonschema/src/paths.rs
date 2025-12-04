@@ -63,6 +63,10 @@ impl<'a> LazyLocation<'a, '_> {
 
 impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
     fn from(value: &'a LazyLocation<'_, '_>) -> Self {
+        // Stack capacity for typical paths (≤16 segments), fallback to Vec for deep paths
+        const STACK_CAPACITY: usize = 16;
+
+        // First pass: count segments and calculate string capacity
         let mut capacity = 0;
         let mut string_capacity = 0;
         let mut head = value;
@@ -78,34 +82,175 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
 
         let mut buffer = String::with_capacity(string_capacity);
 
-        let mut segments = Vec::with_capacity(capacity);
-        head = value;
+        if capacity <= STACK_CAPACITY {
+            // Stack-allocated storage with references - no cloning needed
+            let mut stack_segments: [Option<&LocationSegment<'_>>; STACK_CAPACITY] =
+                [None; STACK_CAPACITY];
+            let mut idx = 0;
+            head = value;
 
-        if head.parent.is_some() {
-            segments.push(head.segment.clone());
-        }
-
-        while let Some(next) = head.parent {
-            head = next;
             if head.parent.is_some() {
-                segments.push(head.segment.clone());
+                stack_segments[idx] = Some(&head.segment);
+                idx += 1;
             }
-        }
 
-        for segment in segments.iter().rev() {
-            buffer.push('/');
-            match segment {
-                LocationSegment::Property(property) => {
-                    write_escaped_str(&mut buffer, property);
+            while let Some(next) = head.parent {
+                head = next;
+                if head.parent.is_some() {
+                    stack_segments[idx] = Some(&head.segment);
+                    idx += 1;
                 }
-                LocationSegment::Index(idx) => {
-                    let mut itoa_buffer = itoa::Buffer::new();
-                    buffer.push_str(itoa_buffer.format(*idx));
+            }
+
+            // Format in reverse order
+            for segment in stack_segments[..idx].iter().rev().flatten() {
+                buffer.push('/');
+                match segment {
+                    LocationSegment::Property(property) => {
+                        write_escaped_str(&mut buffer, property);
+                    }
+                    LocationSegment::Index(idx) => {
+                        let mut itoa_buffer = itoa::Buffer::new();
+                        buffer.push_str(itoa_buffer.format(*idx));
+                    }
+                }
+            }
+        } else {
+            // Heap-allocated fallback for deep paths (>16 segments)
+            let mut segments: Vec<&LocationSegment<'_>> = Vec::with_capacity(capacity);
+            head = value;
+
+            if head.parent.is_some() {
+                segments.push(&head.segment);
+            }
+
+            while let Some(next) = head.parent {
+                head = next;
+                if head.parent.is_some() {
+                    segments.push(&head.segment);
+                }
+            }
+
+            for segment in segments.iter().rev() {
+                buffer.push('/');
+                match segment {
+                    LocationSegment::Property(property) => {
+                        write_escaped_str(&mut buffer, property);
+                    }
+                    LocationSegment::Index(idx) => {
+                        let mut itoa_buffer = itoa::Buffer::new();
+                        buffer.push_str(itoa_buffer.format(*idx));
+                    }
                 }
             }
         }
 
         Location(Arc::from(buffer))
+    }
+}
+
+/// A lazily constructed ref path for evaluation path tracking.
+///
+/// Like [`LazyLocation`], uses stack-based references - no heap allocation.
+/// Each `$ref` traversal creates a new stack-local entry that borrows from
+/// the parent, automatically "popping" when the function returns.
+pub(crate) struct LazyRefPath<'a, 'b> {
+    /// Location of the $ref keyword. `None` for root.
+    pub(crate) ref_location: Option<&'a Location>,
+    /// Base path to strip when computing evaluation path. `None` for root.
+    pub(crate) strip_base: Option<&'a Location>,
+    pub(crate) parent: Option<&'b LazyRefPath<'b, 'a>>,
+    /// Cached evaluation prefix - computed lazily on first access.
+    /// Uses Cell for interior mutability without synchronization overhead.
+    cached_prefix: std::cell::Cell<Option<Location>>,
+}
+
+impl std::fmt::Debug for LazyRefPath<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LazyRefPath")
+            .field("ref_location", &self.ref_location)
+            .field("strip_base", &self.strip_base)
+            .field("parent", &self.parent.map(|_| "..."))
+            .finish()
+    }
+}
+
+impl<'a> LazyRefPath<'a, '_> {
+    /// Create root (empty) ref path.
+    #[must_use]
+    pub(crate) const fn new() -> Self {
+        LazyRefPath {
+            ref_location: None,
+            strip_base: None,
+            parent: None,
+            cached_prefix: std::cell::Cell::new(None),
+        }
+    }
+
+    /// Push a new $ref onto the path.
+    #[inline]
+    #[must_use]
+    pub(crate) fn push(&'a self, ref_location: &'a Location, strip_base: &'a Location) -> Self {
+        LazyRefPath {
+            ref_location: Some(ref_location),
+            strip_base: Some(strip_base),
+            parent: Some(self),
+            cached_prefix: std::cell::Cell::new(None),
+        }
+    }
+
+    /// Check if this is the root (no $refs).
+    #[inline]
+    #[must_use]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.parent.is_none()
+    }
+
+    /// Get the cached evaluation prefix, computing it if necessary.
+    /// This is O(1) after first call thanks to Cell caching.
+    /// Parent prefixes are also cached, so computation is incremental.
+    /// Returns a clone of the cached Location (cheap due to Arc).
+    #[inline]
+    pub(crate) fn get_eval_prefix(&self) -> Location {
+        // Take the cached value to check it
+        if let Some(prefix) = self.cached_prefix.take() {
+            // Put it back and return
+            self.cached_prefix.set(Some(prefix.clone()));
+            prefix
+        } else {
+            // Compute the prefix
+            let prefix = self.compute_eval_prefix_inner();
+            self.cached_prefix.set(Some(prefix.clone()));
+            prefix
+        }
+    }
+
+    /// Compute the evaluation prefix for this node.
+    /// Uses parent's cached prefix for O(1) incremental computation.
+    fn compute_eval_prefix_inner(&self) -> Location {
+        let Some(parent) = self.parent else {
+            // Root node - empty prefix (shouldn't normally be called)
+            return Location::new();
+        };
+
+        let ref_location = self.ref_location.unwrap();
+
+        // Check if parent is root (no grandparent)
+        if parent.parent.is_none() {
+            // This is the first $ref - prefix is just the ref_location
+            return ref_location.clone();
+        }
+
+        // Parent has its own ref - get parent's prefix and extend it
+        let parent_prefix = parent.get_eval_prefix();
+        let prev_strip_base = parent.strip_base.unwrap();
+
+        if let Some(suffix) = ref_location.as_str().strip_prefix(prev_strip_base.as_str()) {
+            // Append suffix directly - it's already a valid JSON pointer path
+            parent_prefix.join_raw_suffix(suffix)
+        } else {
+            parent_prefix.clone()
+        }
     }
 }
 
@@ -165,6 +310,22 @@ impl Location {
     pub fn new() -> Self {
         Self(Arc::from(""))
     }
+
+    /// Append a raw JSON pointer suffix (already escaped).
+    /// This is more efficient than multiple `join` calls when the suffix
+    /// is already a valid JSON pointer path.
+    #[must_use]
+    pub(crate) fn join_raw_suffix(&self, suffix: &str) -> Self {
+        if suffix.is_empty() {
+            return self.clone();
+        }
+        let parent = &self.0;
+        let mut buffer = String::with_capacity(parent.len() + suffix.len());
+        buffer.push_str(parent);
+        buffer.push_str(suffix);
+        Self(Arc::from(buffer))
+    }
+
     #[must_use]
     pub fn join<'a>(&self, segment: impl Into<LocationSegment<'a>>) -> Self {
         let parent = &self.0;
@@ -177,9 +338,13 @@ impl Location {
                 Self(Arc::from(buffer))
             }
             LocationSegment::Index(idx) => {
-                let mut buffer = itoa::Buffer::new();
-                let segment = buffer.format(idx);
-                Self(Arc::from(format!("{parent}/{segment}")))
+                let mut itoa_buf = itoa::Buffer::new();
+                let segment = itoa_buf.format(idx);
+                let mut buffer = String::with_capacity(parent.len() + segment.len() + 1);
+                buffer.push_str(parent);
+                buffer.push('/');
+                buffer.push_str(segment);
+                Self(Arc::from(buffer))
             }
         }
     }

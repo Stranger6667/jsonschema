@@ -15,9 +15,11 @@ use crate::{
     compiler, ecma,
     evaluation::ErrorDescription,
     node::SchemaNode,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, LazyRefPath, Location},
     thread::Shared,
-    validator::{EvaluationResult, Validate, ValidationContext},
+    validator::{
+        capture_evaluation_path, EvaluationResult, LightweightContext, Validate, ValidationContext,
+    },
     ValidationError,
 };
 
@@ -79,7 +81,7 @@ impl PropertyValidators {
         &self,
         instance: &'i Value,
         properties: &mut AHashSet<&'i String>,
-        ctx: &mut ValidationContext,
+        ctx: &mut LightweightContext,
     ) {
         // Handle $ref first
         if let Some(ref_) = &self.ref_ {
@@ -164,14 +166,14 @@ impl PropertyValidators {
 
         // Handle "allOf" keyword
         for (node, validators) in &self.all_of {
-            if node.is_valid(instance, ctx) {
+            if node.is_valid(instance, ctx.lightweight()) {
                 validators.mark_evaluated_properties(instance, properties, ctx);
             }
         }
 
         // Handle "anyOf" keyword
         for (node, validators) in &self.any_of {
-            if node.is_valid(instance, ctx) {
+            if node.is_valid(instance, ctx.lightweight()) {
                 validators.mark_evaluated_properties(instance, properties, ctx);
             }
         }
@@ -180,7 +182,7 @@ impl PropertyValidators {
         let one_of_matches: Vec<bool> = self
             .one_of
             .iter()
-            .map(|(node, _)| node.is_valid(instance, ctx))
+            .map(|(node, _)| node.is_valid(instance, ctx.lightweight()))
             .collect();
 
         if one_of_matches.iter().filter(|&&v| v).count() == 1 {
@@ -199,7 +201,7 @@ impl ConditionalValidators {
         &self,
         instance: &'i Value,
         properties: &mut AHashSet<&'i String>,
-        ctx: &mut ValidationContext,
+        ctx: &mut LightweightContext,
     ) {
         if self.condition.is_valid(instance, ctx) {
             self.if_
@@ -306,9 +308,11 @@ fn compile_pattern_properties<'a>(
         let schema_ctx = pat_ctx.new_at_location(pattern.as_str());
         let Ok(regex) = ecma::to_rust_regex(pattern).and_then(|p| Regex::new(&p).map_err(|_| ()))
         else {
+            let location = schema_ctx.location().clone();
             return Err(ValidationError::format(
+                location.clone(),
+                location,
                 Location::new(),
-                ctx.location().clone(),
                 schema,
                 "regex",
             ));
@@ -584,6 +588,7 @@ impl Validate for UnevaluatedPropertiesValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(properties) = instance {
@@ -591,7 +596,7 @@ impl Validate for UnevaluatedPropertiesValidator {
 
             // Mark all evaluated properties
             self.validators
-                .mark_evaluated_properties(instance, &mut evaluated, ctx);
+                .mark_evaluated_properties(instance, &mut evaluated, ctx.lightweight());
 
             // Early return if all properties are evaluated
             if evaluated.len() == properties.len() {
@@ -606,7 +611,7 @@ impl Validate for UnevaluatedPropertiesValidator {
                 }
                 // Check against unevaluatedProperties schema
                 if let Some(unevaluated_schema) = &self.validators.unevaluated {
-                    if !unevaluated_schema.is_valid(value, ctx) {
+                    if !unevaluated_schema.is_valid(value, ctx.lightweight()) {
                         unevaluated.push(property.clone());
                     }
                 } else {
@@ -618,6 +623,7 @@ impl Validate for UnevaluatedPropertiesValidator {
             if !unevaluated.is_empty() {
                 return Err(ValidationError::unevaluated_properties(
                     self.location.clone(),
+                    capture_evaluation_path(&self.location, ref_path),
                     location.into(),
                     instance,
                     unevaluated,
@@ -627,7 +633,7 @@ impl Validate for UnevaluatedPropertiesValidator {
         Ok(())
     }
 
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, ctx: &mut LightweightContext) -> bool {
         if let Value::Object(properties) = instance {
             let mut evaluated = AHashSet::with_capacity(properties.len());
             self.validators
@@ -658,12 +664,13 @@ impl Validate for UnevaluatedPropertiesValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Object(properties) = instance {
             let mut evaluated = AHashSet::with_capacity(properties.len());
             self.validators
-                .mark_evaluated_properties(instance, &mut evaluated, ctx);
+                .mark_evaluated_properties(instance, &mut evaluated, ctx.lightweight());
             let mut children = Vec::new();
             let mut unevaluated = Vec::new();
             let mut invalid = false;
@@ -673,7 +680,8 @@ impl Validate for UnevaluatedPropertiesValidator {
                     continue;
                 }
                 if let Some(validator) = &self.validators.unevaluated {
-                    let child = validator.evaluate_instance(value, &location.push(property), ctx);
+                    let child =
+                        validator.evaluate_instance(value, &location.push(property), ref_path, ctx);
                     if !child.valid {
                         invalid = true;
                         unevaluated.push(property.clone());
@@ -690,6 +698,7 @@ impl Validate for UnevaluatedPropertiesValidator {
                 errors.push(ErrorDescription::from_validation_error(
                     &ValidationError::unevaluated_properties(
                         self.location.clone(),
+                        capture_evaluation_path(&self.location, ref_path),
                         location.into(),
                         instance,
                         unevaluated,

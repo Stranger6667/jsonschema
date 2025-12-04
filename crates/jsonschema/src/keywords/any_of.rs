@@ -2,9 +2,11 @@ use crate::{
     compiler,
     error::{error, no_error, ErrorIterator, ValidationError},
     node::SchemaNode,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, LazyRefPath, Location},
     types::JsonType,
-    validator::{EvaluationResult, Validate, ValidationContext},
+    validator::{
+        capture_evaluation_path, EvaluationResult, LightweightContext, Validate, ValidationContext,
+    },
 };
 use serde_json::{Map, Value};
 
@@ -31,9 +33,11 @@ impl AnyOfValidator {
                 location: ctx.location().clone(),
             }))
         } else {
+            let location = ctx.location().join("anyOf");
             Err(ValidationError::single_type_error(
+                location.clone(),
+                location,
                 Location::new(),
-                ctx.location().clone(),
                 schema,
                 JsonType::Array,
             ))
@@ -42,26 +46,34 @@ impl AnyOfValidator {
 }
 
 impl Validate for AnyOfValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        self.schemas.iter().any(|s| s.is_valid(instance, ctx))
+    fn is_valid(&self, instance: &Value, ctx: &mut LightweightContext) -> bool {
+        self.schemas
+            .iter()
+            .any(|s| s.is_valid(instance, ctx.lightweight()))
     }
 
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::any_of(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 self.schemas
                     .iter()
-                    .map(|schema| schema.iter_errors(instance, location, ctx).collect())
+                    .map(|schema| {
+                        schema
+                            .iter_errors(instance, location, ref_path, ctx)
+                            .collect()
+                    })
                     .collect(),
             ))
         }
@@ -71,18 +83,24 @@ impl Validate for AnyOfValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             no_error()
         } else {
             error(ValidationError::any_of(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 self.schemas
                     .iter()
-                    .map(|schema| schema.iter_errors(instance, location, ctx).collect())
+                    .map(|schema| {
+                        schema
+                            .iter_errors(instance, location, ref_path, ctx)
+                            .collect()
+                    })
                     .collect(),
             ))
         }
@@ -92,28 +110,34 @@ impl Validate for AnyOfValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        let total = self.schemas.len();
-        let mut failures = Vec::with_capacity(total);
-        let mut iter = self.schemas.iter();
-        while let Some(node) = iter.next() {
-            let result = node.evaluate_instance(instance, location, ctx);
-            if result.valid {
-                let remaining = total.saturating_sub(failures.len() + 1);
-                let mut successes = Vec::with_capacity(remaining + 1);
-                successes.push(result);
-                for node in iter {
-                    let tail = node.evaluate_instance(instance, location, ctx);
-                    if tail.valid {
-                        successes.push(tail);
-                    }
-                }
-                return EvaluationResult::from_children(successes);
-            }
-            failures.push(result);
+        // Phase 1: Use fast is_valid() to find which schemas match
+        let valid_indices: Vec<usize> = self
+            .schemas
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| node.is_valid(instance, ctx.lightweight()))
+            .map(|(idx, _)| idx)
+            .collect();
+
+        if valid_indices.is_empty() {
+            // No valid schemas - evaluate all for error output
+            let failures: Vec<_> = self
+                .schemas
+                .iter()
+                .map(|node| node.evaluate_instance(instance, location, ref_path, ctx))
+                .collect();
+            EvaluationResult::from_children(failures)
+        } else {
+            // At least one valid - only evaluate the valid ones
+            let successes: Vec<_> = valid_indices
+                .iter()
+                .map(|&idx| self.schemas[idx].evaluate_instance(instance, location, ref_path, ctx))
+                .collect();
+            EvaluationResult::from_children(successes)
         }
-        EvaluationResult::from_children(failures)
     }
 }
 

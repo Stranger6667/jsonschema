@@ -5,10 +5,10 @@ use crate::{
     error::ValidationError,
     keywords::CompilationResult,
     options::PatternEngineOptions,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, LazyRefPath, Location},
     regex::{RegexEngine, RegexError},
     types::JsonType,
-    validator::{Validate, ValidationContext},
+    validator::{capture_evaluation_path, LightweightContext, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -22,6 +22,7 @@ impl<R: RegexEngine> Validate for PatternValidator<R> {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::String(item) = instance {
@@ -30,6 +31,7 @@ impl<R: RegexEngine> Validate for PatternValidator<R> {
                     if !is_match {
                         return Err(ValidationError::pattern(
                             self.location.clone(),
+                            capture_evaluation_path(&self.location, ref_path),
                             location.into(),
                             instance,
                             self.regex.pattern().to_string(),
@@ -39,6 +41,7 @@ impl<R: RegexEngine> Validate for PatternValidator<R> {
                 Err(e) => {
                     return Err(ValidationError::backtrack_limit(
                         self.location.clone(),
+                        capture_evaluation_path(&self.location, ref_path),
                         location.into(),
                         instance,
                         e.into_backtrack_error()
@@ -50,7 +53,7 @@ impl<R: RegexEngine> Validate for PatternValidator<R> {
         Ok(())
     }
 
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         if let Value::String(item) = instance {
             return self.regex.is_match(item).unwrap_or(false);
         }
@@ -64,8 +67,8 @@ pub(crate) fn compile<'a>(
     _: &'a Map<String, Value>,
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
-    match schema {
-        Value::String(item) => match ctx.config().pattern_options() {
+    if let Value::String(item) = schema {
+        match ctx.config().pattern_options() {
             PatternEngineOptions::FancyRegex { .. } => {
                 let Ok(regex) = ctx.get_or_compile_regex(item) else {
                     return Some(Err(invalid_regex(ctx, schema)));
@@ -84,18 +87,22 @@ pub(crate) fn compile<'a>(
                     location: ctx.location().join("pattern"),
                 })))
             }
-        },
-        _ => Some(Err(ValidationError::single_type_error(
+        }
+    } else {
+        let location = ctx.location().join("pattern");
+        Some(Err(ValidationError::single_type_error(
+            location.clone(),
+            location,
             Location::new(),
-            ctx.location().clone(),
             schema,
             JsonType::String,
-        ))),
+        )))
     }
 }
 
 fn invalid_regex<'a>(ctx: &compiler::Context, schema: &'a Value) -> ValidationError<'a> {
-    ValidationError::format(Location::new(), ctx.location().clone(), schema, "regex")
+    let location = ctx.location().join("pattern");
+    ValidationError::format(location.clone(), location, Location::new(), schema, "regex")
 }
 
 #[cfg(test)]

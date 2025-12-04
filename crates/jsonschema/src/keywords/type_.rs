@@ -1,15 +1,18 @@
 use crate::{
     compiler,
     error::ValidationError,
+    evaluation::ErrorDescription,
     keywords::CompilationResult,
     paths::Location,
     types::{JsonType, JsonTypeSet},
-    validator::{Validate, ValidationContext},
+    validator::{
+        capture_evaluation_path, EvaluationResult, LightweightContext, Validate, ValidationContext,
+    },
 };
 use serde_json::{json, Map, Number, Value};
 use std::str::FromStr;
 
-use crate::paths::LazyLocation;
+use crate::paths::{LazyLocation, LazyRefPath};
 
 pub(crate) struct MultipleTypesValidator {
     types: JsonTypeSet,
@@ -27,8 +30,9 @@ impl MultipleTypesValidator {
                         types = types.insert(ty);
                     } else {
                         return Err(ValidationError::enumeration(
-                            Location::new(),
+                            location.clone(),
                             location,
+                            Location::new(),
                             item,
                             &json!([
                                 "array", "boolean", "integer", "null", "number", "object", "string"
@@ -38,6 +42,7 @@ impl MultipleTypesValidator {
                 }
                 _ => {
                     return Err(ValidationError::single_type_error(
+                        location.clone(),
                         location,
                         Location::new(),
                         item,
@@ -51,24 +56,48 @@ impl MultipleTypesValidator {
 }
 
 impl Validate for MultipleTypesValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         self.types.contains_value_type(instance)
     }
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::multiple_type_error(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 self.types,
             ))
+        }
+    }
+    fn evaluate(
+        &self,
+        instance: &Value,
+        _location: &LazyLocation,
+        _ref_path: &LazyRefPath,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if self.is_valid(instance, ctx.lightweight()) {
+            EvaluationResult::valid_empty()
+        } else {
+            use std::fmt::Write;
+            let mut message = format!("{instance} is not of types ");
+            let mut iter = self.types.iter();
+            if let Some(t) = iter.next() {
+                write!(message, r#""{t}""#).expect("Writing to string always succeeds");
+            }
+            for t in iter {
+                write!(message, r#", "{t}""#).expect("Writing to string always succeeds");
+            }
+            EvaluationResult::invalid_empty(vec![ErrorDescription::new("type", message)])
         }
     }
 }
@@ -85,24 +114,42 @@ impl NullTypeValidator {
 }
 
 impl Validate for NullTypeValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         instance.is_null()
     }
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::single_type_error(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 JsonType::Null,
             ))
+        }
+    }
+    fn evaluate(
+        &self,
+        instance: &Value,
+        _location: &LazyLocation,
+        _ref_path: &LazyRefPath,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if self.is_valid(instance, ctx.lightweight()) {
+            EvaluationResult::valid_empty()
+        } else {
+            EvaluationResult::invalid_empty(vec![ErrorDescription::new(
+                "type",
+                format!(r#"{instance} is not of type "null""#),
+            )])
         }
     }
 }
@@ -119,24 +166,42 @@ impl BooleanTypeValidator {
 }
 
 impl Validate for BooleanTypeValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         instance.is_boolean()
     }
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::single_type_error(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 JsonType::Boolean,
             ))
+        }
+    }
+    fn evaluate(
+        &self,
+        instance: &Value,
+        _location: &LazyLocation,
+        _ref_path: &LazyRefPath,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if self.is_valid(instance, ctx.lightweight()) {
+            EvaluationResult::valid_empty()
+        } else {
+            EvaluationResult::invalid_empty(vec![ErrorDescription::new(
+                "type",
+                format!(r#"{instance} is not of type "boolean""#),
+            )])
         }
     }
 }
@@ -153,7 +218,7 @@ impl StringTypeValidator {
 }
 
 impl Validate for StringTypeValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         instance.is_string()
     }
 
@@ -161,17 +226,35 @@ impl Validate for StringTypeValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::single_type_error(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 JsonType::String,
             ))
+        }
+    }
+    fn evaluate(
+        &self,
+        instance: &Value,
+        _location: &LazyLocation,
+        _ref_path: &LazyRefPath,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if self.is_valid(instance, ctx.lightweight()) {
+            EvaluationResult::valid_empty()
+        } else {
+            EvaluationResult::invalid_empty(vec![ErrorDescription::new(
+                "type",
+                format!(r#"{instance} is not of type "string""#),
+            )])
         }
     }
 }
@@ -188,7 +271,7 @@ impl ArrayTypeValidator {
 }
 
 impl Validate for ArrayTypeValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         instance.is_array()
     }
 
@@ -196,17 +279,35 @@ impl Validate for ArrayTypeValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::single_type_error(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 JsonType::Array,
             ))
+        }
+    }
+    fn evaluate(
+        &self,
+        instance: &Value,
+        _location: &LazyLocation,
+        _ref_path: &LazyRefPath,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if self.is_valid(instance, ctx.lightweight()) {
+            EvaluationResult::valid_empty()
+        } else {
+            EvaluationResult::invalid_empty(vec![ErrorDescription::new(
+                "type",
+                format!(r#"{instance} is not of type "array""#),
+            )])
         }
     }
 }
@@ -223,24 +324,42 @@ impl ObjectTypeValidator {
 }
 
 impl Validate for ObjectTypeValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         instance.is_object()
     }
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::single_type_error(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 JsonType::Object,
             ))
+        }
+    }
+    fn evaluate(
+        &self,
+        instance: &Value,
+        _location: &LazyLocation,
+        _ref_path: &LazyRefPath,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if self.is_valid(instance, ctx.lightweight()) {
+            EvaluationResult::valid_empty()
+        } else {
+            EvaluationResult::invalid_empty(vec![ErrorDescription::new(
+                "type",
+                format!(r#"{instance} is not of type "object""#),
+            )])
         }
     }
 }
@@ -257,24 +376,42 @@ impl NumberTypeValidator {
 }
 
 impl Validate for NumberTypeValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         instance.is_number()
     }
     fn validate<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::single_type_error(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 JsonType::Number,
             ))
+        }
+    }
+    fn evaluate(
+        &self,
+        instance: &Value,
+        _location: &LazyLocation,
+        _ref_path: &LazyRefPath,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if self.is_valid(instance, ctx.lightweight()) {
+            EvaluationResult::valid_empty()
+        } else {
+            EvaluationResult::invalid_empty(vec![ErrorDescription::new(
+                "type",
+                format!(r#"{instance} is not of type "number""#),
+            )])
         }
     }
 }
@@ -291,7 +428,7 @@ impl IntegerTypeValidator {
 }
 
 impl Validate for IntegerTypeValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
         if let Value::Number(num) = instance {
             is_integer(num)
         } else {
@@ -302,17 +439,35 @@ impl Validate for IntegerTypeValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if self.is_valid(instance, ctx.lightweight()) {
             Ok(())
         } else {
             Err(ValidationError::single_type_error(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, ref_path),
                 location.into(),
                 instance,
                 JsonType::Integer,
             ))
+        }
+    }
+    fn evaluate(
+        &self,
+        instance: &Value,
+        _location: &LazyLocation,
+        _ref_path: &LazyRefPath,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if self.is_valid(instance, ctx.lightweight()) {
+            EvaluationResult::valid_empty()
+        } else {
+            EvaluationResult::invalid_empty(vec![ErrorDescription::new(
+                "type",
+                format!(r#"{instance} is not of type "integer""#),
+            )])
         }
     }
 }
@@ -369,8 +524,9 @@ pub(crate) fn compile<'a>(
                     Some(compile_single_type(ty.as_str(), location, item))
                 } else {
                     Some(Err(ValidationError::single_type_error(
-                        Location::new(),
+                        location.clone(),
                         location,
+                        Location::new(),
                         item,
                         JsonType::String,
                     )))
@@ -379,14 +535,18 @@ pub(crate) fn compile<'a>(
                 Some(MultipleTypesValidator::compile(items, location))
             }
         }
-        _ => Some(Err(ValidationError::multiple_type_error(
-            Location::new(),
-            ctx.location().clone(),
-            schema,
-            JsonTypeSet::empty()
-                .insert(JsonType::String)
-                .insert(JsonType::Array),
-        ))),
+        _ => {
+            let location = ctx.location().join("type");
+            Some(Err(ValidationError::multiple_type_error(
+                location.clone(),
+                location,
+                Location::new(),
+                schema,
+                JsonTypeSet::empty()
+                    .insert(JsonType::String)
+                    .insert(JsonType::Array),
+            )))
+        }
     }
 }
 
@@ -404,8 +564,9 @@ fn compile_single_type<'a>(
         Ok(JsonType::Object) => ObjectTypeValidator::compile(location),
         Ok(JsonType::String) => StringTypeValidator::compile(location),
         Err(()) => Err(ValidationError::custom(
-            Location::new(),
+            location.clone(),
             location,
+            Location::new(),
             instance,
             "Unexpected type",
         )),

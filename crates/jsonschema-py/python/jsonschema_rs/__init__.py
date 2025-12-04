@@ -36,6 +36,7 @@ class ValidationError(ValueError):
     verbose_message: str
     schema_path: list[str | int]
     instance_path: list[str | int]
+    evaluation_path: list[str | int]
     kind: ValidationErrorKind
     instance: Any
 
@@ -45,6 +46,7 @@ class ValidationError(ValueError):
         verbose_message: str,
         schema_path: list[str | int],
         instance_path: list[str | int],
+        evaluation_path: list[str | int],
         kind: ValidationErrorKind,
         instance: Any,
     ) -> None:
@@ -53,6 +55,7 @@ class ValidationError(ValueError):
         self.verbose_message = verbose_message
         self.schema_path = schema_path
         self.instance_path = instance_path
+        self.evaluation_path = evaluation_path
         self.kind = kind
         self.instance = instance
 

@@ -58,13 +58,13 @@
                                 {
                                     "valid": false,
                                     "evaluationPath": "/properties/child/$dynamicRef",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/child/$dynamicRef",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#",
                                     "instanceLocation": "/child"
                                 },
                                 {
                                     "valid": false,
                                     "evaluationPath": "/properties/child/$dynamicRef/properties",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/child/$dynamicRef/properties",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties",
                                     "instanceLocation": "/child",
                                     "droppedAnnotations": [
                                         "value"
@@ -73,13 +73,13 @@
                                 {
                                     "valid": false,
                                     "evaluationPath": "/properties/child/$dynamicRef/properties/value",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/child/$dynamicRef/properties/value",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/value",
                                     "instanceLocation": "/child/value"
                                 },
                                 {
                                     "valid": false,
                                     "evaluationPath": "/properties/child/$dynamicRef/properties/value/type",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/child/$dynamicRef/properties/value/type",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/value/type",
                                     "instanceLocation": "/child/value",
                                     "errors": {
                                         "type": "\"boom\" is not of type \"integer\""
@@ -88,13 +88,13 @@
                                 {
                                     "valid": true,
                                     "evaluationPath": "/properties/child/$dynamicRef/required",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/child/$dynamicRef/required",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/required",
                                     "instanceLocation": "/child"
                                 },
                                 {
                                     "valid": true,
                                     "evaluationPath": "/properties/child/$dynamicRef/type",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/child/$dynamicRef/type",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/type",
                                     "instanceLocation": "/child"
                                 },
                                 {
@@ -151,13 +151,13 @@
                                                 {
                                                     "valid": false,
                                                     "evaluationPath": "/properties/child/$dynamicRef",
-                                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/child/$dynamicRef",
+                                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#",
                                                     "instanceLocation": "/child",
                                                     "details": [
                                                         {
                                                             "valid": false,
                                                             "evaluationPath": "/properties/child/$dynamicRef/properties",
-                                                            "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/child/$dynamicRef/properties",
+                                                            "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties",
                                                             "instanceLocation": "/child",
                                                             "droppedAnnotations": [
                                                                 "value"
@@ -166,13 +166,13 @@
                                                                 {
                                                                     "valid": false,
                                                                     "evaluationPath": "/properties/child/$dynamicRef/properties/value",
-                                                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/child/$dynamicRef/properties/value",
+                                                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/value",
                                                                     "instanceLocation": "/child/value",
                                                                     "details": [
                                                                         {
                                                                             "valid": false,
                                                                             "evaluationPath": "/properties/child/$dynamicRef/properties/value/type",
-                                                                            "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/child/$dynamicRef/properties/value/type",
+                                                                            "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/value/type",
                                                                             "instanceLocation": "/child/value",
                                                                             "errors": {
                                                                                 "type": "\"boom\" is not of type \"integer\""
@@ -185,13 +185,13 @@
                                                         {
                                                             "valid": true,
                                                             "evaluationPath": "/properties/child/$dynamicRef/required",
-                                                            "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/child/$dynamicRef/required",
+                                                            "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/required",
                                                             "instanceLocation": "/child"
                                                         },
                                                         {
                                                             "valid": true,
                                                             "evaluationPath": "/properties/child/$dynamicRef/type",
-                                                            "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/child/$dynamicRef/type",
+                                                            "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/type",
                                                             "instanceLocation": "/child"
                                                         }
                                                     ]

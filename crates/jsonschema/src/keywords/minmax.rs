@@ -3,10 +3,10 @@ use crate::{
     error::ValidationError,
     ext::numeric,
     keywords::CompilationResult,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, LazyRefPath, Location},
     thread::ThreadBound,
     types::JsonType,
-    validator::{Validate, ValidationContext},
+    validator::{capture_evaluation_path, LightweightContext, Validate, ValidationContext},
 };
 use num_cmp::NumCmp;
 use serde_json::{Map, Value};
@@ -38,13 +38,15 @@ macro_rules! define_numeric_keywords {
                     &self,
                     instance: &'i Value,
                     location: &LazyLocation,
+        ref_path: &LazyRefPath,
                     ctx: &mut ValidationContext,
                 ) -> Result<(), ValidationError<'i>> {
-                    if self.is_valid(instance, ctx) {
+                    if self.is_valid(instance, ctx.lightweight()) {
                         Ok(())
                     } else {
                         Err(ValidationError::$error_fn_name(
                             self.location.clone(),
+                            capture_evaluation_path(&self.location, ref_path),
                             location.into(),
                             instance,
                             self.limit_val.clone(),
@@ -52,7 +54,7 @@ macro_rules! define_numeric_keywords {
                     }
                 }
 
-                fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+                fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
                     if let Value::Number(item) = instance {
                         $fn_name(item, self.limit)
                     } else {
@@ -74,7 +76,8 @@ define_numeric_keywords!(
 #[cfg(feature = "arbitrary-precision")]
 pub(crate) mod bigint_validators {
     use super::{
-        numeric, LazyLocation, Location, Validate, ValidationContext, ValidationError, Value,
+        capture_evaluation_path, numeric, LazyLocation, LazyRefPath, LightweightContext, Location,
+        Validate, ValidationContext, ValidationError, Value,
     };
     use crate::ext::numeric::bignum::{
         f64_ge_bigfrac, f64_ge_bigint, f64_gt_bigfrac, f64_gt_bigint, f64_le_bigfrac,
@@ -105,13 +108,15 @@ pub(crate) mod bigint_validators {
                     &self,
                     instance: &'i Value,
                     location: &LazyLocation,
+        ref_path: &LazyRefPath,
                     ctx: &mut ValidationContext,
                 ) -> Result<(), ValidationError<'i>> {
-                    if self.is_valid(instance, ctx) {
+                    if self.is_valid(instance, ctx.lightweight()) {
                         Ok(())
                     } else {
                         Err(ValidationError::$error_fn(
                             self.location.clone(),
+                            capture_evaluation_path(&self.location, ref_path),
                             location.into(),
                             instance,
                             self.limit_val.clone(),
@@ -119,7 +124,7 @@ pub(crate) mod bigint_validators {
                     }
                 }
 
-                fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+                fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
                     use fraction::BigFraction;
                     if let Value::Number(item) = instance {
                         // Try to parse instance as BigInt first
@@ -216,13 +221,15 @@ pub(crate) mod bigint_validators {
                     &self,
                     instance: &'i Value,
                     location: &LazyLocation,
+        ref_path: &LazyRefPath,
                     ctx: &mut ValidationContext,
                 ) -> Result<(), ValidationError<'i>> {
-                    if self.is_valid(instance, ctx) {
+                    if self.is_valid(instance, ctx.lightweight()) {
                         Ok(())
                     } else {
                         Err(ValidationError::$error_fn(
                             self.location.clone(),
+                            capture_evaluation_path(&self.location, ref_path),
                             location.into(),
                             instance,
                             self.limit_val.clone(),
@@ -230,7 +237,7 @@ pub(crate) mod bigint_validators {
                     }
                 }
 
-                fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+                fn is_valid(&self, instance: &Value, _ctx: &mut LightweightContext) -> bool {
                     if let Value::Number(item) = instance {
                         // Try to parse instance as BigFraction for exact precision
                         if let Some(instance_bigfrac) = try_parse_bigfraction(item) {
@@ -305,10 +312,16 @@ where
     Ok(Box::new(V::from((limit, schema.clone(), location))))
 }
 
-fn number_type_error<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
+fn number_type_error<'a>(
+    ctx: &compiler::Context,
+    keyword: &str,
+    schema: &'a Value,
+) -> CompilationResult<'a> {
+    let location = ctx.location().join(keyword);
     Err(ValidationError::single_type_error(
+        location.clone(),
+        location,
         Location::new(),
-        ctx.location().clone(),
         schema,
         JsonType::Number,
     ))
@@ -430,7 +443,7 @@ pub(crate) fn compile_minimum<'a>(
 ) -> Option<CompilationResult<'a>> {
     match schema {
         Value::Number(limit) => create_numeric_validator!(Minimum, ctx, "minimum", limit, schema),
-        _ => Some(number_type_error(ctx, schema)),
+        _ => Some(number_type_error(ctx, "minimum", schema)),
     }
 }
 
@@ -442,7 +455,7 @@ pub(crate) fn compile_maximum<'a>(
 ) -> Option<CompilationResult<'a>> {
     match schema {
         Value::Number(limit) => create_numeric_validator!(Maximum, ctx, "maximum", limit, schema),
-        _ => Some(number_type_error(ctx, schema)),
+        _ => Some(number_type_error(ctx, "maximum", schema)),
     }
 }
 
@@ -456,7 +469,7 @@ pub(crate) fn compile_exclusive_minimum<'a>(
         Value::Number(limit) => {
             create_numeric_validator!(ExclusiveMinimum, ctx, "exclusiveMinimum", limit, schema)
         }
-        _ => Some(number_type_error(ctx, schema)),
+        _ => Some(number_type_error(ctx, "exclusiveMinimum", schema)),
     }
 }
 
@@ -470,7 +483,7 @@ pub(crate) fn compile_exclusive_maximum<'a>(
         Value::Number(limit) => {
             create_numeric_validator!(ExclusiveMaximum, ctx, "exclusiveMaximum", limit, schema)
         }
-        _ => Some(number_type_error(ctx, schema)),
+        _ => Some(number_type_error(ctx, "exclusiveMaximum", schema)),
     }
 }
 

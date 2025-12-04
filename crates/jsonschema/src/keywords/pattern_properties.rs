@@ -7,10 +7,10 @@ use crate::{
     keywords::CompilationResult,
     node::SchemaNode,
     options::PatternEngineOptions,
-    paths::{LazyLocation, Location},
+    paths::{LazyLocation, LazyRefPath, Location},
     regex::RegexEngine,
     types::JsonType,
-    validator::{EvaluationResult, Validate, ValidationContext},
+    validator::{EvaluationResult, LightweightContext, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -19,7 +19,7 @@ pub(crate) struct PatternPropertiesValidator<R> {
 }
 
 impl<R: RegexEngine> Validate for PatternPropertiesValidator<R> {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, ctx: &mut LightweightContext) -> bool {
         if let Value::Object(item) = instance {
             for (re, node) in &self.patterns {
                 for (key, value) in item {
@@ -38,13 +38,14 @@ impl<R: RegexEngine> Validate for PatternPropertiesValidator<R> {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
             for (key, value) in item {
                 for (re, node) in &self.patterns {
                     if re.is_match(key).unwrap_or(false) {
-                        node.validate(value, &location.push(key), ctx)?;
+                        node.validate(value, &location.push(key), ref_path, ctx)?;
                     }
                 }
             }
@@ -56,6 +57,7 @@ impl<R: RegexEngine> Validate for PatternPropertiesValidator<R> {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if let Value::Object(item) = instance {
@@ -63,7 +65,12 @@ impl<R: RegexEngine> Validate for PatternPropertiesValidator<R> {
             for (re, node) in &self.patterns {
                 for (key, value) in item {
                     if re.is_match(key).unwrap_or(false) {
-                        errors.extend(node.iter_errors(value, &location.push(key.as_str()), ctx));
+                        errors.extend(node.iter_errors(
+                            value,
+                            &location.push(key.as_str()),
+                            ref_path,
+                            ctx,
+                        ));
                     }
                 }
             }
@@ -77,6 +84,7 @@ impl<R: RegexEngine> Validate for PatternPropertiesValidator<R> {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Object(item) = instance {
@@ -89,6 +97,7 @@ impl<R: RegexEngine> Validate for PatternPropertiesValidator<R> {
                         children.push(node.evaluate_instance(
                             value,
                             &location.push(key.as_str()),
+                            ref_path,
                             ctx,
                         ));
                     }
@@ -109,7 +118,7 @@ pub(crate) struct SingleValuePatternPropertiesValidator<R> {
 }
 
 impl<R: RegexEngine> Validate for SingleValuePatternPropertiesValidator<R> {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &Value, ctx: &mut LightweightContext) -> bool {
         if let Value::Object(item) = instance {
             for (key, value) in item {
                 if self.regex.is_match(key).unwrap_or(false) && !self.node.is_valid(value, ctx) {
@@ -126,12 +135,14 @@ impl<R: RegexEngine> Validate for SingleValuePatternPropertiesValidator<R> {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
             for (key, value) in item {
                 if self.regex.is_match(key).unwrap_or(false) {
-                    self.node.validate(value, &location.push(key), ctx)?;
+                    self.node
+                        .validate(value, &location.push(key), ref_path, ctx)?;
                 }
             }
         }
@@ -142,16 +153,19 @@ impl<R: RegexEngine> Validate for SingleValuePatternPropertiesValidator<R> {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if let Value::Object(item) = instance {
             let mut errors = Vec::new();
             for (key, value) in item {
                 if self.regex.is_match(key).unwrap_or(false) {
-                    errors.extend(
-                        self.node
-                            .iter_errors(value, &location.push(key.as_str()), ctx),
-                    );
+                    errors.extend(self.node.iter_errors(
+                        value,
+                        &location.push(key.as_str()),
+                        ref_path,
+                        ctx,
+                    ));
                 }
             }
             ErrorIterator::from_iterator(errors.into_iter())
@@ -164,6 +178,7 @@ impl<R: RegexEngine> Validate for SingleValuePatternPropertiesValidator<R> {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Object(item) = instance {
@@ -175,6 +190,7 @@ impl<R: RegexEngine> Validate for SingleValuePatternPropertiesValidator<R> {
                     children.push(self.node.evaluate_instance(
                         value,
                         &location.push(key.as_str()),
+                        ref_path,
                         ctx,
                     ));
                 }
@@ -203,9 +219,11 @@ pub(crate) fn compile<'a>(
     }
 
     let Value::Object(map) = schema else {
+        let location = ctx.location().join("patternProperties");
         return Some(Err(ValidationError::single_type_error(
+            location.clone(),
+            location,
             Location::new(),
-            ctx.location().clone(),
             schema,
             JsonType::Object,
         )));
@@ -241,7 +259,8 @@ pub(crate) fn compile<'a>(
 }
 
 fn invalid_regex<'a>(ctx: &compiler::Context, schema: &'a Value) -> ValidationError<'a> {
-    ValidationError::format(Location::new(), ctx.location().clone(), schema, "regex")
+    let location = ctx.location().clone();
+    ValidationError::format(location.clone(), location, Location::new(), schema, "regex")
 }
 
 /// Compile every `(pattern, subschema)` pair into `(regex, node)` tuples.

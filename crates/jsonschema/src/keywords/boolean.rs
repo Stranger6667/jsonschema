@@ -1,9 +1,9 @@
-use crate::paths::{LazyLocation, Location};
+use crate::paths::{LazyLocation, LazyRefPath, Location};
 
 use crate::{
     error::ValidationError,
     keywords::CompilationResult,
-    validator::{Validate, ValidationContext},
+    validator::{capture_evaluation_path, LightweightContext, Validate, ValidationContext},
 };
 use serde_json::Value;
 
@@ -17,7 +17,7 @@ impl FalseValidator {
     }
 }
 impl Validate for FalseValidator {
-    fn is_valid(&self, _: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, _: &Value, _ctx: &mut LightweightContext) -> bool {
         false
     }
 
@@ -25,10 +25,12 @@ impl Validate for FalseValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        ref_path: &LazyRefPath,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         Err(ValidationError::false_schema(
             self.location.clone(),
+            capture_evaluation_path(&self.location, ref_path),
             location.into(),
             instance,
         ))

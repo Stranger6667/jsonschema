@@ -239,13 +239,13 @@
                                 {
                                     "valid": false,
                                     "evaluationPath": "/properties/multi/allOf/0/$ref",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/properties/multi/allOf/0/$ref",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/$defs/integer",
                                     "instanceLocation": "/multi"
                                 },
                                 {
                                     "valid": false,
                                     "evaluationPath": "/properties/multi/allOf/0/$ref/type",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/properties/multi/allOf/0/$ref/type",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/$defs/integer/type",
                                     "instanceLocation": "/multi",
                                     "errors": {
                                         "type": "3.5 is not of type \"integer\""
@@ -260,13 +260,13 @@
                                 {
                                     "valid": false,
                                     "evaluationPath": "/properties/multi/allOf/1/$ref",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/properties/multi/allOf/1/$ref",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/$defs/minimum",
                                     "instanceLocation": "/multi"
                                 },
                                 {
                                     "valid": false,
                                     "evaluationPath": "/properties/multi/allOf/1/$ref/minimum",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/properties/multi/allOf/1/$ref/minimum",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/$defs/minimum/minimum",
                                     "instanceLocation": "/multi",
                                     "errors": {
                                         "minimum": "3.5 is less than the minimum of 5"
@@ -319,13 +319,13 @@
                                                                 {
                                                                     "valid": false,
                                                                     "evaluationPath": "/properties/multi/allOf/0/$ref",
-                                                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/properties/multi/allOf/0/$ref",
+                                                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/$defs/integer",
                                                                     "instanceLocation": "/multi",
                                                                     "details": [
                                                                         {
                                                                             "valid": false,
                                                                             "evaluationPath": "/properties/multi/allOf/0/$ref/type",
-                                                                            "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/properties/multi/allOf/0/$ref/type",
+                                                                            "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/$defs/integer/type",
                                                                             "instanceLocation": "/multi",
                                                                             "errors": {
                                                                                 "type": "3.5 is not of type \"integer\""
@@ -344,13 +344,13 @@
                                                                 {
                                                                     "valid": false,
                                                                     "evaluationPath": "/properties/multi/allOf/1/$ref",
-                                                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/properties/multi/allOf/1/$ref",
+                                                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/$defs/minimum",
                                                                     "instanceLocation": "/multi",
                                                                     "details": [
                                                                         {
                                                                             "valid": false,
                                                                             "evaluationPath": "/properties/multi/allOf/1/$ref/minimum",
-                                                                            "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/properties/multi/allOf/1/$ref/minimum",
+                                                                            "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/$defs/minimum/minimum",
                                                                             "instanceLocation": "/multi",
                                                                             "errors": {
                                                                                 "minimum": "3.5 is less than the minimum of 5"
