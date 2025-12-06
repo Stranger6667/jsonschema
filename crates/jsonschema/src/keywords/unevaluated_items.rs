@@ -187,6 +187,115 @@ impl ItemsValidators {
             }
         }
     }
+
+    /// Mark items evaluated by OTHER keywords, excluding unevaluatedItems itself.
+    /// Used for tracing to ensure we trace all items that unevaluatedItems validates.
+    fn mark_evaluated_indexes_for_trace(
+        &self,
+        instance: &Value,
+        indexes: &mut Vec<bool>,
+        ctx: &mut ValidationContext,
+    ) {
+        // Early return optimization: if items marks ALL items, no need to check anything else
+        if self.items_all {
+            for idx in indexes.iter_mut() {
+                *idx = true;
+            }
+            return;
+        }
+
+        // Handle $ref first
+        if let Some(ref_) = &self.ref_ {
+            ref_.0.mark_evaluated_indexes_for_trace(instance, indexes, ctx);
+        }
+
+        // Handle $recursiveRef (Draft 2019-09 only)
+        if let Some(recursive_ref) = &self.recursive_ref {
+            if let Some(validators) = recursive_ref.get() {
+                validators.mark_evaluated_indexes_for_trace(instance, indexes, ctx);
+            }
+        }
+
+        // Handle $dynamicRef (Draft 2020-12+)
+        if let Some(dynamic_ref) = &self.dynamic_ref {
+            dynamic_ref.mark_evaluated_indexes_for_trace(instance, indexes, ctx);
+        }
+
+        // Mark items based on items/prefixItems keywords
+        if let Some(limit) = self.items_limit {
+            for idx in indexes.iter_mut().take(limit) {
+                *idx = true;
+            }
+        }
+
+        if let Some(limit) = self.prefix_items {
+            for idx in indexes.iter_mut().take(limit) {
+                *idx = true;
+            }
+        }
+
+        // Early exit if all items are already evaluated
+        if indexes.iter().all(|&evaluated| evaluated) {
+            return;
+        }
+
+        // Process contains only - DO NOT mark based on unevaluatedItems validity
+        if let Value::Array(items) = instance {
+            for (item, is_evaluated) in items.iter().zip(indexes.iter_mut()) {
+                if *is_evaluated {
+                    continue;
+                }
+                // contains marks items that match
+                if let Some(validator) = &self.contains {
+                    if validator.is_valid(item, ctx) {
+                        *is_evaluated = true;
+                    }
+                }
+                // NOTE: We intentionally skip marking items based on unevaluatedItems
+                // validity here, so that trace() will trace ALL unevaluated items
+            }
+        }
+
+        // Handle conditional
+        if let Some(conditional) = &self.conditional {
+            conditional.mark_evaluated_indexes_for_trace(instance, indexes, ctx);
+        }
+
+        // Handle allOf
+        if let Some(all_of) = &self.all_of {
+            for (validator, item_validators) in all_of {
+                if validator.is_valid(instance, ctx) {
+                    item_validators.mark_evaluated_indexes_for_trace(instance, indexes, ctx);
+                }
+            }
+        }
+
+        // Handle anyOf
+        if let Some(any_of) = &self.any_of {
+            for (validator, item_validators) in any_of {
+                if validator.is_valid(instance, ctx) {
+                    item_validators.mark_evaluated_indexes_for_trace(instance, indexes, ctx);
+                }
+            }
+        }
+
+        // Handle oneOf
+        if let Some(one_of) = &self.one_of {
+            let results: Vec<_> = one_of
+                .iter()
+                .map(|(v, _)| v.is_valid(instance, ctx))
+                .collect();
+
+            if results.iter().filter(|&&valid| valid).count() == 1 {
+                for ((_, validators), &is_valid) in one_of.iter().zip(&results) {
+                    if is_valid {
+                        validators.mark_evaluated_indexes_for_trace(instance, indexes, ctx);
+                        break;
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl ConditionalValidators {
@@ -203,6 +312,22 @@ impl ConditionalValidators {
             }
         } else if let Some(else_) = &self.else_ {
             else_.mark_evaluated_indexes(instance, indexes, ctx);
+        }
+    }
+
+    fn mark_evaluated_indexes_for_trace(
+        &self,
+        instance: &Value,
+        indexes: &mut Vec<bool>,
+        ctx: &mut ValidationContext,
+    ) {
+        if self.condition.is_valid(instance, ctx) {
+            self.if_.mark_evaluated_indexes_for_trace(instance, indexes, ctx);
+            if let Some(then_) = &self.then_ {
+                then_.mark_evaluated_indexes_for_trace(instance, indexes, ctx);
+            }
+        } else if let Some(else_) = &self.else_ {
+            else_.mark_evaluated_indexes_for_trace(instance, indexes, ctx);
         }
     }
 }
@@ -650,6 +775,44 @@ impl Validate for UnevaluatedItemsValidator {
             }
         } else {
             EvaluationResult::valid_empty()
+        }
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Array(items) = instance {
+            // Get indexes that are evaluated by OTHER keywords (not unevaluatedItems itself)
+            let mut indexes = vec![false; items.len()];
+            self.validators
+                .mark_evaluated_indexes_for_trace(instance, &mut indexes, ctx);
+
+            let mut is_valid = true;
+            for (idx, (item, is_evaluated)) in items.iter().zip(indexes.iter()).enumerate() {
+                if *is_evaluated {
+                    continue;
+                }
+                // This item is unevaluated - trace it against unevaluatedItems schema
+                if let Some(validator) = &self.validators.unevaluated {
+                    let path = instance_path.push(idx);
+                    let item_valid = validator.trace(item, &path, callback, ctx);
+                    is_valid &= item_valid;
+                } else {
+                    // unevaluatedItems: false and item not evaluated
+                    is_valid = false;
+                }
+            }
+            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None)
+                .call(callback);
+            true
         }
     }
 }
