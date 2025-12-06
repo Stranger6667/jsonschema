@@ -126,6 +126,40 @@ impl Validate for DependenciesValidator {
             EvaluationResult::valid_empty()
         }
     }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let mut is_valid = true;
+            let mut at_least_one = false;
+            for (property, node) in &self.dependencies {
+                if item.contains_key(property) {
+                    at_least_one = true;
+                    let dep_valid = node.trace(instance, instance_path, callback, ctx);
+                    crate::tracing::TracingContext::new(
+                        instance_path,
+                        node.location(),
+                        dep_valid,
+                    )
+                    .call(callback);
+                    is_valid &= dep_valid;
+                }
+            }
+            let rv = if at_least_one { Some(is_valid) } else { None };
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), rv)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
 }
 
 pub(crate) struct DependentRequiredValidator {
@@ -255,6 +289,40 @@ impl Validate for DependentRequiredValidator {
             EvaluationResult::valid_empty()
         }
     }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let mut is_valid = true;
+            let mut at_least_one = false;
+            for (property, node) in &self.dependencies {
+                if item.contains_key(property) {
+                    at_least_one = true;
+                    let dep_valid = node.trace(instance, instance_path, callback, ctx);
+                    crate::tracing::TracingContext::new(
+                        instance_path,
+                        node.location(),
+                        dep_valid,
+                    )
+                    .call(callback);
+                    is_valid &= dep_valid;
+                }
+            }
+            let rv = if at_least_one { Some(is_valid) } else { None };
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), rv)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
 }
 
 pub(crate) struct DependentSchemasValidator {
@@ -359,6 +427,40 @@ impl Validate for DependentSchemasValidator {
             EvaluationResult::from_children(children)
         } else {
             EvaluationResult::valid_empty()
+        }
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let mut is_valid = true;
+            let mut at_least_one = false;
+            for (property, node) in &self.dependencies {
+                if item.contains_key(property) {
+                    at_least_one = true;
+                    let dep_valid = node.trace(instance, instance_path, callback, ctx);
+                    crate::tracing::TracingContext::new(
+                        instance_path,
+                        node.location(),
+                        dep_valid,
+                    )
+                    .call(callback);
+                    is_valid &= dep_valid;
+                }
+            }
+            let rv = if at_least_one { Some(is_valid) } else { None };
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), rv)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
         }
     }
 }
