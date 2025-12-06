@@ -145,6 +145,28 @@ impl Validate for OneOfValidator {
     fn schema_path(&self) -> &Location {
         &self.location
     }
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let mut valid_count = 0;
+        for node in &self.schemas {
+            let schema_is_valid = node.trace(instance, instance_path, callback, ctx);
+            crate::tracing::TracingContext::new(instance_path, node.schema_path(), schema_is_valid)
+                .call(callback);
+            if schema_is_valid {
+                valid_count += 1;
+            }
+        }
+        // oneOf is valid if exactly one branch matches
+        let is_valid = valid_count == 1;
+        crate::tracing::TracingContext::new(instance_path, self.schema_path(), is_valid)
+            .call(callback);
+        is_valid
+    }
 }
 
 #[inline]
