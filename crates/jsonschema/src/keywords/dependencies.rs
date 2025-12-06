@@ -193,12 +193,12 @@ impl DependentRequiredValidator {
                     }
                     let validators =
                         vec![
-                            required::compile_with_path(subschema, kctx.location().clone())
+                            required::compile_with_path(subschema, ictx.location().clone())
                                 .expect(
                                     "The required validator compilation does not return None",
                                 )?,
                         ];
-                    dependencies.push((key.clone(), SchemaNode::from_array(&kctx, validators)));
+                    dependencies.push((key.clone(), SchemaNode::from_array(&ictx, validators)));
                 } else {
                     return Err(ValidationError::single_type_error(
                         Location::new(),
