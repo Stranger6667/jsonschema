@@ -205,8 +205,7 @@ impl PropertyValidators {
     ) {
         // Handle $ref first - use regular method for nested validators
         if let Some(ref_) = &self.ref_ {
-            ref_.0
-                .mark_evaluated_properties(instance, properties, ctx);
+            ref_.0.mark_evaluated_properties(instance, properties, ctx);
         }
 
         // Handle $recursiveRef (Draft 2019-09 only)
