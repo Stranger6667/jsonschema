@@ -10,7 +10,8 @@ use crate::{
 use serde_json::{Map, Value};
 
 pub(crate) struct DependenciesValidator {
-    dependencies: Vec<(String, SchemaNode)>,
+    /// Each dependency: (`property_name`, `schema_node`, `is_property_dependency`)
+    dependencies: Vec<(String, SchemaNode, bool)>,
     location: Location,
 }
 
@@ -22,19 +23,22 @@ impl DependenciesValidator {
             let mut dependencies = Vec::with_capacity(map.len());
             for (key, subschema) in map {
                 let ctx = kctx.new_at_location(key.as_str());
-                let s =
+                let (s, is_property) =
                     match subschema {
                         Value::Array(_) => {
                             let validators = vec![required::compile_with_path(
                                 subschema,
-                                kctx.location().clone(),
+                                ctx.location().clone(),
                             )
                             .expect("The required validator compilation does not return None")?];
-                            SchemaNode::from_array(&kctx, validators)
+                            (SchemaNode::from_array(&kctx, validators), true)
                         }
-                        _ => compiler::compile(&ctx, ctx.as_resource_ref(subschema))?,
+                        _ => (
+                            compiler::compile(&ctx, ctx.as_resource_ref(subschema))?,
+                            false,
+                        ),
                     };
-                dependencies.push((key.clone(), s));
+                dependencies.push((key.clone(), s, is_property));
             }
             Ok(Box::new(DependenciesValidator {
                 dependencies,
@@ -62,7 +66,7 @@ impl Validate for DependenciesValidator {
 
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
-            for (property, node) in &self.dependencies {
+            for (property, node, _) in &self.dependencies {
                 if item.contains_key(property) && !node.is_valid(instance, ctx) {
                     return false;
                 }
@@ -80,7 +84,7 @@ impl Validate for DependenciesValidator {
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
-            for (property, dependency) in &self.dependencies {
+            for (property, dependency, _) in &self.dependencies {
                 if item.contains_key(property) {
                     dependency.validate(instance, location, ctx)?;
                 }
@@ -97,7 +101,7 @@ impl Validate for DependenciesValidator {
     ) -> ErrorIterator<'i> {
         if let Value::Object(item) = instance {
             let mut errors = Vec::new();
-            for (property, node) in &self.dependencies {
+            for (property, node, _) in &self.dependencies {
                 if item.contains_key(property) {
                     errors.extend(node.iter_errors(instance, location, ctx));
                 }
@@ -116,7 +120,7 @@ impl Validate for DependenciesValidator {
     ) -> EvaluationResult {
         if let Value::Object(item) = instance {
             let mut children = Vec::new();
-            for (property, dependency) in &self.dependencies {
+            for (property, dependency, _) in &self.dependencies {
                 if item.contains_key(property) {
                     children.push(dependency.evaluate_instance(instance, location, ctx));
                 }
@@ -137,16 +141,20 @@ impl Validate for DependenciesValidator {
         if let Value::Object(item) = instance {
             let mut is_valid = true;
             let mut at_least_one = false;
-            for (property, node) in &self.dependencies {
+            for (property, node, is_property) in &self.dependencies {
                 if item.contains_key(property) {
                     at_least_one = true;
                     let dep_valid = node.trace(instance, instance_path, callback, ctx);
-                    crate::tracing::TracingContext::new(
-                        instance_path,
-                        node.location(),
-                        dep_valid,
-                    )
-                    .call(callback);
+                    // Only trace at node.location() for schema dependencies.
+                    // Property dependencies already trace their container in RequiredValidator.
+                    if !is_property {
+                        crate::tracing::TracingContext::new(
+                            instance_path,
+                            node.location(),
+                            dep_valid,
+                        )
+                        .call(callback);
+                    }
                     is_valid &= dep_valid;
                 }
             }
@@ -304,12 +312,7 @@ impl Validate for DependentRequiredValidator {
                 if item.contains_key(property) {
                     at_least_one = true;
                     let dep_valid = node.trace(instance, instance_path, callback, ctx);
-                    crate::tracing::TracingContext::new(
-                        instance_path,
-                        node.location(),
-                        dep_valid,
-                    )
-                    .call(callback);
+                    // Don't trace at node.location() - RequiredValidator already does this
                     is_valid &= dep_valid;
                 }
             }
@@ -444,12 +447,8 @@ impl Validate for DependentSchemasValidator {
                 if item.contains_key(property) {
                     at_least_one = true;
                     let dep_valid = node.trace(instance, instance_path, callback, ctx);
-                    crate::tracing::TracingContext::new(
-                        instance_path,
-                        node.location(),
-                        dep_valid,
-                    )
-                    .call(callback);
+                    crate::tracing::TracingContext::new(instance_path, node.location(), dep_valid)
+                        .call(callback);
                     is_valid &= dep_valid;
                 }
             }
@@ -495,7 +494,7 @@ mod tests {
     use serde_json::{json, Value};
     use test_case::test_case;
 
-    #[test_case(&json!({"dependencies": {"bar": ["foo"]}}), &json!({"bar": 1}), "/dependencies")]
+    #[test_case(&json!({"dependencies": {"bar": ["foo"]}}), &json!({"bar": 1}), "/dependencies/bar")]
     #[test_case(&json!({"dependencies": {"bar": {"type": "string"}}}), &json!({"bar": 1}), "/dependencies/bar/type")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
         tests_util::assert_schema_location(schema, instance, expected);
