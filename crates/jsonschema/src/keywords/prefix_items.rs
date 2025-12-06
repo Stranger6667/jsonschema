@@ -116,6 +116,35 @@ impl Validate for PrefixItemsValidator {
         }
         EvaluationResult::valid_empty()
     }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Array(items) = instance {
+            let mut is_valid = true;
+            for (idx, (schema, item)) in self.schemas.iter().zip(items.iter()).enumerate() {
+                let schema_is_valid = schema.trace(item, &instance_path.push(idx), callback, ctx);
+                crate::tracing::TracingContext::new(
+                    instance_path,
+                    schema.schema_path(),
+                    schema_is_valid,
+                )
+                .call(callback);
+                is_valid &= schema_is_valid;
+            }
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
 }
 
 #[inline]
