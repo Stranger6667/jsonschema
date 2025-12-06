@@ -107,6 +107,35 @@ impl Validate for PropertyNamesObjectValidator {
     fn schema_path(&self) -> &Location {
         self.node.location()
     }
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let mut is_valid = true;
+            let mut at_least_one = false;
+            for key in item.keys() {
+                at_least_one = true;
+                let wrapper = Value::String(key.clone());
+                // Trace the subschema validation for each property name
+                let key_is_valid = self.node.trace(&wrapper, instance_path, callback, ctx);
+                is_valid &= key_is_valid;
+            }
+            // Report the overall propertyNames result
+            let rv = if at_least_one { Some(is_valid) } else { None };
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), rv)
+                .call(callback);
+            is_valid
+        } else {
+            // Not an object - validation doesn't apply
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
 }
 
 pub(crate) struct PropertyNamesBooleanValidator {
