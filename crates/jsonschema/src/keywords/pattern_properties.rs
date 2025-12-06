@@ -110,6 +110,43 @@ impl<R: RegexEngine> Validate for PatternPropertiesValidator<R> {
             EvaluationResult::valid_empty()
         }
     }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let mut is_valid = true;
+            let mut at_least_one = false;
+            for (re, node) in &self.patterns {
+                for (key, value) in item {
+                    if re.is_match(key).unwrap_or(false) {
+                        at_least_one = true;
+                        let path = instance_path.push(key.as_str());
+                        let schema_is_valid = node.trace(value, &path, callback, ctx);
+                        crate::tracing::TracingContext::new(
+                            instance_path,
+                            node.schema_path(),
+                            schema_is_valid,
+                        )
+                        .call(callback);
+                        is_valid &= schema_is_valid;
+                    }
+                }
+            }
+            let rv = if at_least_one { Some(is_valid) } else { None };
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), rv)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
 }
 
 pub(crate) struct SingleValuePatternPropertiesValidator<R> {
@@ -201,6 +238,41 @@ impl<R: RegexEngine> Validate for SingleValuePatternPropertiesValidator<R> {
             result
         } else {
             EvaluationResult::valid_empty()
+        }
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let mut is_valid = true;
+            let mut at_least_one = false;
+            for (key, value) in item {
+                if self.regex.is_match(key).unwrap_or(false) {
+                    at_least_one = true;
+                    let path = instance_path.push(key.as_str());
+                    let schema_is_valid = self.node.trace(value, &path, callback, ctx);
+                    crate::tracing::TracingContext::new(
+                        instance_path,
+                        self.node.schema_path(),
+                        schema_is_valid,
+                    )
+                    .call(callback);
+                    is_valid &= schema_is_valid;
+                }
+            }
+            let rv = if at_least_one { Some(is_valid) } else { None };
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), rv)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
         }
     }
 }
