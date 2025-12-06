@@ -77,6 +77,30 @@ impl Validate for AdditionalItemsObjectValidator {
             no_error()
         }
     }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Array(items) = instance {
+            let mut is_valid = true;
+            for (idx, item) in items.iter().enumerate().skip(self.items_count) {
+                let path = instance_path.push(idx);
+                let item_valid = self.node.trace(item, &path, callback, ctx);
+                is_valid &= item_valid;
+            }
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
 }
 
 pub(crate) struct AdditionalItemsBooleanValidator {
