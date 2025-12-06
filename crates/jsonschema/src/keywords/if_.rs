@@ -116,7 +116,9 @@ impl Validate for IfThenValidator {
             .call(callback);
         if if_valid {
             // If condition passed, trace then branch
-            let then_valid = self.then_schema.trace(instance, instance_path, callback, ctx);
+            let then_valid = self
+                .then_schema
+                .trace(instance, instance_path, callback, ctx);
             crate::tracing::TracingContext::new(
                 instance_path,
                 self.then_schema.location(),
@@ -241,7 +243,9 @@ impl Validate for IfElseValidator {
             true
         } else {
             // If condition failed, trace else branch
-            let else_valid = self.else_schema.trace(instance, instance_path, callback, ctx);
+            let else_valid = self
+                .else_schema
+                .trace(instance, instance_path, callback, ctx);
             crate::tracing::TracingContext::new(
                 instance_path,
                 self.else_schema.location(),
@@ -373,7 +377,9 @@ impl Validate for IfThenElseValidator {
             .call(callback);
         if if_valid {
             // If condition passed, trace then branch
-            let then_valid = self.then_schema.trace(instance, instance_path, callback, ctx);
+            let then_valid = self
+                .then_schema
+                .trace(instance, instance_path, callback, ctx);
             crate::tracing::TracingContext::new(
                 instance_path,
                 self.then_schema.location(),
@@ -383,7 +389,9 @@ impl Validate for IfThenElseValidator {
             then_valid
         } else {
             // If condition failed, trace else branch
-            let else_valid = self.else_schema.trace(instance, instance_path, callback, ctx);
+            let else_valid = self
+                .else_schema
+                .trace(instance, instance_path, callback, ctx);
             crate::tracing::TracingContext::new(
                 instance_path,
                 self.else_schema.location(),
