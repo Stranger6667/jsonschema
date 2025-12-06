@@ -100,6 +100,34 @@ impl Validate for RequiredValidator {
     fn schema_path(&self) -> &Location {
         &self.location
     }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let mut is_valid = true;
+            for (idx, property_name) in self.required.iter().enumerate() {
+                let present = item.contains_key(property_name);
+                if !present {
+                    is_valid = false;
+                }
+                // Trace at index-based path: /required/0, /required/1, etc.
+                let item_path = self.location.join(idx);
+                crate::tracing::TracingContext::new(instance_path, &item_path, present)
+                    .call(callback);
+            }
+            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            true
+        }
+    }
 }
 
 pub(crate) struct SingleItemRequiredValidator {
@@ -151,6 +179,28 @@ impl Validate for SingleItemRequiredValidator {
     }
     fn schema_path(&self) -> &Location {
         &self.location
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let present = item.contains_key(&self.value);
+            // Trace at index 0: /required/0 (or /dependencies/email/0)
+            let item_path = self.location.join(0usize);
+            crate::tracing::TracingContext::new(instance_path, &item_path, present).call(callback);
+            // Trace container
+            crate::tracing::TracingContext::new(instance_path, &self.location, present)
+                .call(callback);
+            present
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            true
+        }
     }
 }
 
