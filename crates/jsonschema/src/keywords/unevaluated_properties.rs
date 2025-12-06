@@ -191,6 +191,115 @@ impl PropertyValidators {
             }
         }
     }
+
+    /// Mark properties evaluated by OTHER keywords, excluding unevaluatedProperties itself.
+    /// Used for tracing to ensure we trace all properties that unevaluatedProperties validates.
+    ///
+    /// Note: Nested validators use regular mark_evaluated_properties because nested
+    /// unevaluatedProperties: true SHOULD mark properties as evaluated for the outer validator.
+    fn mark_evaluated_properties_for_trace<'i>(
+        &self,
+        instance: &'i Value,
+        properties: &mut AHashSet<&'i String>,
+        ctx: &mut ValidationContext,
+    ) {
+        // Handle $ref first - use regular method for nested validators
+        if let Some(ref_) = &self.ref_ {
+            ref_.0
+                .mark_evaluated_properties(instance, properties, ctx);
+        }
+
+        // Handle $recursiveRef (Draft 2019-09 only)
+        if let Some(recursive_ref) = &self.recursive_ref {
+            if let Some(validators) = recursive_ref.get() {
+                validators.mark_evaluated_properties(instance, properties, ctx);
+            }
+        }
+
+        // Handle $dynamicRef (Draft 2020-12+)
+        if let Some(dynamic_ref) = &self.dynamic_ref {
+            dynamic_ref.mark_evaluated_properties(instance, properties, ctx);
+        }
+
+        // Process properties on the instance
+        if let Value::Object(obj) = instance {
+            // Mark properties from "properties" keyword
+            for property in obj.keys() {
+                if self.properties.iter().any(|(p, _)| p == property) {
+                    properties.insert(property);
+                }
+            }
+
+            // Check "patternProperties" keyword
+            if !self.pattern_properties.is_empty() {
+                for property in obj.keys() {
+                    if properties.contains(property) {
+                        continue;
+                    }
+                    for (pattern, _) in &self.pattern_properties {
+                        if pattern.is_match(property).unwrap_or(false) {
+                            properties.insert(property);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Check "additionalProperties" keyword
+            if self.additional.is_some() {
+                for property in obj.keys() {
+                    if !properties.contains(property) {
+                        properties.insert(property);
+                    }
+                }
+            }
+
+            // NOTE: We intentionally skip marking properties based on THIS validator's
+            // unevaluatedProperties, so that trace() will trace ALL unevaluated properties
+
+            // Check "dependentSchemas" keyword - use regular method for nested validators
+            for (dep_property, dep_validators) in &self.dependent {
+                if obj.contains_key(dep_property) {
+                    dep_validators.mark_evaluated_properties(instance, properties, ctx);
+                }
+            }
+        }
+
+        // Handle "if/then/else" keywords - use regular method for nested validators
+        if let Some(conditional) = &self.conditional {
+            conditional.mark_evaluated_properties(instance, properties, ctx);
+        }
+
+        // Handle "allOf" keyword - use regular method for nested validators
+        for (node, validators) in &self.all_of {
+            if node.is_valid(instance, ctx) {
+                validators.mark_evaluated_properties(instance, properties, ctx);
+            }
+        }
+
+        // Handle "anyOf" keyword - use regular method for nested validators
+        for (node, validators) in &self.any_of {
+            if node.is_valid(instance, ctx) {
+                validators.mark_evaluated_properties(instance, properties, ctx);
+            }
+        }
+
+        // Handle "oneOf" keyword - use regular method for nested validators
+        let one_of_matches: Vec<bool> = self
+            .one_of
+            .iter()
+            .map(|(node, _)| node.is_valid(instance, ctx))
+            .collect();
+
+        if one_of_matches.iter().filter(|&&v| v).count() == 1 {
+            for ((_node, validators), &is_valid) in self.one_of.iter().zip(one_of_matches.iter()) {
+                if is_valid {
+                    validators.mark_evaluated_properties(instance, properties, ctx);
+                    break;
+                }
+            }
+        }
+    }
 }
 
 impl ConditionalValidators {
@@ -718,6 +827,43 @@ impl Validate for UnevaluatedPropertiesValidator {
             }
         } else {
             EvaluationResult::valid_empty()
+        }
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Object(properties) = instance {
+            // Get properties that are evaluated by OTHER keywords (not unevaluatedProperties itself)
+            let mut evaluated = AHashSet::with_capacity(properties.len());
+            self.validators
+                .mark_evaluated_properties_for_trace(instance, &mut evaluated, ctx);
+
+            let mut is_valid = true;
+            for (property, value) in properties {
+                if evaluated.contains(property) {
+                    continue;
+                }
+                // This property is unevaluated - trace it against unevaluatedProperties schema
+                if let Some(validator) = &self.validators.unevaluated {
+                    let path = instance_path.push(property);
+                    let prop_valid = validator.trace(value, &path, callback, ctx);
+                    is_valid &= prop_valid;
+                } else {
+                    // unevaluatedProperties: false and property not evaluated
+                    is_valid = false;
+                }
+            }
+            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            true
         }
     }
 }
