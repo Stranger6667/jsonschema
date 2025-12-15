@@ -252,7 +252,7 @@ jobs:
       - pypy
     if: "startsWith(github.ref, 'refs/tags/')"
     steps:
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v7
         with:
           path: all
       - name: Merge files
