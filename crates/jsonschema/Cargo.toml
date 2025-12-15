@@ -42,7 +42,7 @@ async-trait = { version = "0.1.86", optional = true }
 bytecount = { version = "0.6", features = ["runtime-dispatch-simd"] }
 data-encoding = "2.9"
 email_address = "0.2.9"
-fancy-regex = "0.16"
+fancy-regex = "0.17"
 fraction = { version = "0.15", default-features = false, features = [
   "with-bigint",
 ] }
