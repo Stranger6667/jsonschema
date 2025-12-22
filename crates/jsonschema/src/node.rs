@@ -292,15 +292,12 @@ impl SchemaNode {
     ) -> EvaluationNode {
         let instance_location: Location = location.into();
 
-        // When no $ref on stack, evaluation_path == schema_path
         let keyword_location = if evaluation_path.is_empty() {
             self.location.clone()
         } else {
-            let captured = CapturedRefState::from(evaluation_path);
-            compute_final_evaluation_path(&self.location, &captured)
+            compute_final_evaluation_path(&self.location, &CapturedRefState::from(evaluation_path))
         };
 
-        // schemaLocation: The canonical URI of the schema keyword, WITHOUT $ref traversals.
         let schema_location =
             ctx.format_schema_location(&self.location, self.absolute_path.as_ref());
 
@@ -361,7 +358,6 @@ impl SchemaNode {
         let mut children: Vec<EvaluationNode> = Vec::with_capacity(lower_bound);
         let mut invalid = false;
 
-        // Compute instance location ONCE before loop - each child clones it
         let instance_loc: Location = location.into();
 
         for (child_location, absolute_location, validator) in subschemas {
@@ -369,7 +365,6 @@ impl SchemaNode {
 
             let absolute_location = absolute_location.cloned();
 
-            // evaluationPath: fast path when no $ref on stack (just Arc clone)
             let evaluation_path = match &captured {
                 None => child_location.clone(),
                 Some(cap) => compute_final_evaluation_path(child_location, cap),
@@ -467,6 +462,14 @@ impl Validate for SchemaNode {
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         match self.validators.as_ref() {
+            NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
+                return kvs.validators[0].validator.validate(
+                    instance,
+                    location,
+                    evaluation_path,
+                    ctx,
+                );
+            }
             NodeValidators::Keyword(kvs) => {
                 for entry in &kvs.validators {
                     entry

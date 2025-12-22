@@ -169,23 +169,28 @@ impl Validate for ContentMediaTypeAndEncodingValidator {
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::String(item) = instance {
-            let encoding_location = self.location.join("contentEncoding");
-            let media_type_location = self.location.join("contentMediaType");
             match (self.converter)(item) {
-                Ok(None) => Err(ValidationError::content_encoding(
-                    encoding_location.clone(),
-                    capture_evaluation_path(&encoding_location, evaluation_path),
-                    location.into(),
-                    instance,
-                    &self.encoding,
-                )),
+                Ok(None) => {
+                    let encoding_location = self.location.join("contentEncoding");
+                    let eval_path = capture_evaluation_path(&encoding_location, evaluation_path);
+                    Err(ValidationError::content_encoding(
+                        encoding_location,
+                        eval_path,
+                        location.into(),
+                        instance,
+                        &self.encoding,
+                    ))
+                }
                 Ok(Some(converted)) => {
                     if (self.func)(&converted) {
                         Ok(())
                     } else {
+                        let media_type_location = self.location.join("contentMediaType");
+                        let eval_path =
+                            capture_evaluation_path(&media_type_location, evaluation_path);
                         Err(ValidationError::content_media_type(
-                            media_type_location.clone(),
-                            capture_evaluation_path(&media_type_location, evaluation_path),
+                            media_type_location,
+                            eval_path,
                             location.into(),
                             instance,
                             &self.media_type,

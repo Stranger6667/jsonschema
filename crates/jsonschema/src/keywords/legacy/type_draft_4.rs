@@ -99,23 +99,23 @@ impl Validate for IntegerTypeValidator {
         instance: &'i Value,
         location: &LazyLocation,
         evaluation_path: &LazyRefPath,
-        _ctx: &mut ValidationContext,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Number(num) = instance {
-            if is_integer(num) {
-                return Ok(());
-            }
+        if self.is_valid(instance, ctx) {
+            Ok(())
+        } else {
+            Err(ValidationError::single_type_error(
+                self.location.clone(),
+                capture_evaluation_path(&self.location, evaluation_path),
+                location.into(),
+                instance,
+                JsonType::Integer,
+            ))
         }
-        Err(ValidationError::single_type_error(
-            self.location.clone(),
-            capture_evaluation_path(&self.location, evaluation_path),
-            location.into(),
-            instance,
-            JsonType::Integer,
-        ))
     }
 }
 
+#[inline]
 fn is_integer(num: &Number) -> bool {
     num.is_u64() || num.is_i64()
 }

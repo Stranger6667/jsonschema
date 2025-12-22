@@ -149,19 +149,11 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
     }
 }
 
-/// A lazily constructed ref path for evaluation path tracking.
-///
-/// Like [`LazyLocation`], uses stack-based references - no heap allocation.
-/// Each `$ref` traversal creates a new stack-local entry that borrows from
-/// the parent, automatically "popping" when the function returns.
+/// A lazily constructed path for evaluation path tracking.
 pub(crate) struct LazyRefPath<'a, 'b> {
-    /// Location of the $ref keyword. `None` for root.
     pub(crate) ref_location: Option<&'a Location>,
-    /// Base path to strip when computing evaluation path. `None` for root.
     pub(crate) strip_base: Option<&'a Location>,
     pub(crate) parent: Option<&'b LazyRefPath<'b, 'a>>,
-    /// Cached evaluation prefix - computed lazily on first access.
-    /// Uses Cell for interior mutability without synchronization overhead.
     cached_prefix: std::cell::Cell<Option<Location>>,
 }
 
@@ -225,28 +217,25 @@ impl<'a> LazyRefPath<'a, '_> {
         }
     }
 
-    /// Compute the evaluation prefix for this node.
-    /// Uses parent's cached prefix for O(1) incremental computation.
     fn compute_eval_prefix_inner(&self) -> Location {
         let Some(parent) = self.parent else {
-            // Root node - empty prefix (shouldn't normally be called)
             return Location::new();
         };
 
-        let ref_location = self.ref_location.unwrap();
+        let Some(ref_location) = self.ref_location else {
+            return Location::new();
+        };
 
-        // Check if parent is root (no grandparent)
         if parent.parent.is_none() {
-            // This is the first $ref - prefix is just the ref_location
             return ref_location.clone();
         }
 
-        // Parent has its own ref - get parent's prefix and extend it
         let parent_prefix = parent.get_eval_prefix();
-        let prev_strip_base = parent.strip_base.unwrap();
+        let Some(prev_strip_base) = parent.strip_base else {
+            return parent_prefix.clone();
+        };
 
         if let Some(suffix) = ref_location.as_str().strip_prefix(prev_strip_base.as_str()) {
-            // Append suffix directly - it's already a valid JSON pointer path
             parent_prefix.join_raw_suffix(suffix)
         } else {
             parent_prefix.clone()

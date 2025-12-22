@@ -109,15 +109,12 @@ impl Validate for AnyOfValidator {
         evaluation_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        // In most cases it is much faster to use cheap `is_valid` that does not build evaluation path and then
-        // re-run slower `evaluate` on a subset. It assumes that validation more often succeeds
-        // than not in real use cases.
+        // Use cheap `is_valid` first, then run full `evaluate` only on matching schemas.
         let valid_indices: Vec<usize> = self
             .schemas
             .iter()
             .enumerate()
-            .filter(|(_, node)| node.is_valid(instance, ctx))
-            .map(|(idx, _)| idx)
+            .filter_map(|(idx, node)| node.is_valid(instance, ctx).then_some(idx))
             .collect();
 
         if valid_indices.is_empty() {

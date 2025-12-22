@@ -119,67 +119,44 @@ impl Validate for OneOfValidator {
         evaluation_path: &LazyRefPath,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        // In most cases it is much faster to use cheap `is_valid` that does not build evaluation path and then
-        // re-run slower `evaluate` on a subset. It assumes that validation more often succeeds
-        // than not in real use cases.
-        let mut valid_indices: Vec<usize> = Vec::new();
-        for (idx, node) in self.schemas.iter().enumerate() {
-            if node.is_valid(instance, ctx) {
-                valid_indices.push(idx);
-                // Early exit if we find more than one valid - we know it's invalid
-                if valid_indices.len() > 1 {
-                    break;
-                }
-            }
-        }
+        // Use cheap `is_valid` first, then run full `evaluate` only on matching schemas.
+        let first_valid_idx = self.get_first_valid(instance, ctx);
 
-        match valid_indices.len() {
-            0 => {
-                // No valid schemas - need to evaluate all for error details
-                let failures: Vec<_> = self
-                    .schemas
-                    .iter()
-                    .map(|node| node.evaluate_instance(instance, location, evaluation_path, ctx))
-                    .collect();
-                EvaluationResult::Invalid {
-                    errors: Vec::new(),
-                    children: failures,
-                    annotations: None,
-                }
-            }
-            1 => {
-                // Exactly one valid - only evaluate that one for output
-                let child = self.schemas[valid_indices[0]].evaluate_instance(
-                    instance,
-                    location,
-                    evaluation_path,
-                    ctx,
-                );
-                EvaluationResult::from(child)
-            }
-            _ => {
-                // Multiple valid - evaluate all valid ones for error output
-                // We already found at least 2, but there may be more
-                let mut successes = Vec::with_capacity(valid_indices.len());
-                for (idx, node) in self.schemas.iter().enumerate() {
-                    // Check indices we already know, or test remaining schemas
-                    if valid_indices.contains(&idx) || node.is_valid(instance, ctx) {
-                        let child =
-                            node.evaluate_instance(instance, location, evaluation_path, ctx);
-                        if child.valid {
-                            successes.push(child);
-                        }
+        let Some(first_idx) = first_valid_idx else {
+            let failures: Vec<_> = self
+                .schemas
+                .iter()
+                .map(|node| node.evaluate_instance(instance, location, evaluation_path, ctx))
+                .collect();
+            return EvaluationResult::Invalid {
+                errors: Vec::new(),
+                children: failures,
+                annotations: None,
+            };
+        };
+
+        if self.are_others_valid(instance, first_idx, ctx) {
+            let mut successes = Vec::new();
+            for (idx, node) in self.schemas.iter().enumerate() {
+                if idx == first_idx || node.is_valid(instance, ctx) {
+                    let child = node.evaluate_instance(instance, location, evaluation_path, ctx);
+                    if child.valid {
+                        successes.push(child);
                     }
                 }
-                EvaluationResult::Invalid {
-                    errors: vec![ErrorDescription::new(
-                        "oneOf",
-                        "more than one subschema succeeded".to_string(),
-                    )],
-                    children: successes,
-                    annotations: None,
-                }
             }
+            EvaluationResult::Invalid {
+                errors: vec![ErrorDescription::new(
+                    "oneOf",
+                    "more than one subschema succeeded".to_string(),
+                )],
+                children: successes,
+                annotations: None,
+            }
+        } else {
+            let child =
+                self.schemas[first_idx].evaluate_instance(instance, location, evaluation_path, ctx);
+            EvaluationResult::from(child)
         }
     }
 }

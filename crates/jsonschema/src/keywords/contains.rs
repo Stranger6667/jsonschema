@@ -342,9 +342,10 @@ impl Validate for MinMaxContainsValidator {
                     matches += 1;
                     if matches > self.max_contains {
                         let max_location = self.node.location().join("maxContains");
+                        let eval_path = capture_evaluation_path(&max_location, evaluation_path);
                         return Err(ValidationError::contains(
-                            max_location.clone(),
-                            capture_evaluation_path(&max_location, evaluation_path),
+                            max_location,
+                            eval_path,
                             location.into(),
                             instance,
                         ));
@@ -353,9 +354,10 @@ impl Validate for MinMaxContainsValidator {
             }
             if matches < self.min_contains {
                 let min_location = self.node.location().join("minContains");
+                let eval_path = capture_evaluation_path(&min_location, evaluation_path);
                 Err(ValidationError::contains(
-                    min_location.clone(),
-                    capture_evaluation_path(&min_location, evaluation_path),
+                    min_location,
+                    eval_path,
                     location.into(),
                     instance,
                 ))
