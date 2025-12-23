@@ -10,7 +10,7 @@ use crate::{
 use serde_json::{json, Map, Number, Value};
 use std::str::FromStr;
 
-use crate::paths::{LazyLocation, LazyRefPath};
+use crate::paths::{EvaluationPathTracker, LazyLocation};
 
 pub(crate) struct MultipleTypesValidator {
     types: JsonTypeSet,
@@ -61,7 +61,7 @@ impl Validate for MultipleTypesValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -80,7 +80,7 @@ impl Validate for MultipleTypesValidator {
         &self,
         instance: &Value,
         _location: &LazyLocation,
-        _evaluation_path: &LazyRefPath,
+        _evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if self.is_valid(instance, ctx) {
@@ -111,7 +111,7 @@ impl Validate for NullTypeValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -130,7 +130,7 @@ impl Validate for NullTypeValidator {
         &self,
         instance: &Value,
         _location: &LazyLocation,
-        _evaluation_path: &LazyRefPath,
+        _evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if self.is_valid(instance, ctx) {
@@ -163,7 +163,7 @@ impl Validate for BooleanTypeValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -182,7 +182,7 @@ impl Validate for BooleanTypeValidator {
         &self,
         instance: &Value,
         _location: &LazyLocation,
-        _evaluation_path: &LazyRefPath,
+        _evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if self.is_valid(instance, ctx) {
@@ -216,7 +216,7 @@ impl Validate for StringTypeValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -235,7 +235,7 @@ impl Validate for StringTypeValidator {
         &self,
         instance: &Value,
         _location: &LazyLocation,
-        _evaluation_path: &LazyRefPath,
+        _evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if self.is_valid(instance, ctx) {
@@ -269,7 +269,7 @@ impl Validate for ArrayTypeValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -288,7 +288,7 @@ impl Validate for ArrayTypeValidator {
         &self,
         instance: &Value,
         _location: &LazyLocation,
-        _evaluation_path: &LazyRefPath,
+        _evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if self.is_valid(instance, ctx) {
@@ -321,7 +321,7 @@ impl Validate for ObjectTypeValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -340,7 +340,7 @@ impl Validate for ObjectTypeValidator {
         &self,
         instance: &Value,
         _location: &LazyLocation,
-        _evaluation_path: &LazyRefPath,
+        _evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if self.is_valid(instance, ctx) {
@@ -373,7 +373,7 @@ impl Validate for NumberTypeValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -392,7 +392,7 @@ impl Validate for NumberTypeValidator {
         &self,
         instance: &Value,
         _location: &LazyLocation,
-        _evaluation_path: &LazyRefPath,
+        _evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if self.is_valid(instance, ctx) {
@@ -429,7 +429,7 @@ impl Validate for IntegerTypeValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -448,7 +448,7 @@ impl Validate for IntegerTypeValidator {
         &self,
         instance: &Value,
         _location: &LazyLocation,
-        _evaluation_path: &LazyRefPath,
+        _evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if self.is_valid(instance, ctx) {

@@ -2,7 +2,7 @@ use crate::{
     compiler,
     error::{ErrorIterator, ValidationError},
     node::SchemaNode,
-    paths::{LazyLocation, LazyRefPath, Location},
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
 };
@@ -40,7 +40,7 @@ impl Validate for AllOfValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         for schema in &self.schemas {
@@ -54,7 +54,7 @@ impl Validate for AllOfValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         let errors: Vec<_> = self
@@ -69,7 +69,7 @@ impl Validate for AllOfValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         let mut children = Vec::with_capacity(self.schemas.len());
@@ -103,7 +103,7 @@ impl Validate for SingleValueAllOfValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         self.node.validate(instance, location, evaluation_path, ctx)
@@ -113,7 +113,7 @@ impl Validate for SingleValueAllOfValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         self.node
@@ -124,7 +124,7 @@ impl Validate for SingleValueAllOfValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         EvaluationResult::from(self.node.evaluate_instance(

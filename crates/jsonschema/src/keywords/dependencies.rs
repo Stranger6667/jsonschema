@@ -3,7 +3,7 @@ use crate::{
     error::{no_error, ErrorIterator, ValidationError},
     keywords::{required, unique_items, CompilationResult},
     node::SchemaNode,
-    paths::{LazyLocation, LazyRefPath, Location},
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
 };
@@ -67,7 +67,7 @@ impl Validate for DependenciesValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
@@ -84,7 +84,7 @@ impl Validate for DependenciesValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if let Value::Object(item) = instance {
@@ -104,7 +104,7 @@ impl Validate for DependenciesValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Object(item) = instance {
@@ -198,7 +198,7 @@ impl Validate for DependentRequiredValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
@@ -215,7 +215,7 @@ impl Validate for DependentRequiredValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if let Value::Object(item) = instance {
@@ -235,7 +235,7 @@ impl Validate for DependentRequiredValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Object(item) = instance {
@@ -302,7 +302,7 @@ impl Validate for DependentSchemasValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
@@ -319,7 +319,7 @@ impl Validate for DependentSchemasValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if let Value::Object(item) = instance {
@@ -339,7 +339,7 @@ impl Validate for DependentSchemasValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Object(item) = instance {

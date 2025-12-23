@@ -15,7 +15,7 @@ use crate::{
     compiler, ecma,
     evaluation::ErrorDescription,
     node::SchemaNode,
-    paths::{LazyLocation, LazyRefPath, Location},
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     thread::Shared,
     validator::{capture_evaluation_path, EvaluationResult, Validate, ValidationContext},
     ValidationError,
@@ -586,7 +586,7 @@ impl Validate for UnevaluatedPropertiesValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(properties) = instance {
@@ -662,7 +662,7 @@ impl Validate for UnevaluatedPropertiesValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Object(properties) = instance {

@@ -4,7 +4,7 @@ use crate::{
     evaluation::Annotations,
     keywords::CompilationResult,
     node::SchemaNode,
-    paths::{LazyLocation, LazyRefPath},
+    paths::{EvaluationPathTracker, LazyLocation},
     validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
@@ -47,7 +47,7 @@ impl Validate for ItemsArrayValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
@@ -62,7 +62,7 @@ impl Validate for ItemsArrayValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if let Value::Array(items) = instance {
@@ -80,7 +80,7 @@ impl Validate for ItemsArrayValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Array(items) = instance {
@@ -125,7 +125,7 @@ impl Validate for ItemsObjectValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
@@ -141,7 +141,7 @@ impl Validate for ItemsObjectValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if let Value::Array(items) = instance {
@@ -164,7 +164,7 @@ impl Validate for ItemsObjectValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Array(items) = instance {
@@ -224,7 +224,7 @@ impl Validate for ItemsObjectSkipPrefixValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
@@ -244,7 +244,7 @@ impl Validate for ItemsObjectSkipPrefixValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if let Value::Array(items) = instance {
@@ -267,7 +267,7 @@ impl Validate for ItemsObjectSkipPrefixValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Array(items) = instance {

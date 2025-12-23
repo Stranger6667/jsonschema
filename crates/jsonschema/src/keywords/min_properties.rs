@@ -4,7 +4,7 @@ use crate::{
     compiler,
     error::ValidationError,
     keywords::{helpers::fail_on_non_positive_integer, CompilationResult},
-    paths::{LazyLocation, LazyRefPath, Location},
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     validator::{capture_evaluation_path, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
@@ -54,7 +54,7 @@ impl Validate for MinPropertiesValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {

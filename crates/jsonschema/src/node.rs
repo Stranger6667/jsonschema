@@ -3,7 +3,7 @@ use crate::{
     error::ErrorIterator,
     evaluation::{Annotations, EvaluationNode},
     keywords::{BoxedValidator, Keyword},
-    paths::{LazyLocation, LazyRefPath, Location},
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     thread::{Shared, SharedWeak},
     validator::{
         capture_evaluation_path, compute_final_evaluation_path, CapturedRefState, EvaluationResult,
@@ -163,7 +163,7 @@ impl Validate for PendingSchemaNode {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if ctx.enter(self.node_id(), instance) {
@@ -178,7 +178,7 @@ impl Validate for PendingSchemaNode {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if ctx.enter(self.node_id(), instance) {
@@ -194,7 +194,7 @@ impl Validate for PendingSchemaNode {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if ctx.enter(self.node_id(), instance) {
@@ -287,7 +287,7 @@ impl SchemaNode {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationNode {
         let instance_location: Location = location.into();
@@ -333,7 +333,7 @@ impl SchemaNode {
     fn evaluate_subschemas<'a, I>(
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         subschemas: I,
         annotations: Option<Annotations>,
         ctx: &mut ValidationContext,
@@ -458,7 +458,7 @@ impl Validate for SchemaNode {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         match self.validators.as_ref() {
@@ -501,7 +501,7 @@ impl Validate for SchemaNode {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         match self.validators.as_ref() {
@@ -543,7 +543,7 @@ impl Validate for SchemaNode {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         match self.validators.as_ref() {

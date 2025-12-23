@@ -2,7 +2,7 @@ use crate::{
     compiler,
     error::ValidationError,
     keywords::{type_, CompilationResult},
-    paths::{LazyLocation, LazyRefPath, Location},
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     types::{JsonType, JsonTypeSet},
     validator::{capture_evaluation_path, Validate, ValidationContext},
 };
@@ -58,7 +58,7 @@ impl Validate for MultipleTypesValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -98,7 +98,7 @@ impl Validate for IntegerTypeValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {

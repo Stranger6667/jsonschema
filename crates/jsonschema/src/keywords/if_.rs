@@ -3,7 +3,7 @@ use crate::{
     error::{no_error, ErrorIterator},
     keywords::CompilationResult,
     node::SchemaNode,
-    paths::{LazyLocation, LazyRefPath},
+    paths::{EvaluationPathTracker, LazyLocation},
     validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
@@ -47,7 +47,7 @@ impl Validate for IfThenValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.schema.is_valid(instance, ctx) {
@@ -63,7 +63,7 @@ impl Validate for IfThenValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if self.schema.is_valid(instance, ctx) {
@@ -81,7 +81,7 @@ impl Validate for IfThenValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         let if_node = self
@@ -136,7 +136,7 @@ impl Validate for IfElseValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.schema.is_valid(instance, ctx) {
@@ -152,7 +152,7 @@ impl Validate for IfElseValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if self.schema.is_valid(instance, ctx) {
@@ -170,7 +170,7 @@ impl Validate for IfElseValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         let if_node = self
@@ -231,7 +231,7 @@ impl Validate for IfThenElseValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.schema.is_valid(instance, ctx) {
@@ -248,7 +248,7 @@ impl Validate for IfThenElseValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         if self.schema.is_valid(instance, ctx) {
@@ -270,7 +270,7 @@ impl Validate for IfThenElseValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         let if_node = self

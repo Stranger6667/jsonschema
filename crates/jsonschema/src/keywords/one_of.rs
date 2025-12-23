@@ -4,7 +4,7 @@ use crate::{
     evaluation::ErrorDescription,
     keywords::CompilationResult,
     node::SchemaNode,
-    paths::{LazyLocation, LazyRefPath, Location},
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     types::JsonType,
     validator::{capture_evaluation_path, EvaluationResult, Validate, ValidationContext},
 };
@@ -72,7 +72,7 @@ impl Validate for OneOfValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         let first_valid_idx = self.get_first_valid(instance, ctx);
@@ -116,7 +116,7 @@ impl Validate for OneOfValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         // Use cheap `is_valid` first, then run full `evaluate` only on matching schemas.

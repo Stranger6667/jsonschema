@@ -3,7 +3,7 @@ use crate::{
     error::ValidationError,
     ext::numeric,
     keywords::CompilationResult,
-    paths::{LazyLocation, LazyRefPath, Location},
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     types::JsonType,
     validator::{capture_evaluation_path, Validate, ValidationContext},
 };
@@ -45,7 +45,7 @@ impl Validate for MultipleOfFloatValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if !self.is_valid(instance, ctx) {
@@ -110,7 +110,7 @@ impl Validate for MultipleOfIntegerValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if !self.is_valid(instance, ctx) {
@@ -222,7 +222,7 @@ impl Validate for MultipleOfBigIntValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if !self.is_valid(instance, ctx) {
@@ -292,7 +292,7 @@ impl Validate for MultipleOfBigFracValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if !self.is_valid(instance, ctx) {

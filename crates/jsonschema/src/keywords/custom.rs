@@ -1,5 +1,5 @@
 use crate::{
-    paths::{LazyLocation, LazyRefPath, Location},
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     thread::ThreadBound,
     validator::{Validate, ValidationContext},
     ValidationError,
@@ -22,7 +22,7 @@ impl Validate for CustomKeyword {
         &self,
         instance: &'i Value,
         instance_path: &LazyLocation,
-        _evaluation_path: &LazyRefPath,
+        _evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         self.inner

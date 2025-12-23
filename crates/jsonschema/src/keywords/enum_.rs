@@ -3,7 +3,7 @@ use crate::{
     error::ValidationError,
     ext::cmp,
     keywords::CompilationResult,
-    paths::{LazyLocation, LazyRefPath, Location},
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     types::{JsonType, JsonTypeSet},
     validator::{capture_evaluation_path, Validate, ValidationContext},
 };
@@ -43,7 +43,7 @@ impl Validate for EnumValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {
@@ -98,7 +98,7 @@ impl Validate for SingleValueEnumValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {

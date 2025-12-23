@@ -14,7 +14,7 @@ use crate::{
     compiler,
     evaluation::ErrorDescription,
     node::SchemaNode,
-    paths::{LazyLocation, LazyRefPath, Location},
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     thread::Shared,
     validator::{capture_evaluation_path, EvaluationResult, Validate, ValidationContext},
     ValidationError,
@@ -552,7 +552,7 @@ impl Validate for UnevaluatedItemsValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Array(items) = instance {
@@ -592,7 +592,7 @@ impl Validate for UnevaluatedItemsValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Array(items) = instance {

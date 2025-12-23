@@ -2,7 +2,7 @@ use crate::{
     compiler,
     error::ErrorIterator,
     keywords::CompilationResult,
-    paths::{LazyLocation, LazyRefPath, Location},
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
@@ -30,7 +30,7 @@ impl Validate for RefValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         let child_path = evaluation_path.push(&self.ref_location, &self.ref_target_base);
@@ -41,7 +41,7 @@ impl Validate for RefValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         let child_path = evaluation_path.push(&self.ref_location, &self.ref_target_base);
@@ -52,7 +52,7 @@ impl Validate for RefValidator {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         let child_path = evaluation_path.push(&self.ref_location, &self.ref_target_base);
@@ -207,8 +207,8 @@ fn invalid_reference<'a>(
     let location = ctx.location().join(keyword);
     ValidationError::single_type_error(
         location.clone(),
+        location.clone(),
         location,
-        Location::new(),
         schema,
         JsonType::String,
     )

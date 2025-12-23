@@ -5,7 +5,7 @@ use crate::{
     error::ValidationError,
     keywords::CompilationResult,
     options::PatternEngineOptions,
-    paths::{LazyLocation, LazyRefPath, Location},
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     regex::{RegexEngine, RegexError},
     types::JsonType,
     validator::{capture_evaluation_path, Validate, ValidationContext},
@@ -22,7 +22,7 @@ impl<R: RegexEngine> Validate for PatternValidator<R> {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::String(item) = instance {

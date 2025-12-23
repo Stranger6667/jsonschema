@@ -16,7 +16,7 @@ use crate::{
     compiler, ecma,
     error::ValidationError,
     keywords::CompilationResult,
-    paths::{LazyLocation, LazyRefPath, Location},
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     thread::ThreadBound,
     types::JsonType,
     validator::{capture_evaluation_path, Validate, ValidationContext},
@@ -734,7 +734,7 @@ macro_rules! format_validators {
                     &self,
                     instance: &'i Value,
                     location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
                     ctx: &mut ValidationContext,
                 ) -> Result<(), ValidationError<'i>> {
                     if let Value::String(_item) = instance {
@@ -816,7 +816,7 @@ impl Validate for EmailValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::String(_item) = instance {
@@ -864,7 +864,7 @@ impl Validate for IdnEmailValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::String(_item) = instance {
@@ -907,7 +907,7 @@ impl Validate for CustomFormatValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if self.is_valid(instance, ctx) {

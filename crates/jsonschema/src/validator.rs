@@ -5,7 +5,7 @@ use crate::{
     error::{error, no_error, ErrorIterator},
     evaluation::{Annotations, ErrorDescription, Evaluation, EvaluationNode},
     node::SchemaNode,
-    paths::{LazyLocation, LazyRefPath, Location},
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     thread::ThreadBound,
     Draft, ValidationError, ValidationOptions,
 };
@@ -25,12 +25,12 @@ pub(crate) struct CapturedRefState {
     strip_base: Location,
 }
 
-impl From<&LazyRefPath<'_, '_>> for CapturedRefState {
-    /// Gets cached `eval_prefix` from `LazyRefPath` (O(1) after first call).
-    fn from(path: &LazyRefPath<'_, '_>) -> Self {
+impl From<&EvaluationPathTracker<'_, '_>> for CapturedRefState {
+    /// Gets cached `eval_prefix` from `EvaluationPathTracker` (O(1) after first call).
+    fn from(path: &EvaluationPathTracker<'_, '_>) -> Self {
         debug_assert!(
             !path.is_empty(),
-            "CapturedRefState::from called on empty LazyRefPath"
+            "CapturedRefState::from called on empty EvaluationPathTracker"
         );
 
         CapturedRefState {
@@ -241,7 +241,7 @@ impl ValidationContext {
 #[inline]
 pub(crate) fn capture_evaluation_path(
     schema_location: &Location,
-    evaluation_path: &LazyRefPath,
+    evaluation_path: &EvaluationPathTracker,
 ) -> LazyEvaluationPath {
     if evaluation_path.is_empty() {
         // Fast path: direct mapping, no transformation needed
@@ -277,7 +277,7 @@ pub(crate) trait Validate: ThreadBound {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
         match self.validate(instance, location, evaluation_path, ctx) {
@@ -292,7 +292,7 @@ pub(crate) trait Validate: ThreadBound {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>>;
 
@@ -300,7 +300,7 @@ pub(crate) trait Validate: ThreadBound {
         &self,
         instance: &Value,
         location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         let errors: Vec<ErrorDescription> = self
@@ -511,7 +511,7 @@ impl Validator {
     #[inline]
     pub fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         let mut ctx = ValidationContext::new();
-        let evaluation_path = LazyRefPath::new();
+        let evaluation_path = EvaluationPathTracker::new();
         self.root
             .validate(instance, &LazyLocation::new(), &evaluation_path, &mut ctx)
     }
@@ -520,7 +520,7 @@ impl Validator {
     #[must_use]
     pub fn iter_errors<'i>(&'i self, instance: &'i Value) -> ErrorIterator<'i> {
         let mut ctx = ValidationContext::new();
-        let evaluation_path = LazyRefPath::new();
+        let evaluation_path = EvaluationPathTracker::new();
         self.root
             .iter_errors(instance, &LazyLocation::new(), &evaluation_path, &mut ctx)
     }
@@ -538,7 +538,7 @@ impl Validator {
     #[inline]
     pub fn evaluate(&self, instance: &Value) -> Evaluation {
         let mut ctx = ValidationContext::new();
-        let evaluation_path = LazyRefPath::new();
+        let evaluation_path = EvaluationPathTracker::new();
         let root =
             self.root
                 .evaluate_instance(instance, &LazyLocation::new(), &evaluation_path, &mut ctx);

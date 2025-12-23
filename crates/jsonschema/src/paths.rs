@@ -150,16 +150,16 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
 }
 
 /// A lazily constructed path for evaluation path tracking.
-pub(crate) struct LazyRefPath<'a, 'b> {
+pub(crate) struct EvaluationPathTracker<'a, 'b> {
     pub(crate) ref_location: Option<&'a Location>,
     pub(crate) strip_base: Option<&'a Location>,
-    pub(crate) parent: Option<&'b LazyRefPath<'b, 'a>>,
+    pub(crate) parent: Option<&'b EvaluationPathTracker<'b, 'a>>,
     cached_prefix: std::cell::Cell<Option<Location>>,
 }
 
-impl std::fmt::Debug for LazyRefPath<'_, '_> {
+impl std::fmt::Debug for EvaluationPathTracker<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LazyRefPath")
+        f.debug_struct("EvaluationPathTracker")
             .field("ref_location", &self.ref_location)
             .field("strip_base", &self.strip_base)
             .field("parent", &self.parent.map(|_| "..."))
@@ -167,11 +167,11 @@ impl std::fmt::Debug for LazyRefPath<'_, '_> {
     }
 }
 
-impl<'a> LazyRefPath<'a, '_> {
-    /// Create root (empty) ref path.
+impl<'a> EvaluationPathTracker<'a, '_> {
+    /// Create root (empty) evaluation path.
     #[must_use]
     pub(crate) const fn new() -> Self {
-        LazyRefPath {
+        EvaluationPathTracker {
             ref_location: None,
             strip_base: None,
             parent: None,
@@ -183,7 +183,7 @@ impl<'a> LazyRefPath<'a, '_> {
     #[inline]
     #[must_use]
     pub(crate) fn push(&'a self, ref_location: &'a Location, strip_base: &'a Location) -> Self {
-        LazyRefPath {
+        EvaluationPathTracker {
             ref_location: Some(ref_location),
             strip_base: Some(strip_base),
             parent: Some(self),

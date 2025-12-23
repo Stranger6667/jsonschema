@@ -3,7 +3,7 @@ use crate::{
     error::ValidationError,
     ext::numeric,
     keywords::CompilationResult,
-    paths::{LazyLocation, LazyRefPath, Location},
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     thread::ThreadBound,
     types::JsonType,
     validator::{capture_evaluation_path, Validate, ValidationContext},
@@ -38,7 +38,7 @@ macro_rules! define_numeric_keywords {
                     &self,
                     instance: &'i Value,
                     location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
                     ctx: &mut ValidationContext,
                 ) -> Result<(), ValidationError<'i>> {
                     if self.is_valid(instance, ctx) {
@@ -76,7 +76,7 @@ define_numeric_keywords!(
 #[cfg(feature = "arbitrary-precision")]
 pub(crate) mod bigint_validators {
     use super::{
-        capture_evaluation_path, numeric, LazyLocation, LazyRefPath, Location, Validate,
+        capture_evaluation_path, numeric, EvaluationPathTracker, LazyLocation, Location, Validate,
         ValidationContext, ValidationError, Value,
     };
     use crate::ext::numeric::bignum::{
@@ -108,7 +108,7 @@ pub(crate) mod bigint_validators {
                     &self,
                     instance: &'i Value,
                     location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
                     ctx: &mut ValidationContext,
                 ) -> Result<(), ValidationError<'i>> {
                     if self.is_valid(instance, ctx) {
@@ -221,7 +221,7 @@ pub(crate) mod bigint_validators {
                     &self,
                     instance: &'i Value,
                     location: &LazyLocation,
-        evaluation_path: &LazyRefPath,
+        evaluation_path: &EvaluationPathTracker,
                     ctx: &mut ValidationContext,
                 ) -> Result<(), ValidationError<'i>> {
                     if self.is_valid(instance, ctx) {
