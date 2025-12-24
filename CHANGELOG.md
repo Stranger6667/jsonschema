@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `multipleOf` validation for integer values between `2^53` and `i64::MAX` with `arbitrary-precision` feature.
+
 ## [0.38.0] - 2025-12-24
 
 ### Added

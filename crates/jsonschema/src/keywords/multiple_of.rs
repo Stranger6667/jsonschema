@@ -431,9 +431,21 @@ mod tests {
         #[test_case(r#"{"multipleOf": 2}"#, "1e1000", true; "huge scientific integer is even")]
         #[test_case(r#"{"multipleOf": 3}"#, "1e1000", false; "10^1000 not multiple of 3")]
         #[test_case(r#"{"multipleOf": 0.5}"#, "1e1000", true; "huge scientific integer multiple of 0.5")]
-        // Regression test: u64 values beyond i64::MAX lose precision when converted to f64.
-        // 9223372036854775870 ends in '0' and IS a multiple of 10, but when converted to f64
-        // it becomes 9223372036854775808 which ends in '8' and is NOT a multiple of 10.
+        // Values between 2^53 and i64::MAX (these fit in i64 but lose f64 precision):
+        #[test_case(r#"{"multipleOf": 10}"#, "9007199254740990", true; "at 2^53 boundary multiple of 10")]
+        #[test_case(r#"{"multipleOf": 10}"#, "9007199254740991", false; "at 2^53 boundary not multiple of 10")]
+        #[test_case(r#"{"multipleOf": 10}"#, "9223372036854775800", true; "near i64 max multiple of 10")]
+        #[test_case(r#"{"multipleOf": 10}"#, "9223372036854775801", false; "near i64 max not multiple of 10")]
+        #[test_case(r#"{"multipleOf": 100}"#, "9007199254741000", true; "above 2^53 multiple of 100")]
+        #[test_case(r#"{"multipleOf": 100}"#, "9007199254741050", false; "above 2^53 not multiple of 100")]
+        #[test_case(r#"{"multipleOf": 7}"#, "9007199254740995", true; "above 2^53 multiple of 7")]
+        #[test_case(r#"{"multipleOf": 7}"#, "9007199254740994", false; "above 2^53 not multiple of 7")]
+        // Negative values with absolute value > 2^53 (these fit in i64 but lose f64 precision):
+        #[test_case(r#"{"multipleOf": 10}"#, "-9007199254740990", true; "negative beyond 2^53 multiple of 10")]
+        #[test_case(r#"{"multipleOf": 10}"#, "-9007199254740991", false; "negative beyond 2^53 not multiple of 10")]
+        #[test_case(r#"{"multipleOf": 100}"#, "-9223372036854775800", true; "negative near i64 min multiple of 100")]
+        #[test_case(r#"{"multipleOf": 100}"#, "-9223372036854775801", false; "negative near i64 min not multiple of 100")]
+        // Values beyond i64::MAX (these only fit in u64):
         #[test_case(r#"{"multipleOf": 10}"#, "9223372036854775870", true; "u64 beyond i64 max multiple of 10")]
         #[test_case(r#"{"multipleOf": 10}"#, "9223372036854775871", false; "u64 beyond i64 max not multiple of 10")]
         #[test_case(r#"{"type": "integer", "minimum": 9223372036854775800, "maximum": 9223372036854775900, "multipleOf": 10}"#, "9223372036854775870", true; "combined schema with u64 beyond i64 max")]
