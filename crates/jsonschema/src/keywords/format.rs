@@ -835,6 +835,9 @@ impl Validate for EmailValidator {
         }
         Ok(())
     }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 // Custom IdnEmailValidator that supports email options
@@ -880,6 +883,9 @@ impl Validate for IdnEmailValidator {
             }
         }
         Ok(())
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 

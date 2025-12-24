@@ -432,7 +432,7 @@ impl<R> ValidationOptions<R> {
     pub fn with_format_value<N, F>(mut self, name: N, format: F) -> Self
     where
         N: Into<String>,
-        F: Fn(&Value) -> bool + ThreadBound + 'static,
+        F: Fn(&Value) -> bool + Send + Sync + 'static,
     {
         self.formats
             .insert(name.into(), Arc::new(ValueFormat(format)));
