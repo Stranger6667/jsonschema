@@ -1118,6 +1118,10 @@ impl Validate for EmailValidator {
         Ok(())
     }
 
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
     impl_format_evaluate!();
 }
 
@@ -1169,6 +1173,10 @@ impl Validate for IdnEmailValidator {
             }
         }
         Ok(())
+    }
+
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 
     impl_format_evaluate!();

@@ -258,7 +258,7 @@ impl PropertyValidators {
         if let Value::Object(obj) = instance {
             // Mark properties from "properties" keyword
             for property in obj.keys() {
-                if self.properties.iter().any(|(p, _)| p == property) {
+                if self.properties.contains(property) {
                     properties.insert(property);
                 }
             }
