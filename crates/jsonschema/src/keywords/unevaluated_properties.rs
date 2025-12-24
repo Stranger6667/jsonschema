@@ -5,18 +5,17 @@
 //! combinators (`allOf`, `anyOf`, `oneOf`), conditionals, and references.
 //!
 //! The implementation eagerly compiles a recursive `PropertyValidators` structure during
-//! schema compilation, using `Shared<OnceLock>` for circular reference handling.
+//! schema compilation, using `Arc<OnceLock>` for circular reference handling.
 use ahash::AHashSet;
 use fancy_regex::Regex;
 use serde_json::{Map, Value};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use crate::{
     compiler, ecma,
     evaluation::ErrorDescription,
     node::SchemaNode,
     paths::{LazyLocation, Location},
-    thread::Shared,
     validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
@@ -25,7 +24,7 @@ use super::CompilationResult;
 
 /// Lazy property validators that are compiled on first access.
 /// Used for $recursiveRef and circular references to handle cycles during compilation.
-pub(crate) type PendingPropertyValidators = Shared<OnceLock<PropertyValidators>>;
+pub(crate) type PendingPropertyValidators = Arc<OnceLock<PropertyValidators>>;
 
 /// Holds compiled validators for property evaluation in unevaluatedProperties.
 /// This structure is built during schema compilation and used during validation.
@@ -224,7 +223,7 @@ fn compile_property_validators<'a>(
 ) -> Result<PropertyValidators, ValidationError<'a>> {
     // Create a pending node and cache it before compiling to handle circular refs
     let cache_key = ctx.location_cache_key();
-    let pending = Shared::new(OnceLock::new());
+    let pending = Arc::new(OnceLock::new());
     ctx.cache_pending_property_validators(cache_key.clone(), pending.clone());
     ctx.cache_pending_property_validators_for_schema(parent, pending.clone());
 
@@ -528,7 +527,7 @@ fn compile_recursive_ref<'a>(
         // Not circular, compile normally
         let validators =
             compile_property_validators(&ref_ctx, subschema).map_err(ValidationError::to_owned)?;
-        let pending = Shared::new(OnceLock::new());
+        let pending = Arc::new(OnceLock::new());
         let _ = pending.set(validators);
         Ok(Some(pending))
     } else {

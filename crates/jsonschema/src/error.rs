@@ -37,7 +37,6 @@
 //! ```
 use crate::{
     paths::Location,
-    thread::ThreadBound,
     types::{JsonType, JsonTypeSet},
 };
 use serde_json::{Map, Number, Value};
@@ -83,10 +82,10 @@ struct ValidationErrorRepr<'a> {
 /// }
 /// ```
 #[doc(hidden)]
-pub trait ValidationErrorIterator<'a>: Iterator<Item = ValidationError<'a>> + ThreadBound {}
+pub trait ValidationErrorIterator<'a>: Iterator<Item = ValidationError<'a>> + Send + Sync {}
 
 impl<'a, T> ValidationErrorIterator<'a> for T where
-    T: Iterator<Item = ValidationError<'a>> + ThreadBound
+    T: Iterator<Item = ValidationError<'a>> + Send + Sync
 {
 }
 

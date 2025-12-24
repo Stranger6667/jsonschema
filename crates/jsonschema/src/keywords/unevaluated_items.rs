@@ -5,17 +5,16 @@
 //! conditionals, and references.
 //!
 //! The implementation eagerly compiles a recursive `ItemsValidators` structure during
-//! schema compilation, using `Shared<OnceLock>` for circular reference handling.
+//! schema compilation, using `Arc<OnceLock>` for circular reference handling.
 use referencing::Draft;
 use serde_json::{Map, Value};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use crate::{
     compiler,
     evaluation::ErrorDescription,
     node::SchemaNode,
     paths::{LazyLocation, Location},
-    thread::Shared,
     validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
@@ -24,7 +23,7 @@ use super::CompilationResult;
 
 /// Lazy items validators that are compiled on first access.
 /// Used for $recursiveRef and circular references to handle cycles during compilation.
-pub(crate) type PendingItemsValidators = Shared<OnceLock<ItemsValidators>>;
+pub(crate) type PendingItemsValidators = Arc<OnceLock<ItemsValidators>>;
 
 /// Holds compiled validators for items evaluation in unevaluatedItems.
 /// This structure is built during schema compilation and used during validation.
@@ -342,7 +341,7 @@ fn compile_recursive_ref<'a>(
         // Not circular, compile normally
         let validators =
             compile_items_validators(&ref_ctx, subschema).map_err(ValidationError::to_owned)?;
-        let pending = Shared::new(OnceLock::new());
+        let pending = Arc::new(OnceLock::new());
         let _ = pending.set(validators);
         Ok(Some(pending))
     } else {

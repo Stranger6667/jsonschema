@@ -4,7 +4,6 @@ use crate::{
     evaluation::{format_schema_location, Annotations, EvaluationNode},
     keywords::{BoxedValidator, Keyword},
     paths::{LazyLocation, Location},
-    thread::{Shared, SharedWeak},
     validator::{EvaluationResult, Validate, ValidationContext},
     ValidationError,
 };
@@ -13,13 +12,13 @@ use serde_json::Value;
 use std::{
     cell::OnceCell,
     fmt,
-    sync::{Arc, OnceLock},
+    sync::{Arc, OnceLock, Weak},
 };
 
 /// A node in the schema tree, returned by `compiler::compile`
 #[derive(Clone, Debug)]
 pub(crate) struct SchemaNode {
-    validators: Shared<NodeValidators>,
+    validators: Arc<NodeValidators>,
     location: Location,
     absolute_path: Option<Arc<Uri<String>>>,
 }
@@ -27,12 +26,12 @@ pub(crate) struct SchemaNode {
 // Separate type used only during compilation for handling recursive references
 #[derive(Clone, Debug)]
 pub(crate) struct PendingSchemaNode {
-    cell: Shared<OnceLock<PendingTarget>>,
+    cell: Arc<OnceLock<PendingTarget>>,
 }
 
 #[derive(Debug)]
 struct PendingTarget {
-    validators: SharedWeak<NodeValidators>,
+    validators: Weak<NodeValidators>,
     location: Location,
     absolute_path: Option<Arc<Uri<String>>>,
 }
@@ -92,13 +91,13 @@ struct ArrayValidatorEntry {
 impl PendingSchemaNode {
     pub(crate) fn new() -> Self {
         PendingSchemaNode {
-            cell: Shared::new(OnceLock::new()),
+            cell: Arc::new(OnceLock::new()),
         }
     }
 
     pub(crate) fn initialize(&self, node: &SchemaNode) {
         let target = PendingTarget {
-            validators: Shared::downgrade(&node.validators),
+            validators: Arc::downgrade(&node.validators),
             location: node.location.clone(),
             absolute_path: node.absolute_path.clone(),
         };
@@ -127,7 +126,7 @@ impl PendingSchemaNode {
     /// Uses the address of the inner cell as a stable identifier.
     #[inline]
     fn node_id(&self) -> usize {
-        Shared::as_ptr(&self.cell) as usize
+        Arc::as_ptr(&self.cell) as usize
     }
 }
 
@@ -205,7 +204,7 @@ impl SchemaNode {
         SchemaNode {
             location: ctx.location().clone(),
             absolute_path: ctx.base_uri(),
-            validators: Shared::new(NodeValidators::Boolean { validator }),
+            validators: Arc::new(NodeValidators::Boolean { validator }),
         }
     }
 
@@ -230,7 +229,7 @@ impl SchemaNode {
         SchemaNode {
             location: ctx.location().clone(),
             absolute_path,
-            validators: Shared::new(NodeValidators::Keyword(KeywordValidators {
+            validators: Arc::new(NodeValidators::Keyword(KeywordValidators {
                 unmatched_keywords,
                 validators,
             })),
@@ -255,7 +254,7 @@ impl SchemaNode {
         SchemaNode {
             location: ctx.location().clone(),
             absolute_path,
-            validators: Shared::new(NodeValidators::Array { validators }),
+            validators: Arc::new(NodeValidators::Array { validators }),
         }
     }
 

@@ -6,7 +6,6 @@ use crate::{
     evaluation::{Annotations, ErrorDescription, Evaluation, EvaluationNode},
     node::SchemaNode,
     paths::LazyLocation,
-    thread::ThreadBound,
     Draft, ValidationError, ValidationOptions,
 };
 use serde_json::Value;
@@ -61,7 +60,7 @@ impl ValidationContext {
 ///
 /// All methods accept a `ValidationContext` parameter for cycle detection in circular `$ref`
 /// chains. Simple validators that don't recurse into child schemas can ignore this parameter.
-pub(crate) trait Validate: ThreadBound {
+pub(crate) trait Validate: Send + Sync {
     fn iter_errors<'i>(
         &self,
         instance: &'i Value,
@@ -326,7 +325,6 @@ mod tests {
         error::ValidationError,
         keywords::custom::Keyword,
         paths::{LazyLocation, Location},
-        thread::ThreadBound,
         types::JsonType,
         Validator,
     };
@@ -625,7 +623,7 @@ mod tests {
 
     #[test]
     fn test_validator_is_send_and_sync() {
-        fn assert_send_sync<T: ThreadBound>() {}
+        fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<Validator>();
     }
 

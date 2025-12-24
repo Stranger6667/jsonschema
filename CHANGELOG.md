@@ -9,6 +9,7 @@
 ### Fixed
 
 - `multipleOf` validation for large u64 values beyond `i64::MAX` with `arbitrary-precision` feature.
+- `Validator` not being `Send + Sync` on WASM targets. [#915](https://github.com/Stranger6667/jsonschema/issues/915)
 
 ## [0.37.4] - 2025-11-30
 

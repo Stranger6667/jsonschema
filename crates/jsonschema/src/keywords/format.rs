@@ -17,7 +17,6 @@ use crate::{
     error::ValidationError,
     keywords::CompilationResult,
     paths::{LazyLocation, Location},
-    thread::ThreadBound,
     types::JsonType,
     validator::{Validate, ValidationContext},
     Draft,
@@ -924,13 +923,13 @@ impl Validate for CustomFormatValidator {
     }
 }
 
-pub(crate) trait Format: ThreadBound + 'static {
+pub(crate) trait Format: Send + Sync + 'static {
     fn is_valid(&self, value: &str) -> bool;
 }
 
 impl<F> Format for F
 where
-    F: Fn(&str) -> bool + ThreadBound + 'static,
+    F: Fn(&str) -> bool + Send + Sync + 'static,
 {
     #[inline]
     fn is_valid(&self, value: &str) -> bool {

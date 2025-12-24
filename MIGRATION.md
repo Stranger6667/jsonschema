@@ -1,5 +1,30 @@
 # Migration Guide
 
+## Upgrading from 0.37.x to 0.38.0
+
+### WASM: `Validator` is now `Send + Sync`
+
+The `Validator` type is now `Send + Sync` on WASM targets, restoring the expected behavior that was inadvertently broken in 0.34.0. This allows `Validator` to be used in static variables and shared across async contexts on WASM.
+
+If you implemented custom `Keyword` or `Format` validators on WASM that rely on non-thread-safe types (like `Rc` or `RefCell`), you'll need to update them to use thread-safe alternatives (`Arc`, `Mutex`, etc.):
+
+```rust
+use std::sync::Arc;
+
+// Old (0.37.x on WASM) - non-thread-safe types were allowed
+use std::rc::Rc;
+struct MyKeyword {
+    data: Rc<SomeData>,
+}
+
+// New (0.38.x) - must be Send + Sync on all platforms
+struct MyKeyword {
+    data: Arc<SomeData>,
+}
+```
+
+Note: The `Retrieve` and `AsyncRetrieve` traits still have relaxed `Send + Sync` bounds on WASM, so retrievers can continue to use non-thread-safe types.
+
 ## Upgrading from 0.36.x to 0.37.0
 
 ### `ValidationError` is now opaque

@@ -905,7 +905,6 @@ pub mod paths;
 pub(crate) mod properties;
 pub(crate) mod regex;
 mod retriever;
-pub(crate) mod thread;
 pub mod types;
 mod validator;
 
