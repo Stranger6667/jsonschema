@@ -17,7 +17,7 @@ mod vocabularies;
 
 pub(crate) use anchors::Anchor;
 pub use error::{Error, UriError};
-pub use fluent_uri::{Iri, IriRef, Uri, UriRef};
+pub use fluent_uri::{pct_enc::EStr, Iri, IriRef, Uri, UriRef};
 pub use list::List;
 pub use registry::{parse_index, pointer, Registry, RegistryOptions, SPECIFICATIONS};
 pub use resolver::{Resolved, Resolver};

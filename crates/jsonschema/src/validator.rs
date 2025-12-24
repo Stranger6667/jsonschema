@@ -5,16 +5,166 @@ use crate::{
     error::{error, no_error, ErrorIterator},
     evaluation::{Annotations, ErrorDescription, Evaluation, EvaluationNode},
     node::SchemaNode,
-    paths::LazyLocation,
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     thread::ThreadBound,
     Draft, ValidationError, ValidationOptions,
 };
+use ahash::AHashMap;
+use referencing::Uri;
 use serde_json::Value;
+use std::sync::{Arc, OnceLock};
 
-/// Tracks `(node_id, instance_ptr)` pairs to detect cycles in circular `$ref` chains.
+/// Captured state for lazy evaluation path computation.
+/// This is stored in `LazyEvaluationPath::Deferred` and contains
+/// the precomputed `eval_prefix` (computed at capture time, not push time).
+#[derive(Clone)]
+pub(crate) struct CapturedRefState {
+    /// Precomputed evaluation path prefix.
+    eval_prefix: Location,
+    /// Base location to strip from `schema_location`.
+    strip_base: Location,
+}
+
+impl From<&EvaluationPathTracker<'_, '_>> for CapturedRefState {
+    /// Gets cached `eval_prefix` from `EvaluationPathTracker` (O(1) after first call).
+    fn from(path: &EvaluationPathTracker<'_, '_>) -> Self {
+        debug_assert!(
+            !path.is_empty(),
+            "CapturedRefState::from called on empty EvaluationPathTracker"
+        );
+
+        CapturedRefState {
+            eval_prefix: path.get_eval_prefix(),
+            strip_base: path.strip_base.unwrap().clone(),
+        }
+    }
+}
+
+/// A lazily-evaluated evaluation path.
+///
+/// This enum allows deferring the expensive string operations needed to compute
+/// evaluation paths until the error is actually displayed. When validation fails
+/// in composition validators like `anyOf`, many errors are collected but most are
+/// never displayed - lazy evaluation avoids wasted work.
+pub(crate) enum LazyEvaluationPath {
+    /// Fast path: no $ref on stack, `schema_location` IS the evaluation path.
+    /// Cost: just returning a reference.
+    Direct(Location),
+
+    /// Deferred: need to transform through $ref stack.
+    /// We capture the precomputed `eval_prefix` at error creation time.
+    /// The `OnceLock` caches the final computed result for subsequent accesses.
+    Deferred {
+        schema_location: Location,
+        /// Captured state with precomputed `eval_prefix` (computed at capture time).
+        captured: CapturedRefState,
+        /// Cached computed result (thread-safe).
+        cached: OnceLock<Location>,
+    },
+}
+
+impl std::fmt::Debug for LazyEvaluationPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LazyEvaluationPath::Direct(loc) => f.debug_tuple("Direct").field(loc).finish(),
+            LazyEvaluationPath::Deferred { cached, .. } => {
+                // Only show the cached value if already computed
+                f.debug_struct("Deferred")
+                    .field("resolved", &cached.get())
+                    .finish()
+            }
+        }
+    }
+}
+
+impl Clone for LazyEvaluationPath {
+    fn clone(&self) -> Self {
+        match self {
+            LazyEvaluationPath::Direct(loc) => LazyEvaluationPath::Direct(loc.clone()),
+            LazyEvaluationPath::Deferred {
+                schema_location,
+                captured,
+                cached,
+            } => {
+                // Clone the cached value if present, otherwise create new empty lock
+                let new_cached = OnceLock::new();
+                if let Some(val) = cached.get() {
+                    let _ = new_cached.set(val.clone());
+                }
+                LazyEvaluationPath::Deferred {
+                    schema_location: schema_location.clone(),
+                    captured: captured.clone(),
+                    cached: new_cached,
+                }
+            }
+        }
+    }
+}
+
+impl From<Location> for LazyEvaluationPath {
+    #[inline]
+    fn from(location: Location) -> Self {
+        LazyEvaluationPath::Direct(location)
+    }
+}
+
+impl LazyEvaluationPath {
+    /// Create a new Deferred lazy evaluation path.
+    #[inline]
+    pub(crate) fn deferred(schema_location: Location, captured: CapturedRefState) -> Self {
+        LazyEvaluationPath::Deferred {
+            schema_location,
+            captured,
+            cached: OnceLock::new(),
+        }
+    }
+
+    /// Resolve the lazy evaluation path to a reference to the Location.
+    ///
+    /// For `Direct` paths, this returns the inner reference directly.
+    /// For `Deferred` paths, this computes the result on first call and caches it.
+    #[inline]
+    #[must_use]
+    pub(crate) fn resolve(&self) -> &Location {
+        match self {
+            LazyEvaluationPath::Direct(loc) => loc,
+            LazyEvaluationPath::Deferred {
+                schema_location,
+                captured,
+                cached,
+            } => cached.get_or_init(|| compute_final_evaluation_path(schema_location, captured)),
+        }
+    }
+}
+
+/// Compute final evaluation path from schema location and captured state.
+#[inline]
+pub(crate) fn compute_final_evaluation_path(
+    schema_location: &Location,
+    captured: &CapturedRefState,
+) -> Location {
+    let schema_str = schema_location.as_str();
+    let base_str = captured.strip_base.as_str();
+
+    let Some(suffix) = schema_str.strip_prefix(base_str) else {
+        return schema_location.clone();
+    };
+
+    // Fast path: if suffix is empty, just return eval_prefix (no allocation)
+    if suffix.is_empty() {
+        return captured.eval_prefix.clone();
+    }
+
+    captured.eval_prefix.join_raw_suffix(suffix)
+}
+
+/// Context for `validate()`, `iter_errors()`, and `evaluate()` operations.
+///
+/// Tracks cycle detection during validation.
 #[derive(Default)]
-pub(crate) struct ValidationContext {
+pub struct ValidationContext {
     validating: Vec<(usize, usize)>,
+    schema_location_cache: AHashMap<(usize, usize), Arc<str>>,
 }
 
 impl ValidationContext {
@@ -39,8 +189,45 @@ impl ValidationContext {
         debug_assert_eq!(
             popped,
             Some((node_id, std::ptr::from_ref::<Value>(instance) as usize)),
-            "ValidationContext::exit called out of order"
+            "LightweightContext::exit called out of order"
         );
+    }
+
+    /// Get or compute a formatted schema location.
+    #[inline]
+    pub(crate) fn format_schema_location(
+        &mut self,
+        location: &Location,
+        absolute: Option<&Arc<Uri<String>>>,
+    ) -> Arc<str> {
+        // Create cache key from string pointer (stable for Arc<str>)
+        let loc_ptr = location.as_str().as_ptr() as usize;
+        let uri_ptr = absolute.map_or(0, |u| Arc::as_ptr(u) as usize);
+        let key = (loc_ptr, uri_ptr);
+
+        if let Some(cached) = self.schema_location_cache.get(&key) {
+            return Arc::clone(cached);
+        }
+
+        let result = crate::evaluation::format_schema_location(location, absolute);
+        self.schema_location_cache.insert(key, Arc::clone(&result));
+        result
+    }
+}
+
+/// Capture state for lazy evaluation path computation.
+#[inline]
+pub(crate) fn capture_evaluation_path(
+    schema_location: &Location,
+    evaluation_path: &EvaluationPathTracker,
+) -> LazyEvaluationPath {
+    if evaluation_path.is_empty() {
+        // Fast path: direct mapping, no transformation needed
+        schema_location.clone().into()
+    } else {
+        // Compute captured state by walking the ref path chain
+        let captured = CapturedRefState::from(evaluation_path);
+        LazyEvaluationPath::deferred(schema_location.clone(), captured)
     }
 }
 
@@ -59,16 +246,19 @@ impl ValidationContext {
 /// `is_valid`. `evaluate` is only necessary for validators which compose other validators. See the
 /// documentation for `evaluate` for more information.
 ///
-/// All methods accept a `ValidationContext` parameter for cycle detection in circular `$ref`
-/// chains. Simple validators that don't recurse into child schemas can ignore this parameter.
+/// # Context Types
+///
+/// - `is_valid` takes `LightweightContext`: Only cycle detection, zero path tracking overhead.
+/// - `validate`, `iter_errors`, `evaluate` take `ValidationContext`: Cycle detection + evaluation path tracking.
 pub(crate) trait Validate: ThreadBound {
     fn iter_errors<'i>(
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        match self.validate(instance, location, ctx) {
+        match self.validate(instance, location, evaluation_path, ctx) {
             Ok(()) => no_error(),
             Err(err) => error(err),
         }
@@ -80,6 +270,7 @@ pub(crate) trait Validate: ThreadBound {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>>;
 
@@ -87,10 +278,11 @@ pub(crate) trait Validate: ThreadBound {
         &self,
         instance: &Value,
         location: &LazyLocation,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         let errors: Vec<ErrorDescription> = self
-            .iter_errors(instance, location, ctx)
+            .iter_errors(instance, location, evaluation_path, ctx)
             .map(|e| ErrorDescription::from_validation_error(&e))
             .collect();
         if errors.is_empty() {
@@ -98,6 +290,19 @@ pub(crate) trait Validate: ThreadBound {
         } else {
             EvaluationResult::invalid_empty(errors)
         }
+    }
+
+    /// Returns the canonical location for this validator's schemaLocation output.
+    ///
+    /// Per JSON Schema spec, schemaLocation "MUST NOT include by-reference applicators
+    /// such as `$ref` or `$dynamicRef`". For most validators, the keyword location is the
+    /// canonical location, so this returns `None` by default.
+    ///
+    /// `RefValidator` and similar by-reference validators override this to return
+    /// the target schema's canonical location (e.g., `/$defs/item` instead of
+    /// `/properties/foo/$ref`).
+    fn canonical_location(&self) -> Option<&Location> {
+        None
     }
 }
 
@@ -284,15 +489,18 @@ impl Validator {
     #[inline]
     pub fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         let mut ctx = ValidationContext::new();
-        self.root.validate(instance, &LazyLocation::new(), &mut ctx)
+        let evaluation_path = EvaluationPathTracker::new();
+        self.root
+            .validate(instance, &LazyLocation::new(), &evaluation_path, &mut ctx)
     }
     /// Run validation against `instance` and return an iterator over [`ValidationError`] in the error case.
     #[inline]
     #[must_use]
     pub fn iter_errors<'i>(&'i self, instance: &'i Value) -> ErrorIterator<'i> {
         let mut ctx = ValidationContext::new();
+        let evaluation_path = EvaluationPathTracker::new();
         self.root
-            .iter_errors(instance, &LazyLocation::new(), &mut ctx)
+            .iter_errors(instance, &LazyLocation::new(), &evaluation_path, &mut ctx)
     }
     /// Run validation against `instance` but return a boolean result instead of an iterator.
     /// It is useful for cases, where it is important to only know the fact if the data is valid or not.
@@ -308,9 +516,10 @@ impl Validator {
     #[inline]
     pub fn evaluate(&self, instance: &Value) -> Evaluation {
         let mut ctx = ValidationContext::new();
-        let root = self
-            .root
-            .evaluate_instance(instance, &LazyLocation::new(), &mut ctx);
+        let evaluation_path = EvaluationPathTracker::new();
+        let root =
+            self.root
+                .evaluate_instance(instance, &LazyLocation::new(), &evaluation_path, &mut ctx);
         Evaluation::new(root)
     }
     /// The [`Draft`] which was used to build this validator.
@@ -327,7 +536,7 @@ mod tests {
         keywords::custom::Keyword,
         paths::{LazyLocation, Location},
         thread::ThreadBound,
-        types::JsonType,
+        validator::ValidationContext,
         Validator,
     };
     use fancy_regex::Regex;
@@ -394,25 +603,22 @@ mod tests {
 
     #[test]
     fn custom_keyword_definition() {
-        /// Define a custom validator that verifies the object's keys consist of
-        /// only ASCII representable characters.
-        /// NOTE: This could be done with `propertyNames` + `pattern` but will be slower due to
-        /// regex usage.
+        // Define a custom validator that verifies the object's keys consist of
+        // only ASCII representable characters.
+        // NOTE: This could be done with `propertyNames` + `pattern` but will be slower due to
+        // regex usage.
         struct CustomObjectValidator;
         impl Keyword for CustomObjectValidator {
             fn validate<'i>(
                 &self,
                 instance: &'i Value,
-                location: &LazyLocation,
+                _instance_path: &LazyLocation,
+                _ctx: &mut ValidationContext,
+                _schema_path: &Location,
             ) -> Result<(), ValidationError<'i>> {
                 for key in instance.as_object().unwrap().keys() {
                     if !key.is_ascii() {
-                        return Err(ValidationError::custom(
-                            Location::new(),
-                            location.into(),
-                            instance,
-                            "Key is not ASCII",
-                        ));
+                        return Err(ValidationError::custom("Key is not ASCII"));
                     }
                 }
                 Ok(())
@@ -431,18 +637,15 @@ mod tests {
         fn custom_object_type_factory<'a>(
             _: &'a Map<String, Value>,
             schema: &'a Value,
-            path: Location,
+            _path: Location,
         ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
             const EXPECTED: &str = "ascii-keys";
             if schema.as_str() == Some(EXPECTED) {
                 Ok(Box::new(CustomObjectValidator))
             } else {
-                Err(ValidationError::constant_string(
-                    Location::new(),
-                    path,
-                    schema,
-                    EXPECTED,
-                ))
+                Err(ValidationError::schema(format!(
+                    "Expected '{EXPECTED}', got {schema}"
+                )))
             }
         }
 
@@ -473,37 +676,35 @@ mod tests {
 
     #[test]
     fn custom_format_and_override_keyword() {
-        /// Check that a string has some number of digits followed by a dot followed by exactly 2 digits.
+        // Check that a string has some number of digits followed by a dot followed by exactly 2 digits.
         fn currency_format_checker(s: &str) -> bool {
             static CURRENCY_RE: LazyLock<Regex> = LazyLock::new(|| {
                 Regex::new("^(0|([1-9]+[0-9]*))(\\.[0-9]{2})$").expect("Invalid regex")
             });
             CURRENCY_RE.is_match(s).expect("Invalid regex")
         }
-        /// A custom keyword validator that overrides "minimum"
-        /// so that "minimum" may apply to "currency"-formatted strings as well.
+        // A custom keyword validator that overrides "minimum"
+        // so that "minimum" may apply to "currency"-formatted strings as well.
         struct CustomMinimumValidator {
             limit: f64,
-            limit_val: Value,
             with_currency_format: bool,
-            location: Location,
         }
 
         impl Keyword for CustomMinimumValidator {
             fn validate<'i>(
                 &self,
                 instance: &'i Value,
-                location: &LazyLocation,
+                _instance_path: &LazyLocation,
+                _ctx: &mut ValidationContext,
+                _schema_path: &Location,
             ) -> Result<(), ValidationError<'i>> {
                 if self.is_valid(instance) {
                     Ok(())
                 } else {
-                    Err(ValidationError::minimum(
-                        self.location.clone(),
-                        location.into(),
-                        instance,
-                        self.limit_val.clone(),
-                    ))
+                    Err(ValidationError::custom(format!(
+                        "value is less than the minimum of {}",
+                        self.limit
+                    )))
                 }
             }
 
@@ -538,31 +739,23 @@ mod tests {
             }
         }
 
-        /// Build a validator that overrides the standard `minimum` keyword
+        // Build a validator that overrides the standard `minimum` keyword
         fn custom_minimum_factory<'a>(
             parent: &'a Map<String, Value>,
             schema: &'a Value,
-            location: Location,
+            _path: Location,
         ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
             let limit = if let Value::Number(limit) = schema {
                 limit.as_f64().expect("Always valid")
             } else {
-                return Err(ValidationError::single_type_error(
-                    // There is no metaschema definition for a custom keyword, hence empty `schema` pointer
-                    Location::new(),
-                    location,
-                    schema,
-                    JsonType::Number,
-                ));
+                return Err(ValidationError::schema("minimum must be a number"));
             };
             let with_currency_format = parent
                 .get("format")
                 .is_some_and(|format| format == "currency");
             Ok(Box::new(CustomMinimumValidator {
                 limit,
-                limit_val: schema.clone(),
                 with_currency_format,
-                location,
             }))
         }
 
@@ -614,12 +807,13 @@ mod tests {
         assert!(validator.validate(&instance).is_err());
         assert!(!validator.is_valid(&instance));
 
-        // Invalid `minimum` value
+        // Invalid `minimum` value - meta-schema validation catches this first
         let schema = json!({ "minimum": "foo" });
         let error = crate::options()
             .with_keyword("minimum", custom_minimum_factory)
             .build(&schema)
             .expect_err("Should fail");
+        // The meta-schema validates before our factory runs, so we get a type error
         assert_eq!(error.to_string(), "\"foo\" is not of type \"number\"");
     }
 

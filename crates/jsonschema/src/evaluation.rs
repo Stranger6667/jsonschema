@@ -626,10 +626,8 @@ pub(crate) fn format_schema_location(
     absolute: Option<&Arc<Uri<String>>>,
 ) -> Arc<str> {
     if let Some(uri) = absolute {
-        let base = uri.as_str();
-        if base.contains('#') {
-            Arc::from(base)
-        } else if location.as_str().is_empty() {
+        let base = uri.strip_fragment();
+        if location.as_str().is_empty() {
             Arc::from(format!("{base}#"))
         } else {
             Arc::from(format!("{base}#{}", location.as_str()))
@@ -1568,10 +1566,10 @@ mod tests {
                 .to_owned(),
         );
         let formatted = format_schema_location(&location, Some(&uri));
-        // When URI already contains a fragment, use it as-is
+        // When URI has a fragment, it's replaced with the location
         assert_eq!(
             formatted.as_ref(),
-            "http://example.com/schema.json#/defs/myDef"
+            "http://example.com/schema.json#/properties"
         );
     }
 

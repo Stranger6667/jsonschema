@@ -3,9 +3,9 @@ use crate::{
     error::ValidationError,
     ext::numeric,
     keywords::CompilationResult,
-    paths::{LazyLocation, Location},
+    paths::{EvaluationPathTracker, LazyLocation, Location},
     types::JsonType,
-    validator::{Validate, ValidationContext},
+    validator::{capture_evaluation_path, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
 
@@ -45,6 +45,7 @@ impl Validate for MultipleOfFloatValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if !self.is_valid(instance, ctx) {
@@ -52,6 +53,7 @@ impl Validate for MultipleOfFloatValidator {
             {
                 return Err(ValidationError::multiple_of(
                     self.location.clone(),
+                    capture_evaluation_path(&self.location, evaluation_path),
                     location.into(),
                     instance,
                     Value::Number(self.original_value.clone()),
@@ -61,6 +63,7 @@ impl Validate for MultipleOfFloatValidator {
             {
                 return Err(ValidationError::multiple_of(
                     self.location.clone(),
+                    capture_evaluation_path(&self.location, evaluation_path),
                     location.into(),
                     instance,
                     self.multiple_of,
@@ -107,6 +110,7 @@ impl Validate for MultipleOfIntegerValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if !self.is_valid(instance, ctx) {
@@ -114,6 +118,7 @@ impl Validate for MultipleOfIntegerValidator {
             {
                 return Err(ValidationError::multiple_of(
                     self.location.clone(),
+                    capture_evaluation_path(&self.location, evaluation_path),
                     location.into(),
                     instance,
                     Value::Number(self.original_value.clone()),
@@ -123,6 +128,7 @@ impl Validate for MultipleOfIntegerValidator {
             {
                 return Err(ValidationError::multiple_of(
                     self.location.clone(),
+                    capture_evaluation_path(&self.location, evaluation_path),
                     location.into(),
                     instance,
                     self.multiple_of,
@@ -216,11 +222,13 @@ impl Validate for MultipleOfBigIntValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if !self.is_valid(instance, ctx) {
             return Err(ValidationError::multiple_of(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, evaluation_path),
                 location.into(),
                 instance,
                 Value::Number(self.original_value.clone()),
@@ -284,11 +292,13 @@ impl Validate for MultipleOfBigFracValidator {
         &self,
         instance: &'i Value,
         location: &LazyLocation,
+        evaluation_path: &EvaluationPathTracker,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if !self.is_valid(instance, ctx) {
             return Err(ValidationError::multiple_of(
                 self.location.clone(),
+                capture_evaluation_path(&self.location, evaluation_path),
                 location.into(),
                 instance,
                 Value::Number(self.original_value.clone()),
@@ -360,9 +370,11 @@ pub(crate) fn compile<'a>(
             None
         }
     } else {
+        let location = ctx.location().join("multipleOf");
         Some(Err(ValidationError::single_type_error(
+            location.clone(),
+            location,
             Location::new(),
-            ctx.location().clone(),
             schema,
             JsonType::Number,
         )))
