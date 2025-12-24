@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `EmailOptions` for configuring `email` format validation. [#903](https://github.com/Stranger6667/jsonschema/pull/903)
+
 ### Fixed
 
 - `multipleOf` validation for large u64 values beyond `i64::MAX` with `arbitrary-precision` feature.

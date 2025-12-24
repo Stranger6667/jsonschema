@@ -405,6 +405,48 @@ The available options:
 
 This configuration is crucial when working with untrusted schemas where attackers might craft malicious regex patterns.
 
+## Email Format Configuration
+
+When validating email addresses using `{"format": "email"}`, you can customize the validation behavior beyond the default JSON Schema spec requirements:
+
+```python
+import jsonschema_rs
+from jsonschema_rs import EmailOptions
+
+# Require a top-level domain (reject "user@localhost")
+validator = jsonschema_rs.validator_for(
+    {"format": "email", "type": "string"},
+    validate_formats=True,
+    email_options=EmailOptions(require_tld=True)
+)
+validator.is_valid("user@localhost")     # False
+validator.is_valid("user@example.com")   # True
+
+# Disallow IP address literals and display names
+validator = jsonschema_rs.validator_for(
+    {"format": "email", "type": "string"},
+    validate_formats=True,
+    email_options=EmailOptions(
+        allow_domain_literal=False,  # Reject "user@[127.0.0.1]"
+        allow_display_text=False     # Reject "Name <user@example.com>"
+    )
+)
+
+# Require minimum domain segments
+validator = jsonschema_rs.validator_for(
+    {"format": "email", "type": "string"},
+    validate_formats=True,
+    email_options=EmailOptions(minimum_sub_domains=3)  # e.g., user@sub.example.com
+)
+```
+
+Available options:
+
+  - `require_tld`: Require a top-level domain (e.g., reject "user@localhost")
+  - `allow_domain_literal`: Allow IP address literals like "user@[127.0.0.1]" (default: True)
+  - `allow_display_text`: Allow display names like "Name <user@example.com>" (default: True)
+  - `minimum_sub_domains`: Minimum number of domain segments required
+
 ## External References
 
 By default, `jsonschema-rs` resolves HTTP references and file references from the local file system. You can implement a custom retriever to handle external references. Here's an example that uses a static map of schemas:

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `EmailOptions` for configuring `email` format validation.
+
 ### Fixed
 
 - `multipleOf` validation for large integers beyond `i64::MAX`.

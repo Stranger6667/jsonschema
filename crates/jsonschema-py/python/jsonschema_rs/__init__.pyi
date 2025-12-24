@@ -61,6 +61,18 @@ class RegexOptions:
     def __init__(self, size_limit: int | None = None, dfa_size_limit: int | None = None) -> None: ...
     def __repr__(self) -> str: ...
 
+class EmailOptions:
+    """Configuration for email format validation."""
+
+    def __init__(
+        self,
+        require_tld: bool = False,
+        allow_domain_literal: bool = True,
+        allow_display_text: bool = True,
+        minimum_sub_domains: int | None = None,
+    ) -> None: ...
+    def __repr__(self) -> str: ...
+
 PatternOptionsType = Union[FancyRegexOptions, RegexOptions]
 
 class RetrieverProtocol(Protocol):
@@ -79,6 +91,7 @@ def is_valid(
     mask: str | None = None,
     base_uri: str | None = None,
     pattern_options: PatternOptionsType | None = None,
+    email_options: EmailOptions | None = None,
 ) -> bool:
     """Check if a JSON instance is valid against a schema.
 
@@ -99,6 +112,7 @@ def validate(
     mask: str | None = None,
     base_uri: str | None = None,
     pattern_options: PatternOptionsType | None = None,
+    email_options: EmailOptions | None = None,
 ) -> None:
     """Validate a JSON instance against a schema.
 
@@ -119,6 +133,7 @@ def iter_errors(
     mask: str | None = None,
     base_uri: str | None = None,
     pattern_options: PatternOptionsType | None = None,
+    email_options: EmailOptions | None = None,
 ) -> Iterator[ValidationError]:
     """Iterate over all validation errors.
 
@@ -137,6 +152,7 @@ def evaluate(
     registry: Registry | None = None,
     base_uri: str | None = None,
     pattern_options: PatternOptionsType | None = None,
+    email_options: EmailOptions | None = None,
 ) -> Evaluation:
     """Evaluate an instance and return structured output.
 
@@ -276,6 +292,7 @@ class Draft4Validator:
         mask: str | None = None,
         base_uri: str | None = None,
         pattern_options: PatternOptionsType | None = None,
+        email_options: EmailOptions | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -295,6 +312,7 @@ class Draft6Validator:
         mask: str | None = None,
         base_uri: str | None = None,
         pattern_options: PatternOptionsType | None = None,
+        email_options: EmailOptions | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -314,6 +332,7 @@ class Draft7Validator:
         mask: str | None = None,
         base_uri: str | None = None,
         pattern_options: PatternOptionsType | None = None,
+        email_options: EmailOptions | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -333,6 +352,7 @@ class Draft201909Validator:
         mask: str | None = None,
         base_uri: str | None = None,
         pattern_options: PatternOptionsType | None = None,
+        email_options: EmailOptions | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -352,6 +372,7 @@ class Draft202012Validator:
         mask: str | None = None,
         base_uri: str | None = None,
         pattern_options: PatternOptionsType | None = None,
+        email_options: EmailOptions | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -371,6 +392,7 @@ def validator_for(
     mask: str | None = None,
     base_uri: str | None = None,
     pattern_options: PatternOptionsType | None = None,
+    email_options: EmailOptions | None = None,
 ) -> Validator:
     """Create a validator for the given schema.
 
