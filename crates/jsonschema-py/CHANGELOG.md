@@ -10,6 +10,10 @@
 
 - `multipleOf` validation for large integers beyond `i64::MAX`.
 
+### Removed
+
+- `with_meta_schemas` parameter from type stubs (was removed from the API long ago).
+
 ## [0.37.4] - 2025-11-30
 
 ### Fixed
