@@ -9,6 +9,7 @@
 ### Fixed
 
 - `multipleOf` validation for large integers beyond `i64::MAX`.
+- Incorrect `mask` parameter in `evaluate` docstring.
 
 ### Removed
 

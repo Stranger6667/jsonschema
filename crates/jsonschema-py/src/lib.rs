@@ -972,7 +972,7 @@ fn iter_errors(
     }
 }
 
-/// evaluate(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None)
+/// evaluate(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, base_uri=None, pattern_options=None, email_options=None)
 ///
 /// Evaluate an instance against a schema and return structured output formats.
 ///
