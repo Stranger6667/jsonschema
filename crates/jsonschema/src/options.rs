@@ -537,6 +537,13 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
     ///
     /// Returns an error if `schema` is invalid for the selected draft or if referenced resources
     /// cannot be retrieved or resolved.
+    ///
+    /// # Panics
+    ///
+    /// This method **must not** be called from within an async runtime if the schema contains
+    /// external references that require network requests, or it will panic when attempting to block.
+    /// Use `async_options` and its async `build` method for async contexts, or run this
+    /// in a separate blocking thread via `tokio::task::spawn_blocking`.
     pub fn build(&self, schema: &Value) -> Result<Validator, ValidationError<'static>> {
         compiler::build_validator(self, schema)
     }

@@ -941,6 +941,11 @@ use serde_json::Value;
 /// # Panics
 ///
 /// This function panics if an invalid schema is passed.
+///
+/// This function **must not** be called from within an async runtime if the schema contains
+/// external references that require network requests, or it will panic when attempting to block.
+/// Use `async_validator_for` for async contexts, or run this in a separate blocking thread
+/// via `tokio::task::spawn_blocking`.
 #[must_use]
 #[inline]
 pub fn is_valid(schema: &Value, instance: &Value) -> bool {
@@ -968,6 +973,11 @@ pub fn is_valid(schema: &Value, instance: &Value) -> bool {
 /// # Panics
 ///
 /// This function panics if an invalid schema is passed.
+///
+/// This function **must not** be called from within an async runtime if the schema contains
+/// external references that require network requests, or it will panic when attempting to block.
+/// Use `async_validator_for` for async contexts, or run this in a separate blocking thread
+/// via `tokio::task::spawn_blocking`.
 #[inline]
 pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), ValidationError<'i>> {
     validator_for(schema)
@@ -994,6 +1004,11 @@ pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), Validatio
 /// # Panics
 ///
 /// This function panics if an invalid schema is passed.
+///
+/// This function **must not** be called from within an async runtime if the schema contains
+/// external references that require network requests, or it will panic when attempting to block.
+/// Use `async_validator_for` for async contexts, or run this in a separate blocking thread
+/// via `tokio::task::spawn_blocking`.
 #[must_use]
 #[inline]
 pub fn evaluate(schema: &Value, instance: &Value) -> Evaluation {
@@ -1022,6 +1037,13 @@ pub fn evaluate(schema: &Value, instance: &Value) -> Evaluation {
 /// # Errors
 ///
 /// Returns an error if the schema is invalid or external references cannot be resolved.
+///
+/// # Panics
+///
+/// This function **must not** be called from within an async runtime if the schema contains
+/// external references that require network requests, or it will panic when attempting to block.
+/// Use `async_validator_for` for async contexts, or run this in a separate blocking thread
+/// via `tokio::task::spawn_blocking`.
 pub fn validator_for(schema: &Value) -> Result<Validator, ValidationError<'static>> {
     Validator::new(schema)
 }
@@ -1064,6 +1086,10 @@ pub async fn async_validator_for(schema: &Value) -> Result<Validator, Validation
 /// This function returns a [`ValidationOptions`] struct, which allows you to set various
 /// options for JSON Schema validation. You can use this builder to specify
 /// the draft version, set custom formats, and more.
+///
+/// **Note:** When calling [`ValidationOptions::build`], it **must not** be called from within
+/// an async runtime if the schema contains external references that require network requests,
+/// or it will panic. Use `async_options` for async contexts.
 ///
 /// # Examples
 ///
