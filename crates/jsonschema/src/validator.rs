@@ -213,28 +213,6 @@ impl ValidationContext {
         self.schema_location_cache.insert(key, Arc::clone(&result));
         result
     }
-
-    /// Create a validation error for custom keywords.
-    ///
-    /// Note: Custom keywords don't participate in `$ref` resolution, so the evaluation
-    /// path is simply the schema path without any ref-related transformations.
-    #[must_use]
-    pub fn custom_error<'i>(
-        &self,
-        schema_path: &Location,
-        instance_path: &LazyLocation,
-        instance: &'i Value,
-        message: &'static str,
-    ) -> ValidationError<'i> {
-        ValidationError::custom(
-            schema_path.clone(),
-            // Custom keywords are leaf validators, so schema_path == evaluation_path
-            LazyEvaluationPath::from(schema_path.clone()),
-            instance_path.into(),
-            instance,
-            message,
-        )
-    }
 }
 
 /// Capture state for lazy evaluation path computation.
@@ -553,14 +531,13 @@ impl Validator {
 
 #[cfg(test)]
 mod tests {
-    use super::LazyEvaluationPath;
     use crate::{
         error::ValidationError,
         keywords::custom::Keyword,
         paths::{LazyLocation, Location},
         thread::ThreadBound,
-        types::JsonType,
-        ValidationContext, Validator,
+        validator::ValidationContext,
+        Validator,
     };
     use fancy_regex::Regex;
     use num_cmp::NumCmp;
@@ -626,27 +603,22 @@ mod tests {
 
     #[test]
     fn custom_keyword_definition() {
-        /// Define a custom validator that verifies the object's keys consist of
-        /// only ASCII representable characters.
-        /// NOTE: This could be done with `propertyNames` + `pattern` but will be slower due to
-        /// regex usage.
+        // Define a custom validator that verifies the object's keys consist of
+        // only ASCII representable characters.
+        // NOTE: This could be done with `propertyNames` + `pattern` but will be slower due to
+        // regex usage.
         struct CustomObjectValidator;
         impl Keyword for CustomObjectValidator {
             fn validate<'i>(
                 &self,
                 instance: &'i Value,
-                instance_path: &LazyLocation,
-                ctx: &mut ValidationContext,
-                schema_path: &Location,
+                _instance_path: &LazyLocation,
+                _ctx: &mut ValidationContext,
+                _schema_path: &Location,
             ) -> Result<(), ValidationError<'i>> {
                 for key in instance.as_object().unwrap().keys() {
                     if !key.is_ascii() {
-                        return Err(ctx.custom_error(
-                            schema_path,
-                            instance_path,
-                            instance,
-                            "Key is not ASCII",
-                        ));
+                        return Err(ValidationError::custom("Key is not ASCII"));
                     }
                 }
                 Ok(())
@@ -665,19 +637,15 @@ mod tests {
         fn custom_object_type_factory<'a>(
             _: &'a Map<String, Value>,
             schema: &'a Value,
-            path: Location,
+            _path: Location,
         ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
             const EXPECTED: &str = "ascii-keys";
             if schema.as_str() == Some(EXPECTED) {
                 Ok(Box::new(CustomObjectValidator))
             } else {
-                Err(ValidationError::constant_string(
-                    path.clone(),
-                    path,
-                    Location::new(),
-                    schema,
-                    EXPECTED,
-                ))
+                Err(ValidationError::schema(format!(
+                    "Expected '{EXPECTED}', got {schema}"
+                )))
             }
         }
 
@@ -708,18 +676,17 @@ mod tests {
 
     #[test]
     fn custom_format_and_override_keyword() {
-        /// Check that a string has some number of digits followed by a dot followed by exactly 2 digits.
+        // Check that a string has some number of digits followed by a dot followed by exactly 2 digits.
         fn currency_format_checker(s: &str) -> bool {
             static CURRENCY_RE: LazyLock<Regex> = LazyLock::new(|| {
                 Regex::new("^(0|([1-9]+[0-9]*))(\\.[0-9]{2})$").expect("Invalid regex")
             });
             CURRENCY_RE.is_match(s).expect("Invalid regex")
         }
-        /// A custom keyword validator that overrides "minimum"
-        /// so that "minimum" may apply to "currency"-formatted strings as well.
+        // A custom keyword validator that overrides "minimum"
+        // so that "minimum" may apply to "currency"-formatted strings as well.
         struct CustomMinimumValidator {
             limit: f64,
-            limit_val: Value,
             with_currency_format: bool,
         }
 
@@ -727,21 +694,17 @@ mod tests {
             fn validate<'i>(
                 &self,
                 instance: &'i Value,
-                instance_path: &LazyLocation,
+                _instance_path: &LazyLocation,
                 _ctx: &mut ValidationContext,
-                schema_path: &Location,
+                _schema_path: &Location,
             ) -> Result<(), ValidationError<'i>> {
                 if self.is_valid(instance) {
                     Ok(())
                 } else {
-                    Err(ValidationError::minimum(
-                        schema_path.clone(),
-                        // Custom keywords are leaf validators - evaluation path == schema path
-                        LazyEvaluationPath::from(schema_path.clone()),
-                        instance_path.into(),
-                        instance,
-                        self.limit_val.clone(),
-                    ))
+                    Err(ValidationError::custom(format!(
+                        "value is less than the minimum of {}",
+                        self.limit
+                    )))
                 }
             }
 
@@ -776,29 +739,22 @@ mod tests {
             }
         }
 
-        /// Build a validator that overrides the standard `minimum` keyword
+        // Build a validator that overrides the standard `minimum` keyword
         fn custom_minimum_factory<'a>(
             parent: &'a Map<String, Value>,
             schema: &'a Value,
-            location: Location,
+            _path: Location,
         ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
             let limit = if let Value::Number(limit) = schema {
                 limit.as_f64().expect("Always valid")
             } else {
-                return Err(ValidationError::single_type_error(
-                    location.clone(),
-                    location,
-                    Location::new(),
-                    schema,
-                    JsonType::Number,
-                ));
+                return Err(ValidationError::schema("minimum must be a number"));
             };
             let with_currency_format = parent
                 .get("format")
                 .is_some_and(|format| format == "currency");
             Ok(Box::new(CustomMinimumValidator {
                 limit,
-                limit_val: schema.clone(),
                 with_currency_format,
             }))
         }
@@ -851,12 +807,13 @@ mod tests {
         assert!(validator.validate(&instance).is_err());
         assert!(!validator.is_valid(&instance));
 
-        // Invalid `minimum` value
+        // Invalid `minimum` value - meta-schema validation catches this first
         let schema = json!({ "minimum": "foo" });
         let error = crate::options()
             .with_keyword("minimum", custom_minimum_factory)
             .build(&schema)
             .expect_err("Should fail");
+        // The meta-schema validates before our factory runs, so we get a type error
         assert_eq!(error.to_string(), "\"foo\" is not of type \"number\"");
     }
 

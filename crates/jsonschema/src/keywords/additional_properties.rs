@@ -1401,7 +1401,7 @@ pub(crate) fn compile<'a>(
                                     )
                                 } else {
                                     let location = ctx.location().join("properties");
-                                    Some(Err(ValidationError::custom(
+                                    Some(Err(ValidationError::compile_error(
                                         location.clone(),
                                         location,
                                         Location::new(),
@@ -1432,7 +1432,7 @@ pub(crate) fn compile<'a>(
                                     )
                                 } else {
                                     let location = ctx.location().join("properties");
-                                    Some(Err(ValidationError::custom(
+                                    Some(Err(ValidationError::compile_error(
                                         location.clone(),
                                         location,
                                         Location::new(),
@@ -1472,7 +1472,7 @@ pub(crate) fn compile<'a>(
                                     )
                                 } else {
                                     let location = ctx.location().join("properties");
-                                    Some(Err(ValidationError::custom(
+                                    Some(Err(ValidationError::compile_error(
                                         location.clone(),
                                         location,
                                         Location::new(),
@@ -1503,7 +1503,7 @@ pub(crate) fn compile<'a>(
                                     )
                                 } else {
                                     let location = ctx.location().join("properties");
-                                    Some(Err(ValidationError::custom(
+                                    Some(Err(ValidationError::compile_error(
                                         location.clone(),
                                         location,
                                         Location::new(),

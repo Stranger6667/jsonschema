@@ -553,7 +553,7 @@ fn compile_single_type<'a>(
         Ok(JsonType::Number) => NumberTypeValidator::compile(location),
         Ok(JsonType::Object) => ObjectTypeValidator::compile(location),
         Ok(JsonType::String) => StringTypeValidator::compile(location),
-        Err(()) => Err(ValidationError::custom(
+        Err(()) => Err(ValidationError::compile_error(
             location.clone(),
             location,
             Location::new(),

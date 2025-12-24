@@ -27,6 +27,7 @@ impl Validate for CustomKeyword {
     ) -> Result<(), ValidationError<'i>> {
         self.inner
             .validate(instance, instance_path, ctx, &self.location)
+            .map_err(|err| err.with_context(instance, instance_path, &self.location))
     }
 
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
@@ -53,18 +54,13 @@ impl Validate for CustomKeyword {
 ///     fn validate<'i>(
 ///         &self,
 ///         instance: &'i Value,
-///         instance_path: &LazyLocation,
-///         ctx: &mut ValidationContext,
-///         schema_path: &Location,
+///         _instance_path: &LazyLocation,
+///         _ctx: &mut ValidationContext,
+///         _schema_path: &Location,
 ///     ) -> Result<(), ValidationError<'i>> {
 ///         if let Some(n) = instance.as_u64() {
 ///             if n % 2 != 0 {
-///                 return Err(ctx.custom_error(
-///                     schema_path,
-///                     instance_path,
-///                     instance,
-///                     "number must be even",
-///                 ));
+///                 return Err(ValidationError::custom("number must be even"));
 ///             }
 ///         }
 ///         Ok(())
@@ -78,7 +74,8 @@ impl Validate for CustomKeyword {
 pub trait Keyword: ThreadBound {
     /// Validate an instance against this custom keyword.
     ///
-    /// Use `ctx.custom_error()` to create errors with correct `evaluation_path`.
+    /// Use [`ValidationError::custom`] for simple error messages, or construct
+    /// any [`ValidationError`] variant for full control over error details.
     ///
     /// # Errors
     ///
@@ -119,6 +116,7 @@ where
         schema: &'a Value,
         schema_path: Location,
     ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
-        self(parent, schema, schema_path)
+        self(parent, schema, schema_path.clone())
+            .map_err(|err| err.with_schema_context(schema, schema_path))
     }
 }

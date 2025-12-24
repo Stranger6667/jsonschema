@@ -1,6 +1,9 @@
 use crate::{
-    compiler, node::SchemaNode, paths::Location, thread::ThreadBound, validator::Validate as _,
-    ValidationContext,
+    compiler,
+    node::SchemaNode,
+    paths::Location,
+    thread::ThreadBound,
+    validator::{Validate as _, ValidationContext},
 };
 use ahash::AHashMap;
 use serde_json::{Map, Value};
@@ -178,7 +181,7 @@ macro_rules! compile_dynamic_prop_map_validator {
             }
         } else {
             let location = $ctx.location().clone();
-            Some(Err(ValidationError::custom(
+            Some(Err(ValidationError::compile_error(
                 location.clone(),
                 location,
                 Location::new(),

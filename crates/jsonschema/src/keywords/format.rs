@@ -992,7 +992,7 @@ pub(crate) fn compile<'a>(
                     None
                 } else {
                     let location = ctx.location().join("format");
-                    Some(Err(ValidationError::custom(
+                    Some(Err(ValidationError::compile_error(
                         location.clone(),
                         location,
                         Location::new(),

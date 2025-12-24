@@ -457,12 +457,12 @@ impl<R> ValidationOptions<R> {
     ///     fn validate<'i>(
     ///         &self,
     ///         instance: &'i Value,
-    ///         instance_path: &LazyLocation,
-    ///         ctx: &mut ValidationContext,
-    ///         schema_path: &Location,
+    ///         _instance_path: &LazyLocation,
+    ///         _ctx: &mut ValidationContext,
+    ///         _schema_path: &Location,
     ///     ) -> Result<(), ValidationError<'i>> {
     ///         if !instance.is_object() {
-    ///             return Err(ctx.custom_error(schema_path, instance_path, instance, "expected an object"));
+    ///             return Err(ValidationError::custom("expected an object"));
     ///         }
     ///         Ok(())
     ///     }
@@ -475,7 +475,7 @@ impl<R> ValidationOptions<R> {
     /// fn custom_validator_factory<'a>(
     ///     _parent: &'a Map<String, Value>,
     ///     _value: &'a Value,
-    ///     _schema_path: Location,
+    ///     _path: Location,
     /// ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
     ///     Ok(Box::new(MyCustomValidator))
     /// }

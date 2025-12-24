@@ -36,7 +36,7 @@
 //! value is longer than 5 characters
 //! ```
 use crate::{
-    paths::Location,
+    paths::{LazyLocation, Location},
     thread::ThreadBound,
     types::{JsonType, JsonTypeSet},
     validator::LazyEvaluationPath,
@@ -1145,27 +1145,96 @@ impl<'a> ValidationError<'a> {
             evaluation_path,
         )
     }
-    /// Create a custom error for invalid schema values in keyword factories.
+    /// Create a custom validation error with just a message.
     ///
-    /// Use this in factory functions when the schema value is invalid.
-    /// For validation errors, use [`crate::ValidationContext::custom_error`] instead.
-    pub fn schema(
-        schema_path: Location,
-        schema_value: &'a Value,
-        message: impl Into<String>,
-    ) -> ValidationError<'a> {
-        Self::borrowed(
-            schema_value,
+    /// Use this in [`Keyword::validate`](crate::Keyword::validate) implementations.
+    /// The actual instance, instance path, and schema path are filled in automatically.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use jsonschema::ValidationError;
+    ///
+    /// fn validate_even(n: u64) -> Result<(), ValidationError<'static>> {
+    ///     if n % 2 != 0 {
+    ///         return Err(ValidationError::custom("number must be even"));
+    ///     }
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn custom(message: impl Into<String>) -> ValidationError<'static> {
+        ValidationError::new(
+            Cow::Owned(Value::Null),
             ValidationErrorKind::Custom {
                 message: message.into(),
             },
+            Location::new(),
+            Location::new(),
+            Location::new(),
+        )
+    }
+
+    /// Create an error for invalid schema values in keyword factories.
+    ///
+    /// Use this in factory functions when the schema value is invalid.
+    /// The schema path and value are filled in automatically.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use jsonschema::ValidationError;
+    ///
+    /// fn validate_schema_value(value: bool) -> Result<(), ValidationError<'static>> {
+    ///     if !value {
+    ///         return Err(ValidationError::schema("keyword value must be true"));
+    ///     }
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn schema(message: impl Into<String>) -> ValidationError<'static> {
+        ValidationError::new(
+            Cow::Owned(Value::Null),
+            ValidationErrorKind::Custom {
+                message: message.into(),
+            },
+            Location::new(),
+            Location::new(),
+            Location::new(),
+        )
+    }
+
+    /// Fill in context for a placeholder validation error.
+    pub(crate) fn with_context<'i>(
+        self,
+        instance: &'i Value,
+        instance_path: &LazyLocation,
+        schema_path: &Location,
+    ) -> ValidationError<'i> {
+        ValidationError::new(
+            Cow::Borrowed(instance),
+            self.repr.kind,
+            instance_path.into(),
+            schema_path.clone(),
+            LazyEvaluationPath::from(schema_path.clone()),
+        )
+    }
+
+    /// Fill in context for a placeholder schema error (used in keyword factories).
+    pub(crate) fn with_schema_context(
+        self,
+        schema_value: &Value,
+        schema_path: Location,
+    ) -> ValidationError<'_> {
+        ValidationError::new(
+            Cow::Borrowed(schema_value),
+            self.repr.kind,
             Location::new(),
             schema_path.clone(),
             schema_path,
         )
     }
 
-    pub(crate) fn custom(
+    pub(crate) fn compile_error(
         schema_path: Location,
         evaluation_path: impl Into<LazyEvaluationPath>,
         instance_path: Location,

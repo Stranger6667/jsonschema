@@ -657,16 +657,16 @@
 //!     fn validate<'i>(
 //!         &self,
 //!         instance: &'i Value,
-//!         instance_path: &LazyLocation,
-//!         ctx: &mut ValidationContext,
-//!         schema_path: &Location,
+//!         _instance_path: &LazyLocation,
+//!         _ctx: &mut ValidationContext,
+//!         _schema_path: &Location,
 //!     ) -> Result<(), ValidationError<'i>> {
 //!         if let Some(n) = instance.as_u64() {
 //!             if n % 2 == 0 {
 //!                 return Ok(());
 //!             }
 //!         }
-//!         Err(ctx.custom_error(schema_path, instance_path, instance, "value must be an even integer"))
+//!         Err(ValidationError::custom("value must be an even integer"))
 //!     }
 //!
 //!     fn is_valid(&self, instance: &Value) -> bool {
@@ -677,12 +677,12 @@
 //! fn even_number_factory<'a>(
 //!     _parent: &'a Map<String, Value>,
 //!     value: &'a Value,
-//!     schema_path: Location,
+//!     _path: Location,
 //! ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
 //!     if value.as_bool() == Some(true) {
 //!         Ok(Box::new(EvenNumberValidator))
 //!     } else {
-//!         Err(ValidationError::schema(schema_path, value, "The 'even-number' keyword must be set to true"))
+//!         Err(ValidationError::schema("The 'even-number' keyword must be set to true"))
 //!     }
 //! }
 //!
@@ -698,7 +698,7 @@
 //! ```
 //!
 //! In this example, we've created a custom `even-number` keyword that validates whether a number is even.
-//! The `EvenNumberValidator` implements the actual validation logic, while the `even_number_validator_factory`
+//! The `EvenNumberValidator` implements the actual validation logic, while the `even_number_factory`
 //! creates instances of the validator and allows for additional configuration based on the keyword's value in the schema.
 //!
 //! You can also use a closure instead of a factory function for simpler cases:
@@ -716,9 +716,9 @@
 //! #     fn validate<'i>(
 //! #         &self,
 //! #         instance: &'i Value,
-//! #         instance_path: &LazyLocation,
-//! #         ctx: &mut ValidationContext,
-//! #         schema_path: &Location,
+//! #         _instance_path: &LazyLocation,
+//! #         _ctx: &mut ValidationContext,
+//! #         _schema_path: &Location,
 //! #     ) -> Result<(), ValidationError<'i>> {
 //! #         Ok(())
 //! #     }
