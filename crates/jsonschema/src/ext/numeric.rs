@@ -93,13 +93,15 @@ const MAX_SAFE_INTEGER: u64 = 1u64 << 53;
 
 pub(crate) fn is_multiple_of_integer(value: &Number, multiple: f64) -> bool {
     // For large integer values beyond 2^53, as_f64() loses precision.
-    // Use integer arithmetic directly for these cases.
+    // Use integer arithmetic directly for these cases, but only when the divisor
+    // itself can be exactly represented in f64 (i.e., <= 2^53). Divisors > 2^53
+    // may have already lost precision when converted to f64 during schema compilation.
     #[cfg(feature = "arbitrary-precision")]
     {
         if let Some(v) = value.as_u64() {
             if v > MAX_SAFE_INTEGER
                 && multiple > 0.0
-                && multiple <= u64::MAX as f64
+                && multiple <= MAX_SAFE_INTEGER as f64
                 && multiple.fract() == 0.0
             {
                 return (v % (multiple as u64)) == 0;
@@ -108,7 +110,7 @@ pub(crate) fn is_multiple_of_integer(value: &Number, multiple: f64) -> bool {
         if let Some(v) = value.as_i64() {
             if v.unsigned_abs() > MAX_SAFE_INTEGER
                 && multiple > 0.0
-                && multiple <= i64::MAX as f64
+                && multiple <= MAX_SAFE_INTEGER as f64
                 && multiple.fract() == 0.0
             {
                 return (v % (multiple as i64)) == 0;
@@ -308,13 +310,18 @@ pub(crate) mod bignum {
     /// Try to parse a Number as `BigInt` if it's outside i64 range or for compile-time
     /// schema values that need exact representation
     pub(crate) fn try_parse_bigint(num: &Number) -> Option<BigInt> {
+        use super::MAX_SAFE_INTEGER;
+
         let num_str = num.as_str();
 
-        // Only parse as BigInt if it doesn't fit in i64
-        // We include u64 values beyond i64::MAX because they can't be accurately
-        // represented when cast to i64, which is needed for certain operations
-        if num.as_i64().is_some() {
-            return None;
+        // Parse as BigInt if it's beyond 2^53 (where f64 loses precision).
+        // Values beyond 2^53 need BigInt for accurate arithmetic even if they fit in i64/u64.
+        // Note: If as_i64() fails but as_u64() succeeds, the value is in [2^63, 2^64-1],
+        // which is always > 2^53, so no additional check needed for u64.
+        if let Some(v) = num.as_i64() {
+            if v.unsigned_abs() <= MAX_SAFE_INTEGER {
+                return None;
+            }
         }
 
         let has_fraction_or_exponent = num_str.bytes().any(|b| b == b'.' || b == b'e' || b == b'E');
