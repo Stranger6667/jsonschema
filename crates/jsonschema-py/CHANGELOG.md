@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `multipleOf` validation for large integers beyond `i64::MAX`.
+
 ## [0.37.4] - 2025-11-30
 
 ### Fixed

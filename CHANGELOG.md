@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `multipleOf` validation for large u64 values beyond `i64::MAX` with `arbitrary-precision` feature.
+
 ## [0.37.4] - 2025-11-30
 
 ### Fixed

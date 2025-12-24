@@ -87,6 +87,20 @@ pub(crate) fn is_multiple_of_float(value: &Number, multiple: f64) -> bool {
 }
 
 pub(crate) fn is_multiple_of_integer(value: &Number, multiple: f64) -> bool {
+    // For large u64 values beyond i64::MAX, as_f64() loses precision (since they exceed 2^53).
+    // Use u64 arithmetic directly for these cases.
+    #[cfg(feature = "arbitrary-precision")]
+    if let Some(v) = value.as_u64() {
+        // If as_i64() returns None, the value is > i64::MAX, which is > 2^53
+        // and therefore cannot be exactly represented in f64
+        if value.as_i64().is_none() {
+            // Use u64 modulo when the divisor fits in u64
+            if multiple > 0.0 && multiple <= u64::MAX as f64 && multiple.fract() == 0.0 {
+                return (v % (multiple as u64)) == 0;
+            }
+        }
+    }
+
     if let Some(value_f64) = value.as_f64() {
         // As the divisor has its fractional part as zero, then any value with a non-zero
         // fractional part can't be a multiple of this divisor, therefore it is short-circuited
