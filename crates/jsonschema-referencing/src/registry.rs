@@ -897,6 +897,8 @@ async fn process_resources_async(
     resolution_cache: &mut UriCache,
     default_draft: Draft,
 ) -> Result<Vec<Arc<Uri<String>>>, Error> {
+    type ExternalRefsByBase = AHashMap<Uri<String>, Vec<(String, Uri<String>, ReferenceKind)>>;
+
     let mut state = ProcessingState::new();
     process_input_resources(pairs, documents, resources, &mut state)?;
 
@@ -908,52 +910,63 @@ async fn process_resources_async(
         process_queue(&mut state, resources, anchors, resolution_cache)?;
 
         if !state.external.is_empty() {
-            let data = state
-                .external
-                .drain()
-                .filter_map(|(original, uri, kind)| {
-                    let mut fragmentless = uri.clone();
-                    fragmentless.set_fragment(None);
-                    if resources.contains_key(&fragmentless) {
-                        None
-                    } else {
-                        Some((original, uri, kind, fragmentless))
-                    }
-                })
-                .collect::<Vec<_>>();
+            // Group external refs by fragmentless URI to avoid fetching the same resource multiple times.
+            // Multiple refs may point to the same base URL with different fragments (e.g., #/$defs/foo and #/$defs/bar).
+            // We need to fetch each unique base URL only once, then handle all fragment refs against it.
+            let mut grouped = ExternalRefsByBase::new();
+            for (original, uri, kind) in state.external.drain() {
+                let mut fragmentless = uri.clone();
+                fragmentless.set_fragment(None);
+                if !resources.contains_key(&fragmentless) {
+                    grouped
+                        .entry(fragmentless)
+                        .or_default()
+                        .push((original, uri, kind));
+                }
+            }
 
+            // Fetch each unique fragmentless URI once
+            let entries: Vec<_> = grouped.into_iter().collect();
             let results = {
-                let futures = data
+                let futures = entries
                     .iter()
-                    .map(|(_, _, _, fragmentless)| retriever.retrieve(fragmentless));
+                    .map(|(fragmentless, _)| retriever.retrieve(fragmentless));
                 futures::future::join_all(futures).await
             };
 
-            for ((original, uri, kind, fragmentless), result) in data.iter().zip(results) {
+            for ((fragmentless, refs), result) in entries.into_iter().zip(results) {
                 let retrieved = match result {
                     Ok(retrieved) => retrieved,
                     Err(error) => {
-                        handle_retrieve_error(uri, original, fragmentless, error, *kind)?;
+                        // Report error for the first ref that caused this fetch
+                        if let Some((original, uri, kind)) = refs.into_iter().next() {
+                            handle_retrieve_error(&uri, &original, &fragmentless, error, kind)?;
+                        }
                         continue;
                     }
                 };
 
                 let (key, resource) = create_resource(
                     retrieved,
-                    fragmentless.clone(),
+                    fragmentless,
                     default_draft,
                     documents,
                     resources,
                     &mut state.custom_metaschemas,
                 );
-                handle_fragment(
-                    uri,
-                    &resource,
-                    &key,
-                    default_draft,
-                    &mut state.queue,
-                    Arc::clone(&key),
-                );
+
+                // Handle all fragment refs that pointed to this base URL
+                for (_, uri, _) in &refs {
+                    handle_fragment(
+                        uri,
+                        &resource,
+                        &key,
+                        default_draft,
+                        &mut state.queue,
+                        Arc::clone(&key),
+                    );
+                }
+
                 state.queue.push_back((key, resource, None));
             }
         }
@@ -1815,7 +1828,6 @@ mod tests {
 
     #[test]
     fn test_invalid_reference() {
-        // Found via fuzzing
         let resource = Draft::Draft202012.create_resource(json!({"$schema": "$##"}));
         let _ = Registry::try_new("http://#/", resource);
     }
@@ -1826,7 +1838,10 @@ mod async_tests {
     use crate::{uri, DefaultRetriever, Draft, Registry, Resource, Uri};
     use ahash::AHashMap;
     use serde_json::{json, Value};
-    use std::error::Error;
+    use std::{
+        error::Error,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
 
     struct TestAsyncRetriever {
         schemas: AHashMap<String, Value>,
@@ -2051,6 +2066,106 @@ mod async_tests {
         assert_eq!(
             resolved.contents(),
             &json!({"type": "string", "minLength": 1})
+        );
+    }
+
+    // Multiple refs to the same external schema with different fragments were fetched multiple times in async mode.
+    #[tokio::test]
+    async fn test_async_registry_with_duplicate_fragment_refs() {
+        static FETCH_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+        struct CountingRetriever {
+            inner: TestAsyncRetriever,
+        }
+
+        #[cfg_attr(target_family = "wasm", async_trait::async_trait(?Send))]
+        #[cfg_attr(not(target_family = "wasm"), async_trait::async_trait)]
+        impl crate::AsyncRetrieve for CountingRetriever {
+            async fn retrieve(
+                &self,
+                uri: &Uri<String>,
+            ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+                FETCH_COUNT.fetch_add(1, Ordering::SeqCst);
+                self.inner.retrieve(uri).await
+            }
+        }
+
+        FETCH_COUNT.store(0, Ordering::SeqCst);
+
+        let retriever = CountingRetriever {
+            inner: TestAsyncRetriever::with_schema(
+                "http://example.com/external",
+                json!({
+                    "$defs": {
+                        "foo": {
+                            "type": "object",
+                            "properties": {
+                                "nested": { "type": "string" }
+                            }
+                        },
+                        "bar": {
+                            "type": "object",
+                            "properties": {
+                                "value": { "type": "integer" }
+                            }
+                        }
+                    }
+                }),
+            ),
+        };
+
+        // Schema references the same external URL with different fragments
+        let registry = Registry::options()
+            .async_retriever(retriever)
+            .build([(
+                "http://example.com/main",
+                Resource::from_contents(json!({
+                    "type": "object",
+                    "properties": {
+                        "name": { "$ref": "http://example.com/external#/$defs/foo" },
+                        "age": { "$ref": "http://example.com/external#/$defs/bar" }
+                    }
+                })),
+            )])
+            .await
+            .expect("Invalid resource");
+
+        // Should only fetch the external schema once
+        let fetches = FETCH_COUNT.load(Ordering::SeqCst);
+        assert_eq!(
+            fetches, 1,
+            "External schema should be fetched only once, but was fetched {fetches} times"
+        );
+
+        let resolver = registry
+            .try_resolver("http://example.com/main")
+            .expect("Invalid base URI");
+
+        // Verify both fragment references resolve correctly
+        let foo = resolver
+            .lookup("http://example.com/external#/$defs/foo")
+            .expect("Lookup failed");
+        assert_eq!(
+            foo.contents(),
+            &json!({
+                "type": "object",
+                "properties": {
+                    "nested": { "type": "string" }
+                }
+            })
+        );
+
+        let bar = resolver
+            .lookup("http://example.com/external#/$defs/bar")
+            .expect("Lookup failed");
+        assert_eq!(
+            bar.contents(),
+            &json!({
+                "type": "object",
+                "properties": {
+                    "value": { "type": "integer" }
+                }
+            })
         );
     }
 }

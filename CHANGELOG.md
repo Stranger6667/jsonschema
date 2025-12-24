@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- Use-after-free in async `$ref` resolution when multiple refs target the same external URL with different fragments. [#906](https://github.com/Stranger6667/jsonschema/issues/906)
 - `multipleOf` validation for large u64 values beyond `i64::MAX` with `arbitrary-precision` feature.
 - `Validator` not being `Send + Sync` on WASM targets. [#915](https://github.com/Stranger6667/jsonschema/issues/915)
 
