@@ -145,13 +145,18 @@ impl PendingTarget {
 
 impl Validate for PendingSchemaNode {
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if ctx.enter(self.node_id(), instance) {
-            // Cycle detected - this (node, instance) pair is already being validated.
-            // A pure reference cycle is equivalent to `true` schema.
-            return true;
+        let node_id = self.node_id();
+        // Check memoization cache first (only for arrays/objects)
+        if let Some(cached) = ctx.get_cached_result(node_id, instance) {
+            return cached;
+        }
+        if ctx.enter(node_id, instance) {
+            return true; // Cycle detected
         }
         let result = self.with_node(|node| node.is_valid(instance, ctx));
-        ctx.exit(self.node_id(), instance);
+        ctx.exit(node_id, instance);
+        // Cache result for recursive schemas
+        ctx.cache_result(node_id, instance, result);
         result
     }
 
@@ -414,10 +419,7 @@ impl SchemaNode {
 impl Validate for SchemaNode {
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         match self.validators.as_ref() {
-            // If we only have one validator then calling it's `is_valid` directly does
-            // actually save the 20 or so instructions required to call the `slice::Iter::all`
-            // implementation. Validators at the leaf of a tree are all single node validators so
-            // this optimization can have significant cumulative benefits
+            // Single validator fast path
             NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
                 kvs.validators[0].validator.is_valid(instance, ctx)
             }

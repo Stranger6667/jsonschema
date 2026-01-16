@@ -17,6 +17,7 @@
 ### Performance
 
 - `evaluate()`: 4.5-30x faster on complex schemas, 12-89% faster overall.
+- Recursive schemas with `oneOf`/`anyOf`: ~4000x faster via memoization. [#930](https://github.com/Stranger6667/jsonschema/issues/930)
 
 ## [0.38.1] - 2025-12-25
 

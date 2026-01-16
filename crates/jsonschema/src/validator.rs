@@ -8,17 +8,18 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     Draft, ValidationError, ValidationOptions,
 };
+use ahash::AHashMap;
 use serde_json::Value;
 
 // Re-export LazyEvaluationPath from paths module
 pub(crate) use crate::paths::LazyEvaluationPath;
 
-/// Context for `validate()`, `iter_errors()`, and `evaluate()` operations.
-///
-/// Tracks cycle detection during validation.
+/// Validation state for cycle detection and memoization.
 #[derive(Default)]
 pub struct ValidationContext {
     validating: Vec<(usize, usize)>,
+    /// Lazy-initialized cache for recursive schema validation.
+    is_valid_cache: Option<AHashMap<(usize, usize), bool>>,
 }
 
 impl ValidationContext {
@@ -26,7 +27,7 @@ impl ValidationContext {
         Self::default()
     }
 
-    /// Returns `true` if cycle detected, `false` otherwise (and adds pair to stack).
+    /// Returns `true` if cycle detected.
     #[inline]
     pub(crate) fn enter(&mut self, node_id: usize, instance: &Value) -> bool {
         let key = (node_id, std::ptr::from_ref::<Value>(instance) as usize);
@@ -39,12 +40,36 @@ impl ValidationContext {
 
     #[inline]
     pub(crate) fn exit(&mut self, node_id: usize, instance: &Value) {
+        let key = (node_id, std::ptr::from_ref::<Value>(instance) as usize);
         let popped = self.validating.pop();
         debug_assert_eq!(
             popped,
-            Some((node_id, std::ptr::from_ref::<Value>(instance) as usize)),
+            Some(key),
             "ValidationContext::exit called out of order"
         );
+    }
+
+    /// Only caches arrays/objects to avoid false hits from stack address reuse.
+    #[inline]
+    pub(crate) fn get_cached_result(&self, node_id: usize, instance: &Value) -> Option<bool> {
+        if !matches!(instance, Value::Array(_) | Value::Object(_)) {
+            return None;
+        }
+        let cache = self.is_valid_cache.as_ref()?;
+        let key = (node_id, std::ptr::from_ref::<Value>(instance) as usize);
+        cache.get(&key).copied()
+    }
+
+    /// Only caches arrays/objects to avoid false hits from stack address reuse.
+    #[inline]
+    pub(crate) fn cache_result(&mut self, node_id: usize, instance: &Value, result: bool) {
+        if !matches!(instance, Value::Array(_) | Value::Object(_)) {
+            return;
+        }
+        let key = (node_id, std::ptr::from_ref::<Value>(instance) as usize);
+        self.is_valid_cache
+            .get_or_insert_with(AHashMap::new)
+            .insert(key, result);
     }
 }
 
