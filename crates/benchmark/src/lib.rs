@@ -8,6 +8,7 @@ pub static GEOJSON: &[u8] = include_bytes!("../data/geojson.json");
 pub static CITM_SCHEMA: &[u8] = include_bytes!("../data/citm_catalog_schema.json");
 pub static FAST_SCHEMA: &[u8] = include_bytes!("../data/fast_schema.json");
 pub static FHIR_SCHEMA: &[u8] = include_bytes!("../data/fhir.schema.json");
+pub static RECURSIVE_SCHEMA: &[u8] = include_bytes!("../data/recursive_schema.json");
 
 static ZUORA: &[u8] = include_bytes!("../data/zuora.json");
 static KUBERNETES: &[u8] = include_bytes!("../data/kubernetes.json");
@@ -16,6 +17,7 @@ static CITM: &[u8] = include_bytes!("../data/citm_catalog.json");
 static FAST_VALID: &[u8] = include_bytes!("../data/fast_valid.json");
 static FAST_INVALID: &[u8] = include_bytes!("../data/fast_invalid.json");
 static FHIR: &[u8] = include_bytes!("../data/patient-example-d.json");
+static RECURSIVE_INSTANCE: &[u8] = include_bytes!("../data/recursive_instance.json");
 
 /// Parses the given JSON fixture slice into a `serde_json::Value`.
 ///
@@ -35,6 +37,7 @@ pub enum Benchmark {
     CITM,
     Fast,
     Fhir,
+    Recursive,
 }
 
 type BenchFunc<'a> = dyn FnMut(&str, &Value, &[BenchInstance]) + 'a;
@@ -61,7 +64,7 @@ pub struct BenchInstance {
 }
 
 pub struct BenchmarkSuite {
-    benchmarks: [LazyLock<BenchData>; 6],
+    benchmarks: [LazyLock<BenchData>; 7],
 }
 
 impl BenchmarkSuite {
@@ -120,6 +123,14 @@ impl BenchmarkSuite {
                     instances: vec![BenchInstance {
                         name: "Fhir".to_string(),
                         data: read_json(FHIR),
+                    }],
+                }),
+                LazyLock::new(|| BenchData {
+                    name: "Recursive",
+                    schema: read_json(RECURSIVE_SCHEMA),
+                    instances: vec![BenchInstance {
+                        name: "StructuredContent".to_string(),
+                        data: read_json(RECURSIVE_INSTANCE),
                     }],
                 }),
             ],

@@ -1,0 +1,164 @@
+[
+  [
+    "term1",
+    "reading1",
+    "",
+    "",
+    0,
+    [
+      {
+        "type": "structured-content",
+        "content": [
+          {
+            "tag": "div",
+            "data": {"content": "sense-group"},
+            "content": [
+              {
+                "tag": "span",
+                "title": "noun",
+                "data": {"class": "tag", "code": "n", "content": "part-of-speech-info"},
+                "content": "noun"
+              },
+              {
+                "tag": "div",
+                "data": {"content": "sense"},
+                "content": [
+                  {
+                    "tag": "ul",
+                    "data": {"content": "glossary"},
+                    "content": {
+                      "tag": "li",
+                      "content": "definition text here"
+                    }
+                  },
+                  {
+                    "tag": "div",
+                    "data": {"content": "extra-info"},
+                    "content": {
+                      "tag": "div",
+                      "content": {
+                        "tag": "div",
+                        "data": {"class": "extra-box", "content": "xref"},
+                        "content": [
+                          {
+                            "tag": "div",
+                            "data": {"content": "xref-content"},
+                            "content": [
+                              {
+                                "tag": "span",
+                                "lang": "en",
+                                "data": {"content": "reference-label"},
+                                "content": "See also"
+                              },
+                              {
+                                "tag": "a",
+                                "lang": "ja",
+                                "href": "?query=test",
+                                "content": [
+                                  {
+                                    "tag": "ruby",
+                                    "content": [
+                                      "kanji",
+                                      {"tag": "rt", "content": "reading"}
+                                    ]
+                                  },
+                                  "text",
+                                  {
+                                    "tag": "ruby",
+                                    "content": [
+                                      "more",
+                                      {"tag": "rt", "content": "ruby"}
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "tag": "div",
+                            "data": {"content": "xref-glossary"},
+                            "content": "cross reference"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "tag": "div",
+            "data": {"content": "attribution"},
+            "content": {
+              "tag": "a",
+              "href": "https://example.com",
+              "content": "Source"
+            }
+          }
+        ]
+      }
+    ],
+    1000000,
+    ""
+  ],
+  [
+    "term2",
+    "reading2",
+    "tag1 tag2",
+    "v5",
+    100,
+    [
+      {
+        "type": "structured-content",
+        "content": {
+          "tag": "div",
+          "content": [
+            {"tag": "span", "content": "simple"},
+            {"tag": "div", "content": {"tag": "span", "content": "nested"}},
+            ["array", "of", "strings"],
+            {
+              "tag": "table",
+              "content": {
+                "tag": "tr",
+                "content": [
+                  {"tag": "td", "content": "cell1"},
+                  {"tag": "td", "content": "cell2"}
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "plain string definition"
+    ],
+    1000001,
+    "termtag"
+  ],
+  [
+    "term3",
+    "",
+    null,
+    "",
+    -50,
+    [
+      {
+        "type": "structured-content",
+        "content": {
+          "tag": "ul",
+          "content": [
+            {"tag": "li", "content": "item 1"},
+            {"tag": "li", "content": {"tag": "span", "style": {"fontWeight": "bold"}, "content": "bold item"}},
+            {"tag": "li", "content": [
+              "mixed ",
+              {"tag": "span", "content": "content"},
+              " here"
+            ]}
+          ]
+        }
+      }
+    ],
+    1000002,
+    ""
+  ]
+]
