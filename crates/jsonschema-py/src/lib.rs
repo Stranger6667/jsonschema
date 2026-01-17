@@ -627,6 +627,45 @@ thread_local! {
     static LAST_FORMAT_ERROR: RefCell<Option<PyErr>> = const { RefCell::new(None) };
 }
 
+// Custom keyword validator - instantiated with (parent_schema, value, schema_path), must have validate(instance) method
+struct CustomKeyword {
+    instance: Py<PyAny>,
+}
+
+impl jsonschema::Keyword for CustomKeyword {
+    fn validate<'i>(
+        &self,
+        instance: &'i serde_json::Value,
+    ) -> Result<(), jsonschema::ValidationError<'i>> {
+        Python::attach(|py| {
+            let py_instance = value_to_python(py, instance).map_err(|e| {
+                jsonschema::ValidationError::custom(format!(
+                    "Failed to convert instance to Python: {e}"
+                ))
+            })?;
+
+            match self.instance.call_method1(py, "validate", (py_instance,)) {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    let msg = e.value(py).to_string();
+                    Err(jsonschema::ValidationError::custom(msg))
+                }
+            }
+        })
+    }
+
+    fn is_valid(&self, instance: &serde_json::Value) -> bool {
+        Python::attach(|py| {
+            let Ok(py_instance) = value_to_python(py, instance) else {
+                return false;
+            };
+            self.instance
+                .call_method1(py, "validate", (py_instance,))
+                .is_ok()
+        })
+    }
+}
+
 fn make_options(
     draft: Option<u8>,
     formats: Option<&Bound<'_, PyDict>>,
@@ -638,6 +677,7 @@ fn make_options(
     pattern_options: Option<&Bound<'_, PyAny>>,
     email_options: Option<&Bound<'_, PyAny>>,
     http_options: Option<&Bound<'_, PyAny>>,
+    keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<jsonschema::ValidationOptions> {
     let mut options = jsonschema::options();
     if let Some(raw_draft_version) = draft {
@@ -772,6 +812,67 @@ fn make_options(
             exceptions::PyRuntimeError::new_err(format!("Failed to configure HTTP options: {e}"))
         })?;
     }
+    if let Some(keywords) = keywords {
+        for (name, callback) in keywords.iter() {
+            let name_str = name.to_string();
+            if !callback.is_callable() {
+                return Err(exceptions::PyValueError::new_err(format!(
+                    "Keyword validator for '{name_str}' must be a callable",
+                )));
+            }
+
+            let callback: Py<PyAny> = callback.clone().unbind();
+            let name_for_closure = name_str.clone();
+
+            // Instantiate with (parent_schema, value, schema_path), must have validate(instance) method
+            options = options.with_keyword(
+                name_str,
+                move |parent: &serde_json::Map<String, serde_json::Value>,
+                      value: &serde_json::Value,
+                      path: jsonschema::paths::Location| {
+                    let name_for_error = name_for_closure.clone();
+                    Python::attach(|py| {
+                        let py_schema =
+                            value_to_python(py, &serde_json::Value::Object(parent.clone()))
+                                .map_err(|e| {
+                                    jsonschema::ValidationError::custom(format!(
+                                        "Failed to convert schema to Python: {e}"
+                                    ))
+                                })?;
+                        let py_value = value_to_python(py, value).map_err(|e| {
+                            jsonschema::ValidationError::custom(format!(
+                                "Failed to convert keyword value to Python: {e}"
+                            ))
+                        })?;
+                        let py_path: Vec<Py<PyAny>> = path
+                            .iter()
+                            .map(|segment| match segment {
+                                jsonschema::paths::LocationSegment::Property(p) => {
+                                    PyString::new(py, p.as_ref()).into_any().unbind()
+                                }
+                                jsonschema::paths::LocationSegment::Index(i) => {
+                                    pyo3::types::PyInt::new(py, i).into_any().unbind()
+                                }
+                            })
+                            .collect();
+                        let py_path_list = PyList::new(py, py_path).map_err(|e| {
+                            jsonschema::ValidationError::custom(format!(
+                                "Failed to create path list: {e}"
+                            ))
+                        })?;
+
+                        match callback.call1(py, (py_schema, py_value, py_path_list)) {
+                            Ok(instance) => Ok(Box::new(CustomKeyword { instance })
+                                as Box<dyn jsonschema::Keyword>),
+                            Err(e) => Err(jsonschema::ValidationError::custom(format!(
+                                "Failed to instantiate keyword class '{name_for_error}': {e}"
+                            ))),
+                        }
+                    })
+                },
+            );
+        }
+    }
     Ok(options)
 }
 
@@ -881,7 +982,7 @@ impl Write for StringWriter<'_> {
     }
 }
 
-/// is_valid(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None)
+/// is_valid(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None)
 ///
 /// A shortcut for validating the input instance against the schema.
 ///
@@ -891,7 +992,7 @@ impl Write for StringWriter<'_> {
 /// If your workflow implies validating against the same schema, consider using `validator_for(...).is_valid`
 /// instead.
 #[pyfunction]
-#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None))]
+#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None))]
 #[allow(clippy::needless_pass_by_value)]
 fn is_valid(
     py: Python<'_>,
@@ -908,6 +1009,7 @@ fn is_valid(
     pattern_options: Option<&Bound<'_, PyAny>>,
     email_options: Option<&Bound<'_, PyAny>>,
     http_options: Option<&Bound<'_, PyAny>>,
+    keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<bool> {
     let options = make_options(
         draft,
@@ -920,6 +1022,7 @@ fn is_valid(
         pattern_options,
         email_options,
         http_options,
+        keywords,
     )?;
     let schema = ser::to_value(schema)?;
     match options.build(&schema) {
@@ -932,7 +1035,7 @@ fn is_valid(
     }
 }
 
-/// validate(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None)
+/// validate(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None)
 ///
 /// Validate the input instance and raise `ValidationError` in the error case
 ///
@@ -944,7 +1047,7 @@ fn is_valid(
 /// If your workflow implies validating against the same schema, consider using `validator_for(...).validate`
 /// instead.
 #[pyfunction]
-#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None))]
+#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None))]
 #[allow(clippy::needless_pass_by_value)]
 fn validate(
     py: Python<'_>,
@@ -961,6 +1064,7 @@ fn validate(
     pattern_options: Option<&Bound<'_, PyAny>>,
     email_options: Option<&Bound<'_, PyAny>>,
     http_options: Option<&Bound<'_, PyAny>>,
+    keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<()> {
     let options = make_options(
         draft,
@@ -973,6 +1077,7 @@ fn validate(
         pattern_options,
         email_options,
         http_options,
+        keywords,
     )?;
     let schema = ser::to_value(schema)?;
     match options.build(&schema) {
@@ -981,7 +1086,7 @@ fn validate(
     }
 }
 
-/// iter_errors(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None)
+/// iter_errors(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None)
 ///
 /// Iterate the validation errors of the input instance
 ///
@@ -992,7 +1097,7 @@ fn validate(
 /// If your workflow implies validating against the same schema, consider using `validator_for().iter_errors`
 /// instead.
 #[pyfunction]
-#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None))]
+#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None))]
 #[allow(clippy::needless_pass_by_value)]
 fn iter_errors(
     py: Python<'_>,
@@ -1009,6 +1114,7 @@ fn iter_errors(
     pattern_options: Option<&Bound<'_, PyAny>>,
     email_options: Option<&Bound<'_, PyAny>>,
     http_options: Option<&Bound<'_, PyAny>>,
+    keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<ValidationErrorIter> {
     let options = make_options(
         draft,
@@ -1021,6 +1127,7 @@ fn iter_errors(
         pattern_options,
         email_options,
         http_options,
+        keywords,
     )?;
     let schema = ser::to_value(schema)?;
     match options.build(&schema) {
@@ -1096,7 +1203,7 @@ fn iter_errors(
 /// ```
 ///
 #[pyfunction]
-#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, base_uri=None, pattern_options=None, email_options=None, http_options=None))]
+#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None))]
 #[allow(clippy::needless_pass_by_value)]
 fn evaluate(
     py: Python<'_>,
@@ -1112,6 +1219,7 @@ fn evaluate(
     pattern_options: Option<&Bound<'_, PyAny>>,
     email_options: Option<&Bound<'_, PyAny>>,
     http_options: Option<&Bound<'_, PyAny>>,
+    keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyEvaluation> {
     let options = make_options(
         draft,
@@ -1124,6 +1232,7 @@ fn evaluate(
         pattern_options,
         email_options,
         http_options,
+        keywords,
     )?;
     let schema = ser::to_value(schema)?;
     let instance = ser::to_value(instance)?;
@@ -1154,7 +1263,7 @@ struct Validator {
     mask: Option<String>,
 }
 
-/// validator_for(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None)
+/// validator_for(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None)
 ///
 /// Create a validator for the input schema with automatic draft detection and default options.
 ///
@@ -1163,7 +1272,7 @@ struct Validator {
 ///     False
 ///
 #[pyfunction]
-#[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None))]
+#[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None))]
 fn validator_for(
     py: Python<'_>,
     schema: &Bound<'_, PyAny>,
@@ -1177,6 +1286,7 @@ fn validator_for(
     pattern_options: Option<&Bound<'_, PyAny>>,
     email_options: Option<&Bound<'_, PyAny>>,
     http_options: Option<&Bound<'_, PyAny>>,
+    keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Validator> {
     validator_for_impl(
         py,
@@ -1192,6 +1302,7 @@ fn validator_for(
         pattern_options,
         email_options,
         http_options,
+        keywords,
     )
 }
 
@@ -1209,6 +1320,7 @@ fn validator_for_impl(
     pattern_options: Option<&Bound<'_, PyAny>>,
     email_options: Option<&Bound<'_, PyAny>>,
     http_options: Option<&Bound<'_, PyAny>>,
+    keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Validator> {
     let obj_ptr = schema.as_ptr();
     let object_type = unsafe { pyo3::ffi::Py_TYPE(obj_ptr) };
@@ -1232,6 +1344,7 @@ fn validator_for_impl(
         pattern_options,
         email_options,
         http_options,
+        keywords,
     )?;
     match options.build(&schema) {
         Ok(validator) => Ok(Validator { validator, mask }),
@@ -1242,7 +1355,7 @@ fn validator_for_impl(
 #[pymethods]
 impl Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry = None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry = None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
@@ -1256,6 +1369,7 @@ impl Validator {
         pattern_options: Option<&Bound<'_, PyAny>>,
         email_options: Option<&Bound<'_, PyAny>>,
         http_options: Option<&Bound<'_, PyAny>>,
+        keywords: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
         validator_for(
             py,
@@ -1270,6 +1384,7 @@ impl Validator {
             pattern_options,
             email_options,
             http_options,
+            keywords,
         )
     }
     /// is_valid(instance)
@@ -1376,7 +1491,7 @@ impl Validator {
     }
 }
 
-/// Draft4Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None)
+/// Draft4Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None)
 ///
 /// A JSON Schema Draft 4 validator.
 ///
@@ -1390,7 +1505,7 @@ struct Draft4Validator;
 #[pymethods]
 impl Draft4Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
@@ -1404,6 +1519,7 @@ impl Draft4Validator {
         pattern_options: Option<&Bound<'_, PyAny>>,
         email_options: Option<&Bound<'_, PyAny>>,
         http_options: Option<&Bound<'_, PyAny>>,
+        keywords: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<(Self, Validator)> {
         Ok((
             Draft4Validator {},
@@ -1421,12 +1537,13 @@ impl Draft4Validator {
                 pattern_options,
                 email_options,
                 http_options,
+                keywords,
             )?,
         ))
     }
 }
 
-/// Draft6Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None)
+/// Draft6Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None)
 ///
 /// A JSON Schema Draft 6 validator.
 ///
@@ -1440,7 +1557,7 @@ struct Draft6Validator;
 #[pymethods]
 impl Draft6Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
@@ -1454,6 +1571,7 @@ impl Draft6Validator {
         pattern_options: Option<&Bound<'_, PyAny>>,
         email_options: Option<&Bound<'_, PyAny>>,
         http_options: Option<&Bound<'_, PyAny>>,
+        keywords: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<(Self, Validator)> {
         Ok((
             Draft6Validator {},
@@ -1471,12 +1589,13 @@ impl Draft6Validator {
                 pattern_options,
                 email_options,
                 http_options,
+                keywords,
             )?,
         ))
     }
 }
 
-/// Draft7Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None)
+/// Draft7Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None)
 ///
 /// A JSON Schema Draft 7 validator.
 ///
@@ -1490,7 +1609,7 @@ struct Draft7Validator;
 #[pymethods]
 impl Draft7Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
@@ -1504,6 +1623,7 @@ impl Draft7Validator {
         pattern_options: Option<&Bound<'_, PyAny>>,
         email_options: Option<&Bound<'_, PyAny>>,
         http_options: Option<&Bound<'_, PyAny>>,
+        keywords: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<(Self, Validator)> {
         Ok((
             Draft7Validator {},
@@ -1521,12 +1641,13 @@ impl Draft7Validator {
                 pattern_options,
                 email_options,
                 http_options,
+                keywords,
             )?,
         ))
     }
 }
 
-/// Draft201909Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None)
+/// Draft201909Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None)
 ///
 /// A JSON Schema Draft 2019-09 validator.
 ///
@@ -1540,7 +1661,7 @@ struct Draft201909Validator;
 #[pymethods]
 impl Draft201909Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
@@ -1554,6 +1675,7 @@ impl Draft201909Validator {
         pattern_options: Option<&Bound<'_, PyAny>>,
         email_options: Option<&Bound<'_, PyAny>>,
         http_options: Option<&Bound<'_, PyAny>>,
+        keywords: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<(Self, Validator)> {
         Ok((
             Draft201909Validator {},
@@ -1571,12 +1693,13 @@ impl Draft201909Validator {
                 pattern_options,
                 email_options,
                 http_options,
+                keywords,
             )?,
         ))
     }
 }
 
-/// Draft202012Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None)
+/// Draft202012Validator(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None)
 ///
 /// A JSON Schema Draft 2020-12 validator.
 ///
@@ -1590,7 +1713,7 @@ struct Draft202012Validator;
 #[pymethods]
 impl Draft202012Validator {
     #[new]
-    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None))]
+    #[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None))]
     fn new(
         py: Python<'_>,
         schema: &Bound<'_, PyAny>,
@@ -1604,6 +1727,7 @@ impl Draft202012Validator {
         pattern_options: Option<&Bound<'_, PyAny>>,
         email_options: Option<&Bound<'_, PyAny>>,
         http_options: Option<&Bound<'_, PyAny>>,
+        keywords: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<(Self, Validator)> {
         Ok((
             Draft202012Validator {},
@@ -1621,6 +1745,7 @@ impl Draft202012Validator {
                 pattern_options,
                 email_options,
                 http_options,
+                keywords,
             )?,
         ))
     }

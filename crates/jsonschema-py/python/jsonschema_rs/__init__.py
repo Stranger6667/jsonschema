@@ -26,9 +26,7 @@ from .jsonschema_rs import (
     validator_for,
 )
 
-Validator: TypeAlias = (
-    Draft4Validator | Draft6Validator | Draft7Validator | Draft201909Validator | Draft202012Validator
-)
+Validator: TypeAlias = Draft4Validator | Draft6Validator | Draft7Validator | Draft201909Validator | Draft202012Validator
 
 
 class ValidationError(ValueError):

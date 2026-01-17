@@ -49,6 +49,7 @@ for annotation in evaluation.annotations():
 - 📚 Full support for popular JSON Schema drafts
 - 🌐 Remote reference fetching (network/file)
 - 🔧 Custom format validators
+- 🔑 Custom keyword validators
 - ✨ Meta-schema validation for schema documents
 
 ### Supported drafts
@@ -122,6 +123,32 @@ validator = jsonschema_rs.validator_for(
 )
 validator.is_valid("USD")  # True
 validator.is_valid("invalid")  # False
+```
+
+### Custom Keywords
+
+You can extend JSON Schema with custom keywords for domain-specific validation rules.
+Custom keywords are classes that receive the keyword value during schema compilation
+and validate instances at runtime:
+
+```python
+import jsonschema_rs
+
+class DivisibleBy:
+    def __init__(self, parent_schema, value, schema_path):
+        self.divisor = value
+
+    def validate(self, instance):
+        if isinstance(instance, int) and instance % self.divisor != 0:
+            raise ValueError(f"{instance} is not divisible by {self.divisor}")
+
+
+validator = jsonschema_rs.validator_for(
+    {"type": "integer", "divisibleBy": 3},
+    keywords={"divisibleBy": DivisibleBy},
+)
+validator.is_valid(9)   # True
+validator.is_valid(10)  # False
 ```
 
 Additional configuration options are available for fine-tuning the validation process:

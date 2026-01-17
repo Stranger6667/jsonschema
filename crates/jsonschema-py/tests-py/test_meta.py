@@ -76,13 +76,21 @@ def test_type_errors(invalid_input):
     [
         # Simple custom metaschema that only allows type: object
         (
-            {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "properties": {"type": {"const": "object"}}},
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {"type": {"const": "object"}},
+            },
             {"$schema": "http://example.com/meta", "type": "object"},
             True,
         ),
         # Schema violating custom metaschema
         (
-            {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "properties": {"type": {"const": "object"}}},
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {"type": {"const": "object"}},
+            },
             {"$schema": "http://example.com/meta", "type": "string"},
             False,
         ),
@@ -186,10 +194,12 @@ def test_custom_metaschema_circular_reference():
         "type": "object",
     }
 
-    registry = Registry([
-        ("http://example.com/meta1", meta1),
-        ("http://example.com/meta2", meta2),
-    ])
+    registry = Registry(
+        [
+            ("http://example.com/meta1", meta1),
+            ("http://example.com/meta2", meta2),
+        ]
+    )
 
     schema = {"$schema": "http://example.com/meta1", "type": "string"}
 
@@ -264,9 +274,7 @@ def test_complex_custom_metaschema():
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "Core schema definition",
         "type": "object",
-        "allOf": [
-            {"$ref": "#/$defs/core"}
-        ],
+        "allOf": [{"$ref": "#/$defs/core"}],
         "properties": {
             "properties": {
                 "type": "object",

@@ -4,6 +4,7 @@
 
 ### Added
 
+- Custom keyword validators via the `keywords` parameter for extending JSON Schema with domain-specific validation rules.
 - `HttpOptions` for configuring HTTP client behavior (timeouts, TLS verification, custom CA certificates) when fetching external schemas.
 
 ## [0.39.0] - 2026-01-16

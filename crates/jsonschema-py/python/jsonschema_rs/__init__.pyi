@@ -7,6 +7,31 @@ _FormatFunc = TypeVar("_FormatFunc", bound=Callable[[str], bool])
 JSONType: TypeAlias = dict[str, Any] | list | str | int | float | Decimal | bool | None
 JSONPrimitive: TypeAlias = str | int | float | Decimal | bool | None
 
+class KeywordValidator(Protocol):
+    """Protocol for custom keyword validators.
+
+    Custom keywords are classes instantiated with (parent_schema, value, schema_path)
+    that implement a validate(instance) method which raises an exception on failure.
+
+    Example:
+        class DivisibleBy:
+            def __init__(self, parent_schema, value, schema_path):
+                self.divisor = value
+
+            def validate(self, instance):
+                if isinstance(instance, int) and instance % self.divisor != 0:
+                    raise ValueError(f"{instance} is not divisible by {self.divisor}")
+
+        validator = jsonschema_rs.validator_for(
+            {"divisibleBy": 3},
+            keywords={"divisibleBy": DivisibleBy},
+        )
+
+    """
+
+    def __init__(self, parent_schema: dict[str, Any], value: Any, schema_path: list[str | int]) -> None: ...
+    def validate(self, instance: JSONType) -> None: ...
+
 class EvaluationAnnotation(TypedDict):
     schemaLocation: str
     absoluteKeywordLocation: str | None
@@ -111,6 +136,7 @@ def is_valid(
     pattern_options: PatternOptionsType | None = None,
     email_options: EmailOptions | None = None,
     http_options: HttpOptions | None = None,
+    keywords: dict[str, type[KeywordValidator]] | None = None,
 ) -> bool:
     """Check if a JSON instance is valid against a schema.
 
@@ -132,6 +158,7 @@ def validate(
     pattern_options: PatternOptionsType | None = None,
     email_options: EmailOptions | None = None,
     http_options: HttpOptions | None = None,
+    keywords: dict[str, type[KeywordValidator]] | None = None,
 ) -> None:
     """Validate a JSON instance against a schema.
 
@@ -153,6 +180,7 @@ def iter_errors(
     pattern_options: PatternOptionsType | None = None,
     email_options: EmailOptions | None = None,
     http_options: HttpOptions | None = None,
+    keywords: dict[str, type[KeywordValidator]] | None = None,
 ) -> Iterator[ValidationError]:
     """Iterate over all validation errors.
 
@@ -173,6 +201,7 @@ def evaluate(
     pattern_options: PatternOptionsType | None = None,
     email_options: EmailOptions | None = None,
     http_options: HttpOptions | None = None,
+    keywords: dict[str, type[KeywordValidator]] | None = None,
 ) -> Evaluation:
     """Evaluate an instance and return structured output.
 
@@ -315,6 +344,7 @@ class Draft4Validator:
         pattern_options: PatternOptionsType | None = None,
         email_options: EmailOptions | None = None,
         http_options: HttpOptions | None = None,
+        keywords: dict[str, type[KeywordValidator]] | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -336,6 +366,7 @@ class Draft6Validator:
         pattern_options: PatternOptionsType | None = None,
         email_options: EmailOptions | None = None,
         http_options: HttpOptions | None = None,
+        keywords: dict[str, type[KeywordValidator]] | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -357,6 +388,7 @@ class Draft7Validator:
         pattern_options: PatternOptionsType | None = None,
         email_options: EmailOptions | None = None,
         http_options: HttpOptions | None = None,
+        keywords: dict[str, type[KeywordValidator]] | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -378,6 +410,7 @@ class Draft201909Validator:
         pattern_options: PatternOptionsType | None = None,
         email_options: EmailOptions | None = None,
         http_options: HttpOptions | None = None,
+        keywords: dict[str, type[KeywordValidator]] | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -399,6 +432,7 @@ class Draft202012Validator:
         pattern_options: PatternOptionsType | None = None,
         email_options: EmailOptions | None = None,
         http_options: HttpOptions | None = None,
+        keywords: dict[str, type[KeywordValidator]] | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -420,6 +454,7 @@ def validator_for(
     pattern_options: PatternOptionsType | None = None,
     email_options: EmailOptions | None = None,
     http_options: HttpOptions | None = None,
+    keywords: dict[str, type[KeywordValidator]] | None = None,
 ) -> Validator:
     """Create a validator for the given schema.
 

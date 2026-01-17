@@ -80,63 +80,63 @@ def test_evaluate_produces_expected_outputs_for_valid_instance():
         "instanceLocation": "",
         "schemaLocation": "",
         "details": [
-        {
-            "valid": True,
-            "evaluationPath": "/properties",
-            "instanceLocation": "",
-            "schemaLocation": "/properties",
-            "annotations": ["age", "name"],
-            "details": [
-                {
-                    "valid": True,
-                    "evaluationPath": "/properties/age",
-                    "instanceLocation": "/age",
-                    "schemaLocation": "/properties/age",
-                    "details": [
-                        {
-                            "valid": True,
-                            "evaluationPath": "/properties/age/minimum",
-                            "instanceLocation": "/age",
-                            "schemaLocation": "/properties/age/minimum",
-                        },
-                        {
-                            "valid": True,
-                            "evaluationPath": "/properties/age/type",
-                            "instanceLocation": "/age",
-                            "schemaLocation": "/properties/age/type",
-                        },
-                    ],
-                },
-                {
-                    "valid": True,
-                    "evaluationPath": "/properties/name",
-                    "instanceLocation": "/name",
-                    "schemaLocation": "/properties/name",
-                    "details": [
-                        {
-                            "valid": True,
-                            "evaluationPath": "/properties/name/type",
-                            "instanceLocation": "/name",
-                            "schemaLocation": "/properties/name/type",
-                        }
-                    ],
-                },
-            ],
-        },
-        {
-            "valid": True,
-            "evaluationPath": "/required",
-            "instanceLocation": "",
-            "schemaLocation": "/required",
-        },
-        {
-            "valid": True,
-            "evaluationPath": "/type",
-            "instanceLocation": "",
-            "schemaLocation": "/type",
-        },
-    ],
-}
+            {
+                "valid": True,
+                "evaluationPath": "/properties",
+                "instanceLocation": "",
+                "schemaLocation": "/properties",
+                "annotations": ["age", "name"],
+                "details": [
+                    {
+                        "valid": True,
+                        "evaluationPath": "/properties/age",
+                        "instanceLocation": "/age",
+                        "schemaLocation": "/properties/age",
+                        "details": [
+                            {
+                                "valid": True,
+                                "evaluationPath": "/properties/age/minimum",
+                                "instanceLocation": "/age",
+                                "schemaLocation": "/properties/age/minimum",
+                            },
+                            {
+                                "valid": True,
+                                "evaluationPath": "/properties/age/type",
+                                "instanceLocation": "/age",
+                                "schemaLocation": "/properties/age/type",
+                            },
+                        ],
+                    },
+                    {
+                        "valid": True,
+                        "evaluationPath": "/properties/name",
+                        "instanceLocation": "/name",
+                        "schemaLocation": "/properties/name",
+                        "details": [
+                            {
+                                "valid": True,
+                                "evaluationPath": "/properties/name/type",
+                                "instanceLocation": "/name",
+                                "schemaLocation": "/properties/name/type",
+                            }
+                        ],
+                    },
+                ],
+            },
+            {
+                "valid": True,
+                "evaluationPath": "/required",
+                "instanceLocation": "",
+                "schemaLocation": "/required",
+            },
+            {
+                "valid": True,
+                "evaluationPath": "/type",
+                "instanceLocation": "",
+                "schemaLocation": "/type",
+            },
+        ],
+    }
 
     assert evaluation.annotations() == [
         {

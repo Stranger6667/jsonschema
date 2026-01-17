@@ -34,7 +34,7 @@ def schema_server():
         port = get_free_port()
         schema_json = json.dumps(schema)
 
-        server_code = textwrap.dedent(f'''
+        server_code = textwrap.dedent(f"""
             import json
             import http.server
             import socketserver
@@ -54,7 +54,7 @@ def schema_server():
             with socketserver.TCPServer(("127.0.0.1", {port}), Handler) as httpd:
                 print("READY", flush=True)
                 httpd.serve_forever()
-        ''')
+        """)
 
         proc = subprocess.Popen(
             [sys.executable, "-c", server_code],
@@ -126,7 +126,9 @@ def test_http_options_with_is_valid():
     assert is_valid({"type": "string"}, "test", http_options=opts)
 
 
-@pytest.mark.parametrize("validator_cls", [Draft4Validator, Draft6Validator, Draft7Validator, Draft201909Validator, Draft202012Validator])
+@pytest.mark.parametrize(
+    "validator_cls", [Draft4Validator, Draft6Validator, Draft7Validator, Draft201909Validator, Draft202012Validator]
+)
 def test_http_options_with_draft_validators(validator_cls):
     opts = HttpOptions(timeout=30.0, tls_verify=False)
     validator = validator_cls({"type": "integer"}, http_options=opts)
@@ -167,7 +169,7 @@ def slow_server():
         port = get_free_port()
         schema_json = json.dumps({"type": "string"})
 
-        server_code = textwrap.dedent(f'''
+        server_code = textwrap.dedent(f"""
             import time
             import http.server
             import socketserver
@@ -188,7 +190,7 @@ def slow_server():
             with socketserver.TCPServer(("127.0.0.1", {port}), Handler) as httpd:
                 print("READY", flush=True)
                 httpd.serve_forever()
-        ''')
+        """)
 
         proc = subprocess.Popen(
             [sys.executable, "-c", server_code],
