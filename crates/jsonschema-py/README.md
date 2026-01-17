@@ -35,6 +35,11 @@ for error in validator.iter_errors(instance):
 
 # Boolean result
 assert validator.is_valid(instance)
+
+# Structured output (JSON Schema Output v1)
+evaluation = validator.evaluate(instance)
+for annotation in evaluation.annotations():
+    print(f"Annotation at {annotation['schemaLocation']}: {annotation['annotations']}")
 ```
 
 > ⚠️ **Upgrading from older versions?** Check our [Migration Guide](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-py/MIGRATION.md) for key changes.
