@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- `HttpOptions` and `ValidationOptions::with_http_options()` for configuring HTTP client behavior (timeouts, TLS verification, custom CA certificates) when fetching external schemas.
+- **CLI**: `--timeout`, `--connect-timeout`, `--insecure`, and `--cacert` flags for HTTP configuration.
+
 ## [0.39.0] - 2026-01-16
 
 ### Added

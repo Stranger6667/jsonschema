@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `HttpOptions` for configuring HTTP client behavior (timeouts, TLS verification, custom CA certificates) when fetching external schemas.
+
 ## [0.39.0] - 2026-01-16
 
 ### Added

@@ -1006,3 +1006,166 @@ fn test_validate_schema_with_invalid_ref_structured_output() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Error:"));
 }
+
+#[test]
+fn test_http_timeout_option() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type": "string"}"#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema).arg("--timeout").arg("30");
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Schema is valid"));
+}
+
+#[test]
+fn test_http_connect_timeout_option() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type": "string"}"#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema).arg("--connect-timeout").arg("10");
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Schema is valid"));
+}
+
+#[test]
+fn test_http_insecure_option() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type": "string"}"#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema).arg("--insecure");
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Schema is valid"));
+}
+
+#[test]
+fn test_http_insecure_short_option() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type": "string"}"#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema).arg("-k");
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Schema is valid"));
+}
+
+#[test]
+fn test_http_all_options_combined() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type": "integer"}"#);
+    let instance = create_temp_file(&dir, "instance.json", "42");
+
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--instance")
+        .arg(&instance)
+        .arg("--timeout")
+        .arg("30")
+        .arg("--connect-timeout")
+        .arg("10")
+        .arg("--insecure");
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_http_invalid_timeout_negative() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type": "string"}"#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema).arg("--timeout=-1");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("non-negative finite"));
+}
+
+#[test]
+fn test_http_invalid_timeout_not_a_number() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type": "string"}"#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema).arg("--timeout").arg("abc");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("not a valid number"));
+}
+
+#[test]
+fn test_http_invalid_connect_timeout_negative() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type": "string"}"#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema).arg("--connect-timeout=-5");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("non-negative finite"));
+}
+
+#[test]
+fn test_http_cacert_nonexistent_file() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type": "string"}"#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--cacert")
+        .arg("/nonexistent/path/to/cert.pem");
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Error:"));
+    assert!(stdout.contains("/nonexistent/path/to/cert.pem"));
+}
+
+#[test]
+fn test_http_options_with_external_ref() {
+    // Test that HTTP options are actually applied when fetching external schemas
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"$ref": "https://json-schema.org/draft/2020-12/schema"}"#,
+    );
+    let instance = create_temp_file(&dir, "instance.json", r#"{"type": "string"}"#);
+
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--instance")
+        .arg(&instance)
+        .arg("--timeout")
+        .arg("30");
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_http_options_ndjson_output() {
+    // Test that HTTP options are applied in validate_meta_schema_ndjson (line 276)
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"$ref": "https://json-schema.org/draft/2020-12/schema"}"#,
+    );
+
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--output")
+        .arg("flag")
+        .arg("--timeout")
+        .arg("30");
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+}

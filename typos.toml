@@ -5,8 +5,13 @@ extend-exclude = [
     "crates/jsonschema-testsuite/",
     "tests/suite/",
     "*.json",
+    "*.pem",
 ]
 
 [default.extend-words]
 numer = "numer"
 propert = "propert"
+# False positives in base64-encoded test certificate
+UE = "UE"
+PN = "PN"
+Ba = "Ba"

@@ -4,11 +4,22 @@ use std::{
     io::BufReader,
     path::{Path, PathBuf},
     process::ExitCode,
+    time::Duration,
 };
 
 use clap::{ArgAction, Parser, ValueEnum};
 use percent_encoding::{percent_encode, AsciiSet, CONTROLS};
 use serde_json::json;
+
+fn parse_non_negative_timeout(s: &str) -> Result<f64, String> {
+    let value: f64 = s
+        .parse()
+        .map_err(|_| format!("'{s}' is not a valid number"))?;
+    if value < 0.0 || value.is_nan() || value.is_infinite() {
+        return Err("must be a non-negative finite number".to_string());
+    }
+    Ok(value)
+}
 
 #[derive(Parser)]
 #[command(name = "jsonschema")]
@@ -64,6 +75,41 @@ struct Cli {
     /// Only output validation failures, suppress successful validations.
     #[arg(long = "errors-only", help = "Only show validation errors")]
     errors_only: bool,
+
+    /// Timeout for the connect phase (in seconds).
+    #[arg(
+        long = "connect-timeout",
+        value_name = "SECONDS",
+        value_parser = parse_non_negative_timeout,
+        help = "Timeout for establishing connections (in seconds)"
+    )]
+    connect_timeout: Option<f64>,
+
+    /// Total request timeout (in seconds).
+    #[arg(
+        long = "timeout",
+        value_name = "SECONDS",
+        value_parser = parse_non_negative_timeout,
+        help = "Total timeout for HTTP requests (in seconds)"
+    )]
+    timeout: Option<f64>,
+
+    /// Skip TLS certificate verification (insecure).
+    #[arg(
+        short = 'k',
+        long = "insecure",
+        action = ArgAction::SetTrue,
+        help = "Skip TLS certificate verification (dangerous!)"
+    )]
+    insecure: bool,
+
+    /// Path to a custom CA certificate file (PEM format).
+    #[arg(
+        long = "cacert",
+        value_name = "FILE",
+        help = "Path to a custom CA certificate file (PEM format)"
+    )]
+    cacert: Option<PathBuf>,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -109,6 +155,32 @@ impl From<Draft> for jsonschema::Draft {
             Draft::Draft202012 => jsonschema::Draft::Draft202012,
         }
     }
+}
+
+fn build_http_options(config: &Cli) -> jsonschema::HttpOptions {
+    let mut http_options = jsonschema::HttpOptions::new();
+
+    if let Some(connect_timeout) = config.connect_timeout {
+        http_options = http_options.connect_timeout(Duration::from_secs_f64(connect_timeout));
+    }
+    if let Some(timeout) = config.timeout {
+        http_options = http_options.timeout(Duration::from_secs_f64(timeout));
+    }
+    if config.insecure {
+        http_options = http_options.danger_accept_invalid_certs(true);
+    }
+    if let Some(ref cacert) = config.cacert {
+        http_options = http_options.add_root_certificate(cacert);
+    }
+
+    http_options
+}
+
+fn has_http_options(config: &Cli) -> bool {
+    config.connect_timeout.is_some()
+        || config.timeout.is_some()
+        || config.insecure
+        || config.cacert.is_some()
 }
 
 fn read_json(
@@ -186,6 +258,7 @@ fn output_schema_validation(
     schema_json: &serde_json::Value,
     output: Output,
     errors_only: bool,
+    http_options: Option<&jsonschema::HttpOptions>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     // First validate against meta-schema
     let meta_validator = jsonschema::meta::validator_for(schema_json)?;
@@ -198,9 +271,11 @@ fn output_schema_validation(
         let base_uri = path_to_uri(schema_path);
         let base_uri = referencing::uri::from_str(&base_uri)?;
         // Just try to build - if it fails, the error propagates naturally
-        jsonschema::options()
-            .with_base_uri(base_uri)
-            .build(schema_json)?;
+        let mut options = jsonschema::options().with_base_uri(base_uri);
+        if let Some(http_opts) = http_options {
+            options = options.with_http_options(http_opts)?;
+        }
+        options.build(schema_json)?;
     }
 
     // Skip valid schemas if errors_only is enabled
@@ -230,6 +305,7 @@ fn validate_schema_meta(
     schema_path: &Path,
     output: Output,
     errors_only: bool,
+    http_options: Option<&jsonschema::HttpOptions>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let schema_json = read_json(schema_path)??;
 
@@ -244,10 +320,11 @@ fn validate_schema_meta(
         // Then try to build a validator to check that all referenced schemas are also valid
         let base_uri = path_to_uri(schema_path);
         let base_uri = referencing::uri::from_str(&base_uri)?;
-        match jsonschema::options()
-            .with_base_uri(base_uri)
-            .build(&schema_json)
-        {
+        let mut options = jsonschema::options().with_base_uri(base_uri);
+        if let Some(http_opts) = http_options {
+            options = options.with_http_options(http_opts)?;
+        }
+        match options.build(&schema_json) {
             Ok(_) => {
                 if !errors_only {
                     println!("Schema is valid");
@@ -261,7 +338,7 @@ fn validate_schema_meta(
         }
     } else {
         // Structured output modes using evaluate API
-        output_schema_validation(schema_path, &schema_json, output, errors_only)
+        output_schema_validation(schema_path, &schema_json, output, errors_only, http_options)
     }
 }
 
@@ -272,6 +349,7 @@ fn validate_instances(
     assert_format: Option<bool>,
     output: Output,
     errors_only: bool,
+    http_options: Option<&jsonschema::HttpOptions>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let mut success = true;
 
@@ -284,6 +362,9 @@ fn validate_instances(
     }
     if let Some(assert_format) = assert_format {
         options = options.should_validate_formats(assert_format);
+    }
+    if let Some(http_opts) = http_options {
+        options = options.with_http_options(http_opts)?;
     }
     match options.build(&schema_json) {
         Ok(validator) => {
@@ -343,7 +424,13 @@ fn validate_instances(
                 println!("Schema is invalid. Error: {error}");
             } else {
                 // Schema compilation failed - validate the schema itself to get structured output
-                output_schema_validation(schema_path, &schema_json, output, errors_only)?;
+                output_schema_validation(
+                    schema_path,
+                    &schema_json,
+                    output,
+                    errors_only,
+                    http_options,
+                )?;
             }
             success = false;
         }
@@ -359,7 +446,14 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    if let Some(schema) = config.schema {
+    if let Some(ref schema) = config.schema {
+        // Build HTTP options if any HTTP-related flags are provided
+        let http_options = if has_http_options(&config) {
+            Some(build_http_options(&config))
+        } else {
+            None
+        };
+
         if let Some(instances) = config.instances {
             // - Some(true)  if --assert-format
             // - Some(false) if --no-assert-format
@@ -367,11 +461,12 @@ fn main() -> ExitCode {
             let assert_format = config.assert_format.or(config.no_assert_format);
             return match validate_instances(
                 &instances,
-                &schema,
+                schema,
                 config.draft,
                 assert_format,
                 config.output,
                 config.errors_only,
+                http_options.as_ref(),
             ) {
                 Ok(true) => ExitCode::SUCCESS,
                 Ok(false) => ExitCode::FAILURE,
@@ -382,7 +477,12 @@ fn main() -> ExitCode {
             };
         }
         // No instances provided - validate the schema itself
-        return match validate_schema_meta(&schema, config.output, config.errors_only) {
+        return match validate_schema_meta(
+            schema,
+            config.output,
+            config.errors_only,
+            http_options.as_ref(),
+        ) {
             Ok(true) => ExitCode::SUCCESS,
             Ok(false) => ExitCode::FAILURE,
             Err(error) => {

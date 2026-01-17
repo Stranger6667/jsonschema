@@ -577,6 +577,46 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
         self.retriever = Arc::new(retriever);
         self
     }
+    /// Configure HTTP client options for the built-in HTTP retriever.
+    ///
+    /// This creates an [`HttpRetriever`](crate::HttpRetriever) with the provided options
+    /// and configures it as the retriever for external schemas.
+    ///
+    /// **Note:** If both `connect_timeout` and `timeout` are set, the `timeout` acts as an
+    /// upper bound on the total request time, including connection. If `timeout < connect_timeout`,
+    /// the connection may be aborted before the connect timeout is reached.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use std::time::Duration;
+    /// use serde_json::json;
+    /// use jsonschema::HttpOptions;
+    ///
+    /// let schema = json!({"$ref": "https://example.com/schema.json"});
+    /// let http_options = HttpOptions::new()
+    ///     .connect_timeout(Duration::from_secs(10))
+    ///     .timeout(Duration::from_secs(30));
+    /// let validator = jsonschema::options()
+    ///     .with_http_options(&http_options)
+    ///     .expect("Failed to create HTTP retriever")
+    ///     .build(&schema);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The certificate file cannot be read
+    /// - The certificate is not valid PEM
+    /// - The HTTP client cannot be built
+    #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+    pub fn with_http_options(
+        self,
+        options: &crate::HttpOptions,
+    ) -> Result<Self, crate::HttpRetrieverError> {
+        let retriever = crate::retriever::HttpRetriever::new(options)?;
+        Ok(self.with_retriever(retriever))
+    }
     /// Configure the regular expression engine used during validation for keywords like `pattern`
     /// or `patternProperties`.
     ///

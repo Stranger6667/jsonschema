@@ -2,7 +2,245 @@
 use referencing::{Retrieve, Uri};
 use serde_json::Value;
 
+#[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+use crate::HttpOptions;
+
+/// Error that can occur when creating an HTTP retriever.
+#[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+#[derive(Debug)]
+pub enum HttpRetrieverError {
+    /// Failed to read certificate file.
+    CertificateRead {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
+    /// Failed to build HTTP client.
+    ClientBuild(reqwest::Error),
+}
+
+#[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+impl std::fmt::Display for HttpRetrieverError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CertificateRead { path, source } => {
+                write!(
+                    f,
+                    "Failed to read certificate file '{}': {}",
+                    path.display(),
+                    source
+                )
+            }
+            Self::ClientBuild(e) => write!(f, "Failed to build HTTP client: {e}"),
+        }
+    }
+}
+
+#[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+impl std::error::Error for HttpRetrieverError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::CertificateRead { source, .. } => Some(source),
+            Self::ClientBuild(e) => Some(e),
+        }
+    }
+}
+
+/// Load a certificate from a PEM file.
+/// Note: `reqwest::Certificate::from_pem()` is lenient and rarely fails.
+/// Invalid certificates are caught later during `ClientBuilder::build()`.
+#[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+fn load_certificate(path: &std::path::Path) -> Result<reqwest::Certificate, HttpRetrieverError> {
+    let cert_data = std::fs::read(path).map_err(|e| HttpRetrieverError::CertificateRead {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+    // from_pem is lenient; invalid certs fail during builder.build()
+    Ok(reqwest::Certificate::from_pem(&cert_data).expect("from_pem should not fail"))
+}
+
+/// Configure an HTTP client builder with the given options.
+/// Works with both `reqwest::ClientBuilder` and `reqwest::blocking::ClientBuilder`.
+#[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+macro_rules! configure_http_client {
+    ($builder:expr, $options:expr) => {{
+        let mut builder = $builder;
+        if let Some(connect_timeout) = $options.connect_timeout {
+            builder = builder.connect_timeout(connect_timeout);
+        }
+        if let Some(timeout) = $options.timeout {
+            builder = builder.timeout(timeout);
+        }
+        if $options.danger_accept_invalid_certs {
+            builder = builder.danger_accept_invalid_certs(true);
+        }
+        if let Some(ref cert_path) = &$options.root_certificate {
+            builder = builder.add_root_certificate(load_certificate(cert_path)?);
+        }
+        builder
+    }};
+}
+
 pub(crate) struct DefaultRetriever;
+
+/// HTTP-based schema retriever with configurable client options.
+///
+/// This retriever fetches external schemas over HTTP/HTTPS using a
+/// configured [`reqwest`](https://docs.rs/reqwest) client.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use std::time::Duration;
+/// use jsonschema::{HttpOptions, HttpRetriever};
+///
+/// let http_options = HttpOptions::new()
+///     .timeout(Duration::from_secs(30));
+///
+/// let retriever = HttpRetriever::new(&http_options)
+///     .expect("Failed to create HTTP retriever");
+/// ```
+#[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+#[derive(Debug)]
+pub struct HttpRetriever {
+    client: reqwest::blocking::Client,
+}
+
+#[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+impl HttpRetriever {
+    /// Create a new HTTP retriever with the given options.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The certificate file cannot be read
+    /// - The certificate is not valid PEM
+    /// - The HTTP client cannot be built
+    pub fn new(options: &HttpOptions) -> Result<Self, HttpRetrieverError> {
+        let builder = configure_http_client!(reqwest::blocking::Client::builder(), options);
+        Ok(Self {
+            client: builder.build().map_err(HttpRetrieverError::ClientBuild)?,
+        })
+    }
+}
+
+#[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+impl Retrieve for HttpRetriever {
+    fn retrieve(
+        &self,
+        uri: &Uri<String>,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        match uri.scheme().as_str() {
+            "http" | "https" => Ok(self.client.get(uri.as_str()).send()?.json()?),
+            "file" => {
+                #[cfg(feature = "resolve-file")]
+                {
+                    let path = uri.path().as_str();
+                    let path = {
+                        #[cfg(windows)]
+                        {
+                            let path = path.trim_start_matches('/').replace('/', "\\");
+                            std::path::PathBuf::from(path)
+                        }
+                        #[cfg(not(windows))]
+                        {
+                            std::path::PathBuf::from(path)
+                        }
+                    };
+                    let file = std::fs::File::open(path)?;
+                    Ok(serde_json::from_reader(file)?)
+                }
+                #[cfg(not(feature = "resolve-file"))]
+                {
+                    Err("`resolve-file` feature or a custom resolver is required to resolve external schemas via files".into())
+                }
+            }
+            scheme => Err(format!("Unknown scheme {scheme}").into()),
+        }
+    }
+}
+
+/// Async HTTP-based schema retriever with configurable client options.
+///
+/// This retriever fetches external schemas over HTTP/HTTPS using a
+/// configured async [`reqwest`](https://docs.rs/reqwest) client.
+#[cfg(all(
+    feature = "resolve-http",
+    feature = "resolve-async",
+    not(target_arch = "wasm32")
+))]
+#[derive(Debug)]
+pub struct AsyncHttpRetriever {
+    client: reqwest::Client,
+}
+
+#[cfg(all(
+    feature = "resolve-http",
+    feature = "resolve-async",
+    not(target_arch = "wasm32")
+))]
+impl AsyncHttpRetriever {
+    /// Create a new async HTTP retriever with the given options.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The certificate file cannot be read
+    /// - The certificate is not valid PEM
+    /// - The HTTP client cannot be built
+    pub fn new(options: &HttpOptions) -> Result<Self, HttpRetrieverError> {
+        let builder = configure_http_client!(reqwest::Client::builder(), options);
+        Ok(Self {
+            client: builder.build().map_err(HttpRetrieverError::ClientBuild)?,
+        })
+    }
+}
+
+#[cfg(all(
+    feature = "resolve-http",
+    feature = "resolve-async",
+    not(target_arch = "wasm32")
+))]
+#[async_trait::async_trait]
+impl referencing::AsyncRetrieve for AsyncHttpRetriever {
+    async fn retrieve(
+        &self,
+        uri: &Uri<String>,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        match uri.scheme().as_str() {
+            "http" | "https" => Ok(self.client.get(uri.as_str()).send().await?.json().await?),
+            "file" => {
+                #[cfg(feature = "resolve-file")]
+                {
+                    let path = uri.path().as_str().to_string();
+                    let contents = tokio::task::spawn_blocking(
+                        move || -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+                            let path = {
+                                #[cfg(windows)]
+                                {
+                                    let path = path.trim_start_matches('/').replace('/', "\\");
+                                    std::path::PathBuf::from(path)
+                                }
+                                #[cfg(not(windows))]
+                                {
+                                    std::path::PathBuf::from(path)
+                                }
+                            };
+                            let file = std::fs::File::open(path)?;
+                            Ok(serde_json::from_reader(file)?)
+                        },
+                    )
+                    .await??;
+                    Ok(contents)
+                }
+                #[cfg(not(feature = "resolve-file"))]
+                {
+                    Err("`resolve-file` feature or a custom resolver is required to resolve external schemas via files".into())
+                }
+            }
+            scheme => Err(format!("Unknown scheme {scheme}").into()),
+        }
+    }
+}
 
 impl Retrieve for DefaultRetriever {
     #[allow(unused)]
@@ -189,6 +427,14 @@ pub(crate) fn path_to_uri(path: &std::path::Path) -> String {
 mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     use super::path_to_uri;
+    #[cfg(all(
+        feature = "resolve-http",
+        feature = "resolve-async",
+        not(target_arch = "wasm32")
+    ))]
+    use crate::AsyncHttpRetriever;
+    #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+    use crate::{HttpOptions, HttpRetriever, HttpRetrieverError};
     use serde_json::json;
     #[cfg(not(target_arch = "wasm32"))]
     use std::io::Write;
@@ -248,6 +494,235 @@ mod tests {
         let file_path = dir.path().join(name);
         std::fs::write(&file_path, content).unwrap();
         file_path.to_str().unwrap().to_string()
+    }
+
+    #[test]
+    #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+    fn test_http_retriever_with_default_options() {
+        let options = HttpOptions::new();
+        let retriever = HttpRetriever::new(&options);
+        assert!(retriever.is_ok());
+    }
+
+    #[test]
+    #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+    fn test_http_retriever_nonexistent_cert() {
+        let options = HttpOptions::new().add_root_certificate("/nonexistent/cert.pem");
+        let result = HttpRetriever::new(&options);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, HttpRetrieverError::CertificateRead { .. }));
+        assert!(err.to_string().contains("/nonexistent/cert.pem"));
+    }
+
+    #[test]
+    #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+    fn test_http_retriever_error_source() {
+        use std::error::Error;
+
+        let options = HttpOptions::new().add_root_certificate("/nonexistent/cert.pem");
+        let err = HttpRetriever::new(&options).unwrap_err();
+        assert!(err.source().is_some());
+    }
+
+    #[test]
+    #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+    fn test_http_retriever_with_valid_certificate() {
+        // Test certificate file generated with:
+        // openssl req -x509 -newkey rsa:2048 -keyout /dev/null -out cert.pem -days 3650 -nodes -subj "/CN=test"
+        let cert_path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_cert.pem");
+        let options = HttpOptions::new().add_root_certificate(&cert_path);
+        let retriever = HttpRetriever::new(&options);
+        assert!(retriever.is_ok(), "Failed: {:?}", retriever.err());
+    }
+
+    #[test]
+    #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+    fn test_with_http_options_default() {
+        let http_options = HttpOptions::new();
+        let schema = json!({"type": "string"});
+        let result = crate::options().with_http_options(&http_options);
+        assert!(result.is_ok());
+        let validator = result.unwrap().build(&schema);
+        assert!(validator.is_ok());
+        assert!(validator.unwrap().is_valid(&json!("test")));
+    }
+
+    #[test]
+    #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+    fn test_with_http_options_with_timeouts() {
+        use std::time::Duration;
+
+        let http_options = HttpOptions::new()
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30));
+        let schema = json!({"type": "integer"});
+        let result = crate::options().with_http_options(&http_options);
+        assert!(result.is_ok());
+        let validator = result.unwrap().build(&schema).unwrap();
+        assert!(validator.is_valid(&json!(42)));
+        assert!(!validator.is_valid(&json!("not an integer")));
+    }
+
+    #[test]
+    #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+    fn test_with_http_options_invalid_cert() {
+        let http_options = HttpOptions::new().add_root_certificate("/nonexistent/cert.pem");
+        let result = crate::options().with_http_options(&http_options);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("/nonexistent/cert.pem"));
+    }
+
+    #[test]
+    #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+    fn test_with_http_options_danger_accept_invalid_certs() {
+        let http_options = HttpOptions::new().danger_accept_invalid_certs(true);
+        let schema = json!({"type": "boolean"});
+        let result = crate::options().with_http_options(&http_options);
+        assert!(result.is_ok());
+        let validator = result.unwrap().build(&schema).unwrap();
+        assert!(validator.is_valid(&json!(true)));
+    }
+
+    #[test]
+    #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+    fn test_http_retriever_retrieve_trait() {
+        use referencing::Retrieve;
+        use std::time::Duration;
+
+        let options = HttpOptions::new().timeout(Duration::from_secs(30));
+        let retriever = HttpRetriever::new(&options).unwrap();
+        let uri =
+            referencing::uri::from_str("https://json-schema.org/draft/2020-12/schema").unwrap();
+        let result = retriever.retrieve(&uri);
+        assert!(result.is_ok());
+        let schema = result.unwrap();
+        // The meta-schema should be an object with $schema and $id
+        assert!(schema.is_object());
+        assert!(schema.get("$schema").is_some());
+    }
+
+    #[test]
+    #[cfg(all(
+        feature = "resolve-http",
+        feature = "resolve-file",
+        not(target_arch = "wasm32")
+    ))]
+    fn test_http_retriever_file_scheme() {
+        use referencing::Retrieve;
+
+        let dir = tempfile::tempdir().unwrap();
+        let schema_content = r#"{"type": "string"}"#;
+        let schema_path = dir.path().join("schema.json");
+        std::fs::write(&schema_path, schema_content).unwrap();
+
+        let options = HttpOptions::new();
+        let retriever = HttpRetriever::new(&options).unwrap();
+        let uri = referencing::uri::from_str(&path_to_uri(&schema_path)).unwrap();
+        let result = retriever.retrieve(&uri);
+        assert!(result.is_ok());
+        let schema = result.unwrap();
+        assert_eq!(schema, json!({"type": "string"}));
+    }
+
+    #[test]
+    #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+    fn test_http_retriever_unknown_scheme() {
+        use referencing::Retrieve;
+
+        let options = HttpOptions::new();
+        let retriever = HttpRetriever::new(&options).unwrap();
+        let uri = referencing::uri::from_str("ftp://example.com/schema.json").unwrap();
+        let result = retriever.retrieve(&uri);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unknown scheme"));
+    }
+
+    #[test]
+    #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+    fn test_http_retriever_error_client_build_display() {
+        use std::io::Write;
+
+        // Invalid PEM content that passes from_pem() but fails during client build
+        let mut temp = tempfile::NamedTempFile::new().unwrap();
+        temp.write_all(b"-----BEGIN CERTIFICATE-----\ninvalid\n-----END CERTIFICATE-----")
+            .unwrap();
+        temp.flush().unwrap();
+
+        let options = HttpOptions::new().add_root_certificate(temp.path());
+        let result = HttpRetriever::new(&options);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, HttpRetrieverError::ClientBuild(_)));
+        assert!(err.to_string().contains("Failed to build HTTP client"));
+    }
+
+    #[tokio::test]
+    #[cfg(all(
+        feature = "resolve-http",
+        feature = "resolve-async",
+        not(target_arch = "wasm32")
+    ))]
+    async fn test_async_http_retriever_retrieve_trait() {
+        use referencing::AsyncRetrieve;
+        use serde_json::Value;
+        use std::time::Duration;
+
+        let options = HttpOptions::new().timeout(Duration::from_secs(30));
+        let retriever = AsyncHttpRetriever::new(&options).unwrap();
+        let uri =
+            referencing::uri::from_str("https://json-schema.org/draft/2020-12/schema").unwrap();
+        let result: Result<Value, _> = retriever.retrieve(&uri).await;
+        assert!(result.is_ok());
+        let schema = result.unwrap();
+        // The meta-schema should be an object with $schema and $id
+        assert!(schema.is_object());
+        assert!(schema.get("$schema").is_some());
+    }
+
+    #[tokio::test]
+    #[cfg(all(
+        feature = "resolve-http",
+        feature = "resolve-async",
+        feature = "resolve-file",
+        not(target_arch = "wasm32")
+    ))]
+    async fn test_async_http_retriever_file_scheme() {
+        use referencing::AsyncRetrieve;
+        use serde_json::Value;
+
+        let dir = tempfile::tempdir().unwrap();
+        let schema_content = r#"{"type": "integer"}"#;
+        let schema_path = dir.path().join("schema.json");
+        std::fs::write(&schema_path, schema_content).unwrap();
+
+        let options = HttpOptions::new();
+        let retriever = AsyncHttpRetriever::new(&options).unwrap();
+        let uri = referencing::uri::from_str(&path_to_uri(&schema_path)).unwrap();
+        let result: Result<Value, _> = retriever.retrieve(&uri).await;
+        assert!(result.is_ok());
+        let schema = result.unwrap();
+        assert_eq!(schema, json!({"type": "integer"}));
+    }
+
+    #[tokio::test]
+    #[cfg(all(
+        feature = "resolve-http",
+        feature = "resolve-async",
+        not(target_arch = "wasm32")
+    ))]
+    async fn test_async_http_retriever_unknown_scheme() {
+        use referencing::AsyncRetrieve;
+        use serde_json::Value;
+
+        let options = HttpOptions::new();
+        let retriever = AsyncHttpRetriever::new(&options).unwrap();
+        let uri = referencing::uri::from_str("ftp://example.com/schema.json").unwrap();
+        let result: Result<Value, _> = retriever.retrieve(&uri).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unknown scheme"));
     }
 
     #[test]

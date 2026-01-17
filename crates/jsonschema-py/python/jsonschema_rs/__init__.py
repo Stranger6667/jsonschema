@@ -14,6 +14,7 @@ from .jsonschema_rs import (
     EmailOptions,
     Evaluation,
     FancyRegexOptions,
+    HttpOptions,
     RegexOptions,
     Registry,
     ValidationErrorKind,
@@ -127,6 +128,7 @@ __all__ = [
     "Registry",
     "EmailOptions",
     "FancyRegexOptions",
+    "HttpOptions",
     "RegexOptions",
     "meta",
 ]

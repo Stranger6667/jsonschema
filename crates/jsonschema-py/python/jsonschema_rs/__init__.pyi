@@ -73,6 +73,25 @@ class EmailOptions:
     ) -> None: ...
     def __repr__(self) -> str: ...
 
+class HttpOptions:
+    """Configuration for HTTP client used in schema retrieval."""
+
+    timeout: float | None
+    connect_timeout: float | None
+    tls_verify: bool
+    ca_cert: str | None
+
+    def __init__(
+        self,
+        timeout: float | None = None,
+        connect_timeout: float | None = None,
+        tls_verify: bool = True,
+        ca_cert: str | None = None,
+    ) -> None: ...
+    def __repr__(self) -> str: ...
+    def __eq__(self, other: object) -> bool: ...
+    def __hash__(self) -> int: ...
+
 PatternOptionsType = Union[FancyRegexOptions, RegexOptions]
 
 class RetrieverProtocol(Protocol):
@@ -91,6 +110,7 @@ def is_valid(
     base_uri: str | None = None,
     pattern_options: PatternOptionsType | None = None,
     email_options: EmailOptions | None = None,
+    http_options: HttpOptions | None = None,
 ) -> bool:
     """Check if a JSON instance is valid against a schema.
 
@@ -111,6 +131,7 @@ def validate(
     base_uri: str | None = None,
     pattern_options: PatternOptionsType | None = None,
     email_options: EmailOptions | None = None,
+    http_options: HttpOptions | None = None,
 ) -> None:
     """Validate a JSON instance against a schema.
 
@@ -131,6 +152,7 @@ def iter_errors(
     base_uri: str | None = None,
     pattern_options: PatternOptionsType | None = None,
     email_options: EmailOptions | None = None,
+    http_options: HttpOptions | None = None,
 ) -> Iterator[ValidationError]:
     """Iterate over all validation errors.
 
@@ -150,6 +172,7 @@ def evaluate(
     base_uri: str | None = None,
     pattern_options: PatternOptionsType | None = None,
     email_options: EmailOptions | None = None,
+    http_options: HttpOptions | None = None,
 ) -> Evaluation:
     """Evaluate an instance and return structured output.
 
@@ -291,6 +314,7 @@ class Draft4Validator:
         base_uri: str | None = None,
         pattern_options: PatternOptionsType | None = None,
         email_options: EmailOptions | None = None,
+        http_options: HttpOptions | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -311,6 +335,7 @@ class Draft6Validator:
         base_uri: str | None = None,
         pattern_options: PatternOptionsType | None = None,
         email_options: EmailOptions | None = None,
+        http_options: HttpOptions | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -331,6 +356,7 @@ class Draft7Validator:
         base_uri: str | None = None,
         pattern_options: PatternOptionsType | None = None,
         email_options: EmailOptions | None = None,
+        http_options: HttpOptions | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -351,6 +377,7 @@ class Draft201909Validator:
         base_uri: str | None = None,
         pattern_options: PatternOptionsType | None = None,
         email_options: EmailOptions | None = None,
+        http_options: HttpOptions | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -371,6 +398,7 @@ class Draft202012Validator:
         base_uri: str | None = None,
         pattern_options: PatternOptionsType | None = None,
         email_options: EmailOptions | None = None,
+        http_options: HttpOptions | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -391,6 +419,7 @@ def validator_for(
     base_uri: str | None = None,
     pattern_options: PatternOptionsType | None = None,
     email_options: EmailOptions | None = None,
+    http_options: HttpOptions | None = None,
 ) -> Validator:
     """Create a validator for the given schema.
 

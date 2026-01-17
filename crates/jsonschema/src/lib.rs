@@ -854,6 +854,7 @@ pub mod error;
 mod evaluation;
 #[doc(hidden)]
 pub mod ext;
+mod http;
 mod keywords;
 mod node;
 mod options;
@@ -869,16 +870,25 @@ pub use error::{ErrorIterator, MaskedValidationError, ValidationError, Validatio
 pub use evaluation::{
     AnnotationEntry, ErrorEntry, Evaluation, FlagOutput, HierarchicalOutput, ListOutput,
 };
+pub use http::HttpOptions;
 pub use keywords::custom::Keyword;
 pub use options::{EmailOptions, FancyRegex, PatternOptions, Regex, ValidationOptions};
 pub use referencing::{
     Draft, Error as ReferencingError, Registry, RegistryOptions, Resource, Retrieve, Uri,
 };
+#[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+pub use retriever::{HttpRetriever, HttpRetrieverError};
 pub use types::{JsonType, JsonTypeSet, JsonTypeSetIterator};
 pub use validator::{ValidationContext, Validator};
 
 #[cfg(feature = "resolve-async")]
 pub use referencing::AsyncRetrieve;
+#[cfg(all(
+    feature = "resolve-http",
+    feature = "resolve-async",
+    not(target_arch = "wasm32")
+))]
+pub use retriever::AsyncHttpRetriever;
 
 use serde_json::Value;
 
