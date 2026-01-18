@@ -132,7 +132,13 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        target: [ x86_64, i686, aarch64 ]
+        include:
+          - target: x86_64
+            manylinux: auto
+          - target: i686
+            manylinux: auto
+          - target: aarch64
+            manylinux: 2_28
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
@@ -143,7 +149,7 @@ jobs:
         uses: messense/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          manylinux: auto
+          manylinux: ${{ matrix.manylinux }}
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
       - name: Install built wheel on native architecture
         if: matrix.target == 'x86_64'
@@ -194,7 +200,7 @@ jobs:
           - os: ubuntu-24.04
             target: aarch64
             artifact: wheel-linux-pypy-aarch64
-            manylinux: 2_24
+            manylinux: 2_28
 
     steps:
       - uses: actions/checkout@v6

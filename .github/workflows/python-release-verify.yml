@@ -12,6 +12,7 @@ defaults:
 
 env:
   PACKAGE_NAME: jsonschema_rs
+  PYTHON_ABI_VERSION: "3.10"
 
 jobs:
   wheel-smoke-test:
@@ -51,3 +52,18 @@ jobs:
 
           print('Validation tests passed!')
           PY
+
+  cross-compile-check:
+    runs-on: ubuntu-24.04
+    name: Verify cross-compilation for aarch64
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_ABI_VERSION }}
+      - name: Build wheel for aarch64
+        uses: messense/maturin-action@v1
+        with:
+          target: aarch64
+          manylinux: 2_28
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
