@@ -44,6 +44,8 @@ for annotation in evaluation.annotations():
 
 > ⚠️ **Upgrading from older versions?** Check our [Migration Guide](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-py/MIGRATION.md) for key changes.
 
+> **Migrating from `jsonschema`?** See the [jsonschema migration guide](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-py/MIGRATION_FROM_JSONSCHEMA.md).
+
 ## Highlights
 
 - 📚 Full support for popular JSON Schema drafts
