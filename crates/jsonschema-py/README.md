@@ -600,6 +600,28 @@ except jsonschema_rs.ValidationError as error:
 
 For a complete list of all error kinds and their attributes, see the [type definitions file](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-py/python/jsonschema_rs/__init__.pyi)
 
+### Error Kind Properties
+
+Each error has a `kind` property with convenient accessors:
+
+```python
+for error in jsonschema_rs.iter_errors({"minimum": 5}, 3):
+    print(error.kind.name)      # "minimum"
+    print(error.kind.value)     # 5
+    print(error.kind.as_dict()) # {"limit": 5}
+```
+
+Pattern matching (Python 3.10+):
+
+```python
+for error in jsonschema_rs.iter_errors({"minimum": 5}, 3):
+    match error.kind:
+        case jsonschema_rs.ValidationErrorKind.Minimum(limit=limit):
+            print(f"Value below {limit}")
+        case jsonschema_rs.ValidationErrorKind.Type(types=types):
+            print(f"Expected one of {types}")
+```
+
 ### Error Message Masking
 
 When working with sensitive data, you might want to hide actual values from error messages.

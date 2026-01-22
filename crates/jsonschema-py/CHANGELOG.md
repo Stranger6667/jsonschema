@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ValidationErrorKind.name` property returning the keyword name (e.g., `"minimum"`, `"divisibleBy"`).
+- `ValidationErrorKind.value` property returning the constraint value.
+- `ValidationErrorKind.as_dict()` method returning error details as a dictionary.
+
 ## [0.40.0] - 2026-01-18
 
 ### Added

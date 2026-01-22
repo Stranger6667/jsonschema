@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `ValidationErrorKind::Custom` now includes a `keyword` field containing the custom keyword name.
+
 ## [0.40.0] - 2026-01-18
 
 ### Added

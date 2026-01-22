@@ -675,6 +675,7 @@ mod tests {
             error.evaluation_path().as_str(),
             "/properties/name/alwaysFail"
         );
+        assert_eq!(error.kind().keyword(), "alwaysFail");
     }
 
     #[test]

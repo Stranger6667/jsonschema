@@ -271,7 +271,7 @@ enum ValidationErrorKind {
     Contains {},
     ContentEncoding { content_encoding: String },
     ContentMediaType { content_media_type: String },
-    Custom { message: String },
+    Custom { keyword: String, message: String },
     Enum { options: Py<PyAny> },
     ExclusiveMaximum { limit: Py<PyAny> },
     ExclusiveMinimum { limit: Py<PyAny> },
@@ -337,8 +337,8 @@ impl ValidationErrorKind {
             jsonschema::error::ValidationErrorKind::ContentMediaType { content_media_type } => {
                 ValidationErrorKind::ContentMediaType { content_media_type }
             }
-            jsonschema::error::ValidationErrorKind::Custom { message } => {
-                ValidationErrorKind::Custom { message }
+            jsonschema::error::ValidationErrorKind::Custom { keyword, message } => {
+                ValidationErrorKind::Custom { keyword, message }
             }
             jsonschema::error::ValidationErrorKind::Enum { options } => ValidationErrorKind::Enum {
                 options: value_to_python(py, &options)?,
@@ -476,6 +476,148 @@ impl ValidationErrorKind {
                 }
             }
         })
+    }
+}
+
+#[pymethods]
+impl ValidationErrorKind {
+    #[getter]
+    fn name(&self) -> &str {
+        match self {
+            Self::AdditionalItems { .. } => "additional_items",
+            Self::AdditionalProperties { .. } => "additional_properties",
+            Self::AnyOf { .. } => "any_of",
+            Self::BacktrackLimitExceeded { .. } => "backtrack_limit_exceeded",
+            Self::Constant { .. } => "constant",
+            Self::Contains { .. } => "contains",
+            Self::ContentEncoding { .. } => "content_encoding",
+            Self::ContentMediaType { .. } => "content_media_type",
+            Self::Custom { keyword, .. } => keyword,
+            Self::Enum { .. } => "enum",
+            Self::ExclusiveMaximum { .. } => "exclusive_maximum",
+            Self::ExclusiveMinimum { .. } => "exclusive_minimum",
+            Self::FalseSchema { .. } => "false_schema",
+            Self::Format { .. } => "format",
+            Self::FromUtf8 { .. } => "from_utf8",
+            Self::MaxItems { .. } => "max_items",
+            Self::Maximum { .. } => "maximum",
+            Self::MaxLength { .. } => "max_length",
+            Self::MaxProperties { .. } => "max_properties",
+            Self::MinItems { .. } => "min_items",
+            Self::Minimum { .. } => "minimum",
+            Self::MinLength { .. } => "min_length",
+            Self::MinProperties { .. } => "min_properties",
+            Self::MultipleOf { .. } => "multiple_of",
+            Self::Not { .. } => "not",
+            Self::OneOfMultipleValid { .. } => "one_of_multiple_valid",
+            Self::OneOfNotValid { .. } => "one_of_not_valid",
+            Self::Pattern { .. } => "pattern",
+            Self::PropertyNames { .. } => "property_names",
+            Self::Required { .. } => "required",
+            Self::Type { .. } => "type",
+            Self::UnevaluatedItems { .. } => "unevaluated_items",
+            Self::UnevaluatedProperties { .. } => "unevaluated_properties",
+            Self::UniqueItems { .. } => "unique_items",
+            Self::Referencing { .. } => "referencing",
+        }
+    }
+
+    #[getter]
+    fn value(&self, py: Python<'_>) -> Py<PyAny> {
+        match self {
+            Self::AdditionalItems { limit } => limit.into_pyobject(py).unwrap().into_any().unbind(),
+            Self::AdditionalProperties { unexpected }
+            | Self::UnevaluatedItems { unexpected }
+            | Self::UnevaluatedProperties { unexpected } => unexpected.clone_ref(py).into_any(),
+            Self::AnyOf { context }
+            | Self::OneOfMultipleValid { context }
+            | Self::OneOfNotValid { context } => context.clone_ref(py).into_any(),
+            Self::BacktrackLimitExceeded { error } | Self::FromUtf8 { error } => {
+                error.into_pyobject(py).unwrap().into_any().unbind()
+            }
+            Self::Constant { expected_value } => expected_value.clone_ref(py),
+            Self::Contains {} | Self::FalseSchema {} | Self::UniqueItems {} => py.None(),
+            Self::ContentEncoding { content_encoding } => content_encoding
+                .into_pyobject(py)
+                .unwrap()
+                .into_any()
+                .unbind(),
+            Self::ContentMediaType { content_media_type } => content_media_type
+                .into_pyobject(py)
+                .unwrap()
+                .into_any()
+                .unbind(),
+            Self::Custom { message, .. } => message.into_pyobject(py).unwrap().into_any().unbind(),
+            Self::Enum { options } => options.clone_ref(py),
+            Self::ExclusiveMaximum { limit }
+            | Self::ExclusiveMinimum { limit }
+            | Self::Maximum { limit }
+            | Self::Minimum { limit } => limit.clone_ref(py),
+            Self::Format { format } => format.into_pyobject(py).unwrap().into_any().unbind(),
+            Self::MaxItems { limit }
+            | Self::MaxLength { limit }
+            | Self::MaxProperties { limit }
+            | Self::MinItems { limit }
+            | Self::MinLength { limit }
+            | Self::MinProperties { limit } => limit.into_pyobject(py).unwrap().into_any().unbind(),
+            Self::MultipleOf { multiple_of } => multiple_of.clone_ref(py),
+            Self::Not { schema } => schema.clone_ref(py),
+            Self::Pattern { pattern } => pattern.into_pyobject(py).unwrap().into_any().unbind(),
+            Self::PropertyNames { error } | Self::Referencing { error } => error.clone_ref(py),
+            Self::Required { property } => property.clone_ref(py),
+            Self::Type { types } => types.clone_ref(py).into_any(),
+        }
+    }
+
+    fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let dict = PyDict::new(py);
+        match self {
+            Self::AdditionalItems { limit } => dict.set_item("limit", limit)?,
+            Self::AdditionalProperties { unexpected }
+            | Self::UnevaluatedItems { unexpected }
+            | Self::UnevaluatedProperties { unexpected } => {
+                dict.set_item("unexpected", unexpected)?;
+            }
+            Self::AnyOf { context }
+            | Self::OneOfMultipleValid { context }
+            | Self::OneOfNotValid { context } => dict.set_item("context", context)?,
+            Self::BacktrackLimitExceeded { error } | Self::FromUtf8 { error } => {
+                dict.set_item("error", error)?;
+            }
+            Self::Constant { expected_value } => dict.set_item("expected_value", expected_value)?,
+            Self::Contains {} | Self::FalseSchema {} | Self::UniqueItems {} => {}
+            Self::ContentEncoding { content_encoding } => {
+                dict.set_item("content_encoding", content_encoding)?;
+            }
+            Self::ContentMediaType { content_media_type } => {
+                dict.set_item("content_media_type", content_media_type)?;
+            }
+            Self::Custom { keyword, message } => {
+                dict.set_item("keyword", keyword)?;
+                dict.set_item("message", message)?;
+            }
+            Self::Enum { options } => dict.set_item("options", options)?,
+            Self::ExclusiveMaximum { limit }
+            | Self::ExclusiveMinimum { limit }
+            | Self::Maximum { limit }
+            | Self::Minimum { limit } => dict.set_item("limit", limit)?,
+            Self::Format { format } => dict.set_item("format", format)?,
+            Self::MaxItems { limit }
+            | Self::MaxLength { limit }
+            | Self::MaxProperties { limit }
+            | Self::MinItems { limit }
+            | Self::MinLength { limit }
+            | Self::MinProperties { limit } => dict.set_item("limit", limit)?,
+            Self::MultipleOf { multiple_of } => dict.set_item("multiple_of", multiple_of)?,
+            Self::Not { schema } => dict.set_item("schema", schema)?,
+            Self::Pattern { pattern } => dict.set_item("pattern", pattern)?,
+            Self::PropertyNames { error } | Self::Referencing { error } => {
+                dict.set_item("error", error)?;
+            }
+            Self::Required { property } => dict.set_item("property", property)?,
+            Self::Type { types } => dict.set_item("types", types)?,
+        }
+        Ok(dict.into())
     }
 }
 

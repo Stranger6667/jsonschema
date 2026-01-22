@@ -8,11 +8,16 @@ use serde_json::{Map, Value};
 pub(crate) struct CustomKeyword {
     inner: Box<dyn Keyword>,
     location: Location,
+    keyword: String,
 }
 
 impl CustomKeyword {
-    pub(crate) fn new(inner: Box<dyn Keyword>, location: Location) -> Self {
-        Self { inner, location }
+    pub(crate) fn new(inner: Box<dyn Keyword>, location: Location, keyword: String) -> Self {
+        Self {
+            inner,
+            location,
+            keyword,
+        }
     }
 }
 
@@ -26,7 +31,7 @@ impl Validate for CustomKeyword {
     ) -> Result<(), ValidationError<'i>> {
         self.inner
             .validate(instance)
-            .map_err(|err| err.with_context(instance, instance_path, &self.location))
+            .map_err(|err| err.with_context(instance, instance_path, &self.location, &self.keyword))
     }
 
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
@@ -82,6 +87,7 @@ pub(crate) trait KeywordFactory: Send + Sync {
         parent: &'a Map<String, Value>,
         schema: &'a Value,
         schema_path: Location,
+        keyword: &str,
     ) -> Result<Box<dyn Keyword>, ValidationError<'a>>;
 }
 
@@ -100,8 +106,9 @@ where
         parent: &'a Map<String, Value>,
         schema: &'a Value,
         schema_path: Location,
+        keyword: &str,
     ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
         self(parent, schema, schema_path.clone())
-            .map_err(|err| err.with_schema_context(schema, schema_path))
+            .map_err(|err| err.with_schema_context(schema, schema_path, keyword))
     }
 }

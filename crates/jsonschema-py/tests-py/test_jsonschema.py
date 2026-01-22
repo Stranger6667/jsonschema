@@ -286,6 +286,131 @@ def test_one_of_multiple_valid_with_context():
     assert len(exc.value.kind.context[2]) == 1  # Third schema (maxLength: 3) failed
 
 
+@pytest.mark.parametrize(
+    "schema,instance,expected_name,draft",
+    [
+        # additionalItems is Draft 4/7 only
+        ({"additionalItems": False, "items": [{}]}, [1, 2], "additional_items", Draft7Validator),
+        ({"type": "object", "properties": {"x": {}}, "additionalProperties": False}, {"a": 1}, "additional_properties", None),
+        ({"anyOf": [{"type": "string"}, {"type": "number"}]}, True, "any_of", None),
+        ({"const": "test"}, "wrong", "constant", None),
+        ({"contains": {"type": "string"}}, [1, 2, 3], "contains", None),
+        ({"enum": [1, 2, 3]}, 4, "enum", None),
+        ({"exclusiveMaximum": 5}, 5, "exclusive_maximum", None),
+        ({"exclusiveMinimum": 5}, 5, "exclusive_minimum", None),
+        (False, "anything", "false_schema", None),
+        ({"format": "email"}, "not-an-email", "format", None),
+        ({"maxItems": 1}, [1, 2], "max_items", None),
+        ({"maximum": 5}, 6, "maximum", None),
+        ({"maxLength": 5}, "too long", "max_length", None),
+        ({"maxProperties": 1}, {"a": 1, "b": 2}, "max_properties", None),
+        ({"minItems": 2}, [1], "min_items", None),
+        ({"minimum": 5}, 4, "minimum", None),
+        ({"minLength": 5}, "foo", "min_length", None),
+        ({"minProperties": 2}, {"a": 1}, "min_properties", None),
+        ({"multipleOf": 2}, 3, "multiple_of", None),
+        ({"not": {"type": "string"}}, "string", "not", None),
+        ({"oneOf": [{"type": "string"}, {"type": "string"}]}, "1", "one_of_multiple_valid", None),
+        ({"oneOf": [{"type": "number"}, {"type": "number"}]}, "x", "one_of_not_valid", None),
+        ({"pattern": "^test$"}, "wrong", "pattern", None),
+        ({"propertyNames": {"minLength": 3}}, {"ab": 1}, "property_names", None),
+        ({"required": ["missing"]}, {}, "required", None),
+        ({"type": "string"}, 1, "type", None),
+        ({"unevaluatedItems": False, "prefixItems": [{}]}, [1, 2], "unevaluated_items", None),
+        ({"unevaluatedProperties": False}, {"a": 1}, "unevaluated_properties", None),
+        ({"uniqueItems": True}, [1, 1], "unique_items", None),
+    ],
+)
+def test_kind_name(schema, instance, expected_name, draft):
+    if draft is not None:
+        validator = draft(schema, validate_formats=True)
+        errors = list(validator.iter_errors(instance))
+    else:
+        errors = list(iter_errors(schema, instance, validate_formats=True))
+    assert len(errors) > 0
+    assert errors[0].kind.name == expected_name
+
+
+@pytest.mark.parametrize(
+    "schema,instance,expected_value",
+    [
+        ({"minimum": 5}, 3, 5),
+        ({"maximum": 10}, 15, 10),
+        ({"minLength": 5}, "ab", 5),
+        ({"maxLength": 2}, "abc", 2),
+        ({"pattern": "^a$"}, "b", "^a$"),
+        ({"type": "string"}, 42, ["string"]),
+        ({"const": "expected"}, "actual", "expected"),
+        ({"enum": [1, 2, 3]}, 4, [1, 2, 3]),
+        ({"required": ["foo"]}, {}, "foo"),
+        ({"multipleOf": 3}, 5, 3.0),
+        ({"format": "email"}, "bad", "email"),
+    ],
+)
+def test_kind_value(schema, instance, expected_value):
+    errors = list(iter_errors(schema, instance, validate_formats=True))
+    assert errors[0].kind.value == expected_value
+
+
+@pytest.mark.parametrize(
+    "schema,instance",
+    [
+        ({"contains": {"type": "string"}}, [1, 2, 3]),
+        (False, "anything"),
+        ({"uniqueItems": True}, [1, 1]),
+    ],
+)
+def test_kind_value_none(schema, instance):
+    errors = list(iter_errors(schema, instance))
+    assert errors[0].kind.value is None
+
+
+@pytest.mark.parametrize(
+    "schema,instance,expected_dict",
+    [
+        ({"minimum": 5}, 3, {"limit": 5}),
+        ({"type": "string"}, 42, {"types": ["string"]}),
+        ({"required": ["foo"]}, {}, {"property": "foo"}),
+        ({"pattern": "^a$"}, "b", {"pattern": "^a$"}),
+        ({"contains": {"type": "string"}}, [1], {}),
+        (False, 1, {}),
+        ({"uniqueItems": True}, [1, 1], {}),
+    ],
+)
+def test_kind_as_dict(schema, instance, expected_dict):
+    errors = list(iter_errors(schema, instance))
+    assert errors[0].kind.as_dict() == expected_dict
+
+
+def test_kind_pattern_matching():
+    errors = list(iter_errors({"minimum": 5}, 3))
+    kind = errors[0].kind
+
+    assert hasattr(type(kind), "__match_args__")
+
+    match kind:
+        case ValidationErrorKind.Minimum(limit=lim):
+            assert lim == 5
+        case _:
+            pytest.fail("Pattern matching failed")
+
+
+def test_custom_keyword_kind_name():
+    class DivisibleBy:
+        def __init__(self, parent_schema, value, schema_path):
+            self.divisor = value
+
+        def validate(self, instance):
+            if isinstance(instance, int) and instance % self.divisor != 0:
+                raise ValueError(f"not divisible by {self.divisor}")
+
+    errors = list(iter_errors({"divisibleBy": 3}, 5, keywords={"divisibleBy": DivisibleBy}))
+    assert len(errors) == 1
+    assert errors[0].kind.name == "divisibleBy"
+    assert errors[0].kind.value == "not divisible by 3"
+    assert errors[0].kind.as_dict() == {"keyword": "divisibleBy", "message": "not divisible by 3"}
+
+
 @given(minimum=st.integers().map(abs))
 def test_minimum(minimum):
     with suppress(SystemError, ValueError):

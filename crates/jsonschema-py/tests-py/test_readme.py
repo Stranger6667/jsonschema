@@ -2,6 +2,7 @@ import re
 import sys
 from pathlib import Path
 
+import jsonschema_rs
 import pytest
 
 HERE = Path(__file__).absolute()
@@ -14,9 +15,9 @@ def test_readme():
 
     code_blocks = re.findall(r"```python\n(.*?)```", readme, re.DOTALL)
 
-    # Execute each code block
+    scope = {"jsonschema_rs": jsonschema_rs}
     for i, code_block in enumerate(code_blocks):
         try:
-            exec(code_block)
+            exec(code_block, scope)
         except Exception as e:
             pytest.fail(f"Code block {i + 1} failed: {str(e)}\n\nCode:\n{code_block}")

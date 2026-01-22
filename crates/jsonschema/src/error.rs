@@ -257,7 +257,7 @@ pub enum ValidationErrorKind {
     /// The input value does not respect the defined contentMediaType
     ContentMediaType { content_media_type: String },
     /// Custom error message for user-defined validation.
-    Custom { message: String },
+    Custom { keyword: String, message: String },
     /// The input value doesn't match any of specified options.
     Enum { options: Value },
     /// Value is too large.
@@ -324,7 +324,7 @@ pub enum ValidationErrorKind {
 }
 
 impl ValidationErrorKind {
-    pub(crate) fn keyword(&self) -> &'static str {
+    pub(crate) fn keyword(&self) -> &str {
         match self {
             ValidationErrorKind::AdditionalItems { .. } => "additionalItems",
             ValidationErrorKind::AdditionalProperties { .. } => "additionalProperties",
@@ -337,7 +337,7 @@ impl ValidationErrorKind {
                 "contentEncoding"
             }
             ValidationErrorKind::ContentMediaType { .. } => "contentMediaType",
-            ValidationErrorKind::Custom { .. } => "custom",
+            ValidationErrorKind::Custom { keyword, .. } => keyword,
             ValidationErrorKind::Enum { .. } => "enum",
             ValidationErrorKind::ExclusiveMaximum { .. } => "exclusiveMaximum",
             ValidationErrorKind::ExclusiveMinimum { .. } => "exclusiveMinimum",
@@ -1165,6 +1165,7 @@ impl<'a> ValidationError<'a> {
         ValidationError::new(
             Cow::Owned(Value::Null),
             ValidationErrorKind::Custom {
+                keyword: String::new(),
                 message: message.into(),
             },
             Location::new(),
@@ -1181,6 +1182,7 @@ impl<'a> ValidationError<'a> {
         ValidationError::new(
             Cow::Owned(Value::Null),
             ValidationErrorKind::Custom {
+                keyword: String::new(),
                 message: message.into(),
             },
             Location::new(),
@@ -1198,10 +1200,18 @@ impl<'a> ValidationError<'a> {
         instance: &'i Value,
         instance_path: &LazyLocation,
         schema_path: &Location,
+        keyword: &str,
     ) -> ValidationError<'i> {
+        let kind = match self.repr.kind {
+            ValidationErrorKind::Custom { message, .. } => ValidationErrorKind::Custom {
+                keyword: keyword.to_string(),
+                message,
+            },
+            other => other,
+        };
         ValidationError::new(
             Cow::Borrowed(instance),
-            self.repr.kind,
+            kind,
             instance_path.into(),
             schema_path.clone(),
             // Custom keywords are never reached via $ref, so evaluation path = schema path
@@ -1210,14 +1220,22 @@ impl<'a> ValidationError<'a> {
     }
 
     /// Fill in context for a placeholder schema error (used in keyword factories).
-    pub(crate) fn with_schema_context(
+    pub(crate) fn with_schema_context<'s>(
         self,
-        schema_value: &Value,
+        schema_value: &'s Value,
         schema_path: Location,
-    ) -> ValidationError<'_> {
+        keyword: &str,
+    ) -> ValidationError<'s> {
+        let kind = match self.repr.kind {
+            ValidationErrorKind::Custom { message, .. } => ValidationErrorKind::Custom {
+                keyword: keyword.into(),
+                message,
+            },
+            other => other,
+        };
         ValidationError::new(
             Cow::Borrowed(schema_value),
-            self.repr.kind,
+            kind,
             Location::new(),
             schema_path.clone(),
             schema_path,
@@ -1234,6 +1252,7 @@ impl<'a> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::Custom {
+                keyword: String::new(),
                 message: message.into(),
             },
             instance_path,
@@ -1525,7 +1544,7 @@ impl fmt::Display for ValidationError<'_> {
                 }
                 Ok(())
             }
-            ValidationErrorKind::Custom { message } => f.write_str(message),
+            ValidationErrorKind::Custom { message, .. } => f.write_str(message),
         }
     }
 }
@@ -1714,7 +1733,7 @@ impl fmt::Display for MaskedValidationError<'_, '_, '_> {
                 }
                 Ok(())
             }
-            ValidationErrorKind::Custom { message } => f.write_str(message),
+            ValidationErrorKind::Custom { message, .. } => f.write_str(message),
         }
     }
 }
