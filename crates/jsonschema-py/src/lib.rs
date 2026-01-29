@@ -496,7 +496,7 @@ impl ValidationErrorKind {
             Self::Enum { .. } => "enum",
             Self::ExclusiveMaximum { .. } => "exclusiveMaximum",
             Self::ExclusiveMinimum { .. } => "exclusiveMinimum",
-            Self::FalseSchema { .. } => "false",
+            Self::FalseSchema { .. } => "falseSchema",
             Self::Format { .. } => "format",
             Self::MaxItems { .. } => "maxItems",
             Self::Maximum { .. } => "maximum",

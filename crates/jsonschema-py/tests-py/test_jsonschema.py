@@ -291,14 +291,19 @@ def test_one_of_multiple_valid_with_context():
     [
         # additionalItems is Draft 4/7 only
         ({"additionalItems": False, "items": [{}]}, [1, 2], "additionalItems", Draft7Validator),
-        ({"type": "object", "properties": {"x": {}}, "additionalProperties": False}, {"a": 1}, "additionalProperties", None),
+        (
+            {"type": "object", "properties": {"x": {}}, "additionalProperties": False},
+            {"a": 1},
+            "additionalProperties",
+            None,
+        ),
         ({"anyOf": [{"type": "string"}, {"type": "number"}]}, True, "anyOf", None),
         ({"const": "test"}, "wrong", "const", None),
         ({"contains": {"type": "string"}}, [1, 2, 3], "contains", None),
         ({"enum": [1, 2, 3]}, 4, "enum", None),
         ({"exclusiveMaximum": 5}, 5, "exclusiveMaximum", None),
         ({"exclusiveMinimum": 5}, 5, "exclusiveMinimum", None),
-        (False, "anything", "false", None),
+        (False, "anything", "falseSchema", None),
         ({"format": "email"}, "not-an-email", "format", None),
         ({"maxItems": 1}, [1, 2], "maxItems", None),
         ({"maximum": 5}, 6, "maximum", None),
