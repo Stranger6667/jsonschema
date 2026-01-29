@@ -33,7 +33,22 @@ impl AllOfValidator {
 
 impl Validate for AllOfValidator {
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        self.schemas.iter().all(|n| n.is_valid(instance, ctx))
+        // Unrolled loop for common cases (2-4 schemas)
+        match self.schemas.as_slice() {
+            [s0, s1] => s0.is_valid(instance, ctx) && s1.is_valid(instance, ctx),
+            [s0, s1, s2] => {
+                s0.is_valid(instance, ctx)
+                    && s1.is_valid(instance, ctx)
+                    && s2.is_valid(instance, ctx)
+            }
+            [s0, s1, s2, s3] => {
+                s0.is_valid(instance, ctx)
+                    && s1.is_valid(instance, ctx)
+                    && s2.is_valid(instance, ctx)
+                    && s3.is_valid(instance, ctx)
+            }
+            schemas => schemas.iter().all(|n| n.is_valid(instance, ctx)),
+        }
     }
 
     fn validate<'i>(
@@ -43,8 +58,28 @@ impl Validate for AllOfValidator {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        for schema in &self.schemas {
-            schema.validate(instance, location, tracker, ctx)?;
+        // Unrolled loop for common cases (2-4 schemas)
+        match self.schemas.as_slice() {
+            [s0, s1] => {
+                s0.validate(instance, location, tracker, ctx)?;
+                s1.validate(instance, location, tracker, ctx)?;
+            }
+            [s0, s1, s2] => {
+                s0.validate(instance, location, tracker, ctx)?;
+                s1.validate(instance, location, tracker, ctx)?;
+                s2.validate(instance, location, tracker, ctx)?;
+            }
+            [s0, s1, s2, s3] => {
+                s0.validate(instance, location, tracker, ctx)?;
+                s1.validate(instance, location, tracker, ctx)?;
+                s2.validate(instance, location, tracker, ctx)?;
+                s3.validate(instance, location, tracker, ctx)?;
+            }
+            schemas => {
+                for schema in schemas {
+                    schema.validate(instance, location, tracker, ctx)?;
+                }
+            }
         }
         Ok(())
     }

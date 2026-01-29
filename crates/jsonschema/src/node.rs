@@ -419,18 +419,33 @@ impl SchemaNode {
 impl Validate for SchemaNode {
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         match self.validators.as_ref() {
-            // Single validator fast path
-            NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
-                kvs.validators[0].validator.is_valid(instance, ctx)
-            }
-            NodeValidators::Keyword(kvs) => {
-                for entry in &kvs.validators {
-                    if !entry.validator.is_valid(instance, ctx) {
-                        return false;
-                    }
+            // Unrolled loop for 1-4 validators
+            NodeValidators::Keyword(kvs) => match kvs.validators.as_slice() {
+                [] => true,
+                [v0] => v0.validator.is_valid(instance, ctx),
+                [v0, v1] => {
+                    v0.validator.is_valid(instance, ctx) && v1.validator.is_valid(instance, ctx)
                 }
-                true
-            }
+                [v0, v1, v2] => {
+                    v0.validator.is_valid(instance, ctx)
+                        && v1.validator.is_valid(instance, ctx)
+                        && v2.validator.is_valid(instance, ctx)
+                }
+                [v0, v1, v2, v3] => {
+                    v0.validator.is_valid(instance, ctx)
+                        && v1.validator.is_valid(instance, ctx)
+                        && v2.validator.is_valid(instance, ctx)
+                        && v3.validator.is_valid(instance, ctx)
+                }
+                validators => {
+                    for entry in validators {
+                        if !entry.validator.is_valid(instance, ctx) {
+                            return false;
+                        }
+                    }
+                    true
+                }
+            },
             NodeValidators::Array { validators } => validators
                 .iter()
                 .all(|entry| entry.validator.is_valid(instance, ctx)),
@@ -447,16 +462,31 @@ impl Validate for SchemaNode {
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         match self.validators.as_ref() {
-            NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
-                return kvs.validators[0]
-                    .validator
-                    .validate(instance, location, tracker, ctx);
-            }
-            NodeValidators::Keyword(kvs) => {
-                for entry in &kvs.validators {
-                    entry.validator.validate(instance, location, tracker, ctx)?;
+            // Unrolled loop for 1-4 validators
+            NodeValidators::Keyword(kvs) => match kvs.validators.as_slice() {
+                [] => {}
+                [v0] => return v0.validator.validate(instance, location, tracker, ctx),
+                [v0, v1] => {
+                    v0.validator.validate(instance, location, tracker, ctx)?;
+                    v1.validator.validate(instance, location, tracker, ctx)?;
                 }
-            }
+                [v0, v1, v2] => {
+                    v0.validator.validate(instance, location, tracker, ctx)?;
+                    v1.validator.validate(instance, location, tracker, ctx)?;
+                    v2.validator.validate(instance, location, tracker, ctx)?;
+                }
+                [v0, v1, v2, v3] => {
+                    v0.validator.validate(instance, location, tracker, ctx)?;
+                    v1.validator.validate(instance, location, tracker, ctx)?;
+                    v2.validator.validate(instance, location, tracker, ctx)?;
+                    v3.validator.validate(instance, location, tracker, ctx)?;
+                }
+                validators => {
+                    for entry in validators {
+                        entry.validator.validate(instance, location, tracker, ctx)?;
+                    }
+                }
+            },
             NodeValidators::Array { validators } => {
                 for entry in validators {
                     entry.validator.validate(instance, location, tracker, ctx)?;
