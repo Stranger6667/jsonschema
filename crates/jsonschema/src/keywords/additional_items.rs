@@ -180,7 +180,8 @@ mod tests {
     use serde_json::{json, Value};
     use test_case::test_case;
 
-    #[test_case(&json!({"additionalItems": false, "items": false}), &json!([1]), "/additionalItems")]
+    // When items: false and additionalItems: false, items runs first (lower priority)
+    #[test_case(&json!({"additionalItems": false, "items": false}), &json!([1]), "/items")]
     #[test_case(&json!({"additionalItems": false, "items": [{}]}), &json!([1, 2]), "/additionalItems")]
     #[test_case(&json!({"additionalItems": {"type": "string"}, "items": [{}]}), &json!([1, 2]), "/additionalItems/type")]
     fn location(schema: &Value, instance: &Value, expected: &str) {

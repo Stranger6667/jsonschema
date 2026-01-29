@@ -171,6 +171,86 @@ impl fmt::Display for Keyword {
     }
 }
 
+/// Returns the execution priority for a keyword (lower = execute first).
+/// This enables "fail fast" by running cheap validators before expensive ones.
+///
+/// Priority groups:
+/// - 1-9: Type checks and simple assertions (very cheap)
+/// - 10-19: Value constraints and simple validators
+/// - 20-29: String/array/object size constraints
+/// - 30-39: Property/item validators
+/// - 40-49: Composition validators (allOf, anyOf, oneOf)
+/// - 50+: Reference validators (most expensive due to indirection)
+pub(crate) fn keyword_priority(keyword: &Keyword) -> u8 {
+    match keyword {
+        // Type checks are extremely cheap (single discriminant comparison)
+        Keyword::Builtin(BuiltinKeyword::Type) => 1,
+
+        // Const/enum are cheap (direct value comparison)
+        Keyword::Builtin(BuiltinKeyword::Const) => 5,
+        Keyword::Builtin(BuiltinKeyword::Enum) => 6,
+
+        // Simple numeric assertions
+        Keyword::Builtin(BuiltinKeyword::Minimum) => 10,
+        Keyword::Builtin(BuiltinKeyword::Maximum) => 11,
+        Keyword::Builtin(BuiltinKeyword::ExclusiveMinimum) => 12,
+        Keyword::Builtin(BuiltinKeyword::ExclusiveMaximum) => 13,
+        Keyword::Builtin(BuiltinKeyword::MultipleOf) => 14,
+
+        // Size constraints (also cheap)
+        Keyword::Builtin(BuiltinKeyword::MinLength) => 20,
+        Keyword::Builtin(BuiltinKeyword::MaxLength) => 21,
+        Keyword::Builtin(BuiltinKeyword::MinItems) => 22,
+        Keyword::Builtin(BuiltinKeyword::MaxItems) => 23,
+        Keyword::Builtin(BuiltinKeyword::MinProperties) => 24,
+        Keyword::Builtin(BuiltinKeyword::MaxProperties) => 25,
+
+        // Required is relatively cheap (just checks key existence)
+        Keyword::Builtin(BuiltinKeyword::Required) => 26,
+        Keyword::Builtin(BuiltinKeyword::DependentRequired) => 27,
+
+        // Pattern/format validation (moderate - involves string processing)
+        Keyword::Builtin(BuiltinKeyword::Pattern) => 30,
+        Keyword::Builtin(BuiltinKeyword::Format) => 31,
+        Keyword::Builtin(BuiltinKeyword::ContentEncoding) => 32,
+        Keyword::Builtin(BuiltinKeyword::ContentMediaType) => 33,
+
+        // Unique items (potentially O(n²) for arrays)
+        Keyword::Builtin(BuiltinKeyword::UniqueItems) => 35,
+
+        // Property/item validators (iterate over children)
+        Keyword::Builtin(BuiltinKeyword::Properties) => 40,
+        Keyword::Builtin(BuiltinKeyword::PatternProperties) => 41,
+        Keyword::Builtin(BuiltinKeyword::AdditionalProperties) => 42,
+        Keyword::Builtin(BuiltinKeyword::PropertyNames) => 43,
+        Keyword::Builtin(BuiltinKeyword::Items) => 44,
+        Keyword::Builtin(BuiltinKeyword::PrefixItems) => 45,
+        Keyword::Builtin(BuiltinKeyword::AdditionalItems) => 46,
+        Keyword::Builtin(BuiltinKeyword::Contains) => 47,
+        Keyword::Builtin(BuiltinKeyword::Dependencies) => 48,
+        Keyword::Builtin(BuiltinKeyword::DependentSchemas) => 49,
+
+        // Composition validators (validate against multiple subschemas)
+        Keyword::Builtin(BuiltinKeyword::AllOf) => 50,
+        Keyword::Builtin(BuiltinKeyword::AnyOf) => 51,
+        Keyword::Builtin(BuiltinKeyword::OneOf) => 52,
+        Keyword::Builtin(BuiltinKeyword::Not) => 53,
+        Keyword::Builtin(BuiltinKeyword::If) => 54,
+
+        // Unevaluated validators (depend on other validators' results)
+        Keyword::Builtin(BuiltinKeyword::UnevaluatedProperties) => 60,
+        Keyword::Builtin(BuiltinKeyword::UnevaluatedItems) => 61,
+
+        // Reference validators (most expensive - involve indirection)
+        Keyword::Builtin(BuiltinKeyword::Ref) => 70,
+        Keyword::Builtin(BuiltinKeyword::RecursiveRef) => 71,
+        Keyword::Builtin(BuiltinKeyword::DynamicRef) => 72,
+
+        // Custom keywords get default priority
+        Keyword::Custom(_) => 80,
+    }
+}
+
 pub(crate) fn get_for_draft<'a>(
     ctx: &compiler::Context<'a>,
     keyword: &'a str,

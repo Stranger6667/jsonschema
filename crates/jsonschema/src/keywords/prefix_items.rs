@@ -150,6 +150,7 @@ mod tests {
 
     #[test]
     fn evaluation_outputs_cover_prefix_items() {
+        // Validator execution order: type (1) → required (26) → properties (40)
         let schema = json!({
             "type": "object",
             "properties": {"name": {"type": "string"}, "age": {"type": "number", "minimum": 0}},
@@ -166,6 +167,18 @@ mod tests {
                     {"evaluationPath": "", "instanceLocation": "", "schemaLocation": "", "valid": true},
                     {
                         "valid": true,
+                        "evaluationPath": "/type",
+                        "instanceLocation": "",
+                        "schemaLocation": "/type"
+                    },
+                    {
+                        "valid": true,
+                        "evaluationPath": "/required",
+                        "instanceLocation": "",
+                        "schemaLocation": "/required"
+                    },
+                    {
+                        "valid": true,
                         "evaluationPath": "/properties",
                         "instanceLocation": "",
                         "schemaLocation": "/properties",
@@ -179,15 +192,15 @@ mod tests {
                     },
                     {
                         "valid": true,
-                        "evaluationPath": "/properties/age/minimum",
-                        "instanceLocation": "/age",
-                        "schemaLocation": "/properties/age/minimum"
-                    },
-                    {
-                        "valid": true,
                         "evaluationPath": "/properties/age/type",
                         "instanceLocation": "/age",
                         "schemaLocation": "/properties/age/type"
+                    },
+                    {
+                        "valid": true,
+                        "evaluationPath": "/properties/age/minimum",
+                        "instanceLocation": "/age",
+                        "schemaLocation": "/properties/age/minimum"
                     },
                     {
                         "valid": true,
@@ -200,18 +213,6 @@ mod tests {
                         "evaluationPath": "/properties/name/type",
                         "instanceLocation": "/name",
                         "schemaLocation": "/properties/name/type"
-                    },
-                    {
-                        "valid": true,
-                        "evaluationPath": "/required",
-                        "instanceLocation": "",
-                        "schemaLocation": "/required"
-                    },
-                    {
-                        "valid": true,
-                        "evaluationPath": "/type",
-                        "instanceLocation": "",
-                        "schemaLocation": "/type"
                     }
                 ]
             })
@@ -227,6 +228,18 @@ mod tests {
                 "details": [
                     {
                         "valid": true,
+                        "evaluationPath": "/type",
+                        "instanceLocation": "",
+                        "schemaLocation": "/type"
+                    },
+                    {
+                        "valid": true,
+                        "evaluationPath": "/required",
+                        "instanceLocation": "",
+                        "schemaLocation": "/required"
+                    },
+                    {
+                        "valid": true,
                         "evaluationPath": "/properties",
                         "instanceLocation": "",
                         "schemaLocation": "/properties",
@@ -240,15 +253,15 @@ mod tests {
                                 "details": [
                                     {
                                         "valid": true,
-                                        "evaluationPath": "/properties/age/minimum",
-                                        "instanceLocation": "/age",
-                                        "schemaLocation": "/properties/age/minimum"
-                                    },
-                                    {
-                                        "valid": true,
                                         "evaluationPath": "/properties/age/type",
                                         "instanceLocation": "/age",
                                         "schemaLocation": "/properties/age/type"
+                                    },
+                                    {
+                                        "valid": true,
+                                        "evaluationPath": "/properties/age/minimum",
+                                        "instanceLocation": "/age",
+                                        "schemaLocation": "/properties/age/minimum"
                                     }
                                 ]
                             },
@@ -267,18 +280,6 @@ mod tests {
                                 ]
                             }
                         ]
-                    },
-                    {
-                        "valid": true,
-                        "evaluationPath": "/required",
-                        "instanceLocation": "",
-                        "schemaLocation": "/required"
-                    },
-                    {
-                        "valid": true,
-                        "evaluationPath": "/type",
-                        "instanceLocation": "",
-                        "schemaLocation": "/type"
                     }
                 ]
             })

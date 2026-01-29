@@ -3,6 +3,6 @@ source: crates/jsonschema-cli/tests/cli.rs
 expression: sanitized
 ---
 {FILE_1} - INVALID. Errors:
-1. "not a number" is not of type "number"
-2. 123 is not of type "string"
-3. "email" is a required property
+1. "email" is a required property
+2. "not a number" is not of type "number"
+3. 123 is not of type "string"

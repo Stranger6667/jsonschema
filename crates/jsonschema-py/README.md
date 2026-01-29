@@ -213,6 +213,12 @@ assert evaluation.list() == {
             "valid": False,
         },
         {
+            "valid": True,
+            "evaluationPath": "/type",
+            "instanceLocation": "",
+            "schemaLocation": "/type",
+        },
+        {
             "valid": False,
             "evaluationPath": "/items",
             "instanceLocation": "",
@@ -251,12 +257,6 @@ assert evaluation.list() == {
             "instanceLocation": "/0",
             "schemaLocation": "/prefixItems/0/type",
         },
-        {
-            "valid": True,
-            "evaluationPath": "/type",
-            "instanceLocation": "",
-            "schemaLocation": "/type",
-        },
     ],
 }
 
@@ -267,6 +267,12 @@ assert hierarchical == {
     "instanceLocation": "",
     "schemaLocation": "",
     "details": [
+        {
+            "valid": True,
+            "evaluationPath": "/type",
+            "instanceLocation": "",
+            "schemaLocation": "/type",
+        },
         {
             "valid": False,
             "evaluationPath": "/items",
@@ -313,12 +319,6 @@ assert hierarchical == {
                     ],
                 }
             ],
-        },
-        {
-            "valid": True,
-            "evaluationPath": "/type",
-            "instanceLocation": "",
-            "schemaLocation": "/type",
         },
     ],
 }

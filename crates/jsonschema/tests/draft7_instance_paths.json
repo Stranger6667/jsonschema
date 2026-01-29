@@ -576,7 +576,9 @@
         },
         {
           "id": 3,
-          "instance_path": []
+          "instance_path": [
+            "0"
+          ]
         }
       ]
     }

@@ -271,6 +271,12 @@ impl Evaluation {
     ///         "details": [
     ///             {"evaluationPath": "", "instanceLocation": "", "schemaLocation": "", "valid": false},
     ///             {
+    ///                 "valid": true,
+    ///                 "evaluationPath": "/type",
+    ///                 "instanceLocation": "",
+    ///                 "schemaLocation": "/type"
+    ///             },
+    ///             {
     ///                 "valid": false,
     ///                 "evaluationPath": "/items",
     ///                 "instanceLocation": "",
@@ -308,12 +314,6 @@ impl Evaluation {
     ///                 "evaluationPath": "/prefixItems/0/type",
     ///                 "instanceLocation": "/0",
     ///                 "schemaLocation": "/prefixItems/0/type"
-    ///             },
-    ///             {
-    ///                 "valid": true,
-    ///                 "evaluationPath": "/type",
-    ///                 "instanceLocation": "",
-    ///                 "schemaLocation": "/type"
     ///             }
     ///         ]
     ///     })
@@ -353,6 +353,12 @@ impl Evaluation {
     ///         "schemaLocation": "",
     ///         "instanceLocation": "",
     ///         "details": [
+    ///             {
+    ///                 "valid": true,
+    ///                 "evaluationPath": "/type",
+    ///                 "instanceLocation": "",
+    ///                 "schemaLocation": "/type"
+    ///             },
     ///             {
     ///                 "valid": false,
     ///                 "evaluationPath": "/items",
@@ -399,12 +405,6 @@ impl Evaluation {
     ///                         ]
     ///                     }
     ///                 ]
-    ///             },
-    ///             {
-    ///                 "valid": true,
-    ///                 "evaluationPath": "/type",
-    ///                 "instanceLocation": "",
-    ///                 "schemaLocation": "/type"
     ///             }
     ///         ]
     ///     })
@@ -749,7 +749,7 @@ pub struct AnnotationEntry<'a> {
 ///     }
 /// });
 /// let validator = jsonschema::validator_for(&schema)?;
-/// let instance = json!({"age": "oops"});
+/// let instance = json!({"name": "test", "age": "oops"});
 /// let evaluation = validator.evaluate(&instance);
 /// let entry = evaluation.iter_errors().next().unwrap();
 /// assert_eq!(entry.schema_location, "/properties/age/type");
@@ -879,9 +879,10 @@ impl<'a> Iterator for AnnotationIter<'a> {
 ///
 /// let errors: Vec<_> = evaluation.iter_errors().collect();
 /// assert_eq!(errors.len(), 2);
-/// assert_eq!(errors[0].instance_location.as_str(), "/age");
-/// assert_eq!(errors[0].schema_location, "/properties/age/minimum");
-/// assert_eq!(errors[1].schema_location, "/required");
+/// assert_eq!(errors[0].schema_location, "/required");
+/// assert_eq!(errors[0].instance_location.as_str(), "");
+/// assert_eq!(errors[1].schema_location, "/properties/age/minimum");
+/// assert_eq!(errors[1].instance_location.as_str(), "/age");
 /// # Ok(())
 /// # }
 /// ```

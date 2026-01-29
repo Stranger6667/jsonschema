@@ -40,6 +40,18 @@
                                     "instanceLocation": ""
                                 },
                                 {
+                                    "valid": true,
+                                    "evaluationPath": "/type",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/type",
+                                    "instanceLocation": ""
+                                },
+                                {
+                                    "valid": true,
+                                    "evaluationPath": "/required",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/required",
+                                    "instanceLocation": ""
+                                },
+                                {
                                     "valid": false,
                                     "evaluationPath": "/properties",
                                     "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties",
@@ -59,6 +71,18 @@
                                     "valid": false,
                                     "evaluationPath": "/properties/child/$dynamicRef",
                                     "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#",
+                                    "instanceLocation": "/child"
+                                },
+                                {
+                                    "valid": true,
+                                    "evaluationPath": "/properties/child/$dynamicRef/type",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/type",
+                                    "instanceLocation": "/child"
+                                },
+                                {
+                                    "valid": true,
+                                    "evaluationPath": "/properties/child/$dynamicRef/required",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/required",
                                     "instanceLocation": "/child"
                                 },
                                 {
@@ -87,18 +111,6 @@
                                 },
                                 {
                                     "valid": true,
-                                    "evaluationPath": "/properties/child/$dynamicRef/required",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/required",
-                                    "instanceLocation": "/child"
-                                },
-                                {
-                                    "valid": true,
-                                    "evaluationPath": "/properties/child/$dynamicRef/type",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/type",
-                                    "instanceLocation": "/child"
-                                },
-                                {
-                                    "valid": true,
                                     "evaluationPath": "/properties/value",
                                     "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/value",
                                     "instanceLocation": "/value"
@@ -108,18 +120,6 @@
                                     "evaluationPath": "/properties/value/type",
                                     "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/properties/value/type",
                                     "instanceLocation": "/value"
-                                },
-                                {
-                                    "valid": true,
-                                    "evaluationPath": "/required",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/required",
-                                    "instanceLocation": ""
-                                },
-                                {
-                                    "valid": true,
-                                    "evaluationPath": "/type",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/type",
-                                    "instanceLocation": ""
                                 }
                             ]
                         }
@@ -132,6 +132,18 @@
                             "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#",
                             "instanceLocation": "",
                             "details": [
+                                {
+                                    "valid": true,
+                                    "evaluationPath": "/type",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/type",
+                                    "instanceLocation": ""
+                                },
+                                {
+                                    "valid": true,
+                                    "evaluationPath": "/required",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/required",
+                                    "instanceLocation": ""
+                                },
                                 {
                                     "valid": false,
                                     "evaluationPath": "/properties",
@@ -154,6 +166,18 @@
                                                     "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#",
                                                     "instanceLocation": "/child",
                                                     "details": [
+                                                        {
+                                                            "valid": true,
+                                                            "evaluationPath": "/properties/child/$dynamicRef/type",
+                                                            "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/type",
+                                                            "instanceLocation": "/child"
+                                                        },
+                                                        {
+                                                            "valid": true,
+                                                            "evaluationPath": "/properties/child/$dynamicRef/required",
+                                                            "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/required",
+                                                            "instanceLocation": "/child"
+                                                        },
                                                         {
                                                             "valid": false,
                                                             "evaluationPath": "/properties/child/$dynamicRef/properties",
@@ -181,18 +205,6 @@
                                                                     ]
                                                                 }
                                                             ]
-                                                        },
-                                                        {
-                                                            "valid": true,
-                                                            "evaluationPath": "/properties/child/$dynamicRef/required",
-                                                            "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/required",
-                                                            "instanceLocation": "/child"
-                                                        },
-                                                        {
-                                                            "valid": true,
-                                                            "evaluationPath": "/properties/child/$dynamicRef/type",
-                                                            "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/type",
-                                                            "instanceLocation": "/child"
                                                         }
                                                     ]
                                                 }
@@ -213,18 +225,6 @@
                                             ]
                                         }
                                     ]
-                                },
-                                {
-                                    "valid": true,
-                                    "evaluationPath": "/required",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/required",
-                                    "instanceLocation": ""
-                                },
-                                {
-                                    "valid": true,
-                                    "evaluationPath": "/type",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/dynamic_ref_chain/0#/type",
-                                    "instanceLocation": ""
                                 }
                             ]
                         }

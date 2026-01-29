@@ -24,6 +24,18 @@ def test_evaluate_produces_expected_outputs_for_valid_instance():
             },
             {
                 "valid": True,
+                "evaluationPath": "/type",
+                "instanceLocation": "",
+                "schemaLocation": "/type",
+            },
+            {
+                "valid": True,
+                "evaluationPath": "/required",
+                "instanceLocation": "",
+                "schemaLocation": "/required",
+            },
+            {
+                "valid": True,
                 "evaluationPath": "/properties",
                 "instanceLocation": "",
                 "schemaLocation": "/properties",
@@ -37,15 +49,15 @@ def test_evaluate_produces_expected_outputs_for_valid_instance():
             },
             {
                 "valid": True,
-                "evaluationPath": "/properties/age/minimum",
-                "instanceLocation": "/age",
-                "schemaLocation": "/properties/age/minimum",
-            },
-            {
-                "valid": True,
                 "evaluationPath": "/properties/age/type",
                 "instanceLocation": "/age",
                 "schemaLocation": "/properties/age/type",
+            },
+            {
+                "valid": True,
+                "evaluationPath": "/properties/age/minimum",
+                "instanceLocation": "/age",
+                "schemaLocation": "/properties/age/minimum",
             },
             {
                 "valid": True,
@@ -59,18 +71,6 @@ def test_evaluate_produces_expected_outputs_for_valid_instance():
                 "instanceLocation": "/name",
                 "schemaLocation": "/properties/name/type",
             },
-            {
-                "valid": True,
-                "evaluationPath": "/required",
-                "instanceLocation": "",
-                "schemaLocation": "/required",
-            },
-            {
-                "valid": True,
-                "evaluationPath": "/type",
-                "instanceLocation": "",
-                "schemaLocation": "/type",
-            },
         ],
     }
 
@@ -80,6 +80,18 @@ def test_evaluate_produces_expected_outputs_for_valid_instance():
         "instanceLocation": "",
         "schemaLocation": "",
         "details": [
+            {
+                "valid": True,
+                "evaluationPath": "/type",
+                "instanceLocation": "",
+                "schemaLocation": "/type",
+            },
+            {
+                "valid": True,
+                "evaluationPath": "/required",
+                "instanceLocation": "",
+                "schemaLocation": "/required",
+            },
             {
                 "valid": True,
                 "evaluationPath": "/properties",
@@ -95,15 +107,15 @@ def test_evaluate_produces_expected_outputs_for_valid_instance():
                         "details": [
                             {
                                 "valid": True,
-                                "evaluationPath": "/properties/age/minimum",
-                                "instanceLocation": "/age",
-                                "schemaLocation": "/properties/age/minimum",
-                            },
-                            {
-                                "valid": True,
                                 "evaluationPath": "/properties/age/type",
                                 "instanceLocation": "/age",
                                 "schemaLocation": "/properties/age/type",
+                            },
+                            {
+                                "valid": True,
+                                "evaluationPath": "/properties/age/minimum",
+                                "instanceLocation": "/age",
+                                "schemaLocation": "/properties/age/minimum",
                             },
                         ],
                     },
@@ -122,18 +134,6 @@ def test_evaluate_produces_expected_outputs_for_valid_instance():
                         ],
                     },
                 ],
-            },
-            {
-                "valid": True,
-                "evaluationPath": "/required",
-                "instanceLocation": "",
-                "schemaLocation": "/required",
-            },
-            {
-                "valid": True,
-                "evaluationPath": "/type",
-                "instanceLocation": "",
-                "schemaLocation": "/type",
             },
         ],
     }
@@ -194,6 +194,12 @@ def test_validator_evaluate_annotations_and_errors():
                 "valid": False,
             },
             {
+                "valid": True,
+                "evaluationPath": "/type",
+                "instanceLocation": "",
+                "schemaLocation": "/type",
+            },
+            {
                 "valid": False,
                 "evaluationPath": "/items",
                 "instanceLocation": "",
@@ -232,12 +238,6 @@ def test_validator_evaluate_annotations_and_errors():
                 "instanceLocation": "/0",
                 "schemaLocation": "/prefixItems/0/type",
             },
-            {
-                "valid": True,
-                "evaluationPath": "/type",
-                "instanceLocation": "",
-                "schemaLocation": "/type",
-            },
         ],
     }
     assert invalid_eval.hierarchical() == {
@@ -246,6 +246,12 @@ def test_validator_evaluate_annotations_and_errors():
         "instanceLocation": "",
         "schemaLocation": "",
         "details": [
+            {
+                "valid": True,
+                "evaluationPath": "/type",
+                "instanceLocation": "",
+                "schemaLocation": "/type",
+            },
             {
                 "valid": False,
                 "evaluationPath": "/items",
@@ -292,12 +298,6 @@ def test_validator_evaluate_annotations_and_errors():
                         ],
                     }
                 ],
-            },
-            {
-                "valid": True,
-                "evaluationPath": "/type",
-                "instanceLocation": "",
-                "schemaLocation": "/type",
             },
         ],
     }

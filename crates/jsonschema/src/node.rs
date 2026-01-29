@@ -217,9 +217,14 @@ impl SchemaNode {
 
     pub(crate) fn from_keywords(
         ctx: &Context<'_>,
-        validators: Vec<(Keyword, BoxedValidator)>,
+        mut validators: Vec<(Keyword, BoxedValidator)>,
         unmatched_keywords: Option<Arc<Value>>,
     ) -> SchemaNode {
+        // Sort validators by priority (lower = execute first).
+        // This enables "fail fast" by running cheap validators (type, const)
+        // before expensive ones (allOf, $ref).
+        validators.sort_by_key(|(keyword, _)| crate::keywords::keyword_priority(keyword));
+
         let absolute_path = ctx.base_uri();
         let validators = validators
             .into_iter()

@@ -8,6 +8,10 @@
 - `ValidationErrorKind.value` property returning the constraint value.
 - `ValidationErrorKind.as_dict()` method returning error details as a dictionary.
 
+### Performance
+
+- Faster validation via cost-based keyword ordering.
+
 ## [0.40.0] - 2026-01-18
 
 ### Added

@@ -6,6 +6,10 @@
 
 - `ValidationErrorKind::Custom` now includes a `keyword` field containing the custom keyword name.
 
+### Performance
+
+- Faster validation via cost-based keyword ordering.
+
 ## [0.40.0] - 2026-01-18
 
 ### Added

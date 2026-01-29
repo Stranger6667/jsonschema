@@ -51,6 +51,12 @@
                                 },
                                 {
                                     "valid": true,
+                                    "evaluationPath": "/type",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/type",
+                                    "instanceLocation": ""
+                                },
+                                {
+                                    "valid": true,
                                     "evaluationPath": "/properties",
                                     "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/properties",
                                     "instanceLocation": "",
@@ -63,12 +69,6 @@
                                     "evaluationPath": "/properties/passes",
                                     "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/properties/passes",
                                     "instanceLocation": "/passes"
-                                },
-                                {
-                                    "valid": true,
-                                    "evaluationPath": "/type",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/type",
-                                    "instanceLocation": ""
                                 }
                             ]
                         }
@@ -81,6 +81,12 @@
                             "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#",
                             "instanceLocation": "",
                             "details": [
+                                {
+                                    "valid": true,
+                                    "evaluationPath": "/type",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/type",
+                                    "instanceLocation": ""
+                                },
                                 {
                                     "valid": true,
                                     "evaluationPath": "/properties",
@@ -97,12 +103,6 @@
                                             "instanceLocation": "/passes"
                                         }
                                     ]
-                                },
-                                {
-                                    "valid": true,
-                                    "evaluationPath": "/type",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/type",
-                                    "instanceLocation": ""
                                 }
                             ]
                         }
@@ -127,6 +127,12 @@
                                     "instanceLocation": ""
                                 },
                                 {
+                                    "valid": true,
+                                    "evaluationPath": "/type",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/type",
+                                    "instanceLocation": ""
+                                },
+                                {
                                     "valid": false,
                                     "evaluationPath": "/properties",
                                     "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/properties",
@@ -143,12 +149,6 @@
                                     "errors": {
                                         "falseSchema": "False schema does not allow \"value\""
                                     }
-                                },
-                                {
-                                    "valid": true,
-                                    "evaluationPath": "/type",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/type",
-                                    "instanceLocation": ""
                                 }
                             ]
                         }
@@ -161,6 +161,12 @@
                             "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#",
                             "instanceLocation": "",
                             "details": [
+                                {
+                                    "valid": true,
+                                    "evaluationPath": "/type",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/type",
+                                    "instanceLocation": ""
+                                },
                                 {
                                     "valid": false,
                                     "evaluationPath": "/properties",
@@ -180,12 +186,6 @@
                                             }
                                         }
                                     ]
-                                },
-                                {
-                                    "valid": true,
-                                    "evaluationPath": "/type",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/type",
-                                    "instanceLocation": ""
                                 }
                             ]
                         }
@@ -207,6 +207,12 @@
                                     "valid": false,
                                     "evaluationPath": "",
                                     "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#",
+                                    "instanceLocation": ""
+                                },
+                                {
+                                    "valid": true,
+                                    "evaluationPath": "/type",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/type",
                                     "instanceLocation": ""
                                 },
                                 {
@@ -271,12 +277,6 @@
                                     "errors": {
                                         "minimum": "3.5 is less than the minimum of 5"
                                     }
-                                },
-                                {
-                                    "valid": true,
-                                    "evaluationPath": "/type",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/type",
-                                    "instanceLocation": ""
                                 }
                             ]
                         }
@@ -289,6 +289,12 @@
                             "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#",
                             "instanceLocation": "",
                             "details": [
+                                {
+                                    "valid": true,
+                                    "evaluationPath": "/type",
+                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/type",
+                                    "instanceLocation": ""
+                                },
                                 {
                                     "valid": false,
                                     "evaluationPath": "/properties",
@@ -365,12 +371,6 @@
                                             ]
                                         }
                                     ]
-                                },
-                                {
-                                    "valid": true,
-                                    "evaluationPath": "/type",
-                                    "schemaLocation": "https://json-schema.org/tests/content/v1-extra/list-hierarchical/0#/type",
-                                    "instanceLocation": ""
                                 }
                             ]
                         }
