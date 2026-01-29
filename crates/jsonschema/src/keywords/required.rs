@@ -6,10 +6,12 @@ use crate::{
     types::JsonType,
     validator::{Validate, ValidationContext},
 };
+use ahash::AHashSet;
 use serde_json::{Map, Value};
 
 pub(crate) struct RequiredValidator {
     required: Vec<String>,
+    required_set: AHashSet<String>,
     location: Location,
 }
 
@@ -17,9 +19,13 @@ impl RequiredValidator {
     #[inline]
     pub(crate) fn compile(items: &[Value], location: Location) -> CompilationResult<'_> {
         let mut required = Vec::with_capacity(items.len());
+        let mut required_set = AHashSet::with_capacity(items.len());
         for item in items {
             match item {
-                Value::String(string) => required.push(string.clone()),
+                Value::String(string) => {
+                    required.push(string.clone());
+                    required_set.insert(string.clone());
+                }
                 _ => {
                     return Err(ValidationError::single_type_error(
                         location.clone(),
@@ -31,7 +37,11 @@ impl RequiredValidator {
                 }
             }
         }
-        Ok(Box::new(RequiredValidator { required, location }))
+        Ok(Box::new(RequiredValidator {
+            required,
+            required_set,
+            location,
+        }))
     }
 }
 
@@ -41,9 +51,16 @@ impl Validate for RequiredValidator {
             if item.len() < self.required.len() {
                 return false;
             }
-            self.required
-                .iter()
-                .all(|property_name| item.contains_key(property_name))
+            let mut found = 0;
+            for key in item.keys() {
+                if self.required_set.contains(key) {
+                    found += 1;
+                    if found == self.required.len() {
+                        return true;
+                    }
+                }
+            }
+            false
         } else {
             true
         }
