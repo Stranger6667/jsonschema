@@ -11,6 +11,7 @@
 ### Performance
 
 - Faster validation via cost-based keyword ordering.
+- Faster `patternProperties` for simple prefix patterns (e.g., `^x-`).
 
 ## [0.40.0] - 2026-01-18
 

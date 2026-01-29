@@ -14,8 +14,216 @@ use crate::{
 };
 use serde_json::{Map, Value};
 
+/// Try to extract a simple prefix from a pattern like `^prefix`.
+/// Only matches patterns with alphanumeric characters, hyphens, underscores, and forward slashes.
+fn pattern_as_prefix(pattern: &str) -> Option<&str> {
+    let suffix = pattern.strip_prefix('^')?;
+    // Check all characters are simple literals (no regex metacharacters)
+    if suffix
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '/'))
+    {
+        Some(suffix)
+    } else {
+        None
+    }
+}
+
+/// Validator for multiple patterns using compiled regex.
 pub(crate) struct PatternPropertiesValidator<R> {
     patterns: Vec<(Arc<R>, SchemaNode)>,
+}
+
+/// Validator for patterns that are all simple prefixes (optimized path).
+pub(crate) struct PrefixPatternPropertiesValidator {
+    prefixes: Vec<(Arc<str>, SchemaNode)>,
+}
+
+impl Validate for PrefixPatternPropertiesValidator {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        if let Value::Object(item) = instance {
+            for (prefix, node) in &self.prefixes {
+                for (key, value) in item {
+                    if key.starts_with(prefix.as_ref()) && !node.is_valid(value, ctx) {
+                        return false;
+                    }
+                }
+            }
+            true
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::Object(item) = instance {
+            for (key, value) in item {
+                for (prefix, node) in &self.prefixes {
+                    if key.starts_with(prefix.as_ref()) {
+                        node.validate(value, &location.push(key), tracker, ctx)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Object(item) = instance {
+            let mut errors = Vec::new();
+            for (prefix, node) in &self.prefixes {
+                for (key, value) in item {
+                    if key.starts_with(prefix.as_ref()) {
+                        errors.extend(node.iter_errors(
+                            value,
+                            &location.push(key.as_str()),
+                            tracker,
+                            ctx,
+                        ));
+                    }
+                }
+            }
+            ErrorIterator::from_iterator(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if let Value::Object(item) = instance {
+            let mut matched_propnames = Vec::with_capacity(item.len());
+            let mut children = Vec::new();
+            for (prefix, node) in &self.prefixes {
+                for (key, value) in item {
+                    if key.starts_with(prefix.as_ref()) {
+                        matched_propnames.push(key.clone());
+                        children.push(node.evaluate_instance(
+                            value,
+                            &location.push(key.as_str()),
+                            tracker,
+                            ctx,
+                        ));
+                    }
+                }
+            }
+            let mut result = EvaluationResult::from_children(children);
+            result.annotate(Annotations::new(Value::from(matched_propnames)));
+            result
+        } else {
+            EvaluationResult::valid_empty()
+        }
+    }
+}
+
+/// Validator for a single prefix pattern (optimized path).
+pub(crate) struct SinglePrefixPatternPropertiesValidator {
+    prefix: Arc<str>,
+    node: SchemaNode,
+}
+
+impl Validate for SinglePrefixPatternPropertiesValidator {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        if let Value::Object(item) = instance {
+            for (key, value) in item {
+                if key.starts_with(self.prefix.as_ref()) && !self.node.is_valid(value, ctx) {
+                    return false;
+                }
+            }
+            true
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::Object(item) = instance {
+            for (key, value) in item {
+                if key.starts_with(self.prefix.as_ref()) {
+                    self.node
+                        .validate(value, &location.push(key), tracker, ctx)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Object(item) = instance {
+            let mut errors = Vec::new();
+            for (key, value) in item {
+                if key.starts_with(self.prefix.as_ref()) {
+                    errors.extend(self.node.iter_errors(
+                        value,
+                        &location.push(key.as_str()),
+                        tracker,
+                        ctx,
+                    ));
+                }
+            }
+            ErrorIterator::from_iterator(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if let Value::Object(item) = instance {
+            let mut matched_propnames = Vec::with_capacity(item.len());
+            let mut children = Vec::new();
+            for (key, value) in item {
+                if key.starts_with(self.prefix.as_ref()) {
+                    matched_propnames.push(key.clone());
+                    children.push(self.node.evaluate_instance(
+                        value,
+                        &location.push(key.as_str()),
+                        tracker,
+                        ctx,
+                    ));
+                }
+            }
+            let mut result = EvaluationResult::from_children(children);
+            result.annotate(Annotations::new(Value::from(matched_propnames)));
+            result
+        } else {
+            EvaluationResult::valid_empty()
+        }
+    }
 }
 
 impl<R: RegexEngine> Validate for PatternPropertiesValidator<R> {
@@ -229,6 +437,13 @@ pub(crate) fn compile<'a>(
         )));
     };
     let ctx = ctx.new_at_location("patternProperties");
+
+    // Try to compile all patterns as prefixes first (optimized path)
+    if let Some(validator) = try_compile_as_prefixes(&ctx, map) {
+        return Some(validator);
+    }
+
+    // Fall back to regex compilation
     let result = match ctx.config().pattern_options() {
         PatternEngineOptions::FancyRegex { .. } => {
             compile_pattern_entries(&ctx, map, |pctx, pattern, subschema| {
@@ -256,6 +471,34 @@ pub(crate) fn compile<'a>(
         }
     };
     Some(result)
+}
+
+/// Try to compile all patterns as simple prefixes.
+/// Returns `Some` if ALL patterns are simple prefixes, `None` otherwise.
+fn try_compile_as_prefixes<'a>(
+    ctx: &compiler::Context,
+    map: &'a Map<String, Value>,
+) -> Option<CompilationResult<'a>> {
+    let mut prefixes = Vec::with_capacity(map.len());
+
+    for (pattern, subschema) in map {
+        let prefix = pattern_as_prefix(pattern)?;
+        let pctx = ctx.new_at_location(pattern.as_str());
+        let node = match compiler::compile(&pctx, pctx.as_resource_ref(subschema)) {
+            Ok(node) => node,
+            Err(e) => return Some(Err(e)),
+        };
+        prefixes.push((Arc::from(prefix), node));
+    }
+
+    let validator: Box<dyn Validate> = if prefixes.len() == 1 {
+        let (prefix, node) = prefixes.pop().expect("len checked");
+        Box::new(SinglePrefixPatternPropertiesValidator { prefix, node })
+    } else {
+        Box::new(PrefixPatternPropertiesValidator { prefixes })
+    };
+
+    Some(Ok(validator))
 }
 
 fn invalid_regex<'a>(ctx: &compiler::Context, schema: &'a Value) -> ValidationError<'a> {
@@ -305,6 +548,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::pattern_as_prefix;
     use crate::tests_util;
     use serde_json::{json, Value};
     use test_case::test_case;
@@ -334,5 +578,182 @@ mod tests {
             .build(schema)
             .expect_err("Should fail to compile");
         assert!(error.to_string().contains("regex"));
+    }
+
+    #[test_case("^foo", Some("foo"))]
+    #[test_case("^x-", Some("x-"))]
+    #[test_case("^eo_band", Some("eo_band"))]
+    #[test_case("^path/to", Some("path/to"))]
+    #[test_case("^ABC123", Some("ABC123"))]
+    #[test_case("foo", None; "no anchor")]
+    #[test_case("^foo$", None; "end anchor")]
+    #[test_case("^foo.*", None; "contains dot")]
+    #[test_case("^foo+", None; "contains plus")]
+    #[test_case("^foo?", None; "contains question")]
+    #[test_case("^[a-z]", None; "contains bracket")]
+    #[test_case("^foo|bar", None; "contains pipe")]
+    #[test_case("^foo(bar)", None; "contains parens")]
+    #[test_case("^foo\\d", None; "contains backslash")]
+    fn test_pattern_as_prefix(pattern: &str, expected: Option<&str>) {
+        assert_eq!(pattern_as_prefix(pattern), expected);
+    }
+
+    // Test that prefix optimization works correctly for validation
+    #[test_case("^x-", "x-custom", true)]
+    #[test_case("^x-", "custom", false)]
+    #[test_case("^eo_", "eo_bands", true)]
+    #[test_case("^eo_", "proj_epsg", false)]
+    fn test_prefix_pattern_validation(pattern: &str, key: &str, should_match: bool) {
+        let schema = json!({
+            "patternProperties": {
+                pattern: {"type": "string"}
+            }
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+
+        // If key matches pattern, value must be string
+        let valid_instance = json!({ key: "value" });
+        assert!(validator.is_valid(&valid_instance));
+
+        let invalid_instance = json!({ key: 42 });
+        assert_eq!(validator.is_valid(&invalid_instance), !should_match);
+    }
+
+    // Test multiple prefix patterns
+    #[test]
+    fn test_multiple_prefix_patterns() {
+        let schema = json!({
+            "patternProperties": {
+                "^x-": {"type": "string"},
+                "^y-": {"type": "number"}
+            }
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+
+        assert!(validator.is_valid(&json!({"x-foo": "bar", "y-baz": 42})));
+        assert!(!validator.is_valid(&json!({"x-foo": 123}))); // x- must be string
+        assert!(!validator.is_valid(&json!({"y-baz": "str"}))); // y- must be number
+    }
+
+    // iter_errors tests for prefix patterns
+    #[test]
+    fn test_prefix_iter_errors_valid() {
+        let schema = json!({
+            "patternProperties": {
+                "^x-": {"type": "string"}
+            }
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+
+        // Valid: no errors
+        let instance = json!({"x-foo": "bar"});
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+        assert!(errors.is_empty());
+
+        // Valid: non-matching key is ignored
+        let instance = json!({"other": 42});
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_prefix_iter_errors_invalid() {
+        let schema = json!({
+            "patternProperties": {
+                "^x-": {"type": "string"}
+            }
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+
+        // Invalid: wrong type
+        let instance = json!({"x-foo": 42});
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].to_string().contains("not of type"));
+    }
+
+    #[test]
+    fn test_prefix_iter_errors_multiple_failures() {
+        let schema = json!({
+            "patternProperties": {
+                "^x-": {"type": "string"},
+                "^y-": {"type": "number"}
+            }
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+
+        // Multiple errors
+        let instance = json!({"x-a": 1, "y-b": "str"});
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+        assert_eq!(errors.len(), 2);
+    }
+
+    // evaluate tests for prefix patterns
+    #[test]
+    fn test_prefix_evaluate_valid() {
+        let schema = json!({
+            "patternProperties": {
+                "^x-": {"type": "string"}
+            }
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+
+        let instance = json!({"x-foo": "bar"});
+        let result = validator.evaluate(&instance);
+        assert!(result.flag().valid);
+    }
+
+    #[test]
+    fn test_prefix_evaluate_invalid() {
+        let schema = json!({
+            "patternProperties": {
+                "^x-": {"type": "string"}
+            }
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+
+        let instance = json!({"x-foo": 42});
+        let result = validator.evaluate(&instance);
+        assert!(!result.flag().valid);
+    }
+
+    #[test]
+    fn test_prefix_evaluate_annotations() {
+        let schema = json!({
+            "patternProperties": {
+                "^x-": {"type": "string"}
+            }
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+
+        // Valid case should have annotations for matched properties
+        let instance = json!({"x-foo": "bar", "x-baz": "qux", "other": 123});
+        let result = validator.evaluate(&instance);
+        assert!(result.flag().valid);
+
+        // Check annotations exist
+        let annotations: Vec<_> = result.iter_annotations().collect();
+        assert!(!annotations.is_empty());
+    }
+
+    #[test]
+    fn test_prefix_multiple_patterns_evaluate() {
+        let schema = json!({
+            "patternProperties": {
+                "^x-": {"type": "string"},
+                "^y-": {"type": "number"}
+            }
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+
+        // All valid
+        let instance = json!({"x-a": "s", "y-b": 1});
+        let result = validator.evaluate(&instance);
+        assert!(result.flag().valid);
+
+        // One invalid
+        let instance = json!({"x-a": 123});
+        let result = validator.evaluate(&instance);
+        assert!(!result.flag().valid);
     }
 }

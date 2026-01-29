@@ -17,7 +17,7 @@ use crate::{
     properties::{
         are_properties_valid, compile_big_map, compile_dynamic_prop_map_validator,
         compile_fancy_regex_patterns, compile_regex_patterns, compile_small_map, BigValidatorsMap,
-        PropertiesValidatorsMap, SmallValidatorsMap,
+        CompiledPattern, PropertiesValidatorsMap, SmallValidatorsMap,
     },
     regex::RegexEngine,
     types::JsonType,
@@ -1363,9 +1363,9 @@ pub(crate) fn compile<'a>(
                         Value::Bool(false) => {
                             if let Some(properties) = properties {
                                 if let Value::Object(map) = properties {
-                                    compile_pattern_non_empty_false::<fancy_regex::Regex>(
-                                        ctx, map, patterns,
-                                    )
+                                    compile_pattern_non_empty_false::<
+                                        CompiledPattern<fancy_regex::Regex>,
+                                    >(ctx, map, patterns)
                                 } else {
                                     let location = ctx.location().join("properties");
                                     Some(Err(ValidationError::compile_error(
@@ -1394,7 +1394,7 @@ pub(crate) fn compile<'a>(
                         _ => {
                             if let Some(properties) = properties {
                                 if let Value::Object(map) = properties {
-                                    compile_pattern_non_empty::<fancy_regex::Regex>(
+                                    compile_pattern_non_empty::<CompiledPattern<fancy_regex::Regex>>(
                                         ctx, map, patterns, schema,
                                     )
                                 } else {
@@ -1434,7 +1434,7 @@ pub(crate) fn compile<'a>(
                         Value::Bool(false) => {
                             if let Some(properties) = properties {
                                 if let Value::Object(map) = properties {
-                                    compile_pattern_non_empty_false::<regex::Regex>(
+                                    compile_pattern_non_empty_false::<CompiledPattern<regex::Regex>>(
                                         ctx, map, patterns,
                                     )
                                 } else {
@@ -1465,7 +1465,7 @@ pub(crate) fn compile<'a>(
                         _ => {
                             if let Some(properties) = properties {
                                 if let Value::Object(map) = properties {
-                                    compile_pattern_non_empty::<regex::Regex>(
+                                    compile_pattern_non_empty::<CompiledPattern<regex::Regex>>(
                                         ctx, map, patterns, schema,
                                     )
                                 } else {
@@ -1969,5 +1969,85 @@ mod tests {
             .build(schema)
             .expect_err("Should fail to compile");
         assert!(error.to_string().contains("regex"));
+    }
+
+    // Test prefix optimization with additionalProperties: false
+    #[test_case("^x-", "x-custom", true)]
+    #[test_case("^x-", "y-other", false)]
+    #[test_case("^eo_", "eo_bands", true)]
+    #[test_case("^eo_", "other", false)]
+    fn prefix_pattern_with_additional_false(pattern: &str, key: &str, matches_pattern: bool) {
+        let schema = json!({
+            "additionalProperties": false,
+            "patternProperties": {
+                pattern: {"type": "string"}
+            }
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+
+        // Valid string value
+        let string_instance = json!({ key: "value" });
+        // If matches_pattern: key matches, string is valid type -> valid
+        // If !matches_pattern: key is additional property, not allowed -> invalid
+        assert_eq!(validator.is_valid(&string_instance), matches_pattern);
+
+        // Invalid type (number instead of string)
+        let number_instance = json!({ key: 42 });
+        // If matches_pattern: key matches but wrong type -> invalid
+        // If !matches_pattern: additional property not allowed -> invalid
+        assert!(!validator.is_valid(&number_instance));
+    }
+
+    // Test prefix optimization with additionalProperties as schema
+    #[test]
+    fn prefix_pattern_with_additional_schema() {
+        let schema = json!({
+            "additionalProperties": {"type": "integer"},
+            "patternProperties": {
+                "^x-": {"type": "string"}
+            }
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+
+        // x-foo matches pattern, must be string
+        assert!(validator.is_valid(&json!({"x-foo": "bar"})));
+        assert!(!validator.is_valid(&json!({"x-foo": 42})));
+
+        // other doesn't match pattern, goes to additionalProperties (must be integer)
+        assert!(validator.is_valid(&json!({"other": 42})));
+        assert!(!validator.is_valid(&json!({"other": "str"})));
+
+        // Both patterns
+        assert!(validator.is_valid(&json!({"x-foo": "bar", "other": 42})));
+        assert!(!validator.is_valid(&json!({"x-foo": 42, "other": "str"})));
+    }
+
+    // Test prefix optimization with properties + additionalProperties: false
+    #[test]
+    fn prefix_pattern_with_properties_and_additional_false() {
+        let schema = json!({
+            "properties": {
+                "name": {"type": "string"}
+            },
+            "additionalProperties": false,
+            "patternProperties": {
+                "^x-": {"type": "string"}
+            }
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+
+        // name is in properties
+        assert!(validator.is_valid(&json!({"name": "test"})));
+        assert!(!validator.is_valid(&json!({"name": 42})));
+
+        // x-foo matches pattern
+        assert!(validator.is_valid(&json!({"x-foo": "bar"})));
+        assert!(!validator.is_valid(&json!({"x-foo": 42})));
+
+        // other is neither in properties nor matches pattern -> additional, not allowed
+        assert!(!validator.is_valid(&json!({"other": "value"})));
+
+        // Combined valid
+        assert!(validator.is_valid(&json!({"name": "test", "x-foo": "bar"})));
     }
 }
