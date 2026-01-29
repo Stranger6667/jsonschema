@@ -8,10 +8,12 @@ use crate::{
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
 };
+use ahash::AHashMap;
 use serde_json::{Map, Value};
 
 pub(crate) struct PropertiesValidator {
     pub(crate) properties: Vec<(String, SchemaNode)>,
+    properties_map: AHashMap<String, usize>,
 }
 
 impl PropertiesValidator {
@@ -20,14 +22,20 @@ impl PropertiesValidator {
         if let Value::Object(map) = schema {
             let ctx = ctx.new_at_location("properties");
             let mut properties = Vec::with_capacity(map.len());
+            let mut properties_map = AHashMap::with_capacity(map.len());
             for (key, subschema) in map {
                 let ctx = ctx.new_at_location(key.as_str());
+                let idx = properties.len();
                 properties.push((
                     key.clone(),
                     compiler::compile(&ctx, ctx.as_resource_ref(subschema))?,
                 ));
+                properties_map.insert(key.clone(), idx);
             }
-            Ok(Box::new(PropertiesValidator { properties }))
+            Ok(Box::new(PropertiesValidator {
+                properties,
+                properties_map,
+            }))
         } else {
             let location = ctx.location().join("properties");
             Err(ValidationError::single_type_error(
@@ -44,9 +52,11 @@ impl PropertiesValidator {
 impl Validate for PropertiesValidator {
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
-            for (name, node) in &self.properties {
-                if let Some(prop) = item.get(name) {
-                    if !node.is_valid(prop, ctx) {
+            // Iterate instance properties and use HashMap for O(1) schema lookup
+            // Faster than iterating schema properties with O(log N) BTreeMap lookups
+            for (key, value) in item {
+                if let Some(&idx) = self.properties_map.get(key) {
+                    if !self.properties[idx].1.is_valid(value, ctx) {
                         return false;
                     }
                 }
