@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Switch HTTP client TLS crypto backend from `aws-lc-rs` to `ring` to fix import errors when building from source on some Linux distributions. [#957](https://github.com/Stranger6667/jsonschema/issues/957)
+
 ### Fixed
 
 - `Draft4Validator` now correctly validates large Python integers outside the i64/u64 range (e.g., `-9223372036854775809`, `18446744073709551616`) as valid for `type: integer`.

@@ -5,6 +5,7 @@
 ### Changed
 
 - Exclude internal `tracker` field from `ValidationError` Debug output.
+- Switch HTTP client TLS crypto backend from `aws-lc-rs` to `ring` to simplify building from source on some Linux distributions. [#957](https://github.com/Stranger6667/jsonschema/issues/957)
 
 ### Fixed
 

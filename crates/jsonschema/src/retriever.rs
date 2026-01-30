@@ -14,6 +14,11 @@ pub enum HttpRetrieverError {
         path: std::path::PathBuf,
         source: std::io::Error,
     },
+    /// Failed to parse certificate.
+    CertificateParse {
+        path: std::path::PathBuf,
+        source: reqwest::Error,
+    },
     /// Failed to build HTTP client.
     ClientBuild(reqwest::Error),
 }
@@ -29,6 +34,13 @@ impl std::fmt::Display for HttpRetrieverError {
                     path.display()
                 )
             }
+            Self::CertificateParse { path, source } => {
+                write!(
+                    f,
+                    "Failed to parse certificate '{}': {source}",
+                    path.display()
+                )
+            }
             Self::ClientBuild(e) => write!(f, "Failed to build HTTP client: {e}"),
         }
     }
@@ -39,22 +51,22 @@ impl std::error::Error for HttpRetrieverError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::CertificateRead { source, .. } => Some(source),
-            Self::ClientBuild(e) => Some(e),
+            Self::CertificateParse { source, .. } | Self::ClientBuild(source) => Some(source),
         }
     }
 }
 
 /// Load a certificate from a PEM file.
-/// Note: `reqwest::Certificate::from_pem()` is lenient and rarely fails.
-/// Invalid certificates are caught later during `ClientBuilder::build()`.
 #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
 fn load_certificate(path: &std::path::Path) -> Result<reqwest::Certificate, HttpRetrieverError> {
     let cert_data = std::fs::read(path).map_err(|e| HttpRetrieverError::CertificateRead {
         path: path.to_path_buf(),
         source: e,
     })?;
-    // from_pem is lenient; invalid certs fail during builder.build()
-    Ok(reqwest::Certificate::from_pem(&cert_data).expect("from_pem should not fail"))
+    reqwest::Certificate::from_pem(&cert_data).map_err(|e| HttpRetrieverError::CertificateParse {
+        path: path.to_path_buf(),
+        source: e,
+    })
 }
 
 /// Configure an HTTP client builder with the given options.
@@ -115,6 +127,8 @@ impl HttpRetriever {
     /// - The certificate is not valid PEM
     /// - The HTTP client cannot be built
     pub fn new(options: &HttpOptions) -> Result<Self, HttpRetrieverError> {
+        // Install ring as the default TLS crypto provider (only needed once)
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let builder = configure_http_client!(reqwest::blocking::Client::builder(), options);
         Ok(Self {
             client: builder.build().map_err(HttpRetrieverError::ClientBuild)?,
@@ -187,6 +201,8 @@ impl AsyncHttpRetriever {
     /// - The certificate is not valid PEM
     /// - The HTTP client cannot be built
     pub fn new(options: &HttpOptions) -> Result<Self, HttpRetrieverError> {
+        // Install ring as the default TLS crypto provider (only needed once)
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let builder = configure_http_client!(reqwest::Client::builder(), options);
         Ok(Self {
             client: builder.build().map_err(HttpRetrieverError::ClientBuild)?,
@@ -256,6 +272,8 @@ impl Retrieve for DefaultRetriever {
             "http" | "https" => {
                 #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
                 {
+                    // Install ring as the default TLS crypto provider (only needed once)
+                    let _ = rustls::crypto::ring::default_provider().install_default();
                     Ok(reqwest::blocking::get(uri.as_str())?.json()?)
                 }
                 #[cfg(all(feature = "resolve-http", target_arch = "wasm32"))]
@@ -311,7 +329,13 @@ impl referencing::AsyncRetrieve for DefaultRetriever {
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         match uri.scheme().as_str() {
             "http" | "https" => {
-                #[cfg(feature = "resolve-http")]
+                #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+                {
+                    // Install ring as the default TLS crypto provider (only needed once)
+                    let _ = rustls::crypto::ring::default_provider().install_default();
+                    Ok(reqwest::get(uri.as_str()).await?.json().await?)
+                }
+                #[cfg(all(feature = "resolve-http", target_arch = "wasm32"))]
                 {
                     Ok(reqwest::get(uri.as_str()).await?.json().await?)
                 }
@@ -641,10 +665,9 @@ mod tests {
 
     #[test]
     #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
-    fn test_http_retriever_error_client_build_display() {
+    fn test_http_retriever_error_invalid_certificate() {
         use std::io::Write;
 
-        // Invalid PEM content that passes from_pem() but fails during client build
         let mut temp = tempfile::NamedTempFile::new().unwrap();
         temp.write_all(b"-----BEGIN CERTIFICATE-----\ninvalid\n-----END CERTIFICATE-----")
             .unwrap();
