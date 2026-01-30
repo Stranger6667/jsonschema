@@ -6,11 +6,49 @@ use crate::{
     keywords::CompilationResult,
     options::PatternEngineOptions,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
-    regex::{RegexEngine, RegexError},
+    regex::{pattern_as_prefix, RegexEngine, RegexError},
     types::JsonType,
     validator::{Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
+
+/// Validator for patterns that are simple prefixes (optimized path).
+pub(crate) struct PrefixPatternValidator {
+    prefix: Arc<str>,
+    pattern: Arc<str>,
+    location: Location,
+}
+
+impl Validate for PrefixPatternValidator {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+        if let Value::String(item) = instance {
+            item.starts_with(self.prefix.as_ref())
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::String(item) = instance {
+            if !item.starts_with(self.prefix.as_ref()) {
+                return Err(ValidationError::pattern(
+                    self.location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.location),
+                    location.into(),
+                    instance,
+                    self.pattern.to_string(),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
 
 pub(crate) struct PatternValidator<R> {
     regex: Arc<R>,
@@ -68,6 +106,15 @@ pub(crate) fn compile<'a>(
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
     if let Value::String(item) = schema {
+        // Try prefix optimization first
+        if let Some(prefix) = pattern_as_prefix(item) {
+            return Some(Ok(Box::new(PrefixPatternValidator {
+                prefix: Arc::from(prefix),
+                pattern: Arc::from(item.as_str()),
+                location: ctx.location().join("pattern"),
+            })));
+        }
+        // Fall back to regex compilation
         match ctx.config().pattern_options() {
             PatternEngineOptions::FancyRegex { .. } => {
                 let Ok(regex) = ctx.get_or_compile_regex(item) else {
@@ -128,6 +175,19 @@ mod tests {
     #[test]
     fn location() {
         tests_util::assert_schema_location(&json!({"pattern": "^f"}), &json!("b"), "/pattern");
+    }
+
+    #[test_case("^/", "/api/users", true)]
+    #[test_case("^/", "api/users", false)]
+    #[test_case("^x-", "x-custom-header", true)]
+    #[test_case("^x-", "custom-header", false)]
+    #[test_case("^foo", "foobar", true)]
+    #[test_case("^foo", "barfoo", false)]
+    fn prefix_pattern_optimization(pattern: &str, text: &str, is_matching: bool) {
+        let text = json!(text);
+        let schema = json!({"pattern": pattern});
+        let validator = crate::validator_for(&schema).unwrap();
+        assert_eq!(validator.is_valid(&text), is_matching);
     }
 
     #[test]

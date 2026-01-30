@@ -8,26 +8,11 @@ use crate::{
     node::SchemaNode,
     options::PatternEngineOptions,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
-    regex::RegexEngine,
+    regex::{pattern_as_prefix, RegexEngine},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
-
-/// Try to extract a simple prefix from a pattern like `^prefix`.
-/// Only matches patterns with alphanumeric characters, hyphens, underscores, and forward slashes.
-fn pattern_as_prefix(pattern: &str) -> Option<&str> {
-    let suffix = pattern.strip_prefix('^')?;
-    // Check all characters are simple literals (no regex metacharacters)
-    if suffix
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '/'))
-    {
-        Some(suffix)
-    } else {
-        None
-    }
-}
 
 /// Validator for multiple patterns using compiled regex.
 pub(crate) struct PatternPropertiesValidator<R> {
@@ -548,8 +533,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::pattern_as_prefix;
-    use crate::tests_util;
+    use crate::{regex::pattern_as_prefix, tests_util};
     use serde_json::{json, Value};
     use test_case::test_case;
 

@@ -44,3 +44,17 @@ impl RegexError for regex::Error {
         None
     }
 }
+
+/// Try to extract a simple prefix from a pattern like `^prefix`.
+/// Only matches patterns with alphanumeric characters, hyphens, underscores, and forward slashes.
+pub(crate) fn pattern_as_prefix(pattern: &str) -> Option<&str> {
+    let suffix = pattern.strip_prefix('^')?;
+    if suffix
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '/'))
+    {
+        Some(suffix)
+    } else {
+        None
+    }
+}
