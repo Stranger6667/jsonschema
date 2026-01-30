@@ -57,7 +57,6 @@ pub struct ValidationError<'a> {
     repr: Box<ValidationErrorRepr<'a>>,
 }
 
-#[derive(Debug)]
 struct ValidationErrorRepr<'a> {
     instance: Cow<'a, Value>,
     kind: ValidationErrorKind,
@@ -66,6 +65,17 @@ struct ValidationErrorRepr<'a> {
     schema_path: Location,
     /// Dynamic path including $ref traversals.
     tracker: LazyEvaluationPath,
+}
+
+impl fmt::Debug for ValidationErrorRepr<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ValidationErrorRepr")
+            .field("instance", &self.instance)
+            .field("kind", &self.kind)
+            .field("instance_path", &self.instance_path)
+            .field("schema_path", &self.schema_path)
+            .finish_non_exhaustive()
+    }
 }
 
 /// An iterator over instances of [`ValidationError`] that represent validation error for the

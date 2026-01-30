@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Exclude internal `tracker` field from `ValidationError` Debug output.
+
 ### Fixed
 
 - `type: integer` validation in Draft 4 now correctly accepts large integers outside the i64/u64 range when `arbitrary-precision` feature is enabled.
