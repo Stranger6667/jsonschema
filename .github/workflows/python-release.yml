@@ -180,6 +180,41 @@ jobs:
           name: wheel-linux-${{ matrix.target }}
           path: dist
 
+  linux-musllinux:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - target: x86_64
+            arch: amd64
+          - target: aarch64
+            arch: aarch64
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_ABI_VERSION }}
+      - name: Build wheels
+        uses: messense/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: musllinux_1_2
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
+      - uses: uraimo/run-on-arch-action@v3
+        name: Install built wheel on Alpine
+        with:
+          base_image: '--platform=linux/${{ matrix.arch }} python:${{ env.PYTHON_ABI_VERSION }}-alpine'
+          githubToken: ${{ github.token }}
+          shell: /bin/sh
+          install: apk add --no-cache py3-pip
+          run: pip install ${{ env.PACKAGE_NAME }} --no-index --find-links dist/ --force-reinstall --break-system-packages
+      - name: Upload wheels
+        uses: actions/upload-artifact@v6
+        with:
+          name: wheel-linux-musllinux-${{ matrix.target }}
+          path: dist
+
   pypy:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -255,6 +290,7 @@ jobs:
       - macos-universal
       - windows
       - linux
+      - linux-musllinux
       - pypy
     if: "startsWith(github.ref, 'refs/tags/')"
     steps:

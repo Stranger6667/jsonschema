@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Pre-built wheels for `musllinux` (Alpine Linux) on `x86_64` and `aarch64`.
+
 ## [0.40.2] - 2026-01-30
 
 ### Changed

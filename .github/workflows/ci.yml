@@ -423,6 +423,44 @@ jobs:
 
       - run: cargo +nightly fuzz run --release ${{ matrix.target }} fuzz/seeds -- -dict=fuzz/dict -max_total_time=60
 
+  test-python-musllinux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64
+            arch: amd64
+          - target: aarch64
+            arch: aarch64
+    name: Test Python musllinux on ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+
+      - name: Build wheel
+        uses: messense/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: musllinux_1_2
+          args: -m crates/jsonschema-py/Cargo.toml --out dist
+
+      - uses: uraimo/run-on-arch-action@v3
+        name: Install and test wheel on Alpine
+        with:
+          base_image: '--platform=linux/${{ matrix.arch }} python:3.10-alpine'
+          githubToken: ${{ github.token }}
+          shell: /bin/sh
+          install: apk add --no-cache py3-pip
+          run: |
+            pip install dist/*.whl --break-system-packages
+            python -c "import jsonschema_rs; assert jsonschema_rs.is_valid({'type': 'string'}, 'foo')"
+
   lint-docs:
     name: Lint documentation
     runs-on: ubuntu-24.04
