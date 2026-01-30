@@ -1004,3 +1004,74 @@ def test_decimal_in_schema():
     assert validator.is_valid(11) is True
     assert validator.is_valid(10) is False
     assert validator.is_valid(Decimal("10.6")) is True
+
+
+@pytest.mark.parametrize(
+    "validator_cls",
+    [
+        Draft4Validator,
+        Draft6Validator,
+        Draft7Validator,
+        Draft201909Validator,
+        Draft202012Validator,
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [
+        -9223372036854775809,  # i64::MIN - 1
+        18446744073709551616,  # u64::MAX + 1
+        99999999999999999999999999999999999999,  # Very large integer
+        -99999999999999999999999999999999999999,  # Very large negative integer
+    ],
+)
+def test_large_integer_type_validation_all_drafts(validator_cls, value):
+    # Large integers outside i64/u64 range should be valid for type: integer in all drafts
+    # This was a bug where Draft4Validator specifically rejected these values
+    validator = validator_cls({"type": "integer"})
+    assert validator.is_valid(value), f"{validator_cls.__name__} should accept {value} as integer"
+
+
+@pytest.mark.parametrize(
+    "validator_cls",
+    [
+        Draft4Validator,
+        Draft6Validator,
+        Draft7Validator,
+        Draft201909Validator,
+        Draft202012Validator,
+    ],
+)
+@pytest.mark.parametrize(
+    "value",
+    [
+        # Note: Large floats like 18446744073709551616.5 lose precision in Python
+        # and become integer-valued, so we only test representable floats
+        1.5,
+        0.1,
+    ],
+)
+def test_large_float_type_validation_all_drafts(validator_cls, value):
+    # Floats should NOT be valid for type: integer in all drafts
+    validator = validator_cls({"type": "integer"})
+    assert not validator.is_valid(value), f"{validator_cls.__name__} should reject {value} as integer"
+
+
+@pytest.mark.parametrize(
+    "validator_cls",
+    [
+        Draft4Validator,
+        Draft6Validator,
+        Draft7Validator,
+        Draft201909Validator,
+        Draft202012Validator,
+    ],
+)
+def test_large_integer_in_union_type_all_drafts(validator_cls):
+    # Large integers should work in union types too
+    validator = validator_cls({"type": ["integer", "string"]})
+    assert validator.is_valid(-9223372036854775809)
+    assert validator.is_valid(18446744073709551616)
+    assert validator.is_valid("hello")
+    assert not validator.is_valid(1.5)
+    assert not validator.is_valid([])

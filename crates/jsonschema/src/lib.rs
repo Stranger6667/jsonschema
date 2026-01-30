@@ -2675,6 +2675,26 @@ pub(crate) mod tests_util {
             "No annotation for instance pointer `{instance_pointer}` with keyword location `{keyword_pointer}`. Available keyword locations for pointer: {available:?}"
         );
     }
+
+    #[track_caller]
+    pub(crate) fn is_valid_with_draft4(schema: &Value, instance: &Value) {
+        let validator = crate::options()
+            .with_draft(crate::Draft::Draft4)
+            .should_validate_formats(true)
+            .build(schema)
+            .expect("Invalid schema");
+        is_valid_with(&validator, instance);
+    }
+
+    #[track_caller]
+    pub(crate) fn is_not_valid_with_draft4(schema: &Value, instance: &Value) {
+        let validator = crate::options()
+            .with_draft(crate::Draft::Draft4)
+            .should_validate_formats(true)
+            .build(schema)
+            .expect("Invalid schema");
+        is_not_valid_with(&validator, instance);
+    }
 }
 
 #[cfg(test)]

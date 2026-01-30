@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `Draft4Validator` now correctly validates large Python integers outside the i64/u64 range (e.g., `-9223372036854775809`, `18446744073709551616`) as valid for `type: integer`.
+
 ## [0.40.1] - 2026-01-30
 
 ### Added

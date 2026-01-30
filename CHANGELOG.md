@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `type: integer` validation in Draft 4 now correctly accepts large integers outside the i64/u64 range when `arbitrary-precision` feature is enabled.
+
 ## [0.40.1] - 2026-01-30
 
 ### Changed
