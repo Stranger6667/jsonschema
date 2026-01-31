@@ -846,6 +846,7 @@ compile_error!(
     "Features 'resolve-http' and 'resolve-file' are not supported on wasm32-unknown-unknown"
 );
 
+mod arena;
 pub(crate) mod compiler;
 mod content_encoding;
 mod content_media_type;

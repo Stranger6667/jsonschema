@@ -19,16 +19,16 @@ impl OneOfValidator {
     #[inline]
     pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
         if let Value::Array(items) = schema {
-            let ctx = ctx.new_at_location("oneOf");
+            let one_of_ctx = ctx.new_at_location("oneOf");
             let mut schemas = Vec::with_capacity(items.len());
             for (idx, item) in items.iter().enumerate() {
-                let ctx = ctx.new_at_location(idx);
-                let node = compiler::compile(&ctx, ctx.as_resource_ref(item))?;
+                let item_ctx = one_of_ctx.new_at_location(idx);
+                let node = compiler::compile(&item_ctx, item_ctx.as_resource_ref(item))?;
                 schemas.push(node);
             }
-            Ok(Box::new(OneOfValidator {
+            Ok(ctx.arena.alloc(OneOfValidator {
                 schemas,
-                location: ctx.location().clone(),
+                location: one_of_ctx.location().clone(),
             }))
         } else {
             let location = ctx.location().join("oneOf");
@@ -75,7 +75,7 @@ impl SingleOneOfValidator {
         let one_of_ctx = ctx.new_at_location("oneOf");
         let item_ctx = one_of_ctx.new_at_location(0);
         let node = compiler::compile(&item_ctx, item_ctx.as_resource_ref(schema))?;
-        Ok(Box::new(SingleOneOfValidator {
+        Ok(ctx.arena.alloc(SingleOneOfValidator {
             node,
             location: one_of_ctx.location().clone(),
         }))

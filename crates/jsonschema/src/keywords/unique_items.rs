@@ -103,8 +103,11 @@ pub(crate) struct UniqueItemsValidator {
 
 impl UniqueItemsValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(UniqueItemsValidator { location }))
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(UniqueItemsValidator { location }))
     }
 }
 
@@ -147,7 +150,7 @@ pub(crate) fn compile<'a>(
     if let Value::Bool(value) = schema {
         if *value {
             let location = ctx.location().join("uniqueItems");
-            Some(UniqueItemsValidator::compile(location))
+            Some(UniqueItemsValidator::compile(ctx, location))
         } else {
             None
         }

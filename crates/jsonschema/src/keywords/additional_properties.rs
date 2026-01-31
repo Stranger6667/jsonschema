@@ -48,9 +48,9 @@ pub(crate) struct AdditionalPropertiesValidator {
 impl AdditionalPropertiesValidator {
     #[inline]
     pub(crate) fn compile<'a>(schema: &'a Value, ctx: &compiler::Context) -> CompilationResult<'a> {
-        let ctx = ctx.new_at_location("additionalProperties");
-        Ok(Box::new(AdditionalPropertiesValidator {
-            node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
+        let kctx = ctx.new_at_location("additionalProperties");
+        Ok(ctx.arena.alloc(AdditionalPropertiesValidator {
+            node: compiler::compile(&kctx, kctx.as_resource_ref(schema))?,
         }))
     }
 }
@@ -151,8 +151,13 @@ pub(crate) struct AdditionalPropertiesFalseValidator {
 }
 impl AdditionalPropertiesFalseValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(AdditionalPropertiesFalseValidator { location }))
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx
+            .arena
+            .alloc(AdditionalPropertiesFalseValidator { location }))
     }
 }
 impl Validate for AdditionalPropertiesFalseValidator {
@@ -213,7 +218,7 @@ impl AdditionalPropertiesNotEmptyFalseValidator<SmallValidatorsMap> {
         map: &'a Map<String, Value>,
         ctx: &compiler::Context,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(AdditionalPropertiesNotEmptyFalseValidator {
+        Ok(ctx.arena.alloc(AdditionalPropertiesNotEmptyFalseValidator {
             properties: compile_small_map(ctx, map)?,
             location: ctx.location().join("additionalProperties"),
         }))
@@ -225,7 +230,7 @@ impl AdditionalPropertiesNotEmptyFalseValidator<BigValidatorsMap> {
         map: &'a Map<String, Value>,
         ctx: &compiler::Context,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(AdditionalPropertiesNotEmptyFalseValidator {
+        Ok(ctx.arena.alloc(AdditionalPropertiesNotEmptyFalseValidator {
             properties: compile_big_map(ctx, map)?,
             location: ctx.location().join("additionalProperties"),
         }))
@@ -375,7 +380,7 @@ impl AdditionalPropertiesNotEmptyValidator<SmallValidatorsMap> {
         schema: &'a Value,
     ) -> CompilationResult<'a> {
         let kctx = ctx.new_at_location("additionalProperties");
-        Ok(Box::new(AdditionalPropertiesNotEmptyValidator {
+        Ok(ctx.arena.alloc(AdditionalPropertiesNotEmptyValidator {
             properties: compile_small_map(ctx, map)?,
             node: compiler::compile(&kctx, kctx.as_resource_ref(schema))?,
         }))
@@ -389,7 +394,7 @@ impl AdditionalPropertiesNotEmptyValidator<BigValidatorsMap> {
         schema: &'a Value,
     ) -> CompilationResult<'a> {
         let kctx = ctx.new_at_location("additionalProperties");
-        Ok(Box::new(AdditionalPropertiesNotEmptyValidator {
+        Ok(ctx.arena.alloc(AdditionalPropertiesNotEmptyValidator {
             properties: compile_big_map(ctx, map)?,
             node: compiler::compile(&kctx, kctx.as_resource_ref(schema))?,
         }))
@@ -1296,7 +1301,7 @@ where
 {
     let kctx = ctx.new_at_location("additionalProperties");
     if map.len() < 40 {
-        Some(Ok(Box::new(
+        Some(Ok(ctx.arena.alloc(
             AdditionalPropertiesWithPatternsNotEmptyValidator::<SmallValidatorsMap, R> {
                 node: try_compile!(compiler::compile(&kctx, kctx.as_resource_ref(schema))),
                 properties: try_compile!(compile_small_map(ctx, map)),
@@ -1304,7 +1309,7 @@ where
             },
         )))
     } else {
-        Some(Ok(Box::new(
+        Some(Ok(ctx.arena.alloc(
             AdditionalPropertiesWithPatternsNotEmptyValidator::<BigValidatorsMap, R> {
                 node: try_compile!(compiler::compile(&kctx, kctx.as_resource_ref(schema))),
                 properties: try_compile!(compile_big_map(ctx, map)),
@@ -1324,7 +1329,7 @@ where
 {
     let kctx = ctx.new_at_location("additionalProperties");
     if map.len() < 40 {
-        Some(Ok(Box::new(
+        Some(Ok(ctx.arena.alloc(
             AdditionalPropertiesWithPatternsNotEmptyFalseValidator::<SmallValidatorsMap, R> {
                 properties: try_compile!(compile_small_map(ctx, map)),
                 patterns,
@@ -1332,7 +1337,7 @@ where
             },
         )))
     } else {
-        Some(Ok(Box::new(
+        Some(Ok(ctx.arena.alloc(
             AdditionalPropertiesWithPatternsNotEmptyFalseValidator::<BigValidatorsMap, R> {
                 properties: try_compile!(compile_big_map(ctx, map)),
                 patterns,
@@ -1377,7 +1382,7 @@ pub(crate) fn compile<'a>(
                                     )))
                                 }
                             } else {
-                                Some(Ok(Box::new(
+                                Some(Ok(ctx.arena.alloc(
                                     AdditionalPropertiesWithPatternsFalseValidator {
                                         patterns,
                                         location: ctx.location().join("additionalProperties"),
@@ -1409,17 +1414,21 @@ pub(crate) fn compile<'a>(
                                 }
                             } else {
                                 let kctx = ctx.new_at_location("additionalProperties");
-                                Some(Ok(Box::new(AdditionalPropertiesWithPatternsValidator {
-                                    node: try_compile!(compiler::compile(
-                                        &kctx,
-                                        kctx.as_resource_ref(schema),
-                                    )),
-                                    patterns,
-                                    pattern_keyword_path: ctx.location().join("patternProperties"),
-                                    pattern_keyword_absolute_location: ctx
-                                        .new_at_location("patternProperties")
-                                        .base_uri(),
-                                })))
+                                Some(Ok(ctx.arena.alloc(
+                                    AdditionalPropertiesWithPatternsValidator {
+                                        node: try_compile!(compiler::compile(
+                                            &kctx,
+                                            kctx.as_resource_ref(schema),
+                                        )),
+                                        patterns,
+                                        pattern_keyword_path: ctx
+                                            .location()
+                                            .join("patternProperties"),
+                                        pattern_keyword_absolute_location: ctx
+                                            .new_at_location("patternProperties")
+                                            .base_uri(),
+                                    },
+                                )))
                             }
                         }
                     }
@@ -1448,7 +1457,7 @@ pub(crate) fn compile<'a>(
                                     )))
                                 }
                             } else {
-                                Some(Ok(Box::new(
+                                Some(Ok(ctx.arena.alloc(
                                     AdditionalPropertiesWithPatternsFalseValidator {
                                         patterns,
                                         location: ctx.location().join("additionalProperties"),
@@ -1480,17 +1489,21 @@ pub(crate) fn compile<'a>(
                                 }
                             } else {
                                 let kctx = ctx.new_at_location("additionalProperties");
-                                Some(Ok(Box::new(AdditionalPropertiesWithPatternsValidator {
-                                    node: try_compile!(compiler::compile(
-                                        &kctx,
-                                        kctx.as_resource_ref(schema),
-                                    )),
-                                    patterns,
-                                    pattern_keyword_path: ctx.location().join("patternProperties"),
-                                    pattern_keyword_absolute_location: ctx
-                                        .new_at_location("patternProperties")
-                                        .base_uri(),
-                                })))
+                                Some(Ok(ctx.arena.alloc(
+                                    AdditionalPropertiesWithPatternsValidator {
+                                        node: try_compile!(compiler::compile(
+                                            &kctx,
+                                            kctx.as_resource_ref(schema),
+                                        )),
+                                        patterns,
+                                        pattern_keyword_path: ctx
+                                            .location()
+                                            .join("patternProperties"),
+                                        pattern_keyword_absolute_location: ctx
+                                            .new_at_location("patternProperties")
+                                            .base_uri(),
+                                    },
+                                )))
                             }
                         }
                     }
@@ -1518,7 +1531,7 @@ pub(crate) fn compile<'a>(
                     )
                 } else {
                     let location = ctx.location().join("additionalProperties");
-                    Some(AdditionalPropertiesFalseValidator::compile(location))
+                    Some(AdditionalPropertiesFalseValidator::compile(ctx, location))
                 }
             }
             _ => {

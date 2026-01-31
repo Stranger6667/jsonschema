@@ -517,7 +517,7 @@ impl UnevaluatedItemsValidator {
         let validators =
             compile_items_validators(ctx, parent).map_err(ValidationError::to_owned)?;
 
-        Ok(Box::new(UnevaluatedItemsValidator {
+        Ok(ctx.arena.alloc(UnevaluatedItemsValidator {
             location: ctx.location().join("unevaluatedItems"),
             validators,
         }))

@@ -21,7 +21,7 @@ impl IfThenValidator {
         schema: &'a Value,
         then_schema: &'a Value,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(IfThenValidator {
+        Ok(ctx.arena.alloc(IfThenValidator {
             schema: {
                 let ctx = ctx.new_at_location("if");
                 compiler::compile(&ctx, ctx.as_resource_ref(schema))?
@@ -109,7 +109,7 @@ impl IfElseValidator {
         schema: &'a Value,
         else_schema: &'a Value,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(IfElseValidator {
+        Ok(ctx.arena.alloc(IfElseValidator {
             schema: {
                 let ctx = ctx.new_at_location("if");
                 compiler::compile(&ctx, ctx.as_resource_ref(schema))?
@@ -199,7 +199,7 @@ impl IfThenElseValidator {
         then_schema: &'a Value,
         else_schema: &'a Value,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(IfThenElseValidator {
+        Ok(ctx.arena.alloc(IfThenElseValidator {
             schema: {
                 let ctx = ctx.new_at_location("if");
                 compiler::compile(&ctx, ctx.as_resource_ref(schema))?

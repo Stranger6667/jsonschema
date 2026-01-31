@@ -27,7 +27,7 @@ impl PropertiesValidator {
                     compiler::compile(&ctx, ctx.as_resource_ref(subschema))?,
                 ));
             }
-            Ok(Box::new(PropertiesValidator { properties }))
+            Ok(ctx.arena.alloc(PropertiesValidator { properties }))
         } else {
             let location = ctx.location().join("properties");
             Err(ValidationError::single_type_error(

@@ -14,7 +14,6 @@ use crate::{
     options::{PatternEngineOptions, ValidationOptions},
     paths::{Location, LocationSegment},
     types::{JsonType, JsonTypeSet},
-    validator::Validate,
     ValidationError, Validator,
 };
 use ahash::{AHashMap, AHashSet};
@@ -141,6 +140,8 @@ pub(crate) struct Context<'a> {
     resource_base: Location,
     pub(crate) draft: Draft,
     shared: SharedContextState,
+    /// Arena for allocating validators
+    pub(crate) arena: crate::arena::ValidatorArena,
 }
 
 impl<'a> Context<'a> {
@@ -151,6 +152,7 @@ impl<'a> Context<'a> {
         vocabularies: VocabularySet,
         draft: Draft,
         location: Location,
+        arena: crate::arena::ValidatorArena,
     ) -> Self {
         Context {
             config,
@@ -161,6 +163,7 @@ impl<'a> Context<'a> {
             vocabularies,
             draft,
             shared: SharedContextState::new(),
+            arena,
         }
     }
     pub(crate) fn draft(&self) -> Draft {
@@ -185,6 +188,7 @@ impl<'a> Context<'a> {
             resource_base: self.resource_base.clone(),
             location: self.location.clone(),
             shared: self.shared.clone(),
+            arena: self.arena.clone(),
         })
     }
     pub(crate) fn as_resource_ref<'r>(&'a self, contents: &'r Value) -> ResourceRef<'r> {
@@ -203,6 +207,7 @@ impl<'a> Context<'a> {
             location,
             draft: self.draft,
             shared: self.shared.clone(),
+            arena: self.arena.clone(),
         }
     }
     pub(crate) fn lookup(&'a self, reference: &str) -> Result<Resolved<'a>, referencing::Error> {
@@ -293,6 +298,7 @@ impl<'a> Context<'a> {
             location: resource_base.clone(),
             resource_base,
             shared: self.shared.clone(),
+            arena: self.arena.clone(),
         }
     }
     pub(crate) fn get_content_media_type_check(
@@ -598,17 +604,17 @@ impl<'a> Context<'a> {
     pub(crate) fn lookup_maybe_recursive(
         &self,
         reference: &str,
-    ) -> Result<Option<Box<dyn Validate>>, ValidationError<'static>> {
+    ) -> Result<Option<crate::keywords::BoxedValidator>, ValidationError<'static>> {
         if self.is_circular_reference(reference)? {
             let uri = self
                 .resolve_reference_uri(reference)
                 .map_err(ValidationError::from)?;
             let key = self.alias_cache_key(Arc::clone(&uri));
             if let Some(node) = self.cached_alias_node(&key) {
-                return Ok(Some(Box::new(node)));
+                return Ok(Some(self.arena.alloc(node)));
             }
             if let Some(node) = self.cached_alias_placeholder(&uri) {
-                return Ok(Some(Box::new(node)));
+                return Ok(Some(self.arena.alloc(node)));
             }
         }
         Ok(None)
@@ -702,6 +708,7 @@ pub(crate) fn build_validator(
     let vocabularies = registry.find_vocabularies(draft, schema);
     let resolver = registry.resolver(base_uri);
 
+    let arena = crate::arena::ValidatorArena::new();
     let ctx = Context::new(
         config,
         &registry,
@@ -709,6 +716,7 @@ pub(crate) fn build_validator(
         vocabularies,
         draft,
         Location::new(),
+        arena.clone(),
     );
 
     // Validate the schema itself
@@ -719,7 +727,7 @@ pub(crate) fn build_validator(
     // Finally, compile the validator
     let root = compile(&ctx, resource_ref).map_err(ValidationError::to_owned)?;
     let draft = config.draft();
-    Ok(Validator { root, draft })
+    Ok(Validator { arena, root, draft })
 }
 
 #[cfg(feature = "resolve-async")]
@@ -764,6 +772,7 @@ pub(crate) async fn build_validator_async(
     let config_with_blocking_retriever = config
         .clone()
         .with_blocking_retriever(crate::retriever::DefaultRetriever);
+    let arena = crate::arena::ValidatorArena::new();
     let ctx = Context::new(
         &config_with_blocking_retriever,
         &registry,
@@ -771,6 +780,7 @@ pub(crate) async fn build_validator_async(
         vocabularies,
         draft,
         Location::new(),
+        arena.clone(),
     );
 
     if config.validate_schema {
@@ -779,7 +789,7 @@ pub(crate) async fn build_validator_async(
 
     let root = compile(&ctx, resource_ref).map_err(ValidationError::to_owned)?;
     let draft = config.draft();
-    Ok(Validator { root, draft })
+    Ok(Validator { arena, root, draft })
 }
 
 fn annotations_to_value(annotations: AHashMap<String, Value>) -> Arc<Value> {
@@ -906,7 +916,7 @@ fn compile_without_cache<'a>(
             false => Ok(SchemaNode::from_boolean(
                 ctx,
                 Some(
-                    keywords::boolean::FalseValidator::compile(ctx.location().clone())
+                    keywords::boolean::FalseValidator::compile(ctx, ctx.location().clone())
                         .expect("Should always compile"),
                 ),
             )),
@@ -956,7 +966,7 @@ fn compile_without_cache<'a>(
                         path,
                         keyword.clone(),
                     );
-                    let validator: BoxedValidator = Box::new(validator);
+                    let validator: BoxedValidator = ctx.arena.alloc(validator);
                     validators.push((Keyword::custom(keyword), validator));
                 } else if let Some((keyword, validator)) = keywords::get_for_draft(ctx, keyword)
                     .and_then(|(keyword, f)| f(ctx, schema, value).map(|v| (keyword, v)))

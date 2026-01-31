@@ -19,11 +19,12 @@ pub(crate) struct MultipleOfFloatValidator {
 impl MultipleOfFloatValidator {
     #[inline]
     pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
         multiple_of: f64,
         #[cfg(feature = "arbitrary-precision")] original_value: &serde_json::Number,
         location: Location,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(MultipleOfFloatValidator {
+        Ok(ctx.arena.alloc(MultipleOfFloatValidator {
             multiple_of,
             #[cfg(feature = "arbitrary-precision")]
             original_value: original_value.clone(),
@@ -84,11 +85,12 @@ pub(crate) struct MultipleOfIntegerValidator {
 impl MultipleOfIntegerValidator {
     #[inline]
     pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
         multiple_of: f64,
         #[cfg(feature = "arbitrary-precision")] original_value: &serde_json::Number,
         location: Location,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(MultipleOfIntegerValidator {
+        Ok(ctx.arena.alloc(MultipleOfIntegerValidator {
             multiple_of,
             #[cfg(feature = "arbitrary-precision")]
             original_value: original_value.clone(),
@@ -150,11 +152,12 @@ pub(crate) struct MultipleOfBigIntValidator {
 impl MultipleOfBigIntValidator {
     #[inline]
     pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
         multiple_of: num_bigint::BigInt,
         original_value: &serde_json::Number,
         location: Location,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(MultipleOfBigIntValidator {
+        Ok(ctx.arena.alloc(MultipleOfBigIntValidator {
             multiple_of,
             original_value: original_value.clone(),
             location,
@@ -249,11 +252,12 @@ pub(crate) struct MultipleOfBigFracValidator {
 impl MultipleOfBigFracValidator {
     #[inline]
     pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
         multiple_of: fraction::BigFraction,
         original_value: &serde_json::Number,
         location: Location,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(MultipleOfBigFracValidator {
+        Ok(ctx.arena.alloc(MultipleOfBigFracValidator {
             multiple_of,
             original_value: original_value.clone(),
             location,
@@ -322,6 +326,7 @@ pub(crate) fn compile<'a>(
             // Try BigInt first for large integers
             if let Some(bigint_multiple) = numeric::bignum::try_parse_bigint(multiple_of) {
                 return Some(MultipleOfBigIntValidator::compile(
+                    ctx,
                     bigint_multiple,
                     multiple_of,
                     location,
@@ -330,6 +335,7 @@ pub(crate) fn compile<'a>(
             // Then try BigFraction for exact decimal precision
             if let Some(bigfrac_multiple) = numeric::bignum::try_parse_bigfraction(multiple_of) {
                 return Some(MultipleOfBigFracValidator::compile(
+                    ctx,
                     bigfrac_multiple,
                     multiple_of,
                     location,
@@ -344,12 +350,14 @@ pub(crate) fn compile<'a>(
             {
                 if f64_value.fract() == 0. {
                     Some(MultipleOfIntegerValidator::compile(
+                        ctx,
                         f64_value,
                         multiple_of,
                         location,
                     ))
                 } else {
                     Some(MultipleOfFloatValidator::compile(
+                        ctx,
                         f64_value,
                         multiple_of,
                         location,
@@ -359,9 +367,11 @@ pub(crate) fn compile<'a>(
             #[cfg(not(feature = "arbitrary-precision"))]
             {
                 if f64_value.fract() == 0. {
-                    Some(MultipleOfIntegerValidator::compile(f64_value, location))
+                    Some(MultipleOfIntegerValidator::compile(
+                        ctx, f64_value, location,
+                    ))
                 } else {
-                    Some(MultipleOfFloatValidator::compile(f64_value, location))
+                    Some(MultipleOfFloatValidator::compile(ctx, f64_value, location))
                 }
             }
         } else {

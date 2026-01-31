@@ -19,6 +19,22 @@ pub(crate) struct PrefixPatternValidator {
     location: Location,
 }
 
+impl PrefixPatternValidator {
+    #[inline]
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        prefix: Arc<str>,
+        pattern: Arc<str>,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(PrefixPatternValidator {
+            prefix,
+            pattern,
+            location,
+        }))
+    }
+}
+
 impl Validate for PrefixPatternValidator {
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::String(item) = instance {
@@ -53,6 +69,17 @@ impl Validate for PrefixPatternValidator {
 pub(crate) struct PatternValidator<R> {
     regex: Arc<R>,
     location: Location,
+}
+
+impl<R: RegexEngine + 'static> PatternValidator<R> {
+    #[inline]
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        regex: Arc<R>,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(PatternValidator { regex, location }))
+    }
 }
 
 impl<R: RegexEngine> Validate for PatternValidator<R> {
@@ -106,13 +133,15 @@ pub(crate) fn compile<'a>(
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
     if let Value::String(item) = schema {
+        let location = ctx.location().join("pattern");
         // Try prefix optimization first
         if let Some(prefix) = pattern_as_prefix(item) {
-            return Some(Ok(Box::new(PrefixPatternValidator {
-                prefix: Arc::from(prefix),
-                pattern: Arc::from(item.as_str()),
-                location: ctx.location().join("pattern"),
-            })));
+            return Some(PrefixPatternValidator::compile(
+                ctx,
+                Arc::from(prefix),
+                Arc::from(item.as_str()),
+                location,
+            ));
         }
         // Fall back to regex compilation
         match ctx.config().pattern_options() {
@@ -120,19 +149,13 @@ pub(crate) fn compile<'a>(
                 let Ok(regex) = ctx.get_or_compile_regex(item) else {
                     return Some(Err(invalid_regex(ctx, schema)));
                 };
-                Some(Ok(Box::new(PatternValidator {
-                    regex,
-                    location: ctx.location().join("pattern"),
-                })))
+                Some(PatternValidator::compile(ctx, regex, location))
             }
             PatternEngineOptions::Regex { .. } => {
                 let Ok(regex) = ctx.get_or_compile_standard_regex(item) else {
                     return Some(Err(invalid_regex(ctx, schema)));
                 };
-                Some(Ok(Box::new(PatternValidator {
-                    regex,
-                    location: ctx.location().join("pattern"),
-                })))
+                Some(PatternValidator::compile(ctx, regex, location))
             }
         }
     } else {

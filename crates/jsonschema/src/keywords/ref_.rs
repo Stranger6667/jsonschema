@@ -1,7 +1,7 @@
 use crate::{
     compiler,
     error::ErrorIterator,
-    keywords::CompilationResult,
+    keywords::{BoxedValidator, CompilationResult},
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
@@ -13,7 +13,7 @@ use serde_json::{Map, Value};
 ///
 /// Pushes the `$ref` location onto the tracker before delegating to the inner validator.
 struct RefValidator {
-    inner: Box<dyn Validate>,
+    inner: BoxedValidator,
     /// Path of this `$ref` keyword relative to its resource base.
     /// E.g., `/properties/foo/$ref` (not the full canonical path).
     /// Used for building the `tracker` prefix.
@@ -117,7 +117,7 @@ fn compile_reference_validator<'a>(
 
     match ctx.lookup_maybe_recursive(reference) {
         Ok(Some(validator)) => {
-            return Some(Ok(Box::new(RefValidator {
+            return Some(Ok(ctx.arena.alloc(RefValidator {
                 inner: validator,
                 ref_suffix,
                 ref_target_base,
@@ -146,11 +146,11 @@ fn compile_reference_validator<'a>(
     Some(
         compiler::compile_with_alias(&inner_ctx, resource_ref, alias)
             .map(|node| {
-                Box::new(RefValidator {
-                    inner: Box::new(node),
+                ctx.arena.alloc(RefValidator {
+                    inner: ctx.arena.alloc(node),
                     ref_suffix,
                     ref_target_base,
-                }) as Box<dyn Validate>
+                })
             })
             .map_err(ValidationError::to_owned),
     )
@@ -168,7 +168,7 @@ fn compile_recursive_validator<'a>(
 
     match ctx.lookup_maybe_recursive(reference) {
         Ok(Some(validator)) => {
-            return Ok(Box::new(RefValidator {
+            return Ok(ctx.arena.alloc(RefValidator {
                 inner: validator,
                 ref_suffix,
                 ref_target_base,
@@ -196,11 +196,11 @@ fn compile_recursive_validator<'a>(
     );
     compiler::compile_with_alias(&inner_ctx, resource_ref, alias)
         .map(|node| {
-            Box::new(RefValidator {
-                inner: Box::new(node),
+            ctx.arena.alloc(RefValidator {
+                inner: ctx.arena.alloc(node),
                 ref_suffix,
                 ref_target_base,
-            }) as Box<dyn Validate>
+            })
         })
         .map_err(ValidationError::to_owned)
 }

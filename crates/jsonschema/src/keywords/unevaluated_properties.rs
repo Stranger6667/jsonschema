@@ -572,7 +572,7 @@ impl UnevaluatedPropertiesValidator {
         let validators =
             compile_property_validators(ctx, parent).map_err(ValidationError::to_owned)?;
 
-        Ok(Box::new(UnevaluatedPropertiesValidator {
+        Ok(ctx.arena.alloc(UnevaluatedPropertiesValidator {
             location: ctx.location().join("unevaluatedProperties"),
             validators,
         }))

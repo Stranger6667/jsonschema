@@ -308,7 +308,7 @@ where
     V: From<(T, Value, Location)> + Validate + 'static,
 {
     let location = ctx.location().join(keyword);
-    Ok(Box::new(V::from((limit, schema.clone(), location))))
+    Ok(ctx.arena.alloc(V::from((limit, schema.clone(), location))))
 }
 
 fn number_type_error<'a>(
@@ -392,15 +392,21 @@ fn create_bigint_validator(
     // Try BigInt first for large integers
     if let Some(bigint_limit) = numeric::bignum::try_parse_bigint(limit) {
         let location = ctx.location().join(keyword);
-        let validator: Box<dyn Validate> = match keyword {
-            "minimum" => Box::new(BigIntMinimum::new(bigint_limit, schema.clone(), location)),
-            "maximum" => Box::new(BigIntMaximum::new(bigint_limit, schema.clone(), location)),
-            "exclusiveMinimum" => Box::new(BigIntExclusiveMinimum::new(
+        let validator: &'static dyn Validate = match keyword {
+            "minimum" => {
+                ctx.arena
+                    .alloc(BigIntMinimum::new(bigint_limit, schema.clone(), location))
+            }
+            "maximum" => {
+                ctx.arena
+                    .alloc(BigIntMaximum::new(bigint_limit, schema.clone(), location))
+            }
+            "exclusiveMinimum" => ctx.arena.alloc(BigIntExclusiveMinimum::new(
                 bigint_limit,
                 schema.clone(),
                 location,
             )),
-            "exclusiveMaximum" => Box::new(BigIntExclusiveMaximum::new(
+            "exclusiveMaximum" => ctx.arena.alloc(BigIntExclusiveMaximum::new(
                 bigint_limit,
                 schema.clone(),
                 location,
@@ -413,15 +419,21 @@ fn create_bigint_validator(
     // If not a BigInt, try BigFraction for exact decimal precision
     if let Some(bigfrac_limit) = numeric::bignum::try_parse_bigfraction(limit) {
         let location = ctx.location().join(keyword);
-        let validator: Box<dyn Validate> = match keyword {
-            "minimum" => Box::new(BigFracMinimum::new(bigfrac_limit, schema.clone(), location)),
-            "maximum" => Box::new(BigFracMaximum::new(bigfrac_limit, schema.clone(), location)),
-            "exclusiveMinimum" => Box::new(BigFracExclusiveMinimum::new(
+        let validator: &'static dyn Validate = match keyword {
+            "minimum" => {
+                ctx.arena
+                    .alloc(BigFracMinimum::new(bigfrac_limit, schema.clone(), location))
+            }
+            "maximum" => {
+                ctx.arena
+                    .alloc(BigFracMaximum::new(bigfrac_limit, schema.clone(), location))
+            }
+            "exclusiveMinimum" => ctx.arena.alloc(BigFracExclusiveMinimum::new(
                 bigfrac_limit,
                 schema.clone(),
                 location,
             )),
-            "exclusiveMaximum" => Box::new(BigFracExclusiveMaximum::new(
+            "exclusiveMaximum" => ctx.arena.alloc(BigFracExclusiveMaximum::new(
                 bigfrac_limit,
                 schema.clone(),
                 location,

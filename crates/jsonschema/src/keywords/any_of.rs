@@ -26,7 +26,7 @@ impl AnyOfValidator {
                 let node = compiler::compile(&ctx, ctx.as_resource_ref(item))?;
                 schemas.push(node);
             }
-            Ok(Box::new(AnyOfValidator {
+            Ok(ctx.arena.alloc(AnyOfValidator {
                 schemas,
                 location: ctx.location().clone(),
             }))
@@ -145,7 +145,7 @@ impl SingleAnyOfValidator {
         let any_of_ctx = ctx.new_at_location("anyOf");
         let item_ctx = any_of_ctx.new_at_location(0);
         let node = compiler::compile(&item_ctx, item_ctx.as_resource_ref(schema))?;
-        Ok(Box::new(SingleAnyOfValidator {
+        Ok(ctx.arena.alloc(SingleAnyOfValidator {
             node,
             location: any_of_ctx.location().clone(),
         }))

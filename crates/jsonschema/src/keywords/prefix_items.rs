@@ -28,7 +28,7 @@ impl PrefixItemsValidator {
             let validators = compiler::compile(&ctx, ctx.as_resource_ref(item))?;
             schemas.push(validators);
         }
-        Ok(Box::new(PrefixItemsValidator { schemas }))
+        Ok(ctx.arena.alloc(PrefixItemsValidator { schemas }))
     }
 }
 

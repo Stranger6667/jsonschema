@@ -22,13 +22,13 @@ impl MaxPropertiesValidator {
         location: Location,
     ) -> CompilationResult<'a> {
         if let Some(limit) = schema.as_u64() {
-            return Ok(Box::new(MaxPropertiesValidator { limit, location }));
+            return Ok(ctx.arena.alloc(MaxPropertiesValidator { limit, location }));
         }
         if ctx.supports_integer_valued_numbers() {
             if let Some(limit) = schema.as_f64() {
                 if limit.trunc() == limit {
                     #[allow(clippy::cast_possible_truncation)]
-                    return Ok(Box::new(MaxPropertiesValidator {
+                    return Ok(ctx.arena.alloc(MaxPropertiesValidator {
                         // NOTE: Imprecise cast as big integers are not supported yet
                         limit: limit as u64,
                         location,
