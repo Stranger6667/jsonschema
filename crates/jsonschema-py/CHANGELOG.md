@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Pre-built wheels for free-threaded Python (3.13t, 3.14t) on Linux, macOS, and Windows.
+
 ## [0.40.3] - 2026-01-31
 
 ### Added

@@ -215,6 +215,113 @@ jobs:
           name: wheel-linux-musllinux-${{ matrix.target }}
           path: dist
 
+  linux-freethreaded:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - target: x86_64
+            manylinux: auto
+          - target: aarch64
+            manylinux: 2_28
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Build wheels
+        uses: messense/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter 3.13t 3.14t
+      - name: Upload wheels
+        uses: actions/upload-artifact@v6
+        with:
+          name: wheel-linux-freethreaded-${{ matrix.target }}
+          path: dist
+
+  linux-musllinux-freethreaded:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - target: x86_64
+          - target: aarch64
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Build wheels
+        uses: messense/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: musllinux_1_2
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter 3.13t 3.14t
+      - name: Upload wheels
+        uses: actions/upload-artifact@v6
+        with:
+          name: wheel-linux-musllinux-freethreaded-${{ matrix.target }}
+          path: dist
+
+  macos-freethreaded:
+    runs-on: macos-15
+    strategy:
+      matrix:
+        include:
+          - target: x86_64
+            artifact: wheel-macos-freethreaded-x86_64
+          - target: aarch64
+            artifact: wheel-macos-freethreaded-aarch64
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+      - name: Install Python
+        run: uv python install 3.13t 3.14t
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+      - name: Build wheels
+        uses: messense/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter 3.13t 3.14t
+      - name: Upload wheels
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist
+
+  windows-freethreaded:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+      - name: Install Python
+        run: |
+          uv python install 3.13t
+          uv python install 3.14t
+      - name: Find Python paths
+        id: python-paths
+        shell: bash
+        run: |
+          echo "py313t=$(uv python find 3.13t)" >> "$GITHUB_OUTPUT"
+          echo "py314t=$(uv python find 3.14t)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build wheels
+        uses: messense/maturin-action@v1
+        with:
+          target: x64
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ steps.python-paths.outputs.py313t }} ${{ steps.python-paths.outputs.py314t }}
+      - name: Upload wheels
+        uses: actions/upload-artifact@v6
+        with:
+          name: wheel-windows-freethreaded
+          path: dist
+
   pypy:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -291,6 +398,10 @@ jobs:
       - windows
       - linux
       - linux-musllinux
+      - linux-freethreaded
+      - linux-musllinux-freethreaded
+      - macos-freethreaded
+      - windows-freethreaded
       - pypy
     if: "startsWith(github.ref, 'refs/tags/')"
     steps:

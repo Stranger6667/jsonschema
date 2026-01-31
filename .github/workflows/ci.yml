@@ -256,6 +256,51 @@ jobs:
       - run: uvx --with=".[tests]" --python='${{ matrix.python-version }}' pytest tests-py
         working-directory: crates/jsonschema-py
 
+  test-python-freethreaded:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+        python-version: ['3.13t', '3.14t']
+
+    name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@v7
+
+      - run: uv python install ${{ matrix.python-version }}
+
+      - name: Find Python path (Windows)
+        if: runner.os == 'Windows'
+        id: python-path-windows
+        shell: bash
+        run: echo "path=$(uv python find ${{ matrix.python-version }})" >> "$GITHUB_OUTPUT"
+
+      - name: Build wheel (Windows)
+        if: runner.os == 'Windows'
+        uses: messense/maturin-action@v1
+        with:
+          args: --release -m crates/jsonschema-py/Cargo.toml --out crates/jsonschema-py/dist --interpreter ${{ steps.python-path-windows.outputs.path }}
+
+      - name: Build wheel (Unix)
+        if: runner.os != 'Windows'
+        uses: messense/maturin-action@v1
+        with:
+          args: --release -m crates/jsonschema-py/Cargo.toml --out crates/jsonschema-py/dist --interpreter ${{ matrix.python-version }}
+
+      - name: Test wheel
+        shell: bash
+        run: |
+          uv venv --python ${{ matrix.python-version }}
+          uv pip install crates/jsonschema-py/dist/*.whl
+          uv run --with pytest --with hypothesis pytest crates/jsonschema-py/tests-py
+
   lint-fmt:
     name: Lint formatting
     runs-on: ubuntu-24.04
@@ -365,6 +410,33 @@ jobs:
         run: |
           uv pip install dist/*.whl --force-reinstall
         working-directory: crates/jsonschema-py
+
+  check-release-python-freethreaded:
+    name: Check Python release (free-threaded)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: astral-sh/setup-uv@v7
+
+      - run: uv python install 3.13t
+
+      - name: Build wheel
+        uses: messense/maturin-action@v1
+        with:
+          args: --release -m crates/jsonschema-py/Cargo.toml --out crates/jsonschema-py/dist --interpreter 3.13t
+
+      - name: Install and verify wheel
+        run: |
+          uv venv --python 3.13t
+          uv pip install crates/jsonschema-py/dist/*.whl
+          uv run python -c "import jsonschema_rs; assert jsonschema_rs.is_valid({'type': 'string'}, 'foo')"
 
   check-features:
     strategy:
