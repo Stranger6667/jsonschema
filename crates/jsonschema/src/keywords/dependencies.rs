@@ -21,21 +21,21 @@ impl DependenciesValidator {
             let mut dependencies = Vec::with_capacity(map.len());
             for (key, subschema) in map {
                 let ctx = kctx.new_at_location(key.as_str());
-                let s =
-                    match subschema {
-                        Value::Array(_) => {
-                            let validators = vec![required::compile_with_path(
-                                subschema,
-                                kctx.location().clone(),
-                            )
-                            .expect("The required validator compilation does not return None")?];
-                            SchemaNode::from_array(&kctx, validators)
-                        }
-                        _ => compiler::compile(&ctx, ctx.as_resource_ref(subschema))?,
-                    };
+                let s = match subschema {
+                    Value::Array(_) => {
+                        let validators = vec![required::compile_with_path(
+                            &kctx,
+                            subschema,
+                            kctx.location().clone(),
+                        )
+                        .expect("The required validator compilation does not return None")?];
+                        SchemaNode::from_array(&kctx, validators)
+                    }
+                    _ => compiler::compile(&ctx, ctx.as_resource_ref(subschema))?,
+                };
                 dependencies.push((key.clone(), s));
             }
-            Ok(Box::new(DependenciesValidator { dependencies }))
+            Ok(ctx.arena.alloc(DependenciesValidator { dependencies }))
         } else {
             let location = ctx.location().join("dependencies");
             Err(ValidationError::single_type_error(
@@ -143,13 +143,12 @@ impl DependentRequiredValidator {
                             subschema,
                         ));
                     }
-                    let validators =
-                        vec![
-                            required::compile_with_path(subschema, kctx.location().clone())
-                                .expect(
-                                    "The required validator compilation does not return None",
-                                )?,
-                        ];
+                    let validators = vec![required::compile_with_path(
+                        &kctx,
+                        subschema,
+                        kctx.location().clone(),
+                    )
+                    .expect("The required validator compilation does not return None")?];
                     dependencies.push((key.clone(), SchemaNode::from_array(&kctx, validators)));
                 } else {
                     let location = ictx.location().clone();
@@ -162,7 +161,7 @@ impl DependentRequiredValidator {
                     ));
                 }
             }
-            Ok(Box::new(DependentRequiredValidator { dependencies }))
+            Ok(ctx.arena.alloc(DependentRequiredValidator { dependencies }))
         } else {
             let location = ctx.location().join("dependentRequired");
             Err(ValidationError::single_type_error(
@@ -261,7 +260,7 @@ impl DependentSchemasValidator {
                 let schema_nodes = compiler::compile(&ctx, ctx.as_resource_ref(subschema))?;
                 dependencies.push((key.clone(), schema_nodes));
             }
-            Ok(Box::new(DependentSchemasValidator { dependencies }))
+            Ok(ctx.arena.alloc(DependentSchemasValidator { dependencies }))
         } else {
             let location = ctx.location().join("dependentSchemas");
             Err(ValidationError::single_type_error(

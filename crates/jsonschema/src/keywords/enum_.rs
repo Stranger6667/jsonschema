@@ -21,6 +21,7 @@ pub(crate) struct EnumValidator {
 impl EnumValidator {
     #[inline]
     pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
         schema: &'a Value,
         items: &'a [Value],
         location: Location,
@@ -29,7 +30,7 @@ impl EnumValidator {
         for item in items {
             types = types.insert(JsonType::from(item));
         }
-        Ok(Box::new(EnumValidator {
+        Ok(ctx.arena.alloc(EnumValidator {
             options: schema.clone(),
             items: items.to_vec(),
             types,
@@ -81,11 +82,12 @@ pub(crate) struct SingleValueEnumValidator {
 impl SingleValueEnumValidator {
     #[inline]
     pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
         schema: &'a Value,
         value: &'a Value,
         location: Location,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(SingleValueEnumValidator {
+        Ok(ctx.arena.alloc(SingleValueEnumValidator {
             options: schema.clone(),
             value: value.clone(),
             location,
@@ -129,9 +131,11 @@ pub(crate) fn compile<'a>(
         let location = ctx.location().join("enum");
         if items.len() == 1 {
             let value = items.iter().next().expect("Vec is not empty");
-            Some(SingleValueEnumValidator::compile(schema, value, location))
+            Some(SingleValueEnumValidator::compile(
+                ctx, schema, value, location,
+            ))
         } else {
-            Some(EnumValidator::compile(schema, items, location))
+            Some(EnumValidator::compile(ctx, schema, items, location))
         }
     } else {
         let location = ctx.location().join("enum");

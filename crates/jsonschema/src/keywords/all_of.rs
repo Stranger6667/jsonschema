@@ -27,7 +27,7 @@ impl AllOfValidator {
             let validators = compiler::compile(&ctx, ctx.as_resource_ref(item))?;
             schemas.push(validators);
         }
-        Ok(Box::new(AllOfValidator { schemas }))
+        Ok(ctx.arena.alloc(AllOfValidator { schemas }))
     }
 }
 
@@ -90,7 +90,7 @@ impl SingleValueAllOfValidator {
         let ctx = ctx.new_at_location("allOf");
         let ctx = ctx.new_at_location(0);
         let node = compiler::compile(&ctx, ctx.as_resource_ref(schema))?;
-        Ok(Box::new(SingleValueAllOfValidator { node }))
+        Ok(ctx.arena.alloc(SingleValueAllOfValidator { node }))
     }
 }
 

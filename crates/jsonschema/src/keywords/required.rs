@@ -15,7 +15,11 @@ pub(crate) struct RequiredValidator {
 
 impl RequiredValidator {
     #[inline]
-    pub(crate) fn compile(items: &[Value], location: Location) -> CompilationResult<'_> {
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        items: &'a [Value],
+        location: Location,
+    ) -> CompilationResult<'a> {
         let mut required = Vec::with_capacity(items.len());
         for item in items {
             match item {
@@ -31,7 +35,7 @@ impl RequiredValidator {
                 }
             }
         }
-        Ok(Box::new(RequiredValidator { required, location }))
+        Ok(ctx.arena.alloc(RequiredValidator { required, location }))
     }
 }
 
@@ -107,8 +111,12 @@ pub(crate) struct SingleItemRequiredValidator {
 
 impl SingleItemRequiredValidator {
     #[inline]
-    pub(crate) fn compile(value: &str, location: Location) -> CompilationResult<'_> {
-        Ok(Box::new(SingleItemRequiredValidator {
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        value: &str,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(SingleItemRequiredValidator {
             value: value.to_string(),
             location,
         }))
@@ -154,21 +162,22 @@ pub(crate) fn compile<'a>(
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
     let location = ctx.location().join("required");
-    compile_with_path(schema, location)
+    compile_with_path(ctx, schema, location)
 }
 
 #[inline]
-pub(crate) fn compile_with_path(
-    schema: &Value,
+pub(crate) fn compile_with_path<'a>(
+    ctx: &compiler::Context,
+    schema: &'a Value,
     location: Location,
-) -> Option<CompilationResult<'_>> {
+) -> Option<CompilationResult<'a>> {
     // IMPORTANT: If this function will ever return `None`, adjust `dependencies.rs` accordingly
     match schema {
         Value::Array(items) => {
             if items.len() == 1 {
                 let item = &items[0];
                 if let Value::String(item) = item {
-                    Some(SingleItemRequiredValidator::compile(item, location))
+                    Some(SingleItemRequiredValidator::compile(ctx, item, location))
                 } else {
                     Some(Err(ValidationError::single_type_error(
                         location.clone(),
@@ -179,7 +188,7 @@ pub(crate) fn compile_with_path(
                     )))
                 }
             } else {
-                Some(RequiredValidator::compile(items, location))
+                Some(RequiredValidator::compile(ctx, items, location))
             }
         }
         _ => Some(Err(ValidationError::single_type_error(

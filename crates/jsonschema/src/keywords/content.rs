@@ -20,12 +20,13 @@ pub(crate) struct ContentMediaTypeValidator {
 
 impl ContentMediaTypeValidator {
     #[inline]
-    pub(crate) fn compile(
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
         media_type: &str,
         func: ContentMediaTypeCheckType,
         location: Location,
-    ) -> CompilationResult<'_> {
-        Ok(Box::new(ContentMediaTypeValidator {
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(ContentMediaTypeValidator {
             media_type: media_type.to_string(),
             func,
             location,
@@ -76,12 +77,13 @@ pub(crate) struct ContentEncodingValidator {
 
 impl ContentEncodingValidator {
     #[inline]
-    pub(crate) fn compile(
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
         encoding: &str,
         func: ContentEncodingCheckType,
         location: Location,
-    ) -> CompilationResult<'_> {
-        Ok(Box::new(ContentEncodingValidator {
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(ContentEncodingValidator {
             encoding: encoding.to_string(),
             func,
             location,
@@ -134,13 +136,14 @@ pub(crate) struct ContentMediaTypeAndEncodingValidator {
 impl ContentMediaTypeAndEncodingValidator {
     #[inline]
     pub(crate) fn compile<'a>(
-        media_type: &'a str,
-        encoding: &'a str,
+        ctx: &compiler::Context,
+        media_type: &str,
+        encoding: &str,
         func: ContentMediaTypeCheckType,
         converter: ContentEncodingConverterType,
         location: Location,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(ContentMediaTypeAndEncodingValidator {
+        Ok(ctx.arena.alloc(ContentMediaTypeAndEncodingValidator {
             media_type: media_type.to_string(),
             encoding: encoding.to_string(),
             func,
@@ -220,6 +223,7 @@ pub(crate) fn compile_media_type<'a>(
             if let Value::String(content_encoding) = content_encoding {
                 let converter = ctx.get_content_encoding_convert(content_encoding)?;
                 Some(ContentMediaTypeAndEncodingValidator::compile(
+                    ctx,
                     media_type,
                     content_encoding,
                     func,
@@ -238,6 +242,7 @@ pub(crate) fn compile_media_type<'a>(
             }
         } else {
             Some(ContentMediaTypeValidator::compile(
+                ctx,
                 media_type,
                 func,
                 ctx.location().join("contentMediaType"),
@@ -269,6 +274,7 @@ pub(crate) fn compile_content_encoding<'a>(
     if let Value::String(content_encoding) = subschema {
         let func = ctx.get_content_encoding_check(content_encoding)?;
         Some(ContentEncodingValidator::compile(
+            ctx,
             content_encoding,
             func,
             ctx.location().join("contentEncoding"),

@@ -255,6 +255,10 @@ impl From<EvaluationNode> for EvaluationResult {
 /// of the schema tree and the configuration options used during compilation.
 #[derive(Clone, Debug)]
 pub struct Validator {
+    // IMPORTANT: `arena` must be declared BEFORE `root` to ensure correct drop order.
+    // The `root` contains references into the arena, so the arena must outlive it.
+    #[allow(dead_code)]
+    pub(crate) arena: crate::arena::ValidatorArena,
     pub(crate) root: SchemaNode,
     pub(crate) draft: Draft,
 }

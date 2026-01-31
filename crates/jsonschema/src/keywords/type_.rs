@@ -19,7 +19,11 @@ pub(crate) struct MultipleTypesValidator {
 
 impl MultipleTypesValidator {
     #[inline]
-    pub(crate) fn compile(items: &[Value], location: Location) -> CompilationResult<'_> {
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        items: &'a [Value],
+        location: Location,
+    ) -> CompilationResult<'a> {
         let mut types = JsonTypeSet::empty();
         for item in items {
             match item {
@@ -49,7 +53,7 @@ impl MultipleTypesValidator {
                 }
             }
         }
-        Ok(Box::new(MultipleTypesValidator { types, location }))
+        Ok(ctx.arena.alloc(MultipleTypesValidator { types, location }))
     }
 }
 
@@ -98,8 +102,11 @@ pub(crate) struct NullTypeValidator {
 
 impl NullTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(NullTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(NullTypeValidator { location }))
     }
 }
 
@@ -150,8 +157,11 @@ pub(crate) struct BooleanTypeValidator {
 
 impl BooleanTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(BooleanTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(BooleanTypeValidator { location }))
     }
 }
 
@@ -202,8 +212,11 @@ pub(crate) struct StringTypeValidator {
 
 impl StringTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(StringTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(StringTypeValidator { location }))
     }
 }
 
@@ -255,8 +268,11 @@ pub(crate) struct ArrayTypeValidator {
 
 impl ArrayTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(ArrayTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(ArrayTypeValidator { location }))
     }
 }
 
@@ -308,8 +324,11 @@ pub(crate) struct ObjectTypeValidator {
 
 impl ObjectTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(ObjectTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(ObjectTypeValidator { location }))
     }
 }
 
@@ -360,8 +379,11 @@ pub(crate) struct NumberTypeValidator {
 
 impl NumberTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(NumberTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(NumberTypeValidator { location }))
     }
 }
 
@@ -412,8 +434,11 @@ pub(crate) struct IntegerTypeValidator {
 
 impl IntegerTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(IntegerTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(IntegerTypeValidator { location }))
     }
 }
 
@@ -506,12 +531,12 @@ pub(crate) fn compile<'a>(
 ) -> Option<CompilationResult<'a>> {
     let location = ctx.location().join("type");
     match schema {
-        Value::String(item) => Some(compile_single_type(item.as_str(), location, schema)),
+        Value::String(item) => Some(compile_single_type(ctx, item.as_str(), location, schema)),
         Value::Array(items) => {
             if items.len() == 1 {
                 let item = &items[0];
                 if let Value::String(ty) = item {
-                    Some(compile_single_type(ty.as_str(), location, item))
+                    Some(compile_single_type(ctx, ty.as_str(), location, item))
                 } else {
                     Some(Err(ValidationError::single_type_error(
                         location.clone(),
@@ -522,7 +547,7 @@ pub(crate) fn compile<'a>(
                     )))
                 }
             } else {
-                Some(MultipleTypesValidator::compile(items, location))
+                Some(MultipleTypesValidator::compile(ctx, items, location))
             }
         }
         _ => {
@@ -541,18 +566,19 @@ pub(crate) fn compile<'a>(
 }
 
 fn compile_single_type<'a>(
+    ctx: &compiler::Context,
     item: &str,
     location: Location,
     instance: &'a Value,
 ) -> CompilationResult<'a> {
     match JsonType::from_str(item) {
-        Ok(JsonType::Array) => ArrayTypeValidator::compile(location),
-        Ok(JsonType::Boolean) => BooleanTypeValidator::compile(location),
-        Ok(JsonType::Integer) => IntegerTypeValidator::compile(location),
-        Ok(JsonType::Null) => NullTypeValidator::compile(location),
-        Ok(JsonType::Number) => NumberTypeValidator::compile(location),
-        Ok(JsonType::Object) => ObjectTypeValidator::compile(location),
-        Ok(JsonType::String) => StringTypeValidator::compile(location),
+        Ok(JsonType::Array) => ArrayTypeValidator::compile(ctx, location),
+        Ok(JsonType::Boolean) => BooleanTypeValidator::compile(ctx, location),
+        Ok(JsonType::Integer) => IntegerTypeValidator::compile(ctx, location),
+        Ok(JsonType::Null) => NullTypeValidator::compile(ctx, location),
+        Ok(JsonType::Number) => NumberTypeValidator::compile(ctx, location),
+        Ok(JsonType::Object) => ObjectTypeValidator::compile(ctx, location),
+        Ok(JsonType::String) => StringTypeValidator::compile(ctx, location),
         Err(()) => Err(ValidationError::compile_error(
             location.clone(),
             location,

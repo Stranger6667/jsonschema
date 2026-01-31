@@ -17,10 +17,10 @@ pub(crate) struct NotValidator {
 impl NotValidator {
     #[inline]
     pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
-        let ctx = ctx.new_at_location("not");
-        Ok(Box::new(NotValidator {
+        let not_ctx = ctx.new_at_location("not");
+        Ok(ctx.arena.alloc(NotValidator {
             original: schema.clone(),
-            node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
+            node: compiler::compile(&not_ctx, not_ctx.as_resource_ref(schema))?,
         }))
     }
 }

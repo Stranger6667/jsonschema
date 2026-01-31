@@ -716,7 +716,7 @@ macro_rules! format_validators {
             impl $validator {
                 pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
                     let location = ctx.location().join("format");
-                    Ok(Box::new($validator { location }))
+                    Ok(ctx.arena.alloc($validator { location }))
                 }
             }
 
@@ -795,7 +795,7 @@ impl EmailValidator {
     pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
         let location = ctx.location().join("format");
         let email_options = ctx.config().email_options().copied();
-        Ok(Box::new(EmailValidator {
+        Ok(ctx.arena.alloc(EmailValidator {
             location,
             email_options,
         }))
@@ -843,7 +843,7 @@ impl IdnEmailValidator {
     pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
         let location = ctx.location().join("format");
         let email_options = ctx.config().email_options().copied();
-        Ok(Box::new(IdnEmailValidator {
+        Ok(ctx.arena.alloc(IdnEmailValidator {
             location,
             email_options,
         }))
@@ -893,7 +893,7 @@ impl CustomFormatValidator {
         check: Arc<dyn Format>,
     ) -> CompilationResult<'a> {
         let location = ctx.location().join("format");
-        Ok(Box::new(CustomFormatValidator {
+        Ok(ctx.arena.alloc(CustomFormatValidator {
             location,
             format_name,
             check,

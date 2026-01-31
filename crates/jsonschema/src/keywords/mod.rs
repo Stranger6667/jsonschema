@@ -43,7 +43,7 @@ use serde_json::{Map, Value};
 use crate::{compiler, error, validator::Validate};
 
 pub(crate) type CompilationResult<'a> = Result<BoxedValidator, error::ValidationError<'a>>;
-pub(crate) type BoxedValidator = Box<dyn Validate>;
+pub(crate) type BoxedValidator = &'static dyn Validate;
 
 type CompileFunc<'a> =
     fn(&'a compiler::Context, &'a Map<String, Value>, &'a Value) -> Option<CompilationResult<'a>>;

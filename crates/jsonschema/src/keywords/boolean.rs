@@ -1,6 +1,7 @@
 use crate::paths::{LazyLocation, Location, RefTracker};
 
 use crate::{
+    compiler,
     error::ValidationError,
     keywords::CompilationResult,
     validator::{Validate, ValidationContext},
@@ -12,8 +13,11 @@ pub(crate) struct FalseValidator {
 }
 impl FalseValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(FalseValidator { location }))
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(FalseValidator { location }))
     }
 }
 impl Validate for FalseValidator {

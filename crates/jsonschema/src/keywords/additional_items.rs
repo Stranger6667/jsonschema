@@ -21,10 +21,9 @@ impl AdditionalItemsObjectValidator {
         items_count: usize,
     ) -> CompilationResult<'a> {
         let node = compiler::compile(ctx, ctx.as_resource_ref(schema))?;
-        Ok(Box::new(AdditionalItemsObjectValidator {
-            node,
-            items_count,
-        }))
+        Ok(ctx
+            .arena
+            .alloc(AdditionalItemsObjectValidator { node, items_count }))
     }
 }
 impl Validate for AdditionalItemsObjectValidator {
@@ -83,8 +82,12 @@ pub(crate) struct AdditionalItemsBooleanValidator {
 }
 impl AdditionalItemsBooleanValidator {
     #[inline]
-    pub(crate) fn compile<'a>(items_count: usize, location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(AdditionalItemsBooleanValidator {
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        items_count: usize,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(AdditionalItemsBooleanValidator {
             items_count,
             location,
         }))
@@ -141,6 +144,7 @@ pub(crate) fn compile<'a>(
                         items_count,
                     )),
                     Value::Bool(false) => Some(AdditionalItemsBooleanValidator::compile(
+                        &kctx,
                         items_count,
                         kctx.location().clone(),
                     )),
@@ -152,7 +156,7 @@ pub(crate) fn compile<'a>(
                     None
                 } else {
                     let location = ctx.location().join("additionalItems");
-                    Some(FalseValidator::compile(location))
+                    Some(FalseValidator::compile(ctx, location))
                 }
             }
             _ => {

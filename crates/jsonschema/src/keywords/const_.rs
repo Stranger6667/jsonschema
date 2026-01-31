@@ -16,8 +16,12 @@ struct ConstArrayValidator {
 }
 impl ConstArrayValidator {
     #[inline]
-    pub(crate) fn compile(value: &[Value], location: Location) -> CompilationResult<'_> {
-        Ok(Box::new(ConstArrayValidator {
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        value: &[Value],
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(ConstArrayValidator {
             value: value.to_vec(),
             location,
         }))
@@ -60,8 +64,12 @@ struct ConstBooleanValidator {
 }
 impl ConstBooleanValidator {
     #[inline]
-    pub(crate) fn compile<'a>(value: bool, location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(ConstBooleanValidator { value, location }))
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        value: bool,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(ConstBooleanValidator { value, location }))
     }
 }
 impl Validate for ConstBooleanValidator {
@@ -100,8 +108,11 @@ struct ConstNullValidator {
 }
 impl ConstNullValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(ConstNullValidator { location }))
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(ConstNullValidator { location }))
     }
 }
 impl Validate for ConstNullValidator {
@@ -137,8 +148,12 @@ struct ConstNumberValidator {
 
 impl ConstNumberValidator {
     #[inline]
-    pub(crate) fn compile(original_value: &Number, location: Location) -> CompilationResult<'_> {
-        Ok(Box::new(ConstNumberValidator {
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        original_value: &Number,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(ConstNumberValidator {
             original_value: original_value.clone(),
             location,
         }))
@@ -183,8 +198,12 @@ pub(crate) struct ConstObjectValidator {
 
 impl ConstObjectValidator {
     #[inline]
-    pub(crate) fn compile(value: &Map<String, Value>, location: Location) -> CompilationResult<'_> {
-        Ok(Box::new(ConstObjectValidator {
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        value: &Map<String, Value>,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(ConstObjectValidator {
             value: value.clone(),
             location,
         }))
@@ -229,8 +248,12 @@ pub(crate) struct ConstStringValidator {
 
 impl ConstStringValidator {
     #[inline]
-    pub(crate) fn compile(value: &str, location: Location) -> CompilationResult<'_> {
-        Ok(Box::new(ConstStringValidator {
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        value: &str,
+        location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(ctx.arena.alloc(ConstStringValidator {
             value: value.to_string(),
             location,
         }))
@@ -276,12 +299,12 @@ pub(crate) fn compile<'a>(
 ) -> Option<CompilationResult<'a>> {
     let location = ctx.location().join("const");
     match schema {
-        Value::Array(items) => Some(ConstArrayValidator::compile(items, location)),
-        Value::Bool(item) => Some(ConstBooleanValidator::compile(*item, location)),
-        Value::Null => Some(ConstNullValidator::compile(location)),
-        Value::Number(item) => Some(ConstNumberValidator::compile(item, location)),
-        Value::Object(map) => Some(ConstObjectValidator::compile(map, location)),
-        Value::String(string) => Some(ConstStringValidator::compile(string, location)),
+        Value::Array(items) => Some(ConstArrayValidator::compile(ctx, items, location)),
+        Value::Bool(item) => Some(ConstBooleanValidator::compile(ctx, *item, location)),
+        Value::Null => Some(ConstNullValidator::compile(ctx, location)),
+        Value::Number(item) => Some(ConstNumberValidator::compile(ctx, item, location)),
+        Value::Object(map) => Some(ConstObjectValidator::compile(ctx, map, location)),
+        Value::String(string) => Some(ConstStringValidator::compile(ctx, string, location)),
     }
 }
 
