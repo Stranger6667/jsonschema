@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Precompute regex matches on known properties.
+
 ## [0.40.2] - 2026-01-30
 
 ### Changed
