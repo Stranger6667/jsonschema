@@ -75,9 +75,19 @@ impl Validate for MaxLengthValidator {
 #[inline]
 pub(crate) fn compile<'a>(
     ctx: &compiler::Context,
-    _: &'a Map<String, Value>,
+    parent: &'a Map<String, Value>,
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
+    use super::string_length::parse_limit;
+
+    // If minLength is also present and both can be parsed, the fused validator
+    // was already created by min_length::compile - skip this one
+    if let Some(min_schema) = parent.get("minLength") {
+        if parse_limit(ctx, schema).is_some() && parse_limit(ctx, min_schema).is_some() {
+            return None;
+        }
+    }
+
     let location = ctx.location().join("maxLength");
     Some(MaxLengthValidator::compile(ctx, schema, location))
 }

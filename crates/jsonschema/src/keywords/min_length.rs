@@ -75,11 +75,27 @@ impl Validate for MinLengthValidator {
 #[inline]
 pub(crate) fn compile<'a>(
     ctx: &compiler::Context,
-    _: &'a Map<String, Value>,
+    parent: &'a Map<String, Value>,
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
-    let location = ctx.location().join("minLength");
-    Some(MinLengthValidator::compile(ctx, schema, location))
+    use super::string_length::{parse_limit, MinMaxLengthValidator};
+
+    let min_location = ctx.location().join("minLength");
+
+    // Check if maxLength is also present - if so, create fused validator
+    if let Some(max_schema) = parent.get("maxLength") {
+        if let (Some(min), Some(max)) = (parse_limit(ctx, schema), parse_limit(ctx, max_schema)) {
+            let max_location = ctx.location().join("maxLength");
+            return Some(MinMaxLengthValidator::compile(
+                min,
+                max,
+                min_location,
+                max_location,
+            ));
+        }
+    }
+
+    Some(MinLengthValidator::compile(ctx, schema, min_location))
 }
 
 #[cfg(test)]
