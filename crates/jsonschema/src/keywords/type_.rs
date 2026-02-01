@@ -462,7 +462,7 @@ impl Validate for IntegerTypeValidator {
     }
 }
 
-fn is_integer(num: &Number) -> bool {
+pub(crate) fn is_integer(num: &Number) -> bool {
     if num.is_u64() || num.is_i64() {
         return true;
     }
