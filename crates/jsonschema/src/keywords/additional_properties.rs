@@ -22,6 +22,7 @@ use crate::{
     regex::RegexEngine,
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
+    Draft,
 };
 use ahash::AHashMap;
 use referencing::Uri;
@@ -132,6 +133,620 @@ impl Validate for AdditionalPropertiesValidator {
             EvaluationResult::valid_empty()
         }
     }
+}
+
+// Specialized validators for simple type schemas.
+// These avoid dynamic dispatch overhead by inlining the type check.
+
+pub(crate) struct AdditionalPropertiesStringTypeValidator {
+    location: Location,
+}
+
+impl AdditionalPropertiesStringTypeValidator {
+    #[inline]
+    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
+        Ok(Box::new(AdditionalPropertiesStringTypeValidator {
+            location,
+        }))
+    }
+}
+
+impl Validate for AdditionalPropertiesStringTypeValidator {
+    #[inline]
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+        if let Value::Object(item) = instance {
+            item.values().all(Value::is_string)
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::Object(item) = instance {
+            for (name, value) in item {
+                if !value.is_string() {
+                    return Err(ValidationError::single_type_error(
+                        self.location.clone(),
+                        crate::paths::capture_evaluation_path(tracker, &self.location),
+                        (&location.push(name)).into(),
+                        value,
+                        JsonType::String,
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Object(item) = instance {
+            let errors: Vec<_> = item
+                .iter()
+                .filter(|(_, value)| !value.is_string())
+                .map(|(name, value)| {
+                    ValidationError::single_type_error(
+                        self.location.clone(),
+                        crate::paths::capture_evaluation_path(tracker, &self.location),
+                        (&location.push(name)).into(),
+                        value,
+                        JsonType::String,
+                    )
+                })
+                .collect();
+            ErrorIterator::from_iterator(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        _location: &LazyLocation,
+        _tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if let Value::Object(item) = instance {
+            let errors: Vec<_> = item
+                .iter()
+                .filter(|(_, value)| !value.is_string())
+                .map(|(name, value)| {
+                    ErrorDescription::new(
+                        "type",
+                        format!(r#"{value} at property "{name}" is not of type "string""#),
+                    )
+                })
+                .collect();
+            let annotated_props: Vec<_> = item
+                .keys()
+                .cloned()
+                .map(serde_json::Value::String)
+                .collect();
+            if errors.is_empty() {
+                let mut result = EvaluationResult::valid_empty();
+                result.annotate(Annotations::new(serde_json::Value::Array(annotated_props)));
+                result
+            } else {
+                let mut result = EvaluationResult::invalid_empty(errors);
+                result.annotate(Annotations::new(serde_json::Value::Array(annotated_props)));
+                result
+            }
+        } else {
+            EvaluationResult::valid_empty()
+        }
+    }
+}
+
+pub(crate) struct AdditionalPropertiesNumberTypeValidator {
+    location: Location,
+}
+
+impl AdditionalPropertiesNumberTypeValidator {
+    #[inline]
+    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
+        Ok(Box::new(AdditionalPropertiesNumberTypeValidator {
+            location,
+        }))
+    }
+}
+
+impl Validate for AdditionalPropertiesNumberTypeValidator {
+    #[inline]
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+        if let Value::Object(item) = instance {
+            item.values().all(Value::is_number)
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::Object(item) = instance {
+            for (name, value) in item {
+                if !value.is_number() {
+                    return Err(ValidationError::single_type_error(
+                        self.location.clone(),
+                        crate::paths::capture_evaluation_path(tracker, &self.location),
+                        (&location.push(name)).into(),
+                        value,
+                        JsonType::Number,
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Object(item) = instance {
+            let errors: Vec<_> = item
+                .iter()
+                .filter(|(_, value)| !value.is_number())
+                .map(|(name, value)| {
+                    ValidationError::single_type_error(
+                        self.location.clone(),
+                        crate::paths::capture_evaluation_path(tracker, &self.location),
+                        (&location.push(name)).into(),
+                        value,
+                        JsonType::Number,
+                    )
+                })
+                .collect();
+            ErrorIterator::from_iterator(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        _location: &LazyLocation,
+        _tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if let Value::Object(item) = instance {
+            let errors: Vec<_> = item
+                .iter()
+                .filter(|(_, value)| !value.is_number())
+                .map(|(name, value)| {
+                    ErrorDescription::new(
+                        "type",
+                        format!(r#"{value} at property "{name}" is not of type "number""#),
+                    )
+                })
+                .collect();
+            let annotated_props: Vec<_> = item
+                .keys()
+                .cloned()
+                .map(serde_json::Value::String)
+                .collect();
+            if errors.is_empty() {
+                let mut result = EvaluationResult::valid_empty();
+                result.annotate(Annotations::new(serde_json::Value::Array(annotated_props)));
+                result
+            } else {
+                let mut result = EvaluationResult::invalid_empty(errors);
+                result.annotate(Annotations::new(serde_json::Value::Array(annotated_props)));
+                result
+            }
+        } else {
+            EvaluationResult::valid_empty()
+        }
+    }
+}
+
+pub(crate) struct AdditionalPropertiesBooleanTypeValidator {
+    location: Location,
+}
+
+impl AdditionalPropertiesBooleanTypeValidator {
+    #[inline]
+    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
+        Ok(Box::new(AdditionalPropertiesBooleanTypeValidator {
+            location,
+        }))
+    }
+}
+
+impl Validate for AdditionalPropertiesBooleanTypeValidator {
+    #[inline]
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+        if let Value::Object(item) = instance {
+            item.values().all(Value::is_boolean)
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::Object(item) = instance {
+            for (name, value) in item {
+                if !value.is_boolean() {
+                    return Err(ValidationError::single_type_error(
+                        self.location.clone(),
+                        crate::paths::capture_evaluation_path(tracker, &self.location),
+                        (&location.push(name)).into(),
+                        value,
+                        JsonType::Boolean,
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Object(item) = instance {
+            let errors: Vec<_> = item
+                .iter()
+                .filter(|(_, value)| !value.is_boolean())
+                .map(|(name, value)| {
+                    ValidationError::single_type_error(
+                        self.location.clone(),
+                        crate::paths::capture_evaluation_path(tracker, &self.location),
+                        (&location.push(name)).into(),
+                        value,
+                        JsonType::Boolean,
+                    )
+                })
+                .collect();
+            ErrorIterator::from_iterator(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        _location: &LazyLocation,
+        _tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if let Value::Object(item) = instance {
+            let errors: Vec<_> = item
+                .iter()
+                .filter(|(_, value)| !value.is_boolean())
+                .map(|(name, value)| {
+                    ErrorDescription::new(
+                        "type",
+                        format!(r#"{value} at property "{name}" is not of type "boolean""#),
+                    )
+                })
+                .collect();
+            let annotated_props: Vec<_> = item
+                .keys()
+                .cloned()
+                .map(serde_json::Value::String)
+                .collect();
+            if errors.is_empty() {
+                let mut result = EvaluationResult::valid_empty();
+                result.annotate(Annotations::new(serde_json::Value::Array(annotated_props)));
+                result
+            } else {
+                let mut result = EvaluationResult::invalid_empty(errors);
+                result.annotate(Annotations::new(serde_json::Value::Array(annotated_props)));
+                result
+            }
+        } else {
+            EvaluationResult::valid_empty()
+        }
+    }
+}
+
+pub(crate) struct AdditionalPropertiesIntegerTypeValidator {
+    location: Location,
+}
+
+impl AdditionalPropertiesIntegerTypeValidator {
+    #[inline]
+    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
+        Ok(Box::new(AdditionalPropertiesIntegerTypeValidator {
+            location,
+        }))
+    }
+}
+
+impl Validate for AdditionalPropertiesIntegerTypeValidator {
+    #[inline]
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+        if let Value::Object(item) = instance {
+            item.values().all(|value| {
+                if let Value::Number(n) = value {
+                    super::type_::is_integer(n)
+                } else {
+                    false
+                }
+            })
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::Object(item) = instance {
+            for (name, value) in item {
+                let valid = if let Value::Number(n) = value {
+                    super::type_::is_integer(n)
+                } else {
+                    false
+                };
+                if !valid {
+                    return Err(ValidationError::single_type_error(
+                        self.location.clone(),
+                        crate::paths::capture_evaluation_path(tracker, &self.location),
+                        (&location.push(name)).into(),
+                        value,
+                        JsonType::Integer,
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Object(item) = instance {
+            let errors: Vec<_> = item
+                .iter()
+                .filter(|(_, value)| {
+                    if let Value::Number(n) = value {
+                        !super::type_::is_integer(n)
+                    } else {
+                        true
+                    }
+                })
+                .map(|(name, value)| {
+                    ValidationError::single_type_error(
+                        self.location.clone(),
+                        crate::paths::capture_evaluation_path(tracker, &self.location),
+                        (&location.push(name)).into(),
+                        value,
+                        JsonType::Integer,
+                    )
+                })
+                .collect();
+            ErrorIterator::from_iterator(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        _location: &LazyLocation,
+        _tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if let Value::Object(item) = instance {
+            let errors: Vec<_> = item
+                .iter()
+                .filter(|(_, value)| {
+                    if let Value::Number(n) = value {
+                        !super::type_::is_integer(n)
+                    } else {
+                        true
+                    }
+                })
+                .map(|(name, value)| {
+                    ErrorDescription::new(
+                        "type",
+                        format!(r#"{value} at property "{name}" is not of type "integer""#),
+                    )
+                })
+                .collect();
+            let annotated_props: Vec<_> = item
+                .keys()
+                .cloned()
+                .map(serde_json::Value::String)
+                .collect();
+            if errors.is_empty() {
+                let mut result = EvaluationResult::valid_empty();
+                result.annotate(Annotations::new(serde_json::Value::Array(annotated_props)));
+                result
+            } else {
+                let mut result = EvaluationResult::invalid_empty(errors);
+                result.annotate(Annotations::new(serde_json::Value::Array(annotated_props)));
+                result
+            }
+        } else {
+            EvaluationResult::valid_empty()
+        }
+    }
+}
+
+// Draft 4 has stricter integer semantics: numbers with decimal points are NOT integers
+pub(crate) struct AdditionalPropertiesIntegerTypeValidatorDraft4 {
+    location: Location,
+}
+
+impl AdditionalPropertiesIntegerTypeValidatorDraft4 {
+    #[inline]
+    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
+        Ok(Box::new(AdditionalPropertiesIntegerTypeValidatorDraft4 {
+            location,
+        }))
+    }
+}
+
+impl Validate for AdditionalPropertiesIntegerTypeValidatorDraft4 {
+    #[inline]
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+        if let Value::Object(item) = instance {
+            item.values().all(|value| {
+                if let Value::Number(n) = value {
+                    super::legacy::type_draft_4::is_integer(n)
+                } else {
+                    false
+                }
+            })
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::Object(item) = instance {
+            for (name, value) in item {
+                let valid = if let Value::Number(n) = value {
+                    super::legacy::type_draft_4::is_integer(n)
+                } else {
+                    false
+                };
+                if !valid {
+                    return Err(ValidationError::single_type_error(
+                        self.location.clone(),
+                        crate::paths::capture_evaluation_path(tracker, &self.location),
+                        (&location.push(name)).into(),
+                        value,
+                        JsonType::Integer,
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Object(item) = instance {
+            let errors: Vec<_> = item
+                .iter()
+                .filter(|(_, value)| {
+                    if let Value::Number(n) = value {
+                        !super::legacy::type_draft_4::is_integer(n)
+                    } else {
+                        true
+                    }
+                })
+                .map(|(name, value)| {
+                    ValidationError::single_type_error(
+                        self.location.clone(),
+                        crate::paths::capture_evaluation_path(tracker, &self.location),
+                        (&location.push(name)).into(),
+                        value,
+                        JsonType::Integer,
+                    )
+                })
+                .collect();
+            ErrorIterator::from_iterator(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        _location: &LazyLocation,
+        _tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if let Value::Object(item) = instance {
+            let errors: Vec<_> = item
+                .iter()
+                .filter(|(_, value)| {
+                    if let Value::Number(n) = value {
+                        !super::legacy::type_draft_4::is_integer(n)
+                    } else {
+                        true
+                    }
+                })
+                .map(|(name, value)| {
+                    ErrorDescription::new(
+                        "type",
+                        format!(r#"{value} at property "{name}" is not of type "integer""#),
+                    )
+                })
+                .collect();
+            let annotated_props: Vec<_> = item
+                .keys()
+                .cloned()
+                .map(serde_json::Value::String)
+                .collect();
+            if errors.is_empty() {
+                let mut result = EvaluationResult::valid_empty();
+                result.annotate(Annotations::new(serde_json::Value::Array(annotated_props)));
+                result
+            } else {
+                let mut result = EvaluationResult::invalid_empty(errors);
+                result.annotate(Annotations::new(serde_json::Value::Array(annotated_props)));
+                result
+            }
+        } else {
+            EvaluationResult::valid_empty()
+        }
+    }
+}
+
+/// Check if schema is a simple `{"type": "<type>"}` pattern and return the type.
+fn get_simple_type_schema(schema: &Value) -> Option<&str> {
+    let obj = schema.as_object()?;
+    if obj.len() != 1 {
+        return None;
+    }
+    obj.get("type")?.as_str()
 }
 
 /// # Schema example
@@ -1583,6 +2198,29 @@ pub(crate) fn compile<'a>(
                         ctx,
                         schema,
                     )
+                } else if let Some(type_name) = get_simple_type_schema(schema) {
+                    let location = ctx.location().join("additionalProperties").join("type");
+                    match type_name {
+                        "string" => {
+                            Some(AdditionalPropertiesStringTypeValidator::compile(location))
+                        }
+                        "number" => {
+                            Some(AdditionalPropertiesNumberTypeValidator::compile(location))
+                        }
+                        "integer" => {
+                            if ctx.draft() == Draft::Draft4 {
+                                Some(AdditionalPropertiesIntegerTypeValidatorDraft4::compile(
+                                    location,
+                                ))
+                            } else {
+                                Some(AdditionalPropertiesIntegerTypeValidator::compile(location))
+                            }
+                        }
+                        "boolean" => {
+                            Some(AdditionalPropertiesBooleanTypeValidator::compile(location))
+                        }
+                        _ => Some(AdditionalPropertiesValidator::compile(schema, ctx)),
+                    }
                 } else {
                     Some(AdditionalPropertiesValidator::compile(schema, ctx))
                 }
@@ -2103,5 +2741,183 @@ mod tests {
 
         // Combined valid
         assert!(validator.is_valid(&json!({"name": "test", "x-foo": "bar"})));
+    }
+
+    // Specialized type validator tests
+
+    // String type
+    #[test_case(r#"{"additionalProperties": {"type": "string"}}"#, r#"{"a": "foo"}"#, true; "d7 string valid")]
+    #[test_case(r#"{"additionalProperties": {"type": "string"}}"#, r#"{"a": "foo", "b": "bar"}"#, true; "d7 string multiple valid")]
+    #[test_case(r#"{"additionalProperties": {"type": "string"}}"#, r#"{"a": 42}"#, false; "d7 string invalid number")]
+    #[test_case(r#"{"additionalProperties": {"type": "string"}}"#, r#"{"a": true}"#, false; "d7 string invalid bool")]
+    #[test_case(r#"{"additionalProperties": {"type": "string"}}"#, r#"{"a": null}"#, false; "d7 string invalid null")]
+    #[test_case(r#"{"additionalProperties": {"type": "string"}}"#, r"{}", true; "d7 string empty object")]
+    #[test_case(r#"{"additionalProperties": {"type": "string"}}"#, r"[]", true; "d7 string array skipped")]
+    // Number type
+    #[test_case(r#"{"additionalProperties": {"type": "number"}}"#, r#"{"a": 42}"#, true; "d7 number valid int")]
+    #[test_case(r#"{"additionalProperties": {"type": "number"}}"#, r#"{"a": 3.14}"#, true; "d7 number valid float")]
+    #[test_case(r#"{"additionalProperties": {"type": "number"}}"#, r#"{"a": "foo"}"#, false; "d7 number invalid string")]
+    // Boolean type
+    #[test_case(r#"{"additionalProperties": {"type": "boolean"}}"#, r#"{"a": true}"#, true; "d7 boolean valid true")]
+    #[test_case(r#"{"additionalProperties": {"type": "boolean"}}"#, r#"{"a": false}"#, true; "d7 boolean valid false")]
+    #[test_case(r#"{"additionalProperties": {"type": "boolean"}}"#, r#"{"a": 1}"#, false; "d7 boolean invalid number")]
+    #[test_case(r#"{"additionalProperties": {"type": "boolean"}}"#, r#"{"a": "true"}"#, false; "d7 boolean invalid string")]
+    // Integer type - Draft 7 (lenient: 1.0 is integer)
+    #[test_case(r#"{"additionalProperties": {"type": "integer"}}"#, r#"{"a": 42}"#, true; "d7 integer valid plain")]
+    #[test_case(r#"{"additionalProperties": {"type": "integer"}}"#, r#"{"a": -42}"#, true; "d7 integer valid negative")]
+    #[test_case(r#"{"additionalProperties": {"type": "integer"}}"#, r#"{"a": 1.0}"#, true; "d7 integer valid 1.0")]
+    #[test_case(r#"{"additionalProperties": {"type": "integer"}}"#, r#"{"a": 42.0}"#, true; "d7 integer valid 42.0")]
+    #[test_case(r#"{"additionalProperties": {"type": "integer"}}"#, r#"{"a": 1.5}"#, false; "d7 integer invalid 1.5")]
+    #[test_case(r#"{"additionalProperties": {"type": "integer"}}"#, r#"{"a": "42"}"#, false; "d7 integer invalid string")]
+    #[test_case(r#"{"additionalProperties": {"type": "integer"}}"#, r#"{"a": 9223372036854775807}"#, true; "d7 integer i64 max")]
+    #[test_case(r#"{"additionalProperties": {"type": "integer"}}"#, r#"{"a": 18446744073709551615}"#, true; "d7 integer u64 max")]
+    fn specialized_additional_properties_draft7(schema: &str, instance: &str, expected: bool) {
+        let schema: Value = serde_json::from_str(schema).unwrap();
+        let instance: Value = serde_json::from_str(instance).unwrap();
+        if expected {
+            tests_util::is_valid(&schema, &instance);
+        } else {
+            tests_util::is_not_valid(&schema, &instance);
+        }
+    }
+
+    // Draft 4 integer tests (strict: 1.0 is NOT integer)
+    #[test_case(r#"{"additionalProperties": {"type": "integer"}}"#, r#"{"a": 42}"#, true; "d4 integer valid plain")]
+    #[test_case(r#"{"additionalProperties": {"type": "integer"}}"#, r#"{"a": 1.0}"#, false; "d4 integer 1.0 not valid")]
+    #[test_case(r#"{"additionalProperties": {"type": "integer"}}"#, r#"{"a": 42.0}"#, false; "d4 integer 42.0 not valid")]
+    #[test_case(r#"{"additionalProperties": {"type": "integer"}}"#, r#"{"a": 1.5}"#, false; "d4 integer invalid decimal")]
+    fn specialized_additional_properties_draft4(schema: &str, instance: &str, expected: bool) {
+        let schema: Value = serde_json::from_str(schema).unwrap();
+        let instance: Value = serde_json::from_str(instance).unwrap();
+        if expected {
+            tests_util::is_valid_with_draft4(&schema, &instance);
+        } else {
+            tests_util::is_not_valid_with_draft4(&schema, &instance);
+        }
+    }
+
+    // Error location tests
+    #[test]
+    fn specialized_additional_properties_error_locations() {
+        // String type
+        let schema = json!({"additionalProperties": {"type": "string"}});
+        let instance = json!({"foo": 42});
+        tests_util::assert_locations(&schema, &instance, &["/additionalProperties/type"]);
+        let validator = crate::validator_for(&schema).unwrap();
+        let error = validator.iter_errors(&instance).next().unwrap();
+        assert_eq!(error.instance_path().as_str(), "/foo");
+
+        // Number type
+        let schema = json!({"additionalProperties": {"type": "number"}});
+        let instance = json!({"bar": "not a number"});
+        tests_util::assert_locations(&schema, &instance, &["/additionalProperties/type"]);
+        let validator = crate::validator_for(&schema).unwrap();
+        let error = validator.iter_errors(&instance).next().unwrap();
+        assert_eq!(error.instance_path().as_str(), "/bar");
+
+        // Integer type
+        let schema = json!({"additionalProperties": {"type": "integer"}});
+        let instance = json!({"baz": 1.5});
+        tests_util::assert_locations(&schema, &instance, &["/additionalProperties/type"]);
+        let validator = crate::validator_for(&schema).unwrap();
+        let error = validator.iter_errors(&instance).next().unwrap();
+        assert_eq!(error.instance_path().as_str(), "/baz");
+
+        // Boolean type
+        let schema = json!({"additionalProperties": {"type": "boolean"}});
+        let instance = json!({"qux": "true"});
+        tests_util::assert_locations(&schema, &instance, &["/additionalProperties/type"]);
+        let validator = crate::validator_for(&schema).unwrap();
+        let error = validator.iter_errors(&instance).next().unwrap();
+        assert_eq!(error.instance_path().as_str(), "/qux");
+    }
+
+    // Multiple errors in iter_errors
+    #[test]
+    fn specialized_additional_properties_multiple_errors() {
+        let schema = json!({"additionalProperties": {"type": "string"}});
+        let instance = json!({"a": 1, "b": 2, "c": "ok"});
+        let validator = crate::validator_for(&schema).unwrap();
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+        assert_eq!(errors.len(), 2);
+    }
+
+    #[cfg(feature = "arbitrary-precision")]
+    mod arbitrary_precision {
+        use crate::tests_util;
+        use serde_json::Value;
+        use test_case::test_case;
+
+        // Draft 7: huge integers are valid as integers
+        #[test_case(
+            r#"{"additionalProperties": {"type": "integer"}}"#,
+            r#"{"a": 18446744073709551616}"#,
+            true;
+            "d7 integer huge beyond u64"
+        )]
+        #[test_case(
+            r#"{"additionalProperties": {"type": "integer"}}"#,
+            r#"{"a": -9223372036854775809}"#,
+            true;
+            "d7 integer huge negative beyond i64"
+        )]
+        #[test_case(
+            r#"{"additionalProperties": {"type": "integer"}}"#,
+            r#"{"a": 18446744073709551616.0}"#,
+            true;
+            "d7 integer huge with .0 valid"
+        )]
+        #[test_case(
+            r#"{"additionalProperties": {"type": "integer"}}"#,
+            r#"{"a": 18446744073709551616.5}"#,
+            false;
+            "d7 integer huge decimal invalid"
+        )]
+        fn specialized_additional_properties_draft7_huge(
+            schema: &str,
+            instance: &str,
+            expected: bool,
+        ) {
+            let schema: Value = serde_json::from_str(schema).unwrap();
+            let instance: Value = serde_json::from_str(instance).unwrap();
+            if expected {
+                tests_util::is_valid(&schema, &instance);
+            } else {
+                tests_util::is_not_valid(&schema, &instance);
+            }
+        }
+
+        // Draft 4: huge integers with .0 are NOT valid
+        #[test_case(
+            r#"{"additionalProperties": {"type": "integer"}}"#,
+            r#"{"a": 18446744073709551616}"#,
+            true;
+            "d4 integer huge plain valid"
+        )]
+        #[test_case(
+            r#"{"additionalProperties": {"type": "integer"}}"#,
+            r#"{"a": 18446744073709551616.0}"#,
+            false;
+            "d4 integer huge with .0 not valid"
+        )]
+        #[test_case(
+            r#"{"additionalProperties": {"type": "integer"}}"#,
+            r#"{"a": 18446744073709551616.5}"#,
+            false;
+            "d4 integer huge decimal invalid"
+        )]
+        fn specialized_additional_properties_draft4_huge(
+            schema: &str,
+            instance: &str,
+            expected: bool,
+        ) {
+            let schema: Value = serde_json::from_str(schema).unwrap();
+            let instance: Value = serde_json::from_str(instance).unwrap();
+            if expected {
+                tests_util::is_valid_with_draft4(&schema, &instance);
+            } else {
+                tests_util::is_not_valid_with_draft4(&schema, &instance);
+            }
+        }
     }
 }
