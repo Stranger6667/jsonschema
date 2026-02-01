@@ -865,6 +865,7 @@ pub(crate) mod regex;
 mod retriever;
 pub mod types;
 mod validator;
+mod validator_enum;
 
 pub use error::{ErrorIterator, MaskedValidationError, ValidationError, ValidationErrors};
 pub use evaluation::{

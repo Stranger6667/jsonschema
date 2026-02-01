@@ -104,7 +104,7 @@ pub(crate) struct UniqueItemsValidator {
 impl UniqueItemsValidator {
     #[inline]
     pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(UniqueItemsValidator { location }))
+        Ok(UniqueItemsValidator { location }.into())
     }
 }
 

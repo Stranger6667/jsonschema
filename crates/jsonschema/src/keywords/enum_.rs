@@ -29,12 +29,13 @@ impl EnumValidator {
         for item in items {
             types = types.insert(JsonType::from(item));
         }
-        Ok(Box::new(EnumValidator {
+        Ok(EnumValidator {
             options: schema.clone(),
             items: items.to_vec(),
             types,
             location,
-        }))
+        }
+        .into())
     }
 }
 
@@ -85,11 +86,12 @@ impl SingleValueEnumValidator {
         value: &'a Value,
         location: Location,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(SingleValueEnumValidator {
+        Ok(SingleValueEnumValidator {
             options: schema.clone(),
             value: value.clone(),
             location,
-        }))
+        }
+        .into())
     }
 }
 

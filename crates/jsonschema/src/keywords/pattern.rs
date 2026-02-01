@@ -108,11 +108,12 @@ pub(crate) fn compile<'a>(
     if let Value::String(item) = schema {
         // Try prefix optimization first
         if let Some(prefix) = pattern_as_prefix(item) {
-            return Some(Ok(Box::new(PrefixPatternValidator {
+            return Some(Ok(PrefixPatternValidator {
                 prefix: Arc::from(prefix),
                 pattern: Arc::from(item.as_str()),
                 location: ctx.location().join("pattern"),
-            })));
+            }
+            .into()));
         }
         // Fall back to regex compilation
         match ctx.config().pattern_options() {
@@ -120,19 +121,21 @@ pub(crate) fn compile<'a>(
                 let Ok(regex) = ctx.get_or_compile_regex(item) else {
                     return Some(Err(invalid_regex(ctx, schema)));
                 };
-                Some(Ok(Box::new(PatternValidator {
+                Some(Ok(PatternValidator {
                     regex,
                     location: ctx.location().join("pattern"),
-                })))
+                }
+                .into()))
             }
             PatternEngineOptions::Regex { .. } => {
                 let Ok(regex) = ctx.get_or_compile_standard_regex(item) else {
                     return Some(Err(invalid_regex(ctx, schema)));
                 };
-                Some(Ok(Box::new(PatternValidator {
+                Some(Ok(PatternValidator {
                     regex,
                     location: ctx.location().join("pattern"),
-                })))
+                }
+                .into()))
             }
         }
     } else {

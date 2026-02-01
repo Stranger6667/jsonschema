@@ -575,7 +575,8 @@ impl UnevaluatedPropertiesValidator {
         Ok(Box::new(UnevaluatedPropertiesValidator {
             location: ctx.location().join("unevaluatedProperties"),
             validators,
-        }))
+        })
+        .into())
     }
 }
 

@@ -709,14 +709,14 @@ fn is_valid_uuid(uuid: &str) -> bool {
 macro_rules! format_validators {
     ($(($validator:ident, $format:expr, $validation_fn:ident)),+ $(,)?) => {
         $(
-            struct $validator {
+            pub(crate) struct $validator {
                 location: Location,
             }
 
             impl $validator {
                 pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
                     let location = ctx.location().join("format");
-                    Ok(Box::new($validator { location }))
+                    Ok($validator { location }.into())
                 }
             }
 
@@ -786,7 +786,7 @@ format_validators!(
 );
 
 // Custom EmailValidator that supports email options
-struct EmailValidator {
+pub(crate) struct EmailValidator {
     location: Location,
     email_options: Option<EmailAddressOptions>,
 }
@@ -795,10 +795,11 @@ impl EmailValidator {
     pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
         let location = ctx.location().join("format");
         let email_options = ctx.config().email_options().copied();
-        Ok(Box::new(EmailValidator {
+        Ok(EmailValidator {
             location,
             email_options,
-        }))
+        }
+        .into())
     }
 }
 
@@ -834,7 +835,7 @@ impl Validate for EmailValidator {
 }
 
 // Custom IdnEmailValidator that supports email options
-struct IdnEmailValidator {
+pub(crate) struct IdnEmailValidator {
     location: Location,
     email_options: Option<EmailAddressOptions>,
 }
@@ -843,10 +844,11 @@ impl IdnEmailValidator {
     pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
         let location = ctx.location().join("format");
         let email_options = ctx.config().email_options().copied();
-        Ok(Box::new(IdnEmailValidator {
+        Ok(IdnEmailValidator {
             location,
             email_options,
-        }))
+        }
+        .into())
     }
 }
 
@@ -881,7 +883,7 @@ impl Validate for IdnEmailValidator {
     }
 }
 
-struct CustomFormatValidator {
+pub(crate) struct CustomFormatValidator {
     location: Location,
     format_name: String,
     check: Arc<dyn Format>,
@@ -893,11 +895,12 @@ impl CustomFormatValidator {
         check: Arc<dyn Format>,
     ) -> CompilationResult<'a> {
         let location = ctx.location().join("format");
-        Ok(Box::new(CustomFormatValidator {
+        Ok(CustomFormatValidator {
             location,
             format_name,
             check,
-        }))
+        }
+        .into())
     }
 }
 

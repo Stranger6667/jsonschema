@@ -46,7 +46,7 @@ impl MultipleTypesValidator {
                 }
             }
         }
-        Ok(Box::new(MultipleTypesValidator { types, location }))
+        Ok(MultipleTypesValidator { types, location }.into())
     }
 }
 
@@ -95,7 +95,7 @@ pub(crate) struct IntegerTypeValidator {
 impl IntegerTypeValidator {
     #[inline]
     pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(IntegerTypeValidator { location }))
+        Ok(IntegerTypeValidator { location }.into())
     }
 }
 

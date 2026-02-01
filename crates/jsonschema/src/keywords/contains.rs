@@ -20,9 +20,10 @@ impl ContainsValidator {
     #[inline]
     pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
         let ctx = ctx.new_at_location("contains");
-        Ok(Box::new(ContainsValidator {
+        Ok(ContainsValidator {
             node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
-        }))
+        }
+        .into())
     }
 }
 
@@ -121,10 +122,11 @@ impl MinContainsValidator {
         min_contains: u64,
     ) -> CompilationResult<'a> {
         let ctx = ctx.new_at_location("minContains");
-        Ok(Box::new(MinContainsValidator {
+        Ok(MinContainsValidator {
             node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
             min_contains,
-        }))
+        }
+        .into())
     }
 }
 
@@ -204,10 +206,11 @@ impl MaxContainsValidator {
         max_contains: u64,
     ) -> CompilationResult<'a> {
         let ctx = ctx.new_at_location("maxContains");
-        Ok(Box::new(MaxContainsValidator {
+        Ok(MaxContainsValidator {
             node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
             max_contains,
-        }))
+        }
+        .into())
     }
 }
 
@@ -295,11 +298,12 @@ impl MinMaxContainsValidator {
         min_contains: u64,
         max_contains: u64,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(MinMaxContainsValidator {
+        Ok(MinMaxContainsValidator {
             node: compiler::compile(ctx, ctx.as_resource_ref(schema))?,
             min_contains,
             max_contains,
-        }))
+        }
+        .into())
     }
 }
 

@@ -435,24 +435,14 @@ pub(crate) fn compile<'a>(
                 pctx.get_or_compile_regex(pattern)
                     .map_err(|()| invalid_regex(pctx, subschema))
             })
-            .map(|patterns| {
-                build_validator_from_entries(patterns, |regex, node| {
-                    Box::new(SingleValuePatternPropertiesValidator { regex, node })
-                        as Box<dyn Validate>
-                })
-            })
+            .map(|patterns| build_validator_from_entries_fancy(patterns))
         }
         PatternEngineOptions::Regex { .. } => {
             compile_pattern_entries(&ctx, map, |pctx, pattern, subschema| {
                 pctx.get_or_compile_standard_regex(pattern)
                     .map_err(|()| invalid_regex(pctx, subschema))
             })
-            .map(|patterns| {
-                build_validator_from_entries(patterns, |regex, node| {
-                    Box::new(SingleValuePatternPropertiesValidator { regex, node })
-                        as Box<dyn Validate>
-                })
-            })
+            .map(|patterns| build_validator_from_entries_std(patterns))
         }
     };
     Some(result)
@@ -476,11 +466,11 @@ fn try_compile_as_prefixes<'a>(
         prefixes.push((Arc::from(prefix), node));
     }
 
-    let validator: Box<dyn Validate> = if prefixes.len() == 1 {
+    let validator = if prefixes.len() == 1 {
         let (prefix, node) = prefixes.pop().expect("len checked");
-        Box::new(SinglePrefixPatternPropertiesValidator { prefix, node })
+        SinglePrefixPatternPropertiesValidator { prefix, node }.into()
     } else {
-        Box::new(PrefixPatternPropertiesValidator { prefixes })
+        PrefixPatternPropertiesValidator { prefixes }.into()
     };
 
     Some(Ok(validator))
@@ -515,19 +505,27 @@ where
     Ok(patterns)
 }
 
-/// Pick the optimal validator representation for the compiled pattern entries.
-fn build_validator_from_entries<R>(
-    mut entries: Vec<(Arc<R>, SchemaNode)>,
-    single_factory: impl FnOnce(Arc<R>, SchemaNode) -> Box<dyn Validate>,
-) -> Box<dyn Validate>
-where
-    R: RegexEngine + 'static,
-{
+/// Pick the optimal validator representation for the compiled pattern entries (fancy regex).
+fn build_validator_from_entries_fancy(
+    mut entries: Vec<(Arc<fancy_regex::Regex>, SchemaNode)>,
+) -> crate::validator_enum::ValidatorEnum {
     if entries.len() == 1 {
         let (regex, node) = entries.pop().expect("len checked");
-        single_factory(regex, node)
+        SingleValuePatternPropertiesValidator { regex, node }.into()
     } else {
-        Box::new(PatternPropertiesValidator { patterns: entries })
+        PatternPropertiesValidator { patterns: entries }.into()
+    }
+}
+
+/// Pick the optimal validator representation for the compiled pattern entries (std regex).
+fn build_validator_from_entries_std(
+    mut entries: Vec<(Arc<regex::Regex>, SchemaNode)>,
+) -> crate::validator_enum::ValidatorEnum {
+    if entries.len() == 1 {
+        let (regex, node) = entries.pop().expect("len checked");
+        SingleValuePatternPropertiesValidator { regex, node }.into()
+    } else {
+        PatternPropertiesValidator { patterns: entries }.into()
     }
 }
 

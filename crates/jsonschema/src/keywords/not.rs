@@ -18,10 +18,11 @@ impl NotValidator {
     #[inline]
     pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
         let ctx = ctx.new_at_location("not");
-        Ok(Box::new(NotValidator {
+        Ok(NotValidator {
             original: schema.clone(),
             node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
-        }))
+        }
+        .into())
     }
 }
 

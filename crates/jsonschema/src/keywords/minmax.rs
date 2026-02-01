@@ -305,10 +305,10 @@ fn create_validator<T, V>(
     schema: &Value,
 ) -> CompilationResult<'static>
 where
-    V: From<(T, Value, Location)> + Validate + 'static,
+    V: From<(T, Value, Location)> + Into<crate::validator_enum::ValidatorEnum> + 'static,
 {
     let location = ctx.location().join(keyword);
-    Ok(Box::new(V::from((limit, schema.clone(), location))))
+    Ok(V::from((limit, schema.clone(), location)).into())
 }
 
 fn number_type_error<'a>(
@@ -392,19 +392,15 @@ fn create_bigint_validator(
     // Try BigInt first for large integers
     if let Some(bigint_limit) = numeric::bignum::try_parse_bigint(limit) {
         let location = ctx.location().join(keyword);
-        let validator: Box<dyn Validate> = match keyword {
-            "minimum" => Box::new(BigIntMinimum::new(bigint_limit, schema.clone(), location)),
-            "maximum" => Box::new(BigIntMaximum::new(bigint_limit, schema.clone(), location)),
-            "exclusiveMinimum" => Box::new(BigIntExclusiveMinimum::new(
-                bigint_limit,
-                schema.clone(),
-                location,
-            )),
-            "exclusiveMaximum" => Box::new(BigIntExclusiveMaximum::new(
-                bigint_limit,
-                schema.clone(),
-                location,
-            )),
+        let validator = match keyword {
+            "minimum" => BigIntMinimum::new(bigint_limit, schema.clone(), location).into(),
+            "maximum" => BigIntMaximum::new(bigint_limit, schema.clone(), location).into(),
+            "exclusiveMinimum" => {
+                BigIntExclusiveMinimum::new(bigint_limit, schema.clone(), location).into()
+            }
+            "exclusiveMaximum" => {
+                BigIntExclusiveMaximum::new(bigint_limit, schema.clone(), location).into()
+            }
             _ => return None,
         };
         return Some(Ok(validator));
@@ -413,19 +409,15 @@ fn create_bigint_validator(
     // If not a BigInt, try BigFraction for exact decimal precision
     if let Some(bigfrac_limit) = numeric::bignum::try_parse_bigfraction(limit) {
         let location = ctx.location().join(keyword);
-        let validator: Box<dyn Validate> = match keyword {
-            "minimum" => Box::new(BigFracMinimum::new(bigfrac_limit, schema.clone(), location)),
-            "maximum" => Box::new(BigFracMaximum::new(bigfrac_limit, schema.clone(), location)),
-            "exclusiveMinimum" => Box::new(BigFracExclusiveMinimum::new(
-                bigfrac_limit,
-                schema.clone(),
-                location,
-            )),
-            "exclusiveMaximum" => Box::new(BigFracExclusiveMaximum::new(
-                bigfrac_limit,
-                schema.clone(),
-                location,
-            )),
+        let validator = match keyword {
+            "minimum" => BigFracMinimum::new(bigfrac_limit, schema.clone(), location).into(),
+            "maximum" => BigFracMaximum::new(bigfrac_limit, schema.clone(), location).into(),
+            "exclusiveMinimum" => {
+                BigFracExclusiveMinimum::new(bigfrac_limit, schema.clone(), location).into()
+            }
+            "exclusiveMaximum" => {
+                BigFracExclusiveMaximum::new(bigfrac_limit, schema.clone(), location).into()
+            }
             _ => return None,
         };
         return Some(Ok(validator));

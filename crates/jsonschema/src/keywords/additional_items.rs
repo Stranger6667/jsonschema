@@ -21,10 +21,7 @@ impl AdditionalItemsObjectValidator {
         items_count: usize,
     ) -> CompilationResult<'a> {
         let node = compiler::compile(ctx, ctx.as_resource_ref(schema))?;
-        Ok(Box::new(AdditionalItemsObjectValidator {
-            node,
-            items_count,
-        }))
+        Ok(AdditionalItemsObjectValidator { node, items_count }.into())
     }
 }
 impl Validate for AdditionalItemsObjectValidator {
@@ -84,10 +81,11 @@ pub(crate) struct AdditionalItemsBooleanValidator {
 impl AdditionalItemsBooleanValidator {
     #[inline]
     pub(crate) fn compile<'a>(items_count: usize, location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(AdditionalItemsBooleanValidator {
+        Ok(AdditionalItemsBooleanValidator {
             items_count,
             location,
-        }))
+        }
+        .into())
     }
 }
 impl Validate for AdditionalItemsBooleanValidator {

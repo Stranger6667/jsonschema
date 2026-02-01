@@ -92,6 +92,7 @@ impl ValidationContext {
 ///
 /// - `is_valid` takes `LightweightContext`: Only cycle detection, zero path tracking overhead.
 /// - `validate`, `iter_errors`, `evaluate` take `ValidationContext`: Cycle detection + evaluation path tracking.
+#[enum_dispatch::enum_dispatch]
 pub(crate) trait Validate: Send + Sync {
     fn iter_errors<'i>(
         &self,
@@ -145,6 +146,48 @@ pub(crate) trait Validate: Send + Sync {
     /// `/properties/foo/$ref`).
     fn canonical_location(&self) -> Option<&Location> {
         None
+    }
+}
+
+/// Blanket implementation for boxed validators.
+/// This allows large validators to be boxed in ValidatorEnum to reduce enum size.
+impl<T: Validate + ?Sized> Validate for Box<T> {
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        (**self).iter_errors(instance, location, tracker, ctx)
+    }
+
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        (**self).is_valid(instance, ctx)
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        (**self).validate(instance, location, tracker, ctx)
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        (**self).evaluate(instance, location, tracker, ctx)
+    }
+
+    fn canonical_location(&self) -> Option<&Location> {
+        (**self).canonical_location()
     }
 }
 

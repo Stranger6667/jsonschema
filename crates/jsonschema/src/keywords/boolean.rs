@@ -13,7 +13,7 @@ pub(crate) struct FalseValidator {
 impl FalseValidator {
     #[inline]
     pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(FalseValidator { location }))
+        Ok(FalseValidator { location }.into())
     }
 }
 impl Validate for FalseValidator {

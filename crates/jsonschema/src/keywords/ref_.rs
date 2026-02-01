@@ -2,6 +2,7 @@ use crate::{
     compiler,
     error::ErrorIterator,
     keywords::CompilationResult,
+    node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
@@ -9,11 +10,67 @@ use crate::{
 };
 use serde_json::{Map, Value};
 
+/// Inner validator for RefValidator - either a cached validator or a compiled schema node.
+pub(crate) enum InnerRefValidator {
+    /// Cached validator from lookup_maybe_recursive (returns Box<dyn Validate>)
+    Cached(Box<dyn Validate>),
+    /// Compiled schema node from compile_with_alias
+    Compiled(Box<SchemaNode>),
+}
+
+impl Validate for InnerRefValidator {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        match self {
+            InnerRefValidator::Cached(v) => v.is_valid(instance, ctx),
+            InnerRefValidator::Compiled(n) => n.is_valid(instance, ctx),
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        match self {
+            InnerRefValidator::Cached(v) => v.validate(instance, location, tracker, ctx),
+            InnerRefValidator::Compiled(n) => n.validate(instance, location, tracker, ctx),
+        }
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        match self {
+            InnerRefValidator::Cached(v) => v.iter_errors(instance, location, tracker, ctx),
+            InnerRefValidator::Compiled(n) => n.iter_errors(instance, location, tracker, ctx),
+        }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        match self {
+            InnerRefValidator::Cached(v) => v.evaluate(instance, location, tracker, ctx),
+            InnerRefValidator::Compiled(n) => n.evaluate(instance, location, tracker, ctx),
+        }
+    }
+}
+
 /// Tracks `$ref` traversals for `tracker` (JSON Schema 2020-12 Core, Section 12.4.2).
 ///
 /// Pushes the `$ref` location onto the tracker before delegating to the inner validator.
-struct RefValidator {
-    inner: Box<dyn Validate>,
+pub(crate) struct RefValidator {
+    inner: InnerRefValidator,
     /// Path of this `$ref` keyword relative to its resource base.
     /// E.g., `/properties/foo/$ref` (not the full canonical path).
     /// Used for building the `tracker` prefix.
@@ -117,11 +174,12 @@ fn compile_reference_validator<'a>(
 
     match ctx.lookup_maybe_recursive(reference) {
         Ok(Some(validator)) => {
-            return Some(Ok(Box::new(RefValidator {
-                inner: validator,
+            return Some(Ok(RefValidator {
+                inner: InnerRefValidator::Cached(validator),
                 ref_suffix,
                 ref_target_base,
-            })));
+            }
+            .into()));
         }
         Ok(None) => {}
         Err(error) => return Some(Err(error)),
@@ -146,11 +204,12 @@ fn compile_reference_validator<'a>(
     Some(
         compiler::compile_with_alias(&inner_ctx, resource_ref, alias)
             .map(|node| {
-                Box::new(RefValidator {
-                    inner: Box::new(node),
+                RefValidator {
+                    inner: InnerRefValidator::Compiled(Box::new(node)),
                     ref_suffix,
                     ref_target_base,
-                }) as Box<dyn Validate>
+                }
+                .into()
             })
             .map_err(ValidationError::to_owned),
     )
@@ -168,11 +227,12 @@ fn compile_recursive_validator<'a>(
 
     match ctx.lookup_maybe_recursive(reference) {
         Ok(Some(validator)) => {
-            return Ok(Box::new(RefValidator {
-                inner: validator,
+            return Ok(RefValidator {
+                inner: InnerRefValidator::Cached(validator),
                 ref_suffix,
                 ref_target_base,
-            }));
+            }
+            .into());
         }
         Ok(None) => {}
         Err(error) => return Err(error),
@@ -196,11 +256,12 @@ fn compile_recursive_validator<'a>(
     );
     compiler::compile_with_alias(&inner_ctx, resource_ref, alias)
         .map(|node| {
-            Box::new(RefValidator {
-                inner: Box::new(node),
+            RefValidator {
+                inner: InnerRefValidator::Compiled(Box::new(node)),
                 ref_suffix,
                 ref_target_base,
-            }) as Box<dyn Validate>
+            }
+            .into()
         })
         .map_err(ValidationError::to_owned)
 }

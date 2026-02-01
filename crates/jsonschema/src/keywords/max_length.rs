@@ -22,17 +22,18 @@ impl MaxLengthValidator {
         location: Location,
     ) -> CompilationResult<'a> {
         if let Some(limit) = schema.as_u64() {
-            return Ok(Box::new(MaxLengthValidator { limit, location }));
+            return Ok(MaxLengthValidator { limit, location }.into());
         }
         if ctx.supports_integer_valued_numbers() {
             if let Some(limit) = schema.as_f64() {
                 if limit.trunc() == limit {
                     #[allow(clippy::cast_possible_truncation)]
-                    return Ok(Box::new(MaxLengthValidator {
+                    return Ok(MaxLengthValidator {
                         // NOTE: Imprecise cast as big integers are not supported yet
                         limit: limit as u64,
                         location,
-                    }));
+                    }
+                    .into());
                 }
             }
         }

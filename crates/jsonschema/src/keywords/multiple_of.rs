@@ -23,12 +23,13 @@ impl MultipleOfFloatValidator {
         #[cfg(feature = "arbitrary-precision")] original_value: &serde_json::Number,
         location: Location,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(MultipleOfFloatValidator {
+        Ok(MultipleOfFloatValidator {
             multiple_of,
             #[cfg(feature = "arbitrary-precision")]
             original_value: original_value.clone(),
             location,
-        }))
+        }
+        .into())
     }
 }
 
@@ -88,12 +89,13 @@ impl MultipleOfIntegerValidator {
         #[cfg(feature = "arbitrary-precision")] original_value: &serde_json::Number,
         location: Location,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(MultipleOfIntegerValidator {
+        Ok(MultipleOfIntegerValidator {
             multiple_of,
             #[cfg(feature = "arbitrary-precision")]
             original_value: original_value.clone(),
             location,
-        }))
+        }
+        .into())
     }
 }
 
@@ -154,11 +156,12 @@ impl MultipleOfBigIntValidator {
         original_value: &serde_json::Number,
         location: Location,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(MultipleOfBigIntValidator {
+        Ok(MultipleOfBigIntValidator {
             multiple_of,
             original_value: original_value.clone(),
             location,
-        }))
+        }
+        .into())
     }
 }
 
@@ -253,11 +256,12 @@ impl MultipleOfBigFracValidator {
         original_value: &serde_json::Number,
         location: Location,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(MultipleOfBigFracValidator {
+        Ok(MultipleOfBigFracValidator {
             multiple_of,
             original_value: original_value.clone(),
             location,
-        }))
+        }
+        .into())
     }
 }
 

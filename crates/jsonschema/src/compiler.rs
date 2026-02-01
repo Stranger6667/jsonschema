@@ -956,7 +956,7 @@ fn compile_without_cache<'a>(
                         path,
                         keyword.clone(),
                     );
-                    let validator: BoxedValidator = Box::new(validator);
+                    let validator: BoxedValidator = validator.into();
                     validators.push((Keyword::custom(keyword), validator));
                 } else if let Some((keyword, validator)) = keywords::get_for_draft(ctx, keyword)
                     .and_then(|(keyword, f)| f(ctx, schema, value).map(|v| (keyword, v)))

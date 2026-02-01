@@ -26,7 +26,7 @@ impl ItemsArrayValidator {
             let validators = compiler::compile(&ictx, ictx.as_resource_ref(item))?;
             items.push(validators);
         }
-        Ok(Box::new(ItemsArrayValidator { items }))
+        Ok(ItemsArrayValidator { items }.into())
     }
 }
 impl Validate for ItemsArrayValidator {
@@ -104,7 +104,7 @@ impl ItemsObjectValidator {
     pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
         let ctx = ctx.new_at_location("items");
         let node = compiler::compile(&ctx, ctx.as_resource_ref(schema))?;
-        Ok(Box::new(ItemsObjectValidator { node }))
+        Ok(ItemsObjectValidator { node }.into())
     }
 }
 impl Validate for ItemsObjectValidator {
@@ -192,10 +192,7 @@ impl ItemsObjectSkipPrefixValidator {
     ) -> CompilationResult<'a> {
         let ctx = ctx.new_at_location("items");
         let node = compiler::compile(&ctx, ctx.as_resource_ref(schema))?;
-        Ok(Box::new(ItemsObjectSkipPrefixValidator {
-            node,
-            skip_prefix,
-        }))
+        Ok(ItemsObjectSkipPrefixValidator { node, skip_prefix }.into())
     }
 }
 

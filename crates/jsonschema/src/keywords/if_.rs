@@ -21,7 +21,7 @@ impl IfThenValidator {
         schema: &'a Value,
         then_schema: &'a Value,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(IfThenValidator {
+        Ok(IfThenValidator {
             schema: {
                 let ctx = ctx.new_at_location("if");
                 compiler::compile(&ctx, ctx.as_resource_ref(schema))?
@@ -30,7 +30,8 @@ impl IfThenValidator {
                 let ctx = ctx.new_at_location("then");
                 compiler::compile(&ctx, ctx.as_resource_ref(then_schema))?
             },
-        }))
+        }
+        .into())
     }
 }
 
@@ -109,7 +110,7 @@ impl IfElseValidator {
         schema: &'a Value,
         else_schema: &'a Value,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(IfElseValidator {
+        Ok(IfElseValidator {
             schema: {
                 let ctx = ctx.new_at_location("if");
                 compiler::compile(&ctx, ctx.as_resource_ref(schema))?
@@ -118,7 +119,8 @@ impl IfElseValidator {
                 let ctx = ctx.new_at_location("else");
                 compiler::compile(&ctx, ctx.as_resource_ref(else_schema))?
             },
-        }))
+        }
+        .into())
     }
 }
 
@@ -199,7 +201,7 @@ impl IfThenElseValidator {
         then_schema: &'a Value,
         else_schema: &'a Value,
     ) -> CompilationResult<'a> {
-        Ok(Box::new(IfThenElseValidator {
+        Ok(IfThenElseValidator {
             schema: {
                 let ctx = ctx.new_at_location("if");
                 compiler::compile(&ctx, ctx.as_resource_ref(schema))?
@@ -212,7 +214,8 @@ impl IfThenElseValidator {
                 let ctx = ctx.new_at_location("else");
                 compiler::compile(&ctx, ctx.as_resource_ref(else_schema))?
             },
-        }))
+        }
+        .into())
     }
 }
 

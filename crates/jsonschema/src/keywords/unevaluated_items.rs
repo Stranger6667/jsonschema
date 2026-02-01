@@ -520,7 +520,8 @@ impl UnevaluatedItemsValidator {
         Ok(Box::new(UnevaluatedItemsValidator {
             location: ctx.location().join("unevaluatedItems"),
             validators,
-        }))
+        })
+        .into())
     }
 }
 

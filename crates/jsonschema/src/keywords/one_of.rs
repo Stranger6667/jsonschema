@@ -26,10 +26,11 @@ impl OneOfValidator {
                 let node = compiler::compile(&ctx, ctx.as_resource_ref(item))?;
                 schemas.push(node);
             }
-            Ok(Box::new(OneOfValidator {
+            Ok(OneOfValidator {
                 schemas,
                 location: ctx.location().clone(),
-            }))
+            }
+            .into())
         } else {
             let location = ctx.location().join("oneOf");
             Err(ValidationError::single_type_error(
@@ -75,10 +76,11 @@ impl SingleOneOfValidator {
         let one_of_ctx = ctx.new_at_location("oneOf");
         let item_ctx = one_of_ctx.new_at_location(0);
         let node = compiler::compile(&item_ctx, item_ctx.as_resource_ref(schema))?;
-        Ok(Box::new(SingleOneOfValidator {
+        Ok(SingleOneOfValidator {
             node,
             location: one_of_ctx.location().clone(),
-        }))
+        }
+        .into())
     }
 }
 
