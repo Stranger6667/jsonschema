@@ -375,16 +375,23 @@ pub(crate) fn compile<'a>(
     parent: &'a Map<String, Value>,
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
-    // Check if fused validator in additional_properties handles this case:
-    // properties + additionalProperties: false + required: [single_item]
-    // Also check there's no patternProperties (which uses different validators)
+    // Check if fused validators handle this case
     if let Value::Array(items) = schema {
-        if items.len() == 1
-            && matches!(parent.get("additionalProperties"), Some(Value::Bool(false)))
-            && parent.contains_key("properties")
-            && !parent.contains_key("patternProperties")
+        let has_properties = parent.contains_key("properties");
+        let has_pattern_properties = parent.contains_key("patternProperties");
+        let additional_props_false =
+            matches!(parent.get("additionalProperties"), Some(Value::Bool(false)));
+
+        // Case 1: properties + additionalProperties: false + required: [1 item], no patternProperties
+        // Handled by AdditionalPropertiesNotEmptyFalseWithRequired1Validator
+        if items.len() == 1 && additional_props_false && has_properties && !has_pattern_properties {
+            return None;
+        }
+
+        // Case 2: properties + required: [2 items], no additionalProperties: false, no patternProperties
+        // Handled by SmallPropertiesWithRequired2Validator
+        if items.len() == 2 && has_properties && !additional_props_false && !has_pattern_properties
         {
-            // Fused validator handles this - skip separate required validation
             return None;
         }
     }
