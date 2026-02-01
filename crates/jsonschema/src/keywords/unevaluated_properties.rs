@@ -30,8 +30,8 @@ pub(crate) type PendingPropertyValidators = Arc<OnceLock<PropertyValidators>>;
 /// This structure is built during schema compilation and used during validation.
 #[derive(Debug, Clone)]
 pub(crate) struct PropertyValidators {
-    /// Direct property validators from "properties" keyword
-    properties: Vec<(String, SchemaNode)>,
+    /// Property names from "properties" keyword for O(1) lookup
+    properties: AHashSet<String>,
     /// Validator from "additionalProperties" keyword
     additional: Option<SchemaNode>,
     /// Pattern-based property validators from "patternProperties" keyword
@@ -100,9 +100,9 @@ impl PropertyValidators {
 
         // Process properties on the instance
         if let Value::Object(obj) = instance {
-            // Mark properties from "properties" keyword
+            // Mark properties from "properties" keyword (O(1) lookup)
             for property in obj.keys() {
-                if self.properties.iter().any(|(p, _)| p == property) {
+                if self.properties.contains(property) {
                     properties.insert(property);
                 }
             }
@@ -176,18 +176,21 @@ impl PropertyValidators {
         }
 
         // Handle "oneOf" keyword - only if exactly one matches
-        let one_of_matches: Vec<bool> = self
-            .one_of
-            .iter()
-            .map(|(node, _)| node.is_valid(instance, ctx))
-            .collect();
-
-        if one_of_matches.iter().filter(|&&v| v).count() == 1 {
-            for ((_node, validators), &is_valid) in self.one_of.iter().zip(one_of_matches.iter()) {
-                if is_valid {
-                    validators.mark_evaluated_properties(instance, properties, ctx);
-                    break;
+        // Short-circuit: stop checking after finding 2 matches
+        let mut match_count = 0;
+        let mut matched_validators = None;
+        for (node, validators) in &self.one_of {
+            if node.is_valid(instance, ctx) {
+                match_count += 1;
+                if match_count > 1 {
+                    break; // More than one match, don't mark any properties
                 }
+                matched_validators = Some(validators);
+            }
+        }
+        if match_count == 1 {
+            if let Some(validators) = matched_validators {
+                validators.mark_evaluated_properties(instance, properties, ctx);
             }
         }
     }
@@ -256,24 +259,14 @@ fn compile_property_validators<'a>(
 }
 
 fn compile_properties<'a>(
-    ctx: &compiler::Context<'_>,
+    _ctx: &compiler::Context<'_>,
     parent: &'a Map<String, Value>,
-) -> Result<Vec<(String, SchemaNode)>, ValidationError<'a>> {
+) -> Result<AHashSet<String>, ValidationError<'a>> {
     let Some(Value::Object(map)) = parent.get("properties") else {
-        return Ok(Vec::new());
+        return Ok(AHashSet::new());
     };
-
-    let properties_ctx = ctx.new_at_location("properties");
-    let mut result = Vec::with_capacity(map.len());
-
-    for (property, subschema) in map {
-        let prop_ctx = properties_ctx.new_at_location(property.as_str());
-        let node = compiler::compile(&prop_ctx, prop_ctx.as_resource_ref(subschema))
-            .map_err(ValidationError::to_owned)?;
-        result.push((property.clone(), node));
-    }
-
-    Ok(result)
+    // Only need property names for evaluation tracking, not the validators
+    Ok(map.keys().cloned().collect())
 }
 
 fn compile_additional<'a>(

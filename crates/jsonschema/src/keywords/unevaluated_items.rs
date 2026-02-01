@@ -170,19 +170,22 @@ impl ItemsValidators {
         }
 
         // Handle oneOf - only mark if exactly one schema validates
-        // Optimization: cache validation results to avoid double validation
+        // Short-circuit: stop checking after finding 2 matches
         if let Some(one_of) = &self.one_of {
-            let results: Vec<_> = one_of
-                .iter()
-                .map(|(v, _)| v.is_valid(instance, ctx))
-                .collect();
-
-            if results.iter().filter(|&&valid| valid).count() == 1 {
-                for ((_, validators), &is_valid) in one_of.iter().zip(&results) {
-                    if is_valid {
-                        validators.mark_evaluated_indexes(instance, indexes, ctx);
-                        break;
+            let mut match_count = 0;
+            let mut matched_validators = None;
+            for (node, validators) in one_of {
+                if node.is_valid(instance, ctx) {
+                    match_count += 1;
+                    if match_count > 1 {
+                        break; // More than one match, don't mark any indexes
                     }
+                    matched_validators = Some(validators);
+                }
+            }
+            if match_count == 1 {
+                if let Some(validators) = matched_validators {
+                    validators.mark_evaluated_indexes(instance, indexes, ctx);
                 }
             }
         }

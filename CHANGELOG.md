@@ -5,6 +5,7 @@
 ### Performance
 
 - Precompute regex matches on known properties.
+- Faster `unevaluatedProperties` validation via O(1) property lookup and short-circuit `oneOf` evaluation.
 
 ## [0.40.2] - 2026-01-30
 
