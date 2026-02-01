@@ -345,6 +345,224 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
     }
 }
 
+/// Fused validator for properties + additionalProperties: false + required
+/// Eliminates separate required validation pass by tracking the required property during iteration.
+pub(crate) struct AdditionalPropertiesNotEmptyFalseWithRequired1Validator<
+    M: PropertiesValidatorsMap,
+> {
+    properties: M,
+    required: String,
+    location: Location,
+    required_location: Location,
+}
+impl AdditionalPropertiesNotEmptyFalseWithRequired1Validator<SmallValidatorsMap> {
+    #[inline]
+    pub(crate) fn compile<'a>(
+        map: &'a Map<String, Value>,
+        ctx: &compiler::Context,
+        required: String,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(
+            AdditionalPropertiesNotEmptyFalseWithRequired1Validator {
+                properties: compile_small_map(ctx, map)?,
+                required,
+                location: ctx.location().join("additionalProperties"),
+                required_location: ctx.location().join("required"),
+            },
+        ))
+    }
+}
+impl AdditionalPropertiesNotEmptyFalseWithRequired1Validator<BigValidatorsMap> {
+    #[inline]
+    pub(crate) fn compile<'a>(
+        map: &'a Map<String, Value>,
+        ctx: &compiler::Context,
+        required: String,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(
+            AdditionalPropertiesNotEmptyFalseWithRequired1Validator {
+                properties: compile_big_map(ctx, map)?,
+                required,
+                location: ctx.location().join("additionalProperties"),
+                required_location: ctx.location().join("required"),
+            },
+        ))
+    }
+}
+impl<M: PropertiesValidatorsMap> Validate
+    for AdditionalPropertiesNotEmptyFalseWithRequired1Validator<M>
+{
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        if let Value::Object(props) = instance {
+            if props.is_empty() {
+                return false;
+            }
+            let mut found_required = false;
+            for (property, value) in props {
+                if let Some(node) = self.properties.get_validator(property) {
+                    if !node.is_valid(value, ctx) {
+                        return false;
+                    }
+                    if property == &self.required {
+                        found_required = true;
+                    }
+                } else {
+                    return false;
+                }
+            }
+            found_required
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::Object(item) = instance {
+            let mut found_required = false;
+            for (property, value) in item {
+                if let Some((name, node)) = self.properties.get_key_validator(property) {
+                    node.validate(value, &location.push(name), tracker, ctx)?;
+                    if property == &self.required {
+                        found_required = true;
+                    }
+                } else {
+                    return Err(ValidationError::additional_properties(
+                        self.location.clone(),
+                        crate::paths::capture_evaluation_path(tracker, &self.location),
+                        location.into(),
+                        instance,
+                        vec![property.clone()],
+                    ));
+                }
+            }
+            if !found_required {
+                return Err(ValidationError::required(
+                    self.required_location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.required_location),
+                    location.into(),
+                    instance,
+                    Value::String(self.required.clone()),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Object(item) = instance {
+            let mut errors = vec![];
+            let mut unexpected = vec![];
+            let mut found_required = false;
+            for (property, value) in item {
+                if let Some((name, node)) = self.properties.get_key_validator(property) {
+                    errors.extend(node.iter_errors(
+                        value,
+                        &location.push(name.as_str()),
+                        tracker,
+                        ctx,
+                    ));
+                    if property == &self.required {
+                        found_required = true;
+                    }
+                } else {
+                    unexpected.push(property.clone());
+                }
+            }
+            if !unexpected.is_empty() {
+                errors.push(ValidationError::additional_properties(
+                    self.location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.location),
+                    location.into(),
+                    instance,
+                    unexpected,
+                ));
+            }
+            if !found_required {
+                errors.push(ValidationError::required(
+                    self.required_location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.required_location),
+                    location.into(),
+                    instance,
+                    Value::String(self.required.clone()),
+                ));
+            }
+            ErrorIterator::from_iterator(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if let Value::Object(item) = instance {
+            let mut unexpected = Vec::with_capacity(item.len());
+            let mut children = Vec::with_capacity(item.len());
+            let mut found_required = false;
+            for (property, value) in item {
+                if let Some((_name, node)) = self.properties.get_key_validator(property) {
+                    children.push(node.evaluate_instance(
+                        value,
+                        &location.push(property.as_str()),
+                        tracker,
+                        ctx,
+                    ));
+                    if property == &self.required {
+                        found_required = true;
+                    }
+                } else {
+                    unexpected.push(property.clone());
+                }
+            }
+            let mut result = EvaluationResult::from_children(children);
+            if !unexpected.is_empty() {
+                let eval_path = crate::paths::capture_evaluation_path(tracker, &self.location);
+                result.mark_errored(ErrorDescription::from_validation_error(
+                    &ValidationError::additional_properties(
+                        self.location.clone(),
+                        eval_path,
+                        location.into(),
+                        instance,
+                        unexpected,
+                    ),
+                ));
+            }
+            if !found_required {
+                let eval_path =
+                    crate::paths::capture_evaluation_path(tracker, &self.required_location);
+                result.mark_errored(ErrorDescription::from_validation_error(
+                    &ValidationError::required(
+                        self.required_location.clone(),
+                        eval_path,
+                        location.into(),
+                        instance,
+                        Value::String(self.required.clone()),
+                    ),
+                ));
+            }
+            result
+        } else {
+            EvaluationResult::valid_empty()
+        }
+    }
+}
+
 /// # Schema example
 ///
 /// ```json
@@ -1565,6 +1783,32 @@ pub(crate) fn compile<'a>(
             Value::Bool(true) => None, // "additionalProperties" are "true" by default
             Value::Bool(false) => {
                 if let Some(properties) = properties {
+                    // Check if we can use fused validator with required
+                    if let Some(Value::Array(required)) = parent.get("required") {
+                        if required.len() == 1 {
+                            if let Some(Value::String(req)) = required.first() {
+                                if let Value::Object(map) = properties {
+                                    return if map.len() < 40 {
+                                        Some(
+                                            AdditionalPropertiesNotEmptyFalseWithRequired1Validator::<
+                                                SmallValidatorsMap,
+                                            >::compile(
+                                                map, ctx, req.clone()
+                                            ),
+                                        )
+                                    } else {
+                                        Some(
+                                            AdditionalPropertiesNotEmptyFalseWithRequired1Validator::<
+                                                BigValidatorsMap,
+                                            >::compile(
+                                                map, ctx, req.clone()
+                                            ),
+                                        )
+                                    };
+                                }
+                            }
+                        }
+                    }
                     compile_dynamic_prop_map_validator!(
                         AdditionalPropertiesNotEmptyFalseValidator,
                         properties,
@@ -2103,5 +2347,73 @@ mod tests {
 
         // Combined valid
         assert!(validator.is_valid(&json!({"name": "test", "x-foo": "bar"})));
+    }
+
+    // Test fused validator with properties + additionalProperties: false + single required
+    #[test]
+    fn fused_additional_properties_false_with_required_1() {
+        let schema = json!({
+            "properties": {
+                "id": {"type": "string"},
+                "name": {"type": "string"}
+            },
+            "additionalProperties": false,
+            "required": ["id"]
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+
+        // Valid: has required and valid additional
+        assert!(validator.is_valid(&json!({"id": "123"})));
+        assert!(validator.is_valid(&json!({"id": "123", "name": "test"})));
+
+        // Invalid: missing required
+        assert!(!validator.is_valid(&json!({})));
+        assert!(!validator.is_valid(&json!({"name": "test"})));
+
+        // Invalid: has additional property
+        assert!(!validator.is_valid(&json!({"id": "123", "extra": "val"})));
+
+        // Invalid: wrong type for property
+        assert!(!validator.is_valid(&json!({"id": 123})));
+
+        // Non-object passes
+        assert!(validator.is_valid(&json!("string")));
+        assert!(validator.is_valid(&json!([1, 2, 3])));
+    }
+
+    #[test]
+    fn fused_additional_properties_false_with_required_1_errors() {
+        let schema = json!({
+            "properties": {
+                "id": {"type": "string"},
+                "name": {"type": "string"}
+            },
+            "additionalProperties": false,
+            "required": ["id"]
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+
+        // Missing required should produce required error
+        let instance = json!({});
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].to_string().contains("required"));
+
+        // Missing required with valid other property
+        let instance = json!({"name": "test"});
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].to_string().contains("required"));
+
+        // Additional property error
+        let instance = json!({"id": "123", "extra": "val"});
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].to_string().contains("Additional properties"));
+
+        // Both missing required and extra property
+        let instance = json!({"extra": "val"});
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+        assert_eq!(errors.len(), 2);
     }
 }

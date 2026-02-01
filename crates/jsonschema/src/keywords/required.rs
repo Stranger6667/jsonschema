@@ -372,9 +372,22 @@ impl Validate for Required3Validator {
 #[inline]
 pub(crate) fn compile<'a>(
     ctx: &compiler::Context,
-    _: &'a Map<String, Value>,
+    parent: &'a Map<String, Value>,
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
+    // Check if fused validator in additional_properties handles this case:
+    // properties + additionalProperties: false + required: [single_item]
+    // Also check there's no patternProperties (which uses different validators)
+    if let Value::Array(items) = schema {
+        if items.len() == 1
+            && matches!(parent.get("additionalProperties"), Some(Value::Bool(false)))
+            && parent.contains_key("properties")
+            && !parent.contains_key("patternProperties")
+        {
+            // Fused validator handles this - skip separate required validation
+            return None;
+        }
+    }
     let location = ctx.location().join("required");
     compile_with_path(schema, location)
 }
