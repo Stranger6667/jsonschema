@@ -376,10 +376,10 @@ pub(crate) fn compile<'a>(
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
     // Check if fused validator in additional_properties handles this case:
-    // properties + additionalProperties: false + required: [single_item]
+    // properties + additionalProperties: false + required: [1-3 items]
     // Also check there's no patternProperties (which uses different validators)
     if let Value::Array(items) = schema {
-        if items.len() == 1
+        if (1..=3).contains(&items.len())
             && matches!(parent.get("additionalProperties"), Some(Value::Bool(false)))
             && parent.contains_key("properties")
             && !parent.contains_key("patternProperties")

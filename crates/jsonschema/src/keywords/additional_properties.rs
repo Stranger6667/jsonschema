@@ -563,6 +563,578 @@ impl<M: PropertiesValidatorsMap> Validate
     }
 }
 
+/// Fused validator for properties + additionalProperties: false + required: [2 items].
+pub(crate) struct AdditionalPropertiesNotEmptyFalseWithRequired2Validator<
+    M: PropertiesValidatorsMap,
+> {
+    properties: M,
+    first: String,
+    second: String,
+    location: Location,
+    required_location: Location,
+}
+impl AdditionalPropertiesNotEmptyFalseWithRequired2Validator<SmallValidatorsMap> {
+    #[inline]
+    pub(crate) fn compile<'a>(
+        map: &'a Map<String, Value>,
+        ctx: &compiler::Context,
+        first: String,
+        second: String,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(
+            AdditionalPropertiesNotEmptyFalseWithRequired2Validator {
+                properties: compile_small_map(ctx, map)?,
+                first,
+                second,
+                location: ctx.location().join("additionalProperties"),
+                required_location: ctx.location().join("required"),
+            },
+        ))
+    }
+}
+impl AdditionalPropertiesNotEmptyFalseWithRequired2Validator<BigValidatorsMap> {
+    #[inline]
+    pub(crate) fn compile<'a>(
+        map: &'a Map<String, Value>,
+        ctx: &compiler::Context,
+        first: String,
+        second: String,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(
+            AdditionalPropertiesNotEmptyFalseWithRequired2Validator {
+                properties: compile_big_map(ctx, map)?,
+                first,
+                second,
+                location: ctx.location().join("additionalProperties"),
+                required_location: ctx.location().join("required"),
+            },
+        ))
+    }
+}
+impl<M: PropertiesValidatorsMap> Validate
+    for AdditionalPropertiesNotEmptyFalseWithRequired2Validator<M>
+{
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        if let Value::Object(props) = instance {
+            if props.len() < 2 {
+                return false;
+            }
+            let mut found_first = false;
+            let mut found_second = false;
+            for (property, value) in props {
+                if let Some(node) = self.properties.get_validator(property) {
+                    if !node.is_valid(value, ctx) {
+                        return false;
+                    }
+                    if property == &self.first {
+                        found_first = true;
+                    } else if property == &self.second {
+                        found_second = true;
+                    }
+                } else {
+                    return false;
+                }
+            }
+            found_first && found_second
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::Object(item) = instance {
+            let mut found_first = false;
+            let mut found_second = false;
+            for (property, value) in item {
+                if let Some((name, node)) = self.properties.get_key_validator(property) {
+                    node.validate(value, &location.push(name), tracker, ctx)?;
+                    if property == &self.first {
+                        found_first = true;
+                    } else if property == &self.second {
+                        found_second = true;
+                    }
+                } else {
+                    return Err(ValidationError::additional_properties(
+                        self.location.clone(),
+                        crate::paths::capture_evaluation_path(tracker, &self.location),
+                        location.into(),
+                        instance,
+                        vec![property.clone()],
+                    ));
+                }
+            }
+            if !found_first {
+                return Err(ValidationError::required(
+                    self.required_location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.required_location),
+                    location.into(),
+                    instance,
+                    Value::String(self.first.clone()),
+                ));
+            }
+            if !found_second {
+                return Err(ValidationError::required(
+                    self.required_location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.required_location),
+                    location.into(),
+                    instance,
+                    Value::String(self.second.clone()),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Object(item) = instance {
+            let mut errors = vec![];
+            let mut unexpected = vec![];
+            let mut found_first = false;
+            let mut found_second = false;
+            for (property, value) in item {
+                if let Some((name, node)) = self.properties.get_key_validator(property) {
+                    errors.extend(node.iter_errors(
+                        value,
+                        &location.push(name.as_str()),
+                        tracker,
+                        ctx,
+                    ));
+                    if property == &self.first {
+                        found_first = true;
+                    } else if property == &self.second {
+                        found_second = true;
+                    }
+                } else {
+                    unexpected.push(property.clone());
+                }
+            }
+            if !unexpected.is_empty() {
+                errors.push(ValidationError::additional_properties(
+                    self.location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.location),
+                    location.into(),
+                    instance,
+                    unexpected,
+                ));
+            }
+            let eval_path = crate::paths::capture_evaluation_path(tracker, &self.required_location);
+            if !found_first {
+                errors.push(ValidationError::required(
+                    self.required_location.clone(),
+                    eval_path.clone(),
+                    location.into(),
+                    instance,
+                    Value::String(self.first.clone()),
+                ));
+            }
+            if !found_second {
+                errors.push(ValidationError::required(
+                    self.required_location.clone(),
+                    eval_path,
+                    location.into(),
+                    instance,
+                    Value::String(self.second.clone()),
+                ));
+            }
+            ErrorIterator::from_iterator(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if let Value::Object(item) = instance {
+            let mut unexpected = Vec::with_capacity(item.len());
+            let mut children = Vec::with_capacity(item.len());
+            let mut found_first = false;
+            let mut found_second = false;
+            for (property, value) in item {
+                if let Some((_name, node)) = self.properties.get_key_validator(property) {
+                    children.push(node.evaluate_instance(
+                        value,
+                        &location.push(property.as_str()),
+                        tracker,
+                        ctx,
+                    ));
+                    if property == &self.first {
+                        found_first = true;
+                    } else if property == &self.second {
+                        found_second = true;
+                    }
+                } else {
+                    unexpected.push(property.clone());
+                }
+            }
+            let mut result = EvaluationResult::from_children(children);
+            if !unexpected.is_empty() {
+                let eval_path = crate::paths::capture_evaluation_path(tracker, &self.location);
+                result.mark_errored(ErrorDescription::from_validation_error(
+                    &ValidationError::additional_properties(
+                        self.location.clone(),
+                        eval_path,
+                        location.into(),
+                        instance,
+                        unexpected,
+                    ),
+                ));
+            }
+            let eval_path = crate::paths::capture_evaluation_path(tracker, &self.required_location);
+            if !found_first {
+                result.mark_errored(ErrorDescription::from_validation_error(
+                    &ValidationError::required(
+                        self.required_location.clone(),
+                        eval_path.clone(),
+                        location.into(),
+                        instance,
+                        Value::String(self.first.clone()),
+                    ),
+                ));
+            }
+            if !found_second {
+                result.mark_errored(ErrorDescription::from_validation_error(
+                    &ValidationError::required(
+                        self.required_location.clone(),
+                        eval_path,
+                        location.into(),
+                        instance,
+                        Value::String(self.second.clone()),
+                    ),
+                ));
+            }
+            result
+        } else {
+            EvaluationResult::valid_empty()
+        }
+    }
+}
+
+/// Fused validator for properties + additionalProperties: false + required: [3 items].
+pub(crate) struct AdditionalPropertiesNotEmptyFalseWithRequired3Validator<
+    M: PropertiesValidatorsMap,
+> {
+    properties: M,
+    first: String,
+    second: String,
+    third: String,
+    location: Location,
+    required_location: Location,
+}
+impl AdditionalPropertiesNotEmptyFalseWithRequired3Validator<SmallValidatorsMap> {
+    #[inline]
+    pub(crate) fn compile<'a>(
+        map: &'a Map<String, Value>,
+        ctx: &compiler::Context,
+        first: String,
+        second: String,
+        third: String,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(
+            AdditionalPropertiesNotEmptyFalseWithRequired3Validator {
+                properties: compile_small_map(ctx, map)?,
+                first,
+                second,
+                third,
+                location: ctx.location().join("additionalProperties"),
+                required_location: ctx.location().join("required"),
+            },
+        ))
+    }
+}
+impl AdditionalPropertiesNotEmptyFalseWithRequired3Validator<BigValidatorsMap> {
+    #[inline]
+    pub(crate) fn compile<'a>(
+        map: &'a Map<String, Value>,
+        ctx: &compiler::Context,
+        first: String,
+        second: String,
+        third: String,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(
+            AdditionalPropertiesNotEmptyFalseWithRequired3Validator {
+                properties: compile_big_map(ctx, map)?,
+                first,
+                second,
+                third,
+                location: ctx.location().join("additionalProperties"),
+                required_location: ctx.location().join("required"),
+            },
+        ))
+    }
+}
+impl<M: PropertiesValidatorsMap> Validate
+    for AdditionalPropertiesNotEmptyFalseWithRequired3Validator<M>
+{
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        if let Value::Object(props) = instance {
+            if props.len() < 3 {
+                return false;
+            }
+            let mut found_first = false;
+            let mut found_second = false;
+            let mut found_third = false;
+            for (property, value) in props {
+                if let Some(node) = self.properties.get_validator(property) {
+                    if !node.is_valid(value, ctx) {
+                        return false;
+                    }
+                    if property == &self.first {
+                        found_first = true;
+                    } else if property == &self.second {
+                        found_second = true;
+                    } else if property == &self.third {
+                        found_third = true;
+                    }
+                } else {
+                    return false;
+                }
+            }
+            found_first && found_second && found_third
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::Object(item) = instance {
+            let mut found_first = false;
+            let mut found_second = false;
+            let mut found_third = false;
+            for (property, value) in item {
+                if let Some((name, node)) = self.properties.get_key_validator(property) {
+                    node.validate(value, &location.push(name), tracker, ctx)?;
+                    if property == &self.first {
+                        found_first = true;
+                    } else if property == &self.second {
+                        found_second = true;
+                    } else if property == &self.third {
+                        found_third = true;
+                    }
+                } else {
+                    return Err(ValidationError::additional_properties(
+                        self.location.clone(),
+                        crate::paths::capture_evaluation_path(tracker, &self.location),
+                        location.into(),
+                        instance,
+                        vec![property.clone()],
+                    ));
+                }
+            }
+            if !found_first {
+                return Err(ValidationError::required(
+                    self.required_location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.required_location),
+                    location.into(),
+                    instance,
+                    Value::String(self.first.clone()),
+                ));
+            }
+            if !found_second {
+                return Err(ValidationError::required(
+                    self.required_location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.required_location),
+                    location.into(),
+                    instance,
+                    Value::String(self.second.clone()),
+                ));
+            }
+            if !found_third {
+                return Err(ValidationError::required(
+                    self.required_location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.required_location),
+                    location.into(),
+                    instance,
+                    Value::String(self.third.clone()),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Object(item) = instance {
+            let mut errors = vec![];
+            let mut unexpected = vec![];
+            let mut found_first = false;
+            let mut found_second = false;
+            let mut found_third = false;
+            for (property, value) in item {
+                if let Some((name, node)) = self.properties.get_key_validator(property) {
+                    errors.extend(node.iter_errors(
+                        value,
+                        &location.push(name.as_str()),
+                        tracker,
+                        ctx,
+                    ));
+                    if property == &self.first {
+                        found_first = true;
+                    } else if property == &self.second {
+                        found_second = true;
+                    } else if property == &self.third {
+                        found_third = true;
+                    }
+                } else {
+                    unexpected.push(property.clone());
+                }
+            }
+            if !unexpected.is_empty() {
+                errors.push(ValidationError::additional_properties(
+                    self.location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.location),
+                    location.into(),
+                    instance,
+                    unexpected,
+                ));
+            }
+            let eval_path = crate::paths::capture_evaluation_path(tracker, &self.required_location);
+            if !found_first {
+                errors.push(ValidationError::required(
+                    self.required_location.clone(),
+                    eval_path.clone(),
+                    location.into(),
+                    instance,
+                    Value::String(self.first.clone()),
+                ));
+            }
+            if !found_second {
+                errors.push(ValidationError::required(
+                    self.required_location.clone(),
+                    eval_path.clone(),
+                    location.into(),
+                    instance,
+                    Value::String(self.second.clone()),
+                ));
+            }
+            if !found_third {
+                errors.push(ValidationError::required(
+                    self.required_location.clone(),
+                    eval_path,
+                    location.into(),
+                    instance,
+                    Value::String(self.third.clone()),
+                ));
+            }
+            ErrorIterator::from_iterator(errors.into_iter())
+        } else {
+            no_error()
+        }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if let Value::Object(item) = instance {
+            let mut unexpected = Vec::with_capacity(item.len());
+            let mut children = Vec::with_capacity(item.len());
+            let mut found_first = false;
+            let mut found_second = false;
+            let mut found_third = false;
+            for (property, value) in item {
+                if let Some((_name, node)) = self.properties.get_key_validator(property) {
+                    children.push(node.evaluate_instance(
+                        value,
+                        &location.push(property.as_str()),
+                        tracker,
+                        ctx,
+                    ));
+                    if property == &self.first {
+                        found_first = true;
+                    } else if property == &self.second {
+                        found_second = true;
+                    } else if property == &self.third {
+                        found_third = true;
+                    }
+                } else {
+                    unexpected.push(property.clone());
+                }
+            }
+            let mut result = EvaluationResult::from_children(children);
+            if !unexpected.is_empty() {
+                let eval_path = crate::paths::capture_evaluation_path(tracker, &self.location);
+                result.mark_errored(ErrorDescription::from_validation_error(
+                    &ValidationError::additional_properties(
+                        self.location.clone(),
+                        eval_path,
+                        location.into(),
+                        instance,
+                        unexpected,
+                    ),
+                ));
+            }
+            let eval_path = crate::paths::capture_evaluation_path(tracker, &self.required_location);
+            if !found_first {
+                result.mark_errored(ErrorDescription::from_validation_error(
+                    &ValidationError::required(
+                        self.required_location.clone(),
+                        eval_path.clone(),
+                        location.into(),
+                        instance,
+                        Value::String(self.first.clone()),
+                    ),
+                ));
+            }
+            if !found_second {
+                result.mark_errored(ErrorDescription::from_validation_error(
+                    &ValidationError::required(
+                        self.required_location.clone(),
+                        eval_path.clone(),
+                        location.into(),
+                        instance,
+                        Value::String(self.second.clone()),
+                    ),
+                ));
+            }
+            if !found_third {
+                result.mark_errored(ErrorDescription::from_validation_error(
+                    &ValidationError::required(
+                        self.required_location.clone(),
+                        eval_path,
+                        location.into(),
+                        instance,
+                        Value::String(self.third.clone()),
+                    ),
+                ));
+            }
+            result
+        } else {
+            EvaluationResult::valid_empty()
+        }
+    }
+}
+
 /// # Schema example
 ///
 /// ```json
@@ -1785,27 +2357,85 @@ pub(crate) fn compile<'a>(
                 if let Some(properties) = properties {
                     // Check if we can use fused validator with required
                     if let Some(Value::Array(required)) = parent.get("required") {
-                        if required.len() == 1 {
-                            if let Some(Value::String(req)) = required.first() {
-                                if let Value::Object(map) = properties {
-                                    return if map.len() < 40 {
-                                        Some(
-                                            AdditionalPropertiesNotEmptyFalseWithRequired1Validator::<
-                                                SmallValidatorsMap,
-                                            >::compile(
-                                                map, ctx, req.clone()
-                                            ),
-                                        )
-                                    } else {
-                                        Some(
-                                            AdditionalPropertiesNotEmptyFalseWithRequired1Validator::<
-                                                BigValidatorsMap,
-                                            >::compile(
-                                                map, ctx, req.clone()
-                                            ),
-                                        )
-                                    };
+                        if let Value::Object(map) = properties {
+                            match required.len() {
+                                1 => {
+                                    if let Some(Value::String(req)) = required.first() {
+                                        return if map.len() < 40 {
+                                            Some(
+                                                AdditionalPropertiesNotEmptyFalseWithRequired1Validator::<
+                                                    SmallValidatorsMap,
+                                                >::compile(map, ctx, req.clone()),
+                                            )
+                                        } else {
+                                            Some(
+                                                AdditionalPropertiesNotEmptyFalseWithRequired1Validator::<
+                                                    BigValidatorsMap,
+                                                >::compile(map, ctx, req.clone()),
+                                            )
+                                        };
+                                    }
                                 }
+                                2 => {
+                                    if let (
+                                        Some(Value::String(first)),
+                                        Some(Value::String(second)),
+                                    ) = (required.first(), required.get(1))
+                                    {
+                                        return if map.len() < 40 {
+                                            Some(
+                                                AdditionalPropertiesNotEmptyFalseWithRequired2Validator::<
+                                                    SmallValidatorsMap,
+                                                >::compile(
+                                                    map, ctx, first.clone(), second.clone()
+                                                ),
+                                            )
+                                        } else {
+                                            Some(
+                                                AdditionalPropertiesNotEmptyFalseWithRequired2Validator::<
+                                                    BigValidatorsMap,
+                                                >::compile(
+                                                    map, ctx, first.clone(), second.clone()
+                                                ),
+                                            )
+                                        };
+                                    }
+                                }
+                                3 => {
+                                    if let (
+                                        Some(Value::String(first)),
+                                        Some(Value::String(second)),
+                                        Some(Value::String(third)),
+                                    ) = (required.first(), required.get(1), required.get(2))
+                                    {
+                                        return if map.len() < 40 {
+                                            Some(
+                                                AdditionalPropertiesNotEmptyFalseWithRequired3Validator::<
+                                                    SmallValidatorsMap,
+                                                >::compile(
+                                                    map,
+                                                    ctx,
+                                                    first.clone(),
+                                                    second.clone(),
+                                                    third.clone(),
+                                                ),
+                                            )
+                                        } else {
+                                            Some(
+                                                AdditionalPropertiesNotEmptyFalseWithRequired3Validator::<
+                                                    BigValidatorsMap,
+                                                >::compile(
+                                                    map,
+                                                    ctx,
+                                                    first.clone(),
+                                                    second.clone(),
+                                                    third.clone(),
+                                                ),
+                                            )
+                                        };
+                                    }
+                                }
+                                _ => {}
                             }
                         }
                     }
