@@ -28,11 +28,21 @@ pub(crate) struct PendingSchemaNode {
     cell: Arc<OnceLock<PendingTarget>>,
 }
 
-#[derive(Debug)]
 struct PendingTarget {
     validators: Weak<NodeValidators>,
     location: Location,
     absolute_path: Option<Arc<Uri<String>>>,
+    /// Cached materialized `SchemaNode` to avoid cloning on every access.
+    cached_node: OnceLock<SchemaNode>,
+}
+
+impl fmt::Debug for PendingTarget {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PendingTarget")
+            .field("location", &self.location)
+            .field("absolute_path", &self.absolute_path)
+            .finish_non_exhaustive()
+    }
 }
 
 enum NodeValidators {
@@ -99,26 +109,26 @@ impl PendingSchemaNode {
             validators: Arc::downgrade(&node.validators),
             location: node.location.clone(),
             absolute_path: node.absolute_path.clone(),
+            cached_node: OnceLock::new(),
         };
         self.cell
             .set(target)
             .expect("pending node initialized twice");
     }
 
-    pub(crate) fn get(&self) -> Option<SchemaNode> {
-        self.cell.get().map(PendingTarget::materialize)
+    pub(crate) fn get(&self) -> Option<&SchemaNode> {
+        self.cell.get().map(PendingTarget::get_or_materialize)
     }
 
     fn with_node<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(SchemaNode) -> R,
+        F: FnOnce(&SchemaNode) -> R,
     {
-        let node = self
+        let target = self
             .cell
             .get()
-            .expect("pending node accessed before initialization")
-            .materialize();
-        f(node)
+            .expect("pending node accessed before initialization");
+        f(target.get_or_materialize())
     }
 
     /// Get a unique identifier for this pending node.
@@ -130,16 +140,19 @@ impl PendingSchemaNode {
 }
 
 impl PendingTarget {
-    fn materialize(&self) -> SchemaNode {
-        let validators = self
-            .validators
-            .upgrade()
-            .expect("pending schema target dropped");
-        SchemaNode {
-            validators,
-            location: self.location.clone(),
-            absolute_path: self.absolute_path.clone(),
-        }
+    /// Get or create the cached `SchemaNode`. Only clones on first access.
+    fn get_or_materialize(&self) -> &SchemaNode {
+        self.cached_node.get_or_init(|| {
+            let validators = self
+                .validators
+                .upgrade()
+                .expect("pending schema target dropped");
+            SchemaNode {
+                validators,
+                location: self.location.clone(),
+                absolute_path: self.absolute_path.clone(),
+            }
+        })
     }
 }
 
