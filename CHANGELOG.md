@@ -5,6 +5,7 @@
 ### Performance
 
 - Specialize `items` keyword for simple type schemas (`{"type": "string"}`, `{"type": "number"}`, etc.) to eliminate dynamic dispatch overhead.
+- Specialize tuple validators for 1-3 lengths.
 - Precompute regex matches on known properties.
 - Faster `unevaluatedProperties` validation via O(1) property lookup and short-circuit `oneOf` evaluation.
 - Use HashMap for large set of properties.

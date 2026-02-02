@@ -14,6 +14,25 @@ use serde_json::{Map, Value};
 pub(crate) struct ItemsArrayValidator {
     items: Vec<SchemaNode>,
 }
+
+/// Fused validator for single-item tuples (Draft 4-7). Avoids Vec overhead and iterator machinery.
+pub(crate) struct ItemsArray1Validator {
+    schema: SchemaNode,
+}
+
+/// Fused validator for two-item tuples (Draft 4-7). Avoids Vec overhead and iterator machinery.
+pub(crate) struct ItemsArray2Validator {
+    first: SchemaNode,
+    second: SchemaNode,
+}
+
+/// Fused validator for three-item tuples (Draft 4-7). Avoids Vec overhead and iterator machinery.
+pub(crate) struct ItemsArray3Validator {
+    first: SchemaNode,
+    second: SchemaNode,
+    third: SchemaNode,
+}
+
 impl ItemsArrayValidator {
     #[inline]
     pub(crate) fn compile<'a>(
@@ -28,6 +47,52 @@ impl ItemsArrayValidator {
             items.push(validators);
         }
         Ok(Box::new(ItemsArrayValidator { items }))
+    }
+}
+
+impl ItemsArray1Validator {
+    #[inline]
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        schemas: &'a [Value],
+    ) -> CompilationResult<'a> {
+        let kctx = ctx.new_at_location("items");
+        let schema =
+            compiler::compile(&kctx.new_at_location(0), kctx.as_resource_ref(&schemas[0]))?;
+        Ok(Box::new(ItemsArray1Validator { schema }))
+    }
+}
+
+impl ItemsArray2Validator {
+    #[inline]
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        schemas: &'a [Value],
+    ) -> CompilationResult<'a> {
+        let kctx = ctx.new_at_location("items");
+        let first = compiler::compile(&kctx.new_at_location(0), kctx.as_resource_ref(&schemas[0]))?;
+        let second =
+            compiler::compile(&kctx.new_at_location(1), kctx.as_resource_ref(&schemas[1]))?;
+        Ok(Box::new(ItemsArray2Validator { first, second }))
+    }
+}
+
+impl ItemsArray3Validator {
+    #[inline]
+    pub(crate) fn compile<'a>(
+        ctx: &compiler::Context,
+        schemas: &'a [Value],
+    ) -> CompilationResult<'a> {
+        let kctx = ctx.new_at_location("items");
+        let first = compiler::compile(&kctx.new_at_location(0), kctx.as_resource_ref(&schemas[0]))?;
+        let second =
+            compiler::compile(&kctx.new_at_location(1), kctx.as_resource_ref(&schemas[1]))?;
+        let third = compiler::compile(&kctx.new_at_location(2), kctx.as_resource_ref(&schemas[2]))?;
+        Ok(Box::new(ItemsArray3Validator {
+            first,
+            second,
+            third,
+        }))
     }
 }
 impl Validate for ItemsArrayValidator {
@@ -93,6 +158,297 @@ impl Validate for ItemsArrayValidator {
         } else {
             EvaluationResult::valid_empty()
         }
+    }
+}
+
+impl Validate for ItemsArray1Validator {
+    #[inline]
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        if let Value::Array(items) = instance {
+            if let Some(first) = items.first() {
+                self.schema.is_valid(first, ctx)
+            } else {
+                true
+            }
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::Array(items) = instance {
+            if let Some(first) = items.first() {
+                self.schema
+                    .validate(first, &location.push(0), tracker, ctx)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Array(items) = instance {
+            if let Some(first) = items.first() {
+                return self
+                    .schema
+                    .iter_errors(first, &location.push(0), tracker, ctx);
+            }
+        }
+        no_error()
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if let Value::Array(items) = instance {
+            if let Some(first) = items.first() {
+                let child = self
+                    .schema
+                    .evaluate_instance(first, &location.push(0), tracker, ctx);
+                return EvaluationResult::from_children(vec![child]);
+            }
+        }
+        EvaluationResult::valid_empty()
+    }
+}
+
+impl Validate for ItemsArray2Validator {
+    #[inline]
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        if let Value::Array(items) = instance {
+            if let Some(first) = items.first() {
+                if !self.first.is_valid(first, ctx) {
+                    return false;
+                }
+            }
+            if let Some(second) = items.get(1) {
+                if !self.second.is_valid(second, ctx) {
+                    return false;
+                }
+            }
+            true
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::Array(items) = instance {
+            if let Some(first) = items.first() {
+                self.first
+                    .validate(first, &location.push(0), tracker, ctx)?;
+            }
+            if let Some(second) = items.get(1) {
+                self.second
+                    .validate(second, &location.push(1), tracker, ctx)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Array(items) = instance {
+            let mut errors = Vec::new();
+            if let Some(first) = items.first() {
+                errors.extend(
+                    self.first
+                        .iter_errors(first, &location.push(0), tracker, ctx),
+                );
+            }
+            if let Some(second) = items.get(1) {
+                errors.extend(
+                    self.second
+                        .iter_errors(second, &location.push(1), tracker, ctx),
+                );
+            }
+            if !errors.is_empty() {
+                return ErrorIterator::from_iterator(errors.into_iter());
+            }
+        }
+        no_error()
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if let Value::Array(items) = instance {
+            if !items.is_empty() {
+                let mut children = Vec::new();
+                if let Some(first) = items.first() {
+                    children.push(self.first.evaluate_instance(
+                        first,
+                        &location.push(0),
+                        tracker,
+                        ctx,
+                    ));
+                }
+                if let Some(second) = items.get(1) {
+                    children.push(self.second.evaluate_instance(
+                        second,
+                        &location.push(1),
+                        tracker,
+                        ctx,
+                    ));
+                }
+                return EvaluationResult::from_children(children);
+            }
+        }
+        EvaluationResult::valid_empty()
+    }
+}
+
+impl Validate for ItemsArray3Validator {
+    #[inline]
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        if let Value::Array(items) = instance {
+            if let Some(first) = items.first() {
+                if !self.first.is_valid(first, ctx) {
+                    return false;
+                }
+            }
+            if let Some(second) = items.get(1) {
+                if !self.second.is_valid(second, ctx) {
+                    return false;
+                }
+            }
+            if let Some(third) = items.get(2) {
+                if !self.third.is_valid(third, ctx) {
+                    return false;
+                }
+            }
+            true
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::Array(items) = instance {
+            if let Some(first) = items.first() {
+                self.first
+                    .validate(first, &location.push(0), tracker, ctx)?;
+            }
+            if let Some(second) = items.get(1) {
+                self.second
+                    .validate(second, &location.push(1), tracker, ctx)?;
+            }
+            if let Some(third) = items.get(2) {
+                self.third
+                    .validate(third, &location.push(2), tracker, ctx)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        if let Value::Array(items) = instance {
+            let mut errors = Vec::new();
+            if let Some(first) = items.first() {
+                errors.extend(
+                    self.first
+                        .iter_errors(first, &location.push(0), tracker, ctx),
+                );
+            }
+            if let Some(second) = items.get(1) {
+                errors.extend(
+                    self.second
+                        .iter_errors(second, &location.push(1), tracker, ctx),
+                );
+            }
+            if let Some(third) = items.get(2) {
+                errors.extend(
+                    self.third
+                        .iter_errors(third, &location.push(2), tracker, ctx),
+                );
+            }
+            if !errors.is_empty() {
+                return ErrorIterator::from_iterator(errors.into_iter());
+            }
+        }
+        no_error()
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if let Value::Array(items) = instance {
+            if !items.is_empty() {
+                let mut children = Vec::new();
+                if let Some(first) = items.first() {
+                    children.push(self.first.evaluate_instance(
+                        first,
+                        &location.push(0),
+                        tracker,
+                        ctx,
+                    ));
+                }
+                if let Some(second) = items.get(1) {
+                    children.push(self.second.evaluate_instance(
+                        second,
+                        &location.push(1),
+                        tracker,
+                        ctx,
+                    ));
+                }
+                if let Some(third) = items.get(2) {
+                    children.push(self.third.evaluate_instance(
+                        third,
+                        &location.push(2),
+                        tracker,
+                        ctx,
+                    ));
+                }
+                return EvaluationResult::from_children(children);
+            }
+        }
+        EvaluationResult::valid_empty()
     }
 }
 
@@ -877,7 +1233,15 @@ pub(crate) fn compile<'a>(
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
     match schema {
-        Value::Array(items) => Some(ItemsArrayValidator::compile(ctx, items)),
+        Value::Array(items) => {
+            // Use specialized validators for small tuples to avoid Vec overhead
+            Some(match items.len() {
+                1 => ItemsArray1Validator::compile(ctx, items),
+                2 => ItemsArray2Validator::compile(ctx, items),
+                3 => ItemsArray3Validator::compile(ctx, items),
+                _ => ItemsArrayValidator::compile(ctx, items),
+            })
+        }
         Value::Object(_) | Value::Bool(false) => {
             if let Some(Value::Array(prefix_items)) = parent.get("prefixItems") {
                 return Some(ItemsObjectSkipPrefixValidator::compile(
@@ -1035,6 +1399,152 @@ mod tests {
         } else {
             tests_util::is_not_valid_with_draft4(&schema, &instance);
         }
+    }
+
+    // Tests for fused ItemsArray1Validator (Draft 4-7 tuple validation)
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}]}), &json!([42]), true)]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}]}), &json!([42, "extra"]), true)]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}]}), &json!(["invalid"]), false)]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}]}), &json!([]), true)]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}]}), &json!("not-array"), true)]
+    fn fused_items_array_1_is_valid(schema: &Value, instance: &Value, expected: bool) {
+        let validator = crate::validator_for(schema).unwrap();
+        assert_eq!(validator.is_valid(instance), expected);
+    }
+
+    // Tests for fused ItemsArray2Validator (Draft 4-7 tuple validation)
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}]}), &json!([42, "hello"]), true)]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}]}), &json!([42, "hello", true]), true)]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}]}), &json!(["invalid", "hello"]), false)]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}]}), &json!([42, 99]), false)]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}]}), &json!([42]), true)]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}]}), &json!([]), true)]
+    fn fused_items_array_2_is_valid(schema: &Value, instance: &Value, expected: bool) {
+        let validator = crate::validator_for(schema).unwrap();
+        assert_eq!(validator.is_valid(instance), expected);
+    }
+
+    // Tests for fused ItemsArray3Validator (Draft 4-7 tuple validation)
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}, {"type": "boolean"}]}), &json!([42, "hello", true]), true)]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}, {"type": "boolean"}]}), &json!([42, "hello", true, 99]), true)]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}, {"type": "boolean"}]}), &json!(["invalid", "hello", true]), false)]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}, {"type": "boolean"}]}), &json!([42, 99, true]), false)]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}, {"type": "boolean"}]}), &json!([42, "hello", "invalid"]), false)]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}, {"type": "boolean"}]}), &json!([42, "hello"]), true)]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}, {"type": "boolean"}]}), &json!([42]), true)]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}, {"type": "boolean"}]}), &json!([]), true)]
+    fn fused_items_array_3_is_valid(schema: &Value, instance: &Value, expected: bool) {
+        let validator = crate::validator_for(schema).unwrap();
+        assert_eq!(validator.is_valid(instance), expected);
+    }
+
+    // Test validation errors for fused validators
+    #[test]
+    fn fused_items_array_1_validate_error() {
+        let schema = json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}]});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = json!(["not-an-integer"]);
+        let result = validator.validate(&instance);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn fused_items_array_2_validate_error() {
+        let schema = json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}]});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = json!([42, 99]);
+        let result = validator.validate(&instance);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn fused_items_array_3_validate_error() {
+        let schema = json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}, {"type": "boolean"}]});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = json!([42, "hello", "not-a-bool"]);
+        let result = validator.validate(&instance);
+        assert!(result.is_err());
+    }
+
+    // Test error collection with iter_errors
+    #[test]
+    fn fused_items_array_2_iter_errors() {
+        let schema = json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}]});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = json!(["not-int", 99]);
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+        assert_eq!(errors.len(), 2); // Both items should fail
+    }
+
+    #[test]
+    fn fused_items_array_3_iter_errors() {
+        let schema = json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}, {"type": "boolean"}]});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = json!(["not-int", 99, "not-bool"]);
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+        assert_eq!(errors.len(), 3); // All three items should fail
+    }
+
+    // Test that fused validators work with additionalItems keyword (Draft 4-7)
+    #[test]
+    fn fused_items_array_with_additional_items() {
+        let schema = json!({
+            "$schema": "http://json-schema.org/draft-04/schema#",
+            "items": [{"type": "integer"}, {"type": "string"}],
+            "additionalItems": {"type": "boolean"}
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+        assert!(validator.is_valid(&json!([42, "hello", true, false])));
+        assert!(!validator.is_valid(&json!([42, "hello", "invalid"])));
+    }
+
+    // Test evaluation for fused validators
+    #[test]
+    fn fused_items_array_1_evaluation() {
+        let schema = json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}]});
+        let validator = crate::validator_for(&schema).unwrap();
+
+        // When all items are covered
+        let instance = json!([42]);
+        let eval = validator.evaluate(&instance);
+        assert!(eval.flag().valid);
+
+        // When there are extra items
+        let instance = json!([42, "extra"]);
+        let eval = validator.evaluate(&instance);
+        assert!(eval.flag().valid);
+    }
+
+    #[test]
+    fn fused_items_array_2_evaluation() {
+        let schema = json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}]});
+        let validator = crate::validator_for(&schema).unwrap();
+
+        // When all items are covered
+        let instance = json!([42, "hello"]);
+        let eval = validator.evaluate(&instance);
+        assert!(eval.flag().valid);
+
+        // When there are extra items
+        let instance = json!([42, "hello", true]);
+        let eval = validator.evaluate(&instance);
+        assert!(eval.flag().valid);
+    }
+
+    #[test]
+    fn fused_items_array_3_evaluation() {
+        let schema = json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": [{"type": "integer"}, {"type": "string"}, {"type": "boolean"}]});
+        let validator = crate::validator_for(&schema).unwrap();
+
+        // When all items are covered
+        let instance = json!([42, "hello", true]);
+        let eval = validator.evaluate(&instance);
+        assert!(eval.flag().valid);
+
+        // When there are extra items
+        let instance = json!([42, "hello", true, 99]);
+        let eval = validator.evaluate(&instance);
+        assert!(eval.flag().valid);
     }
 
     #[cfg(feature = "arbitrary-precision")]
