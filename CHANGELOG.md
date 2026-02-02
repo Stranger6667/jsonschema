@@ -4,6 +4,7 @@
 
 ### Performance
 
+- Replace regex-based `uri-template` format validation with a hand-rolled RFC 6570 parser.
 - Specialize `items` keyword for simple type schemas (`{"type": "string"}`, `{"type": "number"}`, etc.) to eliminate dynamic dispatch overhead.
 - Precompute regex matches on known properties.
 - Faster `unevaluatedProperties` validation via O(1) property lookup and short-circuit `oneOf` evaluation.

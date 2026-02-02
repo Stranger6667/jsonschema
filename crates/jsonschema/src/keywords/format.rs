@@ -6,9 +6,7 @@ use std::{
 };
 
 use email_address::{EmailAddress, Options as EmailAddressOptions};
-use fancy_regex::Regex;
 use serde_json::{Map, Value};
-use std::sync::LazyLock;
 use unicode_general_category::{get_general_category, GeneralCategory};
 use uuid_simd::{parse_hyphenated, Out};
 
@@ -22,12 +20,232 @@ use crate::{
     Draft,
 };
 
-static URI_TEMPLATE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r#"^(?:(?:[^\x00-\x20"'<>%\\^`{|}]|%[0-9a-f]{2})|\{[+#./;?&=,!@|]?(?:[a-z0-9_]|%[0-9a-f]{2})+(?::[1-9][0-9]{0,3}|\*)?(?:,(?:[a-z0-9_]|%[0-9a-f]{2})+(?::[1-9][0-9]{0,3}|\*)?)*})*\z"#
+/// RFC 6570 Level 4 URI Template validator.
+///
+/// Single-pass parser with no allocations, early exit on invalid input.
+/// Supports all operators (+, #, ., /, ;, ?, &, =, ,, !, @, |) and modifiers (:prefix, *explode).
+fn is_valid_uri_template(template: &str) -> bool {
+    let bytes = template.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i < len {
+        if bytes[i] == b'{' {
+            // Parse expression
+            i += 1;
+            if i >= len {
+                return false; // Unclosed brace
+            }
+
+            // Optional operator
+            if is_operator(bytes[i]) {
+                i += 1;
+                if i >= len {
+                    return false;
+                }
+            }
+
+            // Parse variable list (at least one varspec required)
+            if !parse_varspec(bytes, &mut i) {
+                return false;
+            }
+
+            // Parse additional varspecs separated by commas
+            while i < len && bytes[i] == b',' {
+                i += 1;
+                if !parse_varspec(bytes, &mut i) {
+                    return false;
+                }
+            }
+
+            // Expect closing brace
+            if i >= len || bytes[i] != b'}' {
+                return false;
+            }
+            i += 1;
+        } else if bytes[i] == b'}' {
+            // Unmatched closing brace
+            return false;
+        } else {
+            // Parse literal
+            if !parse_literal(bytes, &mut i) {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
+/// Check if byte is an RFC 6570 operator (Appendix A grammar).
+/// Level 2: + (reserved expansion), # (fragment)
+/// Level 3: . (label), / (path), ; (path-style param), ? (query), & (query continuation)
+/// Reserved: = , ! @ | (reserved for future extensions per Section 2.2)
+#[inline]
+fn is_operator(b: u8) -> bool {
+    matches!(
+        b,
+        b'+' | b'#' | b'.' | b'/' | b';' | b'?' | b'&' | b'=' | b',' | b'!' | b'@' | b'|'
     )
-    .expect("Is a valid regex")
-});
+}
+
+/// Parse a variable specification: varname \[ modifier \]
+/// Returns false if invalid, updates index on success.
+#[inline]
+fn parse_varspec(bytes: &[u8], i: &mut usize) -> bool {
+    let len = bytes.len();
+
+    // Parse varname (required)
+    if !parse_varname(bytes, i) {
+        return false;
+    }
+
+    // Optional modifier
+    if *i < len {
+        match bytes[*i] {
+            b':' => {
+                // Prefix modifier: ":" max-length (1-9999)
+                *i += 1;
+                if *i >= len {
+                    return false;
+                }
+                // First digit must be 1-9
+                if !bytes[*i].is_ascii_digit() || bytes[*i] == b'0' {
+                    return false;
+                }
+                *i += 1;
+                // Up to 3 more digits (total max 4 digits for 1-9999)
+                let mut digit_count = 1;
+                while *i < len && bytes[*i].is_ascii_digit() && digit_count < 4 {
+                    *i += 1;
+                    digit_count += 1;
+                }
+            }
+            b'*' => {
+                // Explode modifier
+                *i += 1;
+            }
+            _ => {}
+        }
+    }
+
+    true
+}
+
+/// Parse a variable name: `varchar *( ["."] varchar )`
+/// varchar = ALPHA / DIGIT / "_" / pct-encoded
+#[inline]
+fn parse_varname(bytes: &[u8], i: &mut usize) -> bool {
+    let len = bytes.len();
+
+    // Must have at least one varchar
+    if !parse_varchar(bytes, i) {
+        return false;
+    }
+
+    // Continue parsing [ "." ] varchar
+    while *i < len {
+        if bytes[*i] == b'.' {
+            *i += 1;
+            if !parse_varchar(bytes, i) {
+                return false;
+            }
+        } else if is_varchar_start(bytes[*i]) || bytes[*i] == b'%' {
+            if !parse_varchar(bytes, i) {
+                return false;
+            }
+        } else {
+            break;
+        }
+    }
+
+    true
+}
+
+/// Parse one or more varchar characters.
+#[inline]
+fn parse_varchar(bytes: &[u8], i: &mut usize) -> bool {
+    let len = bytes.len();
+    let start = *i;
+
+    while *i < len {
+        if is_varchar_start(bytes[*i]) {
+            *i += 1;
+        } else if bytes[*i] == b'%' {
+            // pct-encoded
+            if *i + 2 >= len {
+                return false;
+            }
+            if !is_hex_digit(bytes[*i + 1]) || !is_hex_digit(bytes[*i + 2]) {
+                return false;
+            }
+            *i += 3;
+        } else {
+            break;
+        }
+    }
+
+    *i > start
+}
+
+/// Check if byte can start a varchar (ALPHA / DIGIT / "_").
+#[inline]
+fn is_varchar_start(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
+/// Check if byte is a hexadecimal digit.
+#[inline]
+fn is_hex_digit(b: u8) -> bool {
+    b.is_ascii_hexdigit()
+}
+
+/// Parse a literal character or percent-encoded sequence.
+/// Returns false if invalid character found.
+#[inline]
+fn parse_literal(bytes: &[u8], i: &mut usize) -> bool {
+    let len = bytes.len();
+    let b = bytes[*i];
+
+    if b == b'%' {
+        // pct-encoded
+        if *i + 2 >= len {
+            return false;
+        }
+        if !is_hex_digit(bytes[*i + 1]) || !is_hex_digit(bytes[*i + 2]) {
+            return false;
+        }
+        *i += 3;
+        true
+    } else if is_literal_char(b) {
+        *i += 1;
+        true
+    } else {
+        false
+    }
+}
+
+/// Check if byte is a valid literal character per RFC 6570.
+/// Excludes: CTL (0x00-0x1F, 0x7F), space (0x20), and: `" ' < > % \ ^ { | }`
+#[inline]
+fn is_literal_char(b: u8) -> bool {
+    !matches!(
+        b,
+        0x00..=0x20
+            | b'"'
+            | b'\''
+            | b'<'
+            | b'>'
+            | b'%'
+            | b'\\'
+            | b'^'
+            | b'`'
+            | b'{'
+            | b'|'
+            | b'}'
+            | 0x7F
+    )
+}
 
 fn is_valid_json_pointer(pointer: &str) -> bool {
     if pointer.is_empty() {
@@ -693,12 +911,6 @@ fn is_valid_uri_reference(uri_reference: &str) -> bool {
 
 fn is_valid_regex(regex: &str) -> bool {
     ecma::to_rust_regex(regex).is_ok()
-}
-
-fn is_valid_uri_template(uri_template: &str) -> bool {
-    URI_TEMPLATE_RE
-        .is_match(uri_template)
-        .expect("Simple URI_TEMPLATE_RE pattern")
 }
 
 fn is_valid_uuid(uuid: &str) -> bool {
@@ -1488,5 +1700,141 @@ mod tests {
         assert!(!validator.is_valid(&json!("Name <user@example.com>")));
         // Should accept valid email with TLD
         assert!(validator.is_valid(&json!("user@example.com")));
+    }
+
+    // Simple valid templates
+    #[test_case(""; "empty string")]
+    #[test_case("http://example.com/"; "plain URL")]
+    #[test_case("no-template-here"; "no templates")]
+    #[test_case("{var}"; "simple variable")]
+    #[test_case("http://example.com/{var}"; "URL with variable")]
+    #[test_case("http://example.com/dictionary/{term}"; "URL with named variable")]
+    #[test_case("/users/{id}"; "path with variable")]
+    #[test_case("http://example.com/~{username}/"; "URL with tilde")]
+    // All operators
+    #[test_case("{+var}"; "reserved expansion")]
+    #[test_case("{#var}"; "fragment expansion")]
+    #[test_case("{.var}"; "label expansion with dot")]
+    #[test_case("{/var}"; "path segment expansion")]
+    #[test_case("{;var}"; "path-style parameter expansion")]
+    #[test_case("{?var}"; "query expansion")]
+    #[test_case("{&var}"; "query continuation expansion")]
+    // RFC 6570 reserved operators (Section 2.2, Appendix A) - syntactically valid
+    #[test_case("{=var}"; "reserved operator equals")]
+    #[test_case("{,var}"; "reserved operator comma")]
+    #[test_case("{!var}"; "reserved operator exclamation")]
+    #[test_case("{@var}"; "reserved operator at")]
+    #[test_case("{|var}"; "reserved operator pipe")]
+    #[test_case("{|var*}"; "reserved operator with explode")]
+    // Prefix modifier valid on any variable (RFC 6570 Section 2.4.1)
+    #[test_case("{keys:1}"; "prefix modifier on any var")]
+    #[test_case("{+keys:1}"; "operator with prefix modifier")]
+    // Modifiers
+    #[test_case("{var:10}"; "prefix modifier")]
+    #[test_case("{var:1}"; "prefix modifier min")]
+    #[test_case("{var:9999}"; "prefix modifier max")]
+    #[test_case("{var*}"; "explode modifier")]
+    #[test_case("{+var*}"; "operator with explode")]
+    #[test_case("{#var:5}"; "operator with prefix")]
+    // Multiple variables
+    #[test_case("{var1,var2}"; "multiple variables")]
+    #[test_case("{var1,var2,var3}"; "three variables")]
+    #[test_case("{+var1,var2}"; "operator with multiple variables")]
+    #[test_case("{var1:5,var2*}"; "multiple variables with modifiers")]
+    // Complex templates
+    #[test_case("http://example.com{+path}{?query*}"; "complex template")]
+    #[test_case("http://example.com{#fragment}"; "fragment template")]
+    #[test_case("http://example.com{.dom*}"; "domain template")]
+    #[test_case("http://example.com{/path,path2}"; "path template")]
+    #[test_case("http://example.com{;params*}"; "params template")]
+    #[test_case("http://example.com{?query,query2}"; "query template")]
+    #[test_case("http://example.com/{var1}/{var2}/{var3}"; "multiple expressions")]
+    // Variable names with dots
+    #[test_case("{var.name}"; "dotted variable name")]
+    #[test_case("{a.b.c}"; "multiple dots in variable name")]
+    // Percent-encoded in variable names
+    #[test_case("{%20}"; "percent-encoded space in varname")]
+    #[test_case("{a%20b}"; "percent-encoded in middle of varname")]
+    #[test_case("{%41}"; "percent-encoded A")]
+    // Percent-encoded in literals
+    #[test_case("http://example.com/%20space"; "percent-encoded in URL")]
+    #[test_case("hello%20world"; "percent-encoded space")]
+    fn test_valid_uri_template(template: &str) {
+        assert!(is_valid_uri_template(template));
+    }
+
+    // Invalid templates
+    #[test_case("{"; "unclosed brace")]
+    #[test_case("}"; "unmatched close brace")]
+    #[test_case("{}"; "empty expression")]
+    #[test_case("{+}"; "operator only")]
+    #[test_case("http://example.com/{unclosed"; "unclosed in URL")]
+    #[test_case("http://example.com/{var"; "missing close brace")]
+    #[test_case("http://example.com/}"; "extra close brace")]
+    // Invalid modifiers
+    #[test_case("{var:0}"; "prefix zero")]
+    #[test_case("{var:}"; "prefix empty")]
+    #[test_case("{var:10000}"; "prefix too large")]
+    #[test_case("{var::5}"; "double colon")]
+    #[test_case("{var**}"; "double explode")]
+    #[test_case("{*}"; "explode only")]
+    #[test_case("{:5}"; "prefix only")]
+    // Invalid variable names
+    #[test_case("{-var}"; "hyphen start")]
+    #[test_case("{var-}"; "hyphen in variable")]
+    #[test_case("{.}"; "dot only")]
+    #[test_case("{..var}"; "double dot start")]
+    #[test_case("{var..name}"; "double dot in name")]
+    // Invalid percent encoding
+    #[test_case("{%}"; "incomplete percent")]
+    #[test_case("{%Z}"; "incomplete percent hex")]
+    #[test_case("{%ZZ}"; "invalid hex digits")]
+    #[test_case("{%0}"; "single hex digit")]
+    #[test_case("%"; "incomplete percent in literal")]
+    #[test_case("%Z"; "incomplete percent in literal 2")]
+    #[test_case("%ZZ"; "invalid hex in literal")]
+    // Invalid characters in literals
+    #[test_case("hello world"; "space in literal")]
+    #[test_case("hello\ttab"; "tab in literal")]
+    #[test_case("hello\nline"; "newline in literal")]
+    #[test_case("hello\"quote"; "quote in literal")]
+    #[test_case("hello<angle"; "angle bracket in literal")]
+    #[test_case("hello\\back"; "backslash in literal")]
+    #[test_case("hello^caret"; "caret in literal")]
+    #[test_case("hello`backtick"; "backtick in literal")]
+    #[test_case("hello|pipe"; "pipe in literal")]
+    // Invalid expressions
+    #[test_case("{var,}"; "trailing comma")]
+    #[test_case("{var,,var2}"; "double comma")]
+    // uritemplate-test/negative-tests.json
+    // Note: Per RFC 6570, reserved operators (=, ,, !, @, |) are syntactically valid.
+    // Tests 7, 11, 13, 21, 22 are valid per RFC syntax but fail in uritemplate-test
+    // because they test expansion behavior, not syntax validation.
+    #[test_case("{/id*"; "uritemplate-test 1: unclosed brace")]
+    #[test_case("/id*}"; "uritemplate-test 2: unmatched close brace")]
+    #[test_case("{/?id}"; "uritemplate-test 3: question mark in varname")]
+    #[test_case("{var:prefix}"; "uritemplate-test 4: non-numeric prefix")]
+    #[test_case("{hello:2*}"; "uritemplate-test 5: prefix and explode combined")]
+    #[test_case("{??hello}"; "uritemplate-test 6: question mark in varname")]
+    #[test_case("{with space}"; "uritemplate-test 8: space in variable name")]
+    #[test_case("{ leading_space}"; "uritemplate-test 9: leading space in expression")]
+    #[test_case("{trailing_space }"; "uritemplate-test 10: trailing space in expression")]
+    #[test_case("{$var}"; "uritemplate-test 12: dollar sign not a valid operator")]
+    #[test_case("{*keys?}"; "uritemplate-test 14: explode at start of varspec")]
+    #[test_case("{?empty=default,var}"; "uritemplate-test 15: equals sign in varname")]
+    #[test_case("{var}{-prefix|/-/|var}"; "uritemplate-test 16: hyphen not a valid operator")]
+    #[test_case("?q={searchTerms}&amp;c={example:color?}"; "uritemplate-test 17: non-numeric prefix")]
+    #[test_case("x{?empty|foo=none}"; "uritemplate-test 18: invalid chars after varname")]
+    #[test_case("/h{#hello+}"; "uritemplate-test 19: plus in varname")]
+    #[test_case("/h#{hello+}"; "uritemplate-test 20: plus in varname")]
+    #[test_case("{;keys:1*}"; "uritemplate-test 23: prefix and explode combined")]
+    #[test_case("?{-join|&|var,list}"; "uritemplate-test 24: hyphen not a valid operator")]
+    #[test_case("{~thing}"; "uritemplate-test 25: tilde not a valid operator")]
+    #[test_case("/{default-graph-uri}"; "uritemplate-test 26: hyphen in varname")]
+    #[test_case("/sparql{?query,default-graph-uri}"; "uritemplate-test 27: hyphen in varname")]
+    #[test_case("/sparql{?query){&default-graph-uri*}"; "uritemplate-test 28: paren in template")]
+    #[test_case("/resolution{?x, y}"; "uritemplate-test 29: space after comma")]
+    fn test_invalid_uri_template(template: &str) {
+        assert!(!is_valid_uri_template(template));
     }
 }
