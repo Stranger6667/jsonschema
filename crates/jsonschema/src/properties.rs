@@ -104,6 +104,64 @@ impl PropertiesValidatorsMap for BigValidatorsMap {
     }
 }
 
+/// Fused property validator map that stores both the validator and pre-computed pattern indices.
+/// This eliminates one `HashMap` lookup per property during validation.
+pub(crate) trait FusedPropertiesMap: Send + Sync {
+    /// Get both the validator and pattern indices in a single lookup.
+    fn get_validator_and_pattern_indices(&self, property: &str) -> Option<(&SchemaNode, &[usize])>;
+    /// Get the key, validator, and pattern indices in a single lookup.
+    fn get_key_validator_and_pattern_indices(
+        &self,
+        property: &str,
+    ) -> Option<(&String, &SchemaNode, &[usize])>;
+}
+
+/// Small fused map using `Vec` for < 40 properties.
+pub(crate) type SmallFusedMap = Vec<(String, SchemaNode, Box<[usize]>)>;
+/// Big fused map using `AHashMap` for >= 40 properties.
+pub(crate) type BigFusedMap = AHashMap<String, (SchemaNode, Box<[usize]>)>;
+
+impl FusedPropertiesMap for SmallFusedMap {
+    #[inline]
+    fn get_validator_and_pattern_indices(&self, property: &str) -> Option<(&SchemaNode, &[usize])> {
+        for (prop, node, indices) in self {
+            if prop == property {
+                return Some((node, indices));
+            }
+        }
+        None
+    }
+
+    #[inline]
+    fn get_key_validator_and_pattern_indices(
+        &self,
+        property: &str,
+    ) -> Option<(&String, &SchemaNode, &[usize])> {
+        for (prop, node, indices) in self {
+            if prop == property {
+                return Some((prop, node, indices));
+            }
+        }
+        None
+    }
+}
+
+impl FusedPropertiesMap for BigFusedMap {
+    #[inline]
+    fn get_validator_and_pattern_indices(&self, property: &str) -> Option<(&SchemaNode, &[usize])> {
+        self.get(property).map(|(node, indices)| (node, &**indices))
+    }
+
+    #[inline]
+    fn get_key_validator_and_pattern_indices(
+        &self,
+        property: &str,
+    ) -> Option<(&String, &SchemaNode, &[usize])> {
+        self.get_key_value(property)
+            .map(|(key, (node, indices))| (key, node, &**indices))
+    }
+}
+
 pub(crate) fn compile_small_map<'a>(
     ctx: &compiler::Context,
     map: &'a Map<String, Value>,
@@ -134,6 +192,55 @@ pub(crate) fn compile_big_map<'a>(
         );
     }
     Ok(properties)
+}
+
+/// Compile a small fused map with pre-computed pattern indices.
+pub(crate) fn compile_small_fused_map<'a, R: crate::regex::RegexEngine>(
+    ctx: &compiler::Context,
+    map: &'a Map<String, Value>,
+    patterns: &[(R, SchemaNode)],
+) -> Result<SmallFusedMap, ValidationError<'a>> {
+    let mut properties = Vec::with_capacity(map.len());
+    let kctx = ctx.new_at_location("properties");
+    for (key, subschema) in map {
+        let pctx = kctx.new_at_location(key.as_str());
+        let node = compiler::compile(&pctx, pctx.as_resource_ref(subschema))?;
+        let pattern_indices = compute_pattern_indices(key, patterns);
+        properties.push((key.clone(), node, pattern_indices));
+    }
+    Ok(properties)
+}
+
+/// Compile a big fused map with pre-computed pattern indices.
+pub(crate) fn compile_big_fused_map<'a, R: crate::regex::RegexEngine>(
+    ctx: &compiler::Context,
+    map: &'a Map<String, Value>,
+    patterns: &[(R, SchemaNode)],
+) -> Result<BigFusedMap, ValidationError<'a>> {
+    let mut properties = AHashMap::with_capacity(map.len());
+    let kctx = ctx.new_at_location("properties");
+    for (key, subschema) in map {
+        let pctx = kctx.new_at_location(key.as_str());
+        let node = compiler::compile(&pctx, pctx.as_resource_ref(subschema))?;
+        let pattern_indices = compute_pattern_indices(key, patterns);
+        properties.insert(key.clone(), (node, pattern_indices));
+    }
+    Ok(properties)
+}
+
+/// Compute which pattern indices match a given property name.
+#[inline]
+fn compute_pattern_indices<R: crate::regex::RegexEngine>(
+    property: &str,
+    patterns: &[(R, SchemaNode)],
+) -> Box<[usize]> {
+    patterns
+        .iter()
+        .enumerate()
+        .filter(|(_, (re, _))| re.is_match(property).unwrap_or(false))
+        .map(|(i, _)| i)
+        .collect::<Vec<_>>()
+        .into_boxed_slice()
 }
 
 pub(crate) fn are_properties_valid<M, F>(
