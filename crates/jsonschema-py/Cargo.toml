@@ -25,7 +25,7 @@ serde_json.workspace = true
 
 [build-dependencies]
 built = { version = "0.8.0", features = ["cargo-lock", "chrono"] }
-pyo3-build-config = { version = "0.27", features = ["resolve-config"] }
+pyo3-build-config = { version = "0.28", features = ["resolve-config"] }
 
 [lints]
 workspace = true
