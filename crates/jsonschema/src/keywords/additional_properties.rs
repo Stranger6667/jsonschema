@@ -17,7 +17,7 @@ use crate::{
     properties::{
         are_properties_valid, compile_big_map, compile_dynamic_prop_map_validator,
         compile_fancy_regex_patterns, compile_regex_patterns, compile_small_map, BigValidatorsMap,
-        CompiledPattern, PropertiesValidatorsMap, SmallValidatorsMap,
+        CompiledPattern, PropertiesValidatorsMap, SmallValidatorsMap, HASHMAP_THRESHOLD,
     },
     regex::RegexEngine,
     types::JsonType,
@@ -1561,7 +1561,7 @@ where
     let kctx = ctx.new_at_location("additionalProperties");
     let property_pattern_indices = precompute_property_pattern_indices(map.keys(), &patterns);
 
-    if map.len() < 40 {
+    if map.len() < HASHMAP_THRESHOLD {
         Some(Ok(Box::new(
             AdditionalPropertiesWithPatternsNotEmptyValidator::<SmallValidatorsMap, R> {
                 node: try_compile!(compiler::compile(&kctx, kctx.as_resource_ref(schema))),
@@ -1593,7 +1593,7 @@ where
     let kctx = ctx.new_at_location("additionalProperties");
     let property_pattern_indices = precompute_property_pattern_indices(map.keys(), &patterns);
 
-    if map.len() < 40 {
+    if map.len() < HASHMAP_THRESHOLD {
         Some(Ok(Box::new(
             AdditionalPropertiesWithPatternsNotEmptyFalseValidator::<SmallValidatorsMap, R> {
                 properties: try_compile!(compile_small_map(ctx, map)),
@@ -1788,7 +1788,7 @@ pub(crate) fn compile<'a>(
                         if required.len() == 1 {
                             if let Some(Value::String(req)) = required.first() {
                                 if let Value::Object(map) = properties {
-                                    return if map.len() < 40 {
+                                    return if map.len() < HASHMAP_THRESHOLD {
                                         Some(
                                             AdditionalPropertiesNotEmptyFalseWithRequired1Validator::<
                                                 SmallValidatorsMap,

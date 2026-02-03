@@ -5,16 +5,12 @@ use crate::{
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
+    properties::HASHMAP_THRESHOLD,
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
 };
 use ahash::AHashMap;
 use serde_json::{Map, Value};
-
-/// Threshold for switching from Vec to `HashMap` storage.
-/// For small schemas, linear search on Vec is faster than `HashMap` lookup
-/// due to cache locality and no hashing overhead.
-const HASHMAP_THRESHOLD: usize = 40;
 
 pub(crate) struct SmallPropertiesValidator {
     pub(crate) properties: Vec<(String, SchemaNode)>,

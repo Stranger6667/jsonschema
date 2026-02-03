@@ -61,13 +61,9 @@ pub(crate) trait PropertiesValidatorsMap: Send + Sync {
     fn get_key_validator(&self, property: &str) -> Option<(&String, &SchemaNode)>;
 }
 
-// We're defining two different property validator map implementations, one for small map sizes and
-// one for large map sizes, to optimize the performance depending on the number of properties
-// present.
-//
-// Implementors should use `compile_dynamic_prop_map_validator!` for building their validator maps
-// at runtime, as it wraps up all of the logic to choose the right map size and then build and
-// compile the validator.
+/// Threshold for switching from linear scan to `HashMap`.
+pub(crate) const HASHMAP_THRESHOLD: usize = 15;
+
 pub(crate) type SmallValidatorsMap = Vec<(String, SchemaNode)>;
 pub(crate) type BigValidatorsMap = AHashMap<String, SchemaNode>;
 
@@ -223,7 +219,7 @@ pub(crate) fn compile_regex_patterns<'a>(
 macro_rules! compile_dynamic_prop_map_validator {
     ($validator:tt, $properties:ident, $ctx:expr, $( $arg:expr ),* $(,)*) => {{
         if let Value::Object(map) = $properties {
-            if map.len() < 40 {
+            if map.len() < HASHMAP_THRESHOLD {
                 Some($validator::<SmallValidatorsMap>::compile(
                     map, $ctx, $($arg, )*
                 ))

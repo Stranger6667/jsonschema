@@ -9,6 +9,7 @@
 - Precompute regex matches on known properties.
 - Faster `unevaluatedProperties` validation via O(1) property lookup and short-circuit `oneOf` evaluation.
 - Use HashMap for large set of properties.
+- Lower HashMap threshold from 40 to 15 properties for faster property lookups.
 
 ## [0.40.2] - 2026-01-30
 
