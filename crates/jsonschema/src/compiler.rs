@@ -864,7 +864,7 @@ fn compile_with_internal<'a>(
         // If the node has already been initialized, reuse it. Otherwise, we rely on the
         // in-flight compilation to finish initialization and continue compiling here.
         if let Some(node) = pending.get() {
-            return Ok(node);
+            return Ok(node.clone());
         }
     }
 
