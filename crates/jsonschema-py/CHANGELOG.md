@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Update `pyo3` to `0.28`.
+- Remove unused `pythonize` dependency.
+
 ### Performance
 
 - Replace regex-based `uri-template` format validation with a hand-rolled RFC 6570 parser.

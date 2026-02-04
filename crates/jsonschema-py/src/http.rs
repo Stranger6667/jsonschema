@@ -29,7 +29,7 @@ fn validate_timeout(value: Option<f64>, name: &str) -> PyResult<Option<f64>> {
 ///     connect_timeout: Connection timeout in seconds (default: None - no timeout)
 ///     tls_verify: Whether to verify TLS certificates (default: True)
 ///     ca_cert: Path to a custom CA certificate file in PEM format (default: None)
-#[pyclass(module = "jsonschema_rs", get_all)]
+#[pyclass(module = "jsonschema_rs", get_all, from_py_object)]
 #[derive(Clone)]
 pub(crate) struct HttpOptions {
     pub(crate) timeout: Option<f64>,
