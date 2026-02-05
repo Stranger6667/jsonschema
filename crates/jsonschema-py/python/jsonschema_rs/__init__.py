@@ -1,4 +1,9 @@
-from typing import Any, TypeAlias
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from typing import Any
 
 from .jsonschema_rs import (
     Draft4,
@@ -26,7 +31,7 @@ from .jsonschema_rs import (
     validator_for,
 )
 
-Validator: TypeAlias = Draft4Validator | Draft6Validator | Draft7Validator | Draft201909Validator | Draft202012Validator
+Validator = Draft4Validator | Draft6Validator | Draft7Validator | Draft201909Validator | Draft202012Validator
 
 
 class ValidationError(ValueError):
@@ -130,3 +135,5 @@ __all__ = [
     "RegexOptions",
     "meta",
 ]
+
+del TYPE_CHECKING, annotations  # noqa: F821
