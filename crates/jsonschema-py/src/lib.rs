@@ -17,7 +17,7 @@ use http::HttpOptions;
 use jsonschema::{paths::LocationSegment, Draft};
 use pyo3::{
     exceptions::{self, PyValueError},
-    ffi::PyUnicode_AsUTF8AndSize,
+    ffi::{PyList_New, PyList_SetItem, PyUnicode_AsUTF8AndSize, Py_DECREF},
     prelude::*,
     types::{PyAny, PyDict, PyList, PyString, PyType},
     wrap_pyfunction,
@@ -80,8 +80,9 @@ fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyA
                         // Fall back to decimal.Decimal for values outside f64 range so Python callers
                         // observe the exact literal from JSON instead of ValueError/inf when numbers
                         // exceed binary64 limits.
-                        let decimal = py.import("decimal")?.getattr("Decimal")?;
-                        decimal.call1((s,)).map(|obj| obj.into_any().unbind())
+                        let decimal_type =
+                            unsafe { PyType::from_borrowed_type_ptr(py, types::DECIMAL_TYPE) };
+                        decimal_type.call1((s,)).map(|obj| obj.into_any().unbind())
                     }
                 } else {
                     // Large integer - parse from string representation
@@ -92,20 +93,42 @@ fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyA
         }
         serde_json::Value::String(s) => Ok(PyString::new(py, s).into_any().unbind()),
         serde_json::Value::Array(arr) => {
-            let py_list = PyList::empty(py);
-            for item in arr {
-                py_list.append(value_to_python(py, item)?)?;
+            let len = arr.len() as pyo3::ffi::Py_ssize_t;
+            unsafe {
+                let list = PyList_New(len);
+                if list.is_null() {
+                    return Err(PyErr::fetch(py));
+                }
+                for (i, item) in arr.iter().enumerate() {
+                    match value_to_python(py, item) {
+                        Ok(py_item) => {
+                            // PyList_SetItem steals the reference
+                            PyList_SetItem(list, i as pyo3::ffi::Py_ssize_t, py_item.into_ptr());
+                        }
+                        Err(e) => {
+                            // Clean up the partially filled list
+                            Py_DECREF(list);
+                            return Err(e);
+                        }
+                    }
+                }
+                Ok(Bound::from_owned_ptr(py, list).unbind())
             }
-            Ok(py_list.into_any().unbind())
         }
-        serde_json::Value::Object(obj) => {
-            let py_dict = PyDict::new(py);
-            for (k, v) in obj {
-                py_dict.set_item(k, value_to_python(py, v)?)?;
-            }
-            Ok(py_dict.into_any().unbind())
-        }
+        serde_json::Value::Object(obj) => map_to_python(py, obj),
     }
+}
+
+/// Convert a serde_json Map directly to a Python dict (avoids wrapping in Value::Object)
+fn map_to_python(
+    py: Python<'_>,
+    obj: &serde_json::Map<String, serde_json::Value>,
+) -> PyResult<Py<PyAny>> {
+    let py_dict = PyDict::new(py);
+    for (k, v) in obj {
+        py_dict.set_item(k, value_to_python(py, v)?)?;
+    }
+    Ok(py_dict.into_any().unbind())
 }
 
 fn evaluation_output_to_python<T>(py: Python<'_>, output: &T) -> PyResult<Py<PyAny>>
@@ -623,25 +646,23 @@ fn convert_validation_context(
     context: Vec<Vec<jsonschema::error::ValidationError<'static>>>,
     mask: Option<&str>,
 ) -> PyResult<Py<PyList>> {
-    let mut py_context: Vec<Py<PyList>> = Vec::with_capacity(context.len());
+    unsafe {
+        let outer_len = context.len() as pyo3::ffi::Py_ssize_t;
+        let outer_list = PyList_New(outer_len);
+        if outer_list.is_null() {
+            return Err(PyErr::fetch(py));
+        }
 
-    for errors in context {
-        let mut py_errors: Vec<Py<PyAny>> = Vec::with_capacity(errors.len());
+        for (outer_idx, errors) in context.into_iter().enumerate() {
+            let inner_len = errors.len() as pyo3::ffi::Py_ssize_t;
+            let inner_list = PyList_New(inner_len);
+            if inner_list.is_null() {
+                Py_DECREF(outer_list);
+                return Err(PyErr::fetch(py));
+            }
 
-        for error in errors {
-            let (
-                message,
-                verbose_message,
-                schema_path,
-                instance_path,
-                evaluation_path,
-                kind,
-                instance,
-            ) = into_validation_error_args(py, error, mask)?;
-
-            py_errors.push(create_validation_error_object(
-                py,
-                ValidationErrorArgs {
+            for (inner_idx, error) in errors.into_iter().enumerate() {
+                let (
                     message,
                     verbose_message,
                     schema_path,
@@ -649,14 +670,50 @@ fn convert_validation_context(
                     evaluation_path,
                     kind,
                     instance,
-                },
-            )?);
+                ) = match into_validation_error_args(py, error, mask) {
+                    Ok(args) => args,
+                    Err(e) => {
+                        Py_DECREF(inner_list);
+                        Py_DECREF(outer_list);
+                        return Err(e);
+                    }
+                };
+
+                let error_obj = match create_validation_error_object(
+                    py,
+                    ValidationErrorArgs {
+                        message,
+                        verbose_message,
+                        schema_path,
+                        instance_path,
+                        evaluation_path,
+                        kind,
+                        instance,
+                    },
+                ) {
+                    Ok(obj) => obj,
+                    Err(e) => {
+                        Py_DECREF(inner_list);
+                        Py_DECREF(outer_list);
+                        return Err(e);
+                    }
+                };
+
+                PyList_SetItem(
+                    inner_list,
+                    inner_idx as pyo3::ffi::Py_ssize_t,
+                    error_obj.into_ptr(),
+                );
+            }
+
+            PyList_SetItem(outer_list, outer_idx as pyo3::ffi::Py_ssize_t, inner_list);
         }
 
-        py_context.push(PyList::new(py, py_errors)?.unbind());
+        // SAFETY: outer_list is a PyList created by PyList_New
+        Ok(Bound::from_owned_ptr(py, outer_list)
+            .cast_into_unchecked::<PyList>()
+            .unbind())
     }
-
-    Ok(PyList::new(py, py_context)?.unbind())
 }
 
 #[pyclass]
@@ -971,13 +1028,11 @@ fn make_options(
                       path: jsonschema::paths::Location| {
                     let name_for_error = name_for_closure.clone();
                     Python::attach(|py| {
-                        let py_schema =
-                            value_to_python(py, &serde_json::Value::Object(parent.clone()))
-                                .map_err(|e| {
-                                    jsonschema::ValidationError::custom(format!(
-                                        "Failed to convert schema to Python: {e}"
-                                    ))
-                                })?;
+                        let py_schema = map_to_python(py, parent).map_err(|e| {
+                            jsonschema::ValidationError::custom(format!(
+                                "Failed to convert schema to Python: {e}"
+                            ))
+                        })?;
                         let py_value = value_to_python(py, value).map_err(|e| {
                             jsonschema::ValidationError::custom(format!(
                                 "Failed to convert keyword value to Python: {e}"

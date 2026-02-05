@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Use FFI `PyList_New` + `PyList_SetItem` for array conversion to avoid reallocations.
+- Cache `ValidationError`, `ReferencingError`, and `decimal.Decimal` types to avoid repeated module imports.
+
 ## [0.41.0] - 2026-02-04
 
 ### Changed
