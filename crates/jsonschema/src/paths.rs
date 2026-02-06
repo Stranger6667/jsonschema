@@ -99,13 +99,22 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
         // Use cached locations for indices 0-15 to avoid allocation
         if let Some(parent) = value.parent {
             if parent.parent.is_none() {
-                if let LocationSegment::Index(idx) = &value.segment {
-                    if *idx < 16 {
-                        return get_cached_index_paths()[*idx].clone();
+                match &value.segment {
+                    LocationSegment::Index(idx) => {
+                        if *idx < 16 {
+                            return get_cached_index_paths()[*idx].clone();
+                        }
+                        // Single index > 15: compute directly
+                        let mut buf = itoa::Buffer::new();
+                        return Location(Arc::from(format!("/{}", buf.format(*idx))));
                     }
-                    // Single index > 15: compute directly
-                    let mut buf = itoa::Buffer::new();
-                    return Location(Arc::from(format!("/{}", buf.format(*idx))));
+                    LocationSegment::Property(property) => {
+                        // Fast path for single-property locations, common in object validation.
+                        let mut buffer = String::with_capacity(1 + property.len());
+                        buffer.push('/');
+                        write_escaped_str(&mut buffer, property);
+                        return Location(Arc::from(buffer));
+                    }
                 }
             }
         }
@@ -778,6 +787,16 @@ mod tests {
     fn test_lazy_location_single_index(idx: usize, expected: &str) {
         let root = LazyLocation::new();
         let loc = root.push(idx);
+        let location: Location = (&loc).into();
+        assert_eq!(location.as_str(), expected);
+    }
+
+    #[test_case("name", "/name"; "single property")]
+    #[test_case("a/b", "/a~1b"; "single property with slash")]
+    #[test_case("a~b", "/a~0b"; "single property with tilde")]
+    fn test_lazy_location_single_property(property: &str, expected: &str) {
+        let root = LazyLocation::new();
+        let loc = root.push(property);
         let location: Location = (&loc).into();
         assert_eq!(location.as_str(), expected);
     }
