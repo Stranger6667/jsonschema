@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Cache formatted schema locations with `OnceLock` to avoid repeated formatting during `evaluate()`.
+
 ## [0.41.0] - 2026-02-04
 
 ### Performance

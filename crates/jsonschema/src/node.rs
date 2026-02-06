@@ -20,6 +20,7 @@ pub(crate) struct SchemaNode {
     validators: Arc<NodeValidators>,
     location: Location,
     absolute_path: Option<Arc<Uri<String>>>,
+    formatted_schema_location: Arc<OnceLock<Arc<str>>>,
 }
 
 // Separate type used only during compilation for handling recursive references
@@ -32,6 +33,7 @@ struct PendingTarget {
     validators: Weak<NodeValidators>,
     location: Location,
     absolute_path: Option<Arc<Uri<String>>>,
+    formatted_schema_location: Arc<OnceLock<Arc<str>>>,
     /// Cached materialized `SchemaNode` to avoid cloning on every access.
     cached_node: OnceLock<SchemaNode>,
 }
@@ -89,12 +91,14 @@ struct KeywordValidatorEntry {
     validator: BoxedValidator,
     location: Location,
     absolute_location: Option<Arc<Uri<String>>>,
+    formatted_schema_location: OnceLock<Arc<str>>,
 }
 
 struct ArrayValidatorEntry {
     validator: BoxedValidator,
     location: Location,
     absolute_location: Option<Arc<Uri<String>>>,
+    formatted_schema_location: OnceLock<Arc<str>>,
 }
 
 impl PendingSchemaNode {
@@ -109,6 +113,7 @@ impl PendingSchemaNode {
             validators: Arc::downgrade(&node.validators),
             location: node.location.clone(),
             absolute_path: node.absolute_path.clone(),
+            formatted_schema_location: node.formatted_schema_location.clone(),
             cached_node: OnceLock::new(),
         };
         self.cell
@@ -151,6 +156,7 @@ impl PendingTarget {
                 validators,
                 location: self.location.clone(),
                 absolute_path: self.absolute_path.clone(),
+                formatted_schema_location: self.formatted_schema_location.clone(),
             }
         })
     }
@@ -221,9 +227,12 @@ impl Validate for PendingSchemaNode {
 
 impl SchemaNode {
     pub(crate) fn from_boolean(ctx: &Context<'_>, validator: Option<BoxedValidator>) -> SchemaNode {
+        let location = ctx.location().clone();
+        let absolute_path = ctx.base_uri();
         SchemaNode {
-            location: ctx.location().clone(),
-            absolute_path: ctx.base_uri(),
+            location,
+            absolute_path,
+            formatted_schema_location: Arc::new(OnceLock::new()),
             validators: Arc::new(NodeValidators::Boolean { validator }),
         }
     }
@@ -238,6 +247,7 @@ impl SchemaNode {
         // before expensive ones (allOf, $ref).
         validators.sort_by_key(|(keyword, _)| crate::keywords::keyword_priority(keyword));
 
+        let location = ctx.location().clone();
         let absolute_path = ctx.base_uri();
         let validators = validators
             .into_iter()
@@ -248,12 +258,14 @@ impl SchemaNode {
                     validator,
                     location,
                     absolute_location,
+                    formatted_schema_location: OnceLock::new(),
                 }
             })
             .collect();
         SchemaNode {
-            location: ctx.location().clone(),
+            location,
             absolute_path,
+            formatted_schema_location: Arc::new(OnceLock::new()),
             validators: Arc::new(NodeValidators::Keyword(KeywordValidators {
                 unmatched_keywords,
                 validators,
@@ -262,6 +274,7 @@ impl SchemaNode {
     }
 
     pub(crate) fn from_array(ctx: &Context<'_>, validators: Vec<BoxedValidator>) -> SchemaNode {
+        let location = ctx.location().clone();
         let absolute_path = ctx.base_uri();
         let validators = validators
             .into_iter()
@@ -273,12 +286,14 @@ impl SchemaNode {
                     validator,
                     location,
                     absolute_location,
+                    formatted_schema_location: OnceLock::new(),
                 }
             })
             .collect();
         SchemaNode {
-            location: ctx.location().clone(),
+            location,
             absolute_path,
+            formatted_schema_location: Arc::new(OnceLock::new()),
             validators: Arc::new(NodeValidators::Array { validators }),
         }
     }
@@ -311,9 +326,9 @@ impl SchemaNode {
         let instance_location: Location = location.into();
 
         let keyword_location = crate::paths::evaluation_path(tracker, &self.location);
-
-        let schema_location =
-            crate::evaluation::format_schema_location(&self.location, self.absolute_path.as_ref());
+        let schema_location = Arc::clone(self.formatted_schema_location.get_or_init(|| {
+            crate::evaluation::format_schema_location(&self.location, self.absolute_path.as_ref())
+        }));
 
         match self.evaluate(instance, location, tracker, ctx) {
             EvaluationResult::Valid {
@@ -322,7 +337,7 @@ impl SchemaNode {
             } => EvaluationNode::valid(
                 keyword_location,
                 self.absolute_path.clone(),
-                schema_location,
+                schema_location.clone(),
                 instance_location,
                 annotations,
                 children,
@@ -357,6 +372,7 @@ impl SchemaNode {
                 Item = (
                     &'a Location,
                     Option<&'a Arc<Uri<String>>>,
+                    &'a OnceLock<Arc<str>>,
                     &'a BoxedValidator,
                 ),
             > + 'a,
@@ -367,7 +383,7 @@ impl SchemaNode {
 
         let instance_loc: Location = location.into();
 
-        for (child_location, absolute_location, validator) in subschemas {
+        for (child_location, absolute_location, cached_schema_location, validator) in subschemas {
             let child_result = validator.evaluate(instance, location, tracker, ctx);
 
             let absolute_location = absolute_location.cloned();
@@ -378,11 +394,20 @@ impl SchemaNode {
             // Per JSON Schema spec: "MUST NOT include by-reference applicators such as $ref"
             // For by-reference validators like $ref, use the target's canonical location.
             // For regular validators, use the keyword's location.
-            let schema_location = validator.canonical_location().unwrap_or(child_location);
-            let formatted_schema_location = crate::evaluation::format_schema_location(
-                schema_location,
-                absolute_location.as_ref(),
-            );
+            let formatted_schema_location =
+                if let Some(schema_location) = validator.canonical_location() {
+                    crate::evaluation::format_schema_location(
+                        schema_location,
+                        absolute_location.as_ref(),
+                    )
+                } else {
+                    Arc::clone(cached_schema_location.get_or_init(|| {
+                        crate::evaluation::format_schema_location(
+                            child_location,
+                            absolute_location.as_ref(),
+                        )
+                    }))
+                };
 
             let child_node = match child_result {
                 EvaluationResult::Valid {
@@ -551,6 +576,7 @@ impl Validate for SchemaNode {
                     (
                         &entry.location,
                         entry.absolute_location.as_ref(),
+                        &entry.formatted_schema_location,
                         &entry.validator,
                     )
                 }),
@@ -583,6 +609,7 @@ impl Validate for SchemaNode {
                         (
                             &entry.location,
                             entry.absolute_location.as_ref(),
+                            &entry.formatted_schema_location,
                             &entry.validator,
                         )
                     }),
