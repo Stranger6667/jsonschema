@@ -5,6 +5,7 @@
 ### Performance
 
 - Cache formatted schema locations with `OnceLock` to avoid repeated formatting during `evaluate()`.
+- Add ASCII fast paths for `minLength` and `maxLength` validation.
 
 ## [0.41.0] - 2026-02-04
 

@@ -3,7 +3,10 @@
 use crate::{
     compiler,
     error::ValidationError,
-    keywords::{helpers::fail_on_non_positive_integer, CompilationResult},
+    keywords::{
+        helpers::{fail_on_non_positive_integer, string_longer_than_limit},
+        CompilationResult,
+    },
     paths::{LazyLocation, Location, RefTracker},
     validator::{Validate, ValidationContext},
 };
@@ -43,7 +46,7 @@ impl MaxLengthValidator {
 impl Validate for MaxLengthValidator {
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::String(item) = instance {
-            if (bytecount::num_chars(item.as_bytes()) as u64) > self.limit {
+            if string_longer_than_limit(item, self.limit) {
                 return false;
             }
         }
@@ -58,7 +61,7 @@ impl Validate for MaxLengthValidator {
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::String(item) = instance {
-            if (bytecount::num_chars(item.as_bytes()) as u64) > self.limit {
+            if string_longer_than_limit(item, self.limit) {
                 return Err(ValidationError::max_length(
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),

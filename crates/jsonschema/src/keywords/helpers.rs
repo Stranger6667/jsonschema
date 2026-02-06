@@ -75,3 +75,45 @@ pub(crate) fn fail_on_non_positive_integer(
         )
     }
 }
+
+/// Return `true` if the string has fewer characters than `limit`.
+///
+/// Fast paths:
+/// - If the byte length is already below `limit`, it's definitely too short.
+/// - If the string is ASCII and byte length is not below `limit`, it's definitely long enough.
+#[inline]
+pub(crate) fn string_shorter_than_limit(value: &str, limit: u64) -> bool {
+    let bytes = value.as_bytes();
+    let Ok(limit_usize) = usize::try_from(limit) else {
+        // Limit is larger than any representable string length on this platform.
+        return true;
+    };
+    if bytes.len() < limit_usize {
+        return true;
+    }
+    if bytes.is_ascii() {
+        return false;
+    }
+    (bytecount::num_chars(bytes) as u64) < limit
+}
+
+/// Return `true` if the string has more characters than `limit`.
+///
+/// Fast paths:
+/// - If the byte length is already <= `limit`, it cannot exceed `limit` chars.
+/// - If the string is ASCII and byte length is above `limit`, it definitely exceeds.
+#[inline]
+pub(crate) fn string_longer_than_limit(value: &str, limit: u64) -> bool {
+    let bytes = value.as_bytes();
+    let Ok(limit_usize) = usize::try_from(limit) else {
+        // Limit is larger than any representable string length on this platform.
+        return false;
+    };
+    if bytes.len() <= limit_usize {
+        return false;
+    }
+    if bytes.is_ascii() {
+        return true;
+    }
+    (bytecount::num_chars(bytes) as u64) > limit
+}
