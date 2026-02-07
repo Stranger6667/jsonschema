@@ -1,0 +1,385 @@
+# Type definitions for jsonschema gem
+# High-performance JSON Schema validation for Ruby
+
+module JSONSchema
+  VERSION: String
+
+  # Valid draft version symbols
+  type draft = :draft4 | :draft6 | :draft7 | :draft201909 | :draft202012
+
+  # Create a validator with auto-detected draft version.
+  #
+  # @param schema The JSON Schema (Hash or JSON string)
+  # @param validate_formats Enable format validation
+  # @param ignore_unknown_formats Ignore unknown formats
+  # @param base_uri Base URI for reference resolution
+  # @param retriever Custom schema retriever proc
+  # @param mask Mask sensitive data in error messages
+  # @param formats Custom format validators (Hash of format_name => proc)
+  # @param keywords Custom keyword validators (Hash of keyword_name => class)
+  def self.validator_for: (
+    untyped schema,
+    ?validate_formats: bool?,
+    ?ignore_unknown_formats: bool?,
+    ?base_uri: String?,
+    ?retriever: (^(String) -> untyped)?,
+    ?mask: String?,
+    ?formats: Hash[String, ^(String) -> bool]?,
+    ?keywords: Hash[String, Class]?,
+    ?registry: Registry?,
+    ?pattern_options: (RegexOptions | FancyRegexOptions)?,
+    ?email_options: EmailOptions?,
+    ?http_options: HttpOptions?
+  ) -> Validator
+
+  # One-off validation returning boolean.
+  def self.valid?: (
+    untyped schema,
+    untyped instance,
+    ?draft: draft?,
+    ?validate_formats: bool?,
+    ?ignore_unknown_formats: bool?,
+    ?base_uri: String?,
+    ?retriever: (^(String) -> untyped)?,
+    ?mask: String?,
+    ?formats: Hash[String, ^(String) -> bool]?,
+    ?keywords: Hash[String, Class]?,
+    ?registry: Registry?,
+    ?pattern_options: (RegexOptions | FancyRegexOptions)?,
+    ?email_options: EmailOptions?,
+    ?http_options: HttpOptions?
+  ) -> bool
+
+  # One-off validation raising on error.
+  def self.validate!: (
+    untyped schema,
+    untyped instance,
+    ?draft: draft?,
+    ?validate_formats: bool?,
+    ?ignore_unknown_formats: bool?,
+    ?base_uri: String?,
+    ?retriever: (^(String) -> untyped)?,
+    ?mask: String?,
+    ?formats: Hash[String, ^(String) -> bool]?,
+    ?keywords: Hash[String, Class]?,
+    ?registry: Registry?,
+    ?pattern_options: (RegexOptions | FancyRegexOptions)?,
+    ?email_options: EmailOptions?,
+    ?http_options: HttpOptions?
+  ) -> nil
+
+  # Iterate validation errors. Returns Array when no block given, nil when block given.
+  def self.each_error: (
+    untyped schema,
+    untyped instance,
+    ?draft: draft?,
+    ?validate_formats: bool?,
+    ?ignore_unknown_formats: bool?,
+    ?base_uri: String?,
+    ?retriever: (^(String) -> untyped)?,
+    ?mask: String?,
+    ?formats: Hash[String, ^(String) -> bool]?,
+    ?keywords: Hash[String, Class]?,
+    ?registry: Registry?,
+    ?pattern_options: (RegexOptions | FancyRegexOptions)?,
+    ?email_options: EmailOptions?,
+    ?http_options: HttpOptions?
+  ) -> Array[ValidationError]
+                      | (
+    untyped schema,
+    untyped instance,
+    ?draft: draft?,
+    ?validate_formats: bool?,
+    ?ignore_unknown_formats: bool?,
+    ?base_uri: String?,
+    ?retriever: (^(String) -> untyped)?,
+    ?mask: String?,
+    ?formats: Hash[String, ^(String) -> bool]?,
+    ?keywords: Hash[String, Class]?,
+    ?registry: Registry?,
+    ?pattern_options: (RegexOptions | FancyRegexOptions)?,
+    ?email_options: EmailOptions?,
+    ?http_options: HttpOptions?
+  ) { (ValidationError) -> void } -> nil
+
+  # One-off evaluation returning structured output.
+  def self.evaluate: (
+    untyped schema,
+    untyped instance,
+    ?draft: draft?,
+    ?validate_formats: bool?,
+    ?ignore_unknown_formats: bool?,
+    ?base_uri: String?,
+    ?retriever: (^(String) -> untyped)?,
+    ?formats: Hash[String, ^(String) -> bool]?,
+    ?keywords: Hash[String, Class]?,
+    ?registry: Registry?,
+    ?pattern_options: (RegexOptions | FancyRegexOptions)?,
+    ?email_options: EmailOptions?,
+    ?http_options: HttpOptions?
+  ) -> Evaluation
+
+  # Reusable JSON Schema validator.
+  private
+  class Validator
+    # Fast validation returning boolean.
+    def valid?: (untyped instance) -> bool
+
+    # Validate and raise on first error.
+    def validate!: (untyped instance) -> nil
+
+    # Iterate validation errors. Returns Array when no block given, nil when block given.
+    def each_error: (untyped instance) -> Array[ValidationError]
+                  | (untyped instance) { (ValidationError) -> void } -> nil
+
+    # Evaluate instance and return structured output.
+    def evaluate: (untyped instance) -> Evaluation
+
+    def inspect: () -> String
+  end
+  public
+
+  # JSON Schema Draft 4 validator.
+  class Draft4Validator < Validator
+  end
+
+  # JSON Schema Draft 6 validator.
+  class Draft6Validator < Validator
+  end
+
+  # JSON Schema Draft 7 validator.
+  class Draft7Validator < Validator
+  end
+
+  # JSON Schema Draft 2019-09 validator.
+  class Draft201909Validator < Validator
+  end
+
+  # JSON Schema Draft 2020-12 validator.
+  class Draft202012Validator < Validator
+  end
+
+  # Validation error with detailed information.
+  class ValidationError < StandardError
+    # Brief error message.
+    attr_reader message: String
+
+    # Detailed error message with full context.
+    attr_reader verbose_message: String
+
+    # Path to the failing instance location.
+    attr_reader instance_path: Array[String | Integer]
+
+    # Path to the failing schema location.
+    attr_reader schema_path: Array[String | Integer]
+
+    # Evaluation path.
+    attr_reader evaluation_path: Array[String | Integer]
+
+    # The specific kind of validation error.
+    attr_reader kind: ValidationErrorKind
+
+    # The failing instance value.
+    attr_reader instance: untyped
+
+    def initialize: (
+      message: String,
+      ?verbose_message: String?,
+      ?instance_path: Array[String | Integer],
+      ?schema_path: Array[String | Integer],
+      ?evaluation_path: Array[String | Integer],
+      ?kind: ValidationErrorKind?,
+      ?instance: untyped
+    ) -> void
+
+    def to_s: () -> String
+    def inspect: () -> String
+
+    # Compare two validation errors by message, schema_path, and instance_path.
+    def ==: (untyped other) -> bool
+    alias eql? ==
+
+    # Hash code based on message, schema_path, and instance_path.
+    def hash: () -> Integer
+
+    # Convert instance_path to JSON Pointer format (RFC 6901).
+    def instance_path_pointer: () -> String
+
+    # Convert schema_path to JSON Pointer format (RFC 6901).
+    def schema_path_pointer: () -> String
+
+    # Evaluation path as JSON Pointer string (RFC 6901), pre-computed in Rust.
+    def evaluation_path_pointer: () -> String
+  end
+
+  # Type of validation error with contextual data.
+  class ValidationErrorKind
+    # Keyword name that caused the error (e.g., "type", "required", "format").
+    def name: () -> String
+
+    # Associated value for the error (varies by error type).
+    def value: () -> untyped
+
+    # Convert to hash representation.
+    def to_h: () -> Hash[Symbol, untyped]
+
+    def inspect: () -> String
+    def to_s: () -> String
+  end
+
+  # Structured evaluation output following JSON Schema specification.
+  class Evaluation
+    # Whether the instance is valid.
+    def valid?: () -> bool
+
+    # Flag output format (simplest).
+    # Returns { valid: true/false }
+    def flag: () -> Hash[Symbol, untyped]
+
+    # List output format (flat).
+    # Contains { valid: bool, details: [...] }
+    def list: () -> Hash[Symbol, untyped]
+
+    # Hierarchical output format (nested).
+    # Contains nested structure following schema hierarchy
+    def hierarchical: () -> Hash[Symbol, untyped]
+
+    # Collected annotations from all evaluated nodes.
+    # Each entry contains schemaLocation, instanceLocation, and annotations
+    def annotations: () -> Array[Hash[Symbol, untyped]]
+
+    # Collected errors from all evaluated nodes.
+    # Each entry contains schemaLocation, instanceLocation, error, and absoluteKeywordLocation
+    def errors: () -> Array[Hash[Symbol, untyped]]
+
+    def inspect: () -> String
+  end
+
+  # Schema registry for reference resolution.
+  class Registry
+    # Create a registry from URI/schema pairs.
+    # @param resources Array of [uri, schema] pairs
+    # @param draft Optional draft version constant
+    # @param retriever Custom schema retriever proc for dynamic resolution
+    def initialize: (Array[[String, untyped]] resources, ?draft: draft?, ?retriever: (^(String) -> untyped)?) -> void
+
+    def inspect: () -> String
+  end
+
+  # Raised when a reference cannot be resolved.
+  class ReferencingError < StandardError
+    attr_reader message: String
+    def initialize: (String message) -> void
+  end
+
+  # Meta-schema validation.
+  module Meta
+    # Validate a schema against its meta-schema.
+    def self.valid?: (untyped schema, ?registry: Registry?) -> bool
+
+    # Validate a schema and raise on error.
+    def self.validate!: (untyped schema, ?registry: Registry?) -> nil
+  end
+
+  # Email format validation options.
+  class EmailOptions
+    # Create email validation options.
+    # @param require_tld Require top-level domain (default: false)
+    # @param allow_domain_literal Allow domain literals like [127.0.0.1] (default: true)
+    # @param allow_display_text Allow display names like "Name <email>" (default: true)
+    # @param minimum_sub_domains Minimum number of subdomains required (default: nil)
+    def initialize: (
+      ?require_tld: bool?,
+      ?allow_domain_literal: bool?,
+      ?allow_display_text: bool?,
+      ?minimum_sub_domains: Integer?
+    ) -> void
+
+    # Whether TLD is required.
+    def require_tld: () -> bool
+
+    # Whether domain literals are allowed.
+    def allow_domain_literal: () -> bool
+
+    # Whether display text is allowed.
+    def allow_display_text: () -> bool
+
+    # Minimum number of subdomains.
+    def minimum_sub_domains: () -> Integer?
+
+    def inspect: () -> String
+    def to_s: () -> String
+  end
+
+  # Regex engine options.
+  class RegexOptions
+    # Create regex engine options.
+    # @param size_limit Maximum compiled regex size in bytes
+    # @param dfa_size_limit Maximum DFA size in bytes
+    def initialize: (?size_limit: Integer?, ?dfa_size_limit: Integer?) -> void
+
+    # Maximum compiled regex size.
+    def size_limit: () -> Integer?
+
+    # Maximum DFA size.
+    def dfa_size_limit: () -> Integer?
+
+    def inspect: () -> String
+    def to_s: () -> String
+  end
+
+  # Fancy regex engine options (ECMA-262 patterns).
+  class FancyRegexOptions
+    # Create fancy regex engine options.
+    # @param backtrack_limit Maximum backtracking steps
+    # @param size_limit Maximum compiled regex size
+    # @param dfa_size_limit Maximum DFA size
+    def initialize: (
+      ?backtrack_limit: Integer?,
+      ?size_limit: Integer?,
+      ?dfa_size_limit: Integer?
+    ) -> void
+
+    # Maximum backtracking steps.
+    def backtrack_limit: () -> Integer?
+
+    # Maximum compiled regex size.
+    def size_limit: () -> Integer?
+
+    # Maximum DFA size.
+    def dfa_size_limit: () -> Integer?
+
+    def inspect: () -> String
+    def to_s: () -> String
+  end
+
+  # HTTP client options for remote schema retrieval.
+  class HttpOptions
+    # Create HTTP client options.
+    # @param timeout Request timeout in seconds
+    # @param connect_timeout Connection timeout in seconds
+    # @param tls_verify Verify TLS certificates (default: true)
+    # @param ca_cert Path to CA certificate file
+    def initialize: (
+      ?timeout: Float?,
+      ?connect_timeout: Float?,
+      ?tls_verify: bool?,
+      ?ca_cert: String?
+    ) -> void
+
+    # Request timeout in seconds.
+    def timeout: () -> Float?
+
+    # Connection timeout in seconds.
+    def connect_timeout: () -> Float?
+
+    # Whether to verify TLS certificates.
+    def tls_verify: () -> bool
+
+    # Path to CA certificate file.
+    def ca_cert: () -> String?
+
+    def inspect: () -> String
+    def to_s: () -> String
+  end
+end

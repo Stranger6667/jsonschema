@@ -1,0 +1,31 @@
+# frozen_string_literal: true
+
+require "bundler/gem_tasks"
+require "rb_sys/extensiontask"
+
+begin
+  require "rspec/core/rake_task"
+  RSpec::Core::RakeTask.new(:spec)
+rescue LoadError # rubocop:disable Lint/SuppressedException
+end
+
+GEMSPEC = Gem::Specification.load("jsonschema.gemspec")
+
+# Use jsonschema-rb as the crate name to match Cargo.toml package name
+# This prevents rb_sys from finding the wrong crate in the workspace
+RbSys::ExtensionTask.new("jsonschema-rb", GEMSPEC) do |ext|
+  ext.lib_dir = "lib/jsonschema"
+  ext.cross_compile = true
+  ext.cross_platform = %w[
+    x86_64-linux
+    x86_64-linux-musl
+    aarch64-linux
+    aarch64-linux-musl
+    arm64-darwin
+    x86_64-darwin
+    x64-mingw-ucrt
+  ]
+end
+
+task build: :compile
+task default: %i[compile spec]

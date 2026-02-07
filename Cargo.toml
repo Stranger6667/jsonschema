@@ -42,6 +42,11 @@ rest_pat_in_fully_bound_structs = "warn"
 files.extend-exclude = ["*.json"]
 default.extend-ignore-re = ["propert"]
 
+[patch.crates-io]
+# Keep workspace crates (including language bindings) on the local core crate
+# while still using a versioned dependency declaration in sub-crates.
+jsonschema = { path = "crates/jsonschema" }
+
 [profile.release]
 lto = "fat"
 codegen-units = 1

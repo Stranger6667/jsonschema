@@ -1,0 +1,125 @@
+name: Ruby Release
+
+on:
+  push:
+    tags:
+      - ruby-v*
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci-data:
+    runs-on: ubuntu-24.04
+    outputs:
+      supported-ruby-platforms: ${{ steps.parse.outputs.supported-ruby-platforms }}
+      stable-ruby-versions: ${{ steps.parse.outputs.stable-ruby-versions }}
+    steps:
+      - id: fetch
+        uses: oxidize-rb/actions/fetch-ci-data@v1
+        with:
+          supported-ruby-platforms: |
+            exclude:
+              - arm-linux
+              - x64-mingw32
+              - aarch64-mingw-ucrt
+          stable-ruby-versions: |
+            exclude:
+              - head
+      - id: parse
+        run: |
+          echo "supported-ruby-platforms=$(echo '${{ steps.fetch.outputs.result }}' | jq -c '."supported-ruby-platforms"')" >> "$GITHUB_OUTPUT"
+          echo "stable-ruby-versions=$(echo '${{ steps.fetch.outputs.result }}' | jq -r '."stable-ruby-versions" | join(",")')" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ubuntu-24.04
+    needs: ci-data
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ fromJSON(needs.ci-data.outputs.supported-ruby-platforms) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+
+      - uses: oxidize-rb/actions/cross-gem@v1
+        id: cross-gem
+        with:
+          platform: ${{ matrix.platform }}
+          ruby-versions: ${{ needs.ci-data.outputs.stable-ruby-versions }}
+          working-directory: crates/jsonschema-rb
+
+      - name: Smoke test (x86_64-linux only)
+        if: matrix.platform == 'x86_64-linux'
+        run: |
+          gem install pkg/*.gem --local
+          ruby -e "require 'jsonschema'; raise 'validation failed' unless JSONSchema.valid?({'type'=>'string'}, 'hello'); puts 'smoke test OK'"
+        working-directory: crates/jsonschema-rb
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: gem-${{ matrix.platform }}
+          path: crates/jsonschema-rb/pkg/*.gem
+          if-no-files-found: error
+
+  release:
+    name: Release
+    runs-on: ubuntu-24.04
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+
+      - uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+          pattern: gem-*
+
+      - name: Build source gem
+        run: gem build jsonschema.gemspec
+        working-directory: crates/jsonschema-rb
+
+      - name: Collect all gems
+        run: |
+          mkdir -p pkg
+          mv artifacts/**/*.gem pkg/
+          mv crates/jsonschema-rb/jsonschema-*.gem pkg/
+
+      - name: Push to RubyGems
+        env:
+          RUBYGEMS_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+        run: |
+          mkdir -p ~/.gem
+          echo "---" > ~/.gem/credentials
+          echo ":rubygems_api_key: ${RUBYGEMS_API_KEY}" >> ~/.gem/credentials
+          chmod 0600 ~/.gem/credentials
+          for gem in pkg/*.gem; do
+            echo "Pushing ${gem}..."
+            gem push "${gem}"
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: pkg/*.gem
+          generate_release_notes: true

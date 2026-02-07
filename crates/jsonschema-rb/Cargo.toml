@@ -1,0 +1,28 @@
+[package]
+name = "jsonschema-rb"
+version = "0.41.0"
+edition = "2021"
+authors = ["Dmitry Dygalo <dmitry@dygalo.dev>"]
+license = "MIT"
+description = "A high-performance JSON Schema validator for Ruby"
+readme = "README.md"
+repository = "https://github.com/Stranger6667/jsonschema"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+jsonschema = { version = "0.41.0", default-features = false, features = [
+    "arbitrary-precision",
+    "resolve-file",
+    "resolve-http",
+] }
+magnus = { version = "0.8", features = ["rb-sys"] }
+rb-sys = "0.9"
+serde = { workspace = true }
+serde_json = { workspace = true, features = ["arbitrary_precision"] }
+referencing = { version = "0.41.0", path = "../jsonschema-referencing" }
+
+[lints]
+workspace = true

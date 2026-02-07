@@ -1,0 +1,40 @@
+inherit_mode:
+  merge:
+    - Exclude
+
+AllCops:
+  TargetRubyVersion: 3.2
+  NewCops: enable
+  SuggestExtensions: false
+  Exclude:
+    - "vendor/**/*"
+
+# Keep line length relaxed for developer ergonomics and error-message expectations.
+Layout/LineLength:
+  Max: 180
+  AllowURI: true
+  Exclude:
+    - "spec/**/*"
+
+Layout/CaseIndentation:
+  EnforcedStyle: case
+
+Layout/HashAlignment:
+  EnforcedHashRocketStyle: key
+  EnforcedColonStyle: key
+  EnforcedLastArgumentHashStyle: always_inspect
+
+Gemspec/DeprecatedAttributeAssignment:
+  Enabled: true
+
+Style/Documentation:
+  Enabled: false
+
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+
+Metrics/BlockLength:
+  Enabled: false
+
+Metrics/ParameterLists:
+  Enabled: false

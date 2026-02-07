@@ -1,0 +1,23 @@
+# Build the native extension
+build:
+    bundle exec rake compile
+
+# Run tests
+test: build
+    bundle exec rspec
+
+# Lint Ruby code
+lint:
+    bundle exec rubocop
+
+# Clean build artifacts
+clean:
+    bundle exec rake clean
+
+# Install dependencies
+setup:
+    bundle install
+
+# Run benchmarks
+bench: build
+    bundle exec ruby bench/benchmark.rb

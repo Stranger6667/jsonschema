@@ -1,0 +1,24 @@
+[package]
+name = "jsonschema-rb-ext"
+version = "0.41.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+name = "jsonschema_rb"
+path = "../../src/lib.rs"
+
+[dependencies]
+jsonschema = { version = "0.41.0", default-features = false, features = [
+    "arbitrary-precision",
+    "resolve-file",
+    "resolve-http",
+] }
+magnus = { version = "0.8", features = ["rb-sys"] }
+rb-sys = "0.9"
+referencing = "0.41.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["arbitrary_precision"] }
+
+[workspace]

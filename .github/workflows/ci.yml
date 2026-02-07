@@ -62,7 +62,7 @@ jobs:
           cache-all-crates: "true"
           key: ${{ matrix.os }}
 
-      - run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py
+      - run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py --exclude jsonschema-rb
 
   test-wasm:
     strategy:
@@ -176,6 +176,7 @@ jobs:
         run: |
           cargo llvm-cov --no-report --all-features --workspace \
             --exclude jsonschema-py \
+            --exclude jsonschema-rb \
             --exclude benchmark \
             --exclude benchmark-suite \
             --exclude jsonschema-testsuite \
@@ -300,6 +301,121 @@ jobs:
           uv venv --python ${{ matrix.python-version }}
           uv pip install crates/jsonschema-py/dist/*.whl
           uv run --with pytest --with hypothesis pytest crates/jsonschema-py/tests-py
+
+  test-ruby:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+        ruby-version: ['3.2', '3.4', '4.0']
+
+    name: Test Ruby ${{ matrix.ruby-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+          bundler-cache: true
+          working-directory: crates/jsonschema-rb
+
+      - run: bundle exec rake compile
+        working-directory: crates/jsonschema-rb
+
+      - run: bundle exec rspec
+        working-directory: crates/jsonschema-rb
+
+  test-ruby-gem-install:
+    name: Ruby Gem Install ${{ matrix.ruby-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+        ruby-version: ['3.2', '3.4', '4.0']
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+          bundler-cache: false
+
+      - name: Build gem
+        run: gem build jsonschema.gemspec
+        working-directory: crates/jsonschema-rb
+
+      - name: Install rb_sys
+        run: gem install rb_sys -v '~> 0.9' --no-document
+
+      - name: Install gem
+        run: |
+          GEM_FILE=$(ls jsonschema-*.gem | head -1)
+          gem install "./$GEM_FILE" --local --no-document
+        working-directory: crates/jsonschema-rb
+        shell: bash
+
+      - name: Smoke test
+        run: |
+          ruby -e "
+            require 'jsonschema'
+            raise 'valid? failed' unless JSONSchema.valid?({'type' => 'string'}, 'hello')
+            raise 'valid? false positive' if JSONSchema.valid?({'type' => 'string'}, 42)
+            puts 'Gem installation OK'
+          "
+
+  test-ruby-gem-install-musl:
+    name: Ruby Gem Install (Alpine/musl)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Test gem install on Alpine/musl
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            public.ecr.aws/docker/library/ruby:3.4-alpine3.21 \
+            sh -c '
+              set -e
+              apk add --no-cache alpine-sdk curl gcompat clang clang-dev llvm-dev
+              curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+              . ~/.cargo/env
+              gem update --system
+              cd crates/jsonschema-rb
+              gem install rb_sys -v "~> 0.9" --no-document
+              gem build jsonschema.gemspec
+              gem install jsonschema-*.gem --local --no-document
+              ruby -e "require \"jsonschema\"; raise unless JSONSchema.valid?({\"type\" => \"string\"}, \"hello\"); puts \"musl OK\""
+            '
+
+  lint-ruby:
+    name: Lint Ruby
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: crates/jsonschema-rb
+
+      - run: bundle exec rubocop
+        working-directory: crates/jsonschema-rb
 
   lint-fmt:
     name: Lint formatting
