@@ -36,6 +36,7 @@ impl fmt::Display for JsonType {
 }
 
 impl JsonType {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             JsonType::Array => "array",

@@ -334,7 +334,8 @@ pub enum ValidationErrorKind {
 }
 
 impl ValidationErrorKind {
-    pub(crate) fn keyword(&self) -> &str {
+    #[must_use]
+    pub fn keyword(&self) -> &str {
         match self {
             ValidationErrorKind::AdditionalItems { .. } => "additionalItems",
             ValidationErrorKind::AdditionalProperties { .. } => "additionalProperties",

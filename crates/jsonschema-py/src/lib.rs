@@ -475,7 +475,8 @@ impl ValidationErrorKind {
                             PyList::new(py, [ty.as_str()])?.unbind()
                         }
                         jsonschema::error::TypeKind::Multiple(types) => {
-                            PyList::new(py, types.iter().map(|ty| ty.as_str()))?.unbind()
+                            PyList::new(py, types.iter().map(jsonschema::JsonType::as_str))?
+                                .unbind()
                         }
                     }
                 },

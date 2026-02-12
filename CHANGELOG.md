@@ -5,6 +5,7 @@
 ### Added
 
 - `JsonType::as_str` method for zero-allocation type name access.
+- `ValidationErrorKind::keyword` is now public.
 
 ### Performance
 
