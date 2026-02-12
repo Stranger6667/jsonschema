@@ -26,11 +26,7 @@ from jsonschema_rs import (
 )
 
 json = st.recursive(
-    st.none()
-    | st.booleans()
-    | st.floats()
-    | st.integers(min_value=-sys.maxsize - 1, max_value=sys.maxsize)
-    | st.text(),
+    st.none() | st.booleans() | st.floats() | st.integers() | st.text(),
     lambda children: st.lists(children, min_size=1) | st.dictionaries(st.text(), children, min_size=1),
 )
 
