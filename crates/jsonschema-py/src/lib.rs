@@ -472,10 +472,10 @@ impl ValidationErrorKind {
                 types: {
                     match kind {
                         jsonschema::error::TypeKind::Single(ty) => {
-                            PyList::new(py, [ty.to_string()].iter())?.unbind()
+                            PyList::new(py, [ty.as_str()])?.unbind()
                         }
                         jsonschema::error::TypeKind::Multiple(types) => {
-                            PyList::new(py, types.iter().map(|ty| ty.to_string()))?.unbind()
+                            PyList::new(py, types.iter().map(|ty| ty.as_str()))?.unbind()
                         }
                     }
                 },

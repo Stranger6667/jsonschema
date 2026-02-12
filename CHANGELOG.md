@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `JsonType::as_str` method for zero-allocation type name access.
+
 ### Performance
 
 - Cache formatted schema locations with `OnceLock` to avoid repeated formatting during `evaluate()`.

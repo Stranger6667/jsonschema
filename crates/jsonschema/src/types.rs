@@ -36,6 +36,18 @@ impl fmt::Display for JsonType {
 }
 
 impl JsonType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            JsonType::Array => "array",
+            JsonType::Boolean => "boolean",
+            JsonType::Integer => "integer",
+            JsonType::Null => "null",
+            JsonType::Number => "number",
+            JsonType::Object => "object",
+            JsonType::String => "string",
+        }
+    }
+
     pub(crate) fn from_repr(repr: u8) -> Self {
         match repr {
             1 => JsonType::Array,
