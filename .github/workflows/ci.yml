@@ -212,10 +212,6 @@ jobs:
         with:
           components: miri
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-all-crates: "true"
-
       - name: Run tests with Miri
         run: cargo miri test -p referencing --lib
 
