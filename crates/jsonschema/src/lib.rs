@@ -419,7 +419,7 @@
 //! You can disable the default behavior using crate features:
 //!
 //! - Disable HTTP resolving: `default-features = false, features = ["resolve-file"]`
-//! - Disable file resolving: `default-features = false, features = ["resolve-http"]`
+//! - Disable file resolving: `default-features = false, features = ["resolve-http", "tls-aws-lc-rs"]`
 //! - Enable async resolution: `features = ["resolve-async"]`
 //! - Disable all resolving: `default-features = false`
 //!
@@ -844,6 +844,15 @@
 ))]
 compile_error!(
     "Features 'resolve-http' and 'resolve-file' are not supported on wasm32-unknown-unknown"
+);
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    feature = "resolve-http",
+    not(any(feature = "tls-aws-lc-rs", feature = "tls-ring"))
+))]
+compile_error!(
+    "Feature `resolve-http` requires a TLS provider: enable `tls-aws-lc-rs` \
+(default) or `tls-ring`."
 );
 
 pub(crate) mod compiler;

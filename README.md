@@ -100,6 +100,30 @@ For detailed benchmarks, see our [full performance comparison](https://github.co
 
 This crate requires Rust 1.83.0 or later.
 
+## TLS Configuration
+
+By default, `jsonschema` uses `aws-lc-rs` as the TLS cryptography provider, which is the default one in `reqwest`.
+
+### Using Ring Instead
+
+You can opt into using `ring` as the TLS provider:
+
+```toml
+[dependencies]
+jsonschema = { version = "0.42", default-features = false, features = ["resolve-http", "resolve-file", "tls-ring"] }
+```
+
+**Note:** To ensure `aws-lc-rs` is not pulled in, disable default features (which include `tls-aws-lc-rs`) and explicitly enable `tls-ring` with the features you need.
+
+**Priority behavior:** If both `tls-aws-lc-rs` and `tls-ring` features are enabled (e.g., through dependency resolution or `--all-features`), `aws-lc-rs` takes precedence. To use `ring`, you must disable default features as shown above.
+
+**When to use `tls-ring`:**
+- You encounter errors like `undefined symbol: aws_lc_0_xx_x_EVP_PKEY_bits` when building from source
+- You're on a Linux distribution where `aws-lc-rs` is not available or compatible
+- You have specific requirements to use `ring`
+
+**Warning:** Using `tls-ring` may cause conflicts if your application also depends on other libraries that use the default `aws-lc-rs` provider. For most users, the default configuration is recommended.
+
 ## Acknowledgements
 
 This library draws API design inspiration from the Python [`jsonschema`](https://github.com/python-jsonschema/jsonschema) package. We're grateful to the Python `jsonschema` maintainers and contributors for their pioneering work in JSON Schema validation.

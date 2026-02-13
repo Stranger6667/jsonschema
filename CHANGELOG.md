@@ -6,6 +6,11 @@
 
 - `JsonType::as_str` method for zero-allocation type name access.
 - `ValidationErrorKind::keyword` is now public.
+- `tls-ring` feature flag to opt into using `ring` as the TLS crypto provider instead of the default `aws-lc-rs`. [#997](https://github.com/Stranger6667/jsonschema/pull/997)
+
+### Changed
+
+- **BREAKING**: Default TLS crypto provider switched back to `aws-lc-rs`. Users who need `ring` can opt in via the `tls-ring` feature flag. This resolves potential conflicts with other libraries using `aws-lc-rs`. [#997](https://github.com/Stranger6667/jsonschema/pull/997)
 
 ### Performance
 

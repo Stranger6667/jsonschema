@@ -561,7 +561,7 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             name: native
-            flags: "--feature-powerset"
+            flags: "--feature-powerset --exclude-features resolve-http"
           - target: wasm32-unknown-unknown
             name: wasm32-unknown-unknown
             flags: "--feature-powerset --exclude-features default,resolve-http,resolve-file,resolve-async,retrieve-async"

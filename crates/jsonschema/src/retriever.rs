@@ -91,6 +91,16 @@ macro_rules! configure_http_client {
     }};
 }
 
+#[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+fn install_tls_provider() {
+    // When both features are enabled (e.g. `--all-features`), keep aws-lc-rs
+    // as the effective default provider.
+    #[cfg(feature = "tls-aws-lc-rs")]
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    #[cfg(all(not(feature = "tls-aws-lc-rs"), feature = "tls-ring"))]
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 pub(crate) struct DefaultRetriever;
 
 /// HTTP-based schema retriever with configurable client options.
@@ -127,8 +137,8 @@ impl HttpRetriever {
     /// - The certificate is not valid PEM
     /// - The HTTP client cannot be built
     pub fn new(options: &HttpOptions) -> Result<Self, HttpRetrieverError> {
-        // Install ring as the default TLS crypto provider (only needed once)
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        install_tls_provider();
+
         let builder = configure_http_client!(reqwest::blocking::Client::builder(), options);
         Ok(Self {
             client: builder.build().map_err(HttpRetrieverError::ClientBuild)?,
@@ -201,8 +211,8 @@ impl AsyncHttpRetriever {
     /// - The certificate is not valid PEM
     /// - The HTTP client cannot be built
     pub fn new(options: &HttpOptions) -> Result<Self, HttpRetrieverError> {
-        // Install ring as the default TLS crypto provider (only needed once)
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        install_tls_provider();
+
         let builder = configure_http_client!(reqwest::Client::builder(), options);
         Ok(Self {
             client: builder.build().map_err(HttpRetrieverError::ClientBuild)?,
@@ -272,8 +282,8 @@ impl Retrieve for DefaultRetriever {
             "http" | "https" => {
                 #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
                 {
-                    // Install ring as the default TLS crypto provider (only needed once)
-                    let _ = rustls::crypto::ring::default_provider().install_default();
+                    install_tls_provider();
+
                     Ok(reqwest::blocking::get(uri.as_str())?.json()?)
                 }
                 #[cfg(all(feature = "resolve-http", target_arch = "wasm32"))]
@@ -331,8 +341,8 @@ impl referencing::AsyncRetrieve for DefaultRetriever {
             "http" | "https" => {
                 #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
                 {
-                    // Install ring as the default TLS crypto provider (only needed once)
-                    let _ = rustls::crypto::ring::default_provider().install_default();
+                    install_tls_provider();
+
                     Ok(reqwest::get(uri.as_str()).await?.json().await?)
                 }
                 #[cfg(all(feature = "resolve-http", target_arch = "wasm32"))]
