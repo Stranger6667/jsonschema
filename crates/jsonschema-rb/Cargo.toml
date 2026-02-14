@@ -13,12 +13,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-jsonschema = { version = "0.42.0", default-features = false, features = [
-    "arbitrary-precision",
-    "resolve-file",
-    "resolve-http",
-    "tls-aws-lc-rs",
-] }
+jsonschema = { version = "0.42.0", features = ["arbitrary-precision"] }
 magnus = { version = "0.8", features = ["rb-sys"] }
 rb-sys = "0.9"
 serde = { workspace = true }
