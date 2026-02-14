@@ -67,7 +67,7 @@ You can check the current status on the [Bowtie Report](https://bowtie.report/#/
 
 Add to your Gemfile:
 
-```ruby
+```
 gem 'jsonschema'
 ```
 

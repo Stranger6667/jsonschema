@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Panic when validating `$ref` targets that resolve to boolean schemas.
+
 ### Performance
 
 - Use FFI `PyList_New` + `PyList_SetItem` for array conversion to avoid reallocations.

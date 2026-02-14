@@ -103,15 +103,39 @@ mod tests {
                 let _ = serde_json::to_value(evaluation.hierarchical())
                     .expect("Hierarchical output should serialize");
             } else {
-                let errors = validator.iter_errors(&test.data).collect::<Vec<_>>();
+                let mut errors = validator.iter_errors(&test.data);
+                let Some(first_error) = errors.next() else {
+                    panic!(
+                        "Test case should have validation errors:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                        test.case,
+                        test.description,
+                        pretty_json(&test.schema),
+                        pretty_json(&test.data),
+                    );
+                };
+
+                let pointer = first_error.instance_path().as_str();
+                assert_eq!(
+                    test.data.pointer(pointer),
+                    Some(first_error.instance().as_ref()),
+                    "Expected error instance did not match actual error instance:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}\nExpected pointer: {:#?}\nActual pointer: {:#?}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                    first_error.instance().as_ref(),
+                    &pointer,
+                );
+
+                // Exercise binding-style error conversion in core suite coverage.
+                let (_instance, _kind, _instance_path, _schema_path, evaluation_path) =
+                    first_error.into_parts();
                 assert!(
-                !errors.is_empty(),
-                "Test case should have validation errors:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
-                test.case,
-                test.description,
-                pretty_json(&test.schema),
-                pretty_json(&test.data),
-            );
+                    evaluation_path.as_str().is_empty()
+                        || evaluation_path.as_str().starts_with('/'),
+                    "Evaluation path should be a JSON pointer: {evaluation_path}"
+                );
+
                 for error in errors {
                     let pointer = error.instance_path().as_str();
                     assert_eq!(
@@ -153,6 +177,13 @@ mod tests {
                 error.instance().as_ref(),
                 &pointer,
             );
+                let (_instance, _kind, _instance_path, _schema_path, evaluation_path) =
+                    error.into_parts();
+                assert!(
+                    evaluation_path.as_str().is_empty()
+                        || evaluation_path.as_str().starts_with('/'),
+                    "Evaluation path should be a JSON pointer: {evaluation_path}"
+                );
                 let evaluation = validator.evaluate(&test.data);
                 assert!(
                     !evaluation.flag().valid,

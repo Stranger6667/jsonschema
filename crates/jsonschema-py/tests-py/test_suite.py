@@ -89,7 +89,24 @@ def test_draft(filename, draft, schema, instance, expected, description, is_opti
         kwargs = {"retriever": TESTSUITE_RETRIEVER}
         if is_optional:
             kwargs["validate_formats"] = True
-        result = cls(schema, **kwargs).is_valid(instance)
-        assert result is expected, error_message
+        validator = cls(schema, **kwargs)
+
+        result = validator.is_valid(instance)
+        assert result is expected, f"is_valid mismatch: {error_message}"
+
+        if expected:
+            validator.validate(instance)
+        else:
+            with pytest.raises(jsonschema_rs.ValidationError):
+                validator.validate(instance)
+
+        errors = list(validator.iter_errors(instance))
+        if expected:
+            assert errors == [], f"iter_errors expected no errors: {error_message}"
+        else:
+            assert errors != [], f"iter_errors expected errors: {error_message}"
+
+        evaluation = validator.evaluate(instance)
+        assert evaluation.flag()["valid"] is expected, f"evaluate mismatch: {error_message}"
     except ValueError:
         pytest.fail(error_message)

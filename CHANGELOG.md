@@ -12,6 +12,10 @@
 
 - **BREAKING**: Default TLS crypto provider switched back to `aws-lc-rs`. Users who need `ring` can opt in via the `tls-ring` feature flag. This resolves potential conflicts with other libraries using `aws-lc-rs`. [#997](https://github.com/Stranger6667/jsonschema/pull/997)
 
+### Fixed
+
+- Panic when validating `$ref` targets that resolve to boolean schemas.
+
 ### Performance
 
 - Cache formatted schema locations with `OnceLock` to avoid repeated formatting during `evaluate()`.

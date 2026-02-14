@@ -303,11 +303,13 @@ jobs:
           uv run --with pytest --with hypothesis pytest crates/jsonschema-py/tests-py
 
   test-ruby:
+    env:
+      BUNDLE_WITHOUT: "lint:benchmark"
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-15]
-        ruby-version: ['3.2', '3.4', '4.0']
+        ruby-version: ["3.2", "3.4", "4.0"]
 
     name: Test Ruby ${{ matrix.ruby-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -318,6 +320,11 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: "true"
+          key: ruby-${{ matrix.os }}
+
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: ${{ matrix.ruby-version }}
@@ -325,9 +332,14 @@ jobs:
           working-directory: crates/jsonschema-rb
 
       - run: bundle exec rake compile
+        env:
+          RB_SYS_CARGO_PROFILE: dev
         working-directory: crates/jsonschema-rb
 
       - run: bundle exec rspec
+        env:
+          JSONSCHEMA_RB_LIFETIME_STRESS_ITERATIONS: "10"
+          JSONSCHEMA_RB_LIFETIME_GC_ROUNDS: "3"
         working-directory: crates/jsonschema-rb
 
   test-ruby-gem-install:
@@ -337,7 +349,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-15]
-        ruby-version: ['3.2', '3.4', '4.0']
+        ruby-version: ["3.2", "3.4", "4.0"]
 
     steps:
       - uses: actions/checkout@v6
@@ -345,6 +357,11 @@ jobs:
           submodules: true
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: "true"
+          key: ruby-gem-install-${{ matrix.os }}
 
       - uses: ruby/setup-ruby@v1
         with:
@@ -405,6 +422,8 @@ jobs:
   lint-ruby:
     name: Lint Ruby
     runs-on: ubuntu-24.04
+    env:
+      BUNDLE_WITHOUT: "development:test:benchmark"
     steps:
       - uses: actions/checkout@v6
 

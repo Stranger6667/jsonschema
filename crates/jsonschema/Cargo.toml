@@ -36,7 +36,7 @@ reqwest = { version = "0.13", default-features = false, features = [
   "http2",
   "rustls-no-provider",
 ], optional = true }
-# Crypto provider for TLS: aws-lc-rs by default (ecosystem standard), or ring when tls-ring feature is enabled
+# Crypto provider for TLS: aws-lc-rs by default, or ring when tls-ring feature is enabled
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12"], optional = true }
 tokio = { version = "1.0", features = ["fs", "rt"], optional = true }
 

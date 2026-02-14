@@ -3,6 +3,10 @@
 require "spec_helper"
 require "weakref"
 
+# Keep strong defaults locally, while allowing CI to tune stress-loop counts.
+LIFETIME_STRESS_ITERATIONS = Integer(ENV.fetch("JSONSCHEMA_RB_LIFETIME_STRESS_ITERATIONS", "100"))
+LIFETIME_GC_ROUNDS = Integer(ENV.fetch("JSONSCHEMA_RB_LIFETIME_GC_ROUNDS", "10"))
+
 RSpec.describe JSONSchema do
   describe ".valid?" do
     it "returns true for valid instance" do
@@ -200,7 +204,7 @@ RSpec.describe "Custom formats" do
     end
 
     it "keeps custom format procs alive during schema compilation" do
-      100.times do |iteration|
+      LIFETIME_STRESS_ITERATIONS.times do |iteration|
         observed_alive = nil
         checker = ->(value) { value.end_with?("42!") }
         weak_checker = WeakRef.new(checker)
@@ -617,14 +621,14 @@ RSpec.describe "Custom keywords" do
         def validate(instance); end
       end
 
-      100.times do
+      LIFETIME_STRESS_ITERATIONS.times do
         JSONSchema.validator_for(
           { "customKeyword" => true },
           keywords: { "customKeyword" => keyword_class }
         )
       end
 
-      10.times do
+      LIFETIME_GC_ROUNDS.times do
         10_000.times { +"x" }
         GC.start(full_mark: true, immediate_sweep: true)
       end
@@ -645,7 +649,7 @@ RSpec.describe "Custom keywords" do
       GC.stress = true
 
       constructors.each do |label, constructor|
-        100.times do |iteration|
+        LIFETIME_STRESS_ITERATIONS.times do |iteration|
           instance_ref = nil
 
           keyword_class = Class.new do
@@ -675,7 +679,7 @@ RSpec.describe "Custom keywords" do
     end
 
     it "keeps keyword validator classes alive until custom keywords are compiled" do
-      100.times do |iteration|
+      LIFETIME_STRESS_ITERATIONS.times do |iteration|
         observed_alive = nil
 
         keyword_class = Class.new do
@@ -709,7 +713,7 @@ RSpec.describe "Custom keywords" do
     end
 
     it "keeps direct retriever callbacks alive during keyword compilation" do
-      100.times do |iteration|
+      LIFETIME_STRESS_ITERATIONS.times do |iteration|
         retriever_ref = nil
         observed_alive = nil
 
@@ -754,7 +758,7 @@ RSpec.describe "Registry with validators" do
 
     _registry, retriever_ref = build_registry.call
 
-    10.times do
+    LIFETIME_GC_ROUNDS.times do
       break unless retriever_ref.weakref_alive?
 
       10_000.times { +"x" }
@@ -1756,7 +1760,7 @@ RSpec.describe JSONSchema::Registry do
   end
 
   it "keeps retriever callback alive while resolving refs during construction" do
-    100.times do |iteration|
+    LIFETIME_STRESS_ITERATIONS.times do |iteration|
       retrieved_uris = []
       retriever = lambda do |uri|
         retrieved_uris << uri

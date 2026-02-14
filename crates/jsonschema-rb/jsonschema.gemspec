@@ -36,6 +36,7 @@ Gem::Specification.new do |spec|
     "MIGRATION.md"
   ]
   spec.require_paths = ["lib"]
+  spec.add_dependency "bigdecimal", ">= 3.1", "< 5"
   spec.add_dependency "rb_sys", "~> 0.9.124"
   # Build via the standalone extension config in ext/jsonschema.
   spec.extensions = ["ext/jsonschema/extconf.rb"]

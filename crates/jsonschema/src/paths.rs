@@ -600,7 +600,9 @@ impl Location {
     /// is already a valid JSON pointer path.
     #[must_use]
     pub(crate) fn join_raw_suffix(&self, suffix: &str) -> Self {
-        debug_assert!(!suffix.is_empty(), "suffix should never be empty");
+        if suffix.is_empty() {
+            return self.clone();
+        }
         let parent = &self.0;
         let mut buffer = String::with_capacity(parent.len() + suffix.len());
         buffer.push_str(parent);
@@ -992,6 +994,23 @@ mod tests {
             "/properties/order/$ref/properties/item/$ref/type"
         );
         assert_eq!(error.instance_path().as_str(), "/order/item");
+    }
+
+    #[test]
+    fn test_ref_to_boolean_schema_evaluation_path() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {
+                "deny": false
+            },
+            "$ref": "#/$defs/deny"
+        });
+
+        let instance = json!("anything");
+        let error = crate::validate(&schema, &instance).expect_err("Should fail");
+
+        assert_eq!(error.schema_path().as_str(), "/$defs/deny");
+        assert_eq!(error.evaluation_path().as_str(), "/$ref");
     }
 
     #[test]
