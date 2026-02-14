@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "jsonschema"
+require "jsonschema_rs"
 
 RSpec.configure do |config|
   config.expect_with :rspec do |expectations|

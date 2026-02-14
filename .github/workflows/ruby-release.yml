@@ -65,7 +65,7 @@ jobs:
         if: matrix.platform == 'x86_64-linux'
         run: |
           gem install pkg/*.gem --local
-          ruby -e "require 'jsonschema'; raise 'validation failed' unless JSONSchema.valid?({'type'=>'string'}, 'hello'); puts 'smoke test OK'"
+          ruby -e "require 'jsonschema_rs'; raise 'validation failed' unless JSONSchema.valid?({'type'=>'string'}, 'hello'); puts 'smoke test OK'"
         working-directory: crates/jsonschema-rb
 
       - uses: actions/upload-artifact@v6
@@ -103,7 +103,7 @@ jobs:
         run: |
           mkdir -p pkg
           mv artifacts/**/*.gem pkg/
-          mv crates/jsonschema-rb/jsonschema-*.gem pkg/
+          mv crates/jsonschema-rb/jsonschema_rs-*.gem pkg/
 
       - name: Push to RubyGems
         env:

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
-require "jsonschema"
+require "jsonschema_rs"
 require "json_schemer"
 require "json-schema"
 require "rj_schema"

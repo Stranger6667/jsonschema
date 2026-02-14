@@ -377,7 +377,7 @@ jobs:
 
       - name: Install gem
         run: |
-          GEM_FILE=$(ls jsonschema-*.gem | head -1)
+          GEM_FILE=$(ls jsonschema_rs-*.gem | head -1)
           gem install "./$GEM_FILE" --local --no-document
         working-directory: crates/jsonschema-rb
         shell: bash
@@ -385,7 +385,7 @@ jobs:
       - name: Smoke test
         run: |
           ruby -e "
-            require 'jsonschema'
+            require 'jsonschema_rs'
             raise 'valid? failed' unless JSONSchema.valid?({'type' => 'string'}, 'hello')
             raise 'valid? false positive' if JSONSchema.valid?({'type' => 'string'}, 42)
             puts 'Gem installation OK'
@@ -415,8 +415,8 @@ jobs:
               cd crates/jsonschema-rb
               gem install rb_sys -v "~> 0.9" --no-document
               gem build jsonschema.gemspec
-              gem install jsonschema-*.gem --local --no-document
-              ruby -e "require \"jsonschema\"; raise unless JSONSchema.valid?({\"type\" => \"string\"}, \"hello\"); puts \"musl OK\""
+              gem install jsonschema_rs-*.gem --local --no-document
+              ruby -e "require \"jsonschema_rs\"; raise unless JSONSchema.valid?({\"type\" => \"string\"}, \"hello\"); puts \"musl OK\""
             '
 
   lint-ruby:

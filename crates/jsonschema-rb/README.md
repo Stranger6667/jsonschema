@@ -1,14 +1,14 @@
-# jsonschema
+# jsonschema_rs
 
 [![Build](https://img.shields.io/github/actions/workflow/status/Stranger6667/jsonschema/ci.yml?branch=master&style=flat-square)](https://github.com/Stranger6667/jsonschema/actions)
-[![Version](https://img.shields.io/gem/v/jsonschema.svg?style=flat-square)](https://rubygems.org/gems/jsonschema)
-[![Ruby versions](https://img.shields.io/badge/ruby-3.2%20%7C%203.4%20%7C%204.0-blue?style=flat-square)](https://rubygems.org/gems/jsonschema)
+[![Version](https://img.shields.io/gem/v/jsonschema_rs.svg?style=flat-square)](https://rubygems.org/gems/jsonschema_rs)
+[![Ruby versions](https://img.shields.io/badge/ruby-3.2%20%7C%203.4%20%7C%204.0-blue?style=flat-square)](https://rubygems.org/gems/jsonschema_rs)
 [<img alt="Supported Dialects" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fsupported_versions.json&style=flat-square">](https://bowtie.report/#/implementations/rust-jsonschema)
 
 A high-performance JSON Schema validator for Ruby.
 
 ```ruby
-require 'jsonschema'
+require 'jsonschema_rs'
 
 schema = { "maxLength" => 5 }
 instance = "foo"
@@ -68,7 +68,7 @@ You can check the current status on the [Bowtie Report](https://bowtie.report/#/
 Add to your Gemfile:
 
 ```
-gem 'jsonschema'
+gem 'jsonschema_rs'
 ```
 
 Pre-built native gems are available for:

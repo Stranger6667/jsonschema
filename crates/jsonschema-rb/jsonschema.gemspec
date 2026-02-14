@@ -3,7 +3,7 @@
 require_relative "lib/jsonschema/version"
 
 Gem::Specification.new do |spec|
-  spec.name = "jsonschema"
+  spec.name = "jsonschema_rs"
   spec.version = JSONSchema::VERSION
   spec.authors = ["Dmitry Dygalo"]
   spec.email = ["dmitry@dygalo.dev"]
