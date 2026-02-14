@@ -136,7 +136,9 @@ pub(crate) fn compile<'a>(
 
 #[cfg(test)]
 mod tests {
-    use crate::tests_util;
+    // SortAllObjects trait is needed in scope for the .sort_all_objects() extension method
+    #[allow(unused_imports)]
+    use crate::tests_util::{self, SortAllObjects};
     use serde_json::{json, Value};
     use test_case::test_case;
 

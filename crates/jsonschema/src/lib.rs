@@ -2707,6 +2707,40 @@ pub(crate) mod tests_util {
             .expect("Invalid schema");
         is_not_valid_with(&validator, instance);
     }
+
+    /// Helper trait to sort JSON values for deterministic test comparisons.
+    /// Recursively sorts all string arrays to handle non-deterministic property ordering.
+    #[allow(dead_code)]
+    pub(crate) trait SortAllObjects {
+        fn sort_all_objects(&mut self);
+    }
+
+    impl SortAllObjects for serde_json::Value {
+        fn sort_all_objects(&mut self) {
+            use serde_json::Value;
+
+            match self {
+                Value::Object(map) => {
+                    // Recursively process all nested values first (post-order)
+                    for value in map.values_mut() {
+                        value.sort_all_objects();
+                    }
+                }
+                Value::Array(arr) => {
+                    // First, recursively process all nested structures
+                    for item in arr.iter_mut() {
+                        item.sort_all_objects();
+                    }
+                    // Then, if this array contains only strings, sort them alphabetically
+                    // This catches annotations arrays regardless of their key name
+                    if arr.iter().all(Value::is_string) {
+                        arr.sort_by(|a, b| a.as_str().unwrap_or("").cmp(b.as_str().unwrap_or("")));
+                    }
+                }
+                _ => {} // Primitives don't need sorting
+            }
+        }
+    }
 }
 
 #[cfg(test)]

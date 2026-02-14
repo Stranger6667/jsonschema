@@ -9,7 +9,6 @@ use crate::{
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
 };
-use ahash::AHashMap;
 use serde_json::{Map, Value};
 
 pub(crate) struct SmallPropertiesValidator {
@@ -17,7 +16,7 @@ pub(crate) struct SmallPropertiesValidator {
 }
 
 pub(crate) struct BigPropertiesValidator {
-    pub(crate) properties: AHashMap<String, SchemaNode>,
+    pub(crate) properties: Vec<(String, SchemaNode)>,
 }
 
 /// Fused validator for `properties` + `required: [2 items]` (no `additionalProperties: false`).
@@ -55,14 +54,15 @@ impl BigPropertiesValidator {
         map: &'a Map<String, Value>,
     ) -> CompilationResult<'a> {
         let ctx = ctx.new_at_location("properties");
-        let mut properties = AHashMap::with_capacity(map.len());
+        let mut properties = Vec::with_capacity(map.len());
         for (key, subschema) in map {
             let pctx = ctx.new_at_location(key.as_str());
-            properties.insert(
+            properties.push((
                 key.clone(),
                 compiler::compile(&pctx, pctx.as_resource_ref(subschema))?,
-            );
+            ));
         }
+        properties.sort_unstable_by(|a, b| a.0.cmp(&b.0));
         Ok(Box::new(BigPropertiesValidator { properties }))
     }
 }
@@ -311,9 +311,8 @@ impl Validate for SmallPropertiesWithRequired2Validator {
 impl Validate for BigPropertiesValidator {
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
-            // Iterate over instance properties and look up in schema's HashMap
-            for (name, prop) in item {
-                if let Some(node) = self.properties.get(name) {
+            for (name, node) in &self.properties {
+                if let Some(prop) = item.get(name) {
                     if !node.is_valid(prop, ctx) {
                         return false;
                     }
@@ -333,8 +332,8 @@ impl Validate for BigPropertiesValidator {
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::Object(item) = instance {
-            for (name, value) in item {
-                if let Some(node) = self.properties.get(name) {
+            for (name, node) in &self.properties {
+                if let Some(value) = item.get(name) {
                     node.validate(value, &location.push(name), tracker, ctx)?;
                 }
             }
@@ -352,8 +351,8 @@ impl Validate for BigPropertiesValidator {
     ) -> ErrorIterator<'i> {
         if let Value::Object(item) = instance {
             let mut errors = Vec::new();
-            for (name, prop) in item {
-                if let Some(node) = self.properties.get(name) {
+            for (name, node) in &self.properties {
+                if let Some(prop) = item.get(name) {
                     let instance_path = location.push(name.as_str());
                     errors.extend(node.iter_errors(prop, &instance_path, tracker, ctx));
                 }
@@ -374,8 +373,8 @@ impl Validate for BigPropertiesValidator {
         if let Value::Object(props) = instance {
             let mut matched_props = Vec::with_capacity(props.len());
             let mut children = Vec::new();
-            for (prop_name, prop) in props {
-                if let Some(node) = self.properties.get(prop_name) {
+            for (prop_name, node) in &self.properties {
+                if let Some(prop) = props.get(prop_name) {
                     let path = location.push(prop_name.as_str());
                     matched_props.push(prop_name.clone());
                     children.push(node.evaluate_instance(prop, &path, tracker, ctx));

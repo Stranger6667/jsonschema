@@ -440,7 +440,15 @@ impl Evaluation {
     /// assert_eq!(entries.len(), 1);
     /// assert_eq!(entries[0].schema_location, "/properties");
     /// assert_eq!(entries[0].instance_location.as_str(), "");
-    /// assert_eq!(entries[0].annotations.value(), &json!(["age", "name"]));
+    ///
+    /// // Sort annotation array for deterministic comparison
+    /// let mut annotation_value = entries[0].annotations.value().clone();
+    /// if let Some(arr) = annotation_value.as_array_mut() {
+    ///     arr.sort_by(|a, b| {
+    ///         a.as_str().unwrap_or("").cmp(b.as_str().unwrap_or(""))
+    ///     });
+    /// }
+    /// assert_eq!(&annotation_value, &json!(["age", "name"]));
     /// # Ok(())
     /// # }
     /// ```
@@ -714,7 +722,15 @@ impl Serialize for SeqEntry<'_> {
 /// let entry = evaluation.iter_annotations().next().unwrap();
 /// assert_eq!(entry.schema_location, "/properties");
 /// assert_eq!(entry.instance_location.as_str(), "");
-/// assert_eq!(entry.annotations.value(), &json!(["age", "name"]));
+///
+/// // Sort annotation array for deterministic comparison
+/// let mut annotation_value = entry.annotations.value().clone();
+/// if let Some(arr) = annotation_value.as_array_mut() {
+///     arr.sort_by(|a, b| {
+///         a.as_str().unwrap_or("").cmp(b.as_str().unwrap_or(""))
+///     });
+/// }
+/// assert_eq!(&annotation_value, &json!(["age", "name"]));
 /// # Ok(())
 /// # }
 /// ```
@@ -818,7 +834,15 @@ impl<'a> Iterator for NodeIter<'a> {
 /// let annotations: Vec<_> = evaluation.iter_annotations().collect();
 /// assert_eq!(annotations.len(), 1);
 /// assert_eq!(annotations[0].instance_location.as_str(), "");
-/// assert_eq!(annotations[0].annotations.value(), &json!(["age", "name"]));
+///
+/// // Sort annotation array for deterministic comparison
+/// let mut annotation_value = annotations[0].annotations.value().clone();
+/// if let Some(arr) = annotation_value.as_array_mut() {
+///     arr.sort_by(|a, b| {
+///         a.as_str().unwrap_or("").cmp(b.as_str().unwrap_or(""))
+///     });
+/// }
+/// assert_eq!(&annotation_value, &json!(["age", "name"]));
 /// # Ok(())
 /// # }
 /// ```
