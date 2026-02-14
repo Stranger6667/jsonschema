@@ -102,7 +102,7 @@ fn context_to_ruby(
                 sym_evaluation_path,
                 ruby.into_value(e.evaluation_path().as_str()),
             )?;
-            hash.aset(sym_kind, ruby.into_value(keyword(e.kind())))?;
+            hash.aset(sym_kind, ruby.into_value(e.kind().keyword()))?;
             errors.push(hash)?;
         }
         branches.push(errors)?;
@@ -115,58 +115,6 @@ fn strings_to_ruby(ruby: &Ruby, strings: &[String]) -> Value {
         .as_value()
 }
 
-// TODO: Replace with `JsonType::as_str()` once we depend on a version that exposes it.
-fn json_type_as_str(ty: &jsonschema::JsonType) -> &'static str {
-    use jsonschema::JsonType;
-    match ty {
-        JsonType::Array => "array",
-        JsonType::Boolean => "boolean",
-        JsonType::Integer => "integer",
-        JsonType::Null => "null",
-        JsonType::Number => "number",
-        JsonType::Object => "object",
-        JsonType::String => "string",
-    }
-}
-
-fn keyword(kind: &jsonschema::error::ValidationErrorKind) -> &str {
-    use jsonschema::error::ValidationErrorKind as K;
-    match kind {
-        K::AdditionalItems { .. } => "additionalItems",
-        K::AdditionalProperties { .. } => "additionalProperties",
-        K::AnyOf { .. } => "anyOf",
-        K::BacktrackLimitExceeded { .. } | K::Pattern { .. } => "pattern",
-        K::Constant { .. } => "const",
-        K::Contains => "contains",
-        K::ContentEncoding { .. } | K::FromUtf8 { .. } => "contentEncoding",
-        K::ContentMediaType { .. } => "contentMediaType",
-        K::Custom { keyword, .. } => keyword,
-        K::Enum { .. } => "enum",
-        K::ExclusiveMaximum { .. } => "exclusiveMaximum",
-        K::ExclusiveMinimum { .. } => "exclusiveMinimum",
-        K::FalseSchema => "falseSchema",
-        K::Format { .. } => "format",
-        K::MaxItems { .. } => "maxItems",
-        K::Maximum { .. } => "maximum",
-        K::MaxLength { .. } => "maxLength",
-        K::MaxProperties { .. } => "maxProperties",
-        K::MinItems { .. } => "minItems",
-        K::Minimum { .. } => "minimum",
-        K::MinLength { .. } => "minLength",
-        K::MinProperties { .. } => "minProperties",
-        K::MultipleOf { .. } => "multipleOf",
-        K::Not { .. } => "not",
-        K::OneOfMultipleValid { .. } | K::OneOfNotValid { .. } => "oneOf",
-        K::PropertyNames { .. } => "propertyNames",
-        K::Required { .. } => "required",
-        K::Type { .. } => "type",
-        K::UnevaluatedItems { .. } => "unevaluatedItems",
-        K::UnevaluatedProperties { .. } => "unevaluatedProperties",
-        K::UniqueItems => "uniqueItems",
-        K::Referencing(_) => "$ref",
-    }
-}
-
 impl ValidationErrorKind {
     pub fn new(
         ruby: &Ruby,
@@ -175,7 +123,7 @@ impl ValidationErrorKind {
     ) -> Result<Self, Error> {
         use jsonschema::error::ValidationErrorKind as K;
 
-        let name = keyword(kind);
+        let name = kind.keyword();
 
         let data = match kind {
             K::AdditionalItems { limit } => rb_hash1(
@@ -301,12 +249,10 @@ impl ValidationErrorKind {
             )?,
             K::Type { kind } => {
                 let types: Vec<Value> = match kind {
-                    jsonschema::error::TypeKind::Single(ty) => {
-                        vec![ruby.into_value(json_type_as_str(ty))]
-                    }
+                    jsonschema::error::TypeKind::Single(ty) => vec![ruby.into_value(ty.as_str())],
                     jsonschema::error::TypeKind::Multiple(types) => types
                         .iter()
-                        .map(|ty| ruby.into_value(json_type_as_str(&ty)))
+                        .map(|ty| ruby.into_value(ty.as_str()))
                         .collect(),
                 };
                 let rb_types = ruby.ary_from_iter(types);
