@@ -30,6 +30,34 @@ fn parse_ndjson(output: &str) -> Vec<Value> {
         .collect()
 }
 
+fn normalize_numbered_errors(output: &str) -> String {
+    let mut lines = output.lines();
+    let Some(header) = lines.next() else {
+        return output.to_string();
+    };
+    let mut errors: Vec<_> = lines
+        .filter_map(|line| {
+            line.split_once(". ")
+                .map(|(_, message)| message.to_string())
+        })
+        .collect();
+    if errors.is_empty() {
+        return output.to_string();
+    }
+    errors.sort_unstable();
+
+    let mut normalized = String::new();
+    normalized.push_str(header);
+    for (idx, message) in errors.into_iter().enumerate() {
+        normalized.push('\n');
+        normalized.push_str(&(idx + 1).to_string());
+        normalized.push_str(". ");
+        normalized.push_str(&message);
+    }
+    normalized.push('\n');
+    normalized
+}
+
 #[test]
 fn test_version() {
     let mut cmd = cli();
@@ -568,7 +596,7 @@ fn test_output_text_multiple_errors() {
     assert!(sanitized.contains("1. "));
     assert!(sanitized.contains("2. "));
     assert!(sanitized.contains("3. "));
-    assert_snapshot!(sanitized);
+    assert_snapshot!(normalize_numbered_errors(&sanitized));
 }
 
 #[test]

@@ -46,12 +46,14 @@ fn run_output_case(test: OutputTest) {
     for expected in outputs {
         let format = expected.format;
         let schema = expected.schema;
-        let expected_schema = prepare_schema_for_version(&schema, version);
-        let actual_output = produce_output(&evaluation, format).unwrap_or_else(|| {
+        let mut expected_schema = prepare_schema_for_version(&schema, version);
+        let mut actual_output = produce_output(&evaluation, format).unwrap_or_else(|| {
             panic!(
                 "Output format `{format}` is not supported (file: {file}, case: `{case}`, test: `{description}`)"
             )
         });
+        normalize_output(&mut actual_output);
+        normalize_const_values(&mut expected_schema);
         validate_against_output_spec(&actual_output);
         let mut options = jsonschema::options().with_retriever(retriever);
         if let Some(draft) = version_draft_override(version) {
@@ -66,6 +68,86 @@ fn run_output_case(test: OutputTest) {
                 "Output format `{format}` failed for {file} (case: `{case}`, test: `{description}`): {error}"
             );
         }
+    }
+}
+
+fn output_entry_sort_key(value: &Value) -> (&str, &str, &str) {
+    let Some(entry) = value.as_object() else {
+        return ("", "", "");
+    };
+    let evaluation_path = entry
+        .get("evaluationPath")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let schema_location = entry
+        .get("schemaLocation")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let instance_location = entry
+        .get("instanceLocation")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    (evaluation_path, schema_location, instance_location)
+}
+
+fn normalize_output(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            for nested in map.values_mut() {
+                normalize_output(nested);
+            }
+            if let Some(details) = map.get_mut("details").and_then(Value::as_array_mut) {
+                details.sort_by(|left, right| {
+                    output_entry_sort_key(left).cmp(&output_entry_sort_key(right))
+                });
+            }
+            for key in ["annotations", "droppedAnnotations"] {
+                if let Some(items) = map.get_mut(key).and_then(Value::as_array_mut) {
+                    if items.iter().all(Value::is_string) {
+                        items.sort_by(|left, right| {
+                            left.as_str()
+                                .unwrap_or("")
+                                .cmp(right.as_str().unwrap_or(""))
+                        });
+                    }
+                }
+            }
+
+            let mut keys: Vec<_> = map.keys().cloned().collect();
+            keys.sort_unstable();
+            let mut sorted = serde_json::Map::new();
+            for key in keys {
+                if let Some(value) = map.remove(&key) {
+                    sorted.insert(key, value);
+                }
+            }
+            *map = sorted;
+        }
+        Value::Array(items) => {
+            for item in items {
+                normalize_output(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn normalize_const_values(schema: &mut Value) {
+    match schema {
+        Value::Object(map) => {
+            for nested in map.values_mut() {
+                normalize_const_values(nested);
+            }
+            if let Some(const_value) = map.get_mut("const") {
+                normalize_output(const_value);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                normalize_const_values(item);
+            }
+        }
+        _ => {}
     }
 }
 

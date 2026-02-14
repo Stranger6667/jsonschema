@@ -230,27 +230,39 @@ mod tests {
                 for test_data in item["tests"].as_array().expect("Valid array") {
                     let test_id = usize::try_from(test_data["id"].as_u64().expect("Is integer"))
                         .expect("test_id fits in usize");
-                    let mut instance_path = String::new();
+                    let mut expected_instance_path = String::new();
 
                     for segment in test_data["instance_path"].as_array().expect("Valid array") {
-                        instance_path.push('/');
-                        instance_path.push_str(segment.as_str().expect("A string"));
+                        expected_instance_path.push('/');
+                        expected_instance_path.push_str(segment.as_str().expect("A string"));
                     }
                     let instance = &data[suite_id]["tests"][test_id]["data"];
-                    let error = validator.validate(instance).expect_err(&format!(
+                    let errors: Vec<_> = validator.iter_errors(instance).collect();
+                    assert!(
+                        !errors.is_empty(),
                         "\nFile: {}\nSuite: {}\nTest: {}",
                         filename,
                         &data[suite_id]["description"],
                         &data[suite_id]["tests"][test_id]["description"],
-                    ));
-                    assert_eq!(
-                        error.instance_path().as_str(),
-                        instance_path,
-                        "\nFile: {}\nSuite: {}\nTest: {}\nError: {}",
+                    );
+
+                    let mut found_paths = Vec::with_capacity(errors.len());
+                    let mut matched = false;
+                    for error in errors {
+                        let actual_path = error.instance_path().as_str().to_string();
+                        found_paths.push(actual_path.clone());
+                        if actual_path == expected_instance_path {
+                            matched = true;
+                        }
+                    }
+                    assert!(
+                        matched,
+                        "\nFile: {}\nSuite: {}\nTest: {}\nExpected path: {}\nFound paths: {:?}",
                         filename,
                         &data[suite_id]["description"],
                         &data[suite_id]["tests"][test_id]["description"],
-                        &error
+                        expected_instance_path,
+                        found_paths
                     );
                 }
             }

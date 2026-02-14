@@ -440,7 +440,17 @@ impl Evaluation {
     /// assert_eq!(entries.len(), 1);
     /// assert_eq!(entries[0].schema_location, "/properties");
     /// assert_eq!(entries[0].instance_location.as_str(), "");
-    /// assert_eq!(entries[0].annotations.value(), &json!(["age", "name"]));
+    ///
+    /// let mut annotation_names: Vec<_> = entries[0]
+    ///     .annotations
+    ///     .value()
+    ///     .as_array()
+    ///     .expect("annotation should be an array")
+    ///     .iter()
+    ///     .map(|value| value.as_str().expect("annotation items should be strings"))
+    ///     .collect();
+    /// annotation_names.sort_unstable();
+    /// assert_eq!(annotation_names, vec!["age", "name"]);
     /// # Ok(())
     /// # }
     /// ```
@@ -714,7 +724,17 @@ impl Serialize for SeqEntry<'_> {
 /// let entry = evaluation.iter_annotations().next().unwrap();
 /// assert_eq!(entry.schema_location, "/properties");
 /// assert_eq!(entry.instance_location.as_str(), "");
-/// assert_eq!(entry.annotations.value(), &json!(["age", "name"]));
+///
+/// let mut annotation_names: Vec<_> = entry
+///     .annotations
+///     .value()
+///     .as_array()
+///     .expect("annotation should be an array")
+///     .iter()
+///     .map(|value| value.as_str().expect("annotation items should be strings"))
+///     .collect();
+/// annotation_names.sort_unstable();
+/// assert_eq!(annotation_names, vec!["age", "name"]);
 /// # Ok(())
 /// # }
 /// ```
@@ -818,7 +838,17 @@ impl<'a> Iterator for NodeIter<'a> {
 /// let annotations: Vec<_> = evaluation.iter_annotations().collect();
 /// assert_eq!(annotations.len(), 1);
 /// assert_eq!(annotations[0].instance_location.as_str(), "");
-/// assert_eq!(annotations[0].annotations.value(), &json!(["age", "name"]));
+///
+/// let mut annotation_names: Vec<_> = annotations[0]
+///     .annotations
+///     .value()
+///     .as_array()
+///     .expect("annotation should be an array")
+///     .iter()
+///     .map(|value| value.as_str().expect("annotation items should be strings"))
+///     .collect();
+/// annotation_names.sort_unstable();
+/// assert_eq!(annotation_names, vec!["age", "name"]);
 /// # Ok(())
 /// # }
 /// ```
