@@ -1,6 +1,6 @@
 [package]
 name = "referencing"
-version = "0.41.0"
+version = "0.42.0"
 description = "An implementation-agnostic JSON reference resolution library for Rust."
 readme = "README.md"
 rust-version.workspace = true

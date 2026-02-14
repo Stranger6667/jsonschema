@@ -1,6 +1,6 @@
 [package]
 name = "jsonschema-cli"
-version = "0.41.0"
+version = "0.42.0"
 description = "A command line tool for JSON Schema validation."
 keywords = ["jsonschema", "validation"]
 categories = ["web-programming"]
@@ -17,9 +17,9 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
-jsonschema = { version = "0.41.0", path = "../jsonschema/" }
+jsonschema = { version = "0.42.0", path = "../jsonschema/" }
 percent-encoding = "2.3"
-referencing = { version = "0.41.0", path = "../jsonschema-referencing" }
+referencing = { version = "0.42.0", path = "../jsonschema-referencing" }
 serde-saphyr = { version = "0.0.18", default-features = false }
 serde_json.workspace = true
 

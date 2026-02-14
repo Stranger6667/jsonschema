@@ -17,13 +17,12 @@ jsonschema = { version = "0.41.0", default-features = false, features = [
     "arbitrary-precision",
     "resolve-file",
     "resolve-http",
-    "tls-aws-lc-rs",
 ] }
 magnus = { version = "0.8", features = ["rb-sys"] }
 rb-sys = "0.9"
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
-referencing = { version = "0.41.0", path = "../jsonschema-referencing" }
+referencing = { version = "*", path = "../jsonschema-referencing" }
 
 [lints]
 workspace = true
