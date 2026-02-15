@@ -1,0 +1,7 @@
+error: Failed to resolve `$ref` `#/$defs/missing`: Failed to resolve #/$defs/missing: Pointer '/$defs/missing' does not exist
+ --> tests/ui/unresolved_ref_in_defs.rs:1:1
+  |
+1 | #[jsonschema::validator(schema = r##"{"$defs":{"ok":{}},"$ref":"#/$defs/missing"}"##)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

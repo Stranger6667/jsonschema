@@ -1,0 +1,5 @@
+error: `size_limit` must be a non-negative integer that fits in usize: number too large to fit in target type
+ --> tests/ui/pattern_limit_overflow.rs:3:38
+  |
+3 |     pattern_options = { size_limit = 999999999999999999999999999999 }
+  |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

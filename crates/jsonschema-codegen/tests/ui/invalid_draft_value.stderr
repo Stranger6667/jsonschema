@@ -1,0 +1,5 @@
+error: Unsupported draft `referencing :: Draft :: Draf202012`. Expected one of: Draft4, Draft6, Draft7, Draft201909, Draft202012
+ --> tests/ui/invalid_draft_value.rs:3:13
+  |
+3 |     draft = referencing::Draft::Draf202012
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

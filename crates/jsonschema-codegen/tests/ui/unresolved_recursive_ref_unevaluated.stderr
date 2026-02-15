@@ -1,0 +1,7 @@
+error: Failed to resolve `$ref` `#/missing`: Failed to resolve #/missing: Pointer '/missing' does not exist
+ --> tests/ui/unresolved_recursive_ref_unevaluated.rs:1:1
+  |
+1 | #[jsonschema::validator(schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$recursiveRef":"#/missing","unevaluatedProperties":false,"unevaluatedItems":false}"##)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

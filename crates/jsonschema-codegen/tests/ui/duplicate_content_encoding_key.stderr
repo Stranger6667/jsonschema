@@ -1,0 +1,5 @@
+error: Duplicate content encoding key
+ --> tests/ui/duplicate_content_encoding_key.rs:3:54
+  |
+3 |     content_encodings = { "e" => { check = crate::c, check = crate::d } }
+  |                                                      ^^^^^

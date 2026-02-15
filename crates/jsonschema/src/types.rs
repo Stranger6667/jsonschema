@@ -165,52 +165,12 @@ impl JsonTypeSet {
             Value::Bool(_) => self.contains(JsonType::Boolean),
             Value::Null => self.contains(JsonType::Null),
             Value::Number(n) => {
-                #[cfg(feature = "arbitrary-precision")]
-                {
-                    use crate::ext::numeric::bignum;
-                    use num_traits::One;
-
-                    // Check if the number is an integer using the same logic as is_integer()
-                    // Important: Check BigFraction BEFORE as_f64() to avoid precision loss
-                    let is_integer = n.is_i64() || n.is_u64() || {
-                        // Check huge plain integers first
-                        if bignum::try_parse_bigint(n).is_some() {
-                            true
-                        } else if let Some(bigfrac) = bignum::try_parse_bigfraction(n) {
-                            // Check if denominator is 1 (integer value)
-                            bigfrac.denom().is_none_or(One::is_one)
-                        } else if let Some(f) = n.as_f64() {
-                            // For numbers in f64 range
-                            f.fract() == 0.
-                        } else {
-                            // Numbers that overflow to infinity (as_f64() returns None)
-                            false
-                        }
-                    };
-                    if is_integer {
-                        self.contains(JsonType::Integer) || self.contains(JsonType::Number)
-                    } else {
-                        self.contains(JsonType::Number)
-                    }
-                }
-                #[cfg(not(feature = "arbitrary-precision"))]
-                {
-                    let is_integer = if n.is_i64() || n.is_u64() {
-                        true
-                    } else if let Some(f) = n.as_f64() {
-                        f.fract() == 0.
-                    } else {
-                        unreachable!(
-                            "Numbers always fit in u64/i64/f64 without arbitrary-precision"
-                        )
-                    };
-                    if is_integer {
-                        // Integer numbers match either Integer or Number types
-                        self.contains(JsonType::Integer) || self.contains(JsonType::Number)
-                    } else {
-                        // Floating-point numbers only match Number type
-                        self.contains(JsonType::Number)
-                    }
+                if number_is_integer(n) {
+                    // Integer numbers match either Integer or Number types
+                    self.contains(JsonType::Integer) || self.contains(JsonType::Number)
+                } else {
+                    // Floating-point numbers only match Number type
+                    self.contains(JsonType::Number)
                 }
             }
             Value::Object(_) => self.contains(JsonType::Object),
@@ -222,6 +182,39 @@ impl JsonTypeSet {
     #[must_use]
     pub fn iter(&self) -> JsonTypeSetIterator {
         JsonTypeSetIterator { set: *self }
+    }
+}
+
+/// Whether `n` holds an integer value per drafts 6+ (floats with a zero fractional part count as integers).
+pub(crate) fn number_is_integer(n: &serde_json::Number) -> bool {
+    #[cfg(feature = "arbitrary-precision")]
+    {
+        use crate::ext::numeric::bignum;
+        use num_traits::One;
+
+        // Important: check BigFraction BEFORE as_f64() to avoid precision loss.
+        n.is_i64()
+            || n.is_u64()
+            || if bignum::try_parse_bigint(n).is_some() {
+                true
+            } else if let Some(bigfrac) = bignum::try_parse_bigfraction(n) {
+                bigfrac.denom().is_none_or(One::is_one)
+            } else if let Some(f) = n.as_f64() {
+                f.fract() == 0.
+            } else {
+                // Numbers that overflow to infinity (as_f64() returns None).
+                false
+            }
+    }
+    #[cfg(not(feature = "arbitrary-precision"))]
+    {
+        if n.is_i64() || n.is_u64() {
+            true
+        } else if let Some(f) = n.as_f64() {
+            f.fract() == 0.
+        } else {
+            unreachable!("Numbers always fit in u64/i64/f64 without arbitrary-precision")
+        }
     }
 }
 

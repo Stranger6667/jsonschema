@@ -1,6 +1,5 @@
 use serde_json::Value;
 use std::sync::LazyLock;
-use strum::{EnumIter, IntoEnumIterator};
 
 pub static OPEN_API: &[u8] = include_bytes!("../data/openapi.json");
 pub static SWAGGER: &[u8] = include_bytes!("../data/swagger.json");
@@ -29,7 +28,7 @@ pub fn read_json(slice: &[u8]) -> Value {
     serde_json::from_slice(slice).expect("Invalid JSON")
 }
 
-#[derive(Debug, Clone, Copy, EnumIter)]
+#[derive(Debug, Clone, Copy)]
 pub enum Benchmark {
     OpenAPI,
     Swagger,
@@ -44,7 +43,16 @@ type BenchFunc<'a> = dyn FnMut(&str, &Value, &[BenchInstance]) + 'a;
 
 impl Benchmark {
     pub fn iter() -> impl Iterator<Item = Benchmark> {
-        <Benchmark as IntoEnumIterator>::iter()
+        [
+            Benchmark::OpenAPI,
+            Benchmark::Swagger,
+            Benchmark::GeoJSON,
+            Benchmark::CITM,
+            Benchmark::Fast,
+            Benchmark::Fhir,
+            Benchmark::Recursive,
+        ]
+        .into_iter()
     }
     pub fn run(self, bench: &mut BenchFunc) {
         BENCHMARK_SUITE.run(self, bench);

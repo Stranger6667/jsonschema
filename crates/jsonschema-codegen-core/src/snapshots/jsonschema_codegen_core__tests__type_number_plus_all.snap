@@ -1,0 +1,14 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"type\":[\"number\",\"string\",\"boolean\",\"null\",\"array\",\"object\"]}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Number(_) => true,
+            serde_json::Value::String(_) => true,
+            serde_json::Value::Bool(_) => true,
+            serde_json::Value::Null => true,
+            serde_json::Value::Array(_) => true,
+            serde_json::Value::Object(_) => true,
+            _ => false,
+        }

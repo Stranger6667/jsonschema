@@ -1,0 +1,5 @@
+error: Overriding the built-in `type` keyword is not supported
+  --> tests/ui/keywords_override_builtin.rs:11:5
+   |
+11 |     keywords = { "type" => crate::factory }
+   |     ^^^^^^^^

@@ -1,0 +1,10 @@
+error: 42 is not of type "string"
+ --> tests/ui/content_encoding_non_string_with_media_type.rs:5:1
+  |
+5 | / #[jsonschema::validator(
+6 | |     schema = r#"{"$schema":"http://json-schema.org/draft-07/schema#","contentMediaType":"application/json","contentEncoding":42}"#,
+7 | |     content_media_types = { "application/json" => crate::noop }
+8 | | )]
+  | |__^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

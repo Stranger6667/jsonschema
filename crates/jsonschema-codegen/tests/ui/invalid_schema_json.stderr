@@ -1,0 +1,5 @@
+error: Invalid JSON: EOF while parsing an object at line 1 column 1
+ --> tests/ui/invalid_schema_json.rs:2:1
+  |
+2 | struct Validator;
+  | ^^^^^^^^^^^^^^^^^

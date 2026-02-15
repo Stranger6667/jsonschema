@@ -1,0 +1,23 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"anyOf\":[{\"prefixItems\":[{}]},{\"prefixItems\":[{},{}]}],\"type\":\"array\",\"unevaluatedItems\":false}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Array(arr) => {
+                arr.iter()
+                    .enumerate()
+                    .all(|(idx, item)| {
+                        if ((|instance: &serde_json::Value| true)(instance)
+                            && (idx < 1usize)
+                            || (|instance: &serde_json::Value| true)(instance)
+                                && (idx < 2usize))
+                        {
+                            true
+                        } else {
+                            false
+                        }
+                    })
+            }
+            _ => false,
+        }

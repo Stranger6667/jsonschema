@@ -1,0 +1,5 @@
+error: Content encoding `e` requires both `check` and `convert`
+ --> tests/ui/content_encoding_missing_key.rs:3:27
+  |
+3 |     content_encodings = { "e" => { check = crate::c } }
+  |                           ^^^

@@ -1,0 +1,5 @@
+error: Duplicate attribute: `validate_formats`
+ --> tests/ui/duplicate_validate_formats_attribute.rs:1:50
+  |
+1 | #[jsonschema::validator(validate_formats = true, validate_formats = false)]
+  |                                                  ^^^^^^^^^^^^^^^^

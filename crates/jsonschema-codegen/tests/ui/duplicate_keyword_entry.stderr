@@ -1,0 +1,5 @@
+error: Duplicate keyword entry: `even`
+  --> tests/ui/duplicate_keyword_entry.rs:21:9
+   |
+21 |         "even" => crate::even_b,
+   |         ^^^^^^

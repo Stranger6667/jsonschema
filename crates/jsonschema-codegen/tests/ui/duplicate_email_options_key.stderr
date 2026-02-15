@@ -1,0 +1,5 @@
+error: Duplicate email_options key: `required_tld`
+ --> tests/ui/duplicate_email_options_key.rs:3:44
+  |
+3 |     email_options = { required_tld = true, required_tld = false }
+  |                                            ^^^^^^^^^^^^

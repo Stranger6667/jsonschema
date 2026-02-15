@@ -1,0 +1,51 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"oneOf\":[{\"properties\":{\"k\":{\"const\":1}},\"required\":[\"k\"],\"type\":[\"object\"]},{\"properties\":{\"k\":{\"const\":2}},\"required\":[\"k\"],\"type\":[\"object\"]}]}"
+expression: is_valid_body(schema)
+---
+{
+            let __one_of_discriminator = match instance {
+                serde_json::Value::Object(obj) => {
+                    obj.get("k")
+                        .and_then(|value| {
+                            value
+                                .as_i64()
+                                .or_else(|| {
+                                    value
+                                        .as_f64()
+                                        .and_then(|float| {
+                                            (float.fract() == 0.0
+                                                && float >= -9_223_372_036_854_775_808.0_f64
+                                                && float < 9_223_372_036_854_775_808.0_f64)
+                                                .then_some(float as i64)
+                                        })
+                                })
+                        })
+                }
+                _ => None,
+            };
+            let mut matched = (matches!(__one_of_discriminator, Some(1i64))
+                && {
+                    match instance {
+                        serde_json::Value::Object(obj) => true,
+                        _ => false,
+                    }
+                });
+            (if (matches!(__one_of_discriminator, Some(2i64))
+                && {
+                    match instance {
+                        serde_json::Value::Object(obj) => true,
+                        _ => false,
+                    }
+                })
+            {
+                if matched {
+                    false
+                } else {
+                    matched = true;
+                    true
+                }
+            } else {
+                true
+            }) && matched
+        }

@@ -10,7 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 # `resolve-http` disabled: network `$ref`s would stall iterations on the HTTP timeout.
-jsonschema = { path = "../crates/jsonschema/", default-features = false, features = ["resolve-file"] }
+jsonschema = { path = "../crates/jsonschema/", default-features = false, features = ["resolve-file", "macros"] }
 referencing = { path = "../crates/jsonschema-referencing" }
 serde_json = "1"
 
@@ -37,6 +37,13 @@ bench = false
 [[bin]]
 name = "referencing"
 path = "fuzz_targets/referencing.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "codegen"
+path = "fuzz_targets/codegen.rs"
 test = false
 doc = false
 bench = false

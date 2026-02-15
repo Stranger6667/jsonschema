@@ -1,0 +1,5 @@
+error: Duplicate format entry: `currency`
+  --> tests/ui/duplicate_format_entry.rs:13:9
+   |
+13 |         "currency" => crate::currency_b,
+   |         ^^^^^^^^^^

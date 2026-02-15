@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `#[jsonschema::validator]` attribute macro (behind the `macros` feature) that compiles a JSON Schema into `is_valid` and `validate` implementations at build time.
+
 ### Fixed
 
 - `type` under `items` asserted with the Validation vocabulary disabled.

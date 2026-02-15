@@ -1,0 +1,24 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"properties\":{\"a\":{}},\"type\":\"object\",\"unevaluatedProperties\":{\"type\":\"integer\"}}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                obj.iter()
+                    .all(|(__key, __value)| {
+                        let key_str = __key.as_str();
+                        if matches!(key_str, "a") {
+                            true
+                        } else {
+                            (|instance: &serde_json::Value| match instance {
+                                serde_json::Value::Number(n) => {
+                                    jsonschema::__private::types::is_integer(n)
+                                }
+                                _ => false,
+                            })(__value)
+                        }
+                    })
+            }
+            _ => false,
+        }

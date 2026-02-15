@@ -1,0 +1,5 @@
+error: Duplicate attribute: `schema`
+ --> tests/ui/duplicate_schema_attribute.rs:1:58
+  |
+1 | #[jsonschema::validator(schema = r#"{"type":"string"}"#, schema = r#"{"type":"number"}"#)]
+  |                                                          ^^^^^^

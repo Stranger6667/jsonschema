@@ -1,0 +1,10 @@
+error: Invalid `$dynamicRef`: expected a string
+ --> tests/ui/invalid_dynamic_ref_type.rs:1:1
+  |
+1 | / #[jsonschema::validator(
+2 | |     schema = r#"{"$dynamicRef": 1}"#,
+3 | |     draft = referencing::Draft::Draft202012
+4 | | )]
+  | |__^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,5 @@
+error: expected `struct`
+ --> tests/ui/macro_on_non_struct.rs:2:1
+  |
+2 | fn not_a_struct() {}
+  | ^^

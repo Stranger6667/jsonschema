@@ -1,0 +1,37 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"oneOf\":[{\"properties\":{\"k\":{\"const\":true}},\"required\":[\"k\"],\"type\":\"object\"},{\"properties\":{\"k\":{\"const\":false}},\"required\":[\"k\"],\"type\":\"object\"}]}"
+expression: is_valid_body(schema)
+---
+{
+            let __one_of_discriminator = match instance {
+                serde_json::Value::Object(obj) => {
+                    obj.get("k").and_then(serde_json::Value::as_bool)
+                }
+                _ => None,
+            };
+            let mut matched = (matches!(__one_of_discriminator, Some(true))
+                && {
+                    match instance {
+                        serde_json::Value::Object(obj) => true,
+                        _ => false,
+                    }
+                });
+            (if (matches!(__one_of_discriminator, Some(false))
+                && {
+                    match instance {
+                        serde_json::Value::Object(obj) => true,
+                        _ => false,
+                    }
+                })
+            {
+                if matched {
+                    false
+                } else {
+                    matched = true;
+                    true
+                }
+            } else {
+                true
+            }) && matched
+        }

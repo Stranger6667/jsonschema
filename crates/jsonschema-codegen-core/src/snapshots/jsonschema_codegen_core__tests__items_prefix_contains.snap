@@ -1,0 +1,35 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"contains\":{\"type\":\"string\"},\"prefixItems\":[{\"type\":\"integer\"}],\"type\":\"array\",\"unevaluatedItems\":false}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Array(arr) => {
+                ((arr
+                    .get(0usize)
+                    .map_or(
+                        true,
+                        |instance| match instance {
+                            serde_json::Value::Number(n) => {
+                                jsonschema::__private::types::is_integer(n)
+                            }
+                            _ => false,
+                        },
+                    )) && (arr.iter().any(|instance| instance.is_string())))
+                    && (arr
+                        .iter()
+                        .enumerate()
+                        .all(|(idx, item)| {
+                            if (idx < 1usize
+                                || (|instance: &serde_json::Value| {
+                                    instance.is_string()
+                                })(item))
+                            {
+                                true
+                            } else {
+                                false
+                            }
+                        }))
+            }
+            _ => false,
+        }

@@ -1,0 +1,7 @@
+error: Invalid `$ref`: expected a string
+ --> tests/ui/invalid_ref_non_string.rs:1:1
+  |
+1 | #[jsonschema::validator(schema = r#"{"$ref":42}"#)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)
