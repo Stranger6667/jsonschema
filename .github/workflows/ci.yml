@@ -52,6 +52,31 @@ jobs:
       - run: cargo update -p reqwest --precise 0.13.3
       - run: cargo update -p zeroize --precise 1.8.2
       - run: cargo build -p jsonschema
+      # Expand the validator macro at MSRV: generated code is not covered by a
+      # lib-only build. A scratch crate keeps `jsonschema`'s dev-dependencies
+      # (benchmark harnesses etc.) out of the resolution graph — they are free
+      # to require a newer toolchain than the library itself.
+      - run: |
+          cargo new "$RUNNER_TEMP/msrv-macro-check" --lib --edition 2021
+          cd "$RUNNER_TEMP/msrv-macro-check"
+          cargo add jsonschema --path "$GITHUB_WORKSPACE/crates/jsonschema" --no-default-features --features macros
+          cargo add serde_json
+          cat > src/lib.rs <<'EOF'
+          #[jsonschema::validator(
+              schema = r#"{"type": "string", "minLength": 2, "format": "email", "pattern": "^[a-z]"}"#
+          )]
+          struct MsrvValidator;
+
+          pub fn check(instance: &serde_json::Value) -> bool {
+              MsrvValidator::is_valid(instance) && MsrvValidator::validate(instance).is_ok()
+          }
+          EOF
+          cargo update -p idna_adapter --precise 1.2.0
+          cargo update -p litemap --precise 0.7.4
+          cargo update -p zerofrom --precise 0.1.5
+          cargo update -p indexmap --precise 2.13.0
+          cargo update -p proc-macro-crate --precise 3.2.0
+          cargo check
 
   test-native:
     strategy:
@@ -118,17 +143,17 @@ jobs:
           - target: wasm32-wasip1
             needs_wasmtime: true
             needs_wasm_bindgen: false
-            features: ""
+            features: "macros"
             display: wasm32-wasip1 (sync)
           - target: wasm32-wasip1
             needs_wasmtime: true
             needs_wasm_bindgen: false
-            features: "resolve-async"
+            features: "resolve-async,macros"
             display: wasm32-wasip1 (async)
           - target: wasm32-unknown-unknown
             needs_wasmtime: false
             needs_wasm_bindgen: true
-            features: ""
+            features: "macros"
             display: wasm32-unknown-unknown
     name: Test on ${{ matrix.display }}
     runs-on: ubuntu-24.04
@@ -597,7 +622,7 @@ jobs:
           cache-all-crates: "true"
 
       # One invocation: separate dry-runs would need every dependency version already on crates.io.
-      - run: cargo publish --dry-run -p referencing -p jsonschema-regex -p jsonschema -p jsonschema-cli
+      - run: cargo publish --dry-run -p referencing -p jsonschema-regex -p jsonschema-codegen -p jsonschema -p jsonschema-cli
 
   check-release-python:
     name: Check Python release
@@ -703,7 +728,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: ["builder", "validation", "referencing"]
+        target: ["builder", "validation", "referencing", "codegen_parity"]
     name: Fuzz ${{ matrix.target }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15

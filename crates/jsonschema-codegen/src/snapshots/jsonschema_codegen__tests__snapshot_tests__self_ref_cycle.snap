@@ -1,0 +1,6 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"$ref\":\"#\"}"
+expression: is_valid_body(schema)
+---
+validate_ref_0(instance)

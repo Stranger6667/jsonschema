@@ -1287,6 +1287,32 @@ impl<'a> ValidationError<'a> {
         )
     }
 
+    /// [`Self::with_context`] variant for macro-generated code, which tracks
+    /// the instance path as an owned [`Location`].
+    #[cfg(feature = "macros")]
+    pub(crate) fn with_generated_context<'i>(
+        self,
+        instance: &'i Value,
+        instance_path: Location,
+        schema_path: Location,
+        keyword: &str,
+    ) -> ValidationError<'i> {
+        let kind = match self.repr.kind {
+            ValidationErrorKind::Custom { message, .. } => ValidationErrorKind::Custom {
+                keyword: keyword.to_string(),
+                message,
+            },
+            other => other,
+        };
+        ValidationError::new(
+            Cow::Borrowed(instance),
+            kind,
+            instance_path,
+            schema_path,
+            LazyEvaluationPath::SameAsSchemaPath,
+        )
+    }
+
     /// Fill in context for a placeholder schema error (used in keyword factories).
     pub(crate) fn with_schema_context<'s>(
         self,

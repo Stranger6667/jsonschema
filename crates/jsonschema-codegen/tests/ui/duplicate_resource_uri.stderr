@@ -1,0 +1,5 @@
+error: Duplicate resource URI: `json-schema:///a`
+ --> tests/ui/duplicate_resource_uri.rs:5:9
+  |
+5 |         "json-schema:///a" => { schema = r#"{"type":"integer"}"# },
+  |         ^^^^^^^^^^^^^^^^^^

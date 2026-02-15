@@ -1,0 +1,13 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+assertion_line: 184
+description: "{\"minLength\":2,\"type\":[\"string\",\"integer\"]}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::String(s) => s.chars().count() >= 2u64 as usize,
+            serde_json::Value::Number(
+                n,
+            ) if jsonschema::__private::types::is_integer(n) => true,
+            _ => false,
+        }

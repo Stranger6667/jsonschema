@@ -1,0 +1,12 @@
+error: Invalid `pattern` regular expression: ^(?!eo:)
+ --> tests/ui/regex_engine_unsupported_pattern.rs:1:1
+  |
+1 | / #[jsonschema::validator(
+2 | |     schema = r#"{"type":"string","pattern":"^(?!eo:)"}"#,
+3 | |     pattern_options = {
+4 | |         engine = regex,
+5 | |     }
+6 | | )]
+  | |__^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,7 @@
+error: -1 is less than the minimum of 0
+ --> tests/ui/invalid_max_length_value.rs:1:1
+  |
+1 | #[jsonschema::validator(schema = r#"{"type":"string","maxLength":-1}"#)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

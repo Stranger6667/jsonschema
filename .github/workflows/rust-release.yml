@@ -23,6 +23,8 @@ jobs:
 
       - run: cargo publish --manifest-path crates/jsonschema-regex/Cargo.toml
 
+      - run: cargo publish --manifest-path crates/jsonschema-codegen/Cargo.toml
+
       - run: cargo publish --manifest-path crates/jsonschema/Cargo.toml
 
       - run: cargo publish --manifest-path crates/jsonschema-cli/Cargo.toml

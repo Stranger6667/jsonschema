@@ -1,0 +1,7 @@
+error: 42 is not of types "boolean", "object"
+ --> tests/ui/invalid_top_level_schema_type.rs:1:1
+  |
+1 | #[jsonschema::validator(schema = "42")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)
