@@ -1,0 +1,5 @@
+error: Duplicate attribute: `path`
+ --> tests/ui/duplicate_path_attribute.rs:1:44
+  |
+1 | #[jsonschema::validator(path = "one.json", path = "two.json")]
+  |                                            ^^^^

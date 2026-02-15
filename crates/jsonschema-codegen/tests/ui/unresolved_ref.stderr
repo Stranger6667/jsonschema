@@ -1,0 +1,7 @@
+error: Failed to resolve `$ref` `#/missing`: Failed to resolve #/missing: Pointer '/missing' does not exist
+ --> tests/ui/unresolved_ref.rs:1:1
+  |
+1 | #[jsonschema::validator(schema = r##"{"$ref":"#/missing"}"##)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

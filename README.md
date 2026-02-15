@@ -44,6 +44,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    // Build-time validator (requires the `macros` feature)
+    // Inline schema, or `path = "schema.json"` to load from a file
+    #[jsonschema::validator(schema = r#"{"maxLength": 5}"#)]
+    struct Short;
+
+    assert!(Short::is_valid(&instance));
+    Short::validate(&instance)?;
+
     Ok(())
 }
 ```

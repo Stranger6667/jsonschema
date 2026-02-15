@@ -1,0 +1,9 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"contentEncoding\":\"base16\",\"type\":\"string\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::String(s) => jsonschema::__private::content::is_base16(s),
+            _ => false,
+        }

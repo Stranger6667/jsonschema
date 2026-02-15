@@ -1,0 +1,44 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"else\":{\"prefixItems\":[{}]},\"if\":{\"prefixItems\":[{\"const\":0}]},\"then\":{\"prefixItems\":[{},{}]},\"type\":\"array\",\"unevaluatedItems\":false}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Array(arr) => {
+                arr.iter()
+                    .enumerate()
+                    .all(|(idx, item)| {
+                        if if (|instance: &serde_json::Value| match instance {
+                            serde_json::Value::Array(arr) => {
+                                arr.get(0usize)
+                                    .map_or(
+                                        true,
+                                        |instance| {
+                                            static EXPECTED: std::sync::LazyLock<serde_json::Number> = std::sync::LazyLock::new(||
+                                            {
+                                                serde_json::from_str("0")
+                                                    .expect("Failed to parse const number")
+                                            });
+                                            match instance {
+                                                serde_json::Value::Number(n) => {
+                                                    jsonschema::__private::cmp::equal_numbers(n, &*EXPECTED)
+                                                }
+                                                _ => false,
+                                            }
+                                        },
+                                    )
+                            }
+                            _ => true,
+                        })(instance) {
+                            (idx < 1usize) || (idx < 2usize)
+                        } else {
+                            idx < 1usize
+                        } {
+                            true
+                        } else {
+                            false
+                        }
+                    })
+            }
+            _ => false,
+        }

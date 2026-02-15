@@ -17,8 +17,24 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        package: [jsonschema, referencing]
-    name: "Run benchmarks (${{ matrix.package }})"
+        include:
+          - name: jsonschema
+            package: jsonschema
+            features: "--features macros"
+            benches: "--bench jsonschema --bench keywords --bench errors --bench location --bench metaschema --bench unevaluated_items --bench unevaluated_properties"
+          - name: codegen
+            package: jsonschema
+            features: "--features macros"
+            benches: "--bench codegen"
+          - name: codegen-generate
+            package: jsonschema-codegen-core
+            features: "--features bench"
+            benches: "--bench generate"
+          - name: referencing
+            package: referencing
+            features: ""
+            benches: ""
+    name: "Run benchmarks (${{ matrix.name }})"
     steps:
       - uses: actions/checkout@v7
 
@@ -26,11 +42,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.package }}
+          key: ${{ matrix.name }}
 
       - run: cargo install cargo-codspeed --force
 
-      - run: cargo codspeed build -p ${{ matrix.package }}
+      - run: cargo codspeed build -p ${{ matrix.package }} ${{ matrix.features }} ${{ matrix.benches }}
 
       - uses: CodSpeedHQ/action@v4
         with:

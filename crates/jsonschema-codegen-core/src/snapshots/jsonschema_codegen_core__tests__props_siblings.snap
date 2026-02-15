@@ -1,0 +1,42 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"additionalProperties\":{\"type\":\"boolean\"},\"patternProperties\":{\"^x_\":{\"type\":\"string\"}},\"properties\":{\"a\":{\"type\":\"integer\"}},\"type\":\"object\",\"unevaluatedProperties\":false}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                let __object_pass = obj
+                    .iter()
+                    .all(|(key, instance)| {
+                        let mut covered = false;
+                        match key.as_str() {
+                            "a" => {
+                                if !(match instance {
+                                    serde_json::Value::Number(n) => {
+                                        jsonschema::__private::types::is_integer(n)
+                                    }
+                                    _ => false,
+                                }) {
+                                    return false;
+                                }
+                                covered = true;
+                            }
+                            _ => {}
+                        }
+                        if key.as_str().starts_with("x_") {
+                            if !(instance.is_string()) {
+                                return false;
+                            }
+                            covered = true;
+                        }
+                        if !covered {
+                            if !(instance.is_boolean()) {
+                                return false;
+                            }
+                        }
+                        true
+                    });
+                __object_pass
+            }
+            _ => false,
+        }

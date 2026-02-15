@@ -1,0 +1,5 @@
+error: Duplicate content encoding entry: `e`
+ --> tests/ui/duplicate_content_encoding_entry.rs:5:9
+  |
+5 |         "e" => { check = crate::c, convert = crate::d },
+  |         ^^^

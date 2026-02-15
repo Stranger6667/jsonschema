@@ -1,0 +1,13 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"minimum\":0,\"type\":\"integer\"}"
+expression: extract_is_valid_body(&code)
+---
+match instance {
+            serde_json::Value::Number(
+                n,
+            ) if jsonschema::__private::types::is_integer(n) => {
+                jsonschema::__private::numeric::ge(n, 0u64)
+            }
+            _ => false,
+        }

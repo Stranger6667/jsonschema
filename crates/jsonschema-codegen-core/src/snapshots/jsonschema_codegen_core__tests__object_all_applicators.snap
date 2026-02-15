@@ -1,0 +1,47 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"additionalProperties\":{\"type\":\"integer\"},\"maxProperties\":5,\"minProperties\":1,\"patternProperties\":{\"^x\":{\"type\":\"integer\"}},\"properties\":{\"a\":{}},\"propertyNames\":{\"minLength\":1},\"type\":\"object\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                ({
+                    let __object_pass = obj
+                        .iter()
+                        .all(|(key, instance)| {
+                            let mut covered = false;
+                            match key.as_str() {
+                                "a" => {
+                                    covered = true;
+                                }
+                                _ => {}
+                            }
+                            if key.as_str().starts_with("x") {
+                                if !(match instance {
+                                    serde_json::Value::Number(n) => {
+                                        jsonschema::__private::types::is_integer(n)
+                                    }
+                                    _ => false,
+                                }) {
+                                    return false;
+                                }
+                                covered = true;
+                            }
+                            if !covered {
+                                if !(match instance {
+                                    serde_json::Value::Number(n) => {
+                                        jsonschema::__private::types::is_integer(n)
+                                    }
+                                    _ => false,
+                                }) {
+                                    return false;
+                                }
+                            }
+                            true
+                        });
+                    __object_pass
+                }) && ((obj.len() as u64) >= 1) && ((obj.len() as u64) <= 5)
+                    && (obj.keys().all(|s| { !s.is_empty() }))
+            }
+            _ => false,
+        }

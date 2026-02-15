@@ -50,10 +50,10 @@ mod bench {
             benchmark.run(&mut |name, schema, instances| {
                 bench_build(c, name, schema);
                 for instance in instances {
-                    let name = format!("{}/{}", name, instance.name);
-                    bench_is_valid(c, &name, schema, &instance.data);
-                    bench_validate(c, &name, schema, &instance.data);
-                    bench_evaluate(c, &name, schema, &instance.data);
+                    let instance_name = format!("{}/{}", name, instance.name);
+                    bench_is_valid(c, &instance_name, schema, &instance.data);
+                    bench_validate(c, &instance_name, schema, &instance.data);
+                    bench_evaluate(c, &instance_name, schema, &instance.data);
                 }
             });
         }

@@ -1,0 +1,10 @@
+error: Invalid JSON for resource 'json-schema:///ext': EOF while parsing an object at line 1 column 1
+ --> tests/ui/resource_invalid_json.rs:1:1
+  |
+1 | / #[jsonschema::validator(
+2 | |     schema = "{}",
+3 | |     resources = { "json-schema:///ext" => { schema = "{" } }
+4 | | )]
+  | |__^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

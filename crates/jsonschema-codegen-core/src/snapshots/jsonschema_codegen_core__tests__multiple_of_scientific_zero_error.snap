@@ -1,0 +1,59 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"multipleOf\":0e-10}"
+expression: schema_to_code(schema)
+---
+struct Validator;
+#[doc(hidden)]
+#[allow(non_snake_case, dead_code, unused_variables, unreachable_code, clippy::all)]
+mod __validator_impl {
+    use super::*;
+    pub(super) fn is_valid(instance: &serde_json::Value) -> bool {
+        match instance {
+            serde_json::Value::Number(n) => {
+                compile_error!("0e-10 is less than or equal to the minimum of 0");
+                false
+            }
+            _ => true,
+        }
+    }
+    pub(super) fn validate<'__i>(
+        instance: &'__i serde_json::Value,
+        __path: &jsonschema::paths::LazyLocation,
+    ) -> Option<jsonschema::ValidationError<'__i>> {
+        match instance {
+            serde_json::Value::Number(n) => {
+                if !({
+                    compile_error!("0e-10 is less than or equal to the minimum of 0");
+                    false
+                }) {
+                    return Some(
+                        jsonschema::__private::error::false_schema(
+                            "",
+                            __path.into(),
+                            instance,
+                        ),
+                    );
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+}
+impl Validator {
+    pub fn is_valid(instance: &serde_json::Value) -> bool {
+        __validator_impl::is_valid(instance)
+    }
+    pub fn validate<'__i>(
+        instance: &'__i serde_json::Value,
+    ) -> ::std::result::Result<(), jsonschema::ValidationError<'__i>> {
+        match __validator_impl::validate(
+            instance,
+            &jsonschema::paths::LazyLocation::new(),
+        ) {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+}

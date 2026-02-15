@@ -1,0 +1,19 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"dependentSchemas\":{\"a\":{\"properties\":{\"b\":{}}}},\"type\":\"object\",\"unevaluatedProperties\":false}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                obj.iter()
+                    .all(|(__key, __value)| {
+                        let key_str = __key.as_str();
+                        if obj.contains_key("a") && (matches!(key_str, "b")) {
+                            true
+                        } else {
+                            false
+                        }
+                    })
+            }
+            _ => false,
+        }

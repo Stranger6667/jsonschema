@@ -1,0 +1,7 @@
+error: Missing required `path` or `schema` attribute
+ --> tests/ui/missing_schema_source.rs:1:1
+  |
+1 | #[jsonschema::validator(draft = referencing::Draft::Draft7)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

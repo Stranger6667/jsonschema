@@ -1,3 +1,6 @@
+// `pub` only for the `__private` re-export consumed by generated code.
+#![allow(clippy::must_use_candidate, clippy::missing_errors_doc)]
+
 use crate::error::ValidationError;
 use ahash::AHashMap;
 use data_encoding::{BASE32, BASE32HEX, BASE64, BASE64URL, HEXUPPER};
@@ -9,13 +12,11 @@ pub(crate) type ContentEncodingConverterType =
 
 // RFC 4648 §4: Base 64 Encoding
 // https://datatracker.ietf.org/doc/html/rfc4648#section-4
-pub(crate) fn is_base64(instance_string: &str) -> bool {
+pub fn is_base64(instance_string: &str) -> bool {
     BASE64.decode(instance_string.as_bytes()).is_ok()
 }
 
-pub(crate) fn from_base64(
-    instance_string: &str,
-) -> Result<Option<String>, ValidationError<'static>> {
+pub fn from_base64(instance_string: &str) -> Result<Option<String>, ValidationError<'static>> {
     match BASE64.decode(instance_string.as_bytes()) {
         Ok(value) => Ok(Some(String::from_utf8(value)?)),
         Err(_) => Ok(None),
@@ -24,13 +25,11 @@ pub(crate) fn from_base64(
 
 // RFC 4648 §5: Base 64 Encoding with URL and Filename Safe Alphabet
 // https://datatracker.ietf.org/doc/html/rfc4648#section-5
-pub(crate) fn is_base64url(instance_string: &str) -> bool {
+pub fn is_base64url(instance_string: &str) -> bool {
     BASE64URL.decode(instance_string.as_bytes()).is_ok()
 }
 
-pub(crate) fn from_base64url(
-    instance_string: &str,
-) -> Result<Option<String>, ValidationError<'static>> {
+pub fn from_base64url(instance_string: &str) -> Result<Option<String>, ValidationError<'static>> {
     match BASE64URL.decode(instance_string.as_bytes()) {
         Ok(value) => Ok(Some(String::from_utf8(value)?)),
         Err(_) => Ok(None),
@@ -39,13 +38,11 @@ pub(crate) fn from_base64url(
 
 // RFC 4648 §6: Base 32 Encoding
 // https://datatracker.ietf.org/doc/html/rfc4648#section-6
-pub(crate) fn is_base32(instance_string: &str) -> bool {
+pub fn is_base32(instance_string: &str) -> bool {
     BASE32.decode(instance_string.as_bytes()).is_ok()
 }
 
-pub(crate) fn from_base32(
-    instance_string: &str,
-) -> Result<Option<String>, ValidationError<'static>> {
+pub fn from_base32(instance_string: &str) -> Result<Option<String>, ValidationError<'static>> {
     match BASE32.decode(instance_string.as_bytes()) {
         Ok(value) => Ok(Some(String::from_utf8(value)?)),
         Err(_) => Ok(None),
@@ -54,13 +51,11 @@ pub(crate) fn from_base32(
 
 // RFC 4648 §7: Base 32 Encoding with Extended Hex Alphabet
 // https://datatracker.ietf.org/doc/html/rfc4648#section-7
-pub(crate) fn is_base32hex(instance_string: &str) -> bool {
+pub fn is_base32hex(instance_string: &str) -> bool {
     BASE32HEX.decode(instance_string.as_bytes()).is_ok()
 }
 
-pub(crate) fn from_base32hex(
-    instance_string: &str,
-) -> Result<Option<String>, ValidationError<'static>> {
+pub fn from_base32hex(instance_string: &str) -> Result<Option<String>, ValidationError<'static>> {
     match BASE32HEX.decode(instance_string.as_bytes()) {
         Ok(value) => Ok(Some(String::from_utf8(value)?)),
         Err(_) => Ok(None),
@@ -69,16 +64,14 @@ pub(crate) fn from_base32hex(
 
 // RFC 4648 §8: Base 16 Encoding
 // https://datatracker.ietf.org/doc/html/rfc4648#section-8
-pub(crate) fn is_base16(instance_string: &str) -> bool {
+pub fn is_base16(instance_string: &str) -> bool {
     HEXUPPER.decode(instance_string.as_bytes()).is_ok()
         || HEXUPPER
             .decode(instance_string.to_uppercase().as_bytes())
             .is_ok()
 }
 
-pub(crate) fn from_base16(
-    instance_string: &str,
-) -> Result<Option<String>, ValidationError<'static>> {
+pub fn from_base16(instance_string: &str) -> Result<Option<String>, ValidationError<'static>> {
     // Base16 is case-insensitive per RFC 4648
     let result = HEXUPPER
         .decode(instance_string.as_bytes())

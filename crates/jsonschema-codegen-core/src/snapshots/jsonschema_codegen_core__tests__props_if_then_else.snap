@@ -1,0 +1,25 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"else\":{\"properties\":{\"y_val\":{}}},\"if\":{\"properties\":{\"kind\":{\"const\":\"x\"}},\"required\":[\"kind\"]},\"then\":{\"properties\":{\"x_val\":{}}},\"type\":\"object\",\"unevaluatedProperties\":false}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                obj.iter()
+                    .all(|(__key, __value)| {
+                        let key_str = __key.as_str();
+                        if if (|instance: &serde_json::Value| validate_ref_0(
+                            instance,
+                        ))(instance) {
+                            (matches!(key_str, "kind")) || (matches!(key_str, "x_val"))
+                        } else {
+                            matches!(key_str, "y_val")
+                        } {
+                            true
+                        } else {
+                            false
+                        }
+                    })
+            }
+            _ => false,
+        }

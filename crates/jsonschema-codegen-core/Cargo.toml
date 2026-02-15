@@ -1,0 +1,43 @@
+[package]
+name = "jsonschema-codegen-core"
+version = "0.46.10"
+description = "Code generation implementation for the jsonschema compile-time validator macro"
+rust-version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[features]
+arbitrary-precision = ["serde_json/arbitrary_precision"]
+bench = []
+
+[dependencies]
+fancy-regex = "0.18"
+indexmap = "2"
+jsonschema-regex = { version = "0.46.10", path = "../jsonschema-regex" }
+percent-encoding = "2.3"
+proc-macro2 = "1"
+proc-macro-crate = "3"
+quote = "1"
+referencing = { version = "0.46.10", path = "../jsonschema-referencing" }
+regex = "1"
+serde_json = "1"
+syn = { version = "2", features = ["full"] }
+
+[dev-dependencies]
+insta = "1"
+prettyplease = "0.2"
+test-case = "3"
+jsonschema = { path = "../jsonschema", features = ["macros"] }
+codspeed-criterion-compat = { version = "5.0", default-features = false }
+criterion = { version = "0.8", default-features = false }
+benchmark = { path = "../benchmark" }
+
+[[bench]]
+name = "generate"
+harness = false
+required-features = ["bench"]
+
+[lints]
+workspace = true

@@ -1,0 +1,5 @@
+error: Invalid `draft` expression. Expected a draft variant such as `Draft202012`
+ --> tests/ui/invalid_draft_expression.rs:1:48
+  |
+1 | #[jsonschema::validator(schema = "{}", draft = 42)]
+  |                                                ^^

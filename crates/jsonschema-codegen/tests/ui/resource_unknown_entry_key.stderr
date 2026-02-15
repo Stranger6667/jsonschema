@@ -1,0 +1,5 @@
+error: Expected `schema` or `path`, got `bogus`
+ --> tests/ui/resource_unknown_entry_key.rs:3:43
+  |
+3 |     resources = { "json-schema:///u" => { bogus = "x" } }
+  |                                           ^^^^^

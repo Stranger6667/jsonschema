@@ -1,4 +1,6 @@
 #![allow(clippy::unnecessary_wraps)]
+// Runtime helpers stay `pub` for the macros-gated `__private` re-exports; without `macros` they are crate-internal.
+#![cfg_attr(not(feature = "macros"), allow(unreachable_pub))]
 //! A high-performance JSON Schema validator for Rust.
 //!
 //! - 📚 Support for popular JSON Schema drafts
@@ -86,6 +88,48 @@
 //! ```
 //!
 //! Once built, any `format` keywords in your schema will be actively validated according to the chosen draft.
+//!
+//! # Compile-Time Validator Macro
+//!
+//! The `validator` attribute macro (enabled by the `macros` feature) compiles schemas at build time:
+//!
+//! ```ignore
+//! // Inline schema
+//! #[jsonschema::validator(schema = r#"{"maxLength": 5}"#)]
+//! struct Short;
+//!
+//! // Or load it from a file:
+//! // #[jsonschema::validator(path = "schema.json")]
+//!
+//! let instance = serde_json::json!("value");
+//! assert!(Short::is_valid(&instance));
+//! Short::validate(&instance)?;
+//! ```
+//!
+//! Supported macro attributes; each mirrors the matching [`ValidationOptions`] builder method,
+//! which documents its behavior and defaults:
+//!
+//! - schema source (exactly one required): `path = "..."` (file) or `schema = r#"..."#` (inline)
+//! - `draft = Draft202012` (or another variant) -> [`ValidationOptions::with_draft`]
+//! - `base_uri = "..."` -> [`ValidationOptions::with_base_uri`]
+//! - `resources = { "<uri>" => { schema = r#"..."# } | { path = "..." } }`
+//! - `validate_formats = true|false` -> [`ValidationOptions::should_validate_formats`]
+//! - `ignore_unknown_formats = true|false` -> [`ValidationOptions::should_ignore_unknown_formats`]
+//! - `formats = { "name" => crate::path::to::fn }` -> [`ValidationOptions::with_format`]
+//! - `keywords = { "name" => crate::path::to::factory }` -> [`ValidationOptions::with_keyword`]
+//! - `content_media_types = { "type" => crate::path::to::fn }` -> [`ValidationOptions::with_content_media_type`]
+//! - `content_encodings = { "name" => { check = ..., convert = ... } }` -> [`ValidationOptions::with_content_encoding`]
+//! - `pattern_options = { ... }` -> [`PatternOptions`]
+//! - `email_options = { ... }` -> [`EmailOptions`]
+//!
+//! ## Limitations
+//!
+//! - Only `is_valid` and `validate` are generated; `iter_errors` and `evaluate` are not implemented yet.
+//! - Custom keywords cannot override built-in ones: a `keywords` entry named like a built-in keyword runs in
+//!   addition to the built-in check, not instead of it.
+//! - `anyOf`/`oneOf` errors from `validate()` carry no per-branch sub-error context, unlike the runtime validator.
+//! - When an instance violates several keywords, the first error reported by `validate()` may differ from the runtime
+//!   validator's, since generated checks are not ordered by keyword priority; `is_valid` and validity are unaffected.
 //!
 //! # Structured Output
 //!
@@ -894,6 +938,9 @@ pub use evaluation::{
     AnnotationEntry, ErrorEntry, Evaluation, FlagOutput, HierarchicalOutput, ListOutput,
 };
 pub use http::HttpOptions;
+#[doc(inline)]
+#[cfg(feature = "macros")]
+pub use jsonschema_codegen::validator;
 pub use keywords::custom::Keyword;
 pub use options::{EmailOptions, FancyRegex, PatternOptions, Regex, ValidationOptions};
 pub use referencing::{
@@ -2705,6 +2752,783 @@ pub mod draft202012 {
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
             validator().as_ref().validate(schema)
+        }
+    }
+}
+
+#[cfg(feature = "macros")]
+#[doc(hidden)]
+pub mod __private {
+    pub mod fancy_regex {
+        pub use fancy_regex::{Regex, RegexBuilder};
+    }
+    pub mod regex {
+        pub use jsonschema_regex::is_ecma_whitespace;
+        pub use regex::{Regex, RegexBuilder};
+    }
+    pub mod unique_items {
+        pub use crate::keywords::unique_items::is_unique;
+    }
+    pub mod cmp {
+        pub use crate::ext::cmp::{equal, equal_numbers};
+    }
+    pub mod custom {
+        use crate::paths::Location;
+
+        #[must_use]
+        pub fn location(pointer: &str) -> Location {
+            Location::from_escaped(pointer)
+        }
+
+        /// Run a custom keyword and fill in error context exactly like the runtime validator's `CustomKeyword` wrapper.
+        pub fn validate<'i>(
+            keyword: &dyn crate::Keyword,
+            instance: &'i serde_json::Value,
+            instance_path: Location,
+            schema_path: &str,
+            keyword_name: &str,
+        ) -> Option<crate::ValidationError<'i>> {
+            match keyword.validate(instance) {
+                Ok(()) => None,
+                Err(error) => Some(error.with_generated_context(
+                    instance,
+                    instance_path,
+                    Location::from_escaped(schema_path),
+                    keyword_name,
+                )),
+            }
+        }
+    }
+    pub mod types {
+        /// Integer check per drafts 6+: floats with zero fractional part count.
+        #[must_use]
+        pub fn is_integer(n: &serde_json::Number) -> bool {
+            crate::types::number_is_integer(n)
+        }
+        /// Integer check per draft 4: numbers written with a decimal point are not integers.
+        #[must_use]
+        pub fn is_integer_draft4(n: &serde_json::Number) -> bool {
+            crate::keywords::legacy::type_draft_4::is_integer(n)
+        }
+    }
+    pub mod format {
+        pub use crate::keywords::format::{
+            is_valid_date, is_valid_datetime, is_valid_duration, is_valid_hostname,
+            is_valid_hostname_rfc1034, is_valid_idn_hostname, is_valid_ipv4, is_valid_ipv6,
+            is_valid_iri, is_valid_iri_reference, is_valid_json_pointer, is_valid_regex,
+            is_valid_relative_json_pointer, is_valid_time, is_valid_uri, is_valid_uri_reference,
+            is_valid_uri_template, is_valid_uuid,
+        };
+
+        /// Per-call memoization cache for URI/IRI `format` checks in generated validators.
+        pub type Cache = std::collections::HashMap<Box<str>, bool, ahash::RandomState>;
+
+        /// Validate an email format using configured [`crate::EmailOptions`].
+        #[must_use]
+        pub fn is_valid_email_with_options(
+            value: &str,
+            options: Option<&crate::EmailOptions>,
+        ) -> bool {
+            crate::keywords::format::is_valid_email(value, options.map(|opts| &opts.inner))
+        }
+
+        /// Validate an IDN email format using configured [`crate::EmailOptions`].
+        #[must_use]
+        pub fn is_valid_idn_email_with_options(
+            value: &str,
+            options: Option<&crate::EmailOptions>,
+        ) -> bool {
+            crate::keywords::format::is_valid_idn_email(value, options.map(|opts| &opts.inner))
+        }
+    }
+    pub mod content {
+        pub use crate::{
+            content_encoding::{
+                from_base16, from_base32, from_base32hex, from_base64, from_base64url, is_base16,
+                is_base32, is_base32hex, is_base64, is_base64url,
+            },
+            content_media_type::is_json,
+        };
+    }
+    pub mod numeric {
+        /// Compare `value` >= `limit` using runtime numeric semantics.
+        pub fn ge<T>(value: &serde_json::Number, limit: T) -> bool
+        where
+            T: Copy + num_traits::ToPrimitive,
+            u64: num_cmp::NumCmp<T>,
+            i64: num_cmp::NumCmp<T>,
+            f64: num_cmp::NumCmp<T>,
+        {
+            crate::ext::numeric::ge(value, limit)
+        }
+
+        /// Compare `value` <= `limit` using runtime numeric semantics.
+        pub fn le<T>(value: &serde_json::Number, limit: T) -> bool
+        where
+            T: Copy + num_traits::ToPrimitive,
+            u64: num_cmp::NumCmp<T>,
+            i64: num_cmp::NumCmp<T>,
+            f64: num_cmp::NumCmp<T>,
+        {
+            crate::ext::numeric::le(value, limit)
+        }
+
+        /// Compare `value` > `limit` using runtime numeric semantics.
+        pub fn gt<T>(value: &serde_json::Number, limit: T) -> bool
+        where
+            T: Copy + num_traits::ToPrimitive,
+            u64: num_cmp::NumCmp<T>,
+            i64: num_cmp::NumCmp<T>,
+            f64: num_cmp::NumCmp<T>,
+        {
+            crate::ext::numeric::gt(value, limit)
+        }
+
+        /// Compare `value` < `limit` using runtime numeric semantics.
+        pub fn lt<T>(value: &serde_json::Number, limit: T) -> bool
+        where
+            T: Copy + num_traits::ToPrimitive,
+            u64: num_cmp::NumCmp<T>,
+            i64: num_cmp::NumCmp<T>,
+            f64: num_cmp::NumCmp<T>,
+        {
+            crate::ext::numeric::lt(value, limit)
+        }
+
+        /// Check `multipleOf` with integer divisors using runtime numeric semantics.
+        #[must_use]
+        pub fn is_multiple_of_integer(value: &serde_json::Number, multiple: f64) -> bool {
+            crate::ext::numeric::is_multiple_of_integer(value, multiple)
+        }
+
+        /// Check `multipleOf` with fractional divisors using runtime numeric semantics.
+        #[must_use]
+        pub fn is_multiple_of_float(value: &serde_json::Number, multiple: f64) -> bool {
+            crate::ext::numeric::is_multiple_of_float(value, multiple)
+        }
+
+        /// Check numeric bounds with a compiled descriptor for arbitrary-precision schemas.
+        #[cfg(feature = "arbitrary-precision")]
+        #[must_use]
+        pub fn check_compiled_bound(
+            value: &serde_json::Number,
+            op: u8,
+            limit_literal: &'static str,
+        ) -> bool {
+            use crate::ext::numeric_check::{check_bound, compile_bound, BoundOp, CompiledBound};
+
+            #[inline]
+            fn literal_key(literal: &'static str) -> (usize, usize) {
+                (literal.as_ptr() as usize, literal.len())
+            }
+
+            type BoundCache =
+                std::cell::RefCell<ahash::AHashMap<((usize, usize), u8), CompiledBound>>;
+            std::thread_local! {
+                static CACHE: BoundCache = std::cell::RefCell::new(ahash::AHashMap::default());
+            }
+
+            let op_tag = op;
+            let Some(op) = BoundOp::from_u8(op_tag) else {
+                unreachable!("codegen emits only bound op tags 0..=3")
+            };
+            let key = (literal_key(limit_literal), op_tag);
+
+            CACHE.with(|cache| {
+                let mut cache = cache.borrow_mut();
+                let compiled = cache.entry(key).or_insert_with(|| {
+                    let limit = serde_json::from_str::<serde_json::Number>(limit_literal)
+                        .expect("Codegen emitted an invalid numeric literal");
+                    compile_bound(op, &limit)
+                });
+                check_bound(compiled, value)
+            })
+        }
+
+        /// Check `multipleOf` with a compiled descriptor for arbitrary-precision schemas.
+        #[cfg(feature = "arbitrary-precision")]
+        #[must_use]
+        pub fn check_compiled_multiple_of(
+            value: &serde_json::Number,
+            limit_literal: &'static str,
+        ) -> bool {
+            use crate::ext::numeric_check::{
+                check_multiple_of, compile_multiple_of, CompiledMultipleOf,
+            };
+
+            #[inline]
+            fn literal_key(literal: &'static str) -> (usize, usize) {
+                (literal.as_ptr() as usize, literal.len())
+            }
+
+            std::thread_local! {
+                static CACHE: std::cell::RefCell<ahash::AHashMap<(usize, usize), CompiledMultipleOf>> =
+                    std::cell::RefCell::new(ahash::AHashMap::default());
+            }
+            let key = literal_key(limit_literal);
+
+            CACHE.with(|cache| {
+                let mut cache = cache.borrow_mut();
+                let compiled = cache.entry(key).or_insert_with(|| {
+                    let limit = serde_json::from_str::<serde_json::Number>(limit_literal)
+                        .expect("Codegen emitted an invalid numeric literal");
+                    compile_multiple_of(&limit)
+                });
+                check_multiple_of(compiled, value)
+            })
+        }
+    }
+
+    /// Per-keyword error constructors for generated code; evaluation path always equals schema path.
+    pub mod error {
+        use serde_json::Value;
+
+        use crate::{
+            paths::Location,
+            types::{JsonType, JsonTypeSet},
+            validator::LazyEvaluationPath,
+            ValidationError,
+        };
+
+        /// `contentEncoding` keyword violation.
+        #[inline]
+        pub fn content_encoding<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            encoding: &str,
+        ) -> ValidationError<'i> {
+            ValidationError::content_encoding(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                encoding,
+            )
+        }
+
+        /// `contentMediaType` keyword violation.
+        #[inline]
+        pub fn content_media_type<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            media_type: &str,
+        ) -> ValidationError<'i> {
+            ValidationError::content_media_type(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                media_type,
+            )
+        }
+
+        /// `minLength` keyword violation: string is shorter than `limit` characters.
+        #[inline]
+        pub fn min_length<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            limit: u64,
+        ) -> ValidationError<'i> {
+            ValidationError::min_length(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                limit,
+            )
+        }
+
+        /// `maxLength` keyword violation: string exceeds `limit` characters.
+        #[inline]
+        pub fn max_length<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            limit: u64,
+        ) -> ValidationError<'i> {
+            ValidationError::max_length(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                limit,
+            )
+        }
+
+        /// `pattern` keyword violation.
+        #[inline]
+        pub fn pattern<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            pattern: &str,
+        ) -> ValidationError<'i> {
+            ValidationError::pattern(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                pattern.to_string(),
+            )
+        }
+
+        /// `format` keyword violation.
+        #[inline]
+        pub fn format<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            format: &str,
+        ) -> ValidationError<'i> {
+            ValidationError::format(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                format,
+            )
+        }
+
+        /// `type` keyword violation: instance is not one of the expected JSON types.
+        ///
+        /// Use [`single_type`] when only one type is expected, [`multiple_types`] for union types.
+        #[inline]
+        pub fn single_type<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            ty: JsonType,
+        ) -> ValidationError<'i> {
+            ValidationError::single_type_error(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                ty,
+            )
+        }
+
+        /// `type` keyword violation for a union of expected types.
+        #[inline]
+        pub fn multiple_types<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            types: JsonTypeSet,
+        ) -> ValidationError<'i> {
+            ValidationError::multiple_type_error(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                types,
+            )
+        }
+
+        /// `minimum` keyword violation: value is less than `limit`.
+        #[inline]
+        pub fn minimum<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            limit: Value,
+        ) -> ValidationError<'i> {
+            ValidationError::minimum(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                limit,
+            )
+        }
+
+        /// `maximum` keyword violation: value exceeds `limit`.
+        #[inline]
+        pub fn maximum<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            limit: Value,
+        ) -> ValidationError<'i> {
+            ValidationError::maximum(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                limit,
+            )
+        }
+
+        /// `exclusiveMinimum` keyword violation: value is not strictly greater than `limit`.
+        #[inline]
+        pub fn exclusive_minimum<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            limit: Value,
+        ) -> ValidationError<'i> {
+            ValidationError::exclusive_minimum(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                limit,
+            )
+        }
+
+        /// `exclusiveMaximum` keyword violation: value is not strictly less than `limit`.
+        #[inline]
+        pub fn exclusive_maximum<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            limit: Value,
+        ) -> ValidationError<'i> {
+            ValidationError::exclusive_maximum(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                limit,
+            )
+        }
+
+        /// `multipleOf` keyword violation (non-arbitrary-precision).
+        #[cfg(not(feature = "arbitrary-precision"))]
+        #[inline]
+        pub fn multiple_of<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            multiple_of: f64,
+        ) -> ValidationError<'i> {
+            ValidationError::multiple_of(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                multiple_of,
+            )
+        }
+
+        /// `multipleOf` keyword violation (arbitrary-precision).
+        #[cfg(feature = "arbitrary-precision")]
+        #[inline]
+        pub fn multiple_of<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            multiple_of: Value,
+        ) -> ValidationError<'i> {
+            ValidationError::multiple_of(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                multiple_of,
+            )
+        }
+
+        /// `minItems` keyword violation: array has fewer items than `limit`.
+        #[inline]
+        pub fn min_items<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            limit: u64,
+        ) -> ValidationError<'i> {
+            ValidationError::min_items(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                limit,
+            )
+        }
+
+        /// `maxItems` keyword violation: array exceeds `limit` items.
+        #[inline]
+        pub fn max_items<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            limit: u64,
+        ) -> ValidationError<'i> {
+            ValidationError::max_items(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                limit,
+            )
+        }
+
+        /// `additionalItems` keyword violation (Draft 4 / 2019-09 tuple form).
+        #[inline]
+        pub fn additional_items<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            limit: usize,
+        ) -> ValidationError<'i> {
+            ValidationError::additional_items(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                limit,
+            )
+        }
+
+        /// `uniqueItems` keyword violation: array contains duplicate elements.
+        #[inline]
+        pub fn unique_items<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+        ) -> ValidationError<'i> {
+            ValidationError::unique_items(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+            )
+        }
+
+        /// `contains` keyword violation: no array item matched the `contains` schema.
+        #[inline]
+        pub fn contains<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+        ) -> ValidationError<'i> {
+            ValidationError::contains(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+            )
+        }
+
+        /// `minProperties` keyword violation: object has fewer properties than `limit`.
+        #[inline]
+        pub fn min_properties<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            limit: u64,
+        ) -> ValidationError<'i> {
+            ValidationError::min_properties(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                limit,
+            )
+        }
+
+        /// `maxProperties` keyword violation: object exceeds `limit` properties.
+        #[inline]
+        pub fn max_properties<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            limit: u64,
+        ) -> ValidationError<'i> {
+            ValidationError::max_properties(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                limit,
+            )
+        }
+
+        /// `required` keyword violation: object is missing `property`.
+        #[inline]
+        pub fn required<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            property: &str,
+        ) -> ValidationError<'i> {
+            ValidationError::required(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                Value::String(property.to_owned()),
+            )
+        }
+
+        /// `additionalProperties` keyword violation (the `false` schema form).
+        #[inline]
+        pub fn additional_properties<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            unexpected: Vec<String>,
+        ) -> ValidationError<'i> {
+            ValidationError::additional_properties(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                unexpected,
+            )
+        }
+
+        /// `const` keyword violation: instance does not equal the expected constant.
+        #[inline]
+        pub fn constant<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            expected: Value,
+        ) -> ValidationError<'i> {
+            ValidationError::new(
+                std::borrow::Cow::Borrowed(instance),
+                crate::error::ValidationErrorKind::Constant {
+                    expected_value: expected,
+                },
+                instance_path,
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+            )
+        }
+
+        /// `enum` keyword violation: instance does not match any of the allowed values.
+        #[inline]
+        pub fn enumeration<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            options: &Value,
+        ) -> ValidationError<'i> {
+            ValidationError::enumeration(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                options,
+            )
+        }
+
+        /// `false` schema violation: nothing is valid against a `false` schema.
+        #[inline]
+        pub fn false_schema<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+        ) -> ValidationError<'i> {
+            ValidationError::false_schema(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+            )
+        }
+
+        /// `not` keyword violation: instance is valid against the negated schema.
+        #[inline]
+        pub fn not<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            schema: Value,
+        ) -> ValidationError<'i> {
+            ValidationError::not(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                schema,
+            )
+        }
+
+        /// `anyOf` keyword violation: instance is not valid under any of the listed schemas.
+        #[inline]
+        pub fn any_of<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+        ) -> ValidationError<'i> {
+            ValidationError::any_of(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                vec![],
+            )
+        }
+
+        /// `oneOf` keyword violation: instance is not valid under any of the listed schemas.
+        #[inline]
+        pub fn one_of_not_valid<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+        ) -> ValidationError<'i> {
+            ValidationError::one_of_not_valid(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                vec![],
+            )
+        }
+
+        /// `oneOf` keyword violation: instance is valid under more than one of the listed schemas.
+        #[inline]
+        pub fn one_of_multiple_valid<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+        ) -> ValidationError<'i> {
+            ValidationError::one_of_multiple_valid(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                vec![],
+            )
+        }
+
+        /// `unevaluatedProperties` keyword violation.
+        #[inline]
+        pub fn unevaluated_properties<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            unexpected: Vec<String>,
+        ) -> ValidationError<'i> {
+            ValidationError::unevaluated_properties(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                unexpected,
+            )
+        }
+
+        /// `unevaluatedItems` keyword violation.
+        #[inline]
+        pub fn unevaluated_items<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: &'i Value,
+            unexpected: Vec<String>,
+        ) -> ValidationError<'i> {
+            ValidationError::unevaluated_items(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance,
+                unexpected,
+            )
         }
     }
 }

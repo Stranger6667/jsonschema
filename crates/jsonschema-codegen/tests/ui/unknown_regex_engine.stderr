@@ -1,0 +1,5 @@
+error: Unknown regex engine. Expected `fancy_regex` or `regex`
+ --> tests/ui/unknown_regex_engine.rs:3:34
+  |
+3 |     pattern_options = { engine = bogus }
+  |                                  ^^^^^

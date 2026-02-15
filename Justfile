@@ -54,7 +54,7 @@ release-rust VERSION:
   PREV=$(grep -m1 -oE '[0-9]+\.[0-9]+\.[0-9]+' crates/jsonschema/Cargo.toml)
   PREV_RE=${PREV//./\\.}
   DATE=$(date +%Y-%m-%d)
-  FILES=(crates/jsonschema/Cargo.toml crates/jsonschema-referencing/Cargo.toml crates/jsonschema-cli/Cargo.toml crates/jsonschema-regex/Cargo.toml)
+  FILES=(crates/jsonschema/Cargo.toml crates/jsonschema-referencing/Cargo.toml crates/jsonschema-cli/Cargo.toml crates/jsonschema-regex/Cargo.toml crates/jsonschema-codegen-core/Cargo.toml crates/jsonschema-codegen/Cargo.toml)
   sed -i "s/${PREV_RE}/${VERSION}/g" "${FILES[@]}"
   sed -i "0,/^## \[Unreleased\]$/s//## [Unreleased]\n\n## [${VERSION}] - ${DATE}/" CHANGELOG.md
   sed -i "s#compare/rust-v${PREV_RE}\.\.\.HEAD#compare/rust-v${VERSION}...HEAD#" CHANGELOG.md

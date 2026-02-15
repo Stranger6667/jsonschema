@@ -1,0 +1,5 @@
+error: Generic structs are not supported: the schema is fixed at compile time, so the generated methods cannot depend on type parameters
+ --> tests/ui/generic_struct.rs:2:17
+  |
+2 | struct Validator<T>(std::marker::PhantomData<T>);
+  |                 ^^^

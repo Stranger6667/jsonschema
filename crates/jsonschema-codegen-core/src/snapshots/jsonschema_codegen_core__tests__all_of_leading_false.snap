@@ -1,0 +1,6 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"allOf\":[false,{\"type\":\"string\"}]}"
+expression: is_valid_body(schema)
+---
+(false) && (instance.is_string())

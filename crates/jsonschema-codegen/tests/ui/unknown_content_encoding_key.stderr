@@ -1,0 +1,5 @@
+error: Expected `check` or `convert`
+ --> tests/ui/unknown_content_encoding_key.rs:3:36
+  |
+3 |     content_encodings = { "e" => { bogus = crate::c } }
+  |                                    ^^^^^

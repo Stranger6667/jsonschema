@@ -1,0 +1,9 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"$schema\":\"http://json-schema.org/draft-06/schema#\",\"maxLength\":-0.0,\"type\":\"string\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::String(s) => s.is_empty(),
+            _ => false,
+        }

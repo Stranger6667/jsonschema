@@ -1,0 +1,46 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"oneOf\":[true,{\"properties\":{\"a\":{}},\"required\":[\"a\"]}],\"type\":\"object\",\"unevaluatedProperties\":false}"
+expression: is_valid_body(schema)
+---
+({
+            let mut matched = true;
+            (if match instance {
+                serde_json::Value::Object(obj) => obj.contains_key("a"),
+                _ => true,
+            } {
+                if matched {
+                    false
+                } else {
+                    matched = true;
+                    true
+                }
+            } else {
+                true
+            }) && matched
+        })
+            && (match instance {
+                serde_json::Value::Object(obj) => {
+                    obj.iter()
+                        .all(|(__key, __value)| {
+                            let key_str = __key.as_str();
+                            if {
+                                let mut __one_of_matches = 0usize;
+                                let mut __one_of_evaluates = false;
+                                if (|instance: &serde_json::Value| validate_ref_0(
+                                    instance,
+                                ))(instance) {
+                                    __one_of_matches += 1;
+                                    __one_of_evaluates = __one_of_evaluates
+                                        || (matches!(key_str, "a"));
+                                }
+                                __one_of_matches == 1 && __one_of_evaluates
+                            } {
+                                true
+                            } else {
+                                false
+                            }
+                        })
+                }
+                _ => false,
+            })

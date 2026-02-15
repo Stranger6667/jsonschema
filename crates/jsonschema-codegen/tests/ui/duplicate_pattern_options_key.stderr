@@ -1,0 +1,5 @@
+error: Duplicate pattern_options key: `size_limit`
+ --> tests/ui/duplicate_pattern_options_key.rs:3:41
+  |
+3 |     pattern_options = { size_limit = 1, size_limit = 2 }
+  |                                         ^^^^^^^^^^

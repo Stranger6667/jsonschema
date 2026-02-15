@@ -1,0 +1,5 @@
+error: expected identifier
+ --> tests/ui/attribute_not_key_value.rs:1:25
+  |
+1 | #[jsonschema::validator(123)]
+  |                         ^^^

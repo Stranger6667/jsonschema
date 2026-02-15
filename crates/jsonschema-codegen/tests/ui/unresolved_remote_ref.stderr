@@ -1,0 +1,7 @@
+error: Registry error: Resource 'http://example.com/remote' is not present in a registry and retrieving it failed: Default retriever does not fetch resources
+ --> tests/ui/unresolved_remote_ref.rs:1:1
+  |
+1 | #[jsonschema::validator(schema = r#"{"$ref":"http://example.com/remote"}"#)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

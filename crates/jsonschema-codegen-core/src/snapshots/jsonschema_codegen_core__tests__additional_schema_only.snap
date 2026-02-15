@@ -1,0 +1,17 @@
+---
+source: crates/jsonschema-codegen-core/src/tests.rs
+description: "{\"additionalProperties\":{\"type\":\"integer\"},\"type\":\"object\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                obj.values()
+                    .all(|instance| match instance {
+                        serde_json::Value::Number(n) => {
+                            jsonschema::__private::types::is_integer(n)
+                        }
+                        _ => false,
+                    })
+            }
+            _ => false,
+        }

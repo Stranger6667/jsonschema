@@ -1,0 +1,12 @@
+error: Invalid `pattern` regular expression: [a-z]+
+ --> tests/ui/regex_engine_oversized_pattern.rs:1:1
+  |
+1 | / #[jsonschema::validator(
+2 | |     schema = r#"{"type":"string","pattern":"[a-z]+"}"#,
+3 | |     pattern_options = {
+4 | |         engine = regex,
+... |
+8 | | )]
+  | |__^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)
