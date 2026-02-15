@@ -1,0 +1,9 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"minItems\":1,\"type\":\"array\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Array(arr) => arr.len() >= 1u64 as usize,
+            _ => false,
+        }

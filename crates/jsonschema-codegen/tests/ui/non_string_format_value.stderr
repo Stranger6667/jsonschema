@@ -1,0 +1,10 @@
+error: 123 is not of type "string"
+ --> tests/ui/non_string_format_value.rs:1:1
+  |
+1 | / #[jsonschema::validator(
+2 | |     schema = r#"{"type":"string","format":123}"#,
+3 | |     validate_formats = true
+4 | | )]
+  | |__^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

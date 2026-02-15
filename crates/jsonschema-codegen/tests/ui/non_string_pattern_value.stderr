@@ -1,0 +1,7 @@
+error: 123 is not of type "string"
+ --> tests/ui/non_string_pattern_value.rs:1:1
+  |
+1 | #[jsonschema::validator(schema = r#"{"type":"string","pattern":123}"#)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

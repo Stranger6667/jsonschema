@@ -38,6 +38,8 @@ requires-python = ">=3.10"
 tests = [
     "flask>=2.2.5",
     "hypothesis>=6.79.4",
+    "hypothesis-jsonschema>=0.23.1",
+    "jsonschema>=4.23.0",
     "pytest>=7.4.4",
 ]
 bench = [

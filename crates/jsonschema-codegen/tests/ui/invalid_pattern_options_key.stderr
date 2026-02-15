@@ -1,0 +1,5 @@
+error: Unknown pattern_options key. Expected `engine`, `backtrack_limit`, `size_limit`, or `dfa_size_limit`
+ --> tests/ui/invalid_pattern_options_key.rs:5:9
+  |
+5 |         unknown = 1,
+  |         ^^^^^^^

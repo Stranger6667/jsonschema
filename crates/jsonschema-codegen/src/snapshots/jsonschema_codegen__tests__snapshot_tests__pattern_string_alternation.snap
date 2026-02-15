@@ -1,0 +1,9 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"pattern\":\"^(a|b)$\",\"type\":\"string\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::String(s) => matches!(s.as_str(), "a" | "b"),
+            _ => false,
+        }

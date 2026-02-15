@@ -1,0 +1,11 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"items\":{\"type\":\"string\"},\"type\":\"array\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Array(arr) => {
+                arr.iter().all(|instance| instance.is_string())
+            }
+            _ => false,
+        }

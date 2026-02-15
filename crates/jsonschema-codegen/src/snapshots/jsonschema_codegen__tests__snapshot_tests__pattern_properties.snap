@@ -1,0 +1,13 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"patternProperties\":{\"^str_\":{\"type\":\"string\"}}}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                obj.iter()
+                    .filter(|(key, _)| key.as_str().starts_with("str_"))
+                    .all(|(_, instance)| { instance.is_string() })
+            }
+            _ => true,
+        }

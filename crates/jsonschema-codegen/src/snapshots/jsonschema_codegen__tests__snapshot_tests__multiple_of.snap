@@ -1,0 +1,11 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"multipleOf\":3,\"type\":\"number\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Number(n) => {
+                jsonschema::keywords_helpers::numeric::is_multiple_of_integer(n, 3f64)
+            }
+            _ => false,
+        }

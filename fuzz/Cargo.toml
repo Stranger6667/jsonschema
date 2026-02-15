@@ -39,3 +39,10 @@ path = "fuzz_targets/referencing.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "codegen_parity"
+path = "fuzz_targets/codegen_parity.rs"
+test = false
+doc = false
+bench = false

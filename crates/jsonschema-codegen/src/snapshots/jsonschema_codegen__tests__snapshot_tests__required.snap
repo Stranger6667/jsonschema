@@ -1,0 +1,11 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"required\":[\"name\",\"age\"],\"type\":\"object\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                (obj.contains_key("name")) && (obj.contains_key("age"))
+            }
+            _ => false,
+        }

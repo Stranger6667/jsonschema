@@ -1,0 +1,12 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"maximum\":5,\"minimum\":5,\"type\":\"number\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Number(n) => {
+                (jsonschema::keywords_helpers::numeric::ge(n, 5u64 as u64))
+                    && (jsonschema::keywords_helpers::numeric::le(n, 5u64 as u64))
+            }
+            _ => false,
+        }

@@ -1,0 +1,9 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"pattern\":\"^[a-z]+$\",\"type\":\"string\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::String(s) => __jsonschema_regex_0(s),
+            _ => false,
+        }

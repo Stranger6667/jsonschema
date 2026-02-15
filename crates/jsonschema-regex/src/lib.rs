@@ -5,10 +5,15 @@ use regex_syntax::ast::{
     LiteralKind, Span, SpecialLiteralKind, Visitor,
 };
 
-/// Convert ECMA Script 262 regex to Rust regex on the best effort basiso.
+/// Convert ECMA Script 262 regex to Rust regex on the best effort basis.
 ///
-/// NOTE: Patterns with look arounds and backreferecnes are not supported.
-pub(crate) fn to_rust_regex(pattern: &str) -> Result<Cow<'_, str>, ()> {
+/// NOTE: Patterns with look arounds and backreferences are not supported.
+///
+/// # Errors
+///
+/// Errors are returned on unsupported or invalid regular expressions.
+#[allow(clippy::result_unit_err)]
+pub fn to_rust_regex(pattern: &str) -> Result<Cow<'_, str>, ()> {
     let mut pattern = Cow::Borrowed(pattern);
     let mut ast = loop {
         match Parser::new().parse(&pattern) {
@@ -171,6 +176,119 @@ impl<'a> Visitor for Ecma262Translator<'a> {
     }
 }
 
+/// The result of analyzing a regex pattern for literal-match optimizations.
+#[derive(Debug, PartialEq)]
+pub enum PatternAnalysis<'a> {
+    /// `^prefix` — use `starts_with(prefix)`.
+    Prefix(Cow<'a, str>),
+    /// `^exact$` — use `== exact`.
+    Exact(Cow<'a, str>),
+    /// `^(a|b|c)$` — linear scan over a small sorted set of literals.
+    Alternation(Vec<String>),
+}
+
+/// Parse a single literal alternative for use inside `^(a|b|c)$`.
+/// Accepts alphanumeric chars, `-`, `_`, `/` and the safe escapes `\/` → `/`, `\$` → `$`.
+fn parse_literal_alternative(s: &str) -> Option<String> {
+    let mut result = String::new();
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => match chars.next() {
+                Some('/') => result.push('/'),
+                Some('$') => result.push('$'),
+                _ => return None,
+            },
+            c if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '/') => result.push(c),
+            _ => return None,
+        }
+    }
+    Some(result)
+}
+
+/// Analyze a regex pattern and return a [`PatternAnalysis`] if a literal optimization applies.
+///
+/// Handles:
+/// - `^prefix` → [`PatternAnalysis::Prefix`] (use `starts_with`)
+/// - `^exact$` → [`PatternAnalysis::Exact`] (use `==`)
+/// - `^(a|b|c)$` → [`PatternAnalysis::Alternation`] (linear scan, sorted)
+///
+/// Returns `None` if a full regex engine is required.
+#[must_use]
+pub fn analyze_pattern(pattern: &str) -> Option<PatternAnalysis<'_>> {
+    // Fast path: `^(a|b|c)$` alternation.
+    if let Some(inner) = pattern
+        .strip_prefix("^(")
+        .and_then(|s| s.strip_suffix(")$"))
+    {
+        let mut alternatives: Vec<String> = inner
+            .split('|')
+            .map(parse_literal_alternative)
+            .collect::<Option<_>>()?;
+        alternatives.sort_unstable();
+        return Some(PatternAnalysis::Alternation(alternatives));
+    }
+
+    let suffix = pattern.strip_prefix('^')?;
+
+    // Fast path: no backslashes — borrow directly from the input.
+    if !suffix.contains('\\') {
+        // Trailing `$` is the end-of-string anchor → Exact match.
+        if let Some(body) = suffix.strip_suffix('$') {
+            return if body
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '/'))
+            {
+                Some(PatternAnalysis::Exact(Cow::Borrowed(body)))
+            } else {
+                None
+            };
+        }
+        return if suffix
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '/'))
+        {
+            Some(PatternAnalysis::Prefix(Cow::Borrowed(suffix)))
+        } else {
+            None
+        };
+    }
+
+    // Slow path: unescape `\/` → `/` and `\$` → `$`; a bare `$` at end means Exact.
+    let mut result = String::with_capacity(suffix.len());
+    let mut chars = suffix.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => match chars.next() {
+                Some('/') => result.push('/'),
+                Some('$') => result.push('$'),
+                _ => return None,
+            },
+            '$' => {
+                // End-of-string anchor — valid only as the very last character.
+                if chars.peek().is_none() {
+                    return Some(PatternAnalysis::Exact(Cow::Owned(result)));
+                }
+                return None;
+            }
+            c if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '/') => result.push(c),
+            _ => return None,
+        }
+    }
+    Some(PatternAnalysis::Prefix(Cow::Owned(result)))
+}
+
+/// Try to extract a simple prefix from a pattern like `^prefix`.
+/// Only matches patterns with alphanumeric characters, hyphens, underscores, and forward slashes.
+/// The escaped form `\/` is also accepted and normalised to `/`.
+#[must_use]
+pub fn pattern_as_prefix(pattern: &str) -> Option<Cow<'_, str>> {
+    match analyze_pattern(pattern) {
+        Some(PatternAnalysis::Prefix(p)) => Some(p),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,5 +327,57 @@ mod tests {
     fn test_invalid_regex(input: &str) {
         let result = to_rust_regex(input);
         assert!(result.is_err(), "Expected error for input: {input}");
+    }
+
+    #[test_case("^foo", Some("foo"))]
+    #[test_case("^x-", Some("x-"))]
+    #[test_case("^eo_band", Some("eo_band"))]
+    #[test_case("^path/to", Some("path/to"))]
+    #[test_case("^ABC123", Some("ABC123"))]
+    #[test_case("^\\/", Some("/"); "escaped slash prefix")]
+    #[test_case("^\\/path", Some("/path"); "escaped slash with suffix")]
+    #[test_case("^\\$ref", Some("$ref"); "escaped dollar ref")]
+    #[test_case("^\\$defs", Some("$defs"); "escaped dollar defs")]
+    #[test_case("foo", None; "no anchor")]
+    #[test_case("^foo$", None; "end anchor")]
+    #[test_case("^\\$ref$", None; "exact match dollar ref is not a prefix")]
+    #[test_case("^foo.*", None; "contains dot")]
+    #[test_case("^foo+", None; "contains plus")]
+    #[test_case("^foo?", None; "contains question")]
+    #[test_case("^[a-z]", None; "contains bracket")]
+    #[test_case("^foo|bar", None; "contains pipe")]
+    #[test_case("^foo(bar)", None; "contains parens")]
+    #[test_case("^foo\\d", None; "contains backslash-d")]
+    fn test_pattern_as_prefix(pattern: &str, expected: Option<&str>) {
+        assert_eq!(pattern_as_prefix(pattern).as_deref(), expected);
+    }
+
+    #[test_case("^foo", PatternAnalysis::Prefix("foo".into()) ; "prefix")]
+    #[test_case("^x-", PatternAnalysis::Prefix("x-".into()) ; "x_prefix")]
+    #[test_case("^\\$ref", PatternAnalysis::Prefix("$ref".into()) ; "escaped dollar ref prefix")]
+    #[test_case("^foo$", PatternAnalysis::Exact("foo".into()) ; "exact fast path")]
+    #[test_case("^\\$ref$", PatternAnalysis::Exact("$ref".into()) ; "exact escaped dollar ref")]
+    #[test_case(
+        "^(get|put|post|delete|options|head|patch|trace)$",
+        PatternAnalysis::Alternation(vec![
+            "delete".into(), "get".into(), "head".into(), "options".into(),
+            "patch".into(), "post".into(), "put".into(), "trace".into(),
+        ]) ; "http methods alternation"
+    )]
+    #[test_case(
+        "^(a|b|c)$",
+        PatternAnalysis::Alternation(vec!["a".into(), "b".into(), "c".into()]) ; "simple alternation sorted"
+    )]
+    fn test_analyze_pattern(pattern: &str, expected: PatternAnalysis<'_>) {
+        assert_eq!(analyze_pattern(pattern), Some(expected));
+    }
+
+    #[test_case("foo" ; "no anchor")]
+    #[test_case("^foo.*" ; "contains dot")]
+    #[test_case("^foo+" ; "contains plus")]
+    #[test_case("^[a-z]" ; "contains bracket")]
+    #[test_case("^(a|b^)$" ; "invalid char in alternation")]
+    fn test_analyze_pattern_none(pattern: &str) {
+        assert_eq!(analyze_pattern(pattern), None);
     }
 }

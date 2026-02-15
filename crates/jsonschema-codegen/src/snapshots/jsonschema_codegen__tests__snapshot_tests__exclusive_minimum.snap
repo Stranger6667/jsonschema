@@ -1,0 +1,11 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"exclusiveMinimum\":0,\"type\":\"number\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Number(n) => {
+                jsonschema::keywords_helpers::numeric::gt(n, 0u64 as u64)
+            }
+            _ => false,
+        }

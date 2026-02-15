@@ -576,6 +576,16 @@ impl Location {
         Self(Arc::from(escaped))
     }
 
+    /// Create a `Location` from an already-escaped JSON Pointer string.
+    ///
+    /// The input must be a valid JSON Pointer (e.g. `""`, `"/properties/name/minLength"`).
+    /// Tilde-escaping (`~0` / `~1`) must already be applied.  Use this when constructing
+    /// locations from compile-time string literals in generated code.
+    #[must_use]
+    pub fn from_json_pointer(pointer: &str) -> Self {
+        Self(Arc::from(pointer))
+    }
+
     /// Append a raw JSON pointer suffix (already escaped).
     /// This is more efficient than multiple `join` calls when the suffix
     /// is already a valid JSON pointer path.

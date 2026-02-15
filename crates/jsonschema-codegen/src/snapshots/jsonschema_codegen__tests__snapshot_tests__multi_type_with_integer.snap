@@ -1,0 +1,12 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"type\":[\"integer\",\"object\"]}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Number(n) => {
+                n.is_i64() || n.is_u64() || n.as_f64().is_some_and(|f| f.fract() == 0.0)
+            }
+            serde_json::Value::Object(_) => true,
+            _ => false,
+        }

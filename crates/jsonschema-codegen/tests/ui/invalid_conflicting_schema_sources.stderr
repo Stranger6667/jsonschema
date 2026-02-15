@@ -1,0 +1,5 @@
+error: Schema source is already specified. Use exactly one of `path` or `schema`
+ --> tests/ui/invalid_conflicting_schema_sources.rs:1:47
+  |
+1 | #[jsonschema::validator(path = "schema.json", schema = r#"{"type":"string"}"#)]
+  |                                               ^^^^^^

@@ -1,0 +1,12 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"maxLength\":5,\"minLength\":5,\"type\":\"string\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::String(s) => {
+                let len = s.chars().count();
+                len == 5u64 as usize
+            }
+            _ => false,
+        }

@@ -2,3 +2,6 @@ target
 corpus
 artifacts
 coverage
+
+# Generated libFuzzer seed files (hash-like filenames), keep curated seeds.
+seeds/**/[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*

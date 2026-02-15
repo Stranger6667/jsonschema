@@ -1,0 +1,10 @@
+error: Registry error: Invalid URI reference 'http://exa mple.com': unexpected character at index 10
+ --> tests/ui/invalid_base_uri.rs:1:1
+  |
+1 | / #[jsonschema::validator(
+2 | |     schema = r#"{"type":"integer"}"#,
+3 | |     base_uri = "http://exa mple.com"
+4 | | )]
+  | |__^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

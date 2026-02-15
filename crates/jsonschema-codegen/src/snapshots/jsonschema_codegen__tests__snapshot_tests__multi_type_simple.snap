@@ -1,0 +1,6 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"type\":[\"string\",\"null\"]}"
+expression: is_valid_body(schema)
+---
+matches!(instance, serde_json::Value::String(_) | serde_json::Value::Null)

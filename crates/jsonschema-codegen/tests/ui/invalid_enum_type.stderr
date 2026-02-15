@@ -1,0 +1,7 @@
+error: 1 is not of type "array"
+ --> tests/ui/invalid_enum_type.rs:1:1
+  |
+1 | #[jsonschema::validator(schema = r#"{"enum":1}"#)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

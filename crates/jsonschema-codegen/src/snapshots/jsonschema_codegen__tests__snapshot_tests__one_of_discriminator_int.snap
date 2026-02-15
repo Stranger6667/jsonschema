@@ -1,0 +1,102 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"oneOf\":[{\"properties\":{\"code\":{\"const\":1},\"data\":{\"type\":\"string\"}},\"required\":[\"code\"],\"type\":\"object\"},{\"properties\":{\"code\":{\"const\":2},\"payload\":{\"type\":\"number\"}},\"required\":[\"code\"],\"type\":\"object\"}]}"
+expression: is_valid_body(schema)
+---
+{
+            let __one_of_discriminator = match instance {
+                serde_json::Value::Object(obj) => {
+                    obj.get("code").and_then(serde_json::Value::as_i64)
+                }
+                _ => None,
+            };
+            let mut matched = false;
+            (if (matches!(__one_of_discriminator, Some(1i64))
+                && {
+                    match instance {
+                        serde_json::Value::Object(obj) => {
+                            let mut __required_0 = false;
+                            obj
+                                .iter()
+                                .all(|(key, instance)| {
+                                    let key_str = key.as_str();
+                                    match key_str {
+                                        "code" => {
+                                            __required_0 = true;
+                                            {
+                                                static EXPECTED: std::sync::LazyLock<serde_json::Number> = std::sync::LazyLock::new(||
+                                                {
+                                                    serde_json::from_str("1")
+                                                        .expect("Failed to parse const number")
+                                                });
+                                                match instance {
+                                                    serde_json::Value::Number(n) => {
+                                                        jsonschema::ext::cmp::equal_numbers(n, &*EXPECTED)
+                                                    }
+                                                    _ => false,
+                                                }
+                                            }
+                                        }
+                                        "data" => instance.is_string(),
+                                        _ => true,
+                                    }
+                                }) && __required_0
+                        }
+                        _ => false,
+                    }
+                })
+            {
+                if matched {
+                    false
+                } else {
+                    matched = true;
+                    true
+                }
+            } else {
+                true
+            }
+                && if (matches!(__one_of_discriminator, Some(2i64))
+                    && {
+                        match instance {
+                            serde_json::Value::Object(obj) => {
+                                let mut __required_0 = false;
+                                obj
+                                    .iter()
+                                    .all(|(key, instance)| {
+                                        let key_str = key.as_str();
+                                        match key_str {
+                                            "code" => {
+                                                __required_0 = true;
+                                                {
+                                                    static EXPECTED: std::sync::LazyLock<serde_json::Number> = std::sync::LazyLock::new(||
+                                                    {
+                                                        serde_json::from_str("2")
+                                                            .expect("Failed to parse const number")
+                                                    });
+                                                    match instance {
+                                                        serde_json::Value::Number(n) => {
+                                                            jsonschema::ext::cmp::equal_numbers(n, &*EXPECTED)
+                                                        }
+                                                        _ => false,
+                                                    }
+                                                }
+                                            }
+                                            "payload" => instance.is_number(),
+                                            _ => true,
+                                        }
+                                    }) && __required_0
+                            }
+                            _ => false,
+                        }
+                    })
+                {
+                    if matched {
+                        false
+                    } else {
+                        matched = true;
+                        true
+                    }
+                } else {
+                    true
+                }) && matched
+        }

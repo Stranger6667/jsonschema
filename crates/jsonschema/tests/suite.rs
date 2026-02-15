@@ -1,4 +1,4 @@
-#![allow(clippy::large_stack_arrays)]
+#![allow(clippy::large_stack_arrays, clippy::needless_pass_by_value)]
 
 mod tests {
     use jsonschema::{Draft, PatternOptions};
@@ -6,7 +6,7 @@ mod tests {
     use std::env;
     #[cfg(not(target_arch = "wasm32"))]
     use std::fs;
-    use testsuite::{suite, Test};
+    use testsuite::{suite, CodegenValidator, Test};
 
     #[suite(
     path = "crates/jsonschema/tests/suite",
@@ -22,7 +22,7 @@ mod tests {
         "draft4::optional::bignum::integer::a_negative_bignum_is_an_integer",
     ]
 )]
-    fn test_suite(test: &Test) {
+    fn test_suite(test: &Test, codegen_validator: Box<dyn CodegenValidator>) {
         enum RegexEngine {
             Regex,
             FancyRegex,
@@ -39,7 +39,12 @@ mod tests {
             "draft7" => {
                 options = options.with_draft(Draft::Draft7);
             }
-            "draft2019-09" | "draft2020-12" => {}
+            "draft2019-09" => {
+                options = options.with_draft(Draft::Draft201909);
+            }
+            "draft2020-12" => {
+                options = options.with_draft(Draft::Draft202012);
+            }
             _ => panic!("Unsupported draft"),
         }
         if should_skip_draft(test.draft) {
@@ -75,6 +80,14 @@ mod tests {
                 }
                 assert!(
                     validator.is_valid(&test.data),
+                    "Test case should be valid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                );
+                assert!(
+                    codegen_validator.is_valid(&test.data),
                     "Test case should be valid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
                     test.case,
                     test.description,
@@ -156,6 +169,14 @@ mod tests {
                     pretty_json(&test.schema),
                     pretty_json(&test.data),
                 );
+                assert!(
+                    !codegen_validator.is_valid(&test.data),
+                    "Test case should be invalid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                );
                 let Some(error) = validator.validate(&test.data).err() else {
                     panic!(
                     "Test case should be invalid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
@@ -183,6 +204,74 @@ mod tests {
                         || evaluation_path.as_str().starts_with('/'),
                     "Evaluation path should be a JSON pointer: {evaluation_path}"
                 );
+
+                // Compare codegen validate() error against dynamic validate()
+                let codegen_v_err = codegen_validator
+                    .validate(&test.data)
+                    .err()
+                    .unwrap_or_else(|| panic!(
+                        "codegen validate() should return Err:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                        test.case, test.description,
+                        pretty_json(&test.schema), pretty_json(&test.data),
+                    ));
+                let codegen_v_parts = (*codegen_v_err
+                    .downcast::<jsonschema::ValidationError<'static>>()
+                    .expect("codegen validate() error should downcast to ValidationError"))
+                .into_parts();
+                assert_eq!(
+                    codegen_v_parts.schema_path, error_parts.schema_path,
+                    "codegen validate() schema_path mismatch:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case, test.description,
+                    pretty_json(&test.schema), pretty_json(&test.data),
+                );
+                assert_eq!(
+                    codegen_v_parts.instance_path, error_parts.instance_path,
+                    "codegen validate() instance_path mismatch:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case, test.description,
+                    pretty_json(&test.schema), pretty_json(&test.data),
+                );
+
+                // Compare all codegen iter_errors() against all dynamic iter_errors()
+                let dynamic_ie_parts: Vec<_> = validator
+                    .iter_errors(&test.data)
+                    .map(jsonschema::ValidationError::into_parts)
+                    .collect();
+                let codegen_ie_parts: Vec<_> = codegen_validator
+                    .iter_errors(&test.data)
+                    .map(|boxed| {
+                        (*boxed
+                            .downcast::<jsonschema::ValidationError<'static>>()
+                            .expect(
+                                "codegen iter_errors() error should downcast to ValidationError",
+                            ))
+                        .into_parts()
+                    })
+                    .collect();
+                assert_eq!(
+                    codegen_ie_parts.len(), dynamic_ie_parts.len(),
+                    "codegen iter_errors() error count mismatch:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case, test.description,
+                    pretty_json(&test.schema), pretty_json(&test.data),
+                );
+                for (i, (dynamic, codegen)) in dynamic_ie_parts
+                    .iter()
+                    .zip(codegen_ie_parts.iter())
+                    .enumerate()
+                {
+                    assert_eq!(
+                        codegen.schema_path, dynamic.schema_path,
+                        "codegen iter_errors() error[{i}] schema_path mismatch:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                        test.case, test.description,
+                        pretty_json(&test.schema), pretty_json(&test.data),
+                    );
+                    assert_eq!(
+                        codegen.instance_path, dynamic.instance_path,
+                        "codegen iter_errors() error[{i}] instance_path mismatch:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                        test.case, test.description,
+                        pretty_json(&test.schema), pretty_json(&test.data),
+                    );
+                }
+
                 let evaluation = validator.evaluate(&test.data);
                 assert!(
                     !evaluation.flag().valid,

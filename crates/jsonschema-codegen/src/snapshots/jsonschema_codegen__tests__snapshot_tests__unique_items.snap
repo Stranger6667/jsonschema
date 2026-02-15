@@ -1,0 +1,11 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"type\":\"array\",\"uniqueItems\":true}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Array(arr) => {
+                jsonschema::keywords_helpers::unique_items::is_unique(arr)
+            }
+            _ => false,
+        }

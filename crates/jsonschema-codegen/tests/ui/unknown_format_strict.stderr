@@ -1,0 +1,11 @@
+error: Unknown format: 'made-up'. Adjust configuration to ignore unrecognized formats
+ --> tests/ui/unknown_format_strict.rs:1:1
+  |
+1 | / #[jsonschema::validator(
+2 | |     schema = r#"{"type":"string","format":"made-up"}"#,
+3 | |     validate_formats = true,
+4 | |     ignore_unknown_formats = false
+5 | | )]
+  | |__^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

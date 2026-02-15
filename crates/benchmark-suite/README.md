@@ -39,6 +39,23 @@ Sources:
 
 ## Results
 
+### `jsonschema`: Dynamic `is_valid` vs Codegen `is_valid`
+
+From `cargo bench -p jsonschema --bench jsonschema -- is_valid`:
+
+| Benchmark | Dynamic `is_valid` | Codegen `is_valid` | Speedup |
+|-----------|---------------------|--------------------|---------|
+| OpenAPI   | 1.1100 ms           | 532.20 µs          | **2.09x** |
+| Swagger   | 1.3272 ms           | 628.40 µs          | **2.11x** |
+| GeoJSON   | 368.65 µs           | 60.843 µs          | **6.06x** |
+| CITM      | 313.33 µs           | 59.574 µs          | **5.26x** |
+| Fast (Valid) | 53.250 ns        | 9.3342 ns          | **5.70x** |
+| Fast (Invalid) | 4.7597 ns      | 2.2062 ns          | **2.16x** |
+| FHIR      | 3.7823 µs           | 1.2758 µs          | **2.96x** |
+| Recursive | 6.2143 µs           | 817.82 ns          | **7.60x** |
+
+Compile-time validators are most useful when the schema is static and validation sits on a hot path.
+
 ### Comparison with Other Libraries
 
 | Benchmark     | jsonschema_valid | valico        | boon          | jsonschema (validate) |
@@ -65,4 +82,3 @@ You can find benchmark code in [benches/](benches/) and in the main `jsonschema`
 ## Contributing
 
 Contributions to improve, expand, or optimize the benchmark suite are welcome. This includes adding new benchmarks, ensuring fair representation of real-world use cases, and optimizing the configuration and usage of benchmarked libraries. Such efforts are highly appreciated as they ensure accurate and meaningful performance comparisons.
-

@@ -1,0 +1,5 @@
+error: Unknown email_options key. Expected `minimum_sub_domains`, `no_minimum_sub_domains`, `required_tld`, `allow_domain_literal`, or `allow_display_text`
+ --> tests/ui/invalid_email_options_key.rs:4:9
+  |
+4 |         unknown = true,
+  |         ^^^^^^^

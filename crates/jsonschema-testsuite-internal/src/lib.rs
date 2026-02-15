@@ -90,3 +90,19 @@ pub struct OutputRemote {
     pub uri: &'static str,
     pub contents: &'static str,
 }
+
+/// Trait for compile-time generated validators.
+///
+/// This trait allows generated validators to be passed to test functions
+/// using dynamic dispatch (`&dyn CodegenValidator`).
+pub trait CodegenValidator {
+    fn is_valid(&self, instance: &Value) -> bool;
+    /// # Errors
+    ///
+    /// Returns an error if the instance is invalid according to the schema.
+    fn validate(&self, instance: &Value) -> Result<(), Box<dyn std::any::Any + Send + Sync>>;
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+    ) -> Box<dyn Iterator<Item = Box<dyn std::any::Any + Send + Sync>> + 'i>;
+}

@@ -1,0 +1,5 @@
+error: backtrack_limit is only supported for `fancy_regex` engine
+ --> tests/ui/invalid_pattern_options_backtrack_regex.rs:5:9
+  |
+5 |         backtrack_limit = 10,
+  |         ^^^^^^^^^^^^^^^

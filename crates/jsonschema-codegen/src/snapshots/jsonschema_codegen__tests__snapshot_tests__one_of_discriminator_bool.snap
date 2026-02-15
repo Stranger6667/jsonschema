@@ -1,0 +1,78 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"oneOf\":[{\"properties\":{\"active\":{\"const\":true},\"name\":{\"type\":\"string\"}},\"required\":[\"active\"],\"type\":\"object\"},{\"properties\":{\"active\":{\"const\":false},\"archived_at\":{\"type\":\"string\"}},\"required\":[\"active\"],\"type\":\"object\"}]}"
+expression: is_valid_body(schema)
+---
+{
+            let __one_of_discriminator = match instance {
+                serde_json::Value::Object(obj) => {
+                    obj.get("active").and_then(serde_json::Value::as_bool)
+                }
+                _ => None,
+            };
+            let mut matched = false;
+            (if (matches!(__one_of_discriminator, Some(true))
+                && {
+                    match instance {
+                        serde_json::Value::Object(obj) => {
+                            let mut __required_0 = false;
+                            obj
+                                .iter()
+                                .all(|(key, instance)| {
+                                    let key_str = key.as_str();
+                                    match key_str {
+                                        "active" => {
+                                            __required_0 = true;
+                                            instance.as_bool() == Some(true)
+                                        }
+                                        "name" => instance.is_string(),
+                                        _ => true,
+                                    }
+                                }) && __required_0
+                        }
+                        _ => false,
+                    }
+                })
+            {
+                if matched {
+                    false
+                } else {
+                    matched = true;
+                    true
+                }
+            } else {
+                true
+            }
+                && if (matches!(__one_of_discriminator, Some(false))
+                    && {
+                        match instance {
+                            serde_json::Value::Object(obj) => {
+                                let mut __required_0 = false;
+                                obj
+                                    .iter()
+                                    .all(|(key, instance)| {
+                                        let key_str = key.as_str();
+                                        match key_str {
+                                            "active" => {
+                                                __required_0 = true;
+                                                instance.as_bool() == Some(false)
+                                            }
+                                            "archived_at" => instance.is_string(),
+                                            _ => true,
+                                        }
+                                    }) && __required_0
+                            }
+                            _ => false,
+                        }
+                    })
+                {
+                    if matched {
+                        false
+                    } else {
+                        matched = true;
+                        true
+                    }
+                } else {
+                    true
+                }) && matched
+        }

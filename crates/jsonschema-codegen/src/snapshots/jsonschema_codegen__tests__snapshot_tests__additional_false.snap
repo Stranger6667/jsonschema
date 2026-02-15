@@ -1,0 +1,11 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"additionalProperties\":false,\"properties\":{\"a\":{}}}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                obj.keys().all(|key| { matches!(key.as_str(), "a") })
+            }
+            _ => true,
+        }

@@ -10,9 +10,10 @@ pub(crate) fn generate_modules(
     functions: &mut HashSet<String>,
     xfail: &[String],
     draft: &str,
+    remote_resources: &[(String, String)],
 ) -> TokenStream {
     let root_path = vec![draft.to_string()];
-    generate_nested_structure(tree, functions, &root_path, xfail, draft)
+    generate_nested_structure(tree, functions, &root_path, xfail, draft, remote_resources)
 }
 
 fn generate_nested_structure(
@@ -21,6 +22,7 @@ fn generate_nested_structure(
     current_path: &[String],
     xfail: &[String],
     draft: &str,
+    remote_resources: &[(String, String)],
 ) -> TokenStream {
     let modules = tree.iter().map(|(name, node)| {
         let module_name = testsuite::sanitize_name(name.to_snake_case());
@@ -30,8 +32,14 @@ fn generate_nested_structure(
 
         match node {
             loader::TestCaseNode::Submodule(subtree) => {
-                let submodules =
-                    generate_nested_structure(subtree, functions, &new_path, xfail, draft);
+                let submodules = generate_nested_structure(
+                    subtree,
+                    functions,
+                    &new_path,
+                    xfail,
+                    draft,
+                    remote_resources,
+                );
                 quote! {
                     mod #module_ident {
                         use super::*;
@@ -52,6 +60,18 @@ fn generate_nested_structure(
                     let schema = serde_json::to_string(&case.schema).expect("Can't serialize JSON");
                     let case_description = &case.description;
 
+                    // Build the resources attribute fragment for schemas that reference localhost:1234.
+                    let resources_attr = if schema.contains("localhost:1234") {
+                        let resource_entries = remote_resources
+                            .iter()
+                            .map(|(uri, contents)| {
+                                quote! { #uri => { schema = #contents } }
+                            });
+                        quote! { , resources = { #(#resource_entries),* } }
+                    } else {
+                        quote! {}
+                    };
+
                     let test_functions = case.tests.iter().map(|test| {
                         let base_test_name = testsuite::sanitize_name(test.description.to_snake_case());
                         let test_name = idents::get_unique(&base_test_name, functions);
@@ -71,6 +91,56 @@ fn generate_nested_structure(
                         let test_description = &test.description;
                         let data = serde_json::to_string(&test.data).expect("Can't serialize JSON");
                         let valid = test.valid;
+                        let validate_formats_attr = if is_optional {
+                            quote! { , validate_formats = true }
+                        } else {
+                            quote! {}
+                        };
+
+                        // Convert draft string to Draft enum variant
+                        let draft_variant = match draft {
+                            "draft4" => quote! { referencing::Draft::Draft4 },
+                            "draft6" => quote! { referencing::Draft::Draft6 },
+                            "draft7" => quote! { referencing::Draft::Draft7 },
+                            "draft2019-09" => quote! { referencing::Draft::Draft201909 },
+                            _ => quote! { referencing::Draft::Draft202012 },
+                        };
+
+                        let validate_assertions = if valid {
+                            quote! {
+                                assert!(
+                                    Validator::validate(&test.data).is_ok(),
+                                    "codegen validate() should be Ok:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                                    test.case, test.description,
+                                    serde_json::to_string_pretty(&test.schema).unwrap_or_default(),
+                                    serde_json::to_string_pretty(&test.data).unwrap_or_default(),
+                                );
+                                assert_eq!(
+                                    Validator::iter_errors(&test.data).count(), 0,
+                                    "codegen iter_errors() should yield no errors:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                                    test.case, test.description,
+                                    serde_json::to_string_pretty(&test.schema).unwrap_or_default(),
+                                    serde_json::to_string_pretty(&test.data).unwrap_or_default(),
+                                );
+                            }
+                        } else {
+                            quote! {
+                                assert!(
+                                    Validator::validate(&test.data).is_err(),
+                                    "codegen validate() should be Err:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                                    test.case, test.description,
+                                    serde_json::to_string_pretty(&test.schema).unwrap_or_default(),
+                                    serde_json::to_string_pretty(&test.data).unwrap_or_default(),
+                                );
+                                assert!(
+                                    Validator::iter_errors(&test.data).next().is_some(),
+                                    "codegen iter_errors() should yield at least one error:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                                    test.case, test.description,
+                                    serde_json::to_string_pretty(&test.schema).unwrap_or_default(),
+                                    serde_json::to_string_pretty(&test.data).unwrap_or_default(),
+                                );
+                            }
+                        };
 
                         quote! {
                             #ignore_attr
@@ -86,7 +156,42 @@ fn generate_nested_structure(
                                     data: serde_json::from_str(#data).expect("Failed to load JSON"),
                                     valid: #valid,
                                 };
-                                inner_test(&test);
+
+                                #[jsonschema::validator(
+                                    schema = #schema,
+                                    draft = #draft_variant
+                                    #resources_attr
+                                    #validate_formats_attr
+                                )]
+                                struct Validator;
+
+                                impl testsuite::CodegenValidator for Validator {
+                                    fn is_valid(&self, instance: &serde_json::Value) -> bool {
+                                        Self::is_valid(instance)
+                                    }
+                                    fn validate(
+                                        &self,
+                                        instance: &serde_json::Value,
+                                    ) -> Result<(), Box<dyn std::any::Any + Send + Sync>> {
+                                        Self::validate(instance).map_err(|e| {
+                                            Box::new(e.to_owned())
+                                                as Box<dyn std::any::Any + Send + Sync>
+                                        })
+                                    }
+                                    fn iter_errors<'i>(
+                                        &self,
+                                        instance: &'i serde_json::Value,
+                                    ) -> Box<dyn Iterator<Item = Box<dyn std::any::Any + Send + Sync>> + 'i> {
+                                        Box::new(Self::iter_errors(instance).map(|e| {
+                                            Box::new(e.to_owned())
+                                                as Box<dyn std::any::Any + Send + Sync>
+                                        }))
+                                    }
+                                }
+
+                                let validator = Box::new(Validator);
+                                inner_test(&test, validator as Box<dyn testsuite::CodegenValidator>);
+                                #validate_assertions
                             }
                         }
                     });

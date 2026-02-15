@@ -1,0 +1,13 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+description: "{\"if\":{\"type\":\"string\"},\"then\":{\"minLength\":1}}"
+expression: is_valid_body(schema)
+---
+if instance.is_string() {
+            match instance {
+                serde_json::Value::String(s) => s.chars().count() >= 1u64 as usize,
+                _ => true,
+            }
+        } else {
+            true
+        }
