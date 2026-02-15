@@ -645,7 +645,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: ["builder", "validation", "referencing"]
+        target: ["builder", "validation", "referencing", "codegen_parity"]
     name: Fuzz ${{ matrix.target }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15

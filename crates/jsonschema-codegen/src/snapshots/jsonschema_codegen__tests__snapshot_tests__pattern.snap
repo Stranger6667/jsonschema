@@ -1,0 +1,33 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+expression: schema_to_code(schema)
+---
+struct Validator;
+#[doc(hidden)]
+#[allow(non_snake_case, dead_code, unused_variables, clippy::all)]
+mod __validator_impl {
+    use super::*;
+    #[inline]
+    fn __jsonschema_regex_0(subject: &str) -> bool {
+        static REGEX: std::sync::LazyLock<
+            Option<jsonschema::__private::fancy_regex::Regex>,
+        > = std::sync::LazyLock::new(|| {
+            let mut builder = jsonschema::__private::fancy_regex::RegexBuilder::new(
+                "^[a-z]+$",
+            );
+            builder.build().ok()
+        });
+        REGEX.as_ref().is_some_and(|re| re.is_match(subject).unwrap_or(false))
+    }
+    pub(super) fn is_valid(instance: &serde_json::Value) -> bool {
+        (match instance {
+            serde_json::Value::String(s) => (__jsonschema_regex_0(s)),
+            _ => false,
+        })
+    }
+}
+impl Validator {
+    pub fn is_valid(instance: &serde_json::Value) -> bool {
+        __validator_impl::is_valid(instance)
+    }
+}

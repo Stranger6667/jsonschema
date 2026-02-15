@@ -6,7 +6,7 @@ mod tests {
     use std::env;
     #[cfg(not(target_arch = "wasm32"))]
     use std::fs;
-    use testsuite::{suite, Test};
+    use testsuite::{suite, CodegenValidator, Test};
 
     #[suite(
     path = "crates/jsonschema/tests/suite",
@@ -22,7 +22,7 @@ mod tests {
         "draft4::optional::bignum::integer::a_negative_bignum_is_an_integer",
     ]
 )]
-    fn test_suite(test: &Test) {
+    fn test_suite(test: &Test, codegen_validator: Box<dyn CodegenValidator>) {
         enum RegexEngine {
             Regex,
             FancyRegex,
@@ -39,7 +39,12 @@ mod tests {
             "draft7" => {
                 options = options.with_draft(Draft::Draft7);
             }
-            "draft2019-09" | "draft2020-12" => {}
+            "draft2019-09" => {
+                options = options.with_draft(Draft::Draft201909);
+            }
+            "draft2020-12" => {
+                options = options.with_draft(Draft::Draft202012);
+            }
             _ => panic!("Unsupported draft"),
         }
         if should_skip_draft(test.draft) {
@@ -75,6 +80,14 @@ mod tests {
                 }
                 assert!(
                     validator.is_valid(&test.data),
+                    "Test case should be valid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                );
+                assert!(
+                    codegen_validator.is_valid(&test.data),
                     "Test case should be valid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
                     test.case,
                     test.description,
@@ -151,6 +164,14 @@ mod tests {
                 }
                 assert!(
                     !validator.is_valid(&test.data),
+                    "Test case should be invalid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                );
+                assert!(
+                    !codegen_validator.is_valid(&test.data),
                     "Test case should be invalid:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
                     test.case,
                     test.description,

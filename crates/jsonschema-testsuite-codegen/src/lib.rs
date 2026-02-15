@@ -18,15 +18,17 @@ pub fn suite(args: TokenStream, input: TokenStream) -> TokenStream {
     let test_func = parse_macro_input!(input as ItemFn);
     let test_func_ident = &test_func.sig.ident;
 
-    let remotes = match remotes::generate(&config.path) {
-        Ok(remotes) => remotes,
+    let remote_data = match remotes::generate(&config.path) {
+        Ok(data) => data,
         Err(e) => return compile_error_ts(e.to_string()),
     };
+    let remotes_static = &remote_data.static_array;
+    let remote_resources = &remote_data.resources;
 
     let mut output = quote! {
         #test_func
 
-        #remotes
+        #remotes_static
 
         struct TestsuiteRetriever;
 
@@ -65,8 +67,13 @@ pub fn suite(args: TokenStream, input: TokenStream) -> TokenStream {
             Ok(tree) => tree,
             Err(e) => return compile_error_ts(e.to_string()),
         };
-        let modules =
-            generator::generate_modules(&suite_tree, &mut functions, &config.xfail, draft);
+        let modules = generator::generate_modules(
+            &suite_tree,
+            &mut functions,
+            &config.xfail,
+            draft,
+            remote_resources,
+        );
         let module_ident = format_ident!("{}", &draft.replace('-', "_"));
         output = quote! {
             #output
@@ -76,8 +83,8 @@ pub fn suite(args: TokenStream, input: TokenStream) -> TokenStream {
                 use super::#test_func_ident;
 
                 #[inline]
-                fn inner_test(test: &Test) {
-                    #test_func_ident(test);
+                fn inner_test(test: &Test, validator: Box<dyn testsuite::CodegenValidator>) {
+                    #test_func_ident(test, validator);
                 }
                 #modules
             }

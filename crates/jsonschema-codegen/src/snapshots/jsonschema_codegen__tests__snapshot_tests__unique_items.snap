@@ -1,0 +1,23 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+expression: schema_to_code(schema)
+---
+struct Validator;
+#[doc(hidden)]
+#[allow(non_snake_case, dead_code, unused_variables, clippy::all)]
+mod __validator_impl {
+    use super::*;
+    pub(super) fn is_valid(instance: &serde_json::Value) -> bool {
+        (match instance {
+            serde_json::Value::Array(arr) => {
+                (jsonschema::keywords_helpers::unique_items::is_unique(arr))
+            }
+            _ => false,
+        })
+    }
+}
+impl Validator {
+    pub fn is_valid(instance: &serde_json::Value) -> bool {
+        __validator_impl::is_valid(instance)
+    }
+}

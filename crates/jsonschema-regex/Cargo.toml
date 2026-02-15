@@ -1,0 +1,17 @@
+[package]
+name = "jsonschema-regex"
+version = "0.44.0"
+rust-version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+regex-syntax = "0.8.9"
+
+[dev-dependencies]
+test-case = "3"
+
+[lints]
+workspace = true

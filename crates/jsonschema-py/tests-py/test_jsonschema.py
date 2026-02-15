@@ -9,6 +9,8 @@ from decimal import Decimal
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+import jsonschema as _jsonschema
+from hypothesis_jsonschema import from_schema as _from_schema
 
 from jsonschema_rs import (
     Draft4Validator,
@@ -1108,3 +1110,29 @@ def test_large_integer_in_union_type_all_drafts(validator_cls):
     assert validator.is_valid("hello")
     assert not validator.is_valid(1.5)
     assert not validator.is_valid([])
+
+
+_DRAFT_PARAMS = pytest.mark.parametrize(
+    "meta,ref_cls,draft_id",
+    [
+        (_jsonschema.Draft4Validator.META_SCHEMA,      _jsonschema.Draft4Validator,      "draft4"),
+        (_jsonschema.Draft6Validator.META_SCHEMA,      _jsonschema.Draft6Validator,      "draft6"),
+        (_jsonschema.Draft7Validator.META_SCHEMA,      _jsonschema.Draft7Validator,      "draft7"),
+        (_jsonschema.Draft201909Validator.META_SCHEMA,  _jsonschema.Draft201909Validator,  "draft2019"),
+        (_jsonschema.Draft202012Validator.META_SCHEMA,  _jsonschema.Draft202012Validator,  "draft2020"),
+    ],
+    ids=["draft4", "draft6", "draft7", "draft2019", "draft2020"],
+)
+
+
+@_DRAFT_PARAMS
+@given(data=st.data())
+def test_schema_stability(data, meta, ref_cls, draft_id):
+    """validator_for must not crash on any schema valid per its draft metaschema."""
+    try:
+        schema = data.draw(_from_schema(meta))
+    except Exception as e:
+        if "Unsupported" in type(e).__name__:
+            pytest.xfail(f"hypothesis-jsonschema does not support {draft_id}: {e}")
+        raise
+    _ = validator_for(schema)

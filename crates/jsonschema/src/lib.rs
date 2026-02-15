@@ -87,6 +87,37 @@
 //!
 //! Once built, any `format` keywords in your schema will be actively validated according to the chosen draft.
 //!
+//! # Compile-Time Validator Macro
+//!
+//! For hot paths where startup-time schema compilation is undesirable, use [`validator`] to compile
+//! schemas at build time:
+//!
+//! ```ignore
+//! #[jsonschema::validator(path = "schema.json")]
+//! struct UserValidator;
+//!
+//! let ok = UserValidator::is_valid(&serde_json::json!({"name":"Alice"}));
+//! ```
+//!
+//! Compile-time validators are best when schemas are static and validation is hot-path.
+//! Trade-offs: longer compile times, larger binaries, and less runtime configurability.
+//!
+//! Supported macro attributes:
+//!
+//! - required schema source: `path = "..."`
+//! - required schema source: `schema = r#"..."#`
+//! - `draft = referencing::Draft::...`
+//! - `base_uri = "..."`
+//! - `resources = { "<uri>" => { schema = r#"..."# } | { path = "..." } }`
+//! - `validate_formats = true|false`
+//! - `ignore_unknown_formats = true|false`
+//! - `formats = { "name" => crate::path::to::fn }`
+//! - `email_options = { ... }`
+//! - `pattern_options = { ... }`
+//!
+//! Generated validators currently expose `is_valid` only.
+//! `validate`, `iter_errors`, and `evaluate` will be added later.
+//!
 //! # Structured Output
 //!
 //! The `evaluate()` method provides access to structured validation output formats defined by
@@ -859,7 +890,6 @@ pub mod canonical;
 pub(crate) mod compiler;
 mod content_encoding;
 mod content_media_type;
-mod ecma;
 pub mod error;
 mod evaluation;
 #[doc(hidden)]
@@ -876,11 +906,208 @@ mod retriever;
 pub mod types;
 mod validator;
 
+// Public keyword helpers for compile-time code generation
+#[doc(hidden)]
+pub mod keywords_helpers {
+    pub mod unique_items {
+        pub use crate::keywords::unique_items::is_unique;
+    }
+    pub mod format {
+        pub use crate::keywords::format::{
+            is_valid_date, is_valid_datetime, is_valid_duration, is_valid_email, is_valid_hostname,
+            is_valid_idn_email, is_valid_idn_hostname, is_valid_ipv4, is_valid_ipv6, is_valid_iri,
+            is_valid_iri_reference, is_valid_json_pointer, is_valid_regex,
+            is_valid_relative_json_pointer, is_valid_time, is_valid_uri, is_valid_uri_reference,
+            is_valid_uri_template, is_valid_uuid,
+        };
+
+        /// Validate an email format using configured [`crate::EmailOptions`].
+        #[must_use]
+        pub fn is_valid_email_with_options(
+            value: &str,
+            options: Option<&crate::EmailOptions>,
+        ) -> bool {
+            crate::keywords::format::is_valid_email(value, options.map(|opts| &opts.inner))
+        }
+
+        /// Validate an IDN email format using configured [`crate::EmailOptions`].
+        #[must_use]
+        pub fn is_valid_idn_email_with_options(
+            value: &str,
+            options: Option<&crate::EmailOptions>,
+        ) -> bool {
+            crate::keywords::format::is_valid_idn_email(value, options.map(|opts| &opts.inner))
+        }
+    }
+    pub mod content {
+        /// Validate that a string is valid base64-encoded data.
+        #[must_use]
+        pub fn is_valid_base64(s: &str) -> bool {
+            crate::content_encoding::is_base64(s)
+        }
+        /// Validate that a base64-encoded string decodes to valid JSON.
+        #[must_use]
+        pub fn is_valid_base64_json(s: &str) -> bool {
+            matches!(
+                crate::content_encoding::from_base64(s),
+                Ok(Some(ref decoded)) if crate::content_media_type::is_json(decoded)
+            )
+        }
+        /// Validate that a string is valid JSON.
+        #[must_use]
+        pub fn is_valid_json_str(s: &str) -> bool {
+            crate::content_media_type::is_json(s)
+        }
+    }
+    pub mod numeric {
+        /// Compare `value` >= `limit` using runtime numeric semantics.
+        pub fn ge<T>(value: &serde_json::Number, limit: T) -> bool
+        where
+            T: Copy + num_traits::ToPrimitive,
+            u64: num_cmp::NumCmp<T>,
+            i64: num_cmp::NumCmp<T>,
+            f64: num_cmp::NumCmp<T>,
+        {
+            crate::ext::numeric::ge(value, limit)
+        }
+
+        /// Compare `value` <= `limit` using runtime numeric semantics.
+        pub fn le<T>(value: &serde_json::Number, limit: T) -> bool
+        where
+            T: Copy + num_traits::ToPrimitive,
+            u64: num_cmp::NumCmp<T>,
+            i64: num_cmp::NumCmp<T>,
+            f64: num_cmp::NumCmp<T>,
+        {
+            crate::ext::numeric::le(value, limit)
+        }
+
+        /// Compare `value` > `limit` using runtime numeric semantics.
+        pub fn gt<T>(value: &serde_json::Number, limit: T) -> bool
+        where
+            T: Copy + num_traits::ToPrimitive,
+            u64: num_cmp::NumCmp<T>,
+            i64: num_cmp::NumCmp<T>,
+            f64: num_cmp::NumCmp<T>,
+        {
+            crate::ext::numeric::gt(value, limit)
+        }
+
+        /// Compare `value` < `limit` using runtime numeric semantics.
+        pub fn lt<T>(value: &serde_json::Number, limit: T) -> bool
+        where
+            T: Copy + num_traits::ToPrimitive,
+            u64: num_cmp::NumCmp<T>,
+            i64: num_cmp::NumCmp<T>,
+            f64: num_cmp::NumCmp<T>,
+        {
+            crate::ext::numeric::lt(value, limit)
+        }
+
+        /// Check `multipleOf` with integer divisors using runtime numeric semantics.
+        #[must_use]
+        pub fn is_multiple_of_integer(value: &serde_json::Number, multiple: f64) -> bool {
+            crate::ext::numeric::is_multiple_of_integer(value, multiple)
+        }
+
+        /// Check `multipleOf` with fractional divisors using runtime numeric semantics.
+        #[must_use]
+        pub fn is_multiple_of_float(value: &serde_json::Number, multiple: f64) -> bool {
+            crate::ext::numeric::is_multiple_of_float(value, multiple)
+        }
+
+        /// Check numeric bounds with a compiled descriptor for arbitrary-precision schemas.
+        #[cfg(feature = "arbitrary-precision")]
+        pub fn check_compiled_bound(
+            value: &serde_json::Number,
+            op: u8,
+            limit_literal: &'static str,
+        ) -> bool {
+            use crate::ext::compiled_numeric::{
+                check_bound, compile_bound, BoundOp, CompiledBound,
+            };
+
+            #[inline]
+            fn literal_key(literal: &'static str) -> (usize, usize) {
+                (literal.as_ptr() as usize, literal.len())
+            }
+
+            std::thread_local! {
+                static CACHE: std::cell::RefCell<ahash::AHashMap<((usize, usize), u8), CompiledBound>> =
+                    std::cell::RefCell::new(ahash::AHashMap::default());
+            }
+
+            let op_tag = op;
+            let Some(op) = BoundOp::from_u8(op_tag) else {
+                return false;
+            };
+            let key = (literal_key(limit_literal), op_tag);
+
+            CACHE.with(|cache| {
+                let mut cache = cache.borrow_mut();
+                let compiled = cache.entry(key).or_insert_with(|| {
+                    let limit = serde_json::from_str::<serde_json::Number>(limit_literal)
+                        .expect("Codegen emitted an invalid numeric literal");
+                    compile_bound(op, &limit)
+                });
+                check_bound(compiled, value)
+            })
+        }
+
+        /// Check `multipleOf` with a compiled descriptor for arbitrary-precision schemas.
+        #[cfg(feature = "arbitrary-precision")]
+        pub fn check_compiled_multiple_of(
+            value: &serde_json::Number,
+            limit_literal: &'static str,
+        ) -> bool {
+            use crate::ext::compiled_numeric::{
+                check_multiple_of, compile_multiple_of, CompiledMultipleOf,
+            };
+
+            #[inline]
+            fn literal_key(literal: &'static str) -> (usize, usize) {
+                (literal.as_ptr() as usize, literal.len())
+            }
+
+            std::thread_local! {
+                static CACHE: std::cell::RefCell<ahash::AHashMap<(usize, usize), CompiledMultipleOf>> =
+                    std::cell::RefCell::new(ahash::AHashMap::default());
+            }
+            let key = literal_key(limit_literal);
+
+            CACHE.with(|cache| {
+                let mut cache = cache.borrow_mut();
+                let compiled = cache.entry(key).or_insert_with(|| {
+                    let limit = serde_json::from_str::<serde_json::Number>(limit_literal)
+                        .expect("Codegen emitted an invalid numeric literal");
+                    compile_multiple_of(&limit)
+                });
+                check_multiple_of(compiled, value)
+            })
+        }
+    }
+}
+
+#[doc(hidden)]
+pub mod __private {
+    pub mod fancy_regex {
+        pub use fancy_regex::{Regex, RegexBuilder};
+    }
+    pub mod regex {
+        pub use regex::{Regex, RegexBuilder};
+    }
+}
+
 pub use error::{ErrorIterator, MaskedValidationError, ValidationError, ValidationErrors};
 pub use evaluation::{
     AnnotationEntry, ErrorEntry, Evaluation, FlagOutput, HierarchicalOutput, ListOutput,
 };
 pub use http::HttpOptions;
+/// Compile-time validator macro.
+///
+/// See the crate-level ["Compile-Time Validator Macro"](#compile-time-validator-macro)
+/// section for supported attributes and examples.
+pub use jsonschema_codegen::validator;
 pub use keywords::custom::Keyword;
 pub use options::{EmailOptions, FancyRegex, PatternOptions, Regex, ValidationOptions};
 pub use referencing::{

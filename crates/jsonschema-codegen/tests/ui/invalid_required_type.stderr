@@ -1,0 +1,7 @@
+error: "x" is not of type "array"
+ --> tests/ui/invalid_required_type.rs:1:1
+  |
+1 | #[jsonschema::validator(schema = r#"{"type":"object","required":"x"}"#)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

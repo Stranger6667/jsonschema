@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: ["builder", "validation", "referencing"]
+        target: ["builder", "validation", "referencing", "codegen_parity"]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6

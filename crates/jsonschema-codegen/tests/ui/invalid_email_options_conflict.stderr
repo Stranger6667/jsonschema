@@ -1,0 +1,12 @@
+error: At most one of `minimum_sub_domains`, `no_minimum_sub_domains`, or `required_tld` may be specified
+ --> tests/ui/invalid_email_options_conflict.rs:1:1
+  |
+1 | / #[jsonschema::validator(
+2 | |     schema = r#"{"type":"string","format":"email"}"#,
+3 | |     email_options = {
+4 | |         minimum_sub_domains = 1,
+... |
+7 | | )]
+  | |__^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

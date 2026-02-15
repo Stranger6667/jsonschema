@@ -1,0 +1,24 @@
+---
+source: crates/jsonschema-codegen/src/tests.rs
+expression: schema_to_code(schema)
+---
+struct Validator;
+#[doc(hidden)]
+#[allow(non_snake_case, dead_code, unused_variables, clippy::all)]
+mod __validator_impl {
+    use super::*;
+    pub(super) fn is_valid(instance: &serde_json::Value) -> bool {
+        (match instance {
+            serde_json::Value::Number(n) => {
+                n.is_i64() || n.is_u64() || n.as_f64().is_some_and(|f| f.fract() == 0.0)
+            }
+            serde_json::Value::Object(_) => true,
+            _ => false,
+        })
+    }
+}
+impl Validator {
+    pub fn is_valid(instance: &serde_json::Value) -> bool {
+        __validator_impl::is_valid(instance)
+    }
+}

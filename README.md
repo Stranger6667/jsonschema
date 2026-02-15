@@ -58,6 +58,38 @@ See more usage examples in the [documentation](https://docs.rs/jsonschema).
 
 > ⚠️ **Upgrading from older versions?** Check our [Migration Guide](https://github.com/Stranger6667/jsonschema/blob/master/MIGRATION.md) for key changes.
 
+## Compile-time validators
+
+Use `#[jsonschema::validator(...)]` to compile schema validation code at build time:
+
+```rust,ignore
+#[jsonschema::validator(
+    path = "schema.json",
+    draft = referencing::Draft::Draft202012,
+    validate_formats = true
+)]
+struct Validator;
+
+assert!(Validator::is_valid(&serde_json::json!("value")));
+```
+
+Compile-time validators are best when your schema is static and validation is on a hot path.
+Trade-offs: longer compile times, larger binaries, and less runtime configurability than dynamic builders.
+
+Current MVP scope: generated validators expose `is_valid` only.
+`validate`, `iter_errors`, and `evaluate` will be added later.
+
+Supported macro configuration includes:
+
+- schema source: `path` or `schema`
+- `draft`, `base_uri`, `resources`
+- `validate_formats`, `ignore_unknown_formats`
+- custom `formats`
+- `email_options`
+- `pattern_options`
+
+See crate docs for complete details: <https://docs.rs/jsonschema/latest/jsonschema/macro.validator.html>.
+
 ## Highlights
 
 - 📚 Full support for popular JSON Schema drafts
@@ -140,6 +172,7 @@ We welcome contributions! Here's how you can help:
 - Fix failing test cases from the [JSON Schema test suite](https://bowtie.report/#/implementations/rust-jsonschema)
 
 See [CONTRIBUTING.md](https://github.com/Stranger6667/jsonschema/blob/master/CONTRIBUTING.md) for more details.
+Fuzzing targets and commands are documented in [`fuzz/README.md`](fuzz/README.md).
 
 ## License
 

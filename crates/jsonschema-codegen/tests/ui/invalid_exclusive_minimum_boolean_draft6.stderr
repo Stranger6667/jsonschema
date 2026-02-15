@@ -1,0 +1,9 @@
+error: true is not of type "number"
+ --> tests/ui/invalid_exclusive_minimum_boolean_draft6.rs:1:1
+  |
+1 | / #[jsonschema::validator(
+2 | |     schema = r#"{"$schema":"http://json-schema.org/draft-06/schema#","exclusiveMinimum":true}"#
+3 | | )]
+  | |__^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)
