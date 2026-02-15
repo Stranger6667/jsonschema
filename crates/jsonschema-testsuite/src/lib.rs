@@ -1,2 +1,2 @@
 pub use codegen::{output_suite, suite};
-pub use internal::{OutputFormat, OutputRemote, OutputTest, Test};
+pub use internal::{CodegenValidator, OutputFormat, OutputRemote, OutputTest, Test};

@@ -72,6 +72,15 @@ fn generate_nested_structure(
                         let data = serde_json::to_string(&test.data).expect("Can't serialize JSON");
                         let valid = test.valid;
 
+                        // Convert draft string to Draft enum variant
+                        let draft_variant = match draft {
+                            "draft4" => quote! { referencing::Draft::Draft4 },
+                            "draft6" => quote! { referencing::Draft::Draft6 },
+                            "draft7" => quote! { referencing::Draft::Draft7 },
+                            "draft2019-09" => quote! { referencing::Draft::Draft201909 },
+                            _ => quote! { referencing::Draft::Draft202012 },
+                        };
+
                         quote! {
                             #ignore_attr
                             #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
@@ -86,7 +95,22 @@ fn generate_nested_structure(
                                     data: serde_json::from_str(#data).expect("Failed to load JSON"),
                                     valid: #valid,
                                 };
-                                inner_test(&test);
+
+                                #[jsonschema::validator(schema = #schema, draft = #draft_variant)]
+                                struct Validator;
+
+                                impl testsuite::CodegenValidator for Validator {
+                                    fn is_valid(&self, instance: &serde_json::Value) -> bool {
+                                        Self::is_valid(instance)
+                                    }
+                                    fn validate(&self, instance: &serde_json::Value) -> Result<(), Box<dyn std::error::Error + 'static>> {
+                                        Self::validate(instance).map_err(|e| Box::new(e) as Box<dyn std::error::Error + 'static>)
+                                    }
+                                }
+
+                                let validator = Box::new(Validator);
+
+                                inner_test(&test, validator as Box<dyn testsuite::CodegenValidator>);
                             }
                         }
                     });

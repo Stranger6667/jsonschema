@@ -858,7 +858,6 @@ compile_error!(
 pub(crate) mod compiler;
 mod content_encoding;
 mod content_media_type;
-mod ecma;
 pub mod error;
 mod evaluation;
 #[doc(hidden)]
@@ -875,11 +874,29 @@ mod retriever;
 pub mod types;
 mod validator;
 
+// Public keyword helpers for compile-time code generation
+#[doc(hidden)]
+pub mod keywords_helpers {
+    pub mod unique_items {
+        pub use crate::keywords::unique_items::is_unique;
+    }
+    pub mod format {
+        pub use crate::keywords::format::{
+            is_valid_date, is_valid_datetime, is_valid_duration, is_valid_email, is_valid_hostname,
+            is_valid_idn_email, is_valid_idn_hostname, is_valid_ipv4, is_valid_ipv6, is_valid_iri,
+            is_valid_iri_reference, is_valid_json_pointer, is_valid_relative_json_pointer,
+            is_valid_time, is_valid_uri, is_valid_uri_reference, is_valid_uri_template,
+            is_valid_uuid,
+        };
+    }
+}
+
 pub use error::{ErrorIterator, MaskedValidationError, ValidationError, ValidationErrors};
 pub use evaluation::{
     AnnotationEntry, ErrorEntry, Evaluation, FlagOutput, HierarchicalOutput, ListOutput,
 };
 pub use http::HttpOptions;
+pub use jsonschema_codegen::validator;
 pub use keywords::custom::Keyword;
 pub use options::{EmailOptions, FancyRegex, PatternOptions, Regex, ValidationOptions};
 pub use referencing::{

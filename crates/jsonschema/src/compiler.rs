@@ -1,7 +1,6 @@
 use crate::{
     content_encoding::{ContentEncodingCheckType, ContentEncodingConverterType},
     content_media_type::ContentMediaTypeCheckType,
-    ecma,
     keywords::{
         self,
         custom::{CustomKeyword, KeywordFactory},
@@ -247,7 +246,7 @@ impl<'a> Context<'a> {
         if let Some(entry) = self.shared.pattern_cache.borrow().get(pattern) {
             return Ok(Arc::clone(&entry.translated));
         }
-        let translated = Arc::<str>::from(ecma::to_rust_regex(pattern)?);
+        let translated = Arc::<str>::from(jsonschema_core::regex::to_rust_regex(pattern)?);
         self.shared.pattern_cache.borrow_mut().insert(
             Arc::from(pattern),
             PatternCacheEntry {

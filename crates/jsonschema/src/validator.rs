@@ -80,7 +80,7 @@ impl ValidationContext {
                 return result;
             }
         }
-        let result = crate::ecma::to_rust_regex(pattern).is_ok();
+        let result = jsonschema_core::regex::to_rust_regex(pattern).is_ok();
         self.ecma_regex_cache
             .get_or_insert_with(AHashMap::new)
             .insert(pattern.to_owned(), result);

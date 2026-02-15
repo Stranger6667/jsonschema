@@ -43,7 +43,8 @@ macro_rules! num_cmp {
 
 /// Compare two JSON numbers for equality with arbitrary precision support
 #[inline]
-pub(crate) fn equal_numbers(left: &serde_json::Number, right: &serde_json::Number) -> bool {
+#[doc(hidden)]
+pub fn equal_numbers(left: &serde_json::Number, right: &serde_json::Number) -> bool {
     #[cfg(feature = "arbitrary-precision")]
     {
         use crate::ext::numeric::bignum;
