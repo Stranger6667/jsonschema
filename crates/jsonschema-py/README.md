@@ -38,8 +38,8 @@ assert validator.is_valid(instance)
 
 # Structured output (JSON Schema Output v1)
 evaluation = validator.evaluate(instance)
-for annotation in evaluation.annotations():
-    print(f"Annotation at {annotation['schemaLocation']}: {annotation['annotations']}")
+for error in evaluation.errors():
+    print(f"Error at {error['instanceLocation']}: {error['error']}")
 ```
 
 > ⚠️ **Upgrading from older versions?** Check our [Migration Guide](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-py/MIGRATION.md) for key changes.
@@ -323,11 +323,23 @@ assert hierarchical == {
     ],
 }
 
-for error in evaluation.errors():
-    print(error["instanceLocation"], error["error"])
+assert evaluation.errors() == [
+    {
+        "schemaLocation": "/items/type",
+        "absoluteKeywordLocation": None,
+        "instanceLocation": "/1",
+        "error": '"oops" is not of type "integer"',
+    }
+]
 
-for annotation in evaluation.annotations():
-    print(annotation["schemaLocation"], annotation["annotations"])
+assert evaluation.annotations() == [
+    {
+        "schemaLocation": "/prefixItems",
+        "absoluteKeywordLocation": None,
+        "instanceLocation": "",
+        "annotations": 0,
+    }
+]
 ```
 
 ### Arbitrary-Precision Numbers

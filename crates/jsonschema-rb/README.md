@@ -36,8 +36,8 @@ validator.valid?(instance)  # => true
 
 # Structured output (JSON Schema Output v1)
 evaluation = validator.evaluate(instance)
-evaluation.annotations.each do |ann|
-  puts "Annotation at #{ann[:schemaLocation]}: #{ann[:annotations]}"
+evaluation.errors.each do |err|
+  puts "Error at #{err[:instanceLocation]}: #{err[:error]}"
 end
 ```
 
@@ -149,7 +149,7 @@ Each custom keyword class must implement:
 
 ### Structured evaluation output
 
-When you need more than a boolean result, use the `evaluate` API to access the JSON Schema Output v1 formats:
+When you need more than a boolean result, use the `evaluate` API to access the [JSON Schema Output v1](https://json-schema.org/draft/2020-12/json-schema-core#name-output-formatting) formats:
 
 ```ruby
 schema = {
@@ -165,34 +165,79 @@ validator = JSONSchema.validator_for(schema)
 evaluation = validator.evaluate({ "age" => "not_an_integer" })
 
 evaluation.valid?  # => false
+```
 
-# Flag output (simplest)
+**Flag output** — simplest, just valid/invalid:
+
+```ruby
 evaluation.flag
-# => { "valid" => false }
+# => {valid: false}
+```
 
-# List output (flat)
+**List output** — flat list of all evaluation nodes:
+
+```ruby
 evaluation.list
-# => { "valid" => false, "details" => [
-#   { "valid" => false, "evaluationPath" => "", "instanceLocation" => "", "schemaLocation" => "" },
-#   { "valid" => false, "evaluationPath" => "/required", "instanceLocation" => "", "schemaLocation" => "/required",
-#     "errors" => { "required" => "\"name\" is a required property" } },
-#   ...
-# ] }
+# => {valid: false,
+#     details: [
+#       {valid: false, evaluationPath: "", schemaLocation: "", instanceLocation: ""},
+#       {valid: true, evaluationPath: "/type", schemaLocation: "/type", instanceLocation: ""},
+#       {valid: false, evaluationPath: "/required", schemaLocation: "/required",
+#        instanceLocation: "",
+#        errors: {"required" => "\"name\" is a required property"}},
+#       {valid: false, evaluationPath: "/properties", schemaLocation: "/properties",
+#        instanceLocation: "", droppedAnnotations: ["age"]},
+#       {valid: false, evaluationPath: "/properties/age", schemaLocation: "/properties/age",
+#        instanceLocation: "/age"},
+#       {valid: false, evaluationPath: "/properties/age/type",
+#        schemaLocation: "/properties/age/type", instanceLocation: "/age",
+#        errors: {"type" => "\"not_an_integer\" is not of type \"integer\""}}
+#     ]}
+```
 
-# Hierarchical output (nested tree following schema structure)
+**Hierarchical output** — nested tree following schema structure:
+
+```ruby
 evaluation.hierarchical
-# => { "valid" => false, "evaluationPath" => "", "instanceLocation" => "", "schemaLocation" => "",
-#   "details" => [ ... ] }
+# => {valid: false, evaluationPath: "", schemaLocation: "", instanceLocation: "",
+#     details: [
+#       {valid: true, evaluationPath: "/type", schemaLocation: "/type", instanceLocation: ""},
+#       {valid: false, evaluationPath: "/required", schemaLocation: "/required",
+#        instanceLocation: "",
+#        errors: {"required" => "\"name\" is a required property"}},
+#       {valid: false, evaluationPath: "/properties", schemaLocation: "/properties",
+#        instanceLocation: "", droppedAnnotations: ["age"],
+#        details: [
+#          {valid: false, evaluationPath: "/properties/age",
+#           schemaLocation: "/properties/age", instanceLocation: "/age",
+#           details: [
+#             {valid: false, evaluationPath: "/properties/age/type",
+#              schemaLocation: "/properties/age/type", instanceLocation: "/age",
+#              errors: {"type" => "\"not_an_integer\" is not of type \"integer\""}}
+#           ]}
+#        ]}
+#     ]}
+```
 
-# Collected errors across all nodes
+**Collected errors** — flat list of all errors across evaluation nodes:
+
+```ruby
 evaluation.errors
-# => [{ "schemaLocation" => "/required", "instanceLocation" => "",
-#        "absoluteKeywordLocation" => nil, "error" => "\"name\" is a required property" }, ...]
+# => [{schemaLocation: "/required", absoluteKeywordLocation: nil,
+#      instanceLocation: "", error: "\"name\" is a required property"},
+#     {schemaLocation: "/properties/age/type", absoluteKeywordLocation: nil,
+#      instanceLocation: "/age",
+#      error: "\"not_an_integer\" is not of type \"integer\""}]
+```
 
-# Collected annotations
-evaluation.annotations
-# => [{ "schemaLocation" => "/properties", "instanceLocation" => "",
-#        "absoluteKeywordLocation" => nil, "annotations" => ["age"] }]
+**Collected annotations** — flat list of annotations from successfully validated nodes.
+When a node fails validation, its annotations appear as `droppedAnnotations` in the list/hierarchical output instead.
+
+```ruby
+valid_eval = validator.evaluate({ "name" => "Alice", "age" => 30 })
+valid_eval.annotations
+# => [{schemaLocation: "/properties", absoluteKeywordLocation: nil,
+#      instanceLocation: "", annotations: ["age", "name"]}]
 ```
 
 ## Meta-Schema Validation
