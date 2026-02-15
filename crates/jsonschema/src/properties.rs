@@ -4,11 +4,11 @@ use crate::{
     compiler,
     node::SchemaNode,
     paths::{LazyEvaluationPath, Location},
-    regex::pattern_as_prefix,
     validator::Validate as _,
     ValidationContext,
 };
 use ahash::AHashMap;
+use jsonschema_core::regex::pattern_as_prefix;
 use serde_json::{Map, Value};
 
 use crate::ValidationError;

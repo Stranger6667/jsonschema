@@ -6,10 +6,11 @@ use crate::{
     keywords::CompilationResult,
     options::PatternEngineOptions,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
-    regex::{pattern_as_prefix, RegexEngine, RegexError},
+    regex::{RegexEngine, RegexError},
     types::JsonType,
     validator::{Validate, ValidationContext},
 };
+use jsonschema_core::regex::pattern_as_prefix;
 use serde_json::{Map, Value};
 
 /// Validator for patterns that are simple prefixes (optimized path).

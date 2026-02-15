@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 use std::sync::{Arc, OnceLock};
 
 use crate::{
-    compiler, ecma,
+    compiler,
     evaluation::ErrorDescription,
     node::SchemaNode,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
@@ -296,7 +296,8 @@ fn compile_pattern_properties<'a>(
 
     for (pattern, schema) in patterns {
         let schema_ctx = pat_ctx.new_at_location(pattern.as_str());
-        let Ok(regex) = ecma::to_rust_regex(pattern).and_then(|p| Regex::new(&p).map_err(|_| ()))
+        let Ok(regex) = jsonschema_core::regex::to_rust_regex(pattern)
+            .and_then(|p| Regex::new(&p).map_err(|_| ()))
         else {
             return Err(ValidationError::format(
                 schema_ctx.location().clone(),

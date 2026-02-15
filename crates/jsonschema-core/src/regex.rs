@@ -5,10 +5,15 @@ use regex_syntax::ast::{
     LiteralKind, Span, SpecialLiteralKind, Visitor,
 };
 
-/// Convert ECMA Script 262 regex to Rust regex on the best effort basiso.
+/// Convert ECMA Script 262 regex to Rust regex on the best effort basis.
 ///
-/// NOTE: Patterns with look arounds and backreferecnes are not supported.
-pub(crate) fn to_rust_regex(pattern: &str) -> Result<Cow<'_, str>, ()> {
+/// NOTE: Patterns with look arounds and backreferences are not supported.
+///
+/// # Errors
+///
+/// Errors are returned on unsupported or invalid regular expressions.
+#[allow(clippy::result_unit_err)]
+pub fn to_rust_regex(pattern: &str) -> Result<Cow<'_, str>, ()> {
     let mut pattern = Cow::Borrowed(pattern);
     let mut ast = loop {
         match Parser::new().parse(&pattern) {
@@ -171,6 +176,41 @@ impl<'a> Visitor for Ecma262Translator<'a> {
     }
 }
 
+/// Try to extract a simple prefix from a pattern like `^prefix`.
+/// Only matches patterns with alphanumeric characters, hyphens, underscores, and forward slashes.
+/// The escaped form `\/` is also accepted and normalised to `/`.
+#[must_use]
+pub fn pattern_as_prefix(pattern: &str) -> Option<Cow<'_, str>> {
+    let suffix = pattern.strip_prefix('^')?;
+
+    // Fast path: no backslashes — borrow directly from the input.
+    if !suffix.contains('\\') {
+        return if suffix
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '/'))
+        {
+            Some(Cow::Borrowed(suffix))
+        } else {
+            None
+        };
+    }
+
+    // Slow path: unescape `\/` → `/`; reject any other escape or metacharacter.
+    let mut result = String::with_capacity(suffix.len());
+    let mut chars = suffix.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => match chars.next() {
+                Some('/') => result.push('/'),
+                _ => return None,
+            },
+            c if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '/') => result.push(c),
+            _ => return None,
+        }
+    }
+    Some(Cow::Owned(result))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,5 +249,25 @@ mod tests {
     fn test_invalid_regex(input: &str) {
         let result = to_rust_regex(input);
         assert!(result.is_err(), "Expected error for input: {input}");
+    }
+
+    #[test_case("^foo", Some("foo"))]
+    #[test_case("^x-", Some("x-"))]
+    #[test_case("^eo_band", Some("eo_band"))]
+    #[test_case("^path/to", Some("path/to"))]
+    #[test_case("^ABC123", Some("ABC123"))]
+    #[test_case("^\\/", Some("/"); "escaped slash prefix")]
+    #[test_case("^\\/path", Some("/path"); "escaped slash with suffix")]
+    #[test_case("foo", None; "no anchor")]
+    #[test_case("^foo$", None; "end anchor")]
+    #[test_case("^foo.*", None; "contains dot")]
+    #[test_case("^foo+", None; "contains plus")]
+    #[test_case("^foo?", None; "contains question")]
+    #[test_case("^[a-z]", None; "contains bracket")]
+    #[test_case("^foo|bar", None; "contains pipe")]
+    #[test_case("^foo(bar)", None; "contains parens")]
+    #[test_case("^foo\\d", None; "contains backslash-d")]
+    fn test_pattern_as_prefix(pattern: &str, expected: Option<&str>) {
+        assert_eq!(pattern_as_prefix(pattern).as_deref(), expected);
     }
 }

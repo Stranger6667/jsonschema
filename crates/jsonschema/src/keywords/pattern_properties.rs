@@ -8,10 +8,11 @@ use crate::{
     node::SchemaNode,
     options::PatternEngineOptions,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
-    regex::{pattern_as_prefix, RegexEngine},
+    regex::RegexEngine,
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
 };
+use jsonschema_core::regex::pattern_as_prefix;
 use serde_json::{Map, Value};
 
 /// Validator for multiple patterns using compiled regex.
@@ -533,7 +534,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{regex::pattern_as_prefix, tests_util};
+    use crate::tests_util;
+
     use serde_json::{json, Value};
     use test_case::test_case;
 
@@ -562,24 +564,6 @@ mod tests {
             .build(schema)
             .expect_err("Should fail to compile");
         assert!(error.to_string().contains("regex"));
-    }
-
-    #[test_case("^foo", Some("foo"))]
-    #[test_case("^x-", Some("x-"))]
-    #[test_case("^eo_band", Some("eo_band"))]
-    #[test_case("^path/to", Some("path/to"))]
-    #[test_case("^ABC123", Some("ABC123"))]
-    #[test_case("foo", None; "no anchor")]
-    #[test_case("^foo$", None; "end anchor")]
-    #[test_case("^foo.*", None; "contains dot")]
-    #[test_case("^foo+", None; "contains plus")]
-    #[test_case("^foo?", None; "contains question")]
-    #[test_case("^[a-z]", None; "contains bracket")]
-    #[test_case("^foo|bar", None; "contains pipe")]
-    #[test_case("^foo(bar)", None; "contains parens")]
-    #[test_case("^foo\\d", None; "contains backslash")]
-    fn test_pattern_as_prefix(pattern: &str, expected: Option<&str>) {
-        assert_eq!(pattern_as_prefix(pattern), expected);
     }
 
     // Test that prefix optimization works correctly for validation
