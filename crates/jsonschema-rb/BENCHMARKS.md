@@ -4,7 +4,7 @@ A benchmarking suite for comparing different Ruby JSON Schema implementations.
 
 ## Implementations
 
-- `jsonschema` (latest version in this repo)
+- `jsonschema_rs` (latest version in this repo)
 - [json_schemer](https://rubygems.org/gems/json_schemer) (v2.5.0)
 - [json-schema](https://rubygems.org/gems/json-schema) (v6.1.0)
 - [rj_schema](https://rubygems.org/gems/rj_schema) (v1.0.5) - RapidJSON-based (C++)
@@ -43,20 +43,28 @@ Sources:
 - Fast: [fastjsonschema benchmarks](https://github.com/horejsek/python-fastjsonschema/blob/master/performance.py#L15)
 - FHIR: [Schema](http://hl7.org/fhir/R4/fhir.schema.json.zip) (R4 v4.0.1), [Example](http://hl7.org/fhir/R4/patient-example-d.json.html)
 
+## Methodology
+
+Not all libraries support the same compile-once, validate-many pattern, which affects what each iteration measures:
+
+- **jsonschema_rs** and **json_schemer** both support pre-compiling a schema into a reusable validator object. The benchmark compiles the schema once and measures only validation time.
+- **json-schema** only provides class methods (`JSON::Validator.validate`). There is no way to pre-compile a schema into a reusable validator object, so each iteration includes schema processing overhead.
+- **rj_schema** accepts the schema as a string argument to `validate()` — the constructor only handles remote `$ref` mappings, not main schema compilation. Each iteration re-parses the schema. Additionally, `rj_schema` operates on JSON strings rather than parsed Ruby objects, so its timings include JSON parsing overhead.
+
 ## Results
 
 ### Comparison with Other Libraries
 
-| Benchmark        | json-schema              | rj_schema                      | json_schemer                   | jsonschema (validate) |
+| Benchmark        | json-schema              | rj_schema                      | json_schemer                   | jsonschema_rs |
 |------------------|--------------------------|--------------------------------|--------------------------------|-----------------------|
-| OpenAPI          | 2.37 s (**x174.36**)     | 380.78 ms (**x28.07**)         | 406.75 ms (**x29.98**)         | 13.57 ms              |
-| Swagger          | 4.02 s (**x534.56**)     | - (4)                          | - (2)                          | 7.52 ms               |
-| Canada (GeoJSON) | - (1)                    | 74.83 ms (**x9.80**)           | 1.07 s (**x140.50**)           | 7.63 ms               |
-| CITM Catalog     | - (1)                    | 17.25 ms (**x6.56**)           | 67.85 ms (**x25.79**)          | 2.63 ms               |
-| Fast (Valid)     | - (1)                    | 68.04 µs (**x125.06**)         | 30.21 µs (**x55.53**)          | 544.03 ns             |
-| Fast (Invalid)   | - (1)                    | - (3)                          | 29.83 µs (**x67.58**)          | 441.40 ns             |
-| FHIR             | 403.60 ms (**x75105.32**)| 2.10 s (**x391159.68**)        | 8.44 ms (**x1571.47**)         | 5.37 µs               |
-| Recursive        | - (1)                    | 3.15 ms (**x224.38**)          | 21.25 s (**x1513937.35**)      | 14.04 µs              |
+| OpenAPI          | 2.25 s (**x205.61**)     | 378.91 ms (**x34.68**)         | 398.68 ms (**x36.48**)         | 10.93 ms              |
+| Swagger          | 3.32 s (**x473.37**)     | - (4)                          | - (2)                          | 7.02 ms               |
+| Canada (GeoJSON) | - (1)                    | 75.41 ms (**x9.97**)           | 885.18 ms (**x117.01**)        | 7.56 ms               |
+| CITM Catalog     | - (1)                    | 17.24 ms (**x6.96**)           | 74.15 ms (**x29.91**)          | 2.48 ms               |
+| Fast (Valid)     | - (1)                    | 66.82 µs (**x118.46**)         | 31.64 µs (**x56.09**)          | 564.05 ns             |
+| Fast (Invalid)   | - (1)                    | - (3)                          | 31.57 µs (**x70.08**)          | 450.55 ns             |
+| FHIR             | 396.47 ms (**x71832.10**)| 2.15 s (**x388783.53**)        | 8.56 ms (**x1550.24**)         | 5.52 µs               |
+| Recursive        | - (1)                    | 3.04 ms (**x214.51**)          | 20.73 s (**x1461544.33**)      | 14.19 µs              |
 
 Notes:
 

@@ -109,7 +109,7 @@ DATA_STR.freeze
 
 def try_compile(lib, schema, schema_str, instance_str) # rubocop:disable Metrics/MethodLength
   case lib
-  when "jsonschema"
+  when "jsonschema_rs"
     JSONSchema.validator_for(schema)
   when "json_schemer"
     JSONSchemer.schema(schema)
@@ -119,14 +119,15 @@ def try_compile(lib, schema, schema_str, instance_str) # rubocop:disable Metrics
     JSON::Validator.fully_validate(schema, {})
     :class_method
   when "rj_schema"
-    # rj_schema uses RapidJSON (C++); verify it produces correct results
-    # by cross-checking against jsonschema (Rust)
-    result = RjSchema::Validator.new.validate(schema_str, instance_str)
+    # rj_schema uses RapidJSON; verify it produces correct results
+    # by cross-checking against jsonschema_rs
+    rj_validator = RjSchema::Validator.new
+    result = rj_validator.validate(schema_str, instance_str)
     rj_valid = result[:machine_errors].empty?
     rs_valid = JSONSchema.valid?(schema, JSON.parse(instance_str))
-    raise "rj_schema disagrees with jsonschema" if rj_valid != rs_valid
+    raise "rj_schema disagrees with jsonschema_rs" if rj_valid != rs_valid
 
-    :rj_validator
+    rj_validator
   end
 rescue StandardError => e
   warn "  #{lib}: skipped (#{e.class}: #{e.message[0..80]})"
@@ -135,13 +136,13 @@ end
 
 def make_validate_proc(lib, validator, schema, instance, schema_str, instance_str)
   case lib
-  when "jsonschema", "json_schemer"
+  when "jsonschema_rs", "json_schemer"
     -> { validator.valid?(instance) }
   when "json-schema"
     -> { JSON::Validator.validate(schema, instance) }
   when "rj_schema"
-    # rj_schema works with JSON strings; includes parse time
-    -> { RjSchema::Validator.new.validate(schema_str, instance_str) }
+    # rj_schema works with JSON strings; re-parses schema each call (no pre-compilation API)
+    -> { validator.validate(schema_str, instance_str) }
   end
 end
 
@@ -154,10 +155,10 @@ def print_table_row(name, col1, col2, col3, col4)
        "| #{col3.to_s.ljust(30)} | #{col4.to_s.ljust(25)} |"
 end
 
-LIBRARIES = %w[json-schema rj_schema json_schemer jsonschema].freeze
+LIBRARIES = %w[json-schema rj_schema json_schemer jsonschema_rs].freeze
 
 BenchHelper.section("JSON Schema Validation Benchmarks")
-puts "jsonschema (Rust) vs json_schemer vs json-schema vs rj_schema"
+puts "jsonschema_rs vs json_schemer vs json-schema vs rj_schema"
 rust_version = `rustc --version 2>/dev/null`.strip.split[1] || "unknown"
 puts "Ruby #{RUBY_VERSION}, Rust #{rust_version}"
 puts
@@ -201,10 +202,10 @@ end
 # Print markdown summary table
 BenchHelper.section("Summary")
 
-baseline_lib = "jsonschema"
+baseline_lib = "jsonschema_rs"
 libs = %w[json-schema rj_schema json_schemer]
 header = "| #{'Benchmark'.ljust(20)} | #{'json-schema'.ljust(30)} | #{'rj_schema'.ljust(30)} " \
-         "| #{'json_schemer'.ljust(30)} | #{'jsonschema (validate)'.ljust(25)} |"
+         "| #{'json_schemer'.ljust(30)} | #{'jsonschema_rs'.ljust(25)} |"
 separator = "|#{'-' * 22}|#{'-' * 32}|#{'-' * 32}|#{'-' * 32}|#{'-' * 27}|"
 
 puts header
@@ -223,8 +224,8 @@ results.each do |row|
       BenchHelper.format_time(t)
     end
   end
-  jsonschema_col = baseline ? BenchHelper.format_time(baseline) : "-"
-  print_table_row(row[:name], cols[0], cols[1], cols[2], jsonschema_col)
+  jsonschema_rs_col = baseline ? BenchHelper.format_time(baseline) : "-"
+  print_table_row(row[:name], cols[0], cols[1], cols[2], jsonschema_rs_col)
 end
 
 puts
