@@ -20,6 +20,8 @@ pub struct ValidationContext {
     validating: Vec<(usize, usize)>,
     /// Lazy-initialized cache for recursive schema validation.
     is_valid_cache: Option<AHashMap<(usize, usize), bool>>,
+    /// Lazy-initialized cache for ECMA regex transformation results during format "regex" validation.
+    ecma_regex_cache: Option<AHashMap<String, bool>>,
 }
 
 impl ValidationContext {
@@ -70,6 +72,19 @@ impl ValidationContext {
         self.is_valid_cache
             .get_or_insert_with(AHashMap::new)
             .insert(key, result);
+    }
+    /// Check if an ECMA regex pattern is valid.
+    pub(crate) fn is_valid_ecma_regex(&mut self, pattern: &str) -> bool {
+        if let Some(cache) = &self.ecma_regex_cache {
+            if let Some(&result) = cache.get(pattern) {
+                return result;
+            }
+        }
+        let result = crate::ecma::to_rust_regex(pattern).is_ok();
+        self.ecma_regex_cache
+            .get_or_insert_with(AHashMap::new)
+            .insert(pattern.to_owned(), result);
+        result
     }
 }
 

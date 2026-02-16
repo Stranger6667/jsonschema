@@ -11,7 +11,7 @@ use unicode_general_category::{get_general_category, GeneralCategory};
 use uuid_simd::{parse_hyphenated, Out};
 
 use crate::{
-    compiler, ecma,
+    compiler,
     error::ValidationError,
     keywords::CompilationResult,
     paths::{LazyLocation, Location, RefTracker},
@@ -909,10 +909,6 @@ fn is_valid_uri_reference(uri_reference: &str) -> bool {
     referencing::UriRef::parse(uri_reference).is_ok()
 }
 
-fn is_valid_regex(regex: &str) -> bool {
-    ecma::to_rust_regex(regex).is_ok()
-}
-
 fn is_valid_uuid(uuid: &str) -> bool {
     let mut out = [0; 16];
     parse_hyphenated(uuid.as_bytes(), Out::from_mut(&mut out)).is_ok()
@@ -980,7 +976,6 @@ format_validators!(
         is_valid_iri_reference
     ),
     (JsonPointerValidator, "json-pointer", is_valid_json_pointer),
-    (RegexValidator, "regex", is_valid_regex),
     (
         RelativeJsonPointerValidator,
         "relative-json-pointer",
@@ -996,6 +991,49 @@ format_validators!(
     (UriTemplateValidator, "uri-template", is_valid_uri_template),
     (UuidValidator, "uuid", is_valid_uuid),
 );
+
+// Custom RegexValidator that caches ECMA regex transformation results in ValidationContext
+struct RegexValidator {
+    location: Location,
+}
+
+impl RegexValidator {
+    pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
+        let location = ctx.location().join("format");
+        Ok(Box::new(RegexValidator { location }))
+    }
+}
+
+impl Validate for RegexValidator {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        if let Value::String(item) = instance {
+            ctx.is_valid_ecma_regex(item)
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::String(_) = instance {
+            if !self.is_valid(instance, ctx) {
+                return Err(ValidationError::format(
+                    self.location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.location),
+                    location.into(),
+                    instance,
+                    "regex",
+                ));
+            }
+        }
+        Ok(())
+    }
+}
 
 // Custom EmailValidator that supports email options
 struct EmailValidator {
