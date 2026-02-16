@@ -111,3 +111,7 @@ name = "unevaluated_properties"
 [[bench]]
 harness = false
 name = "unevaluated_items"
+
+[[bench]]
+harness = false
+name = "metaschema"
