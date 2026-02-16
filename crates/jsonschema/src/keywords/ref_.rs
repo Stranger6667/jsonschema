@@ -2,6 +2,7 @@ use crate::{
     compiler,
     error::ErrorIterator,
     keywords::CompilationResult,
+    node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
@@ -9,9 +10,8 @@ use crate::{
 };
 use serde_json::{Map, Value};
 
-/// Tracks `$ref` traversals for `tracker` (JSON Schema 2020-12 Core, Section 12.4.2).
-///
-/// Pushes the `$ref` location onto the tracker before delegating to the inner validator.
+/// Tracks `$ref` traversals for recursive references where the target is behind `Box<dyn Validate>`
+/// (either a `PendingSchemaNode` or a cached node returned by `lookup_maybe_recursive`).
 struct RefValidator {
     inner: Box<dyn Validate>,
     /// Path of this `$ref` keyword relative to its resource base.
@@ -69,6 +69,61 @@ impl Validate for RefValidator {
     ///
     /// Per JSON Schema 2020-12 Core Section 12.4.2, `schema_path` "MUST NOT include
     /// by-reference applicators such as `$ref` or `$dynamicRef`".
+    fn canonical_location(&self) -> Option<&Location> {
+        Some(&self.ref_target_base)
+    }
+}
+
+/// Like `RefValidator` but holds a concrete `SchemaNode` instead of `Box<dyn Validate>`,
+/// eliminating one layer of vtable dispatch on every validation call.
+/// Used for non-recursive refs where the target is fully resolved at compile time.
+struct DirectRefValidator {
+    inner: SchemaNode,
+    ref_suffix: Location,
+    ref_target_base: Location,
+}
+
+impl Validate for DirectRefValidator {
+    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+        self.inner.is_valid(instance, ctx)
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        let child_tracker = RefTracker::new(&self.ref_suffix, &self.ref_target_base, tracker);
+        self.inner
+            .validate(instance, location, Some(&child_tracker), ctx)
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        let child_tracker = RefTracker::new(&self.ref_suffix, &self.ref_target_base, tracker);
+        self.inner
+            .iter_errors(instance, location, Some(&child_tracker), ctx)
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        let child_tracker = RefTracker::new(&self.ref_suffix, &self.ref_target_base, tracker);
+        self.inner
+            .evaluate(instance, location, Some(&child_tracker), ctx)
+    }
+
     fn canonical_location(&self) -> Option<&Location> {
         Some(&self.ref_target_base)
     }
@@ -146,8 +201,8 @@ fn compile_reference_validator<'a>(
     Some(
         compiler::compile_with_alias(&inner_ctx, resource_ref, alias)
             .map(|node| {
-                Box::new(RefValidator {
-                    inner: Box::new(node),
+                Box::new(DirectRefValidator {
+                    inner: node,
                     ref_suffix,
                     ref_target_base,
                 }) as Box<dyn Validate>
