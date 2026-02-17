@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.42.1] - 2026-02-17
+
 ### Performance
 
 - Reduce dynamic dispatch overhead for non-recursive `$ref` resolution.
@@ -11,3 +13,5 @@
 
 - Initial public release
 
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.42.1...HEAD
+[0.42.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.42.0...ruby-v0.42.1
