@@ -7,6 +7,10 @@
 - Reduce dynamic dispatch overhead for non-recursive `$ref` resolution.
 - Cache ECMA regex transformations during `format: "regex"` validation.
 
+### Packaging
+
+- Exclude `rust-toolchain.toml` from wheels. [#1012](https://github.com/Stranger6667/jsonschema/issues/1012)
+
 ## [0.42.0] - 2026-02-14
 
 ### Fixed
