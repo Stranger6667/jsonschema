@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.42.1] - 2026-02-17
+
 ### Performance
 
 - Reduce dynamic dispatch overhead for non-recursive `$ref` resolution.
@@ -1174,7 +1176,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.42.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.42.1...HEAD
+[0.42.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.42.0...rust-v0.42.1
 [0.42.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.41.0...rust-v0.42.0
 [0.41.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.40.2...rust-v0.41.0
 [0.40.2]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.40.1...rust-v0.40.2
