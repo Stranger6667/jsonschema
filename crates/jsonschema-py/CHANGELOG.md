@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.42.1] - 2026-02-17
+
 ### Performance
 
 - Reduce dynamic dispatch overhead for non-recursive `$ref` resolution.
@@ -910,7 +912,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.42.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.42.1...HEAD
+[0.42.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.42.0...python-v0.42.1
 [0.42.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.41.0...python-v0.42.0
 [0.41.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.40.4...python-v0.41.0
 [0.40.4]: https://github.com/Stranger6667/jsonschema/compare/python-v0.40.3...python-v0.40.4
