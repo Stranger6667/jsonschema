@@ -6,7 +6,7 @@ use crate::{
     keywords::CompilationResult,
     options::PatternEngineOptions,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
-    regex::{pattern_as_prefix, RegexEngine, RegexError},
+    regex::{analyze_pattern, PatternOptimization, RegexEngine, RegexError},
     types::JsonType,
     validator::{Validate, ValidationContext},
 };
@@ -14,15 +14,15 @@ use serde_json::{Map, Value};
 
 /// Validator for patterns that are simple prefixes (optimized path).
 pub(crate) struct PrefixPatternValidator {
-    prefix: Arc<str>,
-    pattern: Arc<str>,
+    prefix: String,
+    pattern: String,
     location: Location,
 }
 
 impl Validate for PrefixPatternValidator {
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::String(item) = instance {
-            item.starts_with(self.prefix.as_ref())
+            item.starts_with(&self.prefix)
         } else {
             true
         }
@@ -36,13 +36,51 @@ impl Validate for PrefixPatternValidator {
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Value::String(item) = instance {
-            if !item.starts_with(self.prefix.as_ref()) {
+            if !item.starts_with(&self.prefix) {
                 return Err(ValidationError::pattern(
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
                     instance,
-                    self.pattern.to_string(),
+                    self.pattern.clone(),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Validator for patterns that are exact-match anchored patterns.
+pub(crate) struct ExactPatternValidator {
+    exact: String,
+    pattern: String,
+    location: Location,
+}
+
+impl Validate for ExactPatternValidator {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+        if let Value::String(item) = instance {
+            item.as_str() == self.exact
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::String(item) = instance {
+            if item.as_str() != self.exact {
+                return Err(ValidationError::pattern(
+                    self.location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.location),
+                    location.into(),
+                    instance,
+                    self.pattern.clone(),
                 ));
             }
         }
@@ -106,13 +144,23 @@ pub(crate) fn compile<'a>(
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
     if let Value::String(item) = schema {
-        // Try prefix optimization first
-        if let Some(prefix) = pattern_as_prefix(item) {
-            return Some(Ok(Box::new(PrefixPatternValidator {
-                prefix: Arc::from(prefix),
-                pattern: Arc::from(item.as_str()),
-                location: ctx.location().join("pattern"),
-            })));
+        // Try literal optimizations before compiling a full regex.
+        match analyze_pattern(item) {
+            Some(PatternOptimization::Exact(exact)) => {
+                return Some(Ok(Box::new(ExactPatternValidator {
+                    exact,
+                    pattern: item.clone(),
+                    location: ctx.location().join("pattern"),
+                })));
+            }
+            Some(PatternOptimization::Prefix(prefix)) => {
+                return Some(Ok(Box::new(PrefixPatternValidator {
+                    prefix,
+                    pattern: item.clone(),
+                    location: ctx.location().join("pattern"),
+                })));
+            }
+            None => {}
         }
         // Fall back to regex compilation
         match ctx.config().pattern_options() {
@@ -183,6 +231,8 @@ mod tests {
     #[test_case("^x-", "custom-header", false)]
     #[test_case("^foo", "foobar", true)]
     #[test_case("^foo", "barfoo", false)]
+    #[test_case("^\\/", "/api/users", true; "escaped slash match")]
+    #[test_case("^\\/", "api/users", false; "escaped slash no match")]
     fn prefix_pattern_optimization(pattern: &str, text: &str, is_matching: bool) {
         let text = json!(text);
         let schema = json!({"pattern": pattern});
@@ -190,22 +240,16 @@ mod tests {
         assert_eq!(validator.is_valid(&text), is_matching);
     }
 
-    #[test]
-    #[ignore = "fancy-regex 0.16 no longer fails for this test case"]
-    fn test_fancy_regex_backtrack_limit_exceeded() {
-        let schema = json!({"pattern": "(?i)(a|b|ab)*(?=c)"});
-        let validator = crate::options()
-            .with_pattern_options(PatternOptions::fancy_regex().backtrack_limit(1))
-            .build(&schema)
-            .expect("Schema should be valid");
-
-        let instance = json!("abababababababababababababababababababababababababababab");
-
-        let error = validator.validate(&instance).expect_err("Should fail");
-        assert_eq!(
-            error.to_string(),
-            "Error executing regex: Max limit for backtracking count exceeded"
-        );
+    #[test_case("^\\$ref$", "$ref", true; "dollar ref exact match")]
+    #[test_case("^\\$ref$", "$refs", false; "dollar ref suffix no match")]
+    #[test_case("^\\$ref$", "ref", false; "dollar ref no dollar no match")]
+    #[test_case("^\\$ref$", "$ref_", false; "dollar ref trailing no match")]
+    fn exact_pattern_optimization(pattern: &str, text: &str, is_matching: bool) {
+        let text = json!(text);
+        let schema = json!({"pattern": pattern});
+        let validator = crate::validator_for(&schema).unwrap();
+        assert_eq!(validator.is_valid(&text), is_matching);
+        assert_eq!(validator.validate(&text).is_ok(), is_matching);
     }
 
     #[test]

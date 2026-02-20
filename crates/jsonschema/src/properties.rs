@@ -4,7 +4,7 @@ use crate::{
     compiler,
     node::SchemaNode,
     paths::{LazyEvaluationPath, Location},
-    regex::pattern_as_prefix,
+    regex::{analyze_pattern, LiteralMatchError, PatternOptimization},
     validator::Validate as _,
     ValidationContext,
 };
@@ -13,32 +13,25 @@ use serde_json::{Map, Value};
 
 use crate::ValidationError;
 
-/// A compiled pattern that can be either a simple prefix (optimized) or a full regex.
+/// A compiled pattern that can be a literal optimized match or a full regex.
 #[derive(Debug, Clone)]
 pub(crate) enum CompiledPattern<R> {
-    /// Simple prefix match using `starts_with()` - much faster than regex.
+    /// Simple prefix match using `starts_with()`.
     Prefix(Arc<str>),
+    /// Exact match using `==` - for `^...$` patterns.
+    Exact(Arc<str>),
     /// Full regex pattern.
     Regex(R),
 }
 
-/// A dummy error type for prefix matching (which never fails).
-#[derive(Debug)]
-pub(crate) struct PrefixMatchError;
-
-impl crate::regex::RegexError for PrefixMatchError {
-    fn into_backtrack_error(self) -> Option<fancy_regex::Error> {
-        None
-    }
-}
-
 impl<R: crate::regex::RegexEngine> crate::regex::RegexEngine for CompiledPattern<R> {
-    type Error = PrefixMatchError;
+    type Error = LiteralMatchError;
 
     #[inline]
     fn is_match(&self, text: &str) -> Result<bool, Self::Error> {
         match self {
             CompiledPattern::Prefix(prefix) => Ok(text.starts_with(prefix.as_ref())),
+            CompiledPattern::Exact(exact) => Ok(text == exact.as_ref()),
             // Treat regex errors as non-match for compatibility
             CompiledPattern::Regex(re) => Ok(re.is_match(text).unwrap_or(false)),
         }
@@ -47,6 +40,7 @@ impl<R: crate::regex::RegexEngine> crate::regex::RegexEngine for CompiledPattern
     fn pattern(&self) -> &str {
         match self {
             CompiledPattern::Prefix(prefix) => prefix.as_ref(),
+            CompiledPattern::Exact(exact) => exact.as_ref(),
             CompiledPattern::Regex(re) => re.pattern(),
         }
     }
@@ -165,19 +159,21 @@ pub(crate) fn compile_fancy_regex_patterns<'a>(
     let mut compiled_patterns = Vec::with_capacity(obj.len());
     for (pattern, subschema) in obj {
         let pctx = kctx.new_at_location(pattern.as_str());
-        let compiled_pattern = if let Some(prefix) = pattern_as_prefix(pattern) {
-            CompiledPattern::Prefix(Arc::from(prefix))
-        } else {
-            let regex = ctx.get_or_compile_regex(pattern).map_err(|()| {
-                ValidationError::format(
-                    kctx.location().clone(),
-                    LazyEvaluationPath::SameAsSchemaPath,
-                    Location::new(),
-                    subschema,
-                    "regex",
-                )
-            })?;
-            CompiledPattern::Regex((*regex).clone())
+        let compiled_pattern = match analyze_pattern(pattern) {
+            Some(PatternOptimization::Prefix(prefix)) => CompiledPattern::Prefix(Arc::from(prefix)),
+            Some(PatternOptimization::Exact(exact)) => CompiledPattern::Exact(Arc::from(exact)),
+            None => {
+                let regex = ctx.get_or_compile_regex(pattern).map_err(|()| {
+                    ValidationError::format(
+                        kctx.location().clone(),
+                        LazyEvaluationPath::SameAsSchemaPath,
+                        Location::new(),
+                        subschema,
+                        "regex",
+                    )
+                })?;
+                CompiledPattern::Regex((*regex).clone())
+            }
         };
         let node = compiler::compile(&pctx, pctx.as_resource_ref(subschema))?;
         compiled_patterns.push((compiled_pattern, node));
@@ -186,7 +182,7 @@ pub(crate) fn compile_fancy_regex_patterns<'a>(
 }
 
 /// Create a vector of pattern-validators pairs using standard regex.
-/// Uses prefix optimization when patterns are simple `^prefix` patterns.
+/// Uses literal optimizations when patterns are simple prefix or exact-match patterns.
 #[inline]
 pub(crate) fn compile_regex_patterns<'a>(
     ctx: &compiler::Context,
@@ -196,19 +192,21 @@ pub(crate) fn compile_regex_patterns<'a>(
     let mut compiled_patterns = Vec::with_capacity(obj.len());
     for (pattern, subschema) in obj {
         let pctx = kctx.new_at_location(pattern.as_str());
-        let compiled_pattern = if let Some(prefix) = pattern_as_prefix(pattern) {
-            CompiledPattern::Prefix(Arc::from(prefix))
-        } else {
-            let regex = ctx.get_or_compile_standard_regex(pattern).map_err(|()| {
-                ValidationError::format(
-                    kctx.location().clone(),
-                    LazyEvaluationPath::SameAsSchemaPath,
-                    Location::new(),
-                    subschema,
-                    "regex",
-                )
-            })?;
-            CompiledPattern::Regex((*regex).clone())
+        let compiled_pattern = match analyze_pattern(pattern) {
+            Some(PatternOptimization::Prefix(prefix)) => CompiledPattern::Prefix(Arc::from(prefix)),
+            Some(PatternOptimization::Exact(exact)) => CompiledPattern::Exact(Arc::from(exact)),
+            None => {
+                let regex = ctx.get_or_compile_standard_regex(pattern).map_err(|()| {
+                    ValidationError::format(
+                        kctx.location().clone(),
+                        LazyEvaluationPath::SameAsSchemaPath,
+                        Location::new(),
+                        subschema,
+                        "regex",
+                    )
+                })?;
+                CompiledPattern::Regex((*regex).clone())
+            }
         };
         let node = compiler::compile(&pctx, pctx.as_resource_ref(subschema))?;
         compiled_patterns.push((compiled_pattern, node));
