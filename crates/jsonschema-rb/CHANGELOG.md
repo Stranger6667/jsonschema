@@ -5,6 +5,7 @@
 ### Performance
 
 - Extend `pattern` prefix optimization to handle escaped slashes (`^\/`) and exact-match patterns (`^\$ref$`).
+- Specialize `enum` for cases when all variants are strings.
 
 ## [0.42.1] - 2026-02-17
 
