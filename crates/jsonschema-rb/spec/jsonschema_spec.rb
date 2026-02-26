@@ -613,6 +613,72 @@ RSpec.describe "Custom keywords" do
     end
   end
 
+  describe "exception chaining" do
+    let(:domain_error_class) do
+      Class.new(StandardError) do
+        attr_reader :field, :reason
+
+        def initialize(field, reason)
+          @field = field
+          @reason = reason
+          super("Field '#{field}': #{reason}")
+        end
+      end
+    end
+
+    it "sets cause to the original exception raised inside validate" do
+      klass = Class.new do
+        def initialize(_parent_schema, _value, _schema_path); end
+
+        def validate(instance)
+          raise "something went wrong for #{instance}"
+        end
+      end
+
+      validator = JSONSchema.validator_for({ "kw" => true }, keywords: { "kw" => klass })
+      expect { validator.validate!(42) }.to raise_error(JSONSchema::ValidationError) do |err|
+        expect(err.cause).to be_a(RuntimeError)
+        expect(err.cause.message).to eq("something went wrong for 42")
+      end
+    end
+
+    it "preserves the exact user-defined exception class as cause" do
+      domain_error = domain_error_class
+      klass = Class.new do
+        def initialize(_parent_schema, _value, _schema_path); end
+
+        define_method(:validate) do |instance|
+          raise domain_error.new("value", "must be positive") unless instance.is_a?(Integer) && instance > 0
+        end
+      end
+
+      validator = JSONSchema.validator_for({ "positive" => true }, keywords: { "positive" => klass })
+
+      expect { validator.validate!(-1) }.to raise_error(JSONSchema::ValidationError) do |err|
+        expect(err.cause).to be_a(domain_error)
+        expect(err.cause.field).to eq("value")
+        expect(err.cause.reason).to eq("must be positive")
+        expect(err.message).to include("must be positive")
+      end
+    end
+
+    it "sets cause on errors returned by each_error" do
+      klass = Class.new do
+        def initialize(_parent_schema, _value, _schema_path); end
+
+        def validate(_instance)
+          raise ArgumentError, "domain rule violated"
+        end
+      end
+
+      validator = JSONSchema.validator_for({ "kw" => true }, keywords: { "kw" => klass })
+      errors = validator.each_error(42).to_a
+      expect(errors.size).to eq(1)
+      expect(errors.first.cause).to be_a(ArgumentError)
+      expect(errors.first.cause.message).to eq("domain rule violated")
+    end
+  end
+
   describe "lifetime management" do
     it "does not leak keyword validator instances after validator disposal" do
       keyword_class = Class.new do
