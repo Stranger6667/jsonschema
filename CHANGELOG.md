@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.42.2] - 2026-02-26
+
 ### Fixed
 
 - SWAR digit parser accepted bytes `:`–`?` (0x3A–0x3F) as valid digits during `date`, `time`, and `date-time` format validation, potentially allowing malformed values to pass.
@@ -1185,7 +1187,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.42.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.42.2...HEAD
+[0.42.2]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.42.1...rust-v0.42.2
 [0.42.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.42.0...rust-v0.42.1
 [0.42.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.41.0...rust-v0.42.0
 [0.41.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.40.2...rust-v0.41.0
