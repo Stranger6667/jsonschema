@@ -15,6 +15,7 @@ mod static_id;
 
 use jsonschema::{paths::LocationSegment, ValidationOptions};
 use magnus::{
+    error::ErrorType,
     function,
     gc::{register_address, register_mark_object, unregister_address},
     method,
@@ -58,6 +59,7 @@ define_rb_intern!(static ID_AT_SCHEMA_PATH_POINTER: "@schema_path_pointer");
 define_rb_intern!(static ID_AT_EVALUATION_PATH_POINTER: "@evaluation_path_pointer");
 define_rb_intern!(static ID_AT_KIND: "@kind");
 define_rb_intern!(static ID_AT_INSTANCE: "@instance");
+define_rb_intern!(static ID_CAUSE: "cause");
 
 define_rb_intern!(static ID_SYM_MESSAGE: "message");
 define_rb_intern!(static ID_SYM_VERBOSE_MESSAGE: "verbose_message");
@@ -187,6 +189,9 @@ fn build_parsed_options(
 
 thread_local! {
     static LAST_CALLBACK_ERROR: RefCell<Option<Error>> = const { RefCell::new(None) };
+    // Stores the original Ruby exception from a custom keyword's validate() call so it can be
+    // set as the `cause` on the resulting ValidationError.
+    pub(crate) static CUSTOM_KEYWORD_CAUSE: RefCell<Option<Error>> = const { RefCell::new(None) };
     /// When `true`, the custom panic hook suppresses output (inside `catch_unwind` blocks).
     static SUPPRESS_PANIC_OUTPUT: RefCell<bool> = const { RefCell::new(false) };
 }
@@ -353,6 +358,10 @@ fn into_ruby_error(
     message: &str,
     mask: Option<&str>,
 ) -> Result<Value, Error> {
+    let is_custom = matches!(
+        error.kind(),
+        jsonschema::error::ValidationErrorKind::Custom { .. }
+    );
     let rb_message = ruby.into_value(message);
     let verbose_message = build_verbose_message(
         message.to_owned(),
@@ -405,6 +414,14 @@ fn into_ruby_error(
     exc.ivar_set(*ID_AT_EVALUATION_PATH_POINTER, evaluation_path_ptr)?;
     exc.ivar_set(*ID_AT_KIND, ruby.into_value(kind_obj))?;
     exc.ivar_set(*ID_AT_INSTANCE, rb_instance)?;
+
+    if is_custom {
+        if let Some(cause) = CUSTOM_KEYWORD_CAUSE.with(|cell| cell.borrow_mut().take()) {
+            if let ErrorType::Exception(cause_exc) = cause.error_type() {
+                exc.ivar_set(*ID_CAUSE, cause_exc.as_value())?;
+            }
+        }
+    }
 
     Ok(exc.as_value())
 }

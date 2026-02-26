@@ -152,6 +152,16 @@ validator.is_valid(9)   # True
 validator.is_valid(10)  # False
 ```
 
+When `validate` raises, the original exception is preserved as the `__cause__` of the `ValidationError`, so callers can inspect it:
+
+```python
+try:
+    validator.validate(instance)
+except jsonschema_rs.ValidationError as e:
+    print(type(e.__cause__))   # <class 'ValueError'>
+    print(e.__cause__)         # original message
+```
+
 Additional configuration options are available for fine-tuning the validation process:
 
 - `validate_formats`: Override the draft-specific default behavior for format validation.

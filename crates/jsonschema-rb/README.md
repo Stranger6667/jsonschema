@@ -147,6 +147,17 @@ Each custom keyword class must implement:
 - `initialize(parent_schema, value, schema_path)` - called during schema compilation
 - `validate(instance)` - raise on failure, return normally on success
 
+When `validate` raises, the original exception is preserved as the `cause` of the `ValidationError`, so callers can inspect it:
+
+```ruby
+begin
+  validator.validate!(3)
+rescue JSONSchema::ValidationError => e
+  puts e.cause.class    # => RuntimeError
+  puts e.cause.message  # => "3 is not even"
+end
+```
+
 ### Structured evaluation output
 
 When you need more than a boolean result, use the `evaluate` API to access the [JSON Schema Output v1](https://json-schema.org/draft/2020-12/json-schema-core#name-output-formatting) formats:

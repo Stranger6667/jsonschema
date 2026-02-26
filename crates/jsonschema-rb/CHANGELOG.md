@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Custom keyword validation exceptions are now chained to the resulting `ValidationError` via `cause`, preserving the original exception class and message.
+
 ### Fixed
 
 - SWAR digit parser accepted bytes `:`–`?` (0x3A–0x3F) as valid digits during `date`, `time`, and `date-time` format validation, potentially allowing malformed values to pass.

@@ -20,7 +20,7 @@ use crate::{
     retriever::{make_retriever, RubyRetriever},
     ser::{map_to_ruby, value_to_ruby},
     static_id::{define_rb_intern, StaticId},
-    LAST_CALLBACK_ERROR,
+    CUSTOM_KEYWORD_CAUSE, LAST_CALLBACK_ERROR,
 };
 
 // Base kwarg names
@@ -384,7 +384,13 @@ impl jsonschema::Keyword for RubyKeyword {
         let result: Result<Value, _> = keyword.funcall("validate", (rb_instance,));
         match result {
             Ok(_) => Ok(()),
-            Err(e) => Err(jsonschema::ValidationError::custom(e.to_string())),
+            Err(e) => {
+                let msg = e.to_string();
+                CUSTOM_KEYWORD_CAUSE.with(|cell| {
+                    *cell.borrow_mut() = Some(e);
+                });
+                Err(jsonschema::ValidationError::custom(msg))
+            }
         }
     }
 
