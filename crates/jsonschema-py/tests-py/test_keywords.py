@@ -315,6 +315,75 @@ def test_init_error_propagates():
     assert "Init failed" in str(exc_info.value)
 
 
+class DomainValidationError(Exception):
+    """User-defined exception for domain-specific validation failures."""
+
+    def __init__(self, field, reason):
+        self.field = field
+        self.reason = reason
+        super().__init__(f"Field '{field}': {reason}")
+
+
+def test_custom_exception_class_as_cause():
+    class StrictKeyword:
+        def __init__(self, parent_schema, value, schema_path):
+            pass
+
+        def validate(self, instance):
+            if not isinstance(instance, str):
+                raise DomainValidationError("value", "must be a string")
+
+    validator = jsonschema_rs.validator_for(
+        {"strict": True},
+        keywords={"strict": StrictKeyword},
+    )
+    with pytest.raises(jsonschema_rs.ValidationError) as exc_info:
+        validator.validate(123)
+
+    cause = exc_info.value.__cause__
+    assert isinstance(cause, DomainValidationError)
+    assert cause.field == "value"
+    assert cause.reason == "must be a string"
+    assert "Field 'value': must be a string" in str(exc_info.value)
+
+
+def test_validate_cause_is_preserved():
+    class FailingValidator:
+        def __init__(self, parent_schema, value, schema_path):
+            pass
+
+        def validate(self, instance):
+            raise ValueError("specific error detail")
+
+    validator = jsonschema_rs.validator_for(
+        {"kw": True},
+        keywords={"kw": FailingValidator},
+    )
+    with pytest.raises(jsonschema_rs.ValidationError) as exc_info:
+        validator.validate(42)
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert "specific error detail" in str(exc_info.value.__cause__)
+    assert exc_info.value.__suppress_context__ is True
+
+
+def test_iter_errors_cause_is_preserved():
+    class FailingValidator:
+        def __init__(self, parent_schema, value, schema_path):
+            pass
+
+        def validate(self, instance):
+            raise TypeError("type-level problem")
+
+    validator = jsonschema_rs.validator_for(
+        {"kw": True},
+        keywords={"kw": FailingValidator},
+    )
+    errors = list(validator.iter_errors(42))
+    assert len(errors) == 1
+    assert isinstance(errors[0].__cause__, TypeError)
+    assert "type-level problem" in str(errors[0].__cause__)
+
+
 def test_keyword_disabled_by_value():
     validator = jsonschema_rs.validator_for(
         {"even": False},

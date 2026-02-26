@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Custom keyword validation exceptions are now chained to the resulting `ValidationError` via `__cause__`, preserving the original exception type and message.
+
 ### Performance
 
 - Extend `pattern` prefix optimization to handle escaped slashes (`^\/`) and exact-match patterns (`^\$ref$`).
