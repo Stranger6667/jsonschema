@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.42.2] - 2026-02-26
+
 ### Fixed
 
 - SWAR digit parser accepted bytes `:`–`?` (0x3A–0x3F) as valid digits during `date`, `time`, and `date-time` format validation, potentially allowing malformed values to pass.
@@ -925,7 +927,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.42.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.42.2...HEAD
+[0.42.2]: https://github.com/Stranger6667/jsonschema/compare/python-v0.42.1...python-v0.42.2
 [0.42.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.42.0...python-v0.42.1
 [0.42.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.41.0...python-v0.42.0
 [0.41.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.40.4...python-v0.41.0
