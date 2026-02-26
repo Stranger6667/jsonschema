@@ -367,27 +367,27 @@ fn is_leap_year(year: u16) -> bool {
 
 #[inline]
 fn parse_four_digits(bytes: &[u8]) -> Option<u16> {
-    let value = u32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-
+    // Little-endian layout: bytes[0] lands in the lowest byte of the u32.
     // Check if all bytes are ASCII digits
-    if value.wrapping_sub(0x3030_3030) & 0xF0F0_F0F0 == 0 {
-        let val = (value & 0x0F0F_0F0F).wrapping_mul(2561) >> 8;
-        Some(((val & 0x00FF_00FF).wrapping_mul(6_553_601) >> 16) as u16)
-    } else {
-        None
+    let value = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+    let sub = value.wrapping_sub(0x3030_3030);
+    if sub.wrapping_add(0x0606_0606) & 0xF0F0_F0F0 != 0 {
+        return None;
     }
+    let val = (sub & 0x0F0F_0F0F).wrapping_mul(2561) >> 8;
+    Some(((val & 0x00FF_00FF).wrapping_mul(6_553_601) >> 16) as u16)
 }
 
 #[inline]
 fn parse_two_digits(bytes: &[u8]) -> Option<u8> {
-    let value = u16::from_ne_bytes([bytes[0], bytes[1]]);
-
-    // Check if both bytes are ASCII digits
-    if value.wrapping_sub(0x3030) & 0xF0F0 == 0 {
-        Some(((value & 0x0F0F).wrapping_mul(2561) >> 8) as u8)
-    } else {
-        None
+    // Little-endian layout: bytes[0] lands in the low byte of the u16.
+    // Check if all bytes are ASCII digits
+    let value = u16::from_le_bytes([bytes[0], bytes[1]]);
+    let sub = value.wrapping_sub(0x3030);
+    if sub.wrapping_add(0x0606) & 0xF0F0 != 0 {
+        return None;
     }
+    Some(((sub & 0x0F0F).wrapping_mul(2561) >> 8) as u8)
 }
 
 macro_rules! handle_offset {
@@ -1273,6 +1273,30 @@ mod tests {
 
     use super::*;
 
+    #[test_case(b"00" => Some(0);  "min")]
+    #[test_case(b"09" => Some(9);  "nine")]
+    #[test_case(b"10" => Some(10); "ten")]
+    #[test_case(b"59" => Some(59); "fifty-nine")]
+    #[test_case(b"99" => Some(99); "max")]
+    #[test_case(b"1a" => None; "alpha")]
+    #[test_case(b" 5" => None; "leading space")]
+    #[test_case(b":0" => None; "colon is not a digit")]
+    #[test_case(b";9" => None; "semicolon is not a digit")]
+    fn test_parse_two_digits(bytes: &[u8]) -> Option<u8> {
+        parse_two_digits(bytes)
+    }
+
+    #[test_case(b"0000" => Some(0);    "zero")]
+    #[test_case(b"1970" => Some(1970); "epoch year")]
+    #[test_case(b"2023" => Some(2023); "recent year")]
+    #[test_case(b"9999" => Some(9999); "max")]
+    #[test_case(b"199x" => None; "trailing alpha")]
+    #[test_case(b" 999" => None; "leading space")]
+    #[test_case(b"20:3" => None; "colon is not a digit")]
+    fn test_parse_four_digits(bytes: &[u8]) -> Option<u16> {
+        parse_four_digits(bytes)
+    }
+
     #[test]
     fn ignored_format() {
         let schema = json!({"format": "custom", "type": "string"});
@@ -1391,6 +1415,8 @@ mod tests {
     #[test_case("aaaa-01-12", false; "Malformed (letters in year)")]
     #[test_case("2000-bb-12", false; "Malformed (letters in month)")]
     #[test_case("2000-01-cc", false; "Malformed (letters in day)")]
+    #[test_case("20:3-01-15", false; "colon in year")]
+    #[test_case("20;3-01-15", false; "semicolon in year")]
     fn test_is_valid_date(input: &str, expected: bool) {
         assert_eq!(is_valid_date(input), expected);
     }

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- SWAR digit parser accepted bytes `:`–`?` (0x3A–0x3F) as valid digits during `date`, `time`, and `date-time` format validation, potentially allowing malformed values to pass.
+
 ### Performance
 
 - Extend `pattern` prefix optimization to handle escaped slashes (`^\/`) and exact-match patterns (`^\$ref$`).
