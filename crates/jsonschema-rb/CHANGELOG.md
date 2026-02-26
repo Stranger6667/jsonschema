@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.42.2] - 2026-02-26
+
 ### Changed
 
 - Custom keyword validation exceptions are now chained to the resulting `ValidationError` via `cause`, preserving the original exception class and message.
@@ -26,5 +28,6 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.42.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.42.2...HEAD
+[0.42.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.42.1...ruby-v0.42.2
 [0.42.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.42.0...ruby-v0.42.1
