@@ -793,7 +793,8 @@ fn into_py_err(
 ) -> PyResult<PyErr> {
     let (message, verbose_message, schema_path, instance_path, evaluation_path, kind, instance) =
         into_validation_error_args(py, error, mask)?;
-    validation_error_pyerr(
+    let is_custom = matches!(kind, ValidationErrorKind::Custom { .. });
+    let py_err = validation_error_pyerr(
         py,
         ValidationErrorArgs {
             message,
@@ -804,7 +805,15 @@ fn into_py_err(
             kind,
             instance,
         },
-    )
+    )?;
+    if is_custom {
+        if let Some(cause) = CUSTOM_KEYWORD_CAUSE.with(|cell| cell.borrow_mut().take()) {
+            let err_obj = py_err.value(py);
+            err_obj.setattr("__cause__", cause.value(py))?;
+            err_obj.setattr("__suppress_context__", true)?;
+        }
+    }
+    Ok(py_err)
 }
 
 fn get_draft(draft: u8) -> PyResult<Draft> {
@@ -822,6 +831,9 @@ fn get_draft(draft: u8) -> PyResult<Draft> {
 
 thread_local! {
     static LAST_FORMAT_ERROR: RefCell<Option<PyErr>> = const { RefCell::new(None) };
+    // Stores the original Python exception from a custom keyword's validate() call so it can be
+    // attached as __cause__ on the resulting ValidationError.
+    static CUSTOM_KEYWORD_CAUSE: RefCell<Option<PyErr>> = const { RefCell::new(None) };
 }
 
 // Custom keyword validator - instantiated with (parent_schema, value, schema_path), must have validate(instance) method
@@ -845,6 +857,9 @@ impl jsonschema::Keyword for CustomKeyword {
                 Ok(_) => Ok(()),
                 Err(e) => {
                     let msg = e.value(py).to_string();
+                    CUSTOM_KEYWORD_CAUSE.with(|cell| {
+                        *cell.borrow_mut() = Some(e);
+                    });
                     Err(jsonschema::ValidationError::custom(msg))
                 }
             }
