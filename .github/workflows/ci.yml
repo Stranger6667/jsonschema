@@ -103,11 +103,18 @@ jobs:
         if: ${{ matrix.needs_wasmtime }}
         uses: bytecodealliance/actions/wasmtime/setup@v1
 
+      - name: Get wasm-bindgen version
+        if: ${{ matrix.needs_wasm_bindgen }}
+        id: wasm-bindgen-version
+        run: |
+          VERSION=$(cargo metadata --format-version 1 | jq -r '.packages[] | select(.name=="wasm-bindgen") | .version')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Install wasm-bindgen
         if: ${{ matrix.needs_wasm_bindgen }}
         uses: taiki-e/install-action@wasm-bindgen
         with:
-          tool: 'wasm-bindgen@0.2.108'
+          tool: 'wasm-bindgen@${{ steps.wasm-bindgen-version.outputs.version }}'
 
       - name: Run tests
         env:
