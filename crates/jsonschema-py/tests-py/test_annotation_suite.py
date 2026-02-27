@@ -1,0 +1,92 @@
+"""
+Annotation Test Harness for jsonschema-rs (Python bindings)
+============================================================
+Runs the official JSON Schema Annotation Test Suite against
+the `jsonschema_rs` Python package.
+
+Usage:
+    pytest crates/jsonschema-py/tests-py/test_annotation_suite.py -v
+"""
+
+import json
+import os
+import pytest
+import jsonschema_rs
+
+# Path to the annotation test suite
+SUITE_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "../../../JSON-Schema-Test-Suite/annotations/tests",
+)
+
+
+def load_test_cases():
+    """Load all test cases from the annotation test suite."""
+    cases = []
+    for filename in sorted(os.listdir(SUITE_PATH)):
+        if not filename.endswith(".json"):
+            continue
+        filepath = os.path.join(SUITE_PATH, filename)
+        with open(filepath, encoding="utf-8") as f:
+            data = json.load(f)
+        for suite_case in data.get("suite", []):
+            schema = suite_case["schema"]
+            description = suite_case.get("description", filename)
+            for test in suite_case.get("tests", []):
+                instance = test["instance"]
+                assertions = test.get("assertions", [])
+                cases.append(
+                    pytest.param(
+                        schema,
+                        instance,
+                        assertions,
+                        id=f"{filename}::{description}",
+                    )
+                )
+    return cases
+
+
+def get_annotations(schema, instance):
+    validator = jsonschema_rs.validator_for(schema)
+    evaluation = validator.evaluate(instance)
+    raw = evaluation.annotations()
+
+    result = {}
+    for ann in raw:
+        instance_loc = ann.get("instanceLocation", "")
+        annotations_dict = ann.get("annotations", {})
+        
+        if isinstance(annotations_dict, dict):
+            for keyword, value in annotations_dict.items():
+                key = (instance_loc, keyword)
+                result.setdefault(key, []).append(value)
+    return result
+
+
+@pytest.mark.parametrize("schema,instance,assertions", load_test_cases())
+def test_annotation(schema, instance, assertions):
+    """
+    For each assertion in the test:
+      - location: instance location (JSON Pointer)
+      - keyword: annotation keyword (e.g. "title")
+      - expected: dict of schemaLocation -> expected annotation value
+                  key "#" means the root schema location
+    """
+    collected = get_annotations(schema, instance)
+
+    for assertion in assertions:
+        location = assertion["location"]
+        keyword = assertion["keyword"]
+        expected = assertion["expected"]
+
+        key = (location, keyword)
+        actual_values = collected.get(key, [])
+
+        for schema_loc, expected_value in expected.items():
+            assert expected_value in actual_values, (
+                f"\nKeyword   : {keyword!r}"
+                f"\nInstance  : {location!r}"
+                f"\nSchema    : {schema_loc!r}"
+                f"\nExpected  : {expected_value!r}"
+                f"\nGot       : {actual_values!r}"
+            )
