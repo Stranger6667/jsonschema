@@ -68,7 +68,7 @@ jobs:
           ruby -e "require 'jsonschema_rs'; raise 'validation failed' unless JSONSchema.valid?({'type'=>'string'}, 'hello'); puts 'smoke test OK'"
         working-directory: crates/jsonschema-rb
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: gem-${{ matrix.platform }}
           path: crates/jsonschema-rb/pkg/*.gem
