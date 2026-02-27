@@ -45,7 +45,7 @@ jobs:
         working-directory: crates/jsonschema-py
 
       - name: Upload sdist
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: sdist
           path: crates/jsonschema-py/dist
@@ -70,7 +70,7 @@ jobs:
           uv venv --python ${{ env.PYTHON_ABI_VERSION }}
           uv pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: wheel-macos-x86_64
           path: dist
@@ -94,7 +94,7 @@ jobs:
           uv venv --python ${{ env.PYTHON_ABI_VERSION }}
           uv pip install dist/${{ env.PACKAGE_NAME }}-*universal2.whl --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: wheel-macos-universal
           path: dist
@@ -123,7 +123,7 @@ jobs:
           uv venv --python ${{ env.PYTHON_ABI_VERSION }}
           uv pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: wheel-windows-${{ matrix.target }}
           path: dist
@@ -175,7 +175,7 @@ jobs:
             venv/bin/pip install -U pip wheel
             venv/bin/pip install ${{ env.PACKAGE_NAME }} --no-index --find-links dist/ --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: wheel-linux-${{ matrix.target }}
           path: dist
@@ -210,7 +210,7 @@ jobs:
           install: apk add --no-cache py3-pip
           run: pip install ${{ env.PACKAGE_NAME }} --no-index --find-links dist/ --force-reinstall --break-system-packages
       - name: Upload wheels
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: wheel-linux-musllinux-${{ matrix.target }}
           path: dist
@@ -237,7 +237,7 @@ jobs:
           manylinux: ${{ matrix.manylinux }}
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter 3.13t 3.14t
       - name: Upload wheels
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: wheel-linux-freethreaded-${{ matrix.target }}
           path: dist
@@ -262,7 +262,7 @@ jobs:
           manylinux: musllinux_1_2
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter 3.13t 3.14t
       - name: Upload wheels
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: wheel-linux-musllinux-freethreaded-${{ matrix.target }}
           path: dist
@@ -290,7 +290,7 @@ jobs:
           target: ${{ matrix.target }}
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter 3.13t 3.14t
       - name: Upload wheels
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: dist
@@ -317,7 +317,7 @@ jobs:
           target: x64
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ steps.python-paths.outputs.py313t }} ${{ steps.python-paths.outputs.py314t }}
       - name: Upload wheels
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: wheel-windows-freethreaded
           path: dist
@@ -383,7 +383,7 @@ jobs:
           uv venv --python ${{ env.PYPY_VERSION }}
           uv pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: dist
