@@ -12,11 +12,12 @@ use uuid_simd::{parse_hyphenated, Out};
 
 use crate::{
     compiler,
-    error::ValidationError,
+    error::{no_error, ValidationError},
+    evaluation::Annotations,
     keywords::CompilationResult,
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
-    validator::{Validate, ValidationContext},
+    validator::{EvaluationResult, Validate, ValidationContext},
     Draft,
 };
 
@@ -914,17 +915,50 @@ fn is_valid_uuid(uuid: &str) -> bool {
     parse_hyphenated(uuid.as_bytes(), Out::from_mut(&mut out)).is_ok()
 }
 
+/// Implements `evaluate()` for format validators that have an `annotation: Arc<Value>` field.
+///
+/// Per spec §7.2.1 and §7.2.2, the format value MUST be collected as an annotation
+/// regardless of whether the assertion passes or fails.
+macro_rules! impl_format_evaluate {
+    () => {
+        fn evaluate(
+            &self,
+            instance: &Value,
+            location: &LazyLocation,
+            tracker: Option<&RefTracker>,
+            ctx: &mut ValidationContext,
+        ) -> EvaluationResult {
+            if !instance.is_string() {
+                return EvaluationResult::valid_empty();
+            }
+            let errors: Vec<_> = self
+                .iter_errors(instance, location, tracker, ctx)
+                .map(|e| crate::evaluation::ErrorDescription::from_validation_error(&e))
+                .collect();
+            let mut result = if errors.is_empty() {
+                EvaluationResult::valid_empty()
+            } else {
+                EvaluationResult::invalid_empty(errors)
+            };
+            result.annotate(Annotations::from_arc(Arc::clone(&self.annotation)));
+            result
+        }
+    };
+}
+
 macro_rules! format_validators {
     ($(($validator:ident, $format:expr, $validation_fn:ident)),+ $(,)?) => {
         $(
             struct $validator {
                 location: Location,
+                annotation: Arc<Value>,
             }
 
             impl $validator {
                 pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
                     let location = ctx.location().join("format");
-                    Ok(Box::new($validator { location }))
+                    let annotation = Arc::new(Value::String($format.to_owned()));
+                    Ok(Box::new($validator { location, annotation }))
                 }
             }
 
@@ -957,6 +991,8 @@ macro_rules! format_validators {
                     }
                     Ok(())
                 }
+
+                impl_format_evaluate!();
             }
         )+
     };
@@ -995,12 +1031,17 @@ format_validators!(
 // Custom RegexValidator that caches ECMA regex transformation results in ValidationContext
 struct RegexValidator {
     location: Location,
+    annotation: Arc<Value>,
 }
 
 impl RegexValidator {
     pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
         let location = ctx.location().join("format");
-        Ok(Box::new(RegexValidator { location }))
+        let annotation = Arc::new(Value::String("regex".to_owned()));
+        Ok(Box::new(RegexValidator {
+            location,
+            annotation,
+        }))
     }
 }
 
@@ -1033,20 +1074,25 @@ impl Validate for RegexValidator {
         }
         Ok(())
     }
+
+    impl_format_evaluate!();
 }
 
 // Custom EmailValidator that supports email options
 struct EmailValidator {
     location: Location,
+    annotation: Arc<Value>,
     email_options: Option<EmailAddressOptions>,
 }
 
 impl EmailValidator {
     pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
         let location = ctx.location().join("format");
+        let annotation = Arc::new(Value::String("email".to_owned()));
         let email_options = ctx.config().email_options().copied();
         Ok(Box::new(EmailValidator {
             location,
+            annotation,
             email_options,
         }))
     }
@@ -1081,20 +1127,25 @@ impl Validate for EmailValidator {
         }
         Ok(())
     }
+
+    impl_format_evaluate!();
 }
 
 // Custom IdnEmailValidator that supports email options
 struct IdnEmailValidator {
     location: Location,
+    annotation: Arc<Value>,
     email_options: Option<EmailAddressOptions>,
 }
 
 impl IdnEmailValidator {
     pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
         let location = ctx.location().join("format");
+        let annotation = Arc::new(Value::String("idn-email".to_owned()));
         let email_options = ctx.config().email_options().copied();
         Ok(Box::new(IdnEmailValidator {
             location,
+            annotation,
             email_options,
         }))
     }
@@ -1129,10 +1180,13 @@ impl Validate for IdnEmailValidator {
         }
         Ok(())
     }
+
+    impl_format_evaluate!();
 }
 
 struct CustomFormatValidator {
     location: Location,
+    annotation: Arc<Value>,
     format_name: String,
     check: Arc<dyn Format>,
 }
@@ -1143,8 +1197,10 @@ impl CustomFormatValidator {
         check: Arc<dyn Format>,
     ) -> CompilationResult<'a> {
         let location = ctx.location().join("format");
+        let annotation = Arc::new(Value::String(format_name.clone()));
         Ok(Box::new(CustomFormatValidator {
             location,
+            annotation,
             format_name,
             check,
         }))
@@ -1179,6 +1235,56 @@ impl Validate for CustomFormatValidator {
             true
         }
     }
+
+    impl_format_evaluate!();
+}
+
+/// Format annotation-only validator used when format assertion is disabled.
+///
+/// Always validates successfully but emits the required annotation per spec §7.2.1.
+struct AnnotationOnlyFormatValidator {
+    annotation: Arc<Value>,
+}
+
+impl Validate for AnnotationOnlyFormatValidator {
+    fn is_valid(&self, _instance: &Value, _ctx: &mut ValidationContext) -> bool {
+        true
+    }
+
+    fn validate<'i>(
+        &self,
+        _instance: &'i Value,
+        _location: &LazyLocation,
+        _tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        Ok(())
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        _instance: &'i Value,
+        _location: &LazyLocation,
+        _tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> crate::error::ErrorIterator<'i> {
+        no_error()
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        _location: &LazyLocation,
+        _tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if !instance.is_string() {
+            return EvaluationResult::valid_empty();
+        }
+        let mut result = EvaluationResult::valid_empty();
+        result.annotate(Annotations::from_arc(Arc::clone(&self.annotation)));
+        result
+    }
 }
 
 pub(crate) trait Format: Send + Sync + 'static {
@@ -1201,55 +1307,71 @@ pub(crate) fn compile<'a>(
     _: &'a Map<String, Value>,
     schema: &'a Value,
 ) -> Option<CompilationResult<'a>> {
-    if !ctx.validates_formats_by_default() {
-        return None;
-    }
-
     if let Value::String(format) = schema {
-        if let Some((name, func)) = ctx.get_format(format) {
-            return Some(CustomFormatValidator::compile(
-                ctx,
-                name.clone(),
-                func.clone(),
-            ));
-        }
-        let draft = ctx.draft();
-        match format.as_str() {
-            "date" => Some(DateValidator::compile(ctx)),
-            "date-time" => Some(DateTimeValidator::compile(ctx)),
-            "duration" if draft >= Draft::Draft201909 => Some(DurationValidator::compile(ctx)),
-            "email" => Some(EmailValidator::compile(ctx)),
-            "hostname" => Some(HostnameValidator::compile(ctx)),
-            "idn-email" => Some(IdnEmailValidator::compile(ctx)),
-            "idn-hostname" if draft >= Draft::Draft7 => Some(IdnHostnameValidator::compile(ctx)),
-            "ipv4" => Some(IpV4Validator::compile(ctx)),
-            "ipv6" => Some(IpV6Validator::compile(ctx)),
-            "iri" if draft >= Draft::Draft7 => Some(IriValidator::compile(ctx)),
-            "iri-reference" if draft >= Draft::Draft7 => Some(IriReferenceValidator::compile(ctx)),
-            "json-pointer" if draft >= Draft::Draft6 => Some(JsonPointerValidator::compile(ctx)),
-            "regex" => Some(RegexValidator::compile(ctx)),
-            "relative-json-pointer" if draft >= Draft::Draft7 => {
-                Some(RelativeJsonPointerValidator::compile(ctx))
+        if ctx.validates_formats_by_default() {
+            // Format validation is enabled: each specific validator carries its own annotation
+            if let Some((name, func)) = ctx.get_format(format) {
+                return Some(CustomFormatValidator::compile(
+                    ctx,
+                    name.clone(),
+                    func.clone(),
+                ));
             }
-            "time" => Some(TimeValidator::compile(ctx)),
-            "uri" => Some(UriValidator::compile(ctx)),
-            "uri-reference" if draft >= Draft::Draft6 => Some(UriReferenceValidator::compile(ctx)),
-            "uri-template" if draft >= Draft::Draft6 => Some(UriTemplateValidator::compile(ctx)),
-            "uuid" if draft >= Draft::Draft201909 => Some(UuidValidator::compile(ctx)),
-            name => {
-                if ctx.are_unknown_formats_ignored() {
-                    None
-                } else {
-                    let location = ctx.location().join("format");
-                    Some(Err(ValidationError::compile_error(
-                        location.clone(),
-                        location,
-                        Location::new(),
-                        schema,
-                        format!("Unknown format: '{name}'. Adjust configuration to ignore unrecognized formats"),
-                    )))
+            let draft = ctx.draft();
+            match format.as_str() {
+                "date" => Some(DateValidator::compile(ctx)),
+                "date-time" => Some(DateTimeValidator::compile(ctx)),
+                "duration" if draft >= Draft::Draft201909 => Some(DurationValidator::compile(ctx)),
+                "email" => Some(EmailValidator::compile(ctx)),
+                "hostname" => Some(HostnameValidator::compile(ctx)),
+                "idn-email" => Some(IdnEmailValidator::compile(ctx)),
+                "idn-hostname" if draft >= Draft::Draft7 => {
+                    Some(IdnHostnameValidator::compile(ctx))
+                }
+                "ipv4" => Some(IpV4Validator::compile(ctx)),
+                "ipv6" => Some(IpV6Validator::compile(ctx)),
+                "iri" if draft >= Draft::Draft7 => Some(IriValidator::compile(ctx)),
+                "iri-reference" if draft >= Draft::Draft7 => {
+                    Some(IriReferenceValidator::compile(ctx))
+                }
+                "json-pointer" if draft >= Draft::Draft6 => {
+                    Some(JsonPointerValidator::compile(ctx))
+                }
+                "regex" => Some(RegexValidator::compile(ctx)),
+                "relative-json-pointer" if draft >= Draft::Draft7 => {
+                    Some(RelativeJsonPointerValidator::compile(ctx))
+                }
+                "time" => Some(TimeValidator::compile(ctx)),
+                "uri" => Some(UriValidator::compile(ctx)),
+                "uri-reference" if draft >= Draft::Draft6 => {
+                    Some(UriReferenceValidator::compile(ctx))
+                }
+                "uri-template" if draft >= Draft::Draft6 => {
+                    Some(UriTemplateValidator::compile(ctx))
+                }
+                "uuid" if draft >= Draft::Draft201909 => Some(UuidValidator::compile(ctx)),
+                name => {
+                    if ctx.are_unknown_formats_ignored() {
+                        None
+                    } else {
+                        let location = ctx.location().join("format");
+                        Some(Err(ValidationError::compile_error(
+                            location.clone(),
+                            location,
+                            Location::new(),
+                            schema,
+                            format!(
+                                "Unknown format: '{name}'. Adjust configuration to ignore unrecognized formats"
+                            ),
+                        )))
+                    }
                 }
             }
+        } else {
+            // Format validation disabled: annotation-only per spec §7.2.1
+            Some(Ok(Box::new(AnnotationOnlyFormatValidator {
+                annotation: Arc::new(Value::String(format.clone())),
+            })))
         }
     } else {
         let location = ctx.location().join("format");
