@@ -22,7 +22,8 @@ use magnus::{
     prelude::*,
     scan_args::scan_args,
     value::{Lazy, ReprValue},
-    DataTypeFunctions, Error, Exception, ExceptionClass, RClass, RModule, RObject, Ruby, Value,
+    DataTypeFunctions, Error, Exception, ExceptionClass, RClass, RHash, RModule, RObject, Ruby,
+    Value,
 };
 use referencing::unescape_segment;
 use std::{
@@ -776,6 +777,38 @@ impl Validator {
     }
 }
 
+/// validator_cls_for(schema) -> Class
+///
+/// Detect the JSON Schema draft for a schema and return the corresponding validator class.
+/// Draft is detected automatically from the `$schema` field. Defaults to Draft202012Validator.
+///
+///     >>> cls = JSONSchema.validator_cls_for({"type" => "string"})
+///     >>> validator = cls.new({"type" => "string"})
+///     >>> cls = JSONSchema.validator_cls_for({"$schema" => "http://json-schema.org/draft-07/schema#", "type" => "string"})
+///     >>> validator = cls.new({"$schema" => "http://json-schema.org/draft-07/schema#", "type" => "string"})
+///
+fn validator_cls_for(ruby: &Ruby, schema: Value) -> Result<RClass, Error> {
+    let draft = if let Some(hash) = RHash::from_value(schema) {
+        if let Ok(uri) = hash.aref::<_, String>(ruby.str_new("$schema")) {
+            jsonschema::Draft::from_schema_uri(&uri)
+        } else {
+            jsonschema::Draft::default()
+        }
+    } else {
+        jsonschema::Draft::default()
+    };
+
+    let module = ruby.define_module("JSONSchema")?;
+    let cls_name = match draft {
+        jsonschema::Draft::Draft4 => "Draft4Validator",
+        jsonschema::Draft::Draft6 => "Draft6Validator",
+        jsonschema::Draft::Draft7 => "Draft7Validator",
+        jsonschema::Draft::Draft201909 => "Draft201909Validator",
+        jsonschema::Draft::Draft202012 | jsonschema::Draft::Unknown | _ => "Draft202012Validator",
+    };
+    module.const_get::<&str, RClass>(cls_name)
+}
+
 fn validator_for(ruby: &Ruby, args: &[Value]) -> Result<Validator, Error> {
     let parsed_args = scan_args::<(Value,), (), (), (), _, ()>(args)?;
     let (schema,) = parsed_args.required;
@@ -1287,6 +1320,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     module.define_error("ReferencingError", ruby.exception_standard_error())?;
 
     // Module-level functions
+    module.define_singleton_method("validator_cls_for", function!(validator_cls_for, 1))?;
     module.define_singleton_method("validator_for", function!(validator_for, -1))?;
     module.define_singleton_method("valid?", function!(is_valid, -1))?;
     module.define_singleton_method("validate!", function!(validate, -1))?;

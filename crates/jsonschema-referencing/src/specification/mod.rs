@@ -46,33 +46,41 @@ impl Draft {
     pub fn create_resource_ref(self, contents: &Value) -> ResourceRef<'_> {
         ResourceRef::new(contents, self)
     }
+    /// Detect a draft from a `$schema` URI string.
+    ///
+    /// Accepts the URI with or without a trailing `#`. Returns `Draft::Unknown`
+    /// for custom/unknown meta-schema URIs.
+    #[must_use]
+    pub fn from_schema_uri(uri: &str) -> Draft {
+        match uri.trim_end_matches('#') {
+            // Accept both HTTPS and HTTP for all known drafts
+            "https://json-schema.org/draft/2020-12/schema"
+            | "http://json-schema.org/draft/2020-12/schema" => Draft::Draft202012,
+            "https://json-schema.org/draft/2019-09/schema"
+            | "http://json-schema.org/draft/2019-09/schema" => Draft::Draft201909,
+            "https://json-schema.org/draft-07/schema"
+            | "http://json-schema.org/draft-07/schema" => Draft::Draft7,
+            "https://json-schema.org/draft-06/schema"
+            | "http://json-schema.org/draft-06/schema" => Draft::Draft6,
+            "https://json-schema.org/draft-04/schema"
+            | "http://json-schema.org/draft-04/schema" => Draft::Draft4,
+            // Custom/unknown meta-schemas return Unknown
+            // Validation of custom meta-schemas happens during registry building
+            _ => Draft::Unknown,
+        }
+    }
     /// Detect what specification could be applied to the given contents.
     ///
     /// Returns `Draft::Unknown` for custom/unknown `$schema` values.
     /// Validation of custom meta-schemas happens during registry building.
     #[must_use]
     pub fn detect(self, contents: &Value) -> Draft {
-        if let Some(schema) = contents
+        if let Some(uri) = contents
             .as_object()
             .and_then(|contents| contents.get("$schema"))
             .and_then(|schema| schema.as_str())
         {
-            match schema.trim_end_matches('#') {
-                // Accept both HTTPS and HTTP for all known drafts
-                "https://json-schema.org/draft/2020-12/schema"
-                | "http://json-schema.org/draft/2020-12/schema" => Draft::Draft202012,
-                "https://json-schema.org/draft/2019-09/schema"
-                | "http://json-schema.org/draft/2019-09/schema" => Draft::Draft201909,
-                "https://json-schema.org/draft-07/schema"
-                | "http://json-schema.org/draft-07/schema" => Draft::Draft7,
-                "https://json-schema.org/draft-06/schema"
-                | "http://json-schema.org/draft-06/schema" => Draft::Draft6,
-                "https://json-schema.org/draft-04/schema"
-                | "http://json-schema.org/draft-04/schema" => Draft::Draft4,
-                // Custom/unknown meta-schemas return Unknown
-                // Validation of custom meta-schemas happens during registry building
-                _ => Draft::Unknown,
-            }
+            Draft::from_schema_uri(uri)
         } else {
             self
         }

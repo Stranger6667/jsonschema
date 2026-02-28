@@ -1516,6 +1516,41 @@ fn validator_for(
     )
 }
 
+/// validator_cls_for(schema)
+///
+/// Detect the JSON Schema draft for a schema and return the corresponding validator class.
+/// Draft is detected automatically from the `$schema` field. Defaults to Draft202012Validator.
+///
+///     >>> cls = validator_cls_for({"type": "string"})
+///     >>> validator = cls({"type": "string"})
+///     >>> cls = validator_cls_for({"$schema": "http://json-schema.org/draft-07/schema#", "type": "string"})
+///     >>> validator = cls({"$schema": "http://json-schema.org/draft-07/schema#", "type": "string"})
+///
+#[pyfunction]
+fn validator_cls_for(py: Python<'_>, schema: &Bound<'_, PyAny>) -> Py<PyType> {
+    let draft = if let Ok(dict) = schema.cast::<PyDict>() {
+        if let Ok(Some(val)) = dict.get_item("$schema") {
+            if let Ok(s) = val.extract::<&str>() {
+                Draft::from_schema_uri(s)
+            } else {
+                Draft::default()
+            }
+        } else {
+            Draft::default()
+        }
+    } else {
+        Draft::default()
+    };
+    let cls: Bound<'_, PyType> = match draft {
+        Draft::Draft4 => py.get_type::<Draft4Validator>(),
+        Draft::Draft6 => py.get_type::<Draft6Validator>(),
+        Draft::Draft7 => py.get_type::<Draft7Validator>(),
+        Draft::Draft201909 => py.get_type::<Draft201909Validator>(),
+        Draft::Draft202012 | Draft::Unknown | _ => py.get_type::<Draft202012Validator>(),
+    };
+    cls.unbind()
+}
+
 fn validator_for_impl(
     py: Python<'_>,
     schema: &Bound<'_, PyAny>,
@@ -2077,6 +2112,7 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_wrapped(wrap_pyfunction!(iter_errors))?;
     module.add_wrapped(wrap_pyfunction!(evaluate))?;
     module.add_wrapped(wrap_pyfunction!(validator_for))?;
+    module.add_wrapped(wrap_pyfunction!(validator_cls_for))?;
     module.add_class::<Draft4Validator>()?;
     module.add_class::<Draft6Validator>()?;
     module.add_class::<Draft7Validator>()?;

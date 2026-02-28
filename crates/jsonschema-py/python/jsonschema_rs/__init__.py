@@ -28,6 +28,7 @@ from .jsonschema_rs import (
     iter_errors,
     meta,
     validate,
+    validator_cls_for,
     validator_for,
 )
 
@@ -116,6 +117,7 @@ __all__ = [
     "validate",
     "iter_errors",
     "evaluate",
+    "validator_cls_for",
     "validator_for",
     "Draft4",
     "Draft6",
