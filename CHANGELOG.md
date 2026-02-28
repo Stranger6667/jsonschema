@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-02-28
+
 ### Performance
 
 - Optimize `pattern` and `patternProperties` for `^(a|b|c)$` alternations via linear array scan.
@@ -1196,7 +1198,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.42.2...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.43.0...HEAD
+[0.43.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.42.2...rust-v0.43.0
 [0.42.2]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.42.1...rust-v0.42.2
 [0.42.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.42.0...rust-v0.42.1
 [0.42.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.41.0...rust-v0.42.0
