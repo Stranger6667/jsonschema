@@ -730,18 +730,24 @@ def test_enum_as_keys_invalid(enum_type):
         is_valid(schema, {EnumCls.A: "xyz"})
 
 
+class BrokenValueStrEnum(str, E.Enum):
+    A = "a"
+
+    def __getattribute__(self, name):
+        if name == "value":
+            raise RuntimeError("boom from value")
+        return super().__getattribute__(name)
+
+
 def test_enum_key_value_lookup_error():
-    class BrokenStrEnum(str, E.Enum):
-        A = "a"
-
-        def __getattribute__(self, name):
-            if name == "value":
-                raise RuntimeError("boom from value")
-            return super().__getattribute__(name)
-
     schema = {"properties": {"a": {"type": "string"}}}
     with pytest.raises(ValueError, match="boom from value"):
-        is_valid(schema, {BrokenStrEnum.A: "xyz"})
+        is_valid(schema, {BrokenValueStrEnum.A: "xyz"})
+
+
+def test_enum_value_lookup_error():
+    with pytest.raises(ValueError, match="boom from value"):
+        is_valid(True, BrokenValueStrEnum.A)
 
 
 def test_validate_error_instance_path_traverses_instance():
