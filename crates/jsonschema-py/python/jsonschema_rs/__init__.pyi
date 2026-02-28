@@ -472,6 +472,13 @@ def validator_for(
     """
     ...
 
+def validator_cls_for(schema: _SchemaT) -> type[Validator]:
+    """Detect the JSON Schema draft for a schema and return the corresponding validator class.
+
+    Draft is detected automatically from the $schema field. Defaults to Draft202012Validator.
+    """
+    ...
+
 class Registry:
     def __init__(
         self,

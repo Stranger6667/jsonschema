@@ -2,14 +2,18 @@
 
 ## [Unreleased]
 
-### Performance
+### Added
 
-- Optimize `pattern` and `patternProperties` for `^(a|b|c)$` alternations via linear array scan.
-- Optimize `^\S*$` patterns by replacing regex with a direct ECMA-262 whitespace check.
+- `validator_cls_for(schema)` function to detect and return the appropriate validator class for a schema.
 
 ### Fixed
 
 - `anyOf`, `format`, `unevaluatedProperties`, and `unevaluatedItems` now correctly collect annotations per spec.
+
+### Performance
+
+- Optimize `pattern` and `patternProperties` for `^(a|b|c)$` alternations via linear array scan.
+- Optimize `^\S*$` patterns by replacing regex with a direct ECMA-262 whitespace check.
 
 ## [0.42.2] - 2026-02-26
 

@@ -32,6 +32,10 @@ module JSONSchema
     ?http_options: HttpOptions?
   ) -> Validator
 
+  # Detect the JSON Schema draft for a schema and return the corresponding validator class.
+  # Draft is detected automatically from the `$schema` field. Defaults to Draft202012Validator.
+  def self.validator_cls_for: (untyped schema) -> (singleton(Draft4Validator) | singleton(Draft6Validator) | singleton(Draft7Validator) | singleton(Draft201909Validator) | singleton(Draft202012Validator))
+
   # One-off validation returning boolean.
   def self.valid?: (
     untyped schema,
