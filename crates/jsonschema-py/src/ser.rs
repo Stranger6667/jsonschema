@@ -509,6 +509,13 @@ impl Serialize for SerializePyObject {
             }
             ObjectType::Enum => {
                 let value = unsafe { PyObject_GetAttr(self.object, types::VALUE_STR) };
+                if value.is_null() {
+                    let py = unsafe { Python::assume_attached() };
+                    let py_error = pyo3::PyErr::fetch(py);
+                    return Err(ser::Error::custom(format!(
+                        "Failed to access enum value: {py_error}",
+                    )));
+                }
                 #[allow(clippy::arithmetic_side_effects)]
                 SerializePyObject::new(value, self.recursion_depth + 1).serialize(serializer)
             }
