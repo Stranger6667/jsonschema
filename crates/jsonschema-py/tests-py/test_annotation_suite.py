@@ -6,9 +6,8 @@ import jsonschema_rs
 
 SUITE_PATH = os.path.join(
     os.path.dirname(__file__),
-    "../../../JSON-Schema-Test-Suite/annotations/tests",
+    "../../jsonschema/tests/suite/annotations/tests",
 )
-
 
 def load_test_cases():
     cases = []
