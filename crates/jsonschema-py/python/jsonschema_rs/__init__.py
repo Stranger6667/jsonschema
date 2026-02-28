@@ -23,6 +23,7 @@ from .jsonschema_rs import (
     RegexOptions,
     Registry,
     ValidationErrorKind,
+    canonical_dumps,
     evaluate,
     is_valid,
     iter_errors,
@@ -111,6 +112,7 @@ class ReferencingError(Exception):
 __all__ = [
     "ReferencingError",
     "ValidationError",
+    "canonical_dumps",
     "ValidationErrorKind",
     "Evaluation",
     "is_valid",

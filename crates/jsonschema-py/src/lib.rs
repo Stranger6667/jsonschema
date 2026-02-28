@@ -29,6 +29,7 @@ use serde::Serialize;
 #[macro_use]
 extern crate pyo3_built;
 
+mod canonical;
 mod email;
 mod http;
 mod regex;
@@ -2113,6 +2114,7 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_wrapped(wrap_pyfunction!(evaluate))?;
     module.add_wrapped(wrap_pyfunction!(validator_for))?;
     module.add_wrapped(wrap_pyfunction!(validator_cls_for))?;
+    module.add_wrapped(wrap_pyfunction!(canonical::canonical_dumps))?;
     module.add_class::<Draft4Validator>()?;
     module.add_class::<Draft6Validator>()?;
     module.add_class::<Draft7Validator>()?;
