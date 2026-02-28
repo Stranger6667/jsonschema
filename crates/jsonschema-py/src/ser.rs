@@ -273,6 +273,13 @@ impl Serialize for SerializePyObject {
             ObjectType::Str => {
                 let mut str_size: pyo3::ffi::Py_ssize_t = 0;
                 let ptr = unsafe { PyUnicode_AsUTF8AndSize(self.object, &raw mut str_size) };
+                if ptr.is_null() {
+                    let py = unsafe { Python::assume_attached() };
+                    let py_error = pyo3::PyErr::fetch(py);
+                    return Err(ser::Error::custom(format!(
+                        "Failed to get UTF-8 representation: {py_error}",
+                    )));
+                }
                 let slice = unsafe {
                     std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                         ptr.cast::<u8>(),
