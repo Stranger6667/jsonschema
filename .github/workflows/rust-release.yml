@@ -8,6 +8,8 @@ on:
 jobs:
   rust-release:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
 
@@ -22,3 +24,13 @@ jobs:
       - run: cargo publish --manifest-path crates/jsonschema/Cargo.toml
 
       - run: cargo publish --manifest-path crates/jsonschema-cli/Cargo.toml
+
+      - name: Extract Version
+        run: echo "version=${GITHUB_REF#refs/tags/rust-v}" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          make_latest: false
+          draft: true
+          name: "[Rust] Release ${{ env.version }}"
