@@ -4,7 +4,7 @@ use crate::{
     compiler,
     node::SchemaNode,
     paths::{LazyEvaluationPath, Location},
-    regex::{analyze_pattern, LiteralMatchError, PatternOptimization},
+    regex::{analyze_pattern, is_ecma_whitespace, LiteralMatchError, PatternOptimization},
     validator::Validate as _,
     ValidationContext,
 };
@@ -20,6 +20,10 @@ pub(crate) enum CompiledPattern<R> {
     Prefix(Arc<str>),
     /// Exact match using `==` - for `^...$` patterns.
     Exact(Arc<str>),
+    /// `^(a|b|c)$` — linear scan over a small sorted array of alternatives.
+    Alternation(Arc<[String]>, Arc<str>),
+    /// `^\S*$` — no ECMA-262 whitespace characters.
+    NoWhitespace(Arc<str>),
     /// Full regex pattern.
     Regex(R),
 }
@@ -32,6 +36,8 @@ impl<R: crate::regex::RegexEngine> crate::regex::RegexEngine for CompiledPattern
         match self {
             CompiledPattern::Prefix(prefix) => Ok(text.starts_with(prefix.as_ref())),
             CompiledPattern::Exact(exact) => Ok(text == exact.as_ref()),
+            CompiledPattern::Alternation(alts, _) => Ok(alts.iter().any(|a| a.as_str() == text)),
+            CompiledPattern::NoWhitespace(_) => Ok(!text.chars().any(is_ecma_whitespace)),
             // Treat regex errors as non-match for compatibility
             CompiledPattern::Regex(re) => Ok(re.is_match(text).unwrap_or(false)),
         }
@@ -41,6 +47,9 @@ impl<R: crate::regex::RegexEngine> crate::regex::RegexEngine for CompiledPattern
         match self {
             CompiledPattern::Prefix(prefix) => prefix.as_ref(),
             CompiledPattern::Exact(exact) => exact.as_ref(),
+            CompiledPattern::Alternation(_, original) | CompiledPattern::NoWhitespace(original) => {
+                original.as_ref()
+            }
             CompiledPattern::Regex(re) => re.pattern(),
         }
     }
@@ -162,6 +171,13 @@ pub(crate) fn compile_fancy_regex_patterns<'a>(
         let compiled_pattern = match analyze_pattern(pattern) {
             Some(PatternOptimization::Prefix(prefix)) => CompiledPattern::Prefix(Arc::from(prefix)),
             Some(PatternOptimization::Exact(exact)) => CompiledPattern::Exact(Arc::from(exact)),
+            Some(PatternOptimization::Alternation(alts)) => CompiledPattern::Alternation(
+                Arc::from(alts.into_boxed_slice()),
+                Arc::from(pattern.as_str()),
+            ),
+            Some(PatternOptimization::NoWhitespace) => {
+                CompiledPattern::NoWhitespace(Arc::from(pattern.as_str()))
+            }
             None => {
                 let regex = ctx.get_or_compile_regex(pattern).map_err(|()| {
                     ValidationError::format(
@@ -195,6 +211,13 @@ pub(crate) fn compile_regex_patterns<'a>(
         let compiled_pattern = match analyze_pattern(pattern) {
             Some(PatternOptimization::Prefix(prefix)) => CompiledPattern::Prefix(Arc::from(prefix)),
             Some(PatternOptimization::Exact(exact)) => CompiledPattern::Exact(Arc::from(exact)),
+            Some(PatternOptimization::Alternation(alts)) => CompiledPattern::Alternation(
+                Arc::from(alts.into_boxed_slice()),
+                Arc::from(pattern.as_str()),
+            ),
+            Some(PatternOptimization::NoWhitespace) => {
+                CompiledPattern::NoWhitespace(Arc::from(pattern.as_str()))
+            }
             None => {
                 let regex = ctx.get_or_compile_standard_regex(pattern).map_err(|()| {
                     ValidationError::format(
