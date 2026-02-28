@@ -1,10 +1,9 @@
 #![cfg(not(target_arch = "wasm32"))]
 
+use ahash::HashMap;
 use serde::Deserialize;
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::path::Path;
+use std::{fs, path::Path};
 
 #[derive(Debug, Deserialize)]
 struct AnnotationTestFile {
@@ -34,132 +33,35 @@ struct Assertion {
 fn collect_annotations(
     evaluation: &jsonschema::Evaluation,
 ) -> HashMap<(String, String), Vec<Value>> {
-    let mut result: HashMap<(String, String), Vec<Value>> = HashMap::new();
+    let mut result: HashMap<(String, String), Vec<Value>> = HashMap::default();
 
     for entry in evaluation.iter_annotations() {
         let instance_loc = entry.instance_location.as_str().to_string();
-        // The keyword is the last segment of the schema_location path
-        // e.g., "/title" -> "title", "/properties" -> "properties"
-        let keyword = entry
-            .schema_location
-            .rsplit('/')
-            .next()
-            .unwrap_or(entry.schema_location)
-            .to_string();
-        let value = entry.annotations.value().clone();
+        let annotations_value = entry.annotations.value();
 
-        let key = (instance_loc, keyword);
-        result.entry(key).or_default().push(value);
+        if let Some(annotations_obj) = annotations_value.as_object() {
+            // Metadata keywords (title, description, etc.) are bundled in an object
+            for (keyword, value) in annotations_obj {
+                let key = (instance_loc.clone(), keyword.clone());
+                result.entry(key).or_default().push(value.clone());
+            }
+        } else {
+            // Structural keywords (properties, format, etc.) have the keyword in the schema_location path
+            let keyword = entry
+                .schema_location
+                .rsplit('/')
+                .next()
+                .unwrap_or(entry.schema_location)
+                .to_string();
+            let key = (instance_loc, keyword);
+            result
+                .entry(key)
+                .or_default()
+                .push(annotations_value.clone());
+        }
     }
 
     result
-}
-
-fn get_xfail_ids() -> HashSet<String> {
-    let mut xfail = HashSet::new();
-
-    // --- applicators.json ---
-    // Sub-schema annotations (title) through applicators are not emitted
-    xfail.insert("applicators.json / `anyOf` / 0".to_string());
-    xfail.insert("applicators.json / `anyOf` / 1".to_string());
-    xfail.insert(
-        "applicators.json / `properties`, `patternProperties`, and `additionalProperties` / 1"
-            .to_string(),
-    );
-    xfail.insert("applicators.json / `prefixItems` and `items` / 0".to_string());
-    xfail.insert("applicators.json / `contains` / 0".to_string());
-    xfail.insert("applicators.json / `allOf` / 0".to_string());
-    xfail.insert("applicators.json / `oneOf` / 0".to_string());
-    xfail.insert("applicators.json / `oneOf` / 1".to_string());
-    xfail.insert("applicators.json / `not` / 0".to_string());
-    xfail.insert("applicators.json / `dependentSchemas` / 0".to_string());
-    xfail.insert("applicators.json / `if`, `then`, and `else` / 0".to_string());
-    xfail.insert("applicators.json / `if`, `then`, and `else` / 1".to_string());
-
-    // --- content.json ---
-    // Content annotations are not emitted by the library
-    xfail.insert(
-        "content.json / `contentMediaType` is an annotation for string instances / 0".to_string(),
-    );
-    xfail.insert(
-        "content.json / `contentMediaType` is an annotation for string instances / 1".to_string(),
-    );
-    xfail.insert(
-        "content.json / `contentEncoding` is an annotation for string instances / 0".to_string(),
-    );
-    xfail.insert(
-        "content.json / `contentEncoding` is an annotation for string instances / 1".to_string(),
-    );
-    xfail.insert(
-        "content.json / `contentSchema` is an annotation for string instances / 0".to_string(),
-    );
-    xfail.insert(
-        "content.json / `contentSchema` is an annotation for string instances / 1".to_string(),
-    );
-    xfail.insert("content.json / `contentSchema` requires `contentMediaType` / 0".to_string());
-
-    // --- core.json ---
-    // Title annotation through $ref is not emitted
-    xfail.insert("core.json / `$ref` and `$defs` / 0".to_string());
-
-    // --- format.json ---
-    // Format annotation is not emitted
-    xfail.insert("format.json / `format` is an annotation / 0".to_string());
-
-    // --- meta-data.json ---
-    // Metadata annotations (title, description, default, etc.) are not emitted
-    xfail.insert("meta-data.json / `title` is an annotation / 0".to_string());
-    xfail.insert("meta-data.json / `description` is an annotation / 0".to_string());
-    xfail.insert("meta-data.json / `default` is an annotation / 0".to_string());
-    xfail.insert("meta-data.json / `deprecated` is an annotation / 0".to_string());
-    xfail.insert("meta-data.json / `readOnly` is an annotation / 0".to_string());
-    xfail.insert("meta-data.json / `writeOnly` is an annotation / 0".to_string());
-    xfail.insert("meta-data.json / `examples` is an annotation / 0".to_string());
-
-    // --- unevaluated.json ---
-    xfail.insert("unevaluated.json / `unevaluatedProperties` alone / 0".to_string());
-    xfail.insert("unevaluated.json / `unevaluatedProperties` with `properties` / 0".to_string());
-    xfail.insert(
-        "unevaluated.json / `unevaluatedProperties` with `patternProperties` / 0".to_string(),
-    );
-    xfail.insert(
-        "unevaluated.json / `unevaluatedProperties` with `additionalProperties` / 0".to_string(),
-    );
-    xfail.insert(
-        "unevaluated.json / `unevaluatedProperties` with `dependentSchemas` / 0".to_string(),
-    );
-    xfail.insert(
-        "unevaluated.json / `unevaluatedProperties` with `if`, `then`, and `else` / 0"
-            .to_string(),
-    );
-    xfail.insert(
-        "unevaluated.json / `unevaluatedProperties` with `if`, `then`, and `else` / 1"
-            .to_string(),
-    );
-    xfail.insert("unevaluated.json / `unevaluatedProperties` with `allOf` / 0".to_string());
-    xfail.insert("unevaluated.json / `unevaluatedProperties` with `anyOf` / 0".to_string());
-    xfail.insert("unevaluated.json / `unevaluatedProperties` with `oneOf` / 0".to_string());
-    xfail.insert("unevaluated.json / `unevaluatedProperties` with `not` / 0".to_string());
-
-    xfail.insert("unevaluated.json / `unevaluatedItems` alone / 0".to_string());
-    xfail.insert("unevaluated.json / `unevaluatedItems` with `prefixItems` / 0".to_string());
-    xfail.insert("unevaluated.json / `unevaluatedItems` with `contains` / 0".to_string());
-    xfail.insert(
-        "unevaluated.json / `unevaluatedItems` with `if`, `then`, and `else` / 0".to_string(),
-    );
-    xfail.insert(
-        "unevaluated.json / `unevaluatedItems` with `if`, `then`, and `else` / 1".to_string(),
-    );
-    xfail.insert("unevaluated.json / `unevaluatedItems` with `allOf` / 0".to_string());
-    xfail.insert("unevaluated.json / `unevaluatedItems` with `anyOf` / 0".to_string());
-    xfail.insert("unevaluated.json / `unevaluatedItems` with `oneOf` / 0".to_string());
-    xfail.insert("unevaluated.json / `unevaluatedItems` with `not` / 0".to_string());
-
-    // --- unknown.json ---
-    // Unknown keyword annotations are not emitted
-    xfail.insert("unknown.json / `unknownKeyword` is an annotation / 0".to_string());
-
-    xfail
 }
 
 #[test]
@@ -170,7 +72,6 @@ fn test_annotation_suite() {
         .join("annotations")
         .join("tests");
 
-    let xfail_ids = get_xfail_ids();
     let mut failures: Vec<String> = Vec::new();
 
     let mut entries: Vec<_> = fs::read_dir(&suite_path)
@@ -185,10 +86,10 @@ fn test_annotation_suite() {
         let filename = filepath.file_name().unwrap().to_str().unwrap();
 
         let content = fs::read_to_string(&filepath)
-            .unwrap_or_else(|e| panic!("Failed to read {}: {}", filepath.display(), e));
+            .unwrap_or_else(|err| panic!("Failed to read {}: {err}", filepath.display()));
 
         let test_file: AnnotationTestFile = serde_json::from_str(&content)
-            .unwrap_or_else(|e| panic!("Failed to parse {}: {}", filepath.display(), e));
+            .unwrap_or_else(|err| panic!("Failed to parse {}: {err}", filepath.display()));
 
         for suite_case in &test_file.suite {
             let description = &suite_case.description;
@@ -208,10 +109,6 @@ fn test_annotation_suite() {
 
             for (test_idx, test_case) in suite_case.tests.iter().enumerate() {
                 let test_id = format!("{filename} / {description} / {test_idx}");
-
-                if xfail_ids.contains(&test_id) {
-                    continue;
-                }
 
                 let evaluation = validator.evaluate(&test_case.instance);
                 let collected = collect_annotations(&evaluation);
