@@ -503,6 +503,9 @@ impl<R> ValidationOptions<R> {
 impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
     /// Build a JSON Schema validator using the current options.
     ///
+    /// If no draft is set via [`with_draft`](Self::with_draft), the draft is auto-detected
+    /// from the schema's `$schema` field, identical to [`validator_for`](crate::validator_for).
+    ///
     /// # Example
     ///
     /// ```rust

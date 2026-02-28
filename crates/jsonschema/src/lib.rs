@@ -1063,6 +1063,9 @@ pub async fn async_validator_for(schema: &Value) -> Result<Validator, Validation
 /// options for JSON Schema validation. You can use this builder to specify
 /// the draft version, set custom formats, and more.
 ///
+/// If [`with_draft`](ValidationOptions::with_draft) is not called, the draft is
+/// auto-detected from the schema's `$schema` field — the same behaviour as [`validator_for`].
+///
 /// **Note:** When calling [`ValidationOptions::build`], it **must not** be called from within
 /// an async runtime if the schema contains external references that require network requests,
 /// or it will panic. Use `async_options` for async contexts.
