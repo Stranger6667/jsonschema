@@ -137,7 +137,7 @@ def test_enum_value_lookup_error():
                 raise RuntimeError("boom")
             return super().__getattribute__(name)
 
-    with pytest.raises(ValueError, match="Failed to access enum value"):
+    with pytest.raises(ValueError, match="boom"):
         canonical_dumps(BrokenEnum.A)
 
 

@@ -750,6 +750,18 @@ def test_enum_value_lookup_error():
         is_valid(True, BrokenValueStrEnum.A)
 
 
+@pytest.mark.skipif(not hasattr(sys, "getrefcount"), reason="PyPy does not have sys.getrefcount")
+def test_enum_value_refcount_is_stable():
+    class PayloadEnum(E.Enum):
+        ITEM = [1]
+
+    payload = PayloadEnum.ITEM.value
+    baseline = sys.getrefcount(payload)
+    for _ in range(200):
+        assert is_valid(True, PayloadEnum.ITEM)
+    assert sys.getrefcount(payload) == baseline
+
+
 def test_validate_error_instance_path_traverses_instance():
     schema = {
         "type": "object",

@@ -517,7 +517,10 @@ impl Serialize for SerializePyObject {
                     )));
                 }
                 #[allow(clippy::arithmetic_side_effects)]
-                SerializePyObject::new(value, self.recursion_depth + 1).serialize(serializer)
+                let result =
+                    SerializePyObject::new(value, self.recursion_depth + 1).serialize(serializer);
+                unsafe { pyo3::ffi::Py_DECREF(value) };
+                result
             }
             ObjectType::Unknown => {
                 let object_type = unsafe { Py_TYPE(self.object) };

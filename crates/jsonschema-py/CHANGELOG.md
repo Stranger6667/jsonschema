@@ -12,6 +12,7 @@
 - Crash when serializing strings with invalid UTF-8 (e.g., lone surrogates) during schema/instance conversion.
 - Crash when serializing dicts keyed by `str` enums whose `value` lookup raises an exception.
 - Crash when serializing enum instances whose `value` lookup raises an exception.
+- Reference leak when serializing enum instances repeatedly.
 
 ## [0.43.0] - 2026-02-28
 
