@@ -360,9 +360,9 @@ impl Serialize for SerializePyObject {
                             );
                         }
                         let object_type = unsafe { Py_TYPE(key) };
-                        let key_unicode = if object_type == unsafe { types::STR_TYPE } {
+                        let (key_unicode, owned) = if object_type == unsafe { types::STR_TYPE } {
                             // if the key type is string, use it as is
-                            key
+                            (key, false)
                         } else {
                             let is_str = unsafe {
                                 PyObject_IsInstance(
@@ -377,7 +377,15 @@ impl Serialize for SerializePyObject {
                             // cover for both old-style str enums subclassing str and Enum and for new-style
                             // ones subclassing StrEnum
                             if is_str > 0 && is_enum_subclass(object_type) {
-                                unsafe { PyObject_GetAttr(key, types::VALUE_STR) }
+                                let attr = unsafe { PyObject_GetAttr(key, types::VALUE_STR) };
+                                if attr.is_null() {
+                                    let py = unsafe { Python::assume_attached() };
+                                    let py_error = pyo3::PyErr::fetch(py);
+                                    return Err(ser::Error::custom(format!(
+                                        "Failed to access enum key value: {py_error}",
+                                    )));
+                                }
+                                (attr, true)
                             } else {
                                 return Err(ser::Error::custom(format!(
                                     "Dict key must be str or str enum. Got '{}'",
@@ -388,16 +396,30 @@ impl Serialize for SerializePyObject {
 
                         let ptr =
                             unsafe { PyUnicode_AsUTF8AndSize(key_unicode, &raw mut str_size) };
+                        if ptr.is_null() {
+                            let py = unsafe { Python::assume_attached() };
+                            let py_error = pyo3::PyErr::fetch(py);
+                            if owned {
+                                unsafe { pyo3::ffi::Py_DECREF(key_unicode) };
+                            }
+                            return Err(ser::Error::custom(format!(
+                                "Failed to get key as UTF-8: {py_error}",
+                            )));
+                        }
                         let slice = unsafe {
                             std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                                 ptr.cast::<u8>(),
                                 str_size as usize,
                             ))
                         };
-                        tri!(map.serialize_entry(
+                        let entry_result = map.serialize_entry(
                             slice,
                             &SerializePyObject::new(value, self.recursion_depth + 1),
-                        ));
+                        );
+                        if owned {
+                            unsafe { pyo3::ffi::Py_DECREF(key_unicode) };
+                        }
+                        tri!(entry_result);
                     }
                     map.end()
                 }

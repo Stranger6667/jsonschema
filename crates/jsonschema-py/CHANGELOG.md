@@ -10,6 +10,7 @@
 
 - Do not produce annotations for non-string instances from `contentMediaType`, `contentEncoding`, and `contentSchema` keywords.
 - Crash when serializing strings with invalid UTF-8 (e.g., lone surrogates) during schema/instance conversion.
+- Crash when serializing dicts keyed by `str` enums whose `value` lookup raises an exception.
 
 ## [0.43.0] - 2026-02-28
 

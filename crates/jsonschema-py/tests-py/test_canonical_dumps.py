@@ -109,9 +109,10 @@ def test_integer_float_same_as_int(float_val, int_val):
     assert canonical_dumps(float_val) == canonical_dumps(int_val)
 
 
-def test_lone_surrogate_string_raises():
-    with pytest.raises(ValueError, match="Failed to get UTF-8 representation"):
-        canonical_dumps("\ud800")
+@pytest.mark.parametrize("value", ["\ud800", {"\ud800": 1}])
+def test_lone_surrogate_raises(value):
+    with pytest.raises(ValueError, match="surrogates not allowed"):
+        canonical_dumps(value)
 
 
 def test_str_enum_key_value_lookup_error():

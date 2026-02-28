@@ -115,7 +115,11 @@ impl Serialize for CanonicalPyObject {
                 let mut str_size: ffi::Py_ssize_t = 0;
                 let ptr = unsafe { PyUnicode_AsUTF8AndSize(self.object, &raw mut str_size) };
                 if ptr.is_null() {
-                    return Err(ser::Error::custom("Failed to get UTF-8 representation"));
+                    let py = unsafe { Python::assume_attached() };
+                    let py_error = pyo3::PyErr::fetch(py);
+                    return Err(ser::Error::custom(format!(
+                        "Failed to get UTF-8 representation: {py_error}",
+                    )));
                 }
                 let slice = unsafe {
                     std::str::from_utf8_unchecked(std::slice::from_raw_parts(
@@ -204,7 +208,11 @@ impl Serialize for CanonicalPyObject {
                         if is_str > 0 && is_enum_subclass(object_type) {
                             let attr = unsafe { PyObject_GetAttr(key, types::VALUE_STR) };
                             if attr.is_null() {
-                                return Err(ser::Error::custom("Failed to access enum key value"));
+                                let py = unsafe { Python::assume_attached() };
+                                let py_error = pyo3::PyErr::fetch(py);
+                                return Err(ser::Error::custom(format!(
+                                    "Failed to access enum key value: {py_error}",
+                                )));
                             }
                             (attr, true)
                         } else {
@@ -216,10 +224,14 @@ impl Serialize for CanonicalPyObject {
                     };
                     let ptr = unsafe { PyUnicode_AsUTF8AndSize(key_unicode, &raw mut str_size) };
                     if ptr.is_null() {
+                        let py = unsafe { Python::assume_attached() };
+                        let py_error = pyo3::PyErr::fetch(py);
                         if owned {
                             unsafe { ffi::Py_DECREF(key_unicode) };
                         }
-                        return Err(ser::Error::custom("Failed to get key as UTF-8"));
+                        return Err(ser::Error::custom(format!(
+                            "Failed to get key as UTF-8: {py_error}",
+                        )));
                     }
                     let key_str = unsafe {
                         std::str::from_utf8_unchecked(std::slice::from_raw_parts(
@@ -266,9 +278,11 @@ impl Serialize for CanonicalPyObject {
                             if is_str > 0 && is_enum_subclass(object_type) {
                                 let attr = unsafe { PyObject_GetAttr(key, types::VALUE_STR) };
                                 if attr.is_null() {
-                                    return Err(ser::Error::custom(
-                                        "Failed to access enum key value",
-                                    ));
+                                    let py = unsafe { Python::assume_attached() };
+                                    let py_error = pyo3::PyErr::fetch(py);
+                                    return Err(ser::Error::custom(format!(
+                                        "Failed to access enum key value: {py_error}"
+                                    )));
                                 }
                                 (attr, true)
                             } else {
@@ -282,10 +296,14 @@ impl Serialize for CanonicalPyObject {
                         let key_string = unsafe {
                             let ptr = PyUnicode_AsUTF8AndSize(key_unicode, &raw mut str_size);
                             if ptr.is_null() {
+                                let py = Python::assume_attached();
+                                let py_error = pyo3::PyErr::fetch(py);
                                 if owned {
                                     ffi::Py_DECREF(key_unicode);
                                 }
-                                return Err(ser::Error::custom("Failed to get key as UTF-8"));
+                                return Err(ser::Error::custom(format!(
+                                    "Failed to get key as UTF-8: {py_error}",
+                                )));
                             }
                             std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                                 ptr.cast::<u8>(),
