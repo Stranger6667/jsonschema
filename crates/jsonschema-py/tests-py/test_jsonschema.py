@@ -59,6 +59,11 @@ def test_invalid_type(func):
         func(set(), True)
 
 
+def test_lone_surrogate_instance_raises():
+    with pytest.raises(ValueError, match="surrogates not allowed"):
+        is_valid(True, "\ud800")
+
+
 def test_repr():
     assert repr(validator_for({"minimum": 5})) == "<Draft202012Validator>"
 
