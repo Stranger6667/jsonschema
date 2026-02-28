@@ -10,19 +10,25 @@ on:
 jobs:
   rust:
     runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        package: [jsonschema, referencing]
+    name: "Run benchmarks (${{ matrix.package }})"
     steps:
       - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.package }}
 
       - run: cargo install cargo-codspeed --force
 
-      - run: cargo codspeed build -p jsonschema -p referencing
+      - run: cargo codspeed build -p ${{ matrix.package }}
 
       - uses: CodSpeedHQ/action@v4
         with:
-          run: cargo codspeed run -p jsonschema -p referencing
+          run: cargo codspeed run -p ${{ matrix.package }}
           mode: "instrumentation"
           token: ${{ secrets.CODSPEED_TOKEN }}
