@@ -1,10 +1,10 @@
 use pyo3::{exceptions, ffi, prelude::*};
 use serde::{
-    ser::{self, Serialize, SerializeMap, SerializeSeq},
+    ser::{self, Serialize, SerializeMap, SerializeSeq, SerializeStruct},
     Serializer,
 };
 use serde_json::ser::{CompactFormatter, Formatter};
-use std::{io, str::FromStr};
+use std::{cell::RefCell, io, mem};
 
 use crate::{
     ser::{
@@ -27,10 +27,199 @@ struct CanonicalFormatter {
     default: CompactFormatter,
 }
 
+const I64_UPPER_EXCLUSIVE_F64: f64 = 9_223_372_036_854_775_808.0;
+const I64_LOWER_INCLUSIVE_F64: f64 = -9_223_372_036_854_775_808.0;
+const U64_UPPER_EXCLUSIVE_F64: f64 = 18_446_744_073_709_551_616.0;
+const MAX_SCRATCH_POOL_SIZE: usize = 8;
+const MAX_SCRATCH_CAPACITY: usize = 16_384;
+const SERDE_JSON_NUMBER_TOKEN: &str = "$serde_json::private::Number";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DecimalKind {
+    Special,
+    Integral,
+    Fractional,
+}
+
+#[inline]
+fn classify_decimal_kind(bytes: &[u8]) -> DecimalKind {
+    if bytes.is_empty() {
+        return DecimalKind::Fractional;
+    }
+
+    let mut idx = 0;
+    if matches!(bytes[idx], b'+' | b'-') {
+        idx += 1;
+        if idx == bytes.len() {
+            return DecimalKind::Fractional;
+        }
+    }
+
+    // Decimal string specials are ascii words: NaN / sNaN / Infinity.
+    if bytes[idx].is_ascii_alphabetic() {
+        return DecimalKind::Special;
+    }
+
+    let mut seen_digit = false;
+    let mut seen_dot = false;
+    let mut frac_digits: i64 = 0;
+    let mut suffix_zeros: i64 = 0;
+    let mut all_digits_zero = true;
+
+    while idx < bytes.len() {
+        let byte = bytes[idx];
+        if byte.is_ascii_digit() {
+            seen_digit = true;
+            if byte == b'0' {
+                suffix_zeros = suffix_zeros.saturating_add(1);
+            } else {
+                suffix_zeros = 0;
+                all_digits_zero = false;
+            }
+            if seen_dot {
+                frac_digits = frac_digits.saturating_add(1);
+            }
+            idx += 1;
+            continue;
+        }
+        if byte == b'.' && !seen_dot {
+            seen_dot = true;
+            idx += 1;
+            continue;
+        }
+        break;
+    }
+
+    if !seen_digit {
+        return DecimalKind::Fractional;
+    }
+
+    let mut exponent: i64 = 0;
+    if idx < bytes.len() && matches!(bytes[idx], b'e' | b'E') {
+        idx += 1;
+        let mut negative = false;
+        if idx < bytes.len() && matches!(bytes[idx], b'+' | b'-') {
+            negative = bytes[idx] == b'-';
+            idx += 1;
+        }
+        let mut has_exp_digit = false;
+        while idx < bytes.len() && bytes[idx].is_ascii_digit() {
+            has_exp_digit = true;
+            exponent = exponent
+                .saturating_mul(10)
+                .saturating_add(i64::from(bytes[idx] - b'0'));
+            idx += 1;
+        }
+        if !has_exp_digit {
+            return DecimalKind::Fractional;
+        }
+        if negative {
+            exponent = -exponent;
+        }
+    }
+
+    if idx != bytes.len() {
+        return DecimalKind::Fractional;
+    }
+
+    if exponent >= frac_digits {
+        return DecimalKind::Integral;
+    }
+
+    let required_zeros = frac_digits.saturating_sub(exponent);
+    if all_digits_zero || suffix_zeros >= required_zeros {
+        DecimalKind::Integral
+    } else {
+        DecimalKind::Fractional
+    }
+}
+
+struct BorrowedNumber<'a>(&'a str);
+
+impl Serialize for BorrowedNumber<'_> {
+    #[inline]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Emit an arbitrary-precision number directly without parsing or allocating.
+        // This follows serde_json's internal Number serialization token contract.
+        let mut s = serializer.serialize_struct(SERDE_JSON_NUMBER_TOKEN, 1)?;
+        s.serialize_field(SERDE_JSON_NUMBER_TOKEN, self.0)?;
+        s.end()
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn serialize_decimal<S>(object: *mut ffi::PyObject, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    // Get string representation of the Decimal
+    let str_obj = unsafe { ffi::PyObject_Str(object) };
+    if str_obj.is_null() {
+        return Err(ser::Error::custom("Failed to convert Decimal to string"));
+    }
+    let mut str_size: ffi::Py_ssize_t = 0;
+    let ptr = unsafe { ffi::PyUnicode_AsUTF8AndSize(str_obj, &raw mut str_size) };
+    if ptr.is_null() {
+        unsafe { ffi::Py_DECREF(str_obj) };
+        return Err(ser::Error::custom("Failed to get UTF-8 representation"));
+    }
+    let slice = unsafe {
+        std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+            ptr.cast::<u8>(),
+            str_size as usize,
+        ))
+    };
+
+    // Classify from string representation in one pass:
+    // special values -> null, integral values -> integer path.
+    let bytes = slice.as_bytes();
+    match classify_decimal_kind(bytes) {
+        DecimalKind::Special => {
+            unsafe { ffi::Py_DECREF(str_obj) };
+            serializer.serialize_unit()
+        }
+        DecimalKind::Integral => {
+            let py_int = unsafe { ffi::PyNumber_Long(object) };
+            if py_int.is_null() {
+                unsafe {
+                    ffi::PyErr_Clear();
+                    ffi::Py_DECREF(str_obj);
+                }
+                return Err(ser::Error::custom("Failed to convert Decimal to integer"));
+            }
+            let result = serialize_large_int(py_int, serializer);
+            unsafe {
+                ffi::Py_DECREF(py_int);
+                ffi::Py_DECREF(str_obj);
+            }
+            result
+        }
+        DecimalKind::Fractional => {
+            let result = serializer.serialize_some(&BorrowedNumber(slice));
+            unsafe { ffi::Py_DECREF(str_obj) };
+            result
+        }
+    }
+}
+
 impl Formatter for CanonicalFormatter {
     #[inline]
     fn write_f64<W: io::Write + ?Sized>(&mut self, writer: &mut W, value: f64) -> io::Result<()> {
         if value.fract() == 0.0 {
+            if (0.0..U64_UPPER_EXCLUSIVE_F64).contains(&value) {
+                // SAFETY: range check above guarantees lossless conversion.
+                let int = unsafe { value.to_int_unchecked::<u64>() };
+                return self.default.write_u64(writer, int);
+            }
+            if (I64_LOWER_INCLUSIVE_F64..I64_UPPER_EXCLUSIVE_F64).contains(&value) {
+                // SAFETY: range check above guarantees lossless conversion.
+                let int = unsafe { value.to_int_unchecked::<i64>() };
+                return self.default.write_i64(writer, int);
+            }
             // Integer-valued float: convert to integer via Python FFI.
             // The GIL is held because we are always called from within a #[pyfunction].
             unsafe {
@@ -66,32 +255,113 @@ impl Formatter for CanonicalFormatter {
     }
 }
 
-struct CanonicalPyObject {
+struct CanonicalPyObject<'scratch> {
     object: *mut ffi::PyObject,
     object_type: ObjectType,
     recursion_depth: u8,
+    scratch_pool: &'scratch RefCell<Vec<Vec<DictEntry>>>,
 }
 
-impl CanonicalPyObject {
+struct DictEntry {
+    key_ptr: *const u8,
+    key_len: usize,
+    value: *mut ffi::PyObject,
+}
+
+#[derive(Default)]
+struct OwnedKeyRefs {
+    refs: Option<Vec<*mut ffi::PyObject>>,
+}
+
+impl OwnedKeyRefs {
     #[inline]
-    fn new(object: *mut ffi::PyObject, recursion_depth: u8) -> Self {
+    fn push(&mut self, object: *mut ffi::PyObject) {
+        self.refs.get_or_insert_with(Vec::new).push(object);
+    }
+}
+
+impl Drop for OwnedKeyRefs {
+    fn drop(&mut self) {
+        if let Some(refs) = self.refs.take() {
+            for object in refs {
+                unsafe { ffi::Py_DECREF(object) };
+            }
+        }
+    }
+}
+
+struct DictEntryScratch<'scratch> {
+    entries: Vec<DictEntry>,
+    pool: &'scratch RefCell<Vec<Vec<DictEntry>>>,
+}
+
+impl<'scratch> DictEntryScratch<'scratch> {
+    fn with_capacity(pool: &'scratch RefCell<Vec<Vec<DictEntry>>>, capacity: usize) -> Self {
+        let mut entries = pool.borrow_mut().pop().unwrap_or_default();
+        entries.clear();
+        if entries.capacity() < capacity {
+            entries.reserve(capacity - entries.capacity());
+        }
+        DictEntryScratch { entries, pool }
+    }
+
+    fn entries_mut(&mut self) -> &mut Vec<DictEntry> {
+        &mut self.entries
+    }
+}
+
+impl Drop for DictEntryScratch<'_> {
+    fn drop(&mut self) {
+        self.entries.clear();
+        let entries = mem::take(&mut self.entries);
+        if entries.capacity() > MAX_SCRATCH_CAPACITY {
+            return;
+        }
+        let mut pool = self.pool.borrow_mut();
+        if pool.len() < MAX_SCRATCH_POOL_SIZE {
+            pool.push(entries);
+            return;
+        }
+        if let Some((idx, min_capacity)) = pool
+            .iter()
+            .enumerate()
+            .map(|(idx, vec)| (idx, vec.capacity()))
+            .min_by_key(|(_, cap)| *cap)
+        {
+            if entries.capacity() > min_capacity {
+                pool[idx] = entries;
+            }
+        }
+    }
+}
+
+impl<'scratch> CanonicalPyObject<'scratch> {
+    #[inline]
+    fn new(
+        object: *mut ffi::PyObject,
+        recursion_depth: u8,
+        scratch_pool: &'scratch RefCell<Vec<Vec<DictEntry>>>,
+    ) -> Self {
         CanonicalPyObject {
             object,
             object_type: get_object_type_from_object(object),
             recursion_depth,
+            scratch_pool,
         }
     }
 
     #[inline]
-    const fn with_obtype(
+    fn with_obtype(
         object: *mut ffi::PyObject,
         object_type: ObjectType,
         recursion_depth: u8,
+        scratch_pool: &'scratch RefCell<Vec<Vec<DictEntry>>>,
     ) -> Self {
         CanonicalPyObject {
             object,
             object_type,
             recursion_depth,
+            scratch_pool,
         }
     }
 }
@@ -105,7 +375,7 @@ macro_rules! tri {
     };
 }
 
-impl Serialize for CanonicalPyObject {
+impl Serialize for CanonicalPyObject<'_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -242,7 +512,7 @@ impl Serialize for CanonicalPyObject {
                     let mut map = tri!(serializer.serialize_map(Some(1)));
                     let result = map.serialize_entry(
                         key_str,
-                        &CanonicalPyObject::new(value, self.recursion_depth + 1),
+                        &CanonicalPyObject::new(value, self.recursion_depth + 1, self.scratch_pool),
                     );
                     if owned {
                         unsafe { ffi::Py_DECREF(key_unicode) };
@@ -251,7 +521,9 @@ impl Serialize for CanonicalPyObject {
                     map.end()
                 } else {
                     // Collect all key-value pairs, sort by key, then serialize
-                    let mut entries: Vec<(String, *mut ffi::PyObject)> = Vec::with_capacity(length);
+                    let mut scratch = DictEntryScratch::with_capacity(self.scratch_pool, length);
+                    let entries = scratch.entries_mut();
+                    let mut owned_key_refs = OwnedKeyRefs::default();
                     let mut pos = 0_isize;
                     let mut str_size: ffi::Py_ssize_t = 0;
                     let mut key: *mut ffi::PyObject = std::ptr::null_mut();
@@ -266,8 +538,8 @@ impl Serialize for CanonicalPyObject {
                             );
                         }
                         let object_type = unsafe { Py_TYPE(key) };
-                        let (key_unicode, owned) = if object_type == unsafe { types::STR_TYPE } {
-                            (key, false)
+                        let key_unicode = if object_type == unsafe { types::STR_TYPE } {
+                            key
                         } else {
                             let is_str = unsafe {
                                 PyObject_IsInstance(key, types::STR_TYPE.cast::<ffi::PyObject>())
@@ -284,7 +556,8 @@ impl Serialize for CanonicalPyObject {
                                         "Failed to access enum key value: {py_error}"
                                     )));
                                 }
-                                (attr, true)
+                                owned_key_refs.push(attr);
+                                attr
                             } else {
                                 return Err(ser::Error::custom(format!(
                                     "Dict key must be str or str enum. Got '{}'",
@@ -293,37 +566,42 @@ impl Serialize for CanonicalPyObject {
                             }
                         };
 
-                        let key_string = unsafe {
-                            let ptr = PyUnicode_AsUTF8AndSize(key_unicode, &raw mut str_size);
-                            if ptr.is_null() {
-                                let py = Python::assume_attached();
-                                let py_error = pyo3::PyErr::fetch(py);
-                                if owned {
-                                    ffi::Py_DECREF(key_unicode);
-                                }
-                                return Err(ser::Error::custom(format!(
-                                    "Failed to get key as UTF-8: {py_error}",
-                                )));
-                            }
-                            std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                                ptr.cast::<u8>(),
-                                str_size as usize,
-                            ))
-                            .to_string()
-                        };
-                        if owned {
-                            unsafe { ffi::Py_DECREF(key_unicode) };
+                        let ptr =
+                            unsafe { PyUnicode_AsUTF8AndSize(key_unicode, &raw mut str_size) };
+                        if ptr.is_null() {
+                            let py = unsafe { Python::assume_attached() };
+                            let py_error = pyo3::PyErr::fetch(py);
+                            return Err(ser::Error::custom(format!(
+                                "Failed to get key as UTF-8: {py_error}",
+                            )));
                         }
-                        entries.push((key_string, value));
+                        entries.push(DictEntry {
+                            key_ptr: ptr.cast::<u8>(),
+                            key_len: str_size as usize,
+                            value,
+                        });
                     }
                     // Sort keys alphabetically for canonical form
-                    entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+                    entries.sort_unstable_by(|a, b| unsafe {
+                        std::slice::from_raw_parts(a.key_ptr, a.key_len)
+                            .cmp(std::slice::from_raw_parts(b.key_ptr, b.key_len))
+                    });
 
                     let mut map = tri!(serializer.serialize_map(Some(length)));
-                    for (key_str, val_ptr) in &entries {
+                    for entry in entries.iter() {
+                        let key_str = unsafe {
+                            std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                                entry.key_ptr,
+                                entry.key_len,
+                            ))
+                        };
                         tri!(map.serialize_entry(
-                            key_str.as_str(),
-                            &CanonicalPyObject::new(*val_ptr, self.recursion_depth + 1),
+                            key_str,
+                            &CanonicalPyObject::new(
+                                entry.value,
+                                self.recursion_depth + 1,
+                                self.scratch_pool,
+                            ),
                         ));
                     }
                     map.end()
@@ -351,6 +629,7 @@ impl Serialize for CanonicalPyObject {
                             elem,
                             ob_type,
                             self.recursion_depth + 1,
+                            self.scratch_pool,
                         )));
                     }
                     sequence.end()
@@ -378,72 +657,13 @@ impl Serialize for CanonicalPyObject {
                             elem,
                             ob_type,
                             self.recursion_depth + 1,
+                            self.scratch_pool,
                         )));
                     }
                     sequence.end()
                 }
             }
-            ObjectType::Decimal => {
-                // Get string representation of the Decimal
-                let str_obj = unsafe { ffi::PyObject_Str(self.object) };
-                if str_obj.is_null() {
-                    return Err(ser::Error::custom("Failed to convert Decimal to string"));
-                }
-                let mut str_size: ffi::Py_ssize_t = 0;
-                let ptr = unsafe { ffi::PyUnicode_AsUTF8AndSize(str_obj, &raw mut str_size) };
-                if ptr.is_null() {
-                    unsafe { ffi::Py_DECREF(str_obj) };
-                    return Err(ser::Error::custom("Failed to get UTF-8 representation"));
-                }
-                let slice = unsafe {
-                    std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                        ptr.cast::<u8>(),
-                        str_size as usize,
-                    ))
-                };
-
-                // Check for special values (NaN / Infinity)
-                let upper = slice.to_uppercase();
-                if upper.contains("NAN") || upper.contains("INF") {
-                    unsafe { ffi::Py_DECREF(str_obj) };
-                    return serializer.serialize_unit();
-                }
-
-                // Try converting to integer to detect integer-valued Decimals.
-                // PyNumber_Long returns NULL for NaN/Inf (already handled above) and
-                // truncates fractional values, so we compare back to the original.
-                let py_int = unsafe { ffi::PyNumber_Long(self.object) };
-                if py_int.is_null() {
-                    // Shouldn't reach here after the NaN/Inf check, but handle safely
-                    unsafe {
-                        ffi::PyErr_Clear();
-                        ffi::Py_DECREF(str_obj);
-                    }
-                    return Err(ser::Error::custom("Failed to convert Decimal to integer"));
-                }
-
-                // Compare: int(decimal) == decimal ?
-                let cmp = unsafe { ffi::PyObject_RichCompareBool(py_int, self.object, ffi::Py_EQ) };
-                if cmp > 0 {
-                    // Integer-valued: serialize the integer
-                    let result = serialize_large_int(py_int, serializer);
-                    unsafe {
-                        ffi::Py_DECREF(py_int);
-                        ffi::Py_DECREF(str_obj);
-                    }
-                    result
-                } else {
-                    // Fractional: parse as serde_json::Number using the string form
-                    unsafe { ffi::Py_DECREF(py_int) };
-                    let result = if let Ok(num) = serde_json::Number::from_str(slice) {
-                        serializer.serialize_some(&num)
-                    } else {
-                        Err(ser::Error::custom("Failed to parse Decimal as number"))
-                    };
-                    unsafe { ffi::Py_DECREF(str_obj) };
-                    result
-                }
-            }
+            ObjectType::Decimal => serialize_decimal(self.object, serializer),
             ObjectType::Enum => {
                 let value = unsafe { PyObject_GetAttr(self.object, types::VALUE_STR) };
                 if value.is_null() {
@@ -455,7 +675,8 @@ impl Serialize for CanonicalPyObject {
                 }
                 #[allow(clippy::arithmetic_side_effects)]
                 let result =
-                    CanonicalPyObject::new(value, self.recursion_depth + 1).serialize(serializer);
+                    CanonicalPyObject::new(value, self.recursion_depth + 1, self.scratch_pool)
+                        .serialize(serializer);
                 unsafe { ffi::Py_DECREF(value) };
                 result
             }
@@ -470,13 +691,43 @@ impl Serialize for CanonicalPyObject {
     }
 }
 
+#[inline]
+fn initial_output_capacity(object: *mut ffi::PyObject, object_type: ObjectType) -> usize {
+    const MIN_CAPACITY: usize = 16;
+    const MAX_PREALLOC: usize = 1 << 20; // 1 MiB
+
+    let estimated = match object_type {
+        ObjectType::Dict => {
+            let len = unsafe { dict_len(object) };
+            len.saturating_mul(24).saturating_add(2)
+        }
+        ObjectType::List => {
+            let len = unsafe { pylist_len(object) };
+            len.saturating_mul(12).saturating_add(2)
+        }
+        ObjectType::Tuple => {
+            let len = unsafe { pytuple_len(object) };
+            len.saturating_mul(12).saturating_add(2)
+        }
+        ObjectType::Str => 64,
+        ObjectType::Int | ObjectType::Float | ObjectType::Decimal => 32,
+        ObjectType::Bool | ObjectType::None => 8,
+        ObjectType::Enum | ObjectType::Unknown => MIN_CAPACITY,
+    };
+
+    estimated.clamp(MIN_CAPACITY, MAX_PREALLOC)
+}
+
 fn to_canonical_string(object: *mut ffi::PyObject) -> serde_json::Result<String> {
-    let mut output = Vec::with_capacity(16);
+    let object_type = get_object_type_from_object(object);
+    let mut output = Vec::with_capacity(initial_output_capacity(object, object_type));
     let formatter = CanonicalFormatter {
         default: CompactFormatter,
     };
+    let scratch_pool = RefCell::new(Vec::new());
     let mut serializer = serde_json::Serializer::with_formatter(&mut output, formatter);
-    CanonicalPyObject::new(object, 0).serialize(&mut serializer)?;
+    CanonicalPyObject::with_obtype(object, object_type, 0, &scratch_pool)
+        .serialize(&mut serializer)?;
     Ok(unsafe { String::from_utf8_unchecked(output) })
 }
 
