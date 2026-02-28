@@ -284,6 +284,13 @@ fn try_compile_as_literals<'a>(
                 exact,
                 original: pattern.clone(),
             },
+            PatternOptimization::Alternation(alternatives) => LiteralMatcher::Alternation {
+                alternatives,
+                original: pattern.clone(),
+            },
+            PatternOptimization::NoWhitespace => LiteralMatcher::NoWhitespace {
+                original: pattern.clone(),
+            },
         };
         let node = match compiler::compile(&pctx, pctx.as_resource_ref(subschema)) {
             Ok(node) => node,

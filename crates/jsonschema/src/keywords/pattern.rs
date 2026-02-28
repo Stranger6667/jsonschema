@@ -6,7 +6,7 @@ use crate::{
     keywords::CompilationResult,
     options::PatternEngineOptions,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
-    regex::{analyze_pattern, PatternOptimization, RegexEngine, RegexError},
+    regex::{analyze_pattern, is_ecma_whitespace, PatternOptimization, RegexEngine, RegexError},
     types::JsonType,
     validator::{Validate, ValidationContext},
 };
@@ -88,6 +88,87 @@ impl Validate for ExactPatternValidator {
     }
 }
 
+/// Validator for `^(a|b|c)$` alternation patterns (linear scan).
+pub(crate) struct AlternationPatternValidator {
+    alternatives: Vec<String>,
+    pattern: String,
+    location: Location,
+}
+
+impl Validate for AlternationPatternValidator {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+        if let Value::String(item) = instance {
+            self.alternatives
+                .iter()
+                .any(|a| a.as_str() == item.as_str())
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::String(item) = instance {
+            if !self
+                .alternatives
+                .iter()
+                .any(|a| a.as_str() == item.as_str())
+            {
+                return Err(ValidationError::pattern(
+                    self.location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.location),
+                    location.into(),
+                    instance,
+                    self.pattern.clone(),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Validator for `^\S*$` — rejects any string containing ECMA-262 whitespace.
+pub(crate) struct NoWhitespacePatternValidator {
+    pattern: String,
+    location: Location,
+}
+
+impl Validate for NoWhitespacePatternValidator {
+    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+        if let Value::String(item) = instance {
+            !item.chars().any(is_ecma_whitespace)
+        } else {
+            true
+        }
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &'i Value,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Value::String(item) = instance {
+            if item.chars().any(is_ecma_whitespace) {
+                return Err(ValidationError::pattern(
+                    self.location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.location),
+                    location.into(),
+                    instance,
+                    self.pattern.clone(),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 pub(crate) struct PatternValidator<R> {
     regex: Arc<R>,
     location: Location,
@@ -156,6 +237,19 @@ pub(crate) fn compile<'a>(
             Some(PatternOptimization::Prefix(prefix)) => {
                 return Some(Ok(Box::new(PrefixPatternValidator {
                     prefix,
+                    pattern: item.clone(),
+                    location: ctx.location().join("pattern"),
+                })));
+            }
+            Some(PatternOptimization::Alternation(alternatives)) => {
+                return Some(Ok(Box::new(AlternationPatternValidator {
+                    alternatives,
+                    pattern: item.clone(),
+                    location: ctx.location().join("pattern"),
+                })));
+            }
+            Some(PatternOptimization::NoWhitespace) => {
+                return Some(Ok(Box::new(NoWhitespacePatternValidator {
                     pattern: item.clone(),
                     location: ctx.location().join("pattern"),
                 })));
@@ -245,6 +339,31 @@ mod tests {
     #[test_case("^\\$ref$", "ref", false; "dollar ref no dollar no match")]
     #[test_case("^\\$ref$", "$ref_", false; "dollar ref trailing no match")]
     fn exact_pattern_optimization(pattern: &str, text: &str, is_matching: bool) {
+        let text = json!(text);
+        let schema = json!({"pattern": pattern});
+        let validator = crate::validator_for(&schema).unwrap();
+        assert_eq!(validator.is_valid(&text), is_matching);
+        assert_eq!(validator.validate(&text).is_ok(), is_matching);
+    }
+
+    #[test_case(r"^(get|put|post)$", "get", true ; "alternation match get")]
+    #[test_case(r"^(get|put|post)$", "put", true ; "alternation match put")]
+    #[test_case(r"^(get|put|post)$", "post", true ; "alternation match post")]
+    #[test_case(r"^(get|put|post)$", "patch", false ; "alternation no match")]
+    #[test_case(r"^(get|put|post)$", "GET", false ; "alternation case sensitive")]
+    fn alternation_pattern_optimization(pattern: &str, text: &str, is_matching: bool) {
+        let text = json!(text);
+        let schema = json!({"pattern": pattern});
+        let validator = crate::validator_for(&schema).unwrap();
+        assert_eq!(validator.is_valid(&text), is_matching);
+        assert_eq!(validator.validate(&text).is_ok(), is_matching);
+    }
+
+    #[test_case(r"^\S*$", "hello", true ; "no whitespace match")]
+    #[test_case(r"^\S*$", "hello world", false ; "no whitespace space fail")]
+    #[test_case(r"^\S*$", "hello\tworld", false ; "no whitespace tab fail")]
+    #[test_case(r"^\S*$", "", true ; "no whitespace empty string")]
+    fn no_whitespace_pattern_optimization(pattern: &str, text: &str, is_matching: bool) {
         let text = json!(text);
         let schema = json!({"pattern": pattern});
         let validator = crate::validator_for(&schema).unwrap();

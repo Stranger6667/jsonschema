@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Optimize `pattern` and `patternProperties` for `^(a|b|c)$` alternations via linear array scan.
+- Optimize `^\S*$` patterns by replacing regex with a direct ECMA-262 whitespace check.
+
 ### Fixed
 
 - `anyOf`, `format`, `unevaluatedProperties`, and `unevaluatedItems` now correctly collect annotations per spec.
