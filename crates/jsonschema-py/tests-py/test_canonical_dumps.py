@@ -85,8 +85,23 @@ def test_float_large_integer_valued():
     assert result == str(int(1e300))
 
 
+@pytest.mark.parametrize("value", [float(2**63), float(-(2**63)), float(2**64)])
+def test_float_integer_boundary_values(value):
+    assert canonical_dumps(value) == str(int(value))
+
+
 def test_decimal_fractional():
     assert json.loads(canonical_dumps(Decimal("1.5"))) == pytest.approx(1.5)
+
+
+@pytest.mark.parametrize("value, expected", [
+    (Decimal("100E-2"), "1"),
+    (Decimal("1E-2"), "0.01"),
+    (Decimal("0E-1000"), "0"),
+    (Decimal("-0E-1000"), "0"),
+])
+def test_decimal_exponent_integrality(value, expected):
+    assert canonical_dumps(value) == expected
 
 
 @pytest.mark.parametrize("value", [object(), {1, 2, 3}])
