@@ -447,7 +447,11 @@ impl Serialize for CanonicalPyObject {
             ObjectType::Enum => {
                 let value = unsafe { PyObject_GetAttr(self.object, types::VALUE_STR) };
                 if value.is_null() {
-                    return Err(ser::Error::custom("Failed to access enum value"));
+                    let py = unsafe { Python::assume_attached() };
+                    let py_error = pyo3::PyErr::fetch(py);
+                    return Err(ser::Error::custom(format!(
+                        "Failed to access enum value: {py_error}",
+                    )));
                 }
                 #[allow(clippy::arithmetic_side_effects)]
                 let result =
