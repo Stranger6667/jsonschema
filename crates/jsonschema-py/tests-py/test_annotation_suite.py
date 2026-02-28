@@ -68,11 +68,19 @@ def test_annotation(schema, instance, assertions):
         key = (location, keyword)
         actual_values = collected.get(key, [])
 
-        for schema_loc, expected_value in expected.items():
-            assert expected_value in actual_values, (
+        if not expected:
+            assert not actual_values, (
                 f"\nKeyword   : {keyword!r}"
                 f"\nInstance  : {location!r}"
-                f"\nSchema    : {schema_loc!r}"
-                f"\nExpected  : {expected_value!r}"
+                f"\nExpected  : no annotation"
                 f"\nGot       : {actual_values!r}"
             )
+        else:
+            for schema_loc, expected_value in expected.items():
+                assert expected_value in actual_values, (
+                    f"\nKeyword   : {keyword!r}"
+                    f"\nInstance  : {location!r}"
+                    f"\nSchema    : {schema_loc!r}"
+                    f"\nExpected  : {expected_value!r}"
+                    f"\nGot       : {actual_values!r}"
+                )

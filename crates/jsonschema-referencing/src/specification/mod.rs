@@ -181,6 +181,15 @@ impl Draft {
                 true
             }
 
+            "contentEncoding" | "contentMediaType" | "contentSchema"
+                if matches!(
+                    self,
+                    Draft::Draft201909 | Draft::Draft202012 | Draft::Unknown
+                ) =>
+            {
+                true
+            }
+
             "else" | "if" | "then" if *self >= Draft::Draft7 || *self == Draft::Unknown => true,
 
             "$anchor"
