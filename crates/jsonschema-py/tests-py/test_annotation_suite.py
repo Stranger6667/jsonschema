@@ -1,19 +1,9 @@
-"""
-Annotation Test Harness for jsonschema-rs (Python bindings)
-============================================================
-Runs the official JSON Schema Annotation Test Suite against
-the `jsonschema_rs` Python package.
-
-Usage:
-    pytest crates/jsonschema-py/tests-py/test_annotation_suite.py -v
-"""
-
 import json
 import os
 import pytest
 import jsonschema_rs
 
-# Path to the annotation test suite
+
 SUITE_PATH = os.path.join(
     os.path.dirname(__file__),
     "../../../JSON-Schema-Test-Suite/annotations/tests",
@@ -21,7 +11,6 @@ SUITE_PATH = os.path.join(
 
 
 def load_test_cases():
-    """Load all test cases from the annotation test suite."""
     cases = []
     for filename in sorted(os.listdir(SUITE_PATH)):
         if not filename.endswith(".json"):
@@ -55,7 +44,7 @@ def get_annotations(schema, instance):
     for ann in raw:
         instance_loc = ann.get("instanceLocation", "")
         annotations_dict = ann.get("annotations", {})
-        
+
         if isinstance(annotations_dict, dict):
             for keyword, value in annotations_dict.items():
                 key = (instance_loc, keyword)
@@ -65,13 +54,7 @@ def get_annotations(schema, instance):
 
 @pytest.mark.parametrize("schema,instance,assertions", load_test_cases())
 def test_annotation(schema, instance, assertions):
-    """
-    For each assertion in the test:
-      - location: instance location (JSON Pointer)
-      - keyword: annotation keyword (e.g. "title")
-      - expected: dict of schemaLocation -> expected annotation value
-                  key "#" means the root schema location
-    """
+
     collected = get_annotations(schema, instance)
 
     for assertion in assertions:
