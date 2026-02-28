@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `anyOf`, `format`, `unevaluatedProperties`, and `unevaluatedItems` now correctly collect annotations per spec.
+
 ## [0.42.2] - 2026-02-26
 
 ### Changed

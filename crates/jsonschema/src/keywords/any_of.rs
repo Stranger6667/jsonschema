@@ -109,26 +109,30 @@ impl Validate for AnyOfValidator {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        // For anyOf, we only need ONE valid schema. Find first valid with cheap is_valid,
-        // then evaluate only that one. No need to collect all valid indices.
-        let first_valid = self
+        // Per spec §10.2.1.2, annotations must be collected from ALL valid branches.
+        // First detect all valid branches cheaply, then evaluate only those branches to avoid
+        // constructing dropped error trees for invalid branches in the common case.
+        let valid_indices: Vec<_> = self
             .schemas
             .iter()
             .enumerate()
-            .find(|(_, node)| node.is_valid(instance, ctx));
+            .filter_map(|(idx, node)| node.is_valid(instance, ctx).then_some(idx))
+            .collect();
 
-        if let Some((idx, _)) = first_valid {
-            // Found a valid schema - evaluate just that one
-            let result = self.schemas[idx].evaluate_instance(instance, location, tracker, ctx);
-            EvaluationResult::from_children(vec![result])
-        } else {
-            // No valid schemas - evaluate all for error output
+        if valid_indices.is_empty() {
+            // No valid schemas - evaluate all for error output.
             let failures: Vec<_> = self
                 .schemas
                 .iter()
                 .map(|node| node.evaluate_instance(instance, location, tracker, ctx))
                 .collect();
             EvaluationResult::from_children(failures)
+        } else {
+            let valid_results: Vec<_> = valid_indices
+                .into_iter()
+                .map(|idx| self.schemas[idx].evaluate_instance(instance, location, tracker, ctx))
+                .collect();
+            EvaluationResult::from_children(valid_results)
         }
     }
 }

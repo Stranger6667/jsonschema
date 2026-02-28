@@ -71,12 +71,18 @@ struct ConditionalValidators {
 }
 
 impl ItemsValidators {
-    /// Mark all items that are evaluated by this schema.
-    fn mark_evaluated_indexes(
+    /// Core implementation for marking evaluated indexes.
+    ///
+    /// When `include_unevaluated` is `true` (used by `is_valid`/`validate`), also marks
+    /// items validated by `unevaluatedItems` itself — needed so nested schemas can propagate
+    /// evaluations upward. When `false` (used by `evaluate`), those items are left unmarked
+    /// so `evaluate_instance()` is called on them to collect annotations.
+    fn mark_evaluated_indexes_impl(
         &self,
         instance: &Value,
         indexes: &mut Vec<bool>,
         ctx: &mut ValidationContext,
+        include_unevaluated: bool,
     ) {
         // Early return optimization: if items marks ALL items, no need to check anything else
         if self.items_all {
@@ -124,7 +130,7 @@ impl ItemsValidators {
             return;
         }
 
-        // Process contains and unevaluatedItems
+        // Process contains and (optionally) unevaluatedItems
         if let Value::Array(items) = instance {
             for (item, is_evaluated) in items.iter().zip(indexes.iter_mut()) {
                 if *is_evaluated {
@@ -137,10 +143,13 @@ impl ItemsValidators {
                         continue;
                     }
                 }
-                // unevaluatedItems itself can mark items
-                if let Some(validator) = &self.unevaluated {
-                    if validator.is_valid(item, ctx) {
-                        *is_evaluated = true;
+                // unevaluatedItems itself can mark items.
+                // Skipped when called from evaluate() so evaluate_instance() can collect annotations.
+                if include_unevaluated {
+                    if let Some(validator) = &self.unevaluated {
+                        if validator.is_valid(item, ctx) {
+                            *is_evaluated = true;
+                        }
                     }
                 }
             }
@@ -189,6 +198,29 @@ impl ItemsValidators {
                 }
             }
         }
+    }
+
+    /// Mark all items evaluated by this schema (including by `unevaluatedItems` itself).
+    fn mark_evaluated_indexes(
+        &self,
+        instance: &Value,
+        indexes: &mut Vec<bool>,
+        ctx: &mut ValidationContext,
+    ) {
+        self.mark_evaluated_indexes_impl(instance, indexes, ctx, true);
+    }
+
+    /// Mark items evaluated by all keywords *except* `unevaluatedItems` itself.
+    ///
+    /// Used in `evaluate()` so that items that would be covered by `unevaluatedItems`
+    /// are still visited by `evaluate_instance()`, allowing their annotations to be collected.
+    fn mark_evaluated_indexes_by_other_keywords(
+        &self,
+        instance: &Value,
+        indexes: &mut Vec<bool>,
+        ctx: &mut ValidationContext,
+    ) {
+        self.mark_evaluated_indexes_impl(instance, indexes, ctx, false);
     }
 }
 
@@ -600,7 +632,7 @@ impl Validate for UnevaluatedItemsValidator {
         if let Value::Array(items) = instance {
             let mut indexes = vec![false; items.len()];
             self.validators
-                .mark_evaluated_indexes(instance, &mut indexes, ctx);
+                .mark_evaluated_indexes_by_other_keywords(instance, &mut indexes, ctx);
             let mut children = Vec::new();
             let mut unevaluated = Vec::new();
             let mut invalid = false;

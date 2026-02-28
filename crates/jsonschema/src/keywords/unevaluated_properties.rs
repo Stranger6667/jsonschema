@@ -72,13 +72,18 @@ struct ConditionalValidators {
 }
 
 impl PropertyValidators {
-    /// Mark all properties that are evaluated by this schema.
-    /// This is the core logic for determining which properties should not be considered "unevaluated".
-    fn mark_evaluated_properties<'i>(
+    /// Core implementation for marking evaluated properties.
+    ///
+    /// When `include_unevaluated` is `true` (used by `is_valid`/`validate`), also marks
+    /// properties validated by `unevaluatedProperties` itself — needed so nested schemas
+    /// can propagate evaluations upward. When `false` (used by `evaluate`), those properties
+    /// are left unmarked so `evaluate_instance()` is called on them to collect annotations.
+    fn mark_evaluated_properties_impl<'i>(
         &self,
         instance: &'i Value,
         properties: &mut AHashSet<&'i String>,
         ctx: &mut ValidationContext,
+        include_unevaluated: bool,
     ) {
         // Handle $ref first
         if let Some(ref_) = &self.ref_ {
@@ -133,17 +138,20 @@ impl PropertyValidators {
                 }
             }
 
-            // Check "unevaluatedProperties" keyword - marks properties that validate successfully
+            // Check "unevaluatedProperties" keyword - marks properties that validate successfully.
             // This is crucial for nested unevaluatedProperties: a child schema's unevaluatedProperties
-            // can mark properties as evaluated for parent schemas
-            if let Some(unevaluated) = &self.unevaluated {
-                for (property, value) in obj {
-                    // Skip if already marked - avoid redundant validation
-                    if properties.contains(property) {
-                        continue;
-                    }
-                    if unevaluated.is_valid(value, ctx) {
-                        properties.insert(property);
+            // can mark properties as evaluated for parent schemas.
+            // Skipped when called from evaluate() so evaluate_instance() can collect annotations.
+            if include_unevaluated {
+                if let Some(unevaluated) = &self.unevaluated {
+                    for (property, value) in obj {
+                        // Skip if already marked - avoid redundant validation
+                        if properties.contains(property) {
+                            continue;
+                        }
+                        if unevaluated.is_valid(value, ctx) {
+                            properties.insert(property);
+                        }
                     }
                 }
             }
@@ -193,6 +201,29 @@ impl PropertyValidators {
                 validators.mark_evaluated_properties(instance, properties, ctx);
             }
         }
+    }
+
+    /// Mark all properties evaluated by this schema (including by `unevaluatedProperties` itself).
+    fn mark_evaluated_properties<'i>(
+        &self,
+        instance: &'i Value,
+        properties: &mut AHashSet<&'i String>,
+        ctx: &mut ValidationContext,
+    ) {
+        self.mark_evaluated_properties_impl(instance, properties, ctx, true);
+    }
+
+    /// Mark properties evaluated by all keywords *except* `unevaluatedProperties` itself.
+    ///
+    /// Used in `evaluate()` so that properties that would be covered by `unevaluatedProperties`
+    /// are still visited by `evaluate_instance()`, allowing their annotations to be collected.
+    fn mark_evaluated_by_other_keywords<'i>(
+        &self,
+        instance: &'i Value,
+        properties: &mut AHashSet<&'i String>,
+        ctx: &mut ValidationContext,
+    ) {
+        self.mark_evaluated_properties_impl(instance, properties, ctx, false);
     }
 }
 
@@ -659,7 +690,7 @@ impl Validate for UnevaluatedPropertiesValidator {
         if let Value::Object(properties) = instance {
             let mut evaluated = AHashSet::with_capacity(properties.len());
             self.validators
-                .mark_evaluated_properties(instance, &mut evaluated, ctx);
+                .mark_evaluated_by_other_keywords(instance, &mut evaluated, ctx);
             let mut children = Vec::new();
             let mut unevaluated = Vec::new();
             let mut invalid = false;
