@@ -35,44 +35,47 @@ class StrColor(str, enum.Enum):
     BLUE = "blue"
 
 
-@pytest.mark.parametrize("value, expected", [
-    (None, "null"),
-    (True, "true"),
-    (False, "false"),
-    (0, "0"),
-    (42, "42"),
-    (-7, "-7"),
-    ("hello", '"hello"'),
-    ("", '""'),
-    (1.0, "1"),
-    (0.0, "0"),
-    (-5.0, "-5"),
-    (1.5, "1.5"),
-    (float("nan"), "null"),
-    (float("inf"), "null"),
-    (float("-inf"), "null"),
-    (2**128, str(2**128)),
-    (-(2**128), str(-(2**128))),
-    ({"b": 1, "a": 2}, '{"a":2,"b":1}'),
-    ({"a": 1, "b": 2}, '{"a":1,"b":2}'),
-    ({}, "{}"),
-    ({"x": 99}, '{"x":99}'),
-    ({"z": {"b": 1, "a": 2}, "a": 0}, '{"a":0,"z":{"a":2,"b":1}}'),
-    ([], "[]"),
-    ([1, 2, 3], "[1,2,3]"),
-    ([{"b": 1, "a": 2}], '[{"a":2,"b":1}]'),
-    ((), "[]"),
-    ((1, 2, 3), "[1,2,3]"),
-    (Color.RED, '"red"'),
-    (Color.GREEN, "1"),
-    ({StrColor.BLUE: "sky"}, '{"blue":"sky"}'),
-    (Decimal("1.0"), "1"),
-    (Decimal("100"), "100"),
-    (Decimal("NaN"), "null"),
-    (Decimal("Infinity"), "null"),
-    (Decimal("-Infinity"), "null"),
-    (Decimal(2**128), str(2**128)),
-])
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (None, "null"),
+        (True, "true"),
+        (False, "false"),
+        (0, "0"),
+        (42, "42"),
+        (-7, "-7"),
+        ("hello", '"hello"'),
+        ("", '""'),
+        (1.0, "1"),
+        (0.0, "0"),
+        (-5.0, "-5"),
+        (1.5, "1.5"),
+        (float("nan"), "null"),
+        (float("inf"), "null"),
+        (float("-inf"), "null"),
+        (2**128, str(2**128)),
+        (-(2**128), str(-(2**128))),
+        ({"b": 1, "a": 2}, '{"a":2,"b":1}'),
+        ({"a": 1, "b": 2}, '{"a":1,"b":2}'),
+        ({}, "{}"),
+        ({"x": 99}, '{"x":99}'),
+        ({"z": {"b": 1, "a": 2}, "a": 0}, '{"a":0,"z":{"a":2,"b":1}}'),
+        ([], "[]"),
+        ([1, 2, 3], "[1,2,3]"),
+        ([{"b": 1, "a": 2}], '[{"a":2,"b":1}]'),
+        ((), "[]"),
+        ((1, 2, 3), "[1,2,3]"),
+        (Color.RED, '"red"'),
+        (Color.GREEN, "1"),
+        ({StrColor.BLUE: "sky"}, '{"blue":"sky"}'),
+        (Decimal("1.0"), "1"),
+        (Decimal("100"), "100"),
+        (Decimal("NaN"), "null"),
+        (Decimal("Infinity"), "null"),
+        (Decimal("-Infinity"), "null"),
+        (Decimal(2**128), str(2**128)),
+    ],
+)
 def test_canonical_dumps(value, expected):
     assert canonical_dumps(value) == expected
 
@@ -92,10 +95,22 @@ def test_unsupported_type_raises(value):
         canonical_dumps(value)
 
 
-@pytest.mark.parametrize("value", [
-    None, True, False, 0, 42, -7, "hello", 1.5,
-    [1, 2, 3], {"b": 1, "a": 2}, {"nested": {"z": 0, "a": 1}},
-])
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        True,
+        False,
+        0,
+        42,
+        -7,
+        "hello",
+        1.5,
+        [1, 2, 3],
+        {"b": 1, "a": 2},
+        {"nested": {"z": 0, "a": 1}},
+    ],
+)
 def test_roundtrip(value):
     assert json.loads(canonical_dumps(value)) == value
 
