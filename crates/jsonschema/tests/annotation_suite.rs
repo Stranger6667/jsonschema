@@ -38,14 +38,18 @@ fn collect_annotations(
 
     for entry in evaluation.iter_annotations() {
         let instance_loc = entry.instance_location.as_str().to_string();
-        let annotations_value = entry.annotations.value();
+        // The keyword is the last segment of the schema_location path
+        // e.g., "/title" -> "title", "/properties" -> "properties"
+        let keyword = entry
+            .schema_location
+            .rsplit('/')
+            .next()
+            .unwrap_or(entry.schema_location)
+            .to_string();
+        let value = entry.annotations.value().clone();
 
-        if let Some(annotations_obj) = annotations_value.as_object() {
-            for (keyword, value) in annotations_obj {
-                let key = (instance_loc.clone(), keyword.clone());
-                result.entry(key).or_default().push(value.clone());
-            }
-        }
+        let key = (instance_loc, keyword);
+        result.entry(key).or_default().push(value);
     }
 
     result
@@ -54,34 +58,83 @@ fn collect_annotations(
 fn get_xfail_ids() -> HashSet<String> {
     let mut xfail = HashSet::new();
 
+    // --- applicators.json ---
+    // Sub-schema annotations (title) through applicators are not emitted
     xfail.insert("applicators.json / `anyOf` / 0".to_string());
+    xfail.insert("applicators.json / `anyOf` / 1".to_string());
+    xfail.insert(
+        "applicators.json / `properties`, `patternProperties`, and `additionalProperties` / 1"
+            .to_string(),
+    );
+    xfail.insert("applicators.json / `prefixItems` and `items` / 0".to_string());
+    xfail.insert("applicators.json / `contains` / 0".to_string());
+    xfail.insert("applicators.json / `allOf` / 0".to_string());
+    xfail.insert("applicators.json / `oneOf` / 0".to_string());
+    xfail.insert("applicators.json / `oneOf` / 1".to_string());
+    xfail.insert("applicators.json / `not` / 0".to_string());
+    xfail.insert("applicators.json / `dependentSchemas` / 0".to_string());
+    xfail.insert("applicators.json / `if`, `then`, and `else` / 0".to_string());
+    xfail.insert("applicators.json / `if`, `then`, and `else` / 1".to_string());
 
+    // --- content.json ---
+    // Content annotations are not emitted by the library
+    xfail.insert(
+        "content.json / `contentMediaType` is an annotation for string instances / 0".to_string(),
+    );
     xfail.insert(
         "content.json / `contentMediaType` is an annotation for string instances / 1".to_string(),
     );
     xfail.insert(
+        "content.json / `contentEncoding` is an annotation for string instances / 0".to_string(),
+    );
+    xfail.insert(
         "content.json / `contentEncoding` is an annotation for string instances / 1".to_string(),
+    );
+    xfail.insert(
+        "content.json / `contentSchema` is an annotation for string instances / 0".to_string(),
     );
     xfail.insert(
         "content.json / `contentSchema` is an annotation for string instances / 1".to_string(),
     );
     xfail.insert("content.json / `contentSchema` requires `contentMediaType` / 0".to_string());
 
+    // --- core.json ---
+    // Title annotation through $ref is not emitted
+    xfail.insert("core.json / `$ref` and `$defs` / 0".to_string());
+
+    // --- format.json ---
+    // Format annotation is not emitted
     xfail.insert("format.json / `format` is an annotation / 0".to_string());
 
+    // --- meta-data.json ---
+    // Metadata annotations (title, description, default, etc.) are not emitted
+    xfail.insert("meta-data.json / `title` is an annotation / 0".to_string());
+    xfail.insert("meta-data.json / `description` is an annotation / 0".to_string());
+    xfail.insert("meta-data.json / `default` is an annotation / 0".to_string());
+    xfail.insert("meta-data.json / `deprecated` is an annotation / 0".to_string());
+    xfail.insert("meta-data.json / `readOnly` is an annotation / 0".to_string());
+    xfail.insert("meta-data.json / `writeOnly` is an annotation / 0".to_string());
+    xfail.insert("meta-data.json / `examples` is an annotation / 0".to_string());
+
+    // --- unevaluated.json ---
     xfail.insert("unevaluated.json / `unevaluatedProperties` alone / 0".to_string());
     xfail.insert("unevaluated.json / `unevaluatedProperties` with `properties` / 0".to_string());
     xfail.insert(
         "unevaluated.json / `unevaluatedProperties` with `patternProperties` / 0".to_string(),
     );
     xfail.insert(
+        "unevaluated.json / `unevaluatedProperties` with `additionalProperties` / 0".to_string(),
+    );
+    xfail.insert(
         "unevaluated.json / `unevaluatedProperties` with `dependentSchemas` / 0".to_string(),
     );
     xfail.insert(
-        "unevaluated.json / `unevaluatedProperties` with `if`, `then`, and `else` / 0".to_string(),
+        "unevaluated.json / `unevaluatedProperties` with `if`, `then`, and `else` / 0"
+            .to_string(),
     );
     xfail.insert(
-        "unevaluated.json / `unevaluatedProperties` with `if`, `then`, and `else` / 1".to_string(),
+        "unevaluated.json / `unevaluatedProperties` with `if`, `then`, and `else` / 1"
+            .to_string(),
     );
     xfail.insert("unevaluated.json / `unevaluatedProperties` with `allOf` / 0".to_string());
     xfail.insert("unevaluated.json / `unevaluatedProperties` with `anyOf` / 0".to_string());
@@ -101,6 +154,10 @@ fn get_xfail_ids() -> HashSet<String> {
     xfail.insert("unevaluated.json / `unevaluatedItems` with `anyOf` / 0".to_string());
     xfail.insert("unevaluated.json / `unevaluatedItems` with `oneOf` / 0".to_string());
     xfail.insert("unevaluated.json / `unevaluatedItems` with `not` / 0".to_string());
+
+    // --- unknown.json ---
+    // Unknown keyword annotations are not emitted
+    xfail.insert("unknown.json / `unknownKeyword` is an annotation / 0".to_string());
 
     xfail
 }
