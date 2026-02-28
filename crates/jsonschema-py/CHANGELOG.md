@@ -6,6 +6,10 @@
 
 - `canonical_dumps(object)` for canonical JSON serialization: dict keys sorted alphabetically, integer-valued floats serialized as integers, `NaN`/`Infinity` serialized as `null`.
 
+### Fixed
+
+- Do not produce annotations for non-string instances from `contentMediaType`, `contentEncoding`, and `contentSchema` keywords.
+
 ## [0.43.0] - 2026-02-28
 
 ### Added

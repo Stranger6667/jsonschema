@@ -1,15 +1,17 @@
-//! Validators for `contentMediaType` and `contentEncoding` keywords.
+//! Validators for `contentMediaType`, `contentEncoding`, and `contentSchema` keywords.
 use crate::{
     compiler,
     content_encoding::{ContentEncodingCheckType, ContentEncodingConverterType},
     content_media_type::ContentMediaTypeCheckType,
     error::ValidationError,
+    evaluation::Annotations,
     keywords::CompilationResult,
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
-    validator::{Validate, ValidationContext},
+    validator::{EvaluationResult, Validate, ValidationContext},
 };
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
+use std::sync::Arc;
 
 /// Validator for `contentMediaType` keyword.
 pub(crate) struct ContentMediaTypeValidator {
@@ -283,6 +285,197 @@ pub(crate) fn compile_content_encoding<'a>(
             JsonType::String,
         )))
     }
+}
+
+/// Annotation-only validator for `contentMediaType` (Draft 2019-09 / 2020-12).
+///
+/// Per spec, annotations are only produced for string instances.
+pub(crate) struct ContentMediaTypeAnnotationValidator {
+    annotation: Arc<Value>,
+}
+
+impl ContentMediaTypeAnnotationValidator {
+    pub(crate) fn compile<'a>(
+        _ctx: &compiler::Context,
+        _schema: &'a Map<String, Value>,
+        subschema: &'a Value,
+    ) -> Option<CompilationResult<'a>> {
+        if let Value::String(_) = subschema {
+            Some(Ok(Box::new(ContentMediaTypeAnnotationValidator {
+                annotation: Arc::new(subschema.clone()),
+            })))
+        } else {
+            None
+        }
+    }
+}
+
+impl Validate for ContentMediaTypeAnnotationValidator {
+    fn is_valid(&self, _instance: &Value, _ctx: &mut ValidationContext) -> bool {
+        true
+    }
+
+    fn validate<'i>(
+        &self,
+        _instance: &'i Value,
+        _location: &LazyLocation,
+        _tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        Ok(())
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        _location: &LazyLocation,
+        _tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if instance.is_string() {
+            let mut result = EvaluationResult::valid_empty();
+            result.annotate(Annotations::from_arc(Arc::clone(&self.annotation)));
+            result
+        } else {
+            EvaluationResult::valid_empty()
+        }
+    }
+}
+
+pub(crate) fn compile_media_type_annotation<'a>(
+    ctx: &compiler::Context,
+    schema: &'a Map<String, Value>,
+    subschema: &'a Value,
+) -> Option<CompilationResult<'a>> {
+    ContentMediaTypeAnnotationValidator::compile(ctx, schema, subschema)
+}
+
+/// Annotation-only validator for `contentEncoding` (Draft 2019-09 / 2020-12).
+///
+/// Per spec, annotations are only produced for string instances.
+pub(crate) struct ContentEncodingAnnotationValidator {
+    annotation: Arc<Value>,
+}
+
+impl ContentEncodingAnnotationValidator {
+    pub(crate) fn compile<'a>(
+        _ctx: &compiler::Context,
+        _schema: &'a Map<String, Value>,
+        subschema: &'a Value,
+    ) -> Option<CompilationResult<'a>> {
+        if let Value::String(_) = subschema {
+            Some(Ok(Box::new(ContentEncodingAnnotationValidator {
+                annotation: Arc::new(subschema.clone()),
+            })))
+        } else {
+            None
+        }
+    }
+}
+
+impl Validate for ContentEncodingAnnotationValidator {
+    fn is_valid(&self, _instance: &Value, _ctx: &mut ValidationContext) -> bool {
+        true
+    }
+
+    fn validate<'i>(
+        &self,
+        _instance: &'i Value,
+        _location: &LazyLocation,
+        _tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        Ok(())
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        _location: &LazyLocation,
+        _tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if instance.is_string() {
+            let mut result = EvaluationResult::valid_empty();
+            result.annotate(Annotations::from_arc(Arc::clone(&self.annotation)));
+            result
+        } else {
+            EvaluationResult::valid_empty()
+        }
+    }
+}
+
+pub(crate) fn compile_content_encoding_annotation<'a>(
+    ctx: &compiler::Context,
+    schema: &'a Map<String, Value>,
+    subschema: &'a Value,
+) -> Option<CompilationResult<'a>> {
+    ContentEncodingAnnotationValidator::compile(ctx, schema, subschema)
+}
+
+/// Annotation-only validator for `contentSchema` (Draft 2019-09 / 2020-12).
+///
+/// Per spec, the annotation is only produced when the instance is a string AND
+/// `contentMediaType` is also present in the same schema object.
+pub(crate) struct ContentSchemaAnnotationValidator {
+    annotation: Arc<Value>,
+}
+
+impl ContentSchemaAnnotationValidator {
+    pub(crate) fn compile<'a>(
+        _ctx: &compiler::Context,
+        schema: &'a Map<String, Value>,
+        subschema: &'a Value,
+    ) -> Option<CompilationResult<'a>> {
+        // contentSchema only annotates when contentMediaType is also present
+        if schema.contains_key("contentMediaType") {
+            Some(Ok(Box::new(ContentSchemaAnnotationValidator {
+                annotation: Arc::new(json!({"contentSchema": subschema})),
+            })))
+        } else {
+            None
+        }
+    }
+}
+
+impl Validate for ContentSchemaAnnotationValidator {
+    fn is_valid(&self, _instance: &Value, _ctx: &mut ValidationContext) -> bool {
+        true
+    }
+
+    fn validate<'i>(
+        &self,
+        _instance: &'i Value,
+        _location: &LazyLocation,
+        _tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        Ok(())
+    }
+
+    fn evaluate(
+        &self,
+        instance: &Value,
+        _location: &LazyLocation,
+        _tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        if instance.is_string() {
+            let mut result = EvaluationResult::valid_empty();
+            result.annotate(Annotations::from_arc(Arc::clone(&self.annotation)));
+            result
+        } else {
+            EvaluationResult::valid_empty()
+        }
+    }
+}
+
+pub(crate) fn compile_content_schema_annotation<'a>(
+    ctx: &compiler::Context,
+    schema: &'a Map<String, Value>,
+    subschema: &'a Value,
+) -> Option<CompilationResult<'a>> {
+    ContentSchemaAnnotationValidator::compile(ctx, schema, subschema)
 }
 
 #[cfg(test)]

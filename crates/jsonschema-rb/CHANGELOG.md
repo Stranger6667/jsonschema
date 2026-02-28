@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Do not produce annotations for non-string instances from `contentMediaType`, `contentEncoding`, and `contentSchema` keywords.
+
 ## [0.43.0] - 2026-02-28
 
 ### Added

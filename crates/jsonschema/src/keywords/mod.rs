@@ -89,6 +89,7 @@ pub(crate) enum BuiltinKeyword {
     PropertyNames,
     ContentMediaType,
     ContentEncoding,
+    ContentSchema,
     If,
     RecursiveRef,
     DependentRequired,
@@ -135,6 +136,7 @@ impl BuiltinKeyword {
             Self::PropertyNames => "propertyNames",
             Self::ContentMediaType => "contentMediaType",
             Self::ContentEncoding => "contentEncoding",
+            Self::ContentSchema => "contentSchema",
             Self::If => "if",
             Self::RecursiveRef => "$recursiveRef",
             Self::DependentRequired => "dependentRequired",
@@ -214,6 +216,7 @@ pub(crate) fn keyword_priority(keyword: &Keyword) -> u8 {
         Keyword::Builtin(BuiltinKeyword::Format) => 31,
         Keyword::Builtin(BuiltinKeyword::ContentEncoding) => 32,
         Keyword::Builtin(BuiltinKeyword::ContentMediaType) => 33,
+        Keyword::Builtin(BuiltinKeyword::ContentSchema) => 34,
 
         // Unique items (potentially O(n²) for arrays)
         Keyword::Builtin(BuiltinKeyword::UniqueItems) => 35,
@@ -439,6 +442,30 @@ pub(crate) fn get_for_draft<'a>(
             BuiltinKeyword::ContentEncoding.into(),
             content::compile_content_encoding,
         )),
+        (Draft::Draft201909 | Draft::Draft202012 | Draft::Unknown, "contentMediaType")
+            if ctx.has_vocabulary(&Vocabulary::Content) =>
+        {
+            Some((
+                BuiltinKeyword::ContentMediaType.into(),
+                content::compile_media_type_annotation,
+            ))
+        }
+        (Draft::Draft201909 | Draft::Draft202012 | Draft::Unknown, "contentEncoding")
+            if ctx.has_vocabulary(&Vocabulary::Content) =>
+        {
+            Some((
+                BuiltinKeyword::ContentEncoding.into(),
+                content::compile_content_encoding_annotation,
+            ))
+        }
+        (Draft::Draft201909 | Draft::Draft202012 | Draft::Unknown, "contentSchema")
+            if ctx.has_vocabulary(&Vocabulary::Content) =>
+        {
+            Some((
+                BuiltinKeyword::ContentSchema.into(),
+                content::compile_content_schema_annotation,
+            ))
+        }
         (Draft::Draft7 | Draft::Draft201909 | Draft::Draft202012 | Draft::Unknown, "if")
             if ctx.has_vocabulary(&Vocabulary::Applicator) =>
         {
