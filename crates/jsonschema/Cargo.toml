@@ -80,7 +80,7 @@ wasm-bindgen-test = "0.3.55"
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 benchmark = { path = "../benchmark/" }
 codspeed-criterion-compat = { version = "4.1", default-features = false }
-criterion = { version = "0.7", default-features = false }
+criterion = { version = "0.8", default-features = false }
 tempfile = "3.13.0"
 test-case = "3"
 tokio = { version = "1", features = ["macros", "rt"] }
