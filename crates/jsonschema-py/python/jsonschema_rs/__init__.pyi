@@ -122,6 +122,15 @@ PatternOptionsType = Union[FancyRegexOptions, RegexOptions]
 class RetrieverProtocol(Protocol):
     def __call__(self, uri: str) -> JSONType: ...
 
+def canonical_dumps(object: JSONType) -> str:
+    """Serialize a Python object to a canonical JSON string.
+
+    - Dict keys are sorted alphabetically
+    - Integer-valued floats are serialized as integers (1.0 → 1)
+    - NaN and Infinity are serialized as null
+    """
+    ...
+
 def is_valid(
     schema: _SchemaT,
     instance: Any,

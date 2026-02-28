@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `canonical_dumps(object)` for canonical JSON serialization: dict keys sorted alphabetically, integer-valued floats serialized as integers, `NaN`/`Infinity` serialized as `null`.
+
 ## [0.43.0] - 2026-02-28
 
 ### Added

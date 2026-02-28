@@ -71,7 +71,7 @@ impl SerializePyObject {
 }
 
 #[inline]
-unsafe fn pyfloat_as_double(object: *mut pyo3::ffi::PyObject) -> f64 {
+pub(crate) unsafe fn pyfloat_as_double(object: *mut pyo3::ffi::PyObject) -> f64 {
     #[cfg(Py_LIMITED_API)]
     {
         pyo3::ffi::PyFloat_AsDouble(object)
@@ -83,7 +83,7 @@ unsafe fn pyfloat_as_double(object: *mut pyo3::ffi::PyObject) -> f64 {
 }
 
 #[inline]
-unsafe fn pylist_len(object: *mut pyo3::ffi::PyObject) -> usize {
+pub(crate) unsafe fn pylist_len(object: *mut pyo3::ffi::PyObject) -> usize {
     #[cfg(Py_LIMITED_API)]
     {
         pyo3::ffi::PyList_Size(object) as usize
@@ -95,7 +95,7 @@ unsafe fn pylist_len(object: *mut pyo3::ffi::PyObject) -> usize {
 }
 
 #[inline]
-unsafe fn pylist_get_item(
+pub(crate) unsafe fn pylist_get_item(
     object: *mut pyo3::ffi::PyObject,
     index: pyo3::ffi::Py_ssize_t,
 ) -> *mut pyo3::ffi::PyObject {
@@ -110,7 +110,7 @@ unsafe fn pylist_get_item(
 }
 
 #[inline]
-unsafe fn pytuple_len(object: *mut pyo3::ffi::PyObject) -> usize {
+pub(crate) unsafe fn pytuple_len(object: *mut pyo3::ffi::PyObject) -> usize {
     #[cfg(Py_LIMITED_API)]
     {
         pyo3::ffi::PyTuple_Size(object) as usize
@@ -122,7 +122,7 @@ unsafe fn pytuple_len(object: *mut pyo3::ffi::PyObject) -> usize {
 }
 
 #[inline]
-unsafe fn pytuple_get_item(
+pub(crate) unsafe fn pytuple_get_item(
     object: *mut pyo3::ffi::PyObject,
     index: pyo3::ffi::Py_ssize_t,
 ) -> *mut pyo3::ffi::PyObject {
@@ -137,7 +137,7 @@ unsafe fn pytuple_get_item(
 }
 
 #[inline]
-unsafe fn dict_len(object: *mut pyo3::ffi::PyObject) -> usize {
+pub(crate) unsafe fn dict_len(object: *mut pyo3::ffi::PyObject) -> usize {
     #[cfg(any(Py_LIMITED_API, PyPy))]
     {
         pyo3::ffi::PyDict_Size(object) as usize
@@ -149,7 +149,7 @@ unsafe fn dict_len(object: *mut pyo3::ffi::PyObject) -> usize {
 }
 
 #[inline]
-fn is_enum_subclass(object_type: *mut pyo3::ffi::PyTypeObject) -> bool {
+pub(crate) fn is_enum_subclass(object_type: *mut pyo3::ffi::PyTypeObject) -> bool {
     unsafe { PyType_IsSubtype(object_type, types::ENUM_BASE) != 0 }
 }
 
@@ -158,14 +158,14 @@ fn is_dict_subclass(object_type: *mut pyo3::ffi::PyTypeObject) -> bool {
     unsafe { PyType_IsSubtype(object_type, types::DICT_TYPE) != 0 }
 }
 
-fn get_object_type_from_object(object: *mut pyo3::ffi::PyObject) -> ObjectType {
+pub(crate) fn get_object_type_from_object(object: *mut pyo3::ffi::PyObject) -> ObjectType {
     unsafe {
         let object_type = Py_TYPE(object);
         get_object_type(object_type)
     }
 }
 
-fn get_type_name(object_type: *mut pyo3::ffi::PyTypeObject) -> Cow<'static, str> {
+pub(crate) fn get_type_name(object_type: *mut pyo3::ffi::PyTypeObject) -> Cow<'static, str> {
     unsafe {
         let name_obj = PyObject_GetAttrString(
             object_type.cast::<pyo3::ffi::PyObject>(),
@@ -228,7 +228,7 @@ macro_rules! tri {
 
 /// Helper function to serialize a large integer that doesn't fit in i64
 /// by converting it to a string and parsing as serde_json::Number
-fn serialize_large_int<S>(
+pub(crate) fn serialize_large_int<S>(
     object: *mut pyo3::ffi::PyObject,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
