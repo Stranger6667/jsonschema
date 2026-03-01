@@ -742,12 +742,21 @@ pub(crate) fn canonical_json_to_string(object: &Bound<'_, PyAny>) -> PyResult<St
 
 pub(crate) fn init_module(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     let canonical_module = PyModule::new(py, "canonical")?;
+
     let canonical_json_module = PyModule::new(py, "json")?;
     canonical_json_module.add_function(pyo3::wrap_pyfunction!(
         canonical_json_to_string,
         &canonical_json_module
     )?)?;
     canonical_module.add_submodule(&canonical_json_module)?;
+
+    let canonical_schema_module = PyModule::new(py, "schema")?;
+    canonical_schema_module.add_function(pyo3::wrap_pyfunction!(
+        crate::clone::canonical_schema_clone,
+        &canonical_schema_module
+    )?)?;
+    canonical_module.add_submodule(&canonical_schema_module)?;
+
     module.add_submodule(&canonical_module)?;
     Ok(())
 }
