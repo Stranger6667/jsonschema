@@ -855,6 +855,7 @@ compile_error!(
 (default) or `tls-ring`."
 );
 
+pub mod canonical;
 pub(crate) mod compiler;
 mod content_encoding;
 mod content_media_type;

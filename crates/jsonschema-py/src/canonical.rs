@@ -731,6 +731,9 @@ fn to_canonical_string(object: *mut ffi::PyObject) -> serde_json::Result<String>
     Ok(unsafe { String::from_utf8_unchecked(output) })
 }
 
+/// Serialize a Python object to canonical JSON.
+///
+/// Main use case: deduplicating equivalent JSON Schemas.
 #[pyfunction]
 pub(crate) fn canonical_dumps(object: &Bound<'_, PyAny>) -> PyResult<String> {
     to_canonical_string(object.as_ptr())
