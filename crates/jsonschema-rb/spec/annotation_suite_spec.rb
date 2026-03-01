@@ -6,6 +6,7 @@ require "pathname"
 
 module AnnotationHelpers
   ANNOTATION_SUITE_PATH = Pathname.new(__dir__).join("../../jsonschema/tests/suite/annotations/tests")
+  SCHEMA_VALUED_KEYWORDS = ["contentSchema"].freeze
 
   def self.collect_annotations(evaluation)
     evaluation.annotations.each_with_object(default_annotation_map) do |entry, result|
@@ -20,11 +21,11 @@ module AnnotationHelpers
 
   def self.append_entry_annotations(result, instance_loc, entry)
     annotations = entry[:annotations]
+    keyword = keyword_from_schema_location(entry[:schemaLocation])
 
-    if annotations.is_a?(Hash)
+    if !schema_valued_keyword?(keyword) && annotations.is_a?(Hash)
       append_hash_annotations(result, instance_loc, annotations)
     else
-      keyword = keyword_from_schema_location(entry[:schemaLocation])
       result[[instance_loc, keyword]] << annotations
     end
   end
@@ -37,6 +38,10 @@ module AnnotationHelpers
 
   def self.keyword_from_schema_location(schema_location)
     schema_location.to_s.split("/").last.to_s
+  end
+
+  def self.schema_valued_keyword?(keyword)
+    SCHEMA_VALUED_KEYWORDS.include?(keyword)
   end
 end
 
@@ -70,10 +75,12 @@ RSpec.describe "Annotation Test Suite" do
                 key = [location, keyword]
                 actual_values = collected[key] || []
 
-                error_ctx = "Schema: #{JSON.pretty_generate(schema)}\n" \
-                            "Instance: #{JSON.pretty_generate(instance)}\n" \
-                            "Location: #{location.inspect}\n" \
-                            "Keyword: #{keyword.inspect}"
+                error_ctx = [
+                  "Schema: #{JSON.pretty_generate(schema)}\n",
+                  "Instance: #{JSON.pretty_generate(instance)}\n",
+                  "Location: #{location.inspect}\n",
+                  "Keyword: #{keyword.inspect}"
+                ].join
 
                 if expected.empty?
                   message = [

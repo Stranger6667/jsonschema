@@ -37,31 +37,42 @@ fn collect_annotations(
 
     for entry in evaluation.iter_annotations() {
         let instance_loc = entry.instance_location.as_str().to_string();
-        let annotations_value = entry.annotations.value();
+        let annotations = entry.annotations.value();
+        let keyword = keyword_from_schema_location(entry.schema_location);
 
-        if let Some(annotations_obj) = annotations_value.as_object() {
-            // Metadata keywords (title, description, etc.) are bundled in an object
-            for (keyword, value) in annotations_obj {
-                let key = (instance_loc.clone(), keyword.clone());
-                result.entry(key).or_default().push(value.clone());
+        if is_schema_valued_keyword(keyword) {
+            push_annotation(&mut result, &instance_loc, keyword, annotations);
+        } else if let Some(annotation_bundle) = annotations.as_object() {
+            for (bundle_keyword, value) in annotation_bundle {
+                push_annotation(&mut result, &instance_loc, bundle_keyword, value);
             }
         } else {
-            // Structural keywords (properties, format, etc.) have the keyword in the schema_location path
-            let keyword = entry
-                .schema_location
-                .rsplit('/')
-                .next()
-                .unwrap_or(entry.schema_location)
-                .to_string();
-            let key = (instance_loc, keyword);
-            result
-                .entry(key)
-                .or_default()
-                .push(annotations_value.clone());
+            push_annotation(&mut result, &instance_loc, keyword, annotations);
         }
     }
 
     result
+}
+
+fn push_annotation(
+    result: &mut HashMap<(String, String), Vec<Value>>,
+    instance_location: &str,
+    keyword: &str,
+    value: &Value,
+) {
+    let key = (instance_location.to_owned(), keyword.to_owned());
+    result.entry(key).or_default().push(value.clone());
+}
+
+fn keyword_from_schema_location(schema_location: &str) -> &str {
+    schema_location
+        .rsplit('/')
+        .next()
+        .unwrap_or(schema_location)
+}
+
+fn is_schema_valued_keyword(keyword: &str) -> bool {
+    keyword == "contentSchema"
 }
 
 #[test]
