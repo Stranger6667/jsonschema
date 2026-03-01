@@ -6,11 +6,16 @@ on:
     branches:
       - master
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
 
   check-commits:
     name: Check commit messages
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
         with:
@@ -20,6 +25,7 @@ jobs:
   check-msrv:
     name: Check MSRV
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
 
@@ -50,6 +56,7 @@ jobs:
 
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -86,6 +93,7 @@ jobs:
             display: wasm32-unknown-unknown
     name: Test on ${{ matrix.display }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -139,6 +147,7 @@ jobs:
             pattern: "resolve-http.*resolve-file.*not supported.*wasm32-unknown-unknown"
     name: Check ${{ matrix.feature }} fails on ${{ matrix.target }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
@@ -165,6 +174,7 @@ jobs:
   test-coverage:
     name: Test coverage
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -211,6 +221,7 @@ jobs:
   test-miri:
     name: Test with Miri
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -230,6 +241,7 @@ jobs:
   lint-python:
     name: Lint Python
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
@@ -250,6 +262,7 @@ jobs:
 
     name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -273,6 +286,7 @@ jobs:
 
     name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -320,6 +334,7 @@ jobs:
 
     name: Test Ruby ${{ matrix.ruby-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -352,6 +367,7 @@ jobs:
   test-ruby-gem-install:
     name: Ruby Gem Install ${{ matrix.ruby-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -401,7 +417,7 @@ jobs:
   test-ruby-gem-install-musl:
     name: Ruby Gem Install (Alpine/musl)
     runs-on: ubuntu-24.04
-
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -429,6 +445,7 @@ jobs:
   lint-ruby:
     name: Lint Ruby
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     env:
       BUNDLE_WITHOUT: "development:test:benchmark"
     steps:
@@ -446,6 +463,7 @@ jobs:
   lint-fmt:
     name: Lint formatting
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
@@ -458,6 +476,7 @@ jobs:
   lint-clippy:
     name: Lint Clippy
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
@@ -485,6 +504,7 @@ jobs:
         target: [wasm32-unknown-unknown, wasm32-wasip1]
     name: Lint Clippy on ${{ matrix.target }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
@@ -506,6 +526,7 @@ jobs:
   check-release-rust:
     name: Check Rust release
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
@@ -524,6 +545,7 @@ jobs:
   check-release-python:
     name: Check Python release
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
@@ -556,6 +578,7 @@ jobs:
   check-release-python-freethreaded:
     name: Check Python release (free-threaded)
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
@@ -596,6 +619,7 @@ jobs:
             flags: "--feature-powerset --exclude-features retrieve-async"
     name: Check features on ${{ matrix.name }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -624,6 +648,7 @@ jobs:
         target: ["builder", "validation", "referencing"]
     name: Fuzz ${{ matrix.target }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
@@ -648,6 +673,7 @@ jobs:
             arch: aarch64
     name: Test Python musllinux on ${{ matrix.target }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -678,6 +704,7 @@ jobs:
   lint-docs:
     name: Lint documentation
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
 
@@ -694,7 +721,8 @@ jobs:
   lint-spelling:
     name: Lint spelling
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
 
-      - uses: crate-ci/typos@master
+      - uses: crate-ci/typos@v1

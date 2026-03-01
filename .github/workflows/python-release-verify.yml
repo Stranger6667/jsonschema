@@ -6,6 +6,10 @@ on:
     branches:
       - master
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 defaults:
   run:
     shell: bash
@@ -21,6 +25,7 @@ jobs:
       matrix:
         python-version: ["3.10", "pypy3.11"]
     name: Verify wheel for ${{ matrix.python-version }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
@@ -55,6 +60,7 @@ jobs:
 
   cross-compile-check:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     name: Verify cross-compilation for aarch64
     steps:
       - uses: actions/checkout@v6

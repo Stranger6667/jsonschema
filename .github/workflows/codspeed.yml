@@ -7,9 +7,14 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rust:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     strategy:
       matrix:
         package: [jsonschema, referencing]
