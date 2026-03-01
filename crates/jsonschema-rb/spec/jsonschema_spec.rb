@@ -100,6 +100,86 @@ RSpec.describe JSONSchema do
     end
   end
 
+  describe ".canonical_dumps" do
+    it "sorts object keys recursively" do
+      value = { "b" => 1, "a" => { "z" => 2, "y" => 3 } }
+      expect(JSONSchema.canonical_dumps(value)).to eq('{"a":{"y":3,"z":2},"b":1}')
+    end
+
+    it "normalizes integer-valued floats and special floats" do
+      value = [1.0, 1.5, Float::NAN, Float::INFINITY, -Float::INFINITY]
+      expect(JSONSchema.canonical_dumps(value)).to eq("[1,1.5,null,null,null]")
+    end
+
+    it "normalizes negative zero" do
+      expect(JSONSchema.canonical_dumps(-0.0)).to eq("0")
+    end
+
+    it "serializes large integer-valued floats as integers" do
+      value = 1e300
+      expect(JSONSchema.canonical_dumps(value)).to eq(value.to_i.to_s)
+    end
+
+    it "is not affected by Float#to_i monkeypatching" do
+      original = Float.instance_method(:to_i)
+      begin
+        Float.define_method(:to_i) { 42 }
+        expect(JSONSchema.canonical_dumps(1.0)).to eq("1")
+      ensure
+        Float.define_method(:to_i, original)
+      end
+    end
+
+    it "keeps non-integer floats in exponent form when needed" do
+      expect(JSONSchema.canonical_dumps(1e-6)).to eq("1e-6")
+      expect(JSONSchema.canonical_dumps(1e-7)).to eq("1e-7")
+    end
+
+    it "supports BigDecimal values" do
+      require "bigdecimal"
+      expect(JSONSchema.canonical_dumps(BigDecimal("1.0"))).to eq("1")
+      expect(JSONSchema.canonical_dumps(BigDecimal("1E-2"))).to eq("0.01")
+      expect(JSONSchema.canonical_dumps(BigDecimal("NaN"))).to eq("null")
+    end
+
+    it "is stable for equivalent schemas" do
+      schema_a = { "type" => "object", "properties" => { "b" => { "type" => "integer" }, "a" => { "type" => "string" } } }
+      schema_b = { "properties" => { "a" => { "type" => "string" }, "b" => { "type" => "integer" } }, "type" => "object" }
+      expect(JSONSchema.canonical_dumps(schema_a)).to eq(JSONSchema.canonical_dumps(schema_b))
+    end
+
+    it "normalizes symbol and string keys the same way" do
+      expect(JSONSchema.canonical_dumps({ type: "string", properties: { name: { type: "string" } } }))
+        .to eq(JSONSchema.canonical_dumps({ "type" => "string", "properties" => { "name" => { "type" => "string" } } }))
+    end
+
+    it "raises for unsupported types" do
+      expect { JSONSchema.canonical_dumps(Object.new) }.to raise_error(TypeError, /Unsupported type/)
+    end
+
+    it "raises TypeError for invalid hash key type" do
+      expect { JSONSchema.canonical_dumps({ 1 => "value" }) }
+        .to raise_error(TypeError, /Hash keys must be strings or symbols/)
+    end
+
+    it "raises EncodingError for non-UTF-8 hash keys" do
+      key = "\xFF".dup.force_encoding(Encoding::ASCII_8BIT)
+      expect { JSONSchema.canonical_dumps({ key => 1 }) }
+        .to raise_error(EncodingError, /Hash key is not valid UTF-8/)
+    end
+
+    it "raises EncodingError for non-UTF-8 string values" do
+      value = "\xFF".dup.force_encoding(Encoding::ASCII_8BIT)
+      expect { JSONSchema.canonical_dumps(value) }
+        .to raise_error(EncodingError, /String is not valid UTF-8/)
+    end
+
+    it "raises TypeError for duplicate keys after normalization" do
+      expect { JSONSchema.canonical_dumps({ a: 1, "a" => 2 }) }
+        .to raise_error(TypeError, /duplicate keys after normalization/)
+    end
+  end
+
   describe ".validator_for" do
     it "creates a validator" do
       schema = { "type" => "string" }

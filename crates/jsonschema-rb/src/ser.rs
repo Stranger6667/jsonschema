@@ -1,5 +1,7 @@
 //! Serialization between Ruby values and `serde_json::Value`.
 use magnus::{
+    error::ErrorType,
+    exception::ExceptionClass,
     gc::register_mark_object,
     prelude::*,
     rb_sys::AsRawValue,
@@ -7,8 +9,15 @@ use magnus::{
     Error, Integer, RArray, RClass, RHash, RString, Ruby, Symbol, TryConvert, Value,
 };
 use rb_sys::{ruby_value_type, RB_TYPE};
+use serde::{
+    ser::{SerializeMap, SerializeSeq},
+    Serialize, Serializer,
+};
 use serde_json::{Map, Number, Value as JsonValue};
-use std::fmt;
+use std::{
+    cell::RefCell,
+    fmt::{self, Write},
+};
 
 static BIG_DECIMAL_CLASS: Lazy<RClass> = Lazy::new(|ruby| {
     // Ensure bigdecimal is loaded
@@ -23,6 +32,15 @@ static BIG_DECIMAL_CLASS: Lazy<RClass> = Lazy::new(|ruby| {
 });
 
 const RECURSION_LIMIT: u16 = 255;
+const I64_LOWER_INCLUSIVE_F64: f64 = -9_223_372_036_854_775_808.0;
+const I64_UPPER_EXCLUSIVE_F64: f64 = 9_223_372_036_854_775_808.0;
+const U64_UPPER_EXCLUSIVE_F64: f64 = 18_446_744_073_709_551_616.0;
+const IEEE754_F64_FRAC_BITS: u32 = 52;
+const IEEE754_F64_EXP_BIAS: i32 = 1023;
+const DECIMAL_BASE_U64: u64 = 1_000_000_000;
+const DECIMAL_CHUNK_WIDTH: usize = 9;
+const CANONICAL_ERROR_PREFIX: &str = "__jsonschema_rb_canonical_error__";
+const DUPLICATE_CANONICAL_KEY_MESSAGE: &str = "Hash contains duplicate keys after normalization";
 
 #[inline]
 pub fn to_value(ruby: &Ruby, value: Value) -> Result<JsonValue, Error> {
@@ -52,6 +70,25 @@ pub fn to_schema_value(ruby: &Ruby, value: Value) -> Result<JsonValue, Error> {
     to_value_typed(ruby, value, value_type, 0)
 }
 
+/// Serialize a Ruby value to canonical JSON.
+///
+/// Used to generate a stable string form for deduplicating equivalent schemas.
+#[inline]
+pub fn to_canonical_string(ruby: &Ruby, value: Value) -> Result<String, Error> {
+    let mut output = Vec::new();
+    let mut serializer = serde_json::Serializer::new(&mut output);
+    let scratch_pool = RefCell::new(Vec::new());
+    CanonicalRubyValue::new(ruby, value, 0, &scratch_pool)
+        .serialize(&mut serializer)
+        .map_err(|error| canonical_serde_error_to_ruby(ruby, &error))?;
+    String::from_utf8(output).map_err(|_| {
+        Error::new(
+            ruby.exception_runtime_error(),
+            "Internal UTF-8 serialization error",
+        )
+    })
+}
+
 fn to_value_recursive(ruby: &Ruby, value: Value, depth: u16) -> Result<JsonValue, Error> {
     if value.is_nil() {
         return Ok(JsonValue::Null);
@@ -76,96 +113,576 @@ fn to_value_typed(
         ruby_value_type::RUBY_T_FIXNUM | ruby_value_type::RUBY_T_BIGNUM => {
             convert_integer(ruby, value)
         }
-        ruby_value_type::RUBY_T_FLOAT => {
-            let f = f64::try_convert(value)?;
-            Number::from_f64(f).map(JsonValue::Number).ok_or_else(|| {
-                Error::new(
-                    ruby.exception_arg_error(),
-                    "Cannot convert NaN or Infinity to JSON",
-                )
-            })
-        }
-        ruby_value_type::RUBY_T_STRING => {
-            let Some(rstring) = RString::from_value(value) else {
-                unreachable!("We checked the type tag")
-            };
-            // SAFETY: rstring is valid and we're in Ruby VM context
-            #[allow(unsafe_code)]
-            let bytes = unsafe { rstring.as_slice() };
-            match std::str::from_utf8(bytes) {
-                Ok(s) => Ok(JsonValue::String(s.to_owned())),
-                Err(_) => Err(Error::new(
-                    ruby.exception_encoding_error(),
-                    "String is not valid UTF-8",
-                )),
-            }
-        }
-        ruby_value_type::RUBY_T_SYMBOL => {
-            let Some(sym) = Symbol::from_value(value) else {
-                unreachable!("We checked the type tag")
-            };
-            let name = sym.name()?;
-            Ok(JsonValue::String(name.to_string()))
-        }
-        ruby_value_type::RUBY_T_ARRAY => {
-            if depth >= RECURSION_LIMIT {
-                return Err(Error::new(
-                    ruby.exception_arg_error(),
-                    format!("Exceeded maximum nesting depth ({RECURSION_LIMIT})"),
-                ));
-            }
-            let Some(arr) = RArray::from_value(value) else {
-                unreachable!("We checked the type tag")
-            };
-            let len = arr.len();
-            let mut json_arr = Vec::with_capacity(len);
-            // Do not use `RArray::as_slice` here: recursive conversion may call
-            // Ruby APIs for nested values, and `as_slice` borrows Ruby-managed
-            // memory that must not be held across Ruby calls/GC.
-            for idx in 0..len {
-                let idx = isize::try_from(idx).map_err(|_| {
-                    Error::new(
-                        ruby.exception_arg_error(),
-                        "Array index exceeds supported range",
-                    )
-                })?;
-                let item: Value = arr.entry(idx)?;
-                json_arr.push(to_value_recursive(ruby, item, depth + 1)?);
-            }
-            Ok(JsonValue::Array(json_arr))
-        }
-        ruby_value_type::RUBY_T_HASH => {
-            if depth >= RECURSION_LIMIT {
-                return Err(Error::new(
-                    ruby.exception_arg_error(),
-                    format!("Exceeded maximum nesting depth ({RECURSION_LIMIT})"),
-                ));
-            }
-            let Some(hash) = RHash::from_value(value) else {
-                unreachable!("We checked the type tag")
-            };
-            let mut map = Map::with_capacity(hash.len());
-            hash.foreach(|key: Value, val: Value| {
-                let key_str = hash_key_to_string(ruby, key)?;
-                let json_val = to_value_recursive(ruby, val, depth + 1)?;
-                map.insert(key_str, json_val);
-                Ok(magnus::r_hash::ForEach::Continue)
-            })?;
-            Ok(JsonValue::Object(map))
-        }
+        ruby_value_type::RUBY_T_FLOAT => convert_float(ruby, value),
+        ruby_value_type::RUBY_T_STRING => convert_string(ruby, value),
+        ruby_value_type::RUBY_T_SYMBOL => convert_symbol(value),
+        ruby_value_type::RUBY_T_ARRAY => convert_array(ruby, value, depth),
+        ruby_value_type::RUBY_T_HASH => convert_hash(ruby, value, depth),
         ruby_value_type::RUBY_T_DATA if value.is_kind_of(ruby.get_inner(&BIG_DECIMAL_CLASS)) => {
             convert_big_decimal(ruby, value)
         }
-        _ => {
-            let class = value.class();
-            #[allow(unsafe_code)]
-            let class_name = unsafe { class.name() };
-            Err(Error::new(
-                ruby.exception_type_error(),
-                format!("Unsupported type: '{class_name}'"),
-            ))
+        _ => unsupported_type_error(ruby, value),
+    }
+}
+
+#[inline]
+fn convert_float(ruby: &Ruby, value: Value) -> Result<JsonValue, Error> {
+    let float = f64::try_convert(value)?;
+    Number::from_f64(float)
+        .map(JsonValue::Number)
+        .ok_or_else(|| {
+            Error::new(
+                ruby.exception_arg_error(),
+                "Cannot convert NaN or Infinity to JSON",
+            )
+        })
+}
+
+#[inline]
+fn convert_string(ruby: &Ruby, value: Value) -> Result<JsonValue, Error> {
+    utf8_string_from_value(ruby, value, "String is not valid UTF-8").map(JsonValue::String)
+}
+
+#[inline]
+fn convert_symbol(value: Value) -> Result<JsonValue, Error> {
+    symbol_name_from_value(value).map(JsonValue::String)
+}
+
+fn convert_array(ruby: &Ruby, value: Value, depth: u16) -> Result<JsonValue, Error> {
+    if depth >= RECURSION_LIMIT {
+        return Err(Error::new(
+            ruby.exception_arg_error(),
+            format!("Exceeded maximum nesting depth ({RECURSION_LIMIT})"),
+        ));
+    }
+    let Some(arr) = RArray::from_value(value) else {
+        unreachable!("We checked the type tag")
+    };
+    let len = arr.len();
+    let mut json_arr = Vec::with_capacity(len);
+    // Do not use `RArray::as_slice` here: recursive conversion may call
+    // Ruby APIs for nested values, and `as_slice` borrows Ruby-managed
+    // memory that must not be held across Ruby calls/GC.
+    for idx in 0..len {
+        let idx = isize::try_from(idx).map_err(|_| {
+            Error::new(
+                ruby.exception_arg_error(),
+                "Array index exceeds supported range",
+            )
+        })?;
+        let item: Value = arr.entry(idx)?;
+        json_arr.push(to_value_recursive(ruby, item, depth + 1)?);
+    }
+    Ok(JsonValue::Array(json_arr))
+}
+
+fn convert_hash(ruby: &Ruby, value: Value, depth: u16) -> Result<JsonValue, Error> {
+    if depth >= RECURSION_LIMIT {
+        return Err(Error::new(
+            ruby.exception_arg_error(),
+            format!("Exceeded maximum nesting depth ({RECURSION_LIMIT})"),
+        ));
+    }
+    let Some(hash) = RHash::from_value(value) else {
+        unreachable!("We checked the type tag")
+    };
+    let mut map = Map::with_capacity(hash.len());
+    hash.foreach(|key: Value, val: Value| {
+        let key_str = hash_key_to_string(ruby, key)?;
+        let json_val = to_value_recursive(ruby, val, depth + 1)?;
+        map.insert(key_str, json_val);
+        Ok(magnus::r_hash::ForEach::Continue)
+    })?;
+    Ok(JsonValue::Object(map))
+}
+
+#[inline]
+fn unsupported_type_error(ruby: &Ruby, value: Value) -> Result<JsonValue, Error> {
+    let class = value.class();
+    #[allow(unsafe_code)]
+    let class_name = unsafe { class.name() };
+    Err(Error::new(
+        ruby.exception_type_error(),
+        format!("Unsupported type: '{class_name}'"),
+    ))
+}
+
+#[derive(Clone, Copy)]
+enum CanonicalErrorKind {
+    Argument,
+    Type,
+    Encoding,
+    Runtime,
+}
+
+impl CanonicalErrorKind {
+    #[inline]
+    fn as_tag(self) -> &'static str {
+        match self {
+            Self::Argument => "argument",
+            Self::Type => "type",
+            Self::Encoding => "encoding",
+            Self::Runtime => "runtime",
         }
     }
+
+    #[inline]
+    fn from_tag(tag: &str) -> Option<Self> {
+        match tag {
+            "argument" => Some(Self::Argument),
+            "type" => Some(Self::Type),
+            "encoding" => Some(Self::Encoding),
+            "runtime" => Some(Self::Runtime),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    fn exception(self, ruby: &Ruby) -> ExceptionClass {
+        match self {
+            Self::Argument => ruby.exception_arg_error(),
+            Self::Type => ruby.exception_type_error(),
+            Self::Encoding => ruby.exception_encoding_error(),
+            Self::Runtime => ruby.exception_runtime_error(),
+        }
+    }
+}
+
+#[inline]
+fn canonical_error_kind_from_ruby_error(ruby: &Ruby, error: &Error) -> CanonicalErrorKind {
+    if error.is_kind_of(ruby.exception_type_error()) {
+        CanonicalErrorKind::Type
+    } else if error.is_kind_of(ruby.exception_encoding_error()) {
+        CanonicalErrorKind::Encoding
+    } else if error.is_kind_of(ruby.exception_runtime_error()) {
+        CanonicalErrorKind::Runtime
+    } else {
+        CanonicalErrorKind::Argument
+    }
+}
+
+#[inline]
+fn ruby_error_message(error: &Error) -> String {
+    match error.error_type() {
+        ErrorType::Error(_, message) => message.to_string(),
+        _ => error.to_string(),
+    }
+}
+
+#[inline]
+fn encode_canonical_error(kind: CanonicalErrorKind, message: &str) -> String {
+    format!("{CANONICAL_ERROR_PREFIX}{}|{message}", kind.as_tag())
+}
+
+#[inline]
+fn decode_canonical_error(message: &str) -> Option<(CanonicalErrorKind, &str)> {
+    let payload = message.strip_prefix(CANONICAL_ERROR_PREFIX)?;
+    let (tag, body) = payload.split_once('|')?;
+    Some((CanonicalErrorKind::from_tag(tag)?, body))
+}
+
+#[inline]
+fn canonical_serde_error_to_ruby(ruby: &Ruby, error: &serde_json::Error) -> Error {
+    let rendered = error.to_string();
+    let suffix = format!(" at line {} column {}", error.line(), error.column());
+    let without_location = rendered.strip_suffix(&suffix).unwrap_or(&rendered);
+    if let Some((kind, message)) = decode_canonical_error(without_location) {
+        return Error::new(kind.exception(ruby), message.to_string());
+    }
+    Error::new(ruby.exception_arg_error(), rendered)
+}
+
+#[inline]
+fn ruby_error_to_canonical_serde<S>(ruby: &Ruby, error: &Error) -> S::Error
+where
+    S: Serializer,
+{
+    let kind = canonical_error_kind_from_ruby_error(ruby, error);
+    let message = ruby_error_message(error);
+    serde::ser::Error::custom(encode_canonical_error(kind, &message))
+}
+
+#[inline]
+fn canonical_serde_error<S>(kind: CanonicalErrorKind, message: &str) -> S::Error
+where
+    S: Serializer,
+{
+    serde::ser::Error::custom(encode_canonical_error(kind, message))
+}
+
+#[inline]
+fn utf8_string_from_rstring(
+    ruby: &Ruby,
+    rstring: RString,
+    error_message: &'static str,
+) -> Result<String, Error> {
+    // SAFETY: rstring is valid and we're in Ruby VM context.
+    #[allow(unsafe_code)]
+    let bytes = unsafe { rstring.as_slice() };
+    std::str::from_utf8(bytes)
+        .map(str::to_owned)
+        .map_err(|_| Error::new(ruby.exception_encoding_error(), error_message))
+}
+
+#[inline]
+fn utf8_string_from_value(
+    ruby: &Ruby,
+    value: Value,
+    error_message: &'static str,
+) -> Result<String, Error> {
+    let Some(rstring) = RString::from_value(value) else {
+        unreachable!("We checked the type tag")
+    };
+    utf8_string_from_rstring(ruby, rstring, error_message)
+}
+
+#[inline]
+fn symbol_name_from_value(value: Value) -> Result<String, Error> {
+    let Some(sym) = Symbol::from_value(value) else {
+        unreachable!("We checked the type tag")
+    };
+    Ok(sym.name()?.to_string())
+}
+
+const MAX_CANONICAL_SCRATCH_POOL_SIZE: usize = 8;
+const MAX_CANONICAL_SCRATCH_CAPACITY: usize = 16_384;
+
+struct HashEntry {
+    key: String,
+    value: Value,
+}
+
+struct HashEntryScratch<'a> {
+    entries: Vec<HashEntry>,
+    pool: &'a RefCell<Vec<Vec<HashEntry>>>,
+}
+
+impl<'a> HashEntryScratch<'a> {
+    fn with_capacity(pool: &'a RefCell<Vec<Vec<HashEntry>>>, capacity: usize) -> Self {
+        let mut entries = pool.borrow_mut().pop().unwrap_or_default();
+        if entries.capacity() < capacity {
+            entries.reserve(capacity - entries.capacity());
+        }
+        Self { entries, pool }
+    }
+
+    #[inline]
+    fn entries_mut(&mut self) -> &mut Vec<HashEntry> {
+        &mut self.entries
+    }
+
+    #[inline]
+    fn entries(&self) -> &[HashEntry] {
+        &self.entries
+    }
+}
+
+impl Drop for HashEntryScratch<'_> {
+    fn drop(&mut self) {
+        self.entries.clear();
+        if self.entries.capacity() > MAX_CANONICAL_SCRATCH_CAPACITY {
+            return;
+        }
+        let mut pool = self.pool.borrow_mut();
+        if pool.len() < MAX_CANONICAL_SCRATCH_POOL_SIZE {
+            pool.push(std::mem::take(&mut self.entries));
+        }
+    }
+}
+
+struct CanonicalRubyValue<'scratch> {
+    ruby: &'scratch Ruby,
+    value: Value,
+    depth: u16,
+    scratch_pool: &'scratch RefCell<Vec<Vec<HashEntry>>>,
+}
+
+impl<'scratch> CanonicalRubyValue<'scratch> {
+    fn new(
+        ruby: &'scratch Ruby,
+        value: Value,
+        depth: u16,
+        scratch_pool: &'scratch RefCell<Vec<Vec<HashEntry>>>,
+    ) -> Self {
+        Self {
+            ruby,
+            value,
+            depth,
+            scratch_pool,
+        }
+    }
+}
+
+impl Serialize for CanonicalRubyValue<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if self.value.is_nil() {
+            return serializer.serialize_unit();
+        }
+
+        // SAFETY: We're reading the type tag of a valid Ruby value
+        #[allow(unsafe_code)]
+        let value_type = unsafe { RB_TYPE(self.value.as_raw()) };
+
+        match value_type {
+            ruby_value_type::RUBY_T_TRUE => serializer.serialize_bool(true),
+            ruby_value_type::RUBY_T_FALSE => serializer.serialize_bool(false),
+            ruby_value_type::RUBY_T_FIXNUM | ruby_value_type::RUBY_T_BIGNUM => {
+                let number = convert_integer(self.ruby, self.value)
+                    .map_err(|error| ruby_error_to_canonical_serde::<S>(self.ruby, &error))?;
+                number.serialize(serializer)
+            }
+            ruby_value_type::RUBY_T_FLOAT => {
+                let number = convert_float_for_canonical(self.ruby, self.value)
+                    .map_err(|error| ruby_error_to_canonical_serde::<S>(self.ruby, &error))?;
+                number.serialize(serializer)
+            }
+            ruby_value_type::RUBY_T_STRING => {
+                let value =
+                    utf8_string_from_value(self.ruby, self.value, "String is not valid UTF-8")
+                        .map_err(|error| ruby_error_to_canonical_serde::<S>(self.ruby, &error))?;
+                serializer.serialize_str(value.as_str())
+            }
+            ruby_value_type::RUBY_T_SYMBOL => {
+                let name = symbol_name_from_value(self.value)
+                    .map_err(|error| ruby_error_to_canonical_serde::<S>(self.ruby, &error))?;
+                serializer.serialize_str(name.as_str())
+            }
+            ruby_value_type::RUBY_T_ARRAY => {
+                if self.depth >= RECURSION_LIMIT {
+                    return Err(canonical_serde_error::<S>(
+                        CanonicalErrorKind::Argument,
+                        &format!("Exceeded maximum nesting depth ({RECURSION_LIMIT})"),
+                    ));
+                }
+                let Some(arr) = RArray::from_value(self.value) else {
+                    unreachable!("We checked the type tag")
+                };
+                let len = arr.len();
+                let mut sequence = serializer.serialize_seq(Some(len))?;
+                for idx in 0..len {
+                    let idx = isize::try_from(idx).map_err(|_| {
+                        canonical_serde_error::<S>(
+                            CanonicalErrorKind::Argument,
+                            "Array index exceeds supported range",
+                        )
+                    })?;
+                    let item: Value = arr
+                        .entry(idx)
+                        .map_err(|error| ruby_error_to_canonical_serde::<S>(self.ruby, &error))?;
+                    sequence.serialize_element(&CanonicalRubyValue::new(
+                        self.ruby,
+                        item,
+                        self.depth + 1,
+                        self.scratch_pool,
+                    ))?;
+                }
+                sequence.end()
+            }
+            ruby_value_type::RUBY_T_HASH => {
+                if self.depth >= RECURSION_LIMIT {
+                    return Err(canonical_serde_error::<S>(
+                        CanonicalErrorKind::Argument,
+                        &format!("Exceeded maximum nesting depth ({RECURSION_LIMIT})"),
+                    ));
+                }
+                let Some(hash) = RHash::from_value(self.value) else {
+                    unreachable!("We checked the type tag")
+                };
+                let len = hash.len();
+                let mut scratch = HashEntryScratch::with_capacity(self.scratch_pool, len);
+                hash.foreach(|key: Value, value: Value| {
+                    let key = hash_key_to_string(self.ruby, key)?;
+                    scratch.entries_mut().push(HashEntry { key, value });
+                    Ok(magnus::r_hash::ForEach::Continue)
+                })
+                .map_err(|error| ruby_error_to_canonical_serde::<S>(self.ruby, &error))?;
+                let entries = scratch.entries_mut();
+                entries.sort_by(|left, right| left.key.as_bytes().cmp(right.key.as_bytes()));
+                if entries
+                    .windows(2)
+                    .any(|window| window[0].key == window[1].key)
+                {
+                    return Err(canonical_serde_error::<S>(
+                        CanonicalErrorKind::Type,
+                        DUPLICATE_CANONICAL_KEY_MESSAGE,
+                    ));
+                }
+
+                let mut map = serializer.serialize_map(Some(len))?;
+                for entry in scratch.entries() {
+                    map.serialize_entry(
+                        entry.key.as_str(),
+                        &CanonicalRubyValue::new(
+                            self.ruby,
+                            entry.value,
+                            self.depth + 1,
+                            self.scratch_pool,
+                        ),
+                    )?;
+                }
+                map.end()
+            }
+            ruby_value_type::RUBY_T_DATA
+                if self
+                    .value
+                    .is_kind_of(self.ruby.get_inner(&BIG_DECIMAL_CLASS)) =>
+            {
+                let number = convert_big_decimal_for_canonical(self.ruby, self.value)
+                    .map_err(|error| ruby_error_to_canonical_serde::<S>(self.ruby, &error))?;
+                number.serialize(serializer)
+            }
+            _ => {
+                let class = self.value.class();
+                #[allow(unsafe_code)]
+                let class_name = unsafe { class.name() };
+                Err(canonical_serde_error::<S>(
+                    CanonicalErrorKind::Type,
+                    &format!("Unsupported type: '{class_name}'"),
+                ))
+            }
+        }
+    }
+}
+
+#[inline]
+fn convert_float_for_canonical(ruby: &Ruby, value: Value) -> Result<JsonValue, Error> {
+    let float = f64::try_convert(value)?;
+    if !float.is_finite() {
+        return Ok(JsonValue::Null);
+    }
+
+    if float == 0.0 {
+        return Ok(JsonValue::Number(Number::from(0)));
+    }
+
+    if float.fract() == 0.0 {
+        if (0.0..U64_UPPER_EXCLUSIVE_F64).contains(&float) {
+            // SAFETY: range check above guarantees a lossless conversion.
+            #[allow(unsafe_code)]
+            let integer = unsafe { float.to_int_unchecked::<u64>() };
+            return Ok(JsonValue::Number(Number::from(integer)));
+        }
+        if (I64_LOWER_INCLUSIVE_F64..I64_UPPER_EXCLUSIVE_F64).contains(&float) {
+            // SAFETY: range check above guarantees a lossless conversion.
+            #[allow(unsafe_code)]
+            let integer = unsafe { float.to_int_unchecked::<i64>() };
+            return Ok(JsonValue::Number(Number::from(integer)));
+        }
+        if let Some(integer_text) = integer_text_from_float(float) {
+            if let Ok(JsonValue::Number(number)) = serde_json::from_str::<JsonValue>(&integer_text)
+            {
+                return Ok(JsonValue::Number(number));
+            }
+        }
+        return Err(Error::new(
+            ruby.exception_arg_error(),
+            "Cannot convert float to JSON",
+        ));
+    }
+
+    Number::from_f64(float)
+        .map(JsonValue::Number)
+        .ok_or_else(|| Error::new(ruby.exception_arg_error(), "Cannot convert float to JSON"))
+}
+
+fn integer_text_from_float(float: f64) -> Option<String> {
+    const IEEE754_F64_FRAC_BITS_I32: i32 = 52;
+    let bits = float.to_bits();
+    let negative = (bits >> 63) != 0;
+    let exp_bits = i32::try_from((bits >> IEEE754_F64_FRAC_BITS) & 0x7ff).ok()?;
+    let frac_mask = (1_u64 << IEEE754_F64_FRAC_BITS) - 1;
+    let frac = bits & frac_mask;
+
+    let (mantissa, exponent) = if exp_bits == 0 {
+        (frac, 1 - IEEE754_F64_EXP_BIAS - IEEE754_F64_FRAC_BITS_I32)
+    } else {
+        (
+            (1_u64 << IEEE754_F64_FRAC_BITS) | frac,
+            exp_bits - IEEE754_F64_EXP_BIAS - IEEE754_F64_FRAC_BITS_I32,
+        )
+    };
+
+    if mantissa == 0 {
+        return Some("0".to_string());
+    }
+
+    if exponent < 0 {
+        let shift = exponent.unsigned_abs();
+        if shift >= u64::BITS {
+            return Some("0".to_string());
+        }
+        let remainder_mask = (1_u64 << shift) - 1;
+        if mantissa & remainder_mask != 0 {
+            return None;
+        }
+        let integer = mantissa >> shift;
+        let mut output = String::new();
+        if negative {
+            output.push('-');
+        }
+        let _ = write!(&mut output, "{integer}");
+        return Some(output);
+    }
+
+    let mut chunks = Vec::new();
+    let mut value = mantissa;
+    while value > 0 {
+        chunks.push((value % DECIMAL_BASE_U64) as u32);
+        value /= DECIMAL_BASE_U64;
+    }
+
+    let exponent_u32 = u32::try_from(exponent).ok()?;
+    for _ in 0..exponent_u32 {
+        let mut carry = 0_u64;
+        for chunk in &mut chunks {
+            let doubled = u64::from(*chunk) * 2 + carry;
+            *chunk = (doubled % DECIMAL_BASE_U64) as u32;
+            carry = doubled / DECIMAL_BASE_U64;
+        }
+        if carry != 0 {
+            chunks.push(u32::try_from(carry).ok()?);
+        }
+    }
+
+    let mut output = String::new();
+    if negative {
+        output.push('-');
+    }
+
+    let most_significant = chunks.pop()?;
+    let _ = write!(&mut output, "{most_significant}");
+    for chunk in chunks.iter().rev() {
+        let _ = write!(&mut output, "{chunk:0DECIMAL_CHUNK_WIDTH$}");
+    }
+
+    Some(output)
+}
+
+#[inline]
+fn convert_big_decimal_for_canonical(ruby: &Ruby, value: Value) -> Result<JsonValue, Error> {
+    let is_finite: bool = value.funcall("finite?", ())?;
+    if !is_finite {
+        return Ok(JsonValue::Null);
+    }
+
+    let fractional_part: Value = value.funcall("frac", ())?;
+    let is_integer: bool = fractional_part.funcall("zero?", ())?;
+    if is_integer {
+        let integer_value: Value = value.funcall("to_i", ())?;
+        return convert_integer(ruby, integer_value);
+    }
+
+    let decimal_text: String = value.funcall("to_s", ("F",))?;
+    if let Ok(JsonValue::Number(number)) = serde_json::from_str::<JsonValue>(&decimal_text) {
+        return Ok(JsonValue::Number(number));
+    }
+    Err(Error::new(
+        ruby.exception_arg_error(),
+        "Cannot convert BigDecimal to JSON",
+    ))
 }
 
 /// Convert Ruby BigDecimal to JSON Number while preserving precision.
@@ -216,24 +733,10 @@ fn hash_key_to_string(ruby: &Ruby, key: Value) -> Result<String, Error> {
 
     match key_type {
         ruby_value_type::RUBY_T_STRING => {
-            if let Some(rstring) = RString::from_value(key) {
-                // SAFETY: rstring is valid
-                #[allow(unsafe_code)]
-                let bytes = unsafe { rstring.as_slice() };
-                return std::str::from_utf8(bytes)
-                    .map(std::borrow::ToOwned::to_owned)
-                    .map_err(|_| {
-                        Error::new(
-                            ruby.exception_encoding_error(),
-                            "Hash key is not valid UTF-8",
-                        )
-                    });
-            }
+            return utf8_string_from_value(ruby, key, "Hash key is not valid UTF-8");
         }
         ruby_value_type::RUBY_T_SYMBOL => {
-            if let Some(sym) = Symbol::from_value(key) {
-                return Ok(sym.name()?.to_string());
-            }
+            return symbol_name_from_value(key);
         }
         _ => {}
     }

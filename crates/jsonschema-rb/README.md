@@ -251,6 +251,22 @@ valid_eval.annotations
 #      instanceLocation: "", annotations: ["age", "name"]}]
 ```
 
+### Canonical JSON serialization
+
+Use `canonical_dumps` when you need a stable JSON representation:
+
+```ruby
+schema_a = { "type" => "object", "properties" => { "b" => { "type" => "integer" }, "a" => { "type" => "string" } } }
+schema_b = { "properties" => { "a" => { "type" => "string" }, "b" => { "type" => "integer" } }, "type" => "object" }
+
+dump_a = JSONSchema.canonical_dumps(schema_a)
+dump_b = JSONSchema.canonical_dumps(schema_b)
+
+dump_a == dump_b # => true
+```
+
+Main use case: deduplicating equivalent JSON Schemas.
+
 ## Meta-Schema Validation
 
 Validate that a JSON Schema document is itself valid:
