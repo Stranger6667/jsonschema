@@ -125,6 +125,8 @@ class RetrieverProtocol(Protocol):
 def canonical_dumps(object: JSONType) -> str:
     """Serialize a Python object to a canonical JSON string.
 
+    Main use case: deduplicating equivalent JSON Schemas.
+
     - Dict keys are sorted alphabetically
     - Integer-valued floats are serialized as integers (1.0 → 1)
     - NaN and Infinity are serialized as null
