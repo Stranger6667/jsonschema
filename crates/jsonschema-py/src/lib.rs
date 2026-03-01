@@ -30,6 +30,7 @@ use serde::Serialize;
 extern crate pyo3_built;
 
 mod canonical;
+mod clone;
 mod email;
 mod http;
 mod regex;
