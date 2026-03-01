@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-03-02
+
 ### Added
 
 - `canonical.json.to_string(object)` for canonical JSON serialization (stable key ordering and numeric normalization), useful for deduplicating equivalent JSON Schemas.
@@ -954,7 +956,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.43.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.44.0...HEAD
+[0.44.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.43.0...python-v0.44.0
 [0.43.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.42.2...python-v0.43.0
 [0.42.2]: https://github.com/Stranger6667/jsonschema/compare/python-v0.42.1...python-v0.42.2
 [0.42.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.42.0...python-v0.42.1
