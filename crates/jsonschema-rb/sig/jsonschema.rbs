@@ -7,6 +7,11 @@ module JSONSchema
   # Valid draft version symbols
   type draft = :draft4 | :draft6 | :draft7 | :draft201909 | :draft202012
 
+  # Serialize a Ruby value to canonical JSON.
+  #
+  # Main use case: deduplicate equivalent JSON Schemas by using a stable string form.
+  def self.canonical_dumps: (untyped object) -> String
+
   # Create a validator with auto-detected draft version.
   #
   # @param schema The JSON Schema (Hash or JSON string)

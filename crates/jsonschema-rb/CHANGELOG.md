@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `canonical_dumps(object)` for canonical JSON serialization (stable key ordering and numeric normalization), useful for deduplicating equivalent JSON Schemas.
+
 ### Fixed
 
 - Do not produce annotations for non-string instances from `contentMediaType`, `contentEncoding`, and `contentSchema` keywords.

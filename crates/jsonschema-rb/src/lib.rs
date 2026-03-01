@@ -42,7 +42,7 @@ use crate::{
     },
     registry::Registry,
     retriever::{retriever_error_message, RubyRetriever},
-    ser::{to_schema_value, to_value},
+    ser::{to_canonical_string, to_schema_value, to_value},
     static_id::define_rb_intern,
 };
 
@@ -838,6 +838,15 @@ fn validator_for(ruby: &Ruby, args: &[Value]) -> Result<Validator, Error> {
     })
 }
 
+/// canonical_dumps(object) -> String
+///
+/// Serialize a Ruby value to canonical JSON.
+///
+/// Main use case: deduplicating equivalent JSON Schemas using a stable string form.
+fn canonical_dumps(ruby: &Ruby, object: Value) -> Result<String, Error> {
+    to_canonical_string(ruby, object)
+}
+
 #[allow(unsafe_code)]
 fn is_valid(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
     let parsed_args = scan_args::<(Value, Value), (), (), (), _, ()>(args)?;
@@ -1321,6 +1330,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
 
     // Module-level functions
     module.define_singleton_method("validator_cls_for", function!(validator_cls_for, 1))?;
+    module.define_singleton_method("canonical_dumps", function!(canonical_dumps, 1))?;
     module.define_singleton_method("validator_for", function!(validator_for, -1))?;
     module.define_singleton_method("valid?", function!(is_valid, -1))?;
     module.define_singleton_method("validate!", function!(validate, -1))?;
