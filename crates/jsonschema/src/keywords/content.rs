@@ -10,7 +10,7 @@ use crate::{
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
 };
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value};
 use std::sync::Arc;
 
 /// Validator for `contentMediaType` keyword.
@@ -430,7 +430,7 @@ impl ContentSchemaAnnotationValidator {
         // contentSchema only annotates when contentMediaType is also present
         if schema.contains_key("contentMediaType") {
             Some(Ok(Box::new(ContentSchemaAnnotationValidator {
-                annotation: Arc::new(json!({"contentSchema": subschema})),
+                annotation: Arc::new(subschema.clone()),
             })))
         } else {
             None
