@@ -4,7 +4,7 @@
 
 ### Added
 
-- `canonical_dumps(object)` for canonical JSON serialization (stable key ordering and numeric normalization), useful for deduplicating equivalent JSON Schemas.
+- `Canonical::JSON.to_string(object)` for canonical JSON serialization (stable key ordering and numeric normalization), useful for deduplicating equivalent JSON Schemas.
 
 ### Fixed
 

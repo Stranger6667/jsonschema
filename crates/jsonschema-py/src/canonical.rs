@@ -734,8 +734,20 @@ fn to_canonical_string(object: *mut ffi::PyObject) -> serde_json::Result<String>
 /// Serialize a Python object to canonical JSON.
 ///
 /// Main use case: deduplicating equivalent JSON Schemas.
-#[pyfunction]
-pub(crate) fn canonical_dumps(object: &Bound<'_, PyAny>) -> PyResult<String> {
+#[pyfunction(name = "to_string")]
+pub(crate) fn canonical_json_to_string(object: &Bound<'_, PyAny>) -> PyResult<String> {
     to_canonical_string(object.as_ptr())
         .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))
+}
+
+pub(crate) fn init_module(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
+    let canonical_module = PyModule::new(py, "canonical")?;
+    let canonical_json_module = PyModule::new(py, "json")?;
+    canonical_json_module.add_function(pyo3::wrap_pyfunction!(
+        canonical_json_to_string,
+        &canonical_json_module
+    )?)?;
+    canonical_module.add_submodule(&canonical_json_module)?;
+    module.add_submodule(&canonical_module)?;
+    Ok(())
 }
