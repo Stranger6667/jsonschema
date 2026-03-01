@@ -7,7 +7,9 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from jsonschema_rs import canonical_dumps
+from jsonschema_rs import canonical
+
+to_string = canonical.json.to_string
 
 # Recursive strategy for JSON-compatible values (no NaN/Inf — those don't roundtrip)
 _json_scalars = st.one_of(
@@ -76,22 +78,22 @@ class StrColor(str, enum.Enum):
         (Decimal(2**128), str(2**128)),
     ],
 )
-def test_canonical_dumps(value, expected):
-    assert canonical_dumps(value) == expected
+def test_to_string(value, expected):
+    assert to_string(value) == expected
 
 
 def test_float_large_integer_valued():
-    result = canonical_dumps(1e300)
+    result = to_string(1e300)
     assert result == str(int(1e300))
 
 
 @pytest.mark.parametrize("value", [float(2**63), float(-(2**63)), float(2**64)])
 def test_float_integer_boundary_values(value):
-    assert canonical_dumps(value) == str(int(value))
+    assert to_string(value) == str(int(value))
 
 
 def test_decimal_fractional():
-    assert json.loads(canonical_dumps(Decimal("1.5"))) == pytest.approx(1.5)
+    assert json.loads(to_string(Decimal("1.5"))) == pytest.approx(1.5)
 
 
 @pytest.mark.parametrize("value, expected", [
@@ -101,13 +103,13 @@ def test_decimal_fractional():
     (Decimal("-0E-1000"), "0"),
 ])
 def test_decimal_exponent_integrality(value, expected):
-    assert canonical_dumps(value) == expected
+    assert to_string(value) == expected
 
 
 @pytest.mark.parametrize("value", [object(), {1, 2, 3}])
 def test_unsupported_type_raises(value):
     with pytest.raises(ValueError):
-        canonical_dumps(value)
+        to_string(value)
 
 
 @pytest.mark.parametrize(
@@ -127,22 +129,22 @@ def test_unsupported_type_raises(value):
     ],
 )
 def test_roundtrip(value):
-    assert json.loads(canonical_dumps(value)) == value
+    assert json.loads(to_string(value)) == value
 
 
 def test_same_dict_different_order_produces_same_output():
-    assert canonical_dumps({"a": 1, "b": 2, "c": 3}) == canonical_dumps({"c": 3, "a": 1, "b": 2})
+    assert to_string({"a": 1, "b": 2, "c": 3}) == to_string({"c": 3, "a": 1, "b": 2})
 
 
 @pytest.mark.parametrize("float_val, int_val", [(1.0, 1), (0.0, 0)])
 def test_integer_float_same_as_int(float_val, int_val):
-    assert canonical_dumps(float_val) == canonical_dumps(int_val)
+    assert to_string(float_val) == to_string(int_val)
 
 
 @pytest.mark.parametrize("value", ["\ud800", {"\ud800": 1}])
 def test_lone_surrogate_raises(value):
     with pytest.raises(ValueError, match="surrogates not allowed"):
-        canonical_dumps(value)
+        to_string(value)
 
 
 def test_str_enum_key_value_lookup_error():
@@ -155,7 +157,7 @@ def test_str_enum_key_value_lookup_error():
             return super().__getattribute__(name)
 
     with pytest.raises(ValueError, match="Failed to access enum key value"):
-        canonical_dumps({BrokenStrEnum.A: 1})
+        to_string({BrokenStrEnum.A: 1})
 
 
 def test_enum_value_lookup_error():
@@ -168,35 +170,35 @@ def test_enum_value_lookup_error():
             return super().__getattribute__(name)
 
     with pytest.raises(ValueError, match="boom"):
-        canonical_dumps(BrokenEnum.A)
+        to_string(BrokenEnum.A)
 
 
 @given(_json_values)
 def test_roundtrip_hypothesis(value):
-    # json.loads(canonical_dumps(v)) == v holds for all JSON-compatible values.
+    # json.loads(to_string(v)) == v holds for all JSON-compatible values.
     # Python's == handles int/float equivalence (1 == 1.0), so integer-valued
     # floats that become ints after the round-trip still compare equal.
-    assert json.loads(canonical_dumps(value)) == value
+    assert json.loads(to_string(value)) == value
 
 
 @given(_json_values)
 def test_idempotent(value):
     # Re-encoding the parsed output produces the same string.
-    first = canonical_dumps(value)
-    assert canonical_dumps(json.loads(first)) == first
+    first = to_string(value)
+    assert to_string(json.loads(first)) == first
 
 
 @given(st.dictionaries(st.text(), _json_values))
 def test_dict_key_order_invariance(d):
     reversed_d = dict(reversed(list(d.items())))
-    assert canonical_dumps(d) == canonical_dumps(reversed_d)
+    assert to_string(d) == to_string(reversed_d)
 
 
 @given(st.integers())
 def test_integer_float_equivalence(n):
     f = float(n)
     if f == n:  # skip integers outside the exact float range
-        assert canonical_dumps(f) == canonical_dumps(n)
+        assert to_string(f) == to_string(n)
 
 
 @pytest.mark.skipif(not hasattr(sys, "getrefcount"), reason="PyPy does not have sys.getrefcount")
@@ -207,5 +209,5 @@ def test_enum_value_refcount_is_stable():
     payload = PayloadEnum.ITEM.value
     baseline = sys.getrefcount(payload)
     for _ in range(200):
-        assert canonical_dumps(PayloadEnum.ITEM) == "[1]"
+        assert to_string(PayloadEnum.ITEM) == "[1]"
     assert sys.getrefcount(payload) == baseline

@@ -838,12 +838,12 @@ fn validator_for(ruby: &Ruby, args: &[Value]) -> Result<Validator, Error> {
     })
 }
 
-/// canonical_dumps(object) -> String
+/// to_string(object) -> String
 ///
 /// Serialize a Ruby value to canonical JSON.
 ///
 /// Main use case: deduplicating equivalent JSON Schemas using a stable string form.
-fn canonical_dumps(ruby: &Ruby, object: Value) -> Result<String, Error> {
+fn canonical_json_to_string(ruby: &Ruby, object: Value) -> Result<String, Error> {
     to_canonical_string(ruby, object)
 }
 
@@ -1330,12 +1330,16 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
 
     // Module-level functions
     module.define_singleton_method("validator_cls_for", function!(validator_cls_for, 1))?;
-    module.define_singleton_method("canonical_dumps", function!(canonical_dumps, 1))?;
     module.define_singleton_method("validator_for", function!(validator_for, -1))?;
     module.define_singleton_method("valid?", function!(is_valid, -1))?;
     module.define_singleton_method("validate!", function!(validate, -1))?;
     module.define_singleton_method("each_error", function!(each_error, -1))?;
     module.define_singleton_method("evaluate", function!(evaluate, -1))?;
+
+    let canonical_module = module.define_module("Canonical")?;
+    let canonical_json_module = canonical_module.define_module("JSON")?;
+    canonical_json_module
+        .define_singleton_method("to_string", function!(canonical_json_to_string, 1))?;
 
     // Validator class
     let validator_class = module.define_class("Validator", ruby.class_object())?;

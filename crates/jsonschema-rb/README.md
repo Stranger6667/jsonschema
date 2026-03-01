@@ -253,14 +253,14 @@ valid_eval.annotations
 
 ### Canonical JSON serialization
 
-Use `canonical_dumps` when you need a stable JSON representation:
+Use `Canonical::JSON.to_string` when you need a stable JSON representation:
 
 ```ruby
 schema_a = { "type" => "object", "properties" => { "b" => { "type" => "integer" }, "a" => { "type" => "string" } } }
 schema_b = { "properties" => { "a" => { "type" => "string" }, "b" => { "type" => "integer" } }, "type" => "object" }
 
-dump_a = JSONSchema.canonical_dumps(schema_a)
-dump_b = JSONSchema.canonical_dumps(schema_b)
+dump_a = JSONSchema::Canonical::JSON.to_string(schema_a)
+dump_b = JSONSchema::Canonical::JSON.to_string(schema_b)
 
 dump_a == dump_b # => true
 ```
