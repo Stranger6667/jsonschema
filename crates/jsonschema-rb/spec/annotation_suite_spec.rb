@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require "spec_helper"
 require "json"
 require "pathname"
@@ -6,24 +8,35 @@ module AnnotationHelpers
   ANNOTATION_SUITE_PATH = Pathname.new(__dir__).join("../../jsonschema/tests/suite/annotations/tests")
 
   def self.collect_annotations(evaluation)
-    result = Hash.new { |h, k| h[k] = [] }
-
-    evaluation.annotations.each do |entry|
-      instance_loc = entry[:instanceLocation] || ""
-      annotations = entry[:annotations]
-
-      if annotations.is_a?(Hash)
-        annotations.each do |keyword, value|
-          result[[instance_loc, keyword.to_s]] << value
-        end
-      else
-        schema_loc = entry[:schemaLocation] || ""
-        keyword = schema_loc.split("/").last || ""
-        result[[instance_loc, keyword]] << annotations
-      end
+    evaluation.annotations.each_with_object(default_annotation_map) do |entry, result|
+      instance_loc = entry[:instanceLocation].to_s
+      append_entry_annotations(result, instance_loc, entry)
     end
+  end
 
-    result
+  def self.default_annotation_map
+    Hash.new { |hash, key| hash[key] = [] }
+  end
+
+  def self.append_entry_annotations(result, instance_loc, entry)
+    annotations = entry[:annotations]
+
+    if annotations.is_a?(Hash)
+      append_hash_annotations(result, instance_loc, annotations)
+    else
+      keyword = keyword_from_schema_location(entry[:schemaLocation])
+      result[[instance_loc, keyword]] << annotations
+    end
+  end
+
+  def self.append_hash_annotations(result, instance_loc, annotations)
+    annotations.each do |keyword, value|
+      result[[instance_loc, keyword.to_s]] << value
+    end
+  end
+
+  def self.keyword_from_schema_location(schema_location)
+    schema_location.to_s.split("/").last.to_s
   end
 end
 
@@ -63,16 +76,26 @@ RSpec.describe "Annotation Test Suite" do
                             "Keyword: #{keyword.inspect}"
 
                 if expected.empty?
-                  expect(actual_values).to be_empty,
-                    "Expected no annotation for keyword '#{keyword}' at '#{location}', " \
+                  message = [
+                    "Expected no annotation for keyword '#{keyword}' at '#{location}',",
                     "but got: #{actual_values.inspect}\n#{error_ctx}"
+                  ].join(" ")
+                  expect(actual_values).to(
+                    be_empty,
+                    message
+                  )
                 else
                   expected.each do |schema_loc, expected_value|
-                    expect(actual_values).to include(expected_value),
-                      "Missing expected annotation value.\n" \
-                      "Schema location: #{schema_loc.inspect}\n" \
-                      "Expected: #{expected_value.inspect}\n" \
+                    message = [
+                      "Missing expected annotation value.\n",
+                      "Schema location: #{schema_loc.inspect}\n",
+                      "Expected: #{expected_value.inspect}\n",
                       "Got: #{actual_values.inspect}\n#{error_ctx}"
+                    ].join
+                    expect(actual_values).to(
+                      include(expected_value),
+                      message
+                    )
                   end
                 end
               end
