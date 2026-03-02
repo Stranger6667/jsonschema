@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-03-02
+
 ### Added
 
 - `Canonical::JSON.to_string(object)` for canonical JSON serialization (stable key ordering and numeric normalization), useful for deduplicating equivalent JSON Schemas.
@@ -51,7 +53,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.43.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.44.0...HEAD
+[0.44.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.43.0...ruby-v0.44.0
 [0.43.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.42.2...ruby-v0.43.0
 [0.42.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.42.1...ruby-v0.42.2
 [0.42.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.42.0...ruby-v0.42.1
