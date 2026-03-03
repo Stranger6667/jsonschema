@@ -603,9 +603,9 @@ dependencies = [
 
 [[package]]
 name = "ipnet"
-version = "2.11.0"
+version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "469fb0b9cefa57e3ef31275ee7cacb78f2fdca44e4765491884a2b119d4eb130"
+checksum = "d98f6fed1fde3f8c21bc40a1abb88dd75e67924f9cffc3ef95607bad8017f8e2"
 
 [[package]]
 name = "iri-string"
@@ -666,9 +666,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.44.0"
+version = "0.44.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "267fb27be492e66ab147d2ce0233d88ae465b93c3565016e73998729bf3fe60f"
+checksum = "f98b64a413c93a1b413dfbaf973b78d271648b9cae50b10302ad88af78991672"
 dependencies = [
  "ahash",
  "bytecount",
@@ -696,7 +696,7 @@ dependencies = [
 
 [[package]]
 name = "jsonschema-rb-ext"
-version = "0.44.0"
+version = "0.44.1"
 dependencies = [
  "jsonschema",
  "magnus",
@@ -1043,9 +1043,9 @@ dependencies = [
 
 [[package]]
 name = "referencing"
-version = "0.44.0"
+version = "0.44.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12ecd0f3daefd4faff2e0821310c18e6e9d1fd00550bbd7e5a59d78184a071bc"
+checksum = "22952642836711d7a730d23a4dfb0d732e75a85e4c4f5704266d9c8fac278ff1"
 dependencies = [
  "ahash",
  "fluent-uri",
@@ -1428,9 +1428,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.49.0"
+version = "1.50.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72a2903cd7736441aac9df9d7688bd0ce48edccaadf181c3b90be801e81d3d86"
+checksum = "27ad5e34374e03cfffefc301becb44e9dc3c17584f414349ebe29ed26661822d"
 dependencies = [
  "bytes",
  "libc",

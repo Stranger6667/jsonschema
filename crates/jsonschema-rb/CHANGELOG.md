@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.44.1] - 2026-03-03
+
 ### Fixed
 
 - `hostname` format now applies legacy RFC 1034 semantics in Draft 4/6 and keeps IDNA A-label validation in Draft 7+.
@@ -57,7 +59,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.44.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.44.1...HEAD
+[0.44.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.44.0...ruby-v0.44.1
 [0.44.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.43.0...ruby-v0.44.0
 [0.43.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.42.2...ruby-v0.43.0
 [0.42.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.42.1...ruby-v0.42.2
