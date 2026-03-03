@@ -546,54 +546,29 @@ fn is_valid_idn_email(email: &str, options: Option<&EmailAddressOptions>) -> boo
     is_valid_email_impl(email, is_valid_idn_hostname, options)
 }
 
-fn is_valid_hostname(hostname: &str) -> bool {
-    const VALID_CHARS: [bool; 256] = {
-        let mut table = [false; 256];
-        let mut byte: u8 = 0;
-        while byte < 255 {
-            table[byte as usize] = matches!(byte, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-');
-            byte += 1;
-        }
-        // Handle byte 255 separately to avoid overflow
-        table[255] = matches!(255u8, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-');
-        table
-    };
-
-    fn label_allows_punycode(label: &[u8]) -> bool {
-        label.len() >= 4
-            && label[0] == b'x'
-            && label[1] == b'n'
-            && label[2] == b'-'
-            && label[3] == b'-'
+const VALID_HOSTNAME_CHARS: [bool; 256] = {
+    let mut table = [false; 256];
+    let mut byte: u8 = 0;
+    while byte < 255 {
+        table[byte as usize] = matches!(byte, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-');
+        byte += 1;
     }
+    // Handle byte 255 separately to avoid overflow
+    table[255] = matches!(255u8, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-');
+    table
+};
 
-    fn validate_label(label: &[u8]) -> bool {
-        if label.is_empty()
-            || label.len() > 63
-            || label[0] == b'-'
-            || *label.last().unwrap() == b'-'
-        {
-            return false;
-        }
+#[inline]
+fn is_punycode_label(label: &[u8]) -> bool {
+    label.len() >= 4 && label[0] == b'x' && label[1] == b'n' && label[2] == b'-' && label[3] == b'-'
+}
 
-        if label.len() >= 4 && label[2] == b'-' && label[3] == b'-' && !label_allows_punycode(label)
-        {
-            return false;
-        }
+#[inline]
+fn validate_hostname_label(label: &[u8]) -> bool {
+    !label.is_empty() && label.len() <= 63 && label[0] != b'-' && *label.last().unwrap() != b'-'
+}
 
-        true
-    }
-
-    fn contains_punycode_label(hostname: &[u8]) -> bool {
-        hostname.split(|&b| b == b'.').any(|label| {
-            label.len() >= 4
-                && label[0] == b'x'
-                && label[1] == b'n'
-                && label[2] == b'-'
-                && label[3] == b'-'
-        })
-    }
-
+fn is_valid_ascii_hostname(hostname: &str) -> bool {
     let hostname_bytes = hostname.as_bytes();
     let len = hostname_bytes.len();
     if len == 0 || len > 253 || hostname_bytes[len - 1] == b'.' {
@@ -602,40 +577,43 @@ fn is_valid_hostname(hostname: &str) -> bool {
 
     let mut label_start = 0;
     let mut i = 0;
-
     while i < len {
         if hostname_bytes[i] == b'.' {
-            if !validate_label(&hostname_bytes[label_start..i]) {
+            if !validate_hostname_label(&hostname_bytes[label_start..i]) {
                 return false;
             }
             label_start = i + 1;
-        } else if !VALID_CHARS[hostname_bytes[i] as usize] {
+        } else if !VALID_HOSTNAME_CHARS[hostname_bytes[i] as usize] {
             return false;
         }
         i += 1;
     }
 
-    if !validate_label(&hostname_bytes[label_start..]) {
+    validate_hostname_label(&hostname_bytes[label_start..])
+}
+
+fn is_valid_hostname_rfc1034(hostname: &str) -> bool {
+    is_valid_ascii_hostname(hostname)
+}
+
+fn is_valid_hostname(hostname: &str) -> bool {
+    if !is_valid_ascii_hostname(hostname) {
         return false;
     }
 
-    if contains_punycode_label(hostname_bytes) {
-        use idna::punycode;
-        for label in hostname_bytes.split(|&b| b == b'.') {
-            if label.len() >= 4
-                && label[0] == b'x'
-                && label[1] == b'n'
-                && label[2] == b'-'
-                && label[3] == b'-'
-            {
-                let payload =
-                    std::str::from_utf8(&label[4..]).expect("ASCII label already validated");
-                let Some(decoded) = punycode::decode_to_string(payload) else {
-                    return false;
-                };
-                if !validate_unicode_label(&decoded) {
-                    return false;
-                }
+    for label in hostname.as_bytes().split(|&b| b == b'.') {
+        // Per RFC 5891, labels with hyphens in 3rd & 4th positions must be valid A-labels.
+        if label.len() >= 4 && label[2] == b'-' && label[3] == b'-' && !is_punycode_label(label) {
+            return false;
+        }
+
+        if is_punycode_label(label) {
+            let payload = std::str::from_utf8(&label[4..]).expect("ASCII label already validated");
+            let Some(decoded) = idna::punycode::decode_to_string(payload) else {
+                return false;
+            };
+            if !validate_unicode_label(&decoded) {
+                return false;
             }
         }
     }
@@ -1001,6 +979,11 @@ format_validators!(
     (DateValidator, "date", is_valid_date),
     (DateTimeValidator, "date-time", is_valid_datetime),
     (DurationValidator, "duration", is_valid_duration),
+    (
+        HostnameValidatorDraft4,
+        "hostname",
+        is_valid_hostname_rfc1034
+    ),
     (HostnameValidator, "hostname", is_valid_hostname),
     (IdnHostnameValidator, "idn-hostname", is_valid_idn_hostname),
     (IpV4Validator, "ipv4", is_valid_ipv4),
@@ -1323,6 +1306,9 @@ pub(crate) fn compile<'a>(
                 "date-time" => Some(DateTimeValidator::compile(ctx)),
                 "duration" if draft >= Draft::Draft201909 => Some(DurationValidator::compile(ctx)),
                 "email" => Some(EmailValidator::compile(ctx)),
+                "hostname" if matches!(draft, Draft::Draft4 | Draft::Draft6) => {
+                    Some(HostnameValidatorDraft4::compile(ctx))
+                }
                 "hostname" => Some(HostnameValidator::compile(ctx)),
                 "idn-email" => Some(IdnEmailValidator::compile(ctx)),
                 "idn-hostname" if draft >= Draft::Draft7 => {
@@ -1664,6 +1650,35 @@ mod tests {
     #[test_case("XN--aa---o47jg78q" ; "uppercase punycode prefix rejected")]
     fn test_invalid_punycode_hostnames(input: &str) {
         assert!(!is_valid_hostname(input));
+    }
+
+    #[test_case(Draft::Draft4 ; "draft4")]
+    #[test_case(Draft::Draft6 ; "draft6")]
+    fn test_hostname_a_label_rules_not_applied_in_legacy_drafts(draft: Draft) {
+        let schema = json!({"format": "hostname", "type": "string"});
+        let validator = crate::options()
+            .with_draft(draft)
+            .should_validate_formats(true)
+            .build(&schema)
+            .expect("Schema should compile");
+
+        assert!(validator.is_valid(&json!("XN--9krT00a")));
+        assert!(validator.is_valid(&json!("ex--ample.com")));
+    }
+
+    #[test_case(Draft::Draft7 ; "draft7")]
+    #[test_case(Draft::Draft201909 ; "draft2019-09")]
+    #[test_case(Draft::Draft202012 ; "draft2020-12")]
+    fn test_hostname_a_label_rules_applied_in_modern_drafts(draft: Draft) {
+        let schema = json!({"format": "hostname", "type": "string"});
+        let validator = crate::options()
+            .with_draft(draft)
+            .should_validate_formats(true)
+            .build(&schema)
+            .expect("Schema should compile");
+
+        assert!(!validator.is_valid(&json!("XN--9krT00a")));
+        assert!(!validator.is_valid(&json!("ex--ample.com")));
     }
 
     #[test]

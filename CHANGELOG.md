@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `hostname` format now applies legacy RFC 1034 semantics in Draft 4/6 and keeps IDNA A-label validation in Draft 7+.
+
 ## [0.44.0] - 2026-03-02
 
 ### Added
