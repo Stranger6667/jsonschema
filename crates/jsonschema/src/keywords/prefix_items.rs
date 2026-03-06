@@ -135,9 +135,10 @@ impl Validate for PrefixItemsValidator {
         if let Value::Array(items) = instance {
             let mut is_valid = true;
             for (idx, (schema, item)) in self.schemas.iter().zip(items.iter()).enumerate() {
-                let schema_is_valid = schema.trace(item, &instance_path.push(idx), callback, ctx);
+                let item_path = instance_path.push(idx);
+                let schema_is_valid = schema.trace(item, &item_path, callback, ctx);
                 crate::tracing::TracingContext::new(
-                    instance_path,
+                    &item_path,
                     schema.schema_path(),
                     schema_is_valid,
                 )

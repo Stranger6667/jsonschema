@@ -463,6 +463,7 @@ pub(crate) struct AdditionalPropertiesNotEmptyFalseWithRequired1Validator<
     properties: M,
     required: String,
     location: Location,
+    properties_location: Location,
     required_location: Location,
 }
 impl AdditionalPropertiesNotEmptyFalseWithRequired1Validator<SmallValidatorsMap> {
@@ -477,6 +478,7 @@ impl AdditionalPropertiesNotEmptyFalseWithRequired1Validator<SmallValidatorsMap>
                 properties: compile_small_map(ctx, map)?,
                 required,
                 location: ctx.location().join("additionalProperties"),
+                properties_location: ctx.location().join("properties"),
                 required_location: ctx.location().join("required"),
             },
         ))
@@ -494,6 +496,7 @@ impl AdditionalPropertiesNotEmptyFalseWithRequired1Validator<BigValidatorsMap> {
                 properties: compile_big_map(ctx, map)?,
                 required,
                 location: ctx.location().join("additionalProperties"),
+                properties_location: ctx.location().join("properties"),
                 required_location: ctx.location().join("required"),
             },
         ))
@@ -669,6 +672,72 @@ impl<M: PropertiesValidatorsMap> Validate
             result
         } else {
             EvaluationResult::valid_empty()
+        }
+    }
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let mut properties_result: Option<bool> = None;
+            let mut found_required = false;
+            let mut has_unexpected = false;
+
+            for (property, value) in item {
+                let property_path = instance_path.push(property.as_str());
+                if let Some(node) = self.properties.get_validator(property) {
+                    let ok = node.trace(value, &property_path, callback, ctx);
+                    crate::tracing::TracingContext::new(&property_path, node.schema_path(), ok)
+                        .call(callback);
+                    properties_result = Some(properties_result.map_or(ok, |c| c && ok));
+                    if property == &self.required {
+                        found_required = true;
+                    }
+                } else {
+                    has_unexpected = true;
+                }
+            }
+
+            // Emit /properties summary
+            if let Some(ok) = properties_result {
+                crate::tracing::TracingContext::new(instance_path, &self.properties_location, ok)
+                    .call(callback);
+            }
+
+            // Trace required/0 and required
+            let item_path = self.required_location.join(0usize);
+            crate::tracing::TracingContext::new(instance_path, &item_path, found_required)
+                .call(callback);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.required_location,
+                found_required,
+            )
+            .call(callback);
+
+            // Trace additionalProperties: false
+            let additional_valid = !has_unexpected;
+            crate::tracing::TracingContext::new(instance_path, &self.location, additional_valid)
+                .call(callback);
+
+            properties_result.unwrap_or(true) && found_required && additional_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.required_location, None)
+                .call(callback);
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            true
         }
     }
 }
@@ -2913,6 +2982,81 @@ mod tests {
         // Non-object passes
         assert!(validator.is_valid(&json!("string")));
         assert!(validator.is_valid(&json!([1, 2, 3])));
+    }
+
+    #[test]
+    fn trace_additional_props_not_empty_false_with_required1() {
+        let schema = serde_json::json!({
+            "properties": {"name": {"type": "string"}},
+            "additionalProperties": false,
+            "required": ["name"]
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = serde_json::json!({"name": "Alice"});
+        let mut schema_locations: Vec<String> = Vec::new();
+        let _ = validator.trace(&instance, &mut |ctx| {
+            schema_locations.push(ctx.schema_location.as_str().to_string());
+        });
+        assert!(
+            schema_locations
+                .iter()
+                .any(|s| s.contains("additionalProperties")),
+            "expected additionalProperties in {schema_locations:?}"
+        );
+        assert!(
+            schema_locations.iter().any(|s| s.starts_with("/required")),
+            "expected /required in {schema_locations:?}"
+        );
+    }
+
+    #[test]
+    fn trace_additional_props_false_with_required1_violation() {
+        // Instance with an extra property — triggers additionalProperties: false violation
+        let schema = serde_json::json!({
+            "properties": {"name": {"type": "string"}},
+            "additionalProperties": false,
+            "required": ["name"]
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = serde_json::json!({"name": "Alice", "extra": "oops"});
+        let mut schema_locations: Vec<String> = Vec::new();
+        let result = validator.trace(&instance, &mut |ctx| {
+            schema_locations.push(ctx.schema_location.as_str().to_string());
+        });
+        assert!(
+            !result,
+            "expected validation to fail due to additional property"
+        );
+        assert!(
+            schema_locations
+                .iter()
+                .any(|s| s.contains("additionalProperties")),
+            "expected additionalProperties in {schema_locations:?}"
+        );
+    }
+
+    #[test]
+    fn trace_additional_props_false_with_required1_missing_required() {
+        // Instance missing the required field
+        let schema = serde_json::json!({
+            "properties": {"name": {"type": "string"}},
+            "additionalProperties": false,
+            "required": ["name"]
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = serde_json::json!({});
+        let mut schema_locations: Vec<String> = Vec::new();
+        let result = validator.trace(&instance, &mut |ctx| {
+            schema_locations.push(ctx.schema_location.as_str().to_string());
+        });
+        assert!(
+            !result,
+            "expected validation to fail due to missing required field"
+        );
+        assert!(
+            schema_locations.iter().any(|s| s.starts_with("/required")),
+            "expected /required in {schema_locations:?}"
+        );
     }
 
     #[test]

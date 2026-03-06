@@ -306,6 +306,44 @@ impl Validate for Required2Validator {
         }
         no_error()
     }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let first_present = item.contains_key(&self.first);
+            let second_present = item.contains_key(&self.second);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.location.join(0usize),
+                first_present,
+            )
+            .call(callback);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.location.join(1usize),
+                second_present,
+            )
+            .call(callback);
+            let is_valid = first_present && second_present;
+            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            true
+        }
+    }
 }
 
 /// Specialized validator for exactly 3 required properties.
@@ -428,6 +466,39 @@ impl Validate for Required3Validator {
             }
         }
         no_error()
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Object(_))
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let p0 = item.contains_key(&self.first);
+            let p1 = item.contains_key(&self.second);
+            let p2 = item.contains_key(&self.third);
+            crate::tracing::TracingContext::new(instance_path, &self.location.join(0usize), p0)
+                .call(callback);
+            crate::tracing::TracingContext::new(instance_path, &self.location.join(1usize), p1)
+                .call(callback);
+            crate::tracing::TracingContext::new(instance_path, &self.location.join(2usize), p2)
+                .call(callback);
+            let is_valid = p0 && p1 && p2;
+            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            true
+        }
     }
 }
 
@@ -619,5 +690,47 @@ mod tests {
         let instance = json!({"a": 1, "b": 2, "c": 3});
         let errors: Vec<_> = validator.iter_errors(&instance).collect();
         assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn trace_required2_has_schema_path() {
+        let schema = serde_json::json!({"required": ["a", "b"]});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = serde_json::json!({"a": 1, "b": 2});
+        let mut schema_locations: Vec<String> = Vec::new();
+        let _ = validator.trace(&instance, &mut |ctx| {
+            schema_locations.push(ctx.schema_location.as_str().to_string());
+        });
+        assert!(
+            schema_locations.iter().any(|s| s == "/required"),
+            "expected /required in {schema_locations:?}"
+        );
+        assert!(
+            schema_locations.iter().any(|s| s == "/required/0"),
+            "expected /required/0 in {schema_locations:?}"
+        );
+        assert!(
+            schema_locations.iter().any(|s| s == "/required/1"),
+            "expected /required/1 in {schema_locations:?}"
+        );
+    }
+
+    #[test]
+    fn trace_required3_has_schema_path() {
+        let schema = serde_json::json!({"required": ["a", "b", "c"]});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = serde_json::json!({"a": 1, "b": 2, "c": 3});
+        let mut schema_locations: Vec<String> = Vec::new();
+        let _ = validator.trace(&instance, &mut |ctx| {
+            schema_locations.push(ctx.schema_location.as_str().to_string());
+        });
+        assert!(
+            schema_locations.iter().any(|s| s == "/required"),
+            "expected /required in {schema_locations:?}"
+        );
+        assert!(
+            schema_locations.iter().any(|s| s == "/required/2"),
+            "expected /required/2 in {schema_locations:?}"
+        );
     }
 }

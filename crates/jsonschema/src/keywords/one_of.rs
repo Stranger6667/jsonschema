@@ -122,6 +122,27 @@ impl Validate for SingleOneOfValidator {
                 .evaluate_instance(instance, location, tracker, ctx),
         )
     }
+
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let is_valid = self.node.trace(instance, instance_path, callback, ctx);
+        crate::tracing::TracingContext::new(instance_path, self.schema_path(), is_valid)
+            .call(callback);
+        is_valid
+    }
 }
 
 impl Validate for OneOfValidator {
@@ -275,5 +296,40 @@ mod tests {
     #[test_case(&json!({"oneOf": [{"type": "string"}, {"maxLength": 3}]}), &json!(""), "/oneOf")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
         tests_util::assert_schema_location(schema, instance, expected);
+    }
+
+    #[test]
+    fn trace_single_one_of_propagates() {
+        let schema = serde_json::json!({"oneOf": [{"type": "string"}]});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = serde_json::json!("hello");
+        let mut schema_locations: Vec<String> = Vec::new();
+        let _ = validator.trace(&instance, &mut |ctx| {
+            schema_locations.push(ctx.schema_location.as_str().to_string());
+        });
+        assert!(
+            schema_locations.iter().any(|s| s == "/oneOf/0/type"),
+            "expected /oneOf/0/type in {schema_locations:?}"
+        );
+        assert!(
+            schema_locations.iter().any(|s| s == "/oneOf"),
+            "expected /oneOf in {schema_locations:?}"
+        );
+    }
+
+    #[test]
+    fn trace_single_one_of_failing_instance() {
+        let schema = serde_json::json!({"oneOf": [{"type": "string"}]});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = serde_json::json!(42); // fails type: string
+        let mut schema_locations: Vec<String> = Vec::new();
+        let result = validator.trace(&instance, &mut |ctx| {
+            schema_locations.push(ctx.schema_location.as_str().to_string());
+        });
+        assert!(!result, "expected validation to fail");
+        assert!(
+            schema_locations.iter().any(|s| s == "/oneOf"),
+            "expected /oneOf in {schema_locations:?}"
+        );
     }
 }

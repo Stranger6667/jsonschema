@@ -1065,6 +1065,14 @@ impl Validate for RegexValidator {
         Ok(())
     }
 
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
+
     impl_format_evaluate!();
 }
 
@@ -1122,6 +1130,10 @@ impl Validate for EmailValidator {
         &self.location
     }
 
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
+
     impl_format_evaluate!();
 }
 
@@ -1177,6 +1189,10 @@ impl Validate for IdnEmailValidator {
 
     fn schema_path(&self) -> &Location {
         &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
     }
 
     impl_format_evaluate!();
@@ -1246,6 +1262,7 @@ impl Validate for CustomFormatValidator {
 /// Always validates successfully but emits the required annotation per spec §7.2.1.
 struct AnnotationOnlyFormatValidator {
     annotation: Arc<Value>,
+    location: Location,
 }
 
 impl Validate for AnnotationOnlyFormatValidator {
@@ -1286,6 +1303,14 @@ impl Validate for AnnotationOnlyFormatValidator {
         let mut result = EvaluationResult::valid_empty();
         result.annotate(Annotations::from_arc(Arc::clone(&self.annotation)));
         result
+    }
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
     }
 }
 
@@ -1401,6 +1426,7 @@ pub(crate) fn compile<'a>(
             // Format validation disabled: annotation-only per spec §7.2.1
             Some(Ok(Box::new(AnnotationOnlyFormatValidator {
                 annotation: Arc::new(Value::String(format.clone())),
+                location: ctx.location().join("format"),
             })))
         }
     } else {

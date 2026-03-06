@@ -247,11 +247,11 @@ impl Validate for MinContainsValidator {
                     match_count += 1;
                 }
             }
-            // Trace contains schema result
+            // /contains: did at least one item match the contains schema?
             let contains_valid = match_count >= 1;
             crate::tracing::TracingContext::new(instance_path, self.schema_path(), contains_valid)
                 .call(callback);
-            // Trace minContains constraint
+            // /minContains: did enough items match?
             let min_valid = match_count >= self.min_contains;
             crate::tracing::TracingContext::new(
                 instance_path,
@@ -531,11 +531,11 @@ impl Validate for MinMaxContainsValidator {
                     match_count += 1;
                 }
             }
-            // Trace contains schema result
+            // /contains: did at least one item match the contains schema?
             let contains_valid = match_count >= 1;
             crate::tracing::TracingContext::new(instance_path, self.schema_path(), contains_valid)
                 .call(callback);
-            // Trace minContains constraint
+            // /minContains: did enough items match?
             let min_valid = match_count >= self.min_contains;
             crate::tracing::TracingContext::new(
                 instance_path,
@@ -543,7 +543,7 @@ impl Validate for MinMaxContainsValidator {
                 min_valid,
             )
             .call(callback);
-            // Trace maxContains constraint
+            // /maxContains: did too many items match?
             let max_valid = match_count <= self.max_contains;
             crate::tracing::TracingContext::new(
                 instance_path,

@@ -53,9 +53,10 @@ impl Validate for ItemsArrayValidator {
         if let Value::Array(items) = instance {
             let mut is_valid = true;
             for (idx, (item, node)) in items.iter().zip(self.items.iter()).enumerate() {
-                let schema_is_valid = node.trace(item, &instance_path.push(idx), callback, ctx);
+                let item_path = instance_path.push(idx);
+                let schema_is_valid = node.trace(item, &item_path, callback, ctx);
                 crate::tracing::TracingContext::new(
-                    instance_path,
+                    &item_path,
                     node.schema_path(),
                     schema_is_valid,
                 )
@@ -399,6 +400,14 @@ impl ItemsNumberTypeValidator {
 }
 
 impl Validate for ItemsNumberTypeValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
@@ -506,6 +515,14 @@ impl ItemsStringTypeValidator {
 }
 
 impl Validate for ItemsStringTypeValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
@@ -613,6 +630,14 @@ impl ItemsIntegerTypeValidator {
 }
 
 impl Validate for ItemsIntegerTypeValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
@@ -744,6 +769,14 @@ impl ItemsIntegerTypeValidatorDraft4 {
 }
 
 impl Validate for ItemsIntegerTypeValidatorDraft4 {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
@@ -874,6 +907,14 @@ impl ItemsBooleanTypeValidator {
 }
 
 impl Validate for ItemsBooleanTypeValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::Array(_))
+    }
+
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
@@ -1143,6 +1184,37 @@ mod tests {
         } else {
             tests_util::is_not_valid_with_draft4(&schema, &instance);
         }
+    }
+
+    #[test]
+    fn trace_items_number_type_has_schema_path() {
+        // items: {type: number} on a uniform array → ItemsNumberTypeValidator
+        let schema = serde_json::json!({"items": {"type": "number"}});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = serde_json::json!([1, 2, 3]);
+        let mut schema_locations: Vec<String> = Vec::new();
+        let _ = validator.trace(&instance, &mut |ctx| {
+            schema_locations.push(ctx.schema_location.as_str().to_string());
+        });
+        assert!(
+            schema_locations.iter().any(|s| s == "/items/type"),
+            "expected /items/type in {schema_locations:?}"
+        );
+    }
+
+    #[test]
+    fn trace_items_string_type_has_schema_path() {
+        let schema = serde_json::json!({"items": {"type": "string"}});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = serde_json::json!(["a", "b"]);
+        let mut schema_locations: Vec<String> = Vec::new();
+        let _ = validator.trace(&instance, &mut |ctx| {
+            schema_locations.push(ctx.schema_location.as_str().to_string());
+        });
+        assert!(
+            schema_locations.iter().any(|s| s == "/items/type"),
+            "expected /items/type in {schema_locations:?}"
+        );
     }
 
     #[cfg(feature = "arbitrary-precision")]

@@ -48,6 +48,14 @@ impl Validate for PrefixPatternValidator {
         }
         Ok(())
     }
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
 }
 
 /// Validator for patterns that are exact-match anchored patterns.
@@ -85,6 +93,14 @@ impl Validate for ExactPatternValidator {
             }
         }
         Ok(())
+    }
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
     }
 }
 
@@ -130,6 +146,14 @@ impl Validate for AlternationPatternValidator {
         }
         Ok(())
     }
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
 }
 
 /// Validator for `^\S*$` — rejects any string containing ECMA-262 whitespace.
@@ -139,6 +163,14 @@ pub(crate) struct NoWhitespacePatternValidator {
 }
 
 impl Validate for NoWhitespacePatternValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
+
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::String(item) = instance {
             !item.chars().any(is_ecma_whitespace)
@@ -375,6 +407,71 @@ mod tests {
         let validator = crate::validator_for(&schema).unwrap();
         assert_eq!(validator.is_valid(&text), is_matching);
         assert_eq!(validator.validate(&text).is_ok(), is_matching);
+    }
+
+    #[test]
+    fn trace_prefix_pattern_has_schema_path() {
+        // ^foo compiles to PrefixPatternValidator
+        let schema = serde_json::json!({"pattern": "^foo"});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = serde_json::json!("foobar");
+        let mut schema_locations: Vec<String> = Vec::new();
+        let _ = validator.trace(&instance, &mut |ctx| {
+            schema_locations.push(ctx.schema_location.as_str().to_string());
+        });
+        assert!(
+            schema_locations.iter().any(|s| s == "/pattern"),
+            "expected /pattern in {schema_locations:?}"
+        );
+    }
+
+    #[test]
+    fn trace_exact_pattern_has_schema_path() {
+        // ^\$ref$ compiles to ExactPatternValidator
+        let schema = serde_json::json!({"pattern": r"^\$ref$"});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = serde_json::json!("$ref");
+        let mut schema_locations: Vec<String> = Vec::new();
+        let _ = validator.trace(&instance, &mut |ctx| {
+            schema_locations.push(ctx.schema_location.as_str().to_string());
+        });
+        assert!(
+            schema_locations.iter().any(|s| s == "/pattern"),
+            "expected /pattern in {schema_locations:?}"
+        );
+    }
+
+    #[test]
+    fn trace_alternation_pattern_has_schema_path() {
+        // ^(get|put|post)$ compiles to AlternationPatternValidator
+        let schema = serde_json::json!({"pattern": r"^(get|put|post)$"});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = serde_json::json!("get");
+        let mut schema_locations: Vec<String> = Vec::new();
+        let _ = validator.trace(&instance, &mut |ctx| {
+            schema_locations.push(ctx.schema_location.as_str().to_string());
+        });
+        assert!(
+            schema_locations.iter().any(|s| s == "/pattern"),
+            "expected /pattern in {schema_locations:?}"
+        );
+    }
+
+    #[test]
+    fn trace_no_whitespace_pattern_has_schema_path() {
+        // NoWhitespacePatternValidator is used for hostname/uri format checks internally,
+        // but can also be triggered via pattern. Use a direct no-whitespace check.
+        let schema = serde_json::json!({"pattern": r"^\S*$"});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = serde_json::json!("hello");
+        let mut schema_locations: Vec<String> = Vec::new();
+        let _ = validator.trace(&instance, &mut |ctx| {
+            schema_locations.push(ctx.schema_location.as_str().to_string());
+        });
+        assert!(
+            schema_locations.iter().any(|s| s == "/pattern"),
+            "expected /pattern in {schema_locations:?}"
+        );
     }
 
     #[test]

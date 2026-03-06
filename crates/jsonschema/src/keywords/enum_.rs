@@ -188,6 +188,12 @@ impl Validate for SmallStringEnumValidator {
             false
         }
     }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 #[derive(Debug)]
@@ -243,6 +249,12 @@ impl Validate for BigStringEnumValidator {
         } else {
             false
         }
+    }
+    fn matches_type(&self, _: &Value) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
@@ -329,6 +341,22 @@ mod tests {
             &schema,
             &json!("z"),
             &[r#""z" is not one of "a", "b" or 9 other candidates"#],
+        );
+    }
+
+    #[test]
+    fn trace_small_string_enum_has_schema_path() {
+        // 3 string values → SmallStringEnumValidator
+        let schema = serde_json::json!({"enum": ["a", "b", "c"]});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = serde_json::json!("a");
+        let mut schema_locations: Vec<String> = Vec::new();
+        let _ = validator.trace(&instance, &mut |ctx| {
+            schema_locations.push(ctx.schema_location.as_str().to_string());
+        });
+        assert!(
+            schema_locations.iter().any(|s| s == "/enum"),
+            "expected /enum in {schema_locations:?}"
         );
     }
 }

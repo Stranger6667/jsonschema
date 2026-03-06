@@ -63,10 +63,8 @@ impl Validate for NotValidator {
         callback: crate::tracing::TracingCallback<'_>,
         ctx: &mut ValidationContext,
     ) -> bool {
-        // Trace the inner schema
+        // Trace the inner schema (its sub-validators already emit their own callbacks)
         let inner_is_valid = self.node.trace(instance, instance_path, callback, ctx);
-        crate::tracing::TracingContext::new(instance_path, self.node.location(), inner_is_valid)
-            .call(callback);
         // not is valid when inner schema is invalid
         let is_valid = !inner_is_valid;
         crate::tracing::TracingContext::new(instance_path, self.schema_path(), is_valid)
