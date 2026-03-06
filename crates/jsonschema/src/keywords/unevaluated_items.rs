@@ -226,7 +226,7 @@ impl ItemsValidators {
     /// Mark items evaluated by OTHER keywords, excluding unevaluatedItems itself.
     /// Used for tracing to ensure we trace all items that unevaluatedItems validates.
     ///
-    /// Note: Nested validators use regular mark_evaluated_indexes because nested
+    /// Note: Nested validators use regular `mark_evaluated_indexes` because nested
     /// unevaluatedItems: true SHOULD mark items as evaluated for the outer validator.
     fn mark_evaluated_indexes_for_trace(
         &self,

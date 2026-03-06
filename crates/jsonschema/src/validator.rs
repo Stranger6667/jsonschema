@@ -466,12 +466,8 @@ impl Validator {
 #[cfg(test)]
 mod tests {
     use crate::{
-        error::ValidationError,
-        keywords::custom::Keyword,
-        paths::{LazyLocation, Location},
-        tracing::NodeEvaluationResult,
-        types::JsonType,
-        Validator,
+        error::ValidationError, keywords::custom::Keyword, paths::Location,
+        tracing::NodeEvaluationResult, Validator,
     };
     use fancy_regex::Regex;
     use num_cmp::NumCmp;

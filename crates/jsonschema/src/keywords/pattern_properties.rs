@@ -389,9 +389,13 @@ fn try_compile_as_literals<'a>(
         };
         entries.push((Arc::new(matcher), node));
     }
-    Some(Ok(build_validator_from_entries(entries, location, |regex, node| {
-        Box::new(SingleValuePatternPropertiesValidator { regex, node }) as Box<dyn Validate>
-    })))
+    Some(Ok(build_validator_from_entries(
+        entries,
+        location,
+        |regex, node| {
+            Box::new(SingleValuePatternPropertiesValidator { regex, node }) as Box<dyn Validate>
+        },
+    )))
 }
 
 fn invalid_regex<'a>(ctx: &compiler::Context, schema: &'a Value) -> ValidationError<'a> {

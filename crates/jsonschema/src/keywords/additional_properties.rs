@@ -356,7 +356,10 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
                 } else {
                     return Err(ValidationError::additional_properties(
                         self.additional_properties_location.clone(),
-                        crate::paths::capture_evaluation_path(tracker, &self.additional_properties_location),
+                        crate::paths::capture_evaluation_path(
+                            tracker,
+                            &self.additional_properties_location,
+                        ),
                         location.into(),
                         instance,
                         vec![property.clone()],
@@ -392,7 +395,10 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
             if !unexpected.is_empty() {
                 errors.push(ValidationError::additional_properties(
                     self.additional_properties_location.clone(),
-                    crate::paths::capture_evaluation_path(tracker, &self.additional_properties_location),
+                    crate::paths::capture_evaluation_path(
+                        tracker,
+                        &self.additional_properties_location,
+                    ),
                     location.into(),
                     instance,
                     unexpected,
@@ -428,7 +434,10 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
             }
             let mut result = EvaluationResult::from_children(children);
             if !unexpected.is_empty() {
-                let eval_path = crate::paths::capture_evaluation_path(tracker, &self.additional_properties_location);
+                let eval_path = crate::paths::capture_evaluation_path(
+                    tracker,
+                    &self.additional_properties_location,
+                );
                 result.mark_errored(ErrorDescription::from_validation_error(
                     &ValidationError::additional_properties(
                         self.additional_properties_location.clone(),
