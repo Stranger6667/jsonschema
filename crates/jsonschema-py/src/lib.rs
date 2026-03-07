@@ -248,6 +248,7 @@ struct ValidationErrorArgs {
     evaluation_path: Py<PyList>,
     kind: ValidationErrorKind,
     instance: Py<PyAny>,
+    absolute_keyword_location: Option<String>,
 }
 
 fn create_validation_error_object(
@@ -264,6 +265,7 @@ fn create_validation_error_object(
         args.evaluation_path,
         kind_obj,
         args.instance,
+        args.absolute_keyword_location,
     ))?;
     Ok(obj.into())
 }
@@ -441,26 +443,9 @@ impl ValidationErrorKind {
             jsonschema::error::ValidationErrorKind::PropertyNames { error } => {
                 ValidationErrorKind::PropertyNames {
                     error: {
-                        let (
-                            message,
-                            verbose_message,
-                            schema_path,
-                            instance_path,
-                            evaluation_path,
-                            kind,
-                            instance,
-                        ) = into_validation_error_args(py, *error, mask)?;
                         create_validation_error_object(
                             py,
-                            ValidationErrorArgs {
-                                message,
-                                verbose_message,
-                                schema_path,
-                                instance_path,
-                                evaluation_path,
-                                kind,
-                                instance,
-                            },
+                            into_validation_error_args(py, *error, mask)?,
                         )?
                     },
                 }
@@ -665,15 +650,7 @@ fn convert_validation_context(
             }
 
             for (inner_idx, error) in errors.into_iter().enumerate() {
-                let (
-                    message,
-                    verbose_message,
-                    schema_path,
-                    instance_path,
-                    evaluation_path,
-                    kind,
-                    instance,
-                ) = match into_validation_error_args(py, error, mask) {
+                let args = match into_validation_error_args(py, error, mask) {
                     Ok(args) => args,
                     Err(e) => {
                         Py_DECREF(inner_list);
@@ -682,18 +659,7 @@ fn convert_validation_context(
                     }
                 };
 
-                let error_obj = match create_validation_error_object(
-                    py,
-                    ValidationErrorArgs {
-                        message,
-                        verbose_message,
-                        schema_path,
-                        instance_path,
-                        evaluation_path,
-                        kind,
-                        instance,
-                    },
-                ) {
+                let error_obj = match create_validation_error_object(py, args) {
                     Ok(obj) => obj,
                     Err(e) => {
                         Py_DECREF(inner_list);
@@ -734,51 +700,48 @@ impl ValidationErrorIter {
     }
 }
 
-#[allow(clippy::type_complexity)]
 fn into_validation_error_args(
     py: Python<'_>,
     error: jsonschema::ValidationError<'_>,
     mask: Option<&str>,
-) -> PyResult<(
-    String,
-    String,
-    Py<PyList>,
-    Py<PyList>,
-    Py<PyList>,
-    ValidationErrorKind,
-    Py<PyAny>,
-)> {
+) -> PyResult<ValidationErrorArgs> {
     let message = if let Some(mask) = mask {
         error.masked_with(mask).to_string()
     } else {
         error.to_string()
     };
     let verbose_message = to_error_message(&error, message.clone(), mask);
-    let (instance, kind, instance_path, schema_path, evaluation_path) = error.into_parts();
+    let parts = error.into_parts();
     let into_path = |segment: LocationSegment<'_>| match segment {
         LocationSegment::Property(property) => {
             property.into_pyobject(py).and_then(Py::<PyAny>::try_from)
         }
         LocationSegment::Index(idx) => idx.into_pyobject(py).and_then(Py::<PyAny>::try_from),
     };
-    let elements = schema_path
+    let elements = parts
+        .schema_path
         .into_iter()
         .map(into_path)
         .collect::<Result<Vec<_>, _>>()?;
     let schema_path = PyList::new(py, elements)?.unbind();
-    let elements = instance_path
+    let elements = parts
+        .instance_path
         .into_iter()
         .map(into_path)
         .collect::<Result<Vec<_>, _>>()?;
     let instance_path = PyList::new(py, elements)?.unbind();
-    let elements = evaluation_path
+    let elements = parts
+        .evaluation_path
         .into_iter()
         .map(into_path)
         .collect::<Result<Vec<_>, _>>()?;
     let evaluation_path = PyList::new(py, elements)?.unbind();
-    let kind = ValidationErrorKind::try_new(py, kind, mask)?;
-    let instance = value_to_python(py, instance.as_ref())?;
-    Ok((
+    let kind = ValidationErrorKind::try_new(py, parts.kind, mask)?;
+    let instance = value_to_python(py, parts.instance.as_ref())?;
+    let absolute_keyword_location = parts
+        .absolute_keyword_location
+        .map(|u| u.as_str().to_owned());
+    Ok(ValidationErrorArgs {
         message,
         verbose_message,
         schema_path,
@@ -786,28 +749,17 @@ fn into_validation_error_args(
         evaluation_path,
         kind,
         instance,
-    ))
+        absolute_keyword_location,
+    })
 }
 fn into_py_err(
     py: Python<'_>,
     error: jsonschema::ValidationError<'_>,
     mask: Option<&str>,
 ) -> PyResult<PyErr> {
-    let (message, verbose_message, schema_path, instance_path, evaluation_path, kind, instance) =
-        into_validation_error_args(py, error, mask)?;
-    let is_custom = matches!(kind, ValidationErrorKind::Custom { .. });
-    let py_err = validation_error_pyerr(
-        py,
-        ValidationErrorArgs {
-            message,
-            verbose_message,
-            schema_path,
-            instance_path,
-            evaluation_path,
-            kind,
-            instance,
-        },
-    )?;
+    let args = into_validation_error_args(py, error, mask)?;
+    let is_custom = matches!(args.kind, ValidationErrorKind::Custom { .. });
+    let py_err = validation_error_pyerr(py, args)?;
     if is_custom {
         if let Some(cause) = CUSTOM_KEYWORD_CAUSE.with(|cell| cell.borrow_mut().take()) {
             let err_obj = py_err.value(py);

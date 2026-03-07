@@ -876,7 +876,9 @@ mod retriever;
 pub mod types;
 mod validator;
 
-pub use error::{ErrorIterator, MaskedValidationError, ValidationError, ValidationErrors};
+pub use error::{
+    ErrorIterator, MaskedValidationError, ValidationError, ValidationErrorParts, ValidationErrors,
+};
 pub use evaluation::{
     AnnotationEntry, ErrorEntry, Evaluation, FlagOutput, HierarchicalOutput, ListOutput,
 };

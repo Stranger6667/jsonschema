@@ -40,6 +40,7 @@ use crate::{
     types::{JsonType, JsonTypeSet},
     validator::LazyEvaluationPath,
 };
+use referencing::Uri;
 use serde_json::{Map, Number, Value};
 use std::{
     borrow::Cow,
@@ -48,6 +49,7 @@ use std::{
     iter::{empty, once},
     slice,
     string::FromUtf8Error,
+    sync::Arc,
     vec,
 };
 
@@ -65,6 +67,11 @@ struct ValidationErrorRepr<'a> {
     schema_path: Location,
     /// Dynamic path including $ref traversals.
     tracker: LazyEvaluationPath,
+    /// Absolute keyword location: full URI including JSON Pointer fragment.
+    /// E.g. `https://example.com/schema.json#/properties/name/type`.
+    /// Set when the schema has a real base URI (via `$id` or `with_base_uri()`).
+    /// `None` for schemas using the internal `json-schema:///` default.
+    absolute_keyword_location: Option<Arc<Uri<String>>>,
 }
 
 impl fmt::Debug for ValidationErrorRepr<'_> {
@@ -74,6 +81,7 @@ impl fmt::Debug for ValidationErrorRepr<'_> {
             .field("kind", &self.kind)
             .field("instance_path", &self.instance_path)
             .field("schema_path", &self.schema_path)
+            .field("absolute_keyword_location", &self.absolute_keyword_location)
             .finish_non_exhaustive()
     }
 }
@@ -384,6 +392,18 @@ pub enum TypeKind {
     Multiple(JsonTypeSet),
 }
 
+/// Owned parts returned by [`ValidationError::into_parts`].
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct ValidationErrorParts<'a> {
+    pub instance: Cow<'a, Value>,
+    pub kind: ValidationErrorKind,
+    pub instance_path: Location,
+    pub schema_path: Location,
+    pub evaluation_path: Location,
+    pub absolute_keyword_location: Option<Arc<Uri<String>>>,
+}
+
 /// Shortcuts for creation of specific error kinds.
 impl<'a> ValidationError<'a> {
     /// Creates a new validation error from parts.
@@ -403,6 +423,7 @@ impl<'a> ValidationError<'a> {
                 instance_path,
                 schema_path,
                 tracker: tracker.into(),
+                absolute_keyword_location: None,
             }),
         }
     }
@@ -449,28 +470,44 @@ impl<'a> ValidationError<'a> {
         self.repr.tracker.resolve(&self.repr.schema_path)
     }
 
-    /// Decomposes the error into owned parts.
-    /// Returns (instance, kind, `instance_path`, `schema_path`, `evaluation_path`).
+    /// Returns the absolute keyword location as a full URI including JSON Pointer fragment.
+    ///
+    /// This corresponds to JSON Schema's "absoluteKeywordLocation" (e.g.
+    /// `https://example.com/schema.json#/properties/name/type`).
+    ///
+    /// Present when the schema has a real base URI set via `$id` or [`crate::options::ValidationOptions::with_base_uri`].
+    /// `None` for schemas without an explicit base URI.
     #[inline]
     #[must_use]
-    pub fn into_parts(
-        self,
-    ) -> (
-        Cow<'a, Value>,
-        ValidationErrorKind,
-        Location,
-        Location,
-        Location,
-    ) {
+    pub fn absolute_keyword_location(&self) -> Option<&Uri<String>> {
+        self.repr.absolute_keyword_location.as_deref()
+    }
+
+    /// Attach an absolute keyword location if one is not already set.
+    ///
+    /// Uses "set if not already set" semantics so inner `SchemaNode` calls win over outer ones.
+    #[inline]
+    pub(crate) fn with_absolute_keyword_location(mut self, uri: Option<Arc<Uri<String>>>) -> Self {
+        if self.repr.absolute_keyword_location.is_none() {
+            self.repr.absolute_keyword_location = uri;
+        }
+        self
+    }
+
+    /// Decomposes the error into its owned parts.
+    #[inline]
+    #[must_use]
+    pub fn into_parts(self) -> ValidationErrorParts<'a> {
         let repr = *self.repr;
         let evaluation_path = repr.tracker.into_owned(repr.schema_path.clone());
-        (
-            repr.instance,
-            repr.kind,
-            repr.instance_path,
-            repr.schema_path,
+        ValidationErrorParts {
+            instance: repr.instance,
+            kind: repr.kind,
+            instance_path: repr.instance_path,
+            schema_path: repr.schema_path,
             evaluation_path,
-        )
+            absolute_keyword_location: repr.absolute_keyword_location,
+        }
     }
 
     #[inline]
@@ -510,14 +547,15 @@ impl<'a> ValidationError<'a> {
     /// Converts the `ValidationError` into an owned version with `'static` lifetime.
     #[must_use]
     pub fn to_owned(self) -> ValidationError<'static> {
-        let (instance, kind, instance_path, schema_path, tracker) = self.into_parts();
+        let parts = self.into_parts();
         ValidationError::new(
-            Cow::Owned(instance.into_owned()),
-            kind,
-            instance_path,
-            schema_path,
-            tracker,
+            Cow::Owned(parts.instance.into_owned()),
+            parts.kind,
+            parts.instance_path,
+            parts.schema_path,
+            parts.evaluation_path,
         )
+        .with_absolute_keyword_location(parts.absolute_keyword_location)
     }
 
     pub(crate) fn additional_items(
@@ -1752,6 +1790,7 @@ impl fmt::Display for MaskedValidationError<'_, '_, '_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use referencing::Resource;
     use serde_json::json;
 
     use test_case::test_case;
@@ -2148,5 +2187,122 @@ mod tests {
             Location::new(),
         );
         assert_eq!(error.masked_with(placeholder).to_string(), expected);
+    }
+
+    #[test]
+    fn test_absolute_keyword_location_absent_for_schema_without_base_uri() {
+        let schema = serde_json::json!({"type": "string"});
+        let instance = serde_json::json!(42);
+        let err = crate::validate(&schema, &instance).unwrap_err();
+        assert!(err.absolute_keyword_location().is_none());
+    }
+
+    #[test]
+    fn test_absolute_keyword_location_present_for_schema_with_base_uri() {
+        let schema = serde_json::json!({
+            "$id": "https://example.com/schema.json",
+            "type": "string"
+        });
+        let instance = serde_json::json!(42);
+        let validator = crate::options()
+            .build(&schema)
+            .expect("schema should compile");
+        let err = validator.validate(&instance).unwrap_err();
+        let absolute_location = err
+            .absolute_keyword_location()
+            .expect("should have absolute keyword location");
+        assert_eq!(
+            absolute_location.as_str(),
+            "https://example.com/schema.json#/type"
+        );
+    }
+
+    #[test]
+    fn test_absolute_keyword_location_from_iter_errors() {
+        let schema = serde_json::json!({
+            "$id": "https://example.com/schema.json",
+            "type": "string"
+        });
+        let instance = serde_json::json!(42);
+        let validator = crate::options()
+            .build(&schema)
+            .expect("schema should compile");
+        let errs: Vec<_> = validator.iter_errors(&instance).collect();
+        assert_eq!(errs.len(), 1);
+        let absolute_location = errs[0]
+            .absolute_keyword_location()
+            .expect("iter_errors should set absolute keyword location");
+        assert_eq!(
+            absolute_location.as_str(),
+            "https://example.com/schema.json#/type"
+        );
+    }
+
+    #[test]
+    fn test_absolute_keyword_location_false_schema() {
+        let schema = serde_json::json!(false);
+        let instance = serde_json::json!(42);
+        let validator = crate::options()
+            .with_base_uri("https://example.com/schema.json")
+            .build(&schema)
+            .expect("schema should compile");
+        let err = validator.validate(&instance).unwrap_err();
+        let absolute_location = err
+            .absolute_keyword_location()
+            .expect("false schema should have absolute keyword location");
+        assert_eq!(
+            absolute_location.as_str(),
+            "https://example.com/schema.json"
+        );
+    }
+
+    #[test]
+    fn test_absolute_keyword_location_preserved_by_to_owned() {
+        let schema = serde_json::json!({
+            "$id": "https://example.com/schema.json",
+            "type": "string"
+        });
+        let instance = serde_json::json!(42);
+        let validator = crate::options()
+            .build(&schema)
+            .expect("schema should compile");
+        let err = validator.validate(&instance).unwrap_err();
+        let owned = err.to_owned();
+        let absolute_location = owned
+            .absolute_keyword_location()
+            .expect("to_owned should preserve absolute keyword location");
+        assert_eq!(
+            absolute_location.as_str(),
+            "https://example.com/schema.json#/type"
+        );
+    }
+
+    #[test]
+    fn test_absolute_keyword_location_external_ref() {
+        let external = serde_json::json!({
+            "$id": "https://example.com/string.json",
+            "type": "string"
+        });
+        let schema = serde_json::json!({
+            "$id": "https://example.com/root.json",
+            "$ref": "https://example.com/string.json"
+        });
+        let instance = serde_json::json!(42);
+        let validator = crate::options()
+            .with_resource(
+                "https://example.com/string.json",
+                Resource::from_contents(external),
+            )
+            .build(&schema)
+            .expect("schema should compile");
+        let err = validator.validate(&instance).unwrap_err();
+        let absolute_location = err
+            .absolute_keyword_location()
+            .expect("external ref error should have absolute keyword location");
+        // Error originates in the external schema, not the root
+        assert_eq!(
+            absolute_location.as_str(),
+            "https://example.com/string.json#/type"
+        );
     }
 }

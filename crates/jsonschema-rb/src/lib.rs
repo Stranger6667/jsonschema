@@ -60,6 +60,7 @@ define_rb_intern!(static ID_AT_SCHEMA_PATH_POINTER: "@schema_path_pointer");
 define_rb_intern!(static ID_AT_EVALUATION_PATH_POINTER: "@evaluation_path_pointer");
 define_rb_intern!(static ID_AT_KIND: "@kind");
 define_rb_intern!(static ID_AT_INSTANCE: "@instance");
+define_rb_intern!(static ID_AT_ABSOLUTE_KEYWORD_LOCATION: "@absolute_keyword_location");
 define_rb_intern!(static ID_CAUSE: "cause");
 
 define_rb_intern!(static ID_SYM_MESSAGE: "message");
@@ -72,6 +73,7 @@ define_rb_intern!(static ID_SYM_INSTANCE: "instance");
 define_rb_intern!(static ID_SYM_INSTANCE_PATH_POINTER: "instance_path_pointer");
 define_rb_intern!(static ID_SYM_SCHEMA_PATH_POINTER: "schema_path_pointer");
 define_rb_intern!(static ID_SYM_EVALUATION_PATH_POINTER: "evaluation_path_pointer");
+define_rb_intern!(static ID_SYM_ABSOLUTE_KEYWORD_LOCATION: "absolute_keyword_location");
 
 struct BuiltValidator {
     validator: jsonschema::Validator,
@@ -373,11 +375,11 @@ fn into_ruby_error(
         mask,
     );
 
-    let (instance, kind, instance_path, schema_path, evaluation_path) = error.into_parts();
+    let parts = error.into_parts();
 
-    let instance_path_ptr = ruby.into_value(instance_path.as_str());
-    let schema_path_ptr = ruby.into_value(schema_path.as_str());
-    let evaluation_path_ptr = ruby.into_value(evaluation_path.as_str());
+    let instance_path_ptr = ruby.into_value(parts.instance_path.as_str());
+    let schema_path_ptr = ruby.into_value(parts.schema_path.as_str());
+    let evaluation_path_ptr = ruby.into_value(parts.evaluation_path.as_str());
 
     let into_path_segment = |segment: LocationSegment<'_>| -> Value {
         match segment {
@@ -386,8 +388,8 @@ fn into_ruby_error(
         }
     };
 
-    let kind_obj = ValidationErrorKind::new(ruby, &kind, mask)?;
-    let rb_instance = ser::value_to_ruby(ruby, instance.as_ref())?;
+    let kind_obj = ValidationErrorKind::new(ruby, &parts.kind, mask)?;
+    let rb_instance = ser::value_to_ruby(ruby, parts.instance.as_ref())?;
 
     let exc_class = ruby.get_inner(&VALIDATION_ERROR_CLASS);
 
@@ -400,21 +402,27 @@ fn into_ruby_error(
     )?;
     exc.ivar_set(
         *ID_AT_INSTANCE_PATH,
-        ruby.ary_from_iter(instance_path.into_iter().map(&into_path_segment)),
+        ruby.ary_from_iter(parts.instance_path.into_iter().map(&into_path_segment)),
     )?;
     exc.ivar_set(
         *ID_AT_SCHEMA_PATH,
-        ruby.ary_from_iter(schema_path.into_iter().map(&into_path_segment)),
+        ruby.ary_from_iter(parts.schema_path.into_iter().map(&into_path_segment)),
     )?;
     exc.ivar_set(
         *ID_AT_EVALUATION_PATH,
-        ruby.ary_from_iter(evaluation_path.into_iter().map(&into_path_segment)),
+        ruby.ary_from_iter(parts.evaluation_path.into_iter().map(&into_path_segment)),
     )?;
     exc.ivar_set(*ID_AT_INSTANCE_PATH_POINTER, instance_path_ptr)?;
     exc.ivar_set(*ID_AT_SCHEMA_PATH_POINTER, schema_path_ptr)?;
     exc.ivar_set(*ID_AT_EVALUATION_PATH_POINTER, evaluation_path_ptr)?;
     exc.ivar_set(*ID_AT_KIND, ruby.into_value(kind_obj))?;
     exc.ivar_set(*ID_AT_INSTANCE, rb_instance)?;
+    let absolute_location = if let Some(uri) = parts.absolute_keyword_location {
+        ruby.into_value(uri.as_str())
+    } else {
+        ruby.qnil().as_value()
+    };
+    exc.ivar_set(*ID_AT_ABSOLUTE_KEYWORD_LOCATION, absolute_location)?;
 
     if is_custom {
         if let Some(cause) = CUSTOM_KEYWORD_CAUSE.with(|cell| cell.borrow_mut().take()) {
@@ -1315,6 +1323,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
         &*ID_SYM_INSTANCE_PATH_POINTER,
         &*ID_SYM_SCHEMA_PATH_POINTER,
         &*ID_SYM_EVALUATION_PATH_POINTER,
+        &*ID_SYM_ABSOLUTE_KEYWORD_LOCATION,
     ] {
         let _: Value = validation_error_rclass.funcall("attr_reader", (sym_id.to_symbol(),))?;
     }
