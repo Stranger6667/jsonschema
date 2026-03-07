@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ValidationError#absolute_keyword_location` to get the absolute keyword location URI of the schema node that produced the error.
+
 ## [0.44.1] - 2026-03-03
 
 ### Fixed

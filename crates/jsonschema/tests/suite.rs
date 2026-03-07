@@ -127,9 +127,8 @@ mod tests {
                     &pointer,
                 );
 
-                // Exercise binding-style error conversion in core suite coverage.
-                let (_instance, _kind, _instance_path, _schema_path, evaluation_path) =
-                    first_error.into_parts();
+                let first_error_parts = first_error.into_parts();
+                let evaluation_path = first_error_parts.evaluation_path;
                 assert!(
                     evaluation_path.as_str().is_empty()
                         || evaluation_path.as_str().starts_with('/'),
@@ -177,8 +176,8 @@ mod tests {
                 error.instance().as_ref(),
                 &pointer,
             );
-                let (_instance, _kind, _instance_path, _schema_path, evaluation_path) =
-                    error.into_parts();
+                let error_parts = error.into_parts();
+                let evaluation_path = error_parts.evaluation_path;
                 assert!(
                     evaluation_path.as_str().is_empty()
                         || evaluation_path.as_str().starts_with('/'),
