@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.45.0] - 2026-03-08
+
 ### Added
 
 - `JSONSchema.bundle(schema, ...)`: produce a Compound Schema Document with all external `$ref` targets embedded in a draft-appropriate container (`definitions` for Draft 4/6/7, `$defs` for Draft 2019-09/2020-12; [Appendix B](https://json-schema.org/draft/2020-12/json-schema-core#appendix-B)). [#791](https://github.com/Stranger6667/jsonschema/issues/791).
@@ -64,7 +66,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.44.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.45.0...HEAD
+[0.45.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.44.1...ruby-v0.45.0
 [0.44.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.44.0...ruby-v0.44.1
 [0.44.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.43.0...ruby-v0.44.0
 [0.43.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.42.2...ruby-v0.43.0
