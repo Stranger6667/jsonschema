@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.45.0] - 2026-03-08
+
 ### Added
 
 - `bundle(schema)` / `async_bundle(schema)` / `ValidationOptions::bundle`: produce a Compound Schema Document with external `$ref` targets embedded in a draft-appropriate container (`definitions` for Draft 4/6/7, `$defs` for Draft 2019-09/2020-12) while preserving `$ref` values. [#791](https://github.com/Stranger6667/jsonschema/issues/791).
@@ -1224,7 +1226,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.44.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.45.0...HEAD
+[0.45.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.44.1...rust-v0.45.0
 [0.44.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.44.0...rust-v0.44.1
 [0.44.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.43.0...rust-v0.44.0
 [0.43.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.42.2...rust-v0.43.0
