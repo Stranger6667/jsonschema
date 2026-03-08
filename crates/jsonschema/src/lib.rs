@@ -855,6 +855,7 @@ compile_error!(
 (default) or `tls-ring`."
 );
 
+pub(crate) mod bundler;
 pub mod canonical;
 pub(crate) mod compiler;
 mod content_encoding;
@@ -1025,6 +1026,58 @@ pub fn evaluate(schema: &Value, instance: &Value) -> Evaluation {
 /// via `tokio::task::spawn_blocking`.
 pub fn validator_for(schema: &Value) -> Result<Validator, ValidationError<'static>> {
     Validator::new(schema)
+}
+
+/// Embed all external `$ref` targets into a draft-appropriate container,
+/// producing a Compound Schema Document that validates identically to the original.
+/// Draft 4/6/7 use `definitions`; Draft 2019-09/2020-12 use `$defs`.
+/// `$ref` values are preserved unchanged.
+/// For mixed-draft bundles, embedded resources may include both `id` and `$id`
+/// to maximize interoperability with downstream validators that differ in draft
+/// handling.
+///
+/// **Limitation:** `$dynamicRef` is not followed during bundling.
+///
+/// For custom resources or retrievers, use [`options()`] and call `.bundle()`.
+///
+/// # Errors
+///
+/// Returns an error if draft detection fails, registry construction fails,
+/// subresource scope resolution fails, or any `$ref` cannot be resolved.
+///
+/// # Panics
+///
+/// This function **must not** be called from within an async runtime if the schema contains
+/// external references that require network requests, or it will panic when attempting to block.
+/// Use `async_options().bundle()` for async contexts, or run this in a separate blocking thread
+/// via `tokio::task::spawn_blocking`.
+///
+/// # Examples
+///
+/// ```rust
+/// use serde_json::json;
+///
+/// let schema = json!({"type": "string"});
+/// let bundled = jsonschema::bundle(&schema).expect("bundling failed");
+/// assert_eq!(bundled, schema); // no external refs, returned unchanged
+/// ```
+pub fn bundle(schema: &Value) -> Result<Value, ReferencingError> {
+    options().bundle(schema)
+}
+
+/// Bundle a JSON Schema into a Compound Schema Document,
+/// using async retrieval for external references.
+///
+/// Async counterpart to [`bundle`]. For custom resources or retrievers,
+/// use [`async_options()`] and call `.bundle()`.
+///
+/// # Errors
+///
+/// Returns an error if draft detection fails, registry construction fails,
+/// subresource scope resolution fails, or any `$ref` cannot be resolved.
+#[cfg(feature = "resolve-async")]
+pub async fn async_bundle(schema: &Value) -> Result<Value, ReferencingError> {
+    async_options().bundle(schema).await
 }
 
 /// Create a validator for the input schema with automatic draft detection and default options,
@@ -1586,9 +1639,9 @@ pub mod meta {
 
         let draft = walk_meta_schema_chain(uri, |current_uri| {
             let meta_uri = referencing::uri::from_str(current_uri)?;
-            Ok(retriever
+            retriever
                 .retrieve(&meta_uri)
-                .map_err(|e| referencing::Error::unretrievable(current_uri, e))?)
+                .map_err(|e| referencing::Error::unretrievable(current_uri, e))
         })?;
 
         Ok((first_meta_schema, draft))
@@ -1596,14 +1649,14 @@ pub mod meta {
 
     pub(crate) fn walk_meta_schema_chain(
         start_uri: &str,
-        mut fetch: impl FnMut(&str) -> Result<Value, ValidationError<'static>>,
-    ) -> Result<Draft, ValidationError<'static>> {
+        mut fetch: impl FnMut(&str) -> Result<Value, referencing::Error>,
+    ) -> Result<Draft, referencing::Error> {
         let mut visited = AHashSet::new();
         let mut current_uri = start_uri.to_string();
 
         loop {
             if !visited.insert(current_uri.clone()) {
-                return Err(referencing::Error::circular_metaschema(current_uri).into());
+                return Err(referencing::Error::circular_metaschema(current_uri));
             }
 
             let meta_schema = fetch(&current_uri)?;

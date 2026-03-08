@@ -4,6 +4,7 @@
 
 ### Added
 
+- `JSONSchema.bundle(schema, ...)`: produce a Compound Schema Document with all external `$ref` targets embedded in a draft-appropriate container (`definitions` for Draft 4/6/7, `$defs` for Draft 2019-09/2020-12; [Appendix B](https://json-schema.org/draft/2020-12/json-schema-core#appendix-B)). [#791](https://github.com/Stranger6667/jsonschema/issues/791).
 - `ValidationError#absolute_keyword_location` to get the absolute keyword location URI of the schema node that produced the error.
 
 ## [0.44.1] - 2026-03-03

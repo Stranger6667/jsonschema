@@ -49,6 +49,7 @@ end
 - 🌐 Remote reference fetching (network/file)
 - 🔧 Custom keywords and format validators
 - ✨ Meta-schema validation for schema documents
+- 📦 Schema bundling into Compound Schema Documents
 - ♦️ Supports Ruby 3.2, 3.4 and 4.0
 
 ### Supported drafts
@@ -266,6 +267,30 @@ dump_a == dump_b # => true
 ```
 
 Main use case: deduplicating equivalent JSON Schemas.
+
+## Schema Bundling
+
+Produce a Compound Schema Document ([Appendix B](https://json-schema.org/draft/2020-12/json-schema-core#appendix-B)) by embedding all external `$ref` targets into a draft-appropriate container. The result validates identically to the original.
+
+```ruby
+address_schema = {
+  "$schema" => "https://json-schema.org/draft/2020-12/schema",
+  "$id" => "https://example.com/address.json",
+  "type" => "object",
+  "properties" => { "street" => { "type" => "string" }, "city" => { "type" => "string" } },
+  "required" => ["street", "city"]
+}
+
+schema = {
+  "$schema" => "https://json-schema.org/draft/2020-12/schema",
+  "type" => "object",
+  "properties" => { "home" => { "$ref" => "https://example.com/address.json" } },
+  "required" => ["home"]
+}
+
+registry = JSONSchema::Registry.new([["https://example.com/address.json", address_schema]])
+bundled = JSONSchema.bundle(schema, registry: registry)
+```
 
 ## Meta-Schema Validation
 

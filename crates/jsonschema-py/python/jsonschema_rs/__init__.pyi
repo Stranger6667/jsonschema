@@ -474,6 +474,24 @@ def validator_for(
     """
     ...
 
+def bundle(
+    schema: Any,
+    /,
+    *,
+    retriever: RetrieverProtocol | None = None,
+    registry: Registry | None = None,
+    draft: int | None = None,
+    base_uri: str | None = None,
+) -> dict[str, Any]:
+    """Bundle a JSON Schema into a Compound Schema Document.
+
+    All externally-referenced schemas reachable via $ref are embedded in a
+    draft-appropriate container (definitions for Draft 4/6/7, $defs for
+    Draft 2019-09/2020-12).
+    Original $ref values are preserved unchanged.
+    """
+    ...
+
 def validator_cls_for(schema: _SchemaT) -> type[Validator]:
     """Detect the JSON Schema draft for a schema and return the corresponding validator class.
 

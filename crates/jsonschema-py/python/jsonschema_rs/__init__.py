@@ -30,6 +30,7 @@ from .jsonschema_rs import (
     meta,
     validate,
     validator_cls_for,
+    bundle,
     validator_for,
 )
 
@@ -118,6 +119,7 @@ __all__ = [
     "canonical",
     "ValidationErrorKind",
     "Evaluation",
+    "bundle",
     "is_valid",
     "validate",
     "iter_errors",

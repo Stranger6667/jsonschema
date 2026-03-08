@@ -52,6 +52,7 @@ for error in evaluation.errors():
 - 🌐 Remote reference fetching (network/file)
 - 🔧 Custom keywords and format validators
 - ✨ Meta-schema validation for schema documents
+- 📦 Schema bundling into Compound Schema Documents
 
 ### Supported drafts
 
@@ -379,6 +380,32 @@ except ValidationError as exc:
 
 # Extremely large exponents (beyond ~10^1_000_000) are clamped internally to keep parsing
 # predictable, matching the Rust implementation's guardrails.
+```
+
+## Schema Bundling
+
+Produce a Compound Schema Document ([Appendix B](https://json-schema.org/draft/2020-12/json-schema-core#appendix-B)) by embedding all external `$ref` targets into a draft-appropriate container. The result validates identically to the original.
+
+```python
+import jsonschema_rs
+
+address_schema = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://example.com/address.json",
+    "type": "object",
+    "properties": {"street": {"type": "string"}, "city": {"type": "string"}},
+    "required": ["street", "city"]
+}
+
+schema = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {"home": {"$ref": "https://example.com/address.json"}},
+    "required": ["home"]
+}
+
+registry = jsonschema_rs.Registry([("https://example.com/address.json", address_schema)])
+bundled = jsonschema_rs.bundle(schema, registry=registry)
 ```
 
 ## Meta-Schema Validation

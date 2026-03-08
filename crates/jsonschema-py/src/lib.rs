@@ -1470,6 +1470,39 @@ fn validator_for(
     )
 }
 
+/// bundle(schema, /, *, retriever=None, registry=None, draft=None, base_uri=None)
+///
+/// Bundle a JSON Schema into a Compound Schema Document.
+///
+/// All externally-referenced schemas reachable via `$ref` are embedded in a
+/// draft-appropriate container (`definitions` for Draft 4/6/7, `$defs` for
+/// Draft 2019-09/2020-12). Original `$ref` values are preserved unchanged.
+///
+///     >>> bundled = bundle({"$ref": "https://example.com/thing.json"}, registry=my_registry)
+///
+#[pyfunction]
+#[pyo3(signature = (schema, /, *, retriever=None, registry=None, draft=None, base_uri=None))]
+fn bundle(
+    py: Python<'_>,
+    schema: &Bound<'_, PyAny>,
+    retriever: Option<&Bound<'_, PyAny>>,
+    registry: Option<&registry::Registry>,
+    draft: Option<u8>,
+    base_uri: Option<String>,
+) -> PyResult<Py<PyAny>> {
+    let schema_value = ser::to_value(schema)?;
+    let options = make_options(
+        draft, None, None, None, retriever, registry, base_uri, None, None, None, None,
+    )?;
+    match options.bundle(&schema_value) {
+        Ok(bundled) => value_to_python(py, &bundled),
+        Err(e @ jsonschema::ReferencingError::Unretrievable { .. }) => {
+            Err(referencing_error_pyerr(py, e.to_string())?)
+        }
+        Err(e) => Err(exceptions::PyValueError::new_err(e.to_string())),
+    }
+}
+
 /// validator_cls_for(schema)
 ///
 /// Detect the JSON Schema draft for a schema and return the corresponding validator class.
@@ -2066,6 +2099,7 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_wrapped(wrap_pyfunction!(iter_errors))?;
     module.add_wrapped(wrap_pyfunction!(evaluate))?;
     module.add_wrapped(wrap_pyfunction!(validator_for))?;
+    module.add_wrapped(wrap_pyfunction!(bundle))?;
     module.add_wrapped(wrap_pyfunction!(validator_cls_for))?;
     module.add_class::<Draft4Validator>()?;
     module.add_class::<Draft6Validator>()?;

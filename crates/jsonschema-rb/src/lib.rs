@@ -846,6 +846,22 @@ fn validator_for(ruby: &Ruby, args: &[Value]) -> Result<Validator, Error> {
     })
 }
 
+fn bundle(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
+    let parsed_args = scan_args::<(Value,), (), (), (), _, ()>(args)?;
+    let (schema,) = parsed_args.required;
+    let kw = extract_kwargs(ruby, parsed_args.keywords)?;
+
+    let json_schema = to_schema_value(ruby, schema)?;
+    let parsed = build_parsed_options(ruby, kw, None)?;
+    match parsed.options.bundle(&json_schema) {
+        Ok(bundled) => ser::value_to_ruby(ruby, &bundled),
+        Err(e @ jsonschema::ReferencingError::Unretrievable { .. }) => {
+            Err(referencing_error(ruby, e.to_string()))
+        }
+        Err(e) => Err(Error::new(ruby.exception_runtime_error(), e.to_string())),
+    }
+}
+
 /// to_string(object) -> String
 ///
 /// Serialize a Ruby value to canonical JSON.
@@ -1340,6 +1356,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     // Module-level functions
     module.define_singleton_method("validator_cls_for", function!(validator_cls_for, 1))?;
     module.define_singleton_method("validator_for", function!(validator_for, -1))?;
+    module.define_singleton_method("bundle", function!(bundle, -1))?;
     module.define_singleton_method("valid?", function!(is_valid, -1))?;
     module.define_singleton_method("validate!", function!(validate, -1))?;
     module.define_singleton_method("each_error", function!(each_error, -1))?;
