@@ -668,17 +668,16 @@ impl<'a> Context<'a> {
     }
 }
 
-pub(crate) fn build_validator(
+pub(crate) fn build_registry(
     config: &ValidationOptions,
-    schema: &Value,
-) -> Result<Validator, ValidationError<'static>> {
-    let draft = config.draft_for(schema)?;
-    let resource_ref = draft.create_resource_ref(schema);
-    let resource = draft.create_resource(schema.clone());
+    draft: Draft,
+    resource: referencing::Resource,
+    schema_id: Option<&str>,
+) -> Result<(Arc<referencing::Registry>, referencing::Uri<String>), referencing::Error> {
     let base_uri = if let Some(base_uri) = config.base_uri.as_ref() {
         uri::from_str(base_uri)?
     } else {
-        uri::from_str(resource_ref.id().unwrap_or(DEFAULT_BASE_URI))?
+        uri::from_str(schema_id.unwrap_or(DEFAULT_BASE_URI))?
     };
 
     // Build a registry & resolver needed for validator compilation
@@ -699,6 +698,17 @@ pub(crate) fn build_validator(
                 .build(pairs)?,
         )
     };
+    Ok((registry, base_uri))
+}
+
+pub(crate) fn build_validator(
+    config: &ValidationOptions,
+    schema: &Value,
+) -> Result<Validator, ValidationError<'static>> {
+    let draft = config.draft_for(schema)?;
+    let resource_ref = draft.create_resource_ref(schema); // single computation
+    let resource = draft.create_resource(schema.clone());
+    let (registry, base_uri) = build_registry(config, draft, resource, resource_ref.id())?;
     let vocabularies = registry.find_vocabularies(draft, schema);
     let resolver = registry.resolver(base_uri);
 
@@ -723,19 +733,19 @@ pub(crate) fn build_validator(
 }
 
 #[cfg(feature = "resolve-async")]
-pub(crate) async fn build_validator_async(
+pub(crate) async fn build_registry_async(
     config: &ValidationOptions<Arc<dyn referencing::AsyncRetrieve>>,
-    schema: &Value,
-) -> Result<Validator, ValidationError<'static>> {
-    let draft = config.draft_for(schema).await?;
-    let resource_ref = draft.create_resource_ref(schema);
-    let resource = draft.create_resource(schema.clone());
+    draft: Draft,
+    resource: referencing::Resource,
+    schema_id: Option<&str>,
+) -> Result<(Arc<referencing::Registry>, referencing::Uri<String>), referencing::Error> {
     let base_uri = if let Some(base_uri) = config.base_uri.as_ref() {
         uri::from_str(base_uri)?
     } else {
-        uri::from_str(resource_ref.id().unwrap_or(DEFAULT_BASE_URI))?
+        uri::from_str(schema_id.unwrap_or(DEFAULT_BASE_URI))?
     };
 
+    // Build a registry & resolver needed for validator compilation
     // Clone resources to drain them without mutating the original config
     let pairs = collect_resource_pairs(base_uri.as_str(), resource, config.resources.clone());
 
@@ -749,13 +759,25 @@ pub(crate) async fn build_validator_async(
     } else {
         Arc::new(
             Registry::options()
-                .async_retriever(Arc::clone(&config.retriever))
                 .draft(draft)
+                .async_retriever(Arc::clone(&config.retriever))
                 .build(pairs)
                 .await?,
         )
     };
+    Ok((registry, base_uri))
+}
 
+#[cfg(feature = "resolve-async")]
+pub(crate) async fn build_validator_async(
+    config: &ValidationOptions<Arc<dyn referencing::AsyncRetrieve>>,
+    schema: &Value,
+) -> Result<Validator, ValidationError<'static>> {
+    let draft = config.draft_for(schema).await?;
+    let resource_ref = draft.create_resource_ref(schema); // single computation
+    let resource = draft.create_resource(schema.clone());
+    let (registry, base_uri) =
+        build_registry_async(config, draft, resource, resource_ref.id()).await?;
     let vocabularies = registry.find_vocabularies(draft, schema);
     let resolver = registry.resolver(base_uri);
     // HACK: `ValidationOptions` struct has a default type parameter as `Arc<dyn Retrieve>` and to

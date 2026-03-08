@@ -622,7 +622,8 @@ fn process_meta_schemas(
 
         // Process subresources
         for contents in resource.draft().subresources_of(resource.contents()) {
-            let subresource = InnerResourcePtr::new(contents, resource.draft());
+            let subresource_draft = resource.draft().detect(contents);
+            let subresource = InnerResourcePtr::new(contents, subresource_draft);
             queue.push_back((base.clone(), subresource));
         }
     }
@@ -759,7 +760,8 @@ fn process_queue(
         // Subresources inherit the document root URI, or use the current base if none set
         let subresource_root_uri = document_root_uri.or_else(|| Some(base.clone()));
         for contents in resource.draft().subresources_of(resource.contents()) {
-            let subresource = InnerResourcePtr::new(contents, resource.draft());
+            let subresource_draft = resource.draft().detect(contents);
+            let subresource = InnerResourcePtr::new(contents, subresource_draft);
             state
                 .queue
                 .push_back((base.clone(), subresource, subresource_root_uri.clone()));
@@ -1206,6 +1208,7 @@ fn collect_external_resources_recursive(
 
     // Then recursively process all subresources
     for subresource in draft.subresources_of(contents) {
+        let subresource_draft = draft.detect(subresource);
         collect_external_resources_recursive(
             &current_base,
             root,
@@ -1215,7 +1218,7 @@ fn collect_external_resources_recursive(
             resolution_cache,
             scratch,
             refers_metaschemas,
-            draft,
+            subresource_draft,
             visited,
         )?;
     }
@@ -1287,10 +1290,12 @@ fn pointer_with_base<'a>(
 
     let mut current = document;
     let mut current_base = Arc::clone(base);
+    let mut current_draft = draft;
 
     for token in pointer.split('/').skip(1).map(unescape_segment) {
         // Check for $id in the current value before traversing deeper
-        if let Some(id) = draft.id_of(current) {
+        current_draft = current_draft.detect(current);
+        if let Some(id) = current_draft.id_of(current) {
             current_base = resolve_id(&current_base, id, resolution_cache)?;
         }
 

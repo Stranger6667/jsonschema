@@ -3,7 +3,7 @@
 [<img alt="crates.io" src="https://img.shields.io/crates/v/jsonschema-cli.svg?style=flat-square&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/jsonschema-cli)
 [<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-jsonschema-cli?style=flat-square&labelColor=555555&logo=docs.rs" height="20">](https://docs.rs/jsonschema-cli)
 
-A fast command-line tool for JSON Schema validation, powered by the `jsonschema` crate.
+A fast command-line tool for JSON Schema validation and bundling, powered by the `jsonschema` crate.
 
 ## Installation
 
@@ -31,11 +31,8 @@ Download the latest binary for your platform from the [releases page](https://gi
 
 Example installation on Linux/macOS:
 ```bash
-# Download and extract (replace VERSION with actual version, e.g., cli-v0.36.0)
 curl -LO https://github.com/Stranger6667/jsonschema-rs/releases/download/VERSION/jsonschema-cli-x86_64-unknown-linux-gnu.tar.gz
 tar xzf jsonschema-cli-x86_64-unknown-linux-gnu.tar.gz
-
-# Move to a directory in your PATH
 sudo mv jsonschema-cli /usr/local/bin/
 ```
 
@@ -48,63 +45,104 @@ cargo install jsonschema-cli
 ## Usage
 
 ```
-jsonschema [OPTIONS] <SCHEMA>
+jsonschema <COMMAND>
 ```
 
-**NOTE**: It only supports valid JSON as input.
+Two subcommands are available: `validate` and `bundle` (inline external refs).
+
+> ⚠️ **Deprecation notice:** The flat invocation `jsonschema schema.json -i instance.json` still works but is deprecated. Migrate to `jsonschema validate schema.json -i instance.json`.
+
+---
+
+## `jsonschema validate` — validate instances
+
+```
+jsonschema validate [OPTIONS] <SCHEMA>
+```
 
 ### Options
 
-- `-i, --instance <FILE>`: JSON instance(s) to validate (can be used multiple times)
-- `--output <text|flag|list|hierarchical>`: Select output style (default: `text`). `text` prints the human-friendly summary, while the structured modes emit newline-delimited JSON (`ndjson`) records with `schema`, `instance`, and JSON Schema Output v1 payloads.
-- `-v, --version`: Show version information
-- `--help`: Display help information
+| Flag | Description |
+|---|---|
+| `-i, --instance <FILE>` | Instance(s) to validate (repeatable) |
+| `-d, --draft <DRAFT>` | Enforce a specific draft (`4`, `6`, `7`, `2019`, `2020`) |
+| `--assert-format` / `--no-assert-format` | Enable/disable `format` keyword validation |
+| `--output <text\|flag\|list\|hierarchical>` | Output style (default: `text`) |
+| `--errors-only` | Suppress successful validations |
+| `--connect-timeout <SECONDS>` | Connection timeout for remote `$ref` retrieval |
+| `--timeout <SECONDS>` | Total HTTP request timeout |
+| `-k, --insecure` | Skip TLS certificate verification |
+| `--cacert <FILE>` | Custom CA certificate (PEM) |
 
-### Examples:
+### Examples
 
 Validate a single instance:
 ```
-jsonschema schema.json -i instance.json
+jsonschema validate schema.json -i instance.json
 ```
 
-Validate multiple instances:
+Validate multiple instances and emit structured output:
 ```
-jsonschema schema.json -i instance1.json -i instance2.json
-```
-
-Emit JSON Schema Output v1 (`list`) for multiple instances:
-```
-jsonschema schema.json -i instance1.json -i instance2.json --output list
-{"output":"list","schema":"schema.json","instance":"instance1.json","payload":{"valid":true,...}}
-{"output":"list","schema":"schema.json","instance":"instance2.json","payload":{"valid":false,...}}
+jsonschema validate schema.json -i a.json -i b.json --output list
+{"output":"list","schema":"schema.json","instance":"a.json","payload":{"valid":true,...}}
+{"output":"list","schema":"schema.json","instance":"b.json","payload":{"valid":false,...}}
 ```
 
-## Features
+---
 
-- Validate one or more JSON instances against a single schema
-- Clear, concise output with detailed error reporting
-- Fast validation using the `jsonschema` Rust crate
+## `jsonschema bundle` — inline external `$ref` targets
 
-## Output
+Embeds all `$ref` targets into a draft-appropriate container:
+- `definitions` for Draft 4/6/7
+- `$defs` for Draft 2019-09/2020-12
+- For mixed-draft bundles, embedded resources may include both `id` and `$id` for interoperability.
 
-For each instance:
+`$ref` values are preserved unchanged ([Appendix B](https://json-schema.org/draft/2020-12/json-schema-core#appendix-B)).
 
-- `text` (default): prints `<filename> - VALID` or `<filename> - INVALID. Errors:` followed by numbered error messages.
-- `flag|list|hierarchical`: emit newline-delimited JSON objects shaped as:
+```
+jsonschema bundle [OPTIONS] <SCHEMA>
+```
 
+### Options
+
+| Flag | Description |
+|---|---|
+| `--resource <URI=FILE>` | Register an external schema resource (repeatable) |
+| `-o, --output <FILE>` | Write result to file instead of stdout |
+| `--connect-timeout`, `--timeout`, `-k`, `--cacert` | Same as `validate` |
+
+### Examples
+
+With a locally registered resource:
+```
+jsonschema bundle root.json --resource https://example.com/address.json=address.json
+```
+
+Write to file:
+```
+jsonschema bundle root.json -o bundled.json
+```
+
+---
+
+## Output formats (`validate`)
+
+| Mode | Description |
+|---|---|
+| `text` (default) | `<file> - VALID` or `<file> - INVALID. Errors: …` |
+| `flag` | `{"valid": true/false}` per instance (ndjson) |
+| `list` | Flat list of annotations/errors (ndjson) |
+| `hierarchical` | Nested structure following schema hierarchy (ndjson) |
+
+Structured modes emit newline-delimited JSON records:
 ```json
-{
-  "output": "list",
-  "schema": "schema.json",
-  "instance": "instance.json",
-  "payload": { "... JSON Schema Output v1 data ..." }
-}
+{"output":"list","schema":"schema.json","instance":"instance.json","payload":{...}}
 ```
 
 ## Exit Codes
 
-- 0: All instances are valid (or no instances provided)
-- 1: One or more instances are invalid, or there was an error
+- `0` — all instances valid (or no instances provided)
+- `1` — one or more instances invalid, or an error occurred
 
 ## License
 

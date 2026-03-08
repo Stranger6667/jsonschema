@@ -4,6 +4,8 @@
 
 ### Added
 
+- `bundle(schema)` / `async_bundle(schema)` / `ValidationOptions::bundle`: produce a Compound Schema Document with external `$ref` targets embedded in a draft-appropriate container (`definitions` for Draft 4/6/7, `$defs` for Draft 2019-09/2020-12) while preserving `$ref` values. [#791](https://github.com/Stranger6667/jsonschema/issues/791).
+- **CLI**: `jsonschema validate` and `jsonschema bundle` subcommands. Flat invocation (`jsonschema schema.json -i …`) is deprecated — use `jsonschema validate` instead. [#791](https://github.com/Stranger6667/jsonschema/issues/791).
 - `ValidationError::absolute_keyword_location()` to get the absolute keyword location URI of the schema node that produced the error. [#737](https://github.com/Stranger6667/jsonschema/issues/737).
 
 ### Changed

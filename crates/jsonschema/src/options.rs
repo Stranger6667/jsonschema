@@ -534,7 +534,34 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
     pub fn build(&self, schema: &Value) -> Result<Validator, ValidationError<'static>> {
         compiler::build_validator(self, schema)
     }
-    pub(crate) fn draft_for(&self, contents: &Value) -> Result<Draft, ValidationError<'static>> {
+
+    /// Bundle a JSON Schema into a Compound Schema Document.
+    ///
+    /// All externally-referenced schemas reachable via `$ref` are embedded in a
+    /// draft-appropriate container (`definitions` for Draft 4/6/7, `$defs` for
+    /// Draft 2019-09/2020-12). Original `$ref` values are preserved, and the bundled
+    /// document validates identically.
+    ///
+    /// For mixed-draft bundles, embedded resources may include both `id` and `$id`
+    /// to maximize interoperability with downstream validators that differ in draft
+    /// handling.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if draft detection fails, registry construction fails,
+    /// subresource scope resolution fails, or any `$ref` cannot be resolved.
+    ///
+    /// # Panics
+    ///
+    /// This method **must not** be called from within an async runtime if the schema contains
+    /// external references that require network requests, or it will panic when attempting to block.
+    /// Use `async_options` and its async `bundle` method for async contexts, or run this
+    /// in a separate blocking thread via `tokio::task::spawn_blocking`.
+    pub fn bundle(&self, schema: &Value) -> Result<Value, referencing::Error> {
+        crate::bundler::bundle_with_options(self, schema)
+    }
+
+    pub(crate) fn draft_for(&self, contents: &Value) -> Result<Draft, referencing::Error> {
         // Preference:
         //  - Explicitly set
         //  - Autodetected (with registry resolution for custom meta-schemas)
@@ -566,7 +593,7 @@ impl ValidationOptions<Arc<dyn referencing::Retrieve>> {
     fn resolve_draft_from_registry(
         uri: &str,
         registry: &referencing::Registry,
-    ) -> Result<Draft, ValidationError<'static>> {
+    ) -> Result<Draft, referencing::Error> {
         let uri = uri.trim_end_matches('#');
         crate::meta::walk_meta_schema_chain(uri, |current_uri| {
             let resolver = registry.try_resolver(current_uri)?;
@@ -692,6 +719,19 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
     pub async fn build(&self, schema: &Value) -> Result<Validator, ValidationError<'static>> {
         compiler::build_validator_async(self, schema).await
     }
+
+    /// Bundle a JSON Schema using async retrieval for external references.
+    ///
+    /// Async counterpart to [`ValidationOptions::bundle`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any `$ref` cannot be resolved, or if the schema draft is older
+    /// than 2019-09.
+    pub async fn bundle(&self, schema: &Value) -> Result<Value, referencing::Error> {
+        crate::bundler::bundle_with_options_async(self, schema).await
+    }
+
     #[must_use]
     pub fn with_retriever(
         self,
@@ -715,10 +755,7 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
         }
     }
     #[allow(clippy::unused_async)]
-    pub(crate) async fn draft_for(
-        &self,
-        contents: &Value,
-    ) -> Result<Draft, ValidationError<'static>> {
+    pub(crate) async fn draft_for(&self, contents: &Value) -> Result<Draft, referencing::Error> {
         // Preference:
         //  - Explicitly set
         //  - Autodetected

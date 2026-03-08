@@ -1016,8 +1016,33 @@ fn test_validate_schema_with_json_parse_error() {
     let output = cmd.output().unwrap();
     assert!(!output.status.success());
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Error:"));
+    let sanitized = sanitize_output(
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        &[&schema],
+    );
+    assert!(sanitized.contains("Error: failed to parse JSON from {FILE_1}:"));
+}
+
+#[test]
+fn test_validate_instance_with_json_parse_error() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type": "object"}"#);
+    let instance = create_temp_file(&dir, "instance.json", "not json");
+
+    let output = cli()
+        .arg("validate")
+        .arg(&schema)
+        .arg("--instance")
+        .arg(&instance)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+
+    let sanitized = sanitize_output(
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        &[&instance],
+    );
+    assert!(sanitized.contains("Error: failed to read JSON from {FILE_1}:"));
 }
 
 #[test]
@@ -1303,4 +1328,186 @@ fn test_http_options_ndjson_output() {
         .arg("30");
     let output = cmd.output().unwrap();
     assert!(output.status.success());
+}
+
+#[test]
+fn test_bundle_no_external_refs() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type":"string"}"#);
+
+    let output = cli().arg("bundle").arg(&schema).output().unwrap();
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let bundled: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(bundled.get("type"), Some(&serde_json::json!("string")));
+    assert!(bundled.get("$defs").is_none());
+}
+
+#[test]
+fn test_bundle_with_resource_flag() {
+    let dir = tempdir().unwrap();
+    let person = create_temp_file(
+        &dir,
+        "person.json",
+        r#"{"$id":"https://example.com/person.json","type":"object","properties":{"name":{"type":"string"}},"required":["name"]}"#,
+    );
+    let root = create_temp_file(
+        &dir,
+        "root.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":"https://example.com/person.json"}"#,
+    );
+
+    let resource_arg = format!("https://example.com/person.json={person}");
+    let output = cli()
+        .arg("bundle")
+        .arg(&root)
+        .arg("--resource")
+        .arg(&resource_arg)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let bundled: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    // $ref must not be rewritten (spec requirement)
+    assert_eq!(
+        bundled["$ref"],
+        serde_json::json!("https://example.com/person.json")
+    );
+    // resource must be embedded in $defs
+    assert!(bundled["$defs"]["https://example.com/person.json"].is_object());
+}
+
+#[test]
+fn test_bundle_output_to_file() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type":"integer"}"#);
+    let out_path = dir
+        .path()
+        .join("bundled.json")
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let output = cli()
+        .arg("bundle")
+        .arg(&schema)
+        .arg("--output")
+        .arg(&out_path)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+
+    let written = fs::read_to_string(&out_path).unwrap();
+    let bundled: serde_json::Value = serde_json::from_str(&written).unwrap();
+    assert_eq!(bundled.get("type"), Some(&serde_json::json!("integer")));
+}
+
+#[test]
+fn test_bundle_supports_legacy_draft() {
+    let dir = tempdir().unwrap();
+    let person = create_temp_file(
+        &dir,
+        "person.json",
+        r#"{"$schema":"http://json-schema.org/draft-07/schema#","$id":"https://example.com/person.json","type":"string"}"#,
+    );
+    let root = create_temp_file(
+        &dir,
+        "root.json",
+        r#"{"$schema":"http://json-schema.org/draft-07/schema#","$ref":"https://example.com/person.json"}"#,
+    );
+
+    let resource_arg = format!("https://example.com/person.json={person}");
+    let output = cli()
+        .arg("bundle")
+        .arg(&root)
+        .arg("--resource")
+        .arg(&resource_arg)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let bundled: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert!(
+        bundled.get("$defs").is_none(),
+        "legacy bundle should not use $defs"
+    );
+    assert!(bundled["definitions"]["https://example.com/person.json"].is_object());
+}
+
+#[test]
+fn test_validate_subcommand_explicit() {
+    // `jsonschema validate schema.json -i instance.json` — new explicit subcommand form
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type":"string"}"#);
+    let instance = create_temp_file(&dir, "instance.json", r#""hello""#);
+
+    let output = cli()
+        .arg("validate")
+        .arg(&schema)
+        .arg("-i")
+        .arg(&instance)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("VALID"));
+}
+
+#[test]
+fn test_flat_invocation_still_works() {
+    // Flat invocation (deprecated) must still run and emit a deprecation warning
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type":"string"}"#);
+    let instance = create_temp_file(&dir, "instance.json", "42");
+
+    let output = cli()
+        .arg(&schema)
+        .arg("-i")
+        .arg(&instance)
+        .output()
+        .unwrap();
+    // Exit code 1 because instance is invalid
+    assert!(!output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("INVALID"));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("deprecated"),
+        "expected deprecation warning on stderr"
+    );
+}
+
+#[test]
+fn test_no_args_prints_help_hint_and_fails() {
+    let output = cli().output().unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("A schema argument is required"),
+        "expected usage hint on stderr, got: {stderr}"
+    );
+}
+
+#[test]
+fn test_bundle_bad_schema_file_prints_error_on_stderr() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", "not-json{{");
+    let output = cli().arg("bundle").arg(&schema).output().unwrap();
+    assert!(!output.status.success());
+    let sanitized = sanitize_output(String::from_utf8(output.stderr).unwrap(), &[&schema]);
+    assert!(sanitized.contains("error: failed to parse JSON from {FILE_1}:"));
+}
+
+#[test]
+fn test_bundle_missing_schema_file_prints_error_on_stderr() {
+    let dir = tempdir().unwrap();
+    let missing = dir.path().join("missing-schema.json");
+    let missing = missing.to_string_lossy().to_string();
+    let output = cli().arg("bundle").arg(&missing).output().unwrap();
+    assert!(!output.status.success());
+    let sanitized = sanitize_output(String::from_utf8(output.stderr).unwrap(), &[&missing]);
+    assert!(sanitized.contains("error: failed to read {FILE_1}:"));
 }

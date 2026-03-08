@@ -1,4 +1,4 @@
-#![allow(clippy::print_stdout)]
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 use std::{
     fs::File,
     io::BufReader,
@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use clap::{ArgAction, Parser, ValueEnum};
+use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
 use percent_encoding::{percent_encode, AsciiSet, CONTROLS};
 use serde_json::json;
 
@@ -21,16 +21,122 @@ fn parse_non_negative_timeout(s: &str) -> Result<f64, String> {
     Ok(value)
 }
 
+fn parse_resource_pair(s: &str) -> Result<(String, PathBuf), String> {
+    let (uri, path) = s
+        .split_once('=')
+        .ok_or_else(|| format!("expected URI=FILE, got '{s}'"))?;
+    Ok((uri.to_string(), PathBuf::from(path)))
+}
+
 #[derive(Parser)]
 #[command(name = "jsonschema")]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+
+    // Hidden top-level flags for deprecated flat invocation (emits a warning, use `check` instead)
+    #[arg(hide = true, value_parser)]
+    schema: Option<PathBuf>,
+    #[arg(hide = true, short = 'i', long = "instance")]
+    instances: Option<Vec<PathBuf>>,
+    #[arg(hide = true, short = 'd', long = "draft", value_enum)]
+    draft: Option<Draft>,
+    #[arg(
+        hide = true,
+        long = "assert-format",
+        action = ArgAction::SetTrue,
+        overrides_with = "no_assert_format"
+    )]
+    assert_format: Option<bool>,
+    #[arg(
+        hide = true,
+        long = "no-assert-format",
+        action = ArgAction::SetTrue,
+        overrides_with = "assert_format"
+    )]
+    no_assert_format: Option<bool>,
+    #[arg(hide = true, long = "output", value_enum, default_value_t = Output::Text)]
+    output: Output,
+    /// Show program's version number and exit.
+    #[arg(short = 'v', long = "version")]
+    version: bool,
+    #[arg(hide = true, long = "errors-only")]
+    errors_only: bool,
+    #[arg(
+        hide = true,
+        long = "connect-timeout",
+        value_name = "SECONDS",
+        value_parser = parse_non_negative_timeout
+    )]
+    connect_timeout: Option<f64>,
+    #[arg(
+        hide = true,
+        long = "timeout",
+        value_name = "SECONDS",
+        value_parser = parse_non_negative_timeout
+    )]
+    timeout: Option<f64>,
+    #[arg(hide = true, short = 'k', long = "insecure", action = ArgAction::SetTrue)]
+    insecure: bool,
+    #[arg(hide = true, long = "cacert", value_name = "FILE")]
+    cacert: Option<PathBuf>,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Validate JSON instances against a JSON Schema.
+    Validate(ValidateArgs),
+    /// Bundle a JSON Schema into a Compound Schema Document.
+    Bundle(BundleArgs),
+}
+
+#[derive(Args, Clone)]
+struct HttpArgs {
+    /// Timeout for the connect phase (in seconds).
+    #[arg(
+        long = "connect-timeout",
+        value_name = "SECONDS",
+        value_parser = parse_non_negative_timeout,
+        help = "Timeout for establishing connections (in seconds)"
+    )]
+    connect_timeout: Option<f64>,
+
+    /// Total request timeout (in seconds).
+    #[arg(
+        long = "timeout",
+        value_name = "SECONDS",
+        value_parser = parse_non_negative_timeout,
+        help = "Total timeout for HTTP requests (in seconds)"
+    )]
+    timeout: Option<f64>,
+
+    /// Skip TLS certificate verification (insecure).
+    #[arg(
+        short = 'k',
+        long = "insecure",
+        action = ArgAction::SetTrue,
+        help = "Skip TLS certificate verification (dangerous!)"
+    )]
+    insecure: bool,
+
+    /// Path to a custom CA certificate file (PEM format).
+    #[arg(
+        long = "cacert",
+        value_name = "FILE",
+        help = "Path to a custom CA certificate file (PEM format)"
+    )]
+    cacert: Option<PathBuf>,
+}
+
+#[derive(Args)]
+struct ValidateArgs {
+    /// The JSON Schema to validate with (i.e. schema.json).
+    #[arg(value_parser)]
+    schema: PathBuf,
+
     /// A path to a JSON instance (i.e. filename.json) to validate (may be specified multiple times).
     #[arg(short = 'i', long = "instance")]
     instances: Option<Vec<PathBuf>>,
-
-    /// The JSON Schema to validate with (i.e. schema.json).
-    #[arg(value_parser, required_unless_present("version"))]
-    schema: Option<PathBuf>,
 
     /// Which JSON Schema draft to enforce.
     #[arg(
@@ -68,48 +174,30 @@ struct Cli {
     )]
     output: Output,
 
-    /// Show program's version number and exit.
-    #[arg(short = 'v', long = "version")]
-    version: bool,
-
     /// Only output validation failures, suppress successful validations.
     #[arg(long = "errors-only", help = "Only show validation errors")]
     errors_only: bool,
 
-    /// Timeout for the connect phase (in seconds).
-    #[arg(
-        long = "connect-timeout",
-        value_name = "SECONDS",
-        value_parser = parse_non_negative_timeout,
-        help = "Timeout for establishing connections (in seconds)"
-    )]
-    connect_timeout: Option<f64>,
+    #[command(flatten)]
+    http: HttpArgs,
+}
 
-    /// Total request timeout (in seconds).
-    #[arg(
-        long = "timeout",
-        value_name = "SECONDS",
-        value_parser = parse_non_negative_timeout,
-        help = "Total timeout for HTTP requests (in seconds)"
-    )]
-    timeout: Option<f64>,
+#[derive(Args)]
+struct BundleArgs {
+    /// Path to the root JSON Schema file to bundle.
+    #[arg(value_parser)]
+    schema: PathBuf,
 
-    /// Skip TLS certificate verification (insecure).
-    #[arg(
-        short = 'k',
-        long = "insecure",
-        action = ArgAction::SetTrue,
-        help = "Skip TLS certificate verification (dangerous!)"
-    )]
-    insecure: bool,
+    /// Register an external schema resource: URI=FILE (may be repeated).
+    #[arg(long = "resource", value_parser = parse_resource_pair)]
+    resources: Vec<(String, PathBuf)>,
 
-    /// Path to a custom CA certificate file (PEM format).
-    #[arg(
-        long = "cacert",
-        value_name = "FILE",
-        help = "Path to a custom CA certificate file (PEM format)"
-    )]
-    cacert: Option<PathBuf>,
+    /// Write bundled output to FILE instead of stdout.
+    #[arg(short = 'o', long = "output")]
+    output: Option<PathBuf>,
+
+    #[command(flatten)]
+    http: HttpArgs,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -157,38 +245,80 @@ impl From<Draft> for jsonschema::Draft {
     }
 }
 
-fn build_http_options(config: &Cli) -> jsonschema::HttpOptions {
-    let mut http_options = jsonschema::HttpOptions::new();
+impl HttpArgs {
+    fn into_http_options(self) -> Option<jsonschema::HttpOptions> {
+        if self.connect_timeout.is_none()
+            && self.timeout.is_none()
+            && !self.insecure
+            && self.cacert.is_none()
+        {
+            return None;
+        }
 
-    if let Some(connect_timeout) = config.connect_timeout {
-        http_options = http_options.connect_timeout(Duration::from_secs_f64(connect_timeout));
-    }
-    if let Some(timeout) = config.timeout {
-        http_options = http_options.timeout(Duration::from_secs_f64(timeout));
-    }
-    if config.insecure {
-        http_options = http_options.danger_accept_invalid_certs(true);
-    }
-    if let Some(ref cacert) = config.cacert {
-        http_options = http_options.add_root_certificate(cacert);
-    }
+        let mut http_options = jsonschema::HttpOptions::new();
 
-    http_options
+        if let Some(connect_timeout) = self.connect_timeout {
+            http_options = http_options.connect_timeout(Duration::from_secs_f64(connect_timeout));
+        }
+        if let Some(timeout) = self.timeout {
+            http_options = http_options.timeout(Duration::from_secs_f64(timeout));
+        }
+        if self.insecure {
+            http_options = http_options.danger_accept_invalid_certs(true);
+        }
+        if let Some(cacert) = self.cacert.as_ref() {
+            http_options = http_options.add_root_certificate(cacert);
+        }
+
+        Some(http_options)
+    }
 }
 
-fn has_http_options(config: &Cli) -> bool {
-    config.connect_timeout.is_some()
-        || config.timeout.is_some()
-        || config.insecure
-        || config.cacert.is_some()
+#[derive(Debug)]
+enum ReadJsonError {
+    Io {
+        file: PathBuf,
+        err: std::io::Error,
+    },
+    Json {
+        file: PathBuf,
+        err: serde_json::Error,
+    },
 }
 
-fn read_json(
-    path: &Path,
-) -> Result<serde_json::Result<serde_json::Value>, Box<dyn std::error::Error>> {
-    let file = File::open(path)?;
+impl std::fmt::Display for ReadJsonError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Io { file, err } => {
+                f.write_fmt(format_args!("failed to read {}: {err}", file.display()))
+            }
+            Self::Json { file, err } => f.write_fmt(format_args!(
+                "failed to parse JSON from {}: {err}",
+                file.display()
+            )),
+        }
+    }
+}
+
+impl std::error::Error for ReadJsonError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io { file: _, err } => Some(err),
+            Self::Json { file: _, err } => Some(err),
+        }
+    }
+}
+
+fn read_json(path: &Path) -> Result<serde_json::Value, ReadJsonError> {
+    let file = File::open(path).map_err(|err| ReadJsonError::Io {
+        file: path.into(),
+        err,
+    })?;
     let reader = BufReader::new(file);
-    Ok(serde_json::from_reader(reader))
+    serde_json::from_reader(reader).map_err(|err| ReadJsonError::Json {
+        file: path.into(),
+        err,
+    })
 }
 
 #[derive(Debug)]
@@ -314,6 +444,19 @@ fn path_to_uri(path: &std::path::Path) -> String {
     result
 }
 
+fn options_for_schema(
+    schema_path: &Path,
+    http_options: Option<&jsonschema::HttpOptions>,
+) -> Result<jsonschema::ValidationOptions, Box<dyn std::error::Error>> {
+    let base_uri = path_to_uri(schema_path);
+    let base_uri = referencing::uri::from_str(&base_uri)?;
+    let mut options = jsonschema::options().with_base_uri(base_uri);
+    if let Some(http_opts) = http_options {
+        options = options.with_http_options(http_opts)?;
+    }
+    Ok(options)
+}
+
 fn output_schema_validation(
     schema_path: &Path,
     schema_json: &serde_json::Value,
@@ -329,13 +472,8 @@ fn output_schema_validation(
     // If meta-schema validation passed, also try to build the validator
     // to check that all referenced schemas are valid
     if flag_output.valid {
-        let base_uri = path_to_uri(schema_path);
-        let base_uri = referencing::uri::from_str(&base_uri)?;
         // Just try to build - if it fails, the error propagates naturally
-        let mut options = jsonschema::options().with_base_uri(base_uri);
-        if let Some(http_opts) = http_options {
-            options = options.with_http_options(http_opts)?;
-        }
+        let options = options_for_schema(schema_path, http_options)?;
         options.build(schema_json)?;
     }
 
@@ -368,7 +506,7 @@ fn validate_schema_meta(
     errors_only: bool,
     http_options: Option<&jsonschema::HttpOptions>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let schema_json = read_json(schema_path)??;
+    let schema_json = read_json(schema_path)?;
 
     if matches!(output, Output::Text) {
         // Text output mode
@@ -379,12 +517,7 @@ fn validate_schema_meta(
         }
 
         // Then try to build a validator to check that all referenced schemas are also valid
-        let base_uri = path_to_uri(schema_path);
-        let base_uri = referencing::uri::from_str(&base_uri)?;
-        let mut options = jsonschema::options().with_base_uri(base_uri);
-        if let Some(http_opts) = http_options {
-            options = options.with_http_options(http_opts)?;
-        }
+        let options = options_for_schema(schema_path, http_options)?;
         match options.build(&schema_json) {
             Ok(_) => {
                 if !errors_only {
@@ -414,18 +547,13 @@ fn validate_instances(
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let mut success = true;
 
-    let schema_json = read_json(schema_path)??;
-    let base_uri = path_to_uri(schema_path);
-    let base_uri = referencing::uri::from_str(&base_uri)?;
-    let mut options = jsonschema::options().with_base_uri(base_uri);
+    let schema_json = read_json(schema_path)?;
+    let mut options = options_for_schema(schema_path, http_options)?;
     if let Some(draft) = draft {
         options = options.with_draft(draft.into());
     }
     if let Some(assert_format) = assert_format {
         options = options.should_validate_formats(assert_format);
-    }
-    if let Some(http_opts) = http_options {
-        options = options.with_http_options(http_opts)?;
     }
     match options.build(&schema_json) {
         Ok(validator) => {
@@ -449,7 +577,7 @@ fn validate_instances(
                 let schema_display = schema_path.to_string_lossy().to_string();
                 let output_format = output.as_str();
                 for instance in instances {
-                    let instance_json = read_json(instance)??;
+                    let instance_json = read_json(instance)?;
                     let evaluation = validator.evaluate(&instance_json);
                     let flag_output = evaluation.flag();
 
@@ -499,58 +627,144 @@ fn validate_instances(
     Ok(success)
 }
 
-fn main() -> ExitCode {
-    let config = Cli::parse();
+fn validation_result_to_exit(result: Result<bool, Box<dyn std::error::Error>>) -> ExitCode {
+    match result {
+        Ok(true) => ExitCode::SUCCESS,
+        Ok(false) => ExitCode::FAILURE,
+        Err(error) => {
+            println!("Error: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
 
-    if config.version {
+fn fail_with_error(error: impl std::fmt::Display) -> ExitCode {
+    eprintln!("error: {error}");
+    ExitCode::FAILURE
+}
+
+fn run_validate(args: ValidateArgs) -> ExitCode {
+    let ValidateArgs {
+        schema,
+        instances,
+        draft,
+        assert_format,
+        no_assert_format,
+        output,
+        errors_only,
+        http,
+    } = args;
+
+    let http_options = http.into_http_options();
+
+    if let Some(instances) = instances {
+        return validation_result_to_exit(validate_instances(
+            &instances,
+            &schema,
+            draft,
+            assert_format.or(no_assert_format),
+            output,
+            errors_only,
+            http_options.as_ref(),
+        ));
+    }
+
+    validation_result_to_exit(validate_schema_meta(
+        &schema,
+        output,
+        errors_only,
+        http_options.as_ref(),
+    ))
+}
+
+fn run_bundle(args: BundleArgs) -> ExitCode {
+    let BundleArgs {
+        schema,
+        resources,
+        output,
+        http,
+    } = args;
+
+    let schema_json = match read_json(&schema) {
+        Ok(value) => value,
+        Err(error) => return fail_with_error(error),
+    };
+    let http_options = http.into_http_options();
+    let mut opts = match options_for_schema(&schema, http_options.as_ref()) {
+        Ok(value) => value,
+        Err(error) => return fail_with_error(error),
+    };
+
+    for (uri, path) in &resources {
+        let resource_json = match read_json(path) {
+            Ok(value) => value,
+            Err(error) => return fail_with_error(error),
+        };
+        opts = opts.with_resource(
+            uri.as_str(),
+            referencing::Resource::from_contents(resource_json),
+        );
+    }
+
+    match opts.bundle(&schema_json) {
+        Ok(bundled) => {
+            let json = match serde_json::to_string_pretty(&bundled) {
+                Ok(s) => s,
+                Err(error) => return fail_with_error(error),
+            };
+            match output {
+                Some(path) => {
+                    if let Err(error) = std::fs::write(&path, &json) {
+                        return fail_with_error(format!("{}: {error}", path.display()));
+                    }
+                }
+                None => {
+                    println!("{json}");
+                }
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => fail_with_error(error),
+    }
+}
+
+fn main() -> ExitCode {
+    let cli = Cli::parse();
+
+    if cli.version {
         println!(concat!("Version: ", env!("CARGO_PKG_VERSION")));
         return ExitCode::SUCCESS;
     }
 
-    if let Some(ref schema) = config.schema {
-        // Build HTTP options if any HTTP-related flags are provided
-        let http_options = if has_http_options(&config) {
-            Some(build_http_options(&config))
-        } else {
-            None
-        };
-
-        if let Some(instances) = config.instances {
-            // - Some(true)  if --assert-format
-            // - Some(false) if --no-assert-format
-            // - None        if neither (use builder's default)
-            let assert_format = config.assert_format.or(config.no_assert_format);
-            return match validate_instances(
-                &instances,
-                schema,
-                config.draft,
-                assert_format,
-                config.output,
-                config.errors_only,
-                http_options.as_ref(),
-            ) {
-                Ok(true) => ExitCode::SUCCESS,
-                Ok(false) => ExitCode::FAILURE,
-                Err(error) => {
-                    println!("Error: {error}");
-                    ExitCode::FAILURE
-                }
-            };
-        }
-        // No instances provided - validate the schema itself
-        return match validate_schema_meta(
-            schema,
-            config.output,
-            config.errors_only,
-            http_options.as_ref(),
-        ) {
-            Ok(true) => ExitCode::SUCCESS,
-            Ok(false) => ExitCode::FAILURE,
-            Err(error) => {
-                println!("Error: {error}");
+    match cli.command {
+        Some(Command::Validate(args)) => run_validate(args),
+        Some(Command::Bundle(args)) => run_bundle(args),
+        None => {
+            // Flat invocation is deprecated — emit a warning, then proceed as `validate`
+            if let Some(schema) = cli.schema {
+                eprintln!(
+                    "warning: flat invocation is deprecated. Use `jsonschema validate {}` instead.",
+                    schema.display()
+                );
+                run_validate(ValidateArgs {
+                    schema,
+                    instances: cli.instances,
+                    draft: cli.draft,
+                    assert_format: cli.assert_format,
+                    no_assert_format: cli.no_assert_format,
+                    output: cli.output,
+                    errors_only: cli.errors_only,
+                    http: HttpArgs {
+                        connect_timeout: cli.connect_timeout,
+                        timeout: cli.timeout,
+                        insecure: cli.insecure,
+                        cacert: cli.cacert,
+                    },
+                })
+            } else {
+                eprintln!("A schema argument is required. Use `jsonschema validate --help` or `jsonschema bundle --help`.");
                 ExitCode::FAILURE
             }
-        };
+        }
     }
-    ExitCode::SUCCESS
 }
