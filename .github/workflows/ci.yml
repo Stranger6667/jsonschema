@@ -71,6 +71,33 @@ jobs:
 
       - run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py --exclude jsonschema-rb
 
+  test-cross:
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - s390x-unknown-linux-gnu  # big-endian;
+
+    name: Test on ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: "true"
+          key: ${{ matrix.target }}
+
+      - uses: taiki-e/install-action@cross
+
+      - name: Run tests on ${{ matrix.target }}
+        run: cross test --target ${{ matrix.target }} --no-fail-fast --all-features -p jsonschema
+
   test-wasm:
     strategy:
       fail-fast: false
