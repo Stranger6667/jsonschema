@@ -75,23 +75,72 @@ define_rb_intern!(static ID_SYM_SCHEMA_PATH_POINTER: "schema_path_pointer");
 define_rb_intern!(static ID_SYM_EVALUATION_PATH_POINTER: "evaluation_path_pointer");
 define_rb_intern!(static ID_SYM_ABSOLUTE_KEYWORD_LOCATION: "absolute_keyword_location");
 
+const DEFAULT_BASE_URI: &str = "json-schema:///";
+
 struct BuiltValidator {
     validator: jsonschema::Validator,
     callback_roots: CallbackRoots,
     compilation_roots: CompilationRootsRef,
 }
 
+fn effective_draft_for_inline_root(
+    schema: &serde_json::Value,
+    explicit_draft: Option<jsonschema::Draft>,
+) -> jsonschema::Draft {
+    explicit_draft.unwrap_or_else(|| jsonschema::Draft::default().detect(schema))
+}
+
+fn root_uri_for_schema(
+    schema: &serde_json::Value,
+    draft: jsonschema::Draft,
+    base_uri: Option<&str>,
+) -> String {
+    if let Some(base_uri) = base_uri {
+        return base_uri.to_owned();
+    }
+
+    draft
+        .create_resource_ref(schema)
+        .id()
+        .map_or_else(|| DEFAULT_BASE_URI.to_owned(), str::to_owned)
+}
+
+fn registry_with_inline_root(
+    registry: jsonschema::Registry,
+    schema: &serde_json::Value,
+    explicit_draft: Option<jsonschema::Draft>,
+    base_uri: Option<&str>,
+) -> Result<jsonschema::Registry, jsonschema::ReferencingError> {
+    let draft = effective_draft_for_inline_root(schema, explicit_draft);
+    let root_uri = root_uri_for_schema(schema, draft, base_uri);
+    registry.try_with_resource(root_uri, draft.create_resource(schema.clone()))
+}
+
 fn build_validator(
     ruby: &Ruby,
     options: ValidationOptions,
+    registry: Option<jsonschema::Registry>,
+    draft: Option<jsonschema::Draft>,
+    base_uri: Option<&str>,
     retriever: Option<RubyRetriever>,
     callback_roots: CallbackRoots,
     compilation_roots: Arc<CompilationRoots>,
     schema: &serde_json::Value,
 ) -> Result<BuiltValidator, Error> {
-    let validator = match retriever {
-        Some(ret) => options.with_retriever(ret).build(schema),
-        None => options.build(schema),
+    let options = match retriever {
+        Some(ret) => options.with_retriever(ret),
+        None => options,
+    };
+
+    let validator = if let Some(registry) = registry {
+        let registry_with_root = registry_with_inline_root(registry, schema, draft, base_uri)
+            .map_err(|err| referencing_error(ruby, err.to_string()))?;
+        let index = registry_with_root
+            .build_index()
+            .map_err(|err| referencing_error(ruby, err.to_string()))?;
+        options.with_index(&index).build(schema)
+    } else {
+        options.build(schema)
     }
     .map_err(|error| {
         if let jsonschema::error::ValidationErrorKind::Referencing(err) = error.kind() {
@@ -157,7 +206,7 @@ fn build_parsed_options(
     ruby: &Ruby,
     kw: ExtractedKwargs,
     draft_override: Option<jsonschema::Draft>,
-) -> Result<ParsedOptions, Error> {
+) -> Result<ParsedOptions<'_>, Error> {
     let (
         draft_val,
         validate_formats,
@@ -832,6 +881,9 @@ fn validator_for(ruby: &Ruby, args: &[Value]) -> Result<Validator, Error> {
     } = build_validator(
         ruby,
         parsed.options,
+        parsed.registry,
+        parsed.draft,
+        parsed.base_uri.as_deref(),
         parsed.retriever,
         parsed.callback_roots,
         parsed.compilation_roots,
@@ -853,7 +905,22 @@ fn bundle(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
 
     let json_schema = to_schema_value(ruby, schema)?;
     let parsed = build_parsed_options(ruby, kw, None)?;
-    match parsed.options.bundle(&json_schema) {
+    let bundled = if let Some(registry) = parsed.registry {
+        let registry_with_root = registry_with_inline_root(
+            registry,
+            &json_schema,
+            parsed.draft,
+            parsed.base_uri.as_deref(),
+        )
+        .map_err(|err| referencing_error(ruby, err.to_string()))?;
+        let index = registry_with_root
+            .build_index()
+            .map_err(|err| referencing_error(ruby, err.to_string()))?;
+        parsed.options.with_index(&index).bundle(&json_schema)
+    } else {
+        parsed.options.bundle(&json_schema)
+    };
+    match bundled {
         Ok(bundled) => ser::value_to_ruby(ruby, &bundled),
         Err(e @ jsonschema::ReferencingError::Unretrievable { .. }) => {
             Err(referencing_error(ruby, e.to_string()))
@@ -888,6 +955,9 @@ fn is_valid(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
     } = build_validator(
         ruby,
         parsed.options,
+        parsed.registry,
+        parsed.draft,
+        parsed.base_uri.as_deref(),
         parsed.retriever,
         parsed.callback_roots,
         parsed.compilation_roots,
@@ -927,6 +997,9 @@ fn validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
     } = build_validator(
         ruby,
         parsed.options,
+        parsed.registry,
+        parsed.draft,
+        parsed.base_uri.as_deref(),
         parsed.retriever,
         parsed.callback_roots,
         parsed.compilation_roots,
@@ -978,6 +1051,9 @@ fn each_error(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
     } = build_validator(
         ruby,
         parsed.options,
+        parsed.registry,
+        parsed.draft,
+        parsed.base_uri.as_deref(),
         parsed.retriever,
         parsed.callback_roots,
         parsed.compilation_roots,
@@ -1073,6 +1149,9 @@ fn evaluate(ruby: &Ruby, args: &[Value]) -> Result<Evaluation, Error> {
     } = build_validator(
         ruby,
         parsed.options,
+        parsed.registry,
+        parsed.draft,
+        parsed.base_uri.as_deref(),
         parsed.retriever,
         parsed.callback_roots,
         parsed.compilation_roots,
@@ -1126,6 +1205,9 @@ macro_rules! define_draft_validator {
                 } = build_validator(
                     ruby,
                     parsed.options,
+                    parsed.registry,
+                    parsed.draft,
+                    parsed.base_uri.as_deref(),
                     parsed.retriever,
                     parsed.callback_roots,
                     parsed.compilation_roots,

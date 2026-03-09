@@ -96,6 +96,21 @@ def test_validator_for_with_registry():
     assert not validator.is_valid(INVALID_PERSON)
 
 
+def test_validator_for_with_registry_and_explicit_draft4_legacy_id_root():
+    registry = Registry([("urn:string", {"type": "string"})], draft=Draft4)
+    schema = {
+        "id": "urn:root",
+        "type": "object",
+        "properties": {"value": {"$ref": "urn:string"}},
+        "required": ["value"],
+    }
+
+    validator = validator_for(schema, registry=registry, draft=Draft4)
+
+    assert validator.is_valid({"value": "ok"})
+    assert not validator.is_valid({"value": 42})
+
+
 def test_registry_with_retriever_and_validation():
     def retrieve(uri: str):
         if uri == "https://example.com/dynamic.json":

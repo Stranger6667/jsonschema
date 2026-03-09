@@ -3,7 +3,71 @@ use std::iter::FlatMap;
 
 use serde_json::Value;
 
-use crate::{resource::InnerResourcePtr, segments::Segment, Error, Resolver, Segments};
+use crate::{
+    resource::PathStack, segments::Segment, specification::Draft, Error, Resolver, ResourceRef,
+    Segments,
+};
+
+/// Walk the direct subresources of `contents` (Draft 2020-12 / Unknown),
+/// calling `f(path, &Value, Draft)` for each one.
+/// `path` is the lazy JSON pointer to the current node; segments are pushed before each
+/// call to `f` and popped afterward.
+pub(crate) fn walk_subresources_with_path<'a, E, F>(
+    contents: &'a Value,
+    path: &mut PathStack<'a>,
+    draft: Draft,
+    f: &mut F,
+) -> Result<(), E>
+where
+    F: FnMut(&mut PathStack<'a>, &'a Value, Draft) -> Result<(), E>,
+{
+    let Some(schema) = contents.as_object() else {
+        return Ok(());
+    };
+    for (key, value) in schema {
+        match key.as_str() {
+            "additionalProperties"
+            | "contains"
+            | "contentSchema"
+            | "else"
+            | "if"
+            | "items"
+            | "not"
+            | "propertyNames"
+            | "then"
+            | "unevaluatedItems"
+            | "unevaluatedProperties" => {
+                let c = path.push_key(key);
+                f(path, value, draft.detect(value))?;
+                path.truncate(c);
+            }
+            "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
+                if let Some(arr) = value.as_array() {
+                    let c1 = path.push_key(key);
+                    for (i, item) in arr.iter().enumerate() {
+                        let c2 = path.push_index(i);
+                        f(path, item, draft.detect(item))?;
+                        path.truncate(c2);
+                    }
+                    path.truncate(c1);
+                }
+            }
+            "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties" => {
+                if let Some(obj) = value.as_object() {
+                    let c1 = path.push_key(key);
+                    for (child_key, child_value) in obj {
+                        let c2 = path.push_key(child_key);
+                        f(path, child_value, draft.detect(child_value))?;
+                        path.truncate(c2);
+                    }
+                    path.truncate(c1);
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
 
 type ObjectIter<'a> = FlatMap<
     serde_json::map::Iter<'a>,
@@ -101,7 +165,7 @@ pub(crate) fn object_iter<'a>(
 pub(crate) fn maybe_in_subresource<'r>(
     segments: &Segments,
     resolver: &Resolver<'r>,
-    subresource: &InnerResourcePtr,
+    subresource: ResourceRef<'_>,
 ) -> Result<Resolver<'r>, Error> {
     const IN_VALUE: &[&str] = &[
         "additionalProperties",
@@ -138,14 +202,14 @@ pub(crate) fn maybe_in_subresource<'r>(
             }
         }
     }
-    resolver.in_subresource_inner(subresource)
+    resolver.in_subresource(subresource)
 }
 
 #[inline]
 pub(crate) fn maybe_in_subresource_with_items_and_dependencies<'r>(
     segments: &Segments,
     resolver: &Resolver<'r>,
-    subresource: &InnerResourcePtr,
+    subresource: ResourceRef<'_>,
     in_value: &[&str],
     in_child: &[&str],
 ) -> Result<Resolver<'r>, Error> {
@@ -153,7 +217,7 @@ pub(crate) fn maybe_in_subresource_with_items_and_dependencies<'r>(
     while let Some(segment) = iter.next() {
         if let Segment::Key(key) = segment {
             if (*key == "items" || *key == "dependencies") && subresource.contents().is_object() {
-                return resolver.in_subresource_inner(subresource);
+                return resolver.in_subresource(subresource);
             }
             if !in_value.contains(&key.as_ref())
                 && (!in_child.contains(&key.as_ref()) || iter.next().is_none())
@@ -162,7 +226,7 @@ pub(crate) fn maybe_in_subresource_with_items_and_dependencies<'r>(
             }
         }
     }
-    resolver.in_subresource_inner(subresource)
+    resolver.in_subresource(subresource)
 }
 
 #[cfg(test)]

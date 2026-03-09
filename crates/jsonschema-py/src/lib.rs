@@ -44,6 +44,7 @@ const DRAFT6: u8 = 6;
 const DRAFT4: u8 = 4;
 const DRAFT201909: u8 = 19;
 const DRAFT202012: u8 = 20;
+const DEFAULT_BASE_URI: &str = "json-schema:///";
 
 fn validation_error_type(py: Python<'_>) -> PyResult<Bound<'_, PyType>> {
     let module = py.import("jsonschema_rs")?;
@@ -832,19 +833,19 @@ impl jsonschema::Keyword for CustomKeyword {
     }
 }
 
-fn make_options(
+fn make_options<'a>(
     draft: Option<u8>,
-    formats: Option<&Bound<'_, PyDict>>,
+    formats: Option<&Bound<'a, PyDict>>,
     validate_formats: Option<bool>,
     ignore_unknown_formats: Option<bool>,
-    retriever: Option<&Bound<'_, PyAny>>,
-    registry: Option<&registry::Registry>,
+    retriever: Option<&Bound<'a, PyAny>>,
+    _registry: Option<&'a registry::Registry>,
     base_uri: Option<String>,
-    pattern_options: Option<&Bound<'_, PyAny>>,
-    email_options: Option<&Bound<'_, PyAny>>,
-    http_options: Option<&Bound<'_, PyAny>>,
-    keywords: Option<&Bound<'_, PyDict>>,
-) -> PyResult<jsonschema::ValidationOptions> {
+    pattern_options: Option<&Bound<'a, PyAny>>,
+    email_options: Option<&Bound<'a, PyAny>>,
+    http_options: Option<&Bound<'a, PyAny>>,
+    keywords: Option<&Bound<'a, PyDict>>,
+) -> PyResult<jsonschema::ValidationOptions<'a>> {
     let mut options = jsonschema::options();
     if let Some(raw_draft_version) = draft {
         options = options.with_draft(get_draft(raw_draft_version)?);
@@ -888,9 +889,6 @@ fn make_options(
     if let Some(retriever) = retriever {
         let func = into_retriever(retriever)?;
         options = options.with_retriever(Retriever { func });
-    }
-    if let Some(registry) = registry {
-        options = options.with_registry(registry.inner.clone());
     }
     if let Some(base_uri) = base_uri {
         options = options.with_base_uri(base_uri);
@@ -1040,6 +1038,75 @@ fn make_options(
     Ok(options)
 }
 
+fn effective_draft_for_inline_root(
+    schema: &serde_json::Value,
+    explicit_draft: Option<Draft>,
+) -> Draft {
+    explicit_draft.unwrap_or_else(|| Draft::default().detect(schema))
+}
+
+fn root_uri_for_schema(schema: &serde_json::Value, draft: Draft, base_uri: Option<&str>) -> String {
+    if let Some(base_uri) = base_uri {
+        return base_uri.to_owned();
+    }
+
+    draft
+        .create_resource_ref(schema)
+        .id()
+        .map_or_else(|| DEFAULT_BASE_URI.to_owned(), str::to_owned)
+}
+
+fn registry_with_inline_root(
+    registry: &registry::Registry,
+    schema: &serde_json::Value,
+    explicit_draft: Option<Draft>,
+    base_uri: Option<&str>,
+) -> Result<jsonschema::Registry, jsonschema::ReferencingError> {
+    let draft = effective_draft_for_inline_root(schema, explicit_draft);
+    let root_uri = root_uri_for_schema(schema, draft, base_uri);
+    registry
+        .inner
+        .clone()
+        .try_with_resource(root_uri, draft.create_resource(schema.clone()))
+}
+
+fn build_with_registry_index(
+    options: jsonschema::ValidationOptions<'_>,
+    schema: &serde_json::Value,
+    registry: Option<&registry::Registry>,
+    explicit_draft: Option<Draft>,
+    base_uri: Option<&str>,
+) -> Result<jsonschema::Validator, jsonschema::ValidationError<'static>> {
+    if let Some(registry) = registry {
+        let registry_with_root =
+            registry_with_inline_root(registry, schema, explicit_draft, base_uri)
+                .map_err(jsonschema::ValidationError::from)?;
+        let index = registry_with_root
+            .build_index()
+            .map_err(jsonschema::ValidationError::from)?;
+        options.with_index(&index).build(schema)
+    } else {
+        options.build(schema)
+    }
+}
+
+fn bundle_with_registry_index(
+    options: jsonschema::ValidationOptions<'_>,
+    schema: &serde_json::Value,
+    registry: Option<&registry::Registry>,
+    explicit_draft: Option<Draft>,
+    base_uri: Option<&str>,
+) -> Result<serde_json::Value, jsonschema::ReferencingError> {
+    if let Some(registry) = registry {
+        let registry_with_root =
+            registry_with_inline_root(registry, schema, explicit_draft, base_uri)?;
+        let index = registry_with_root.build_index()?;
+        options.with_index(&index).bundle(schema)
+    } else {
+        options.bundle(schema)
+    }
+}
+
 fn iter_on_error(
     py: Python<'_>,
     validator: &jsonschema::Validator,
@@ -1175,6 +1242,8 @@ fn is_valid(
     http_options: Option<&Bound<'_, PyAny>>,
     keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<bool> {
+    let base_uri_for_index = base_uri.clone();
+    let draft_for_inline_root = draft.map(get_draft).transpose()?;
     let options = make_options(
         draft,
         formats,
@@ -1189,7 +1258,13 @@ fn is_valid(
         keywords,
     )?;
     let schema = ser::to_value(schema)?;
-    match options.build(&schema) {
+    match build_with_registry_index(
+        options,
+        &schema,
+        registry,
+        draft_for_inline_root,
+        base_uri_for_index.as_deref(),
+    ) {
         Ok(validator) => {
             let instance = ser::to_value(instance)?;
             panic::catch_unwind(AssertUnwindSafe(|| Ok(validator.is_valid(&instance))))
@@ -1230,6 +1305,8 @@ fn validate(
     http_options: Option<&Bound<'_, PyAny>>,
     keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<()> {
+    let base_uri_for_index = base_uri.clone();
+    let draft_for_inline_root = draft.map(get_draft).transpose()?;
     let options = make_options(
         draft,
         formats,
@@ -1244,7 +1321,13 @@ fn validate(
         keywords,
     )?;
     let schema = ser::to_value(schema)?;
-    match options.build(&schema) {
+    match build_with_registry_index(
+        options,
+        &schema,
+        registry,
+        draft_for_inline_root,
+        base_uri_for_index.as_deref(),
+    ) {
         Ok(validator) => raise_on_error(py, &validator, instance, mask.as_deref()),
         Err(error) => Err(into_py_err(py, error, mask.as_deref())?),
     }
@@ -1280,6 +1363,8 @@ fn iter_errors(
     http_options: Option<&Bound<'_, PyAny>>,
     keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<ValidationErrorIter> {
+    let base_uri_for_index = base_uri.clone();
+    let draft_for_inline_root = draft.map(get_draft).transpose()?;
     let options = make_options(
         draft,
         formats,
@@ -1294,7 +1379,13 @@ fn iter_errors(
         keywords,
     )?;
     let schema = ser::to_value(schema)?;
-    match options.build(&schema) {
+    match build_with_registry_index(
+        options,
+        &schema,
+        registry,
+        draft_for_inline_root,
+        base_uri_for_index.as_deref(),
+    ) {
         Ok(validator) => iter_on_error(py, &validator, instance, mask.as_deref()),
         Err(error) => Err(into_py_err(py, error, mask.as_deref())?),
     }
@@ -1385,6 +1476,8 @@ fn evaluate(
     http_options: Option<&Bound<'_, PyAny>>,
     keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyEvaluation> {
+    let base_uri_for_index = base_uri.clone();
+    let draft_for_inline_root = draft.map(get_draft).transpose()?;
     let options = make_options(
         draft,
         formats,
@@ -1400,7 +1493,13 @@ fn evaluate(
     )?;
     let schema = ser::to_value(schema)?;
     let instance = ser::to_value(instance)?;
-    let validator = match options.build(&schema) {
+    let validator = match build_with_registry_index(
+        options,
+        &schema,
+        registry,
+        draft_for_inline_root,
+        base_uri_for_index.as_deref(),
+    ) {
         Ok(validator) => validator,
         Err(error) => return Err(into_py_err(py, error, None)?),
     };
@@ -1491,10 +1590,18 @@ fn bundle(
     base_uri: Option<String>,
 ) -> PyResult<Py<PyAny>> {
     let schema_value = ser::to_value(schema)?;
+    let base_uri_for_index = base_uri.clone();
+    let draft_for_inline_root = draft.map(get_draft).transpose()?;
     let options = make_options(
         draft, None, None, None, retriever, registry, base_uri, None, None, None, None,
     )?;
-    match options.bundle(&schema_value) {
+    match bundle_with_registry_index(
+        options,
+        &schema_value,
+        registry,
+        draft_for_inline_root,
+        base_uri_for_index.as_deref(),
+    ) {
         Ok(bundled) => value_to_python(py, &bundled),
         Err(e @ jsonschema::ReferencingError::Unretrievable { .. }) => {
             Err(referencing_error_pyerr(py, e.to_string())?)
@@ -1565,6 +1672,8 @@ fn validator_for_impl(
     } else {
         ser::to_value(schema)?
     };
+    let base_uri_for_index = base_uri.clone();
+    let draft_for_inline_root = draft.map(get_draft).transpose()?;
     let options = make_options(
         draft,
         formats,
@@ -1578,7 +1687,13 @@ fn validator_for_impl(
         http_options,
         keywords,
     )?;
-    match options.build(&schema) {
+    match build_with_registry_index(
+        options,
+        &schema,
+        registry,
+        draft_for_inline_root,
+        base_uri_for_index.as_deref(),
+    ) {
         Ok(validator) => Ok(Validator { validator, mask }),
         Err(error) => Err(into_py_err(py, error, mask.as_deref())?),
     }
@@ -2130,4 +2245,88 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("__build__", pyo3_built::pyo3_built!(py, build))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{build_with_registry_index, bundle_with_registry_index};
+
+    #[test]
+    fn build_with_registry_index_respects_explicit_draft_for_inline_root() {
+        let schema = json!({
+            "id": "urn:root",
+            "type": "object",
+            "properties": {
+                "value": {
+                    "$ref": "urn:string"
+                }
+            },
+            "required": ["value"]
+        });
+        let registry = crate::registry::Registry {
+            inner: jsonschema::Registry::try_new(
+                "urn:string",
+                jsonschema::Resource::from_contents(json!({"type": "string"})),
+            )
+            .expect("Registry should be valid"),
+        };
+        let options = jsonschema::options().with_draft(jsonschema::Draft::Draft4);
+
+        let validator = build_with_registry_index(
+            options,
+            &schema,
+            Some(&registry),
+            Some(jsonschema::Draft::Draft4),
+            None,
+        )
+        .expect("Inline root should be added to index under Draft4 id semantics");
+
+        assert!(validator.is_valid(&json!({"value": "ok"})));
+        assert!(!validator.is_valid(&json!({"value": 42})));
+    }
+
+    #[test]
+    fn bundle_with_registry_index_respects_explicit_draft_for_inline_root() {
+        let schema = json!({
+            "id": "urn:root",
+            "type": "object",
+            "properties": {
+                "value": {
+                    "$ref": "urn:string"
+                }
+            },
+            "required": ["value"]
+        });
+        let registry = crate::registry::Registry {
+            inner: jsonschema::Registry::try_new(
+                "urn:string",
+                jsonschema::Resource::from_contents(json!({"type": "string"})),
+            )
+            .expect("Registry should be valid"),
+        };
+        let options = jsonschema::options().with_draft(jsonschema::Draft::Draft4);
+
+        let bundled = bundle_with_registry_index(
+            options,
+            &schema,
+            Some(&registry),
+            Some(jsonschema::Draft::Draft4),
+            None,
+        )
+        .expect("Bundling should succeed with inline Draft4 root and registry index");
+
+        assert_eq!(
+            bundled.pointer("/properties/value/$ref"),
+            Some(&json!("urn:string"))
+        );
+        assert!(
+            bundled
+                .get("definitions")
+                .and_then(|defs| defs.get("urn:string"))
+                .is_some(),
+            "Bundled schema should contain embedded external definition",
+        );
+    }
 }

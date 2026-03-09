@@ -994,6 +994,23 @@ RSpec.describe "Registry with validators" do
     expect(validator.valid?(42)).to be false
   end
 
+  it "validates with registry for inline legacy-id root and explicit draft4" do
+    registry = JSONSchema::Registry.new(
+      [["urn:string", { "type" => "string" }]],
+      draft: :draft4
+    )
+    schema = {
+      "id" => "urn:root",
+      "type" => "object",
+      "properties" => { "value" => { "$ref" => "urn:string" } },
+      "required" => ["value"]
+    }
+
+    validator = JSONSchema.validator_for(schema, registry: registry, draft: :draft4)
+    expect(validator.valid?({ "value" => "ok" })).to be true
+    expect(validator.valid?({ "value" => 42 })).to be false
+  end
+
   it "uses registry retriever during validator compilation when only registry is provided" do
     registry = JSONSchema::Registry.new(
       [],

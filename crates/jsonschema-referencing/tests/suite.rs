@@ -49,9 +49,10 @@ fn test_suite(draft: &'static str, test: Test) {
             .map(|(uri, content)| (uri, draft.create_resource(content))),
     )
     .expect("Invalid registry");
-    let resolver = registry
-        .try_resolver(test.base_uri.unwrap_or_default())
-        .expect("Invalid base URI");
+    let index = registry.build_index().expect("Invalid index");
+    let resolver = index.resolver(
+        referencing::uri::from_str(test.base_uri.unwrap_or_default()).expect("Invalid base URI"),
+    );
     if test.error.is_some() {
         assert!(resolver.lookup(test.reference).is_err());
     } else {

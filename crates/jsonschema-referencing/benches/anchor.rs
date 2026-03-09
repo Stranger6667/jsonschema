@@ -16,20 +16,16 @@ fn bench_anchor_lookup(c: &mut Criterion) {
     let resource = Draft::Draft4.create_resource(data);
     let registry =
         Registry::try_new("http://example.com/", resource).expect("Invalid registry input");
+    let index = registry.build_index().expect("Invalid index");
 
     let mut group = c.benchmark_group("Anchor Lookup");
 
     // Benchmark lookup of existing anchor
-    group.bench_with_input(
-        BenchmarkId::new("resolve", "small"),
-        &registry,
-        |b, registry| {
-            let resolver = registry
-                .try_resolver("http://example.com/")
-                .expect("Invalid base URI");
-            b.iter_with_large_drop(|| resolver.lookup(black_box("#foo")));
-        },
-    );
+    group.bench_with_input(BenchmarkId::new("resolve", "small"), &index, |b, index| {
+        let resolver = index
+            .resolver(referencing::uri::from_str("http://example.com/").expect("Invalid base URI"));
+        b.iter_with_large_drop(|| resolver.lookup(black_box("#foo")));
+    });
 
     group.finish();
 }

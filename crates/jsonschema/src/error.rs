@@ -1790,7 +1790,7 @@ impl fmt::Display for MaskedValidationError<'_, '_, '_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use referencing::Resource;
+    use referencing::{Registry, Resource};
     use serde_json::json;
 
     use test_case::test_case;
@@ -2288,11 +2288,21 @@ mod tests {
             "$ref": "https://example.com/string.json"
         });
         let instance = serde_json::json!(42);
-        let validator = crate::options()
-            .with_resource(
+        let registry = Registry::try_from_resources([
+            (
+                "https://example.com/root.json",
+                Resource::from_contents(schema.clone()),
+            ),
+            (
                 "https://example.com/string.json",
                 Resource::from_contents(external),
-            )
+            ),
+        ])
+        .expect("registry should build");
+        let index = registry.build_index().expect("index should build");
+        let validator = crate::options()
+            .with_index(&index)
+            .with_base_uri("https://example.com/root.json")
             .build(&schema)
             .expect("schema should compile");
         let err = validator.validate(&instance).unwrap_err();

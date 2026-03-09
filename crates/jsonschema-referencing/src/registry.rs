@@ -1,7 +1,6 @@
 use std::{
     collections::{hash_map::Entry, VecDeque},
     num::NonZeroUsize,
-    pin::Pin,
     sync::{Arc, LazyLock},
 };
 
@@ -10,152 +9,145 @@ use fluent_uri::{pct_enc::EStr, Uri};
 use serde_json::Value;
 
 use crate::{
-    anchors::{AnchorKey, AnchorKeyRef},
     cache::{SharedUriCache, UriCache},
+    index::{AnchorMap, ResourceMap},
     meta::{self, metas_for_draft},
-    resource::{unescape_segment, InnerResourcePtr, JsonSchemaResource},
-    uri,
-    vocabularies::{self, VocabularySet},
-    Anchor, DefaultRetriever, Draft, Error, Resolver, Resource, ResourceRef, Retrieve,
+    resource::{unescape_segment, PathStack},
+    uri, DefaultRetriever, Draft, Error, Index, Resource, ResourceRef, Retrieve,
 };
 
-/// An owned-or-refstatic wrapper for JSON `Value`.
+/// An owned-or-borrowed wrapper for JSON `Value`.
 #[derive(Debug)]
-pub(crate) enum ValueWrapper {
+pub(crate) enum ValueWrapper<'a> {
     Owned(Value),
-    StaticRef(&'static Value),
+    Borrowed(&'a Value),
 }
 
-impl AsRef<Value> for ValueWrapper {
+impl AsRef<Value> for ValueWrapper<'_> {
     fn as_ref(&self) -> &Value {
         match self {
             ValueWrapper::Owned(value) => value,
-            ValueWrapper::StaticRef(value) => value,
+            ValueWrapper::Borrowed(value) => value,
         }
     }
 }
 
-// SAFETY: `Pin` guarantees stable memory locations for resource pointers,
-// while `Arc` enables cheap sharing between multiple registries
-type DocumentStore = AHashMap<Arc<Uri<String>>, Pin<Arc<ValueWrapper>>>;
-type ResourceMap = AHashMap<Arc<Uri<String>>, InnerResourcePtr>;
+#[derive(Debug)]
+struct StoredDocument<'a> {
+    value: ValueWrapper<'a>,
+    draft: Draft,
+}
+
+impl<'a> StoredDocument<'a> {
+    fn owned(value: Value, draft: Draft) -> Self {
+        Self {
+            value: ValueWrapper::Owned(value),
+            draft,
+        }
+    }
+
+    fn borrowed(value: &'a Value, draft: Draft) -> Self {
+        Self {
+            value: ValueWrapper::Borrowed(value),
+            draft,
+        }
+    }
+
+    fn contents(&self) -> &Value {
+        self.value.as_ref()
+    }
+
+    fn draft(&self) -> Draft {
+        self.draft
+    }
+}
+
+type DocumentStore<'a> = AHashMap<Arc<Uri<String>>, Arc<StoredDocument<'a>>>;
 
 /// Pre-loaded registry containing all JSON Schema meta-schemas and their vocabularies
-pub static SPECIFICATIONS: LazyLock<Registry> =
+pub static SPECIFICATIONS: LazyLock<Registry<'static>> =
     LazyLock::new(|| Registry::build_from_meta_schemas(meta::META_SCHEMAS_ALL.as_slice()));
 
 /// A registry of JSON Schema resources, each identified by their canonical URIs.
 ///
-/// Registries store a collection of in-memory resources and their anchors.
-/// They eagerly process all added resources, including their subresources and anchors.
-/// This means that subresources contained within any added resources are immediately
-/// discoverable and retrievable via their own IDs.
-///
-/// # Resource Retrieval
-///
-/// Registry supports both blocking and non-blocking retrieval of external resources.
-///
-/// ## Blocking Retrieval
-///
-/// ```rust
-/// use referencing::{Registry, Resource, Retrieve, Uri};
-/// use serde_json::{json, Value};
-///
-/// struct ExampleRetriever;
-///
-/// impl Retrieve for ExampleRetriever {
-///     fn retrieve(
-///         &self,
-///         uri: &Uri<String>
-///     ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-///         // Always return the same value for brevity
-///         Ok(json!({"type": "string"}))
-///     }
-/// }
-///
-/// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let registry = Registry::options()
-///     .retriever(ExampleRetriever)
-///     .build([
-///         // Initial schema that might reference external schemas
-///         (
-///             "https://example.com/user.json",
-///             Resource::from_contents(json!({
-///                 "type": "object",
-///                 "properties": {
-///                     // Should be retrieved by `ExampleRetriever`
-///                     "role": {"$ref": "https://example.com/role.json"}
-///                 }
-///             }))
-///         )
-///     ])?;
-/// # Ok(())
-/// # }
-/// ```
-///
-/// ## Non-blocking Retrieval
-///
-/// ```rust
-/// # #[cfg(feature = "retrieve-async")]
-/// # mod example {
-/// use referencing::{Registry, Resource, AsyncRetrieve, Uri};
-/// use serde_json::{json, Value};
-///
-/// struct ExampleRetriever;
-///
-/// #[cfg_attr(target_family = "wasm", async_trait::async_trait(?Send))]
-/// #[cfg_attr(not(target_family = "wasm"), async_trait::async_trait)]
-/// impl AsyncRetrieve for ExampleRetriever {
-///     async fn retrieve(
-///         &self,
-///         uri: &Uri<String>
-///     ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-///         // Always return the same value for brevity
-///         Ok(json!({"type": "string"}))
-///     }
-/// }
-///
-///  # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let registry = Registry::options()
-///     .async_retriever(ExampleRetriever)
-///     .build([
-///         (
-///             "https://example.com/user.json",
-///             Resource::from_contents(json!({
-///                 // Should be retrieved by `ExampleRetriever`
-///                 "$ref": "https://example.com/common/user.json"
-///             }))
-///         )
-///     ])
-///     .await?;
-/// # Ok(())
-/// # }
-/// # }
-/// ```
-///
-/// The registry will automatically:
-///
-/// - Resolve external references
-/// - Cache retrieved schemas
-/// - Handle nested references
-/// - Process JSON Schema anchors
-///
-#[derive(Debug)]
-pub struct Registry {
-    documents: DocumentStore,
-    pub(crate) resources: ResourceMap,
-    anchors: AHashMap<AnchorKey, Anchor>,
+/// Registry is storage-only. It keeps original documents and URI resolution cache.
+/// Build an [`Index`] from it via [`Registry::build_index`] when you need fast lookup.
+#[derive(Debug, Clone)]
+pub struct Registry<'a> {
+    documents: DocumentStore<'a>,
     resolution_cache: SharedUriCache,
+    known_resources: KnownResources,
+    /// Skeleton built during `process_resources`: one entry per subresource that
+    /// has its own `$id` or has `$anchor`/`$dynamicAnchor` entries.  Used by
+    /// `build_index` to avoid a second full BFS traversal.
+    skeleton: IndexSkeleton,
 }
 
-impl Clone for Registry {
-    fn clone(&self) -> Self {
-        Self {
-            documents: self.documents.clone(),
-            resources: self.resources.clone(),
-            anchors: self.anchors.clone(),
-            resolution_cache: self.resolution_cache.clone(),
-        }
+impl<'a> Registry<'a> {
+    /// Create a borrowing registry from resource references and a custom retriever.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any URI is invalid, retrieval fails, or custom meta-schemas
+    /// cannot be validated.
+    pub fn try_from_resources_and_retriever(
+        pairs: impl IntoIterator<Item = (impl AsRef<str>, ResourceRef<'a>)>,
+        retriever: &dyn Retrieve,
+        draft: Draft,
+    ) -> Result<Self, Error> {
+        let mut documents = DocumentStore::new();
+        let mut known_resources = KnownResources::new();
+        let mut resolution_cache = UriCache::new();
+        let (custom_metaschemas, skeleton) = process_resources_borrowed(
+            pairs,
+            retriever,
+            &mut documents,
+            &mut known_resources,
+            &mut resolution_cache,
+            draft,
+        )?;
+        validate_custom_metaschemas(&custom_metaschemas, &known_resources)?;
+
+        Ok(Self {
+            documents,
+            resolution_cache: resolution_cache.into_shared(),
+            known_resources,
+            skeleton,
+        })
+    }
+
+    #[cfg(feature = "retrieve-async")]
+    /// Async version of [`Registry::try_from_resources_and_retriever`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any URI is invalid, retrieval fails, or custom meta-schemas
+    /// cannot be validated.
+    pub async fn try_from_resources_and_retriever_async(
+        pairs: impl IntoIterator<Item = (impl AsRef<str>, ResourceRef<'a>)>,
+        retriever: &dyn crate::AsyncRetrieve,
+        draft: Draft,
+    ) -> Result<Self, Error> {
+        let mut documents = DocumentStore::new();
+        let mut known_resources = KnownResources::new();
+        let mut resolution_cache = UriCache::new();
+        let (custom_metaschemas, skeleton) = process_resources_async_borrowed(
+            pairs,
+            retriever,
+            &mut documents,
+            &mut known_resources,
+            &mut resolution_cache,
+            draft,
+        )
+        .await?;
+        validate_custom_metaschemas(&custom_metaschemas, &known_resources)?;
+
+        Ok(Self {
+            documents,
+            resolution_cache: resolution_cache.into_shared(),
+            known_resources,
+            skeleton,
+        })
     }
 }
 
@@ -183,12 +175,14 @@ impl RegistryOptions<Arc<dyn Retrieve>> {
             draft: Draft::default(),
         }
     }
+
     /// Set a custom retriever for the [`Registry`].
     #[must_use]
     pub fn retriever(mut self, retriever: impl IntoRetriever) -> Self {
         self.retriever = retriever.into_retriever();
         self
     }
+
     /// Set a custom async retriever for the [`Registry`].
     #[cfg(feature = "retrieve-async")]
     #[must_use]
@@ -201,6 +195,7 @@ impl RegistryOptions<Arc<dyn Retrieve>> {
             draft: self.draft,
         }
     }
+
     /// Create a [`Registry`] from multiple resources using these options.
     ///
     /// # Errors
@@ -211,7 +206,7 @@ impl RegistryOptions<Arc<dyn Retrieve>> {
     pub fn build(
         self,
         pairs: impl IntoIterator<Item = (impl AsRef<str>, Resource)>,
-    ) -> Result<Registry, Error> {
+    ) -> Result<Registry<'static>, Error> {
         Registry::try_from_resources_impl(pairs, &*self.retriever, self.draft)
     }
 }
@@ -228,7 +223,7 @@ impl RegistryOptions<Arc<dyn crate::AsyncRetrieve>> {
     pub async fn build(
         self,
         pairs: impl IntoIterator<Item = (impl AsRef<str>, Resource)>,
-    ) -> Result<Registry, Error> {
+    ) -> Result<Registry<'static>, Error> {
         Registry::try_from_resources_async_impl(pairs, &*self.retriever, self.draft).await
     }
 }
@@ -274,18 +269,14 @@ impl Default for RegistryOptions<Arc<dyn Retrieve>> {
     }
 }
 
-impl Registry {
+impl Registry<'static> {
     /// Get [`RegistryOptions`] for configuring a new [`Registry`].
     #[must_use]
     pub fn options() -> RegistryOptions<Arc<dyn Retrieve>> {
         RegistryOptions::new()
     }
+
     /// Create a new [`Registry`] with a single resource.
-    ///
-    /// # Arguments
-    ///
-    /// * `uri` - The URI of the resource.
-    /// * `resource` - The resource to add.
     ///
     /// # Errors
     ///
@@ -293,6 +284,7 @@ impl Registry {
     pub fn try_new(uri: impl AsRef<str>, resource: Resource) -> Result<Self, Error> {
         Self::try_new_impl(uri, resource, &DefaultRetriever, Draft::default())
     }
+
     /// Create a new [`Registry`] from an iterator of (URI, Resource) pairs.
     ///
     /// # Arguments
@@ -307,6 +299,7 @@ impl Registry {
     ) -> Result<Self, Error> {
         Self::try_from_resources_impl(pairs, &DefaultRetriever, Draft::default())
     }
+
     fn try_new_impl(
         uri: impl AsRef<str>,
         resource: Resource,
@@ -315,35 +308,35 @@ impl Registry {
     ) -> Result<Self, Error> {
         Self::try_from_resources_impl([(uri, resource)], retriever, draft)
     }
+
     fn try_from_resources_impl(
         pairs: impl IntoIterator<Item = (impl AsRef<str>, Resource)>,
         retriever: &dyn Retrieve,
         draft: Draft,
     ) -> Result<Self, Error> {
-        let mut documents = AHashMap::new();
-        let mut resources = ResourceMap::new();
-        let mut anchors = AHashMap::new();
+        let mut documents = DocumentStore::new();
+        let mut known_resources = KnownResources::new();
         let mut resolution_cache = UriCache::new();
-        let custom_metaschemas = process_resources(
+
+        let (custom_metaschemas, skeleton) = process_resources(
             pairs,
             retriever,
             &mut documents,
-            &mut resources,
-            &mut anchors,
+            &mut known_resources,
             &mut resolution_cache,
             draft,
         )?;
 
-        // Validate that all custom $schema references are registered
-        validate_custom_metaschemas(&custom_metaschemas, &resources)?;
+        validate_custom_metaschemas(&custom_metaschemas, &known_resources)?;
 
         Ok(Registry {
             documents,
-            resources,
-            anchors,
             resolution_cache: resolution_cache.into_shared(),
+            known_resources,
+            skeleton,
         })
     }
+
     /// Create a new [`Registry`] from an iterator of (URI, Resource) pairs using an async retriever.
     ///
     /// # Arguments
@@ -359,32 +352,58 @@ impl Registry {
         retriever: &dyn crate::AsyncRetrieve,
         draft: Draft,
     ) -> Result<Self, Error> {
-        let mut documents = AHashMap::new();
-        let mut resources = ResourceMap::new();
-        let mut anchors = AHashMap::new();
+        let mut documents = DocumentStore::new();
+        let mut known_resources = KnownResources::new();
         let mut resolution_cache = UriCache::new();
 
-        let custom_metaschemas = process_resources_async(
+        let (custom_metaschemas, skeleton) = process_resources_async(
             pairs,
             retriever,
             &mut documents,
-            &mut resources,
-            &mut anchors,
+            &mut known_resources,
             &mut resolution_cache,
             draft,
         )
         .await?;
 
-        // Validate that all custom $schema references are registered
-        validate_custom_metaschemas(&custom_metaschemas, &resources)?;
+        validate_custom_metaschemas(&custom_metaschemas, &known_resources)?;
 
         Ok(Registry {
             documents,
-            resources,
-            anchors,
             resolution_cache: resolution_cache.into_shared(),
+            known_resources,
+            skeleton,
         })
     }
+
+    /// Build a registry with all the given meta-schemas from specs.
+    pub(crate) fn build_from_meta_schemas(schemas: &[(&'static str, &'static Value)]) -> Self {
+        let mut documents = DocumentStore::with_capacity(schemas.len());
+        let mut known_resources = KnownResources::with_capacity(schemas.len());
+
+        for (uri, schema) in schemas {
+            let parsed =
+                uri::from_str(uri.trim_end_matches('#')).expect("meta-schema URI must be valid");
+            let key = Arc::new(parsed);
+            let draft = Draft::default().detect(schema);
+            known_resources.insert((*key).clone());
+            documents.insert(key, Arc::new(StoredDocument::borrowed(schema, draft)));
+        }
+
+        let mut resolution_cache = UriCache::with_capacity(35);
+        let skeleton = build_skeleton_for_documents(&documents, &mut resolution_cache)
+            .expect("meta-schema skeleton must build");
+
+        Self {
+            documents,
+            resolution_cache: resolution_cache.into_shared(),
+            known_resources,
+            skeleton,
+        }
+    }
+}
+
+impl<'a> Registry<'a> {
     /// Create a new registry with a new resource.
     ///
     /// # Errors
@@ -394,10 +413,11 @@ impl Registry {
         self,
         uri: impl AsRef<str>,
         resource: Resource,
-    ) -> Result<Registry, Error> {
+    ) -> Result<Registry<'a>, Error> {
         let draft = resource.draft();
         self.try_with_resources([(uri, resource)], draft)
     }
+
     /// Create a new registry with new resources.
     ///
     /// # Errors
@@ -407,9 +427,10 @@ impl Registry {
         self,
         pairs: impl IntoIterator<Item = (impl AsRef<str>, Resource)>,
         draft: Draft,
-    ) -> Result<Registry, Error> {
+    ) -> Result<Registry<'a>, Error> {
         self.try_with_resources_and_retriever(pairs, &DefaultRetriever, draft)
     }
+
     /// Create a new registry with new resources and using the given retriever.
     ///
     /// # Errors
@@ -420,28 +441,31 @@ impl Registry {
         pairs: impl IntoIterator<Item = (impl AsRef<str>, Resource)>,
         retriever: &dyn Retrieve,
         draft: Draft,
-    ) -> Result<Registry, Error> {
+    ) -> Result<Registry<'a>, Error> {
         let mut documents = self.documents;
-        let mut resources = self.resources;
-        let mut anchors = self.anchors;
         let mut resolution_cache = self.resolution_cache.into_local();
-        let custom_metaschemas = process_resources(
+        let mut known_resources = self.known_resources;
+        let mut skeleton = self.skeleton;
+
+        let (custom_metaschemas, mut new_skeleton) = process_resources(
             pairs,
             retriever,
             &mut documents,
-            &mut resources,
-            &mut anchors,
+            &mut known_resources,
             &mut resolution_cache,
             draft,
         )?;
-        validate_custom_metaschemas(&custom_metaschemas, &resources)?;
+        skeleton.append(&mut new_skeleton);
+        validate_custom_metaschemas(&custom_metaschemas, &known_resources)?;
+
         Ok(Registry {
             documents,
-            resources,
-            anchors,
             resolution_cache: resolution_cache.into_shared(),
+            known_resources,
+            skeleton,
         })
     }
+
     /// Create a new registry with new resources and using the given non-blocking retriever.
     ///
     /// # Errors
@@ -453,62 +477,84 @@ impl Registry {
         pairs: impl IntoIterator<Item = (impl AsRef<str>, Resource)>,
         retriever: &dyn crate::AsyncRetrieve,
         draft: Draft,
-    ) -> Result<Registry, Error> {
+    ) -> Result<Registry<'a>, Error> {
         let mut documents = self.documents;
-        let mut resources = self.resources;
-        let mut anchors = self.anchors;
         let mut resolution_cache = self.resolution_cache.into_local();
-        let custom_metaschemas = process_resources_async(
+        let mut known_resources = self.known_resources;
+        let mut skeleton = self.skeleton;
+
+        let (custom_metaschemas, mut new_skeleton) = process_resources_async(
             pairs,
             retriever,
             &mut documents,
-            &mut resources,
-            &mut anchors,
+            &mut known_resources,
             &mut resolution_cache,
             draft,
         )
         .await?;
-        validate_custom_metaschemas(&custom_metaschemas, &resources)?;
+        skeleton.append(&mut new_skeleton);
+        validate_custom_metaschemas(&custom_metaschemas, &known_resources)?;
+
         Ok(Registry {
             documents,
-            resources,
-            anchors,
             resolution_cache: resolution_cache.into_shared(),
+            known_resources,
+            skeleton,
         })
     }
-    /// Create a new [`Resolver`] for this registry with the given base URI.
+
+    /// Build a resolution index that borrows resources from this registry.
     ///
     /// # Errors
     ///
-    /// Returns an error if the base URI is invalid.
-    pub fn try_resolver(&self, base_uri: &str) -> Result<Resolver<'_>, Error> {
-        let base = uri::from_str(base_uri)?;
-        Ok(self.resolver(base))
-    }
-    /// Create a new [`Resolver`] for this registry with a known valid base URI.
-    #[must_use]
-    pub fn resolver(&self, base_uri: Uri<String>) -> Resolver<'_> {
-        Resolver::new(self, Arc::new(base_uri))
-    }
-    pub(crate) fn anchor<'a>(&self, uri: &'a Uri<String>, name: &'a str) -> Result<&Anchor, Error> {
-        let key = AnchorKeyRef::new(uri, name);
-        if let Some(value) = self.anchors.get(key.borrow_dyn()) {
-            return Ok(value);
-        }
-        let resource = &self.resources[uri];
-        if let Some(id) = resource.id() {
-            let uri = uri::from_str(id)?;
-            let key = AnchorKeyRef::new(&uri, name);
-            if let Some(value) = self.anchors.get(key.borrow_dyn()) {
-                return Ok(value);
+    /// Returns an error if URI resolution fails while indexing discovered resources.
+    pub fn build_index(&self) -> Result<Index<'_>, Error> {
+        let mut resources = ResourceMap::new();
+        let mut anchors = AnchorMap::new();
+
+        // Insert all root documents into the resources map and collect their anchors.
+        for (uri, document) in &self.documents {
+            let resource = ResourceRef::new(document.contents(), document.draft());
+            resources.insert(Arc::clone(uri), resource);
+            for anchor in document.draft().anchors(document.contents()) {
+                anchors
+                    .entry(Arc::clone(uri))
+                    .or_default()
+                    .insert(anchor.name(), anchor);
             }
         }
-        if name.contains('/') {
-            Err(Error::invalid_anchor(name.to_string()))
-        } else {
-            Err(Error::no_such_anchor(name.to_string()))
+
+        // Process skeleton entries: subresources with their own `$id` or anchors.
+        // No BFS traversal needed — the skeleton was built during `process_resources`.
+        for entry in &self.skeleton {
+            let Some(document) = self.documents.get(&entry.doc_key) else {
+                continue;
+            };
+            let contents = if entry.pointer.is_empty() {
+                document.contents()
+            } else {
+                match pointer(document.contents(), &entry.pointer) {
+                    Some(v) => v,
+                    None => continue,
+                }
+            };
+            if entry.has_id {
+                resources.insert(
+                    Arc::clone(&entry.uri),
+                    ResourceRef::new(contents, entry.draft),
+                );
+            }
+            for anchor in entry.draft.anchors(contents) {
+                anchors
+                    .entry(Arc::clone(&entry.uri))
+                    .or_default()
+                    .insert(anchor.name(), anchor);
+            }
         }
+
+        Ok(Index::new(resources, anchors, &self.resolution_cache))
     }
+
     /// Resolves a reference URI against a base URI using registry's cache.
     ///
     /// # Errors
@@ -517,118 +563,86 @@ impl Registry {
     pub fn resolve_against(&self, base: &Uri<&str>, uri: &str) -> Result<Arc<Uri<String>>, Error> {
         self.resolution_cache.resolve_against(base, uri)
     }
-    /// Returns vocabulary set configured for given draft and contents.
-    ///
-    /// For custom meta-schemas (`Draft::Unknown`), looks up the meta-schema in the registry
-    /// and extracts its `$vocabulary` declaration. If the meta-schema is not registered,
-    /// returns the default Draft 2020-12 vocabularies.
-    #[must_use]
-    pub fn find_vocabularies(&self, draft: Draft, contents: &Value) -> VocabularySet {
-        match draft.detect(contents) {
-            Draft::Unknown => {
-                // Custom/unknown meta-schema - try to look it up in the registry
-                if let Some(specification) = contents
-                    .as_object()
-                    .and_then(|obj| obj.get("$schema"))
-                    .and_then(|s| s.as_str())
-                {
-                    if let Ok(mut uri) = uri::from_str(specification) {
-                        // Remove fragment for lookup (e.g., "http://example.com/schema#" -> "http://example.com/schema")
-                        // Resources are stored without fragments, so we must strip it to find the meta-schema
-                        uri.set_fragment(None);
-                        if let Some(resource) = self.resources.get(&uri) {
-                            // Found the custom meta-schema - extract vocabularies
-                            if let Ok(Some(vocabularies)) = vocabularies::find(resource.contents())
-                            {
-                                return vocabularies;
-                            }
-                        }
-                        // Meta-schema not registered - this will be caught during compilation
-                        // For now, return default vocabularies to allow resource creation
-                    }
-                }
-                // Default to Draft 2020-12 vocabularies for unknown meta-schemas
-                Draft::Unknown.default_vocabularies()
-            }
-            draft => draft.default_vocabularies(),
-        }
-    }
-
-    /// Build a registry with all the given meta-schemas from specs.
-    pub(crate) fn build_from_meta_schemas(schemas: &[(&'static str, &'static Value)]) -> Self {
-        let schemas_count = schemas.len();
-        let pairs = schemas
-            .iter()
-            .map(|(uri, schema)| (uri, ResourceRef::from_contents(schema)));
-
-        let mut documents = DocumentStore::with_capacity(schemas_count);
-        let mut resources = ResourceMap::with_capacity(schemas_count);
-
-        // The actual number of anchors and cache-entries varies across
-        // drafts. We overshoot here to avoid reallocations, using the sum
-        // over all specifications.
-        let mut anchors = AHashMap::with_capacity(8);
-        let mut resolution_cache = UriCache::with_capacity(35);
-
-        process_meta_schemas(
-            pairs,
-            &mut documents,
-            &mut resources,
-            &mut anchors,
-            &mut resolution_cache,
-        )
-        .expect("Failed to process meta schemas");
-
-        Self {
-            documents,
-            resources,
-            anchors,
-            resolution_cache: resolution_cache.into_shared(),
-        }
-    }
 }
 
-fn process_meta_schemas(
-    pairs: impl IntoIterator<Item = (impl AsRef<str>, ResourceRef<'static>)>,
-    documents: &mut DocumentStore,
-    resources: &mut ResourceMap,
-    anchors: &mut AHashMap<AnchorKey, Anchor>,
+/// Build skeleton entries for all documents already in `documents`.
+/// Used by `build_from_meta_schemas` for the static SPECIFICATIONS registry.
+fn build_skeleton_for_documents(
+    documents: &DocumentStore<'_>,
     resolution_cache: &mut UriCache,
-) -> Result<(), Error> {
-    let mut queue = VecDeque::with_capacity(32);
-
-    for (uri, resource) in pairs {
-        let uri = uri::from_str(uri.as_ref().trim_end_matches('#'))?;
-        let key = Arc::new(uri);
-        let contents: &'static Value = resource.contents();
-        let wrapped_value = Arc::pin(ValueWrapper::StaticRef(contents));
-        let resource = InnerResourcePtr::new((*wrapped_value).as_ref(), resource.draft());
-        documents.insert(Arc::clone(&key), wrapped_value);
-        resources.insert(Arc::clone(&key), resource.clone());
-        queue.push_back((key, resource));
+) -> Result<IndexSkeleton, Error> {
+    let mut skeleton = IndexSkeleton::new();
+    for (doc_uri, document) in documents {
+        let root = document.contents();
+        let initial_base = Arc::clone(doc_uri);
+        // Stack: (base_uri, json_pointer_from_root, draft)
+        let mut work: Vec<(Arc<Uri<String>>, String, Draft)> =
+            vec![(initial_base, String::new(), document.draft())];
+        while let Some((base, ptr_str, draft)) = work.pop() {
+            let contents = if ptr_str.is_empty() {
+                root
+            } else {
+                match pointer(root, &ptr_str) {
+                    Some(v) => v,
+                    None => continue,
+                }
+            };
+            let mut current_base = base;
+            let (id, has_anchors) = draft.id_and_has_anchors(contents);
+            if let Some(id) = id {
+                current_base = resolve_id(&current_base, id, resolution_cache)?;
+                skeleton.push(SkeletonEntry {
+                    uri: Arc::clone(&current_base),
+                    doc_key: Arc::clone(doc_uri),
+                    pointer: ptr_str.clone(),
+                    draft,
+                    has_id: true,
+                });
+            } else if has_anchors {
+                skeleton.push(SkeletonEntry {
+                    uri: Arc::clone(&current_base),
+                    doc_key: Arc::clone(doc_uri),
+                    pointer: ptr_str.clone(),
+                    draft,
+                    has_id: false,
+                });
+            }
+            // Push children with their absolute paths
+            let base_for_children = Arc::clone(&current_base);
+            let mut path = PathStack::from_base(ptr_str);
+            let _ = draft.walk_subresources_with_path(
+                contents,
+                &mut path,
+                &mut |p, _child, child_draft| {
+                    work.push((Arc::clone(&base_for_children), p.to_pointer(), child_draft));
+                    Ok::<(), Error>(())
+                },
+            );
+        }
     }
-
-    // Process current queue and collect references to external resources
-    while let Some((mut base, resource)) = queue.pop_front() {
-        if let Some(id) = resource.id() {
-            base = resolution_cache.resolve_against(&base.borrow(), id)?;
-            resources.insert(base.clone(), resource.clone());
-        }
-
-        // Look for anchors
-        for anchor in resource.anchors() {
-            anchors.insert(AnchorKey::new(base.clone(), anchor.name()), anchor);
-        }
-
-        // Process subresources
-        for contents in resource.draft().subresources_of(resource.contents()) {
-            let subresource_draft = resource.draft().detect(contents);
-            let subresource = InnerResourcePtr::new(contents, subresource_draft);
-            queue.push_back((base.clone(), subresource));
-        }
-    }
-    Ok(())
+    Ok(skeleton)
 }
+
+type KnownResources = AHashSet<Uri<String>>;
+
+/// An entry in the index skeleton, capturing a subresource that has its own
+/// `$id` (needs a `resources` map entry) or has anchors (needs an `anchors` map entry).
+#[derive(Debug, Clone)]
+struct SkeletonEntry {
+    /// Effective base URI at this node: the resolved `$id` if present, else the
+    /// inherited base from the nearest ancestor with an `$id`.
+    uri: Arc<Uri<String>>,
+    /// Key of the root document in `DocumentStore` that contains this node.
+    doc_key: Arc<Uri<String>>,
+    /// JSON Pointer from the document root to this node (empty = root).
+    pointer: String,
+    draft: Draft,
+    /// If `true`, this node has its own `$id` and must be inserted into the
+    /// `resources` map under `uri`.
+    has_id: bool,
+}
+
+type IndexSkeleton = Vec<SkeletonEntry>;
 
 #[derive(Hash, Eq, PartialEq)]
 struct ReferenceKey {
@@ -648,6 +662,24 @@ impl ReferenceKey {
 
 type ReferenceTracker = AHashSet<ReferenceKey>;
 
+/// Allocation-free local-ref deduplication: stores (`base_arc_ptr`, &`str_borrowed_from_json`).
+type LocalSeen<'a> = AHashSet<(NonZeroUsize, &'a str)>;
+
+/// Clears a [`LocalSeen`] set and reinterprets it with a different borrow lifetime,
+/// reusing the backing heap allocation across processing phases.
+///
+/// # Safety
+/// - The set is cleared before the lifetime change, so no `'a` references remain live.
+/// - `(NonZeroUsize, &'a str)` and `(NonZeroUsize, &'b str)` have identical memory layouts
+///   for any two lifetimes (`&str` is a fat pointer whose size/alignment are lifetime-independent).
+#[allow(unsafe_code)]
+#[inline]
+unsafe fn reuse_local_seen<'a, 'b>(mut s: LocalSeen<'a>) -> LocalSeen<'b> {
+    s.clear();
+    // SAFETY: see above — layouts identical, no live 'a refs after clear()
+    std::mem::transmute(s)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ReferenceKind {
     Ref,
@@ -655,10 +687,11 @@ enum ReferenceKind {
 }
 
 /// An entry in the processing queue.
-/// The optional third element is the document root URI, used when the resource
-/// was extracted from a fragment of a larger document. Local `$ref`s need to be
-/// resolved against the document root, not just the fragment content.
-type QueueEntry = (Arc<Uri<String>>, InnerResourcePtr, Option<Arc<Uri<String>>>);
+/// `(base_uri, document_root_uri, pointer, draft)`
+///
+/// `pointer` is a JSON Pointer relative to the document root (`""` means root).
+/// Local `$ref`s are always resolved against the document root.
+type QueueEntry = (Arc<Uri<String>>, Arc<Uri<String>>, String, Draft);
 
 struct ProcessingState {
     queue: VecDeque<QueueEntry>,
@@ -666,10 +699,18 @@ struct ProcessingState {
     external: AHashSet<(String, Uri<String>, ReferenceKind)>,
     scratch: String,
     refers_metaschemas: bool,
-    custom_metaschemas: Vec<Arc<Uri<String>>>,
+    custom_metaschemas: Vec<String>,
     /// Tracks schema pointers we've visited during recursive external resource collection.
     /// This prevents infinite recursion when schemas reference each other.
     visited_schemas: AHashSet<usize>,
+    /// Deferred local-ref targets. During the main traversal, instead of calling
+    /// `collect_external_resources_recursive` immediately when a local `$ref` is found,
+    /// the target is pushed here. After `process_queue` completes (full document traversal),
+    /// subresource targets are already in `visited_schemas` and return in O(1);
+    /// non-subresource paths (e.g. `#/components/schemas/Foo`) are still fully traversed.
+    deferred_refs: Vec<QueueEntry>,
+    /// Skeleton entries accumulated during traversal; used by `build_index`.
+    skeleton: IndexSkeleton,
 }
 
 impl ProcessingState {
@@ -682,14 +723,16 @@ impl ProcessingState {
             refers_metaschemas: false,
             custom_metaschemas: Vec::new(),
             visited_schemas: AHashSet::new(),
+            deferred_refs: Vec::new(),
+            skeleton: IndexSkeleton::new(),
         }
     }
 }
 
 fn process_input_resources(
     pairs: impl IntoIterator<Item = (impl AsRef<str>, Resource)>,
-    documents: &mut DocumentStore,
-    resources: &mut ResourceMap,
+    documents: &mut DocumentStore<'_>,
+    known_resources: &mut KnownResources,
     state: &mut ProcessingState,
 ) -> Result<(), Error> {
     for (uri, resource) in pairs {
@@ -699,162 +742,305 @@ fn process_input_resources(
             Entry::Occupied(_) => {}
             Entry::Vacant(entry) => {
                 let (draft, contents) = resource.into_inner();
-                let wrapped_value = Arc::pin(ValueWrapper::Owned(contents));
-                let resource = InnerResourcePtr::new((*wrapped_value).as_ref(), draft);
-                resources.insert(Arc::clone(&key), resource.clone());
+                entry.insert(Arc::new(StoredDocument::owned(contents, draft)));
+                known_resources.insert((*key).clone());
 
-                // Track resources with custom meta-schemas for later validation
                 if draft == Draft::Unknown {
-                    state.custom_metaschemas.push(Arc::clone(&key));
+                    let contents = documents
+                        .get(&key)
+                        .expect("document was just inserted")
+                        .contents();
+                    if let Some(meta_schema) = contents
+                        .as_object()
+                        .and_then(|obj| obj.get("$schema"))
+                        .and_then(|schema| schema.as_str())
+                    {
+                        state.custom_metaschemas.push(meta_schema.to_string());
+                    }
                 }
 
-                state.queue.push_back((key, resource, None));
-                entry.insert(wrapped_value);
+                state
+                    .queue
+                    .push_back((Arc::clone(&key), key, String::new(), draft));
             }
         }
     }
     Ok(())
 }
 
-fn process_queue(
+fn process_input_resources_borrowed<'a>(
+    pairs: impl IntoIterator<Item = (impl AsRef<str>, ResourceRef<'a>)>,
+    documents: &mut DocumentStore<'a>,
+    known_resources: &mut KnownResources,
     state: &mut ProcessingState,
-    resources: &mut ResourceMap,
-    anchors: &mut AHashMap<AnchorKey, Anchor>,
-    resolution_cache: &mut UriCache,
 ) -> Result<(), Error> {
-    while let Some((mut base, resource, document_root_uri)) = state.queue.pop_front() {
-        if let Some(id) = resource.id() {
-            base = resolve_id(&base, id, resolution_cache)?;
-            resources.insert(base.clone(), resource.clone());
-        }
+    for (uri, resource) in pairs {
+        let uri = uri::from_str(uri.as_ref().trim_end_matches('#'))?;
+        let key = Arc::new(uri);
+        match documents.entry(Arc::clone(&key)) {
+            Entry::Occupied(_) => {}
+            Entry::Vacant(entry) => {
+                entry.insert(Arc::new(StoredDocument::borrowed(
+                    resource.contents(),
+                    resource.draft(),
+                )));
+                known_resources.insert((*key).clone());
 
-        for anchor in resource.anchors() {
-            anchors.insert(AnchorKey::new(base.clone(), anchor.name()), anchor);
-        }
+                if resource.draft() == Draft::Unknown {
+                    let contents = documents
+                        .get(&key)
+                        .expect("document was just inserted")
+                        .contents();
+                    if let Some(meta_schema) = contents
+                        .as_object()
+                        .and_then(|obj| obj.get("$schema"))
+                        .and_then(|schema| schema.as_str())
+                    {
+                        state.custom_metaschemas.push(meta_schema.to_string());
+                    }
+                }
 
-        // Determine the document root for resolving local $refs.
-        // If document_root_uri is set (e.g., for fragment-extracted resources),
-        // look up the full document. Otherwise, this resource IS the document root.
-        let root = document_root_uri
-            .as_ref()
-            .and_then(|uri| resources.get(uri))
-            .map_or_else(|| resource.contents(), InnerResourcePtr::contents);
-
-        // Skip if already visited during local $ref resolution
-        let contents_ptr = std::ptr::from_ref::<Value>(resource.contents()) as usize;
-        if state.visited_schemas.insert(contents_ptr) {
-            collect_external_resources(
-                &base,
-                root,
-                resource.contents(),
-                &mut state.external,
-                &mut state.seen,
-                resolution_cache,
-                &mut state.scratch,
-                &mut state.refers_metaschemas,
-                resource.draft(),
-                &mut state.visited_schemas,
-            )?;
-        }
-
-        // Subresources inherit the document root URI, or use the current base if none set
-        let subresource_root_uri = document_root_uri.or_else(|| Some(base.clone()));
-        for contents in resource.draft().subresources_of(resource.contents()) {
-            let subresource_draft = resource.draft().detect(contents);
-            let subresource = InnerResourcePtr::new(contents, subresource_draft);
-            state
-                .queue
-                .push_back((base.clone(), subresource, subresource_root_uri.clone()));
+                state
+                    .queue
+                    .push_back((Arc::clone(&key), key, String::new(), resource.draft()));
+            }
         }
     }
     Ok(())
 }
 
-fn handle_fragment(
+fn process_queue<'a>(
+    state: &mut ProcessingState,
+    documents: &'a DocumentStore<'a>,
+    known_resources: &mut KnownResources,
+    resolution_cache: &mut UriCache,
+    local_seen: &mut LocalSeen<'a>,
+) -> Result<(), Error> {
+    while let Some((base, document_root_uri, pointer_path, draft)) = state.queue.pop_front() {
+        let Some(document) = documents.get(&document_root_uri) else {
+            continue;
+        };
+        let root = document.contents();
+        let Some(contents) = (if pointer_path.is_empty() {
+            Some(root)
+        } else {
+            pointer(root, &pointer_path)
+        }) else {
+            continue;
+        };
+
+        let resource = ResourceRef::new(contents, draft);
+        let mut path = PathStack::from_base(pointer_path);
+        process_resource_tree(
+            base,
+            root,
+            resource,
+            &mut path,
+            &document_root_uri,
+            state,
+            known_resources,
+            resolution_cache,
+            local_seen,
+        )?;
+    }
+    Ok(())
+}
+
+fn process_resource_tree<'a>(
+    mut base: Arc<Uri<String>>,
+    root: &'a Value,
+    resource: ResourceRef<'a>,
+    path: &mut PathStack<'a>,
+    doc_key: &Arc<Uri<String>>,
+    state: &mut ProcessingState,
+    known_resources: &mut KnownResources,
+    resolution_cache: &mut UriCache,
+    local_seen: &mut LocalSeen<'a>,
+) -> Result<(), Error> {
+    let (id, has_anchors) = resource.draft().id_and_has_anchors(resource.contents());
+    if let Some(id) = id {
+        base = resolve_id(&base, id, resolution_cache)?;
+        known_resources.insert((*base).clone());
+        state.skeleton.push(SkeletonEntry {
+            uri: Arc::clone(&base),
+            doc_key: Arc::clone(doc_key),
+            pointer: path.to_pointer(),
+            draft: resource.draft(),
+            has_id: true,
+        });
+    } else if has_anchors {
+        state.skeleton.push(SkeletonEntry {
+            uri: Arc::clone(&base),
+            doc_key: Arc::clone(doc_key),
+            pointer: path.to_pointer(),
+            draft: resource.draft(),
+            has_id: false,
+        });
+    }
+
+    let contents_ptr = std::ptr::from_ref::<Value>(resource.contents()) as usize;
+    if state.visited_schemas.insert(contents_ptr) {
+        collect_external_resources(
+            &base,
+            root,
+            resource.contents(),
+            &mut state.external,
+            &mut state.seen,
+            resolution_cache,
+            &mut state.scratch,
+            &mut state.refers_metaschemas,
+            resource.draft(),
+            doc_key,
+            &mut state.deferred_refs,
+            local_seen,
+        )?;
+    }
+
+    resource.draft().walk_subresources_with_path(
+        resource.contents(),
+        path,
+        &mut |child_path, child, child_draft| {
+            process_resource_tree(
+                Arc::clone(&base),
+                root,
+                ResourceRef::new(child, child_draft),
+                child_path,
+                doc_key,
+                state,
+                known_resources,
+                resolution_cache,
+                local_seen,
+            )
+        },
+    )
+}
+
+fn enqueue_fragment_entry(
     uri: &Uri<String>,
-    resource: &InnerResourcePtr,
     key: &Arc<Uri<String>>,
     default_draft: Draft,
+    documents: &DocumentStore<'_>,
     queue: &mut VecDeque<QueueEntry>,
-    document_root_uri: Arc<Uri<String>>,
 ) {
     if let Some(fragment) = uri.fragment() {
-        if let Some(resolved) = pointer(resource.contents(), fragment.as_str()) {
-            let draft = default_draft.detect(resolved);
-            let contents = std::ptr::addr_of!(*resolved);
-            let resource = InnerResourcePtr::new(contents, draft);
-            queue.push_back((Arc::clone(key), resource, Some(document_root_uri)));
+        let Some(document) = documents.get(key) else {
+            return;
+        };
+        if let Some(resolved) = pointer(document.contents(), fragment.as_str()) {
+            let fragment_draft = default_draft.detect(resolved);
+            queue.push_back((
+                Arc::clone(key),
+                Arc::clone(key),
+                fragment.as_str().to_string(),
+                fragment_draft,
+            ));
         }
     }
 }
 
 fn handle_metaschemas(
     refers_metaschemas: bool,
-    resources: &mut ResourceMap,
-    anchors: &mut AHashMap<AnchorKey, Anchor>,
+    documents: &mut DocumentStore<'_>,
+    known_resources: &mut KnownResources,
     draft_version: Draft,
-) {
-    if refers_metaschemas {
-        let schemas = metas_for_draft(draft_version);
-        let draft_registry = Registry::build_from_meta_schemas(schemas);
-        resources.reserve(draft_registry.resources.len());
-        for (key, resource) in draft_registry.resources {
-            resources.insert(key, resource.clone());
-        }
-        anchors.reserve(draft_registry.anchors.len());
-        for (key, anchor) in draft_registry.anchors {
-            anchors.insert(key, anchor);
-        }
+    state: &mut ProcessingState,
+) -> Result<(), Error> {
+    if !refers_metaschemas {
+        return Ok(());
     }
+
+    let schemas = metas_for_draft(draft_version);
+    for (uri, schema) in schemas {
+        let key = Arc::new(uri::from_str(uri.trim_end_matches('#'))?);
+        if documents.contains_key(&key) {
+            continue;
+        }
+        let draft = Draft::default().detect(schema);
+        documents.insert(
+            Arc::clone(&key),
+            Arc::new(StoredDocument::borrowed(schema, draft)),
+        );
+        known_resources.insert((*key).clone());
+        state
+            .queue
+            .push_back((Arc::clone(&key), Arc::clone(&key), String::new(), draft));
+    }
+    Ok(())
 }
 
 fn create_resource(
     retrieved: Value,
     fragmentless: Uri<String>,
     default_draft: Draft,
-    documents: &mut DocumentStore,
-    resources: &mut ResourceMap,
-    custom_metaschemas: &mut Vec<Arc<Uri<String>>>,
-) -> (Arc<Uri<String>>, InnerResourcePtr) {
+    documents: &mut DocumentStore<'_>,
+    known_resources: &mut KnownResources,
+    custom_metaschemas: &mut Vec<String>,
+) -> (Arc<Uri<String>>, Draft) {
     let draft = default_draft.detect(&retrieved);
-    let wrapped_value = Arc::pin(ValueWrapper::Owned(retrieved));
-    let resource = InnerResourcePtr::new((*wrapped_value).as_ref(), draft);
     let key = Arc::new(fragmentless);
-    documents.insert(Arc::clone(&key), wrapped_value);
-    resources.insert(Arc::clone(&key), resource.clone());
+    documents.insert(
+        Arc::clone(&key),
+        Arc::new(StoredDocument::owned(retrieved, draft)),
+    );
 
-    // Track resources with custom meta-schemas for later validation
+    let contents = documents
+        .get(&key)
+        .expect("document was just inserted")
+        .contents();
+    known_resources.insert((*key).clone());
+
     if draft == Draft::Unknown {
-        custom_metaschemas.push(Arc::clone(&key));
+        if let Some(meta_schema) = contents
+            .as_object()
+            .and_then(|obj| obj.get("$schema"))
+            .and_then(|schema| schema.as_str())
+        {
+            custom_metaschemas.push(meta_schema.to_string());
+        }
     }
 
-    (key, resource)
+    (key, draft)
 }
 
+#[allow(unsafe_code)]
 fn process_resources(
     pairs: impl IntoIterator<Item = (impl AsRef<str>, Resource)>,
     retriever: &dyn Retrieve,
-    documents: &mut DocumentStore,
-    resources: &mut ResourceMap,
-    anchors: &mut AHashMap<AnchorKey, Anchor>,
+    documents: &mut DocumentStore<'_>,
+    known_resources: &mut KnownResources,
     resolution_cache: &mut UriCache,
     default_draft: Draft,
-) -> Result<Vec<Arc<Uri<String>>>, Error> {
+) -> Result<(Vec<String>, IndexSkeleton), Error> {
     let mut state = ProcessingState::new();
-    process_input_resources(pairs, documents, resources, &mut state)?;
+    process_input_resources(pairs, documents, known_resources, &mut state)?;
+
+    // Pre-size to the initial queue length to avoid repeated rehashing during traversal.
+    let mut local_seen_buf: LocalSeen<'static> = LocalSeen::new();
 
     loop {
         if state.queue.is_empty() && state.external.is_empty() {
             break;
         }
 
-        process_queue(&mut state, resources, anchors, resolution_cache)?;
+        {
+            // SAFETY: widens 'static → '_ (covariant); set is empty after reuse_local_seen clears it.
+            let mut local_seen: LocalSeen<'_> = unsafe { reuse_local_seen(local_seen_buf) };
+            process_queue(
+                &mut state,
+                documents,
+                known_resources,
+                resolution_cache,
+                &mut local_seen,
+            )?;
+            process_deferred_refs(&mut state, documents, resolution_cache, &mut local_seen)?;
+            // SAFETY: clears all '_ refs before narrowing back to 'static to reclaim the buffer.
+            local_seen_buf = unsafe { reuse_local_seen(local_seen) };
+        }
 
-        // Retrieve external resources
         for (original, uri, kind) in state.external.drain() {
             let mut fragmentless = uri.clone();
             fragmentless.set_fragment(None);
-            if !resources.contains_key(&fragmentless) {
+            if !known_resources.contains(&fragmentless) {
                 let retrieved = match retriever.retrieve(&fragmentless) {
                     Ok(retrieved) => retrieved,
                     Err(error) => {
@@ -863,63 +1049,175 @@ fn process_resources(
                     }
                 };
 
-                let (key, resource) = create_resource(
+                let (key, draft) = create_resource(
                     retrieved,
                     fragmentless,
                     default_draft,
                     documents,
-                    resources,
+                    known_resources,
                     &mut state.custom_metaschemas,
                 );
-                handle_fragment(
-                    &uri,
-                    &resource,
-                    &key,
-                    default_draft,
-                    &mut state.queue,
-                    Arc::clone(&key),
-                );
-                state.queue.push_back((key, resource, None));
+                enqueue_fragment_entry(&uri, &key, default_draft, documents, &mut state.queue);
+                state
+                    .queue
+                    .push_back((Arc::clone(&key), key, String::new(), draft));
             }
         }
     }
 
-    handle_metaschemas(state.refers_metaschemas, resources, anchors, default_draft);
+    handle_metaschemas(
+        state.refers_metaschemas,
+        documents,
+        known_resources,
+        default_draft,
+        &mut state,
+    )?;
 
-    Ok(state.custom_metaschemas)
+    if !state.queue.is_empty() {
+        // SAFETY: widens 'static → '_ (covariant); set is empty after reuse_local_seen clears it.
+        let mut local_seen: LocalSeen<'_> = unsafe { reuse_local_seen(local_seen_buf) };
+        process_queue(
+            &mut state,
+            documents,
+            known_resources,
+            resolution_cache,
+            &mut local_seen,
+        )?;
+        process_deferred_refs(&mut state, documents, resolution_cache, &mut local_seen)?;
+    }
+
+    Ok((state.custom_metaschemas, state.skeleton))
 }
 
-#[cfg(feature = "retrieve-async")]
-async fn process_resources_async(
-    pairs: impl IntoIterator<Item = (impl AsRef<str>, Resource)>,
-    retriever: &dyn crate::AsyncRetrieve,
-    documents: &mut DocumentStore,
-    resources: &mut ResourceMap,
-    anchors: &mut AHashMap<AnchorKey, Anchor>,
+#[allow(unsafe_code)]
+fn process_resources_borrowed<'a>(
+    pairs: impl IntoIterator<Item = (impl AsRef<str>, ResourceRef<'a>)>,
+    retriever: &dyn Retrieve,
+    documents: &mut DocumentStore<'a>,
+    known_resources: &mut KnownResources,
     resolution_cache: &mut UriCache,
     default_draft: Draft,
-) -> Result<Vec<Arc<Uri<String>>>, Error> {
-    type ExternalRefsByBase = AHashMap<Uri<String>, Vec<(String, Uri<String>, ReferenceKind)>>;
-
+) -> Result<(Vec<String>, IndexSkeleton), Error> {
     let mut state = ProcessingState::new();
-    process_input_resources(pairs, documents, resources, &mut state)?;
+    process_input_resources_borrowed(pairs, documents, known_resources, &mut state)?;
+
+    let mut local_seen_buf: LocalSeen<'static> = LocalSeen::new();
 
     loop {
         if state.queue.is_empty() && state.external.is_empty() {
             break;
         }
 
-        process_queue(&mut state, resources, anchors, resolution_cache)?;
+        {
+            // SAFETY: widens 'static → '_ (covariant); set is empty after reuse_local_seen clears it.
+            let mut local_seen: LocalSeen<'_> = unsafe { reuse_local_seen(local_seen_buf) };
+            process_queue(
+                &mut state,
+                documents,
+                known_resources,
+                resolution_cache,
+                &mut local_seen,
+            )?;
+            process_deferred_refs(&mut state, documents, resolution_cache, &mut local_seen)?;
+            // SAFETY: clears all '_ refs before narrowing back to 'static to reclaim the buffer.
+            local_seen_buf = unsafe { reuse_local_seen(local_seen) };
+        }
+
+        for (original, uri, kind) in state.external.drain() {
+            let mut fragmentless = uri.clone();
+            fragmentless.set_fragment(None);
+            if !known_resources.contains(&fragmentless) {
+                let retrieved = match retriever.retrieve(&fragmentless) {
+                    Ok(retrieved) => retrieved,
+                    Err(error) => {
+                        handle_retrieve_error(&uri, &original, &fragmentless, error, kind)?;
+                        continue;
+                    }
+                };
+
+                let (key, draft) = create_resource(
+                    retrieved,
+                    fragmentless,
+                    default_draft,
+                    documents,
+                    known_resources,
+                    &mut state.custom_metaschemas,
+                );
+                enqueue_fragment_entry(&uri, &key, default_draft, documents, &mut state.queue);
+                state
+                    .queue
+                    .push_back((Arc::clone(&key), key, String::new(), draft));
+            }
+        }
+    }
+
+    handle_metaschemas(
+        state.refers_metaschemas,
+        documents,
+        known_resources,
+        default_draft,
+        &mut state,
+    )?;
+
+    if !state.queue.is_empty() {
+        // SAFETY: widens 'static → '_ (covariant); set is empty after reuse_local_seen clears it.
+        let mut local_seen: LocalSeen<'_> = unsafe { reuse_local_seen(local_seen_buf) };
+        process_queue(
+            &mut state,
+            documents,
+            known_resources,
+            resolution_cache,
+            &mut local_seen,
+        )?;
+        process_deferred_refs(&mut state, documents, resolution_cache, &mut local_seen)?;
+    }
+
+    Ok((state.custom_metaschemas, state.skeleton))
+}
+
+#[cfg(feature = "retrieve-async")]
+#[allow(unsafe_code)]
+async fn process_resources_async(
+    pairs: impl IntoIterator<Item = (impl AsRef<str>, Resource)>,
+    retriever: &dyn crate::AsyncRetrieve,
+    documents: &mut DocumentStore<'_>,
+    known_resources: &mut KnownResources,
+    resolution_cache: &mut UriCache,
+    default_draft: Draft,
+) -> Result<(Vec<String>, IndexSkeleton), Error> {
+    type ExternalRefsByBase = AHashMap<Uri<String>, Vec<(String, Uri<String>, ReferenceKind)>>;
+
+    let mut state = ProcessingState::new();
+    process_input_resources(pairs, documents, known_resources, &mut state)?;
+
+    let mut local_seen_buf: LocalSeen<'static> = LocalSeen::new();
+
+    loop {
+        if state.queue.is_empty() && state.external.is_empty() {
+            break;
+        }
+
+        {
+            // SAFETY: widens 'static → '_ (covariant); set is empty after reuse_local_seen clears it.
+            let mut local_seen: LocalSeen<'_> = unsafe { reuse_local_seen(local_seen_buf) };
+            process_queue(
+                &mut state,
+                documents,
+                known_resources,
+                resolution_cache,
+                &mut local_seen,
+            )?;
+            process_deferred_refs(&mut state, documents, resolution_cache, &mut local_seen)?;
+            // SAFETY: clears all '_ refs before narrowing back to 'static to reclaim the buffer.
+            local_seen_buf = unsafe { reuse_local_seen(local_seen) };
+        }
 
         if !state.external.is_empty() {
-            // Group external refs by fragmentless URI to avoid fetching the same resource multiple times.
-            // Multiple refs may point to the same base URL with different fragments (e.g., #/$defs/foo and #/$defs/bar).
-            // We need to fetch each unique base URL only once, then handle all fragment refs against it.
             let mut grouped = ExternalRefsByBase::new();
             for (original, uri, kind) in state.external.drain() {
                 let mut fragmentless = uri.clone();
                 fragmentless.set_fragment(None);
-                if !resources.contains_key(&fragmentless) {
+                if !known_resources.contains(&fragmentless) {
                     grouped
                         .entry(fragmentless)
                         .or_default()
@@ -927,7 +1225,6 @@ async fn process_resources_async(
                 }
             }
 
-            // Fetch each unique fragmentless URI once
             let entries: Vec<_> = grouped.into_iter().collect();
             let results = {
                 let futures = entries
@@ -940,7 +1237,6 @@ async fn process_resources_async(
                 let retrieved = match result {
                     Ok(retrieved) => retrieved,
                     Err(error) => {
-                        // Report error for the first ref that caused this fetch
                         if let Some((original, uri, kind)) = refs.into_iter().next() {
                             handle_retrieve_error(&uri, &original, &fragmentless, error, kind)?;
                         }
@@ -948,37 +1244,162 @@ async fn process_resources_async(
                     }
                 };
 
-                let (key, resource) = create_resource(
+                let (key, draft) = create_resource(
                     retrieved,
                     fragmentless,
                     default_draft,
                     documents,
-                    resources,
+                    known_resources,
                     &mut state.custom_metaschemas,
                 );
 
-                // Handle all fragment refs that pointed to this base URL
                 for (_, uri, _) in &refs {
-                    handle_fragment(
-                        uri,
-                        &resource,
-                        &key,
-                        default_draft,
-                        &mut state.queue,
-                        Arc::clone(&key),
-                    );
+                    enqueue_fragment_entry(uri, &key, default_draft, documents, &mut state.queue);
                 }
 
-                state.queue.push_back((key, resource, None));
+                state
+                    .queue
+                    .push_back((Arc::clone(&key), key, String::new(), draft));
             }
         }
     }
 
-    handle_metaschemas(state.refers_metaschemas, resources, anchors, default_draft);
+    handle_metaschemas(
+        state.refers_metaschemas,
+        documents,
+        known_resources,
+        default_draft,
+        &mut state,
+    )?;
 
-    Ok(state.custom_metaschemas)
+    if !state.queue.is_empty() {
+        // SAFETY: widens 'static → '_ (covariant); set is empty after reuse_local_seen clears it.
+        let mut local_seen: LocalSeen<'_> = unsafe { reuse_local_seen(local_seen_buf) };
+        process_queue(
+            &mut state,
+            documents,
+            known_resources,
+            resolution_cache,
+            &mut local_seen,
+        )?;
+        process_deferred_refs(&mut state, documents, resolution_cache, &mut local_seen)?;
+    }
+
+    Ok((state.custom_metaschemas, state.skeleton))
 }
 
+#[cfg(feature = "retrieve-async")]
+#[allow(unsafe_code)]
+async fn process_resources_async_borrowed<'a>(
+    pairs: impl IntoIterator<Item = (impl AsRef<str>, ResourceRef<'a>)>,
+    retriever: &dyn crate::AsyncRetrieve,
+    documents: &mut DocumentStore<'a>,
+    known_resources: &mut KnownResources,
+    resolution_cache: &mut UriCache,
+    default_draft: Draft,
+) -> Result<(Vec<String>, IndexSkeleton), Error> {
+    type ExternalRefsByBase = AHashMap<Uri<String>, Vec<(String, Uri<String>, ReferenceKind)>>;
+
+    let mut state = ProcessingState::new();
+    process_input_resources_borrowed(pairs, documents, known_resources, &mut state)?;
+
+    let mut local_seen_buf: LocalSeen<'static> = LocalSeen::new();
+
+    loop {
+        if state.queue.is_empty() && state.external.is_empty() {
+            break;
+        }
+
+        {
+            // SAFETY: widens 'static → '_ (covariant); set is empty after reuse_local_seen clears it.
+            let mut local_seen: LocalSeen<'_> = unsafe { reuse_local_seen(local_seen_buf) };
+            process_queue(
+                &mut state,
+                documents,
+                known_resources,
+                resolution_cache,
+                &mut local_seen,
+            )?;
+            process_deferred_refs(&mut state, documents, resolution_cache, &mut local_seen)?;
+            // SAFETY: clears all '_ refs before narrowing back to 'static to reclaim the buffer.
+            local_seen_buf = unsafe { reuse_local_seen(local_seen) };
+        }
+
+        if !state.external.is_empty() {
+            let mut grouped = ExternalRefsByBase::new();
+            for (original, uri, kind) in state.external.drain() {
+                let mut fragmentless = uri.clone();
+                fragmentless.set_fragment(None);
+                if !known_resources.contains(&fragmentless) {
+                    grouped
+                        .entry(fragmentless)
+                        .or_default()
+                        .push((original, uri, kind));
+                }
+            }
+
+            let entries: Vec<_> = grouped.into_iter().collect();
+            let results = {
+                let futures = entries
+                    .iter()
+                    .map(|(fragmentless, _)| retriever.retrieve(fragmentless));
+                futures::future::join_all(futures).await
+            };
+
+            for ((fragmentless, refs), result) in entries.into_iter().zip(results) {
+                let retrieved = match result {
+                    Ok(retrieved) => retrieved,
+                    Err(error) => {
+                        if let Some((original, uri, kind)) = refs.into_iter().next() {
+                            handle_retrieve_error(&uri, &original, &fragmentless, error, kind)?;
+                        }
+                        continue;
+                    }
+                };
+
+                let (key, draft) = create_resource(
+                    retrieved,
+                    fragmentless,
+                    default_draft,
+                    documents,
+                    known_resources,
+                    &mut state.custom_metaschemas,
+                );
+
+                for (_, uri, _) in &refs {
+                    enqueue_fragment_entry(uri, &key, default_draft, documents, &mut state.queue);
+                }
+
+                state
+                    .queue
+                    .push_back((Arc::clone(&key), key, String::new(), draft));
+            }
+        }
+    }
+
+    handle_metaschemas(
+        state.refers_metaschemas,
+        documents,
+        known_resources,
+        default_draft,
+        &mut state,
+    )?;
+
+    if !state.queue.is_empty() {
+        // SAFETY: widens 'static → '_ (covariant); set is empty after reuse_local_seen clears it.
+        let mut local_seen: LocalSeen<'_> = unsafe { reuse_local_seen(local_seen_buf) };
+        process_queue(
+            &mut state,
+            documents,
+            known_resources,
+            resolution_cache,
+            &mut local_seen,
+        )?;
+        process_deferred_refs(&mut state, documents, resolution_cache, &mut local_seen)?;
+    }
+
+    Ok((state.custom_metaschemas, state.skeleton))
+}
 fn handle_retrieve_error(
     uri: &Uri<String>,
     original: &str,
@@ -987,13 +1408,8 @@ fn handle_retrieve_error(
     kind: ReferenceKind,
 ) -> Result<(), Error> {
     match kind {
-        ReferenceKind::Schema => {
-            // $schema fetch failures are non-fatal during resource processing
-            // Unregistered custom meta-schemas will be caught in validate_custom_metaschemas()
-            Ok(())
-        }
+        ReferenceKind::Schema => Ok(()),
         ReferenceKind::Ref => {
-            // $ref fetch failures are fatal - they're required for validation
             if uri.scheme().as_str() == "json-schema" {
                 Err(Error::unretrievable(
                     original,
@@ -1007,58 +1423,45 @@ fn handle_retrieve_error(
 }
 
 fn validate_custom_metaschemas(
-    custom_metaschemas: &[Arc<Uri<String>>],
-    resources: &ResourceMap,
+    custom_metaschemas: &[String],
+    known_resources: &KnownResources,
 ) -> Result<(), Error> {
-    // Only validate resources with Draft::Unknown
-    for uri in custom_metaschemas {
-        if let Some(resource) = resources.get(uri) {
-            // Extract the $schema value from this resource
-            if let Some(schema_uri) = resource
-                .contents()
-                .as_object()
-                .and_then(|obj| obj.get("$schema"))
-                .and_then(|s| s.as_str())
-            {
-                // Check if this meta-schema is registered
-                match uri::from_str(schema_uri) {
-                    Ok(mut meta_uri) => {
-                        // Remove fragment for lookup (e.g., "http://example.com/schema#" -> "http://example.com/schema")
-                        meta_uri.set_fragment(None);
-                        if !resources.contains_key(&meta_uri) {
-                            return Err(Error::unknown_specification(schema_uri));
-                        }
-                    }
-                    Err(_) => {
-                        return Err(Error::unknown_specification(schema_uri));
-                    }
+    for schema_uri in custom_metaschemas {
+        match uri::from_str(schema_uri) {
+            Ok(mut meta_uri) => {
+                meta_uri.set_fragment(None);
+                if !known_resources.contains(&meta_uri) {
+                    return Err(Error::unknown_specification(schema_uri));
                 }
+            }
+            Err(_) => {
+                return Err(Error::unknown_specification(schema_uri));
             }
         }
     }
     Ok(())
 }
 
-fn collect_external_resources(
+fn collect_external_resources<'doc>(
     base: &Arc<Uri<String>>,
-    root: &Value,
-    contents: &Value,
+    root: &'doc Value,
+    contents: &'doc Value,
     collected: &mut AHashSet<(String, Uri<String>, ReferenceKind)>,
     seen: &mut ReferenceTracker,
     resolution_cache: &mut UriCache,
     scratch: &mut String,
     refers_metaschemas: &mut bool,
     draft: Draft,
-    visited: &mut AHashSet<usize>,
+    doc_key: &Arc<Uri<String>>,
+    deferred_refs: &mut Vec<QueueEntry>,
+    local_seen: &mut LocalSeen<'doc>,
 ) -> Result<(), Error> {
-    // URN schemes are not supported for external resolution
     if base.scheme().as_str() == "urn" {
         return Ok(());
     }
 
     macro_rules! on_reference {
         ($reference:expr, $key:literal) => {
-            // Skip well-known schema references
             if $reference.starts_with("https://json-schema.org/draft/")
                 || $reference.starts_with("http://json-schema.org/draft-")
                 || base.as_str().starts_with("https://json-schema.org/draft/")
@@ -1067,12 +1470,8 @@ fn collect_external_resources(
                     *refers_metaschemas = true;
                 }
             } else if $reference != "#" {
-                if mark_reference(seen, base, $reference) {
-                    // Handle local references separately as they may have nested references to external resources
-                    if $reference.starts_with('#') {
-                        // Use the root document for pointer resolution since local refs are always
-                        // relative to the document root, not the current subschema.
-                        // Also track $id changes along the path to get the correct base URI.
+                if $reference.starts_with('#') {
+                    if mark_local_reference(local_seen, base, $reference) {
                         if let Some((referenced, resolved_base)) = pointer_with_base(
                             root,
                             $reference.trim_start_matches('#'),
@@ -1080,61 +1479,49 @@ fn collect_external_resources(
                             resolution_cache,
                             draft,
                         )? {
-                            // Recursively collect from the referenced schema and all its subresources
-                            collect_external_resources_recursive(
-                                &resolved_base,
-                                root,
-                                referenced,
-                                collected,
-                                seen,
-                                resolution_cache,
-                                scratch,
-                                refers_metaschemas,
-                                draft,
-                                visited,
-                            )?;
+                            let target_draft = draft.detect(referenced);
+                            deferred_refs.push((
+                                resolved_base,
+                                Arc::clone(doc_key),
+                                $reference.trim_start_matches('#').to_string(),
+                                target_draft,
+                            ));
                         }
-                    } else {
-                        let resolved = if base.has_fragment() {
-                            let mut base_without_fragment = base.as_ref().clone();
-                            base_without_fragment.set_fragment(None);
-
-                            let (path, fragment) = match $reference.split_once('#') {
-                                Some((path, fragment)) => (path, Some(fragment)),
-                                None => ($reference, None),
-                            };
-
-                            let mut resolved = (*resolution_cache
-                                .resolve_against(&base_without_fragment.borrow(), path)?)
-                            .clone();
-                            // Add the fragment back if present
-                            if let Some(fragment) = fragment {
-                                // It is cheaper to check if it is properly encoded than allocate given that
-                                // the majority of inputs do not need to be additionally encoded
-                                if let Some(encoded) = uri::EncodedString::new(fragment) {
-                                    resolved = resolved.with_fragment(Some(encoded));
-                                } else {
-                                    uri::encode_to(fragment, scratch);
-                                    resolved = resolved.with_fragment(Some(
-                                        uri::EncodedString::new_or_panic(scratch),
-                                    ));
-                                    scratch.clear();
-                                }
-                            }
-                            resolved
-                        } else {
-                            (*resolution_cache
-                                .resolve_against(&base.borrow(), $reference)?)
-                            .clone()
-                        };
-
-                        let kind = if $key == "$schema" {
-                            ReferenceKind::Schema
-                        } else {
-                            ReferenceKind::Ref
-                        };
-                        collected.insert(($reference.to_string(), resolved, kind));
                     }
+                } else if mark_reference(seen, base, $reference) {
+                    let resolved = if base.has_fragment() {
+                        let mut base_without_fragment = base.as_ref().clone();
+                        base_without_fragment.set_fragment(None);
+
+                        let (path, fragment) = match $reference.split_once('#') {
+                            Some((path, fragment)) => (path, Some(fragment)),
+                            None => ($reference, None),
+                        };
+
+                        let mut resolved = (*resolution_cache
+                            .resolve_against(&base_without_fragment.borrow(), path)?)
+                        .clone();
+                        if let Some(fragment) = fragment {
+                            if let Some(encoded) = uri::EncodedString::new(fragment) {
+                                resolved = resolved.with_fragment(Some(encoded));
+                            } else {
+                                uri::encode_to(fragment, scratch);
+                                resolved = resolved
+                                    .with_fragment(Some(uri::EncodedString::new_or_panic(scratch)));
+                                scratch.clear();
+                            }
+                        }
+                        resolved
+                    } else {
+                        (*resolution_cache.resolve_against(&base.borrow(), $reference)?).clone()
+                    };
+
+                    let kind = if $key == "$schema" {
+                        ReferenceKind::Schema
+                    } else {
+                        ReferenceKind::Ref
+                    };
+                    collected.insert(($reference.to_string(), resolved, kind));
                 }
             }
         };
@@ -1165,14 +1552,10 @@ fn collect_external_resources(
     Ok(())
 }
 
-/// Recursively collect external resources from a schema and all its subresources.
-///
-/// The `visited` set tracks schema pointers we've already processed to avoid infinite
-/// recursion when schemas reference each other (directly or through subresources).
-fn collect_external_resources_recursive(
+fn collect_external_resources_recursive<'doc>(
     base: &Arc<Uri<String>>,
-    root: &Value,
-    contents: &Value,
+    root: &'doc Value,
+    contents: &'doc Value,
     collected: &mut AHashSet<(String, Uri<String>, ReferenceKind)>,
     seen: &mut ReferenceTracker,
     resolution_cache: &mut UriCache,
@@ -1180,8 +1563,10 @@ fn collect_external_resources_recursive(
     refers_metaschemas: &mut bool,
     draft: Draft,
     visited: &mut AHashSet<usize>,
+    doc_key: &Arc<Uri<String>>,
+    deferred_refs: &mut Vec<QueueEntry>,
+    local_seen: &mut LocalSeen<'doc>,
 ) -> Result<(), Error> {
-    // Track by pointer address to avoid processing the same schema twice
     let ptr = std::ptr::from_ref::<Value>(contents) as usize;
     if !visited.insert(ptr) {
         return Ok(());
@@ -1192,7 +1577,6 @@ fn collect_external_resources_recursive(
         None => Arc::clone(base),
     };
 
-    // First, collect from the current schema
     collect_external_resources(
         &current_base,
         root,
@@ -1203,10 +1587,11 @@ fn collect_external_resources_recursive(
         scratch,
         refers_metaschemas,
         draft,
-        visited,
+        doc_key,
+        deferred_refs,
+        local_seen,
     )?;
 
-    // Then recursively process all subresources
     for subresource in draft.subresources_of(contents) {
         let subresource_draft = draft.detect(subresource);
         collect_external_resources_recursive(
@@ -1220,7 +1605,56 @@ fn collect_external_resources_recursive(
             refers_metaschemas,
             subresource_draft,
             visited,
+            doc_key,
+            deferred_refs,
+            local_seen,
         )?;
+    }
+    Ok(())
+}
+
+/// Process deferred local-ref targets collected during the main traversal.
+///
+/// Called after `process_queue` finishes so that all subresource nodes are already in
+/// `visited_schemas`. Subresource targets return in O(1); non-subresource targets
+/// (e.g. `#/components/schemas/Foo`) are still fully traversed. New deferred entries
+/// added during traversal are also processed iteratively until none remain.
+fn process_deferred_refs<'a>(
+    state: &mut ProcessingState,
+    documents: &'a DocumentStore<'a>,
+    resolution_cache: &mut UriCache,
+    local_seen: &mut LocalSeen<'a>,
+) -> Result<(), Error> {
+    while !state.deferred_refs.is_empty() {
+        let batch = std::mem::take(&mut state.deferred_refs);
+        for (base, doc_key, pointer_path, draft) in batch {
+            let Some(document) = documents.get(&doc_key) else {
+                continue;
+            };
+            let root = document.contents();
+            let Some(contents) = (if pointer_path.is_empty() {
+                Some(root)
+            } else {
+                pointer(root, &pointer_path)
+            }) else {
+                continue;
+            };
+            collect_external_resources_recursive(
+                &base,
+                root,
+                contents,
+                &mut state.external,
+                &mut state.seen,
+                resolution_cache,
+                &mut state.scratch,
+                &mut state.refers_metaschemas,
+                draft,
+                &mut state.visited_schemas,
+                &doc_key,
+                &mut state.deferred_refs,
+                local_seen,
+            )?;
+        }
     }
     Ok(())
 }
@@ -1229,10 +1663,16 @@ fn mark_reference(seen: &mut ReferenceTracker, base: &Arc<Uri<String>>, referenc
     seen.insert(ReferenceKey::new(base, reference))
 }
 
-/// Resolve an `$id` against a base URI, handling anchor-style IDs and empty fragments.
-///
-/// Anchor-style `$id` values (starting with `#`) don't change the base URI.
-/// Empty fragments are stripped from the resolved URI.
+fn mark_local_reference<'a>(
+    local_seen: &mut LocalSeen<'a>,
+    base: &Arc<Uri<String>>,
+    reference: &'a str,
+) -> bool {
+    let base_ptr =
+        NonZeroUsize::new(Arc::as_ptr(base) as usize).expect("Arc pointer should never be null");
+    local_seen.insert((base_ptr, reference))
+}
+
 fn resolve_id(
     base: &Arc<Uri<String>>,
     id: &str,
@@ -1268,11 +1708,6 @@ pub fn pointer<'a>(document: &'a Value, pointer: &str) -> Option<&'a Value> {
     )
 }
 
-/// Look up a value by a JSON Pointer, tracking `$id` changes along the path.
-///
-/// Returns both the resolved value and the accumulated base URI after processing
-/// any `$id` declarations encountered along the path. Note that anchor-style `$id`
-/// values (starting with `#`) don't change the base URI.
 #[allow(clippy::type_complexity)]
 fn pointer_with_base<'a>(
     document: &'a Value,
@@ -1293,7 +1728,6 @@ fn pointer_with_base<'a>(
     let mut current_draft = draft;
 
     for token in pointer.split('/').skip(1).map(unescape_segment) {
-        // Check for $id in the current value before traversing deeper
         current_draft = current_draft.detect(current);
         if let Some(id) = current_draft.id_of(current) {
             current_base = resolve_id(&current_base, id, resolution_cache)?;
@@ -1312,8 +1746,6 @@ fn pointer_with_base<'a>(
         };
     }
 
-    // Note: We don't check $id in the final value here because
-    // `collect_external_resources_recursive` will handle it
     Ok(Some((current, current_base)))
 }
 
@@ -1325,7 +1757,6 @@ pub fn parse_index(s: &str) -> Option<usize> {
     }
     s.parse().ok()
 }
-
 #[cfg(test)]
 mod tests {
     use std::error::Error as _;
@@ -1335,7 +1766,7 @@ mod tests {
     use serde_json::{json, Value};
     use test_case::test_case;
 
-    use crate::{uri::from_str, Draft, Registry, Resource, Retrieve};
+    use crate::{uri::from_str, Draft, Registry, Resource, ResourceRef, Retrieve};
 
     use super::{pointer, RegistryOptions, SPECIFICATIONS};
 
@@ -1373,9 +1804,10 @@ mod tests {
             Registry::try_new("http://example.com/schema1", schema).expect("Invalid resources");
 
         // Attempt to create a resolver for a URL not in the registry
-        let resolver = registry
-            .try_resolver("http://example.com/non_existent_schema")
-            .expect("Invalid base URI");
+        let index = registry.build_index().expect("Invalid index");
+        let resolver = index.resolver(
+            from_str("http://example.com/non_existent_schema").expect("Invalid base URI"),
+        );
 
         let result = resolver.lookup("");
 
@@ -1383,6 +1815,19 @@ mod tests {
             result.unwrap_err().to_string(),
             "Resource 'http://example.com/non_existent_schema' is not present in a registry and retrieving it failed: Retrieving external resources is not supported once the registry is populated"
         );
+    }
+
+    #[test]
+    fn test_registry_can_be_built_from_borrowed_resources() {
+        let schema = json!({"type": "string"});
+        let registry = Registry::try_from_resources_and_retriever(
+            [("urn:root", ResourceRef::from_contents(&schema))],
+            &crate::DefaultRetriever,
+            Draft::default(),
+        )
+        .expect("Invalid resources");
+        let index = registry.build_index().expect("Invalid index");
+        assert!(index.contains_resource_uri("urn:root"));
     }
 
     #[test]
@@ -1716,9 +2161,10 @@ mod tests {
             .retriever(retriever)
             .build(input_pairs)
             .expect("Invalid resources");
+        let index = registry.build_index().expect("Invalid index");
         // Verify that all expected URIs are resolved and present in resources
         for uri in test_case.expected_resolved_uris {
-            let resolver = registry.try_resolver("").expect("Invalid base URI");
+            let resolver = index.resolver(from_str("").expect("Invalid base URI"));
             assert!(resolver.lookup(uri).is_ok());
         }
     }
@@ -1776,10 +2222,8 @@ mod tests {
         );
         let registry = result.unwrap();
 
-        let resource = registry
-            .resources
-            .get(&from_str("http://example.com/schema").expect("Invalid URI"))
-            .unwrap();
+        let index = registry.build_index().expect("Invalid index");
+        let resource = index.resource("http://example.com/schema").unwrap();
         let properties = resource
             .contents()
             .get("properties")
@@ -1802,9 +2246,9 @@ mod tests {
             .clone()
             .try_with_resource("http://example.com", Resource::from_contents(json!({})))
             .expect("Invalid resource");
-        let resolver = registry
-            .try_resolver("http://127.0.0.1/schema")
-            .expect("Invalid base URI");
+        let index = registry.build_index().expect("Invalid index");
+        let resolver =
+            index.resolver(from_str("http://127.0.0.1/schema").expect("Invalid base URI"));
         assert_eq!(
             format!("{resolver:?}"),
             "Resolver { base_uri: \"http://127.0.0.1/schema\", scopes: \"[]\" }"
@@ -1817,7 +2261,8 @@ mod tests {
             .clone()
             .try_with_resource("http://example.com", Resource::from_contents(json!({})))
             .expect("Invalid resource");
-        let resolver = registry.try_resolver("").expect("Invalid base URI");
+        let index = registry.build_index().expect("Invalid index");
+        let resolver = index.resolver(from_str("").expect("Invalid base URI"));
         let resolved = resolver
             .lookup("http://json-schema.org/draft-06/schema#/definitions/schemaArray")
             .expect("Lookup failed");
@@ -1827,6 +2272,42 @@ mod tests {
                 "type": "array",
                 "minItems": 1,
                 "items": { "$ref": "#" }
+            })
+        );
+    }
+
+    #[test]
+    fn test_try_with_resources_preserves_existing_skeleton_entries() {
+        let original = Registry::try_new(
+            "http://example.com/root",
+            Resource::from_contents(json!({
+                "$defs": {
+                    "embedded": {
+                        "$id": "http://example.com/embedded",
+                        "type": "string"
+                    }
+                }
+            })),
+        )
+        .expect("Invalid root schema");
+
+        let extended = original
+            .try_with_resource(
+                "http://example.com/other",
+                Resource::from_contents(json!({"type": "number"})),
+            )
+            .expect("Registry extension should succeed");
+
+        let index = extended.build_index().expect("Invalid index");
+        let resolver = index.resolver(from_str("").expect("Invalid base URI"));
+        let embedded = resolver
+            .lookup("http://example.com/embedded")
+            .expect("Embedded subresource URI should stay indexed after extension");
+        assert_eq!(
+            embedded.contents(),
+            &json!({
+                "$id": "http://example.com/embedded",
+                "type": "string"
             })
         );
     }
@@ -1936,10 +2417,8 @@ mod async_tests {
         );
         let registry = result.unwrap();
 
-        let resource = registry
-            .resources
-            .get(&uri::from_str("http://example.com/schema").expect("Invalid URI"))
-            .unwrap();
+        let index = registry.build_index().expect("Invalid index");
+        let resource = index.resource("http://example.com/schema").unwrap();
         let properties = resource
             .contents()
             .get("properties")
@@ -1972,11 +2451,56 @@ mod async_tests {
             .await
             .expect("Invalid resource");
 
-        let resolver = registry.try_resolver("").expect("Invalid base URI");
+        let index = registry.build_index().expect("Invalid index");
+        let resolver = index.resolver(uri::from_str("").expect("Invalid base URI"));
         let resolved = resolver
             .lookup("http://example.com/schema2")
             .expect("Lookup failed");
         assert_eq!(resolved.contents(), &json!({"type": "object"}));
+    }
+
+    #[tokio::test]
+    async fn test_async_try_with_resources_preserves_existing_skeleton_entries() {
+        let original = Registry::options()
+            .async_retriever(DefaultRetriever)
+            .build([(
+                "http://example.com/root",
+                Resource::from_contents(json!({
+                    "$defs": {
+                        "embedded": {
+                            "$id": "http://example.com/embedded",
+                            "type": "string"
+                        }
+                    }
+                })),
+            )])
+            .await
+            .expect("Invalid root schema");
+
+        let extended = original
+            .try_with_resources_and_retriever_async(
+                [(
+                    "http://example.com/other",
+                    Resource::from_contents(json!({"type": "number"})),
+                )],
+                &DefaultRetriever,
+                Draft::default(),
+            )
+            .await
+            .expect("Registry extension should succeed");
+
+        let index = extended.build_index().expect("Invalid index");
+        let resolver = index.resolver(uri::from_str("").expect("Invalid base URI"));
+        let embedded = resolver
+            .lookup("http://example.com/embedded")
+            .expect("Embedded subresource URI should stay indexed after async extension");
+        assert_eq!(
+            embedded.contents(),
+            &json!({
+                "$id": "http://example.com/embedded",
+                "type": "string"
+            })
+        );
     }
 
     #[tokio::test]
@@ -2009,7 +2533,8 @@ mod async_tests {
             .await
             .expect("Invalid resource");
 
-        let resolver = registry.try_resolver("").expect("Invalid base URI");
+        let index = registry.build_index().expect("Invalid index");
+        let resolver = index.resolver(uri::from_str("").expect("Invalid base URI"));
 
         // Check both references are resolved correctly
         let resolved2 = resolver
@@ -2062,7 +2587,8 @@ mod async_tests {
             .await
             .expect("Invalid resource");
 
-        let resolver = registry.try_resolver("").expect("Invalid base URI");
+        let index = registry.build_index().expect("Invalid index");
+        let resolver = index.resolver(uri::from_str("").expect("Invalid base URI"));
 
         // Verify nested reference resolution
         let resolved = resolver
@@ -2142,9 +2668,9 @@ mod async_tests {
             "External schema should be fetched only once, but was fetched {fetches} times"
         );
 
-        let resolver = registry
-            .try_resolver("http://example.com/main")
-            .expect("Invalid base URI");
+        let index = registry.build_index().expect("Invalid index");
+        let resolver =
+            index.resolver(uri::from_str("http://example.com/main").expect("Invalid base URI"));
 
         // Verify both fragment references resolve correctly
         let foo = resolver
