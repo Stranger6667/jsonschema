@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Registry construction now uses an explicit prepare step, and `with_registry` now borrows the prepared registry. `ValidationOptions::with_resource` and `ValidationOptions::with_resources` were removed in favor of building a `Registry` first. See the [Migration Guide](MIGRATION.md) for the details.
+
+### Performance
+
+- Avoid registry clones and document clones during validator construction. This improves real-world schema compilation by roughly 10-20% in internal benchmarks.
+
 ### Fixed
 
 - Incorrect handling of `duration` format when hours and seconds appear without minutes, or years and days without months.

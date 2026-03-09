@@ -10,7 +10,6 @@ mod subresources;
 
 use crate::{
     anchors,
-    resource::InnerResourcePtr,
     vocabularies::{VocabularySet, DRAFT_2019_09_VOCABULARIES, DRAFT_2020_12_VOCABULARIES},
     Anchor, Error, Resolver, Resource, ResourceRef, Segments,
 };
@@ -92,6 +91,62 @@ impl Draft {
             Draft::Draft201909 | Draft::Draft202012 | Draft::Unknown => ids::dollar_id(contents),
         }
     }
+
+    /// Returns `(id, has_any_anchor)` when both pieces of information are needed
+    /// during registry preparation.
+    #[inline]
+    pub(crate) fn id_and_has_anchors(self, contents: &Value) -> (Option<&str>, bool) {
+        let Some(obj) = contents.as_object() else {
+            return (None, false);
+        };
+        match self {
+            Draft::Draft4 => {
+                if obj.len() <= 3 {
+                    scan_legacy_id_small(obj)
+                } else {
+                    let raw_id = obj.get("id").and_then(Value::as_str);
+                    let is_anchor = raw_id.is_some_and(|id| id.starts_with('#'));
+                    let plain_id = match (is_anchor, obj.contains_key("$ref")) {
+                        (false, false) => raw_id,
+                        _ => None,
+                    };
+                    (plain_id, is_anchor)
+                }
+            }
+            Draft::Draft6 | Draft::Draft7 => {
+                if obj.len() <= 3 {
+                    scan_legacy_dollar_id_small(obj)
+                } else {
+                    let raw_id = obj.get("$id").and_then(Value::as_str);
+                    let is_anchor = raw_id.is_some_and(|id| id.starts_with('#'));
+                    let plain_id = match (is_anchor, obj.contains_key("$ref")) {
+                        (false, false) => raw_id,
+                        _ => None,
+                    };
+                    (plain_id, is_anchor)
+                }
+            }
+            Draft::Draft201909 => {
+                if obj.len() <= 2 {
+                    scan_id_and_anchor_small(obj)
+                } else {
+                    let id = obj.get("$id").and_then(Value::as_str);
+                    let has_anchor = obj.get("$anchor").and_then(Value::as_str).is_some();
+                    (id, has_anchor)
+                }
+            }
+            Draft::Draft202012 | Draft::Unknown => {
+                if obj.len() <= 3 {
+                    scan_id_and_any_anchor_small(obj)
+                } else {
+                    let id = obj.get("$id").and_then(Value::as_str);
+                    let has_anchor = obj.get("$anchor").and_then(Value::as_str).is_some()
+                        || obj.get("$dynamicAnchor").and_then(Value::as_str).is_some();
+                    (id, has_anchor)
+                }
+            }
+        }
+    }
     pub fn subresources_of(self, contents: &Value) -> impl Iterator<Item = &Value> {
         match contents.as_object() {
             Some(schema) => {
@@ -107,7 +162,7 @@ impl Draft {
             None => SubresourceIterator::Empty,
         }
     }
-    pub(crate) fn anchors(self, contents: &Value) -> impl Iterator<Item = Anchor> {
+    pub(crate) fn anchors(self, contents: &Value) -> impl Iterator<Item = Anchor<'_>> {
         match self {
             Draft::Draft4 => anchors::legacy_anchor_in_id(self, contents),
             Draft::Draft6 | Draft::Draft7 => anchors::legacy_anchor_in_dollar_id(self, contents),
@@ -119,7 +174,7 @@ impl Draft {
         self,
         segments: &Segments,
         resolver: &Resolver<'r>,
-        subresource: &InnerResourcePtr,
+        subresource: ResourceRef<'_>,
     ) -> Result<Resolver<'r>, Error> {
         match self {
             Draft::Draft4 => draft4::maybe_in_subresource(segments, resolver, subresource),
@@ -133,6 +188,26 @@ impl Draft {
             }
         }
     }
+    pub(crate) fn walk_subresources_with_path<'a, E, F>(
+        self,
+        contents: &'a Value,
+        path: &mut crate::resource::PathStack<'a>,
+        f: &mut F,
+    ) -> Result<(), E>
+    where
+        F: FnMut(&mut crate::resource::PathStack<'a>, &'a Value, Draft) -> Result<(), E>,
+    {
+        match self {
+            Draft::Draft4 => draft4::walk_subresources_with_path(contents, path, self, f),
+            Draft::Draft6 => draft6::walk_subresources_with_path(contents, path, self, f),
+            Draft::Draft7 => draft7::walk_subresources_with_path(contents, path, self, f),
+            Draft::Draft201909 => draft201909::walk_subresources_with_path(contents, path, self, f),
+            Draft::Draft202012 | Draft::Unknown => {
+                subresources::walk_subresources_with_path(contents, path, self, f)
+            }
+        }
+    }
+
     /// Identifies known JSON schema keywords per draft.
     #[must_use]
     pub fn is_known_keyword(&self, keyword: &str) -> bool {
@@ -227,6 +302,76 @@ impl Draft {
             }
         }
     }
+}
+
+fn scan_legacy_id_small(obj: &serde_json::Map<String, Value>) -> (Option<&str>, bool) {
+    let mut raw_id = None;
+    let mut has_ref = false;
+
+    for (key, value) in obj {
+        match key.as_str() {
+            "id" => raw_id = value.as_str(),
+            "$ref" => has_ref = true,
+            _ => {}
+        }
+    }
+
+    let is_anchor = raw_id.is_some_and(|id| id.starts_with('#'));
+    let plain_id = match (is_anchor, has_ref) {
+        (false, false) => raw_id,
+        _ => None,
+    };
+    (plain_id, is_anchor)
+}
+
+fn scan_legacy_dollar_id_small(obj: &serde_json::Map<String, Value>) -> (Option<&str>, bool) {
+    let mut raw_id = None;
+    let mut has_ref = false;
+
+    for (key, value) in obj {
+        match key.as_str() {
+            "$id" => raw_id = value.as_str(),
+            "$ref" => has_ref = true,
+            _ => {}
+        }
+    }
+
+    let is_anchor = raw_id.is_some_and(|id| id.starts_with('#'));
+    let plain_id = match (is_anchor, has_ref) {
+        (false, false) => raw_id,
+        _ => None,
+    };
+    (plain_id, is_anchor)
+}
+
+fn scan_id_and_anchor_small(obj: &serde_json::Map<String, Value>) -> (Option<&str>, bool) {
+    let mut id = None;
+    let mut has_anchor = false;
+
+    for (key, value) in obj {
+        match key.as_str() {
+            "$id" => id = value.as_str(),
+            "$anchor" => has_anchor |= value.as_str().is_some(),
+            _ => {}
+        }
+    }
+
+    (id, has_anchor)
+}
+
+fn scan_id_and_any_anchor_small(obj: &serde_json::Map<String, Value>) -> (Option<&str>, bool) {
+    let mut id = None;
+    let mut has_anchor = false;
+
+    for (key, value) in obj {
+        match key.as_str() {
+            "$id" => id = value.as_str(),
+            "$anchor" | "$dynamicAnchor" => has_anchor |= value.as_str().is_some(),
+            _ => {}
+        }
+    }
+
+    (id, has_anchor)
 }
 
 #[cfg(test)]

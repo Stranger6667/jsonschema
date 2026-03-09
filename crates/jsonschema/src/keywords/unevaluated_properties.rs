@@ -484,7 +484,7 @@ fn compile_ref<'a>(
 
     let (contents, resolver, draft) = resolved.into_inner();
     if let Value::Object(subschema) = &contents {
-        let vocabularies = ctx.registry.find_vocabularies(draft, contents);
+        let vocabularies = ctx.find_vocabularies(draft, contents);
         let ref_ctx =
             ctx.with_resolver_and_draft(resolver, draft, vocabularies, ctx.location().clone());
         let validators =
@@ -507,7 +507,7 @@ fn compile_dynamic_ref<'a>(
 
     let (contents, resolver, draft) = resolved.into_inner();
     if let Value::Object(subschema) = &contents {
-        let vocabularies = ctx.registry.find_vocabularies(draft, contents);
+        let vocabularies = ctx.find_vocabularies(draft, contents);
         let ref_ctx =
             ctx.with_resolver_and_draft(resolver, draft, vocabularies, ctx.location().clone());
         let validators =
@@ -534,7 +534,7 @@ fn compile_recursive_ref<'a>(
     // Create context for the resolved reference and check its cache key
     let (contents, resolver, draft) = resolved.into_inner();
     if let Value::Object(subschema) = &contents {
-        let vocabularies = ctx.registry.find_vocabularies(draft, contents);
+        let vocabularies = ctx.find_vocabularies(draft, contents);
         let ref_ctx =
             ctx.with_resolver_and_draft(resolver, draft, vocabularies, ctx.location().clone());
 

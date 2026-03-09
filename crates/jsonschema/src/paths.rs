@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use referencing::unescape_segment;
+use referencing::{unescape_segment, write_escaped_str, write_index};
 
 use crate::keywords::Keyword;
 
@@ -104,8 +104,12 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
                         return get_cached_index_paths()[*idx].clone();
                     }
                     // Single index > 15: compute directly
-                    let mut buf = itoa::Buffer::new();
-                    return Location(Arc::from(format!("/{}", buf.format(*idx))));
+                    let mut idx_buffer = itoa::Buffer::new();
+                    let idx = idx_buffer.format(*idx);
+                    let mut buffer = String::with_capacity(1 + idx.len());
+                    buffer.push('/');
+                    buffer.push_str(idx);
+                    return Location(Arc::from(buffer));
                 }
             }
         }
@@ -156,8 +160,7 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
                         write_escaped_str(&mut buffer, property);
                     }
                     LocationSegment::Index(idx) => {
-                        let mut itoa_buffer = itoa::Buffer::new();
-                        buffer.push_str(itoa_buffer.format(*idx));
+                        write_index(&mut buffer, *idx);
                     }
                 }
             }
@@ -184,8 +187,7 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
                         write_escaped_str(&mut buffer, property);
                     }
                     LocationSegment::Index(idx) => {
-                        let mut itoa_buffer = itoa::Buffer::new();
-                        buffer.push_str(itoa_buffer.format(*idx));
+                        write_index(&mut buffer, *idx);
                     }
                 }
             }
@@ -622,9 +624,13 @@ impl Location {
                 Self(Arc::from(buffer))
             }
             LocationSegment::Index(idx) => {
-                let mut itoa_buf = itoa::Buffer::new();
-                let segment = itoa_buf.format(idx);
-                Self(format!("{parent}/{segment}").into())
+                let mut idx_buffer = itoa::Buffer::new();
+                let idx = idx_buffer.format(idx);
+                let mut buffer = String::with_capacity(parent.len() + idx.len() + 1);
+                buffer.push_str(parent);
+                buffer.push('/');
+                buffer.push_str(idx);
+                Self(Arc::from(buffer))
             }
         }
     }
@@ -648,44 +654,6 @@ impl Location {
     #[must_use]
     pub fn iter(&self) -> std::vec::IntoIter<LocationSegment<'_>> {
         <&Self as IntoIterator>::into_iter(self)
-    }
-}
-
-pub fn write_escaped_str(buffer: &mut String, value: &str) {
-    match value.find(['~', '/']) {
-        Some(mut escape_idx) => {
-            let mut remaining = value;
-
-            // Loop through the string to replace `~` and `/`
-            loop {
-                let (before, after) = remaining.split_at(escape_idx);
-                // Copy everything before the escape char
-                buffer.push_str(before);
-
-                // Append the appropriate escape sequence
-                match after.as_bytes()[0] {
-                    b'~' => buffer.push_str("~0"),
-                    b'/' => buffer.push_str("~1"),
-                    _ => unreachable!(),
-                }
-
-                // Move past the escaped character
-                remaining = &after[1..];
-
-                // Find the next `~` or `/` to continue escaping
-                if let Some(next_escape_idx) = remaining.find(['~', '/']) {
-                    escape_idx = next_escape_idx;
-                } else {
-                    // Append any remaining part of the string
-                    buffer.push_str(remaining);
-                    break;
-                }
-            }
-        }
-        None => {
-            // If no escape characters are found, append the segment as is
-            buffer.push_str(value);
-        }
     }
 }
 

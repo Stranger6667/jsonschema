@@ -832,19 +832,19 @@ impl jsonschema::Keyword for CustomKeyword {
     }
 }
 
-fn make_options(
+fn make_options<'a>(
     draft: Option<u8>,
-    formats: Option<&Bound<'_, PyDict>>,
+    formats: Option<&Bound<'a, PyDict>>,
     validate_formats: Option<bool>,
     ignore_unknown_formats: Option<bool>,
-    retriever: Option<&Bound<'_, PyAny>>,
-    registry: Option<&registry::Registry>,
+    retriever: Option<&Bound<'a, PyAny>>,
+    registry: Option<&'a registry::Registry>,
     base_uri: Option<String>,
-    pattern_options: Option<&Bound<'_, PyAny>>,
-    email_options: Option<&Bound<'_, PyAny>>,
-    http_options: Option<&Bound<'_, PyAny>>,
-    keywords: Option<&Bound<'_, PyDict>>,
-) -> PyResult<jsonschema::ValidationOptions> {
+    pattern_options: Option<&Bound<'a, PyAny>>,
+    email_options: Option<&Bound<'a, PyAny>>,
+    http_options: Option<&Bound<'a, PyAny>>,
+    keywords: Option<&Bound<'a, PyDict>>,
+) -> PyResult<jsonschema::ValidationOptions<'a>> {
     let mut options = jsonschema::options();
     if let Some(raw_draft_version) = draft {
         options = options.with_draft(get_draft(raw_draft_version)?);
@@ -890,7 +890,7 @@ fn make_options(
         options = options.with_retriever(Retriever { func });
     }
     if let Some(registry) = registry {
-        options = options.with_registry(registry.inner.clone());
+        options = options.with_registry(&registry.inner);
     }
     if let Some(base_uri) = base_uri {
         options = options.with_base_uri(base_uri);
@@ -2021,7 +2021,7 @@ mod meta {
         let schema = crate::ser::to_value(schema)?;
         let result = if let Some(registry) = registry {
             jsonschema::meta::options()
-                .with_registry(registry.inner.clone())
+                .with_registry(&registry.inner)
                 .validate(&schema)
         } else {
             jsonschema::meta::validate(&schema)
@@ -2070,7 +2070,7 @@ mod meta {
         let schema = crate::ser::to_value(schema)?;
         let result = if let Some(registry) = registry {
             jsonschema::meta::options()
-                .with_registry(registry.inner.clone())
+                .with_registry(&registry.inner)
                 .validate(&schema)
         } else {
             jsonschema::meta::validate(&schema)

@@ -1,4 +1,5 @@
-use referencing::{Draft, Registry};
+use jsonschema::Registry;
+use referencing::SPECIFICATIONS;
 use serde_json::Value;
 use std::fs;
 
@@ -26,7 +27,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "citm" => ("../crates/benchmark/data/citm_catalog_schema.json".to_string(), Some("../crates/benchmark/data/citm_catalog.json".to_string())),
             "fast-valid" => ("../crates/benchmark/data/fast_schema.json".to_string(), Some("../crates/benchmark/data/fast_valid.json".to_string())),
             "fast-invalid" => ("../crates/benchmark/data/fast_schema.json".to_string(), Some("../crates/benchmark/data/fast_invalid.json".to_string())),
-            _ => return Err(format!("Unknown preset: {}. Available: openapi, swagger, geojson, citm, fast-valid, fast-invalid", preset).into()),
+            "fhir" => ("../crates/benchmark/data/fhir.schema.json".to_string(), None),
+            _ => return Err(format!("Unknown preset: {}. Available: openapi, swagger, geojson, citm, fast-valid, fast-invalid, fhir", preset).into()),
         }
     } else {
         let schema_path = pico_args
@@ -52,28 +54,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let schema_str = fs::read_to_string(&args.schema_path)?;
     let schema: Value = serde_json::from_str(&schema_str)?;
 
+    // To initialise metaschema validators
+    let _ = &*SPECIFICATIONS;
+
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
 
     match args.method.as_str() {
         "build" => {
-            if args.instance_path.is_some() {
-                return Err("--instance is not supported for 'build' method".into());
-            }
             for _ in 0..args.iterations {
                 let _ = jsonschema::validator_for(&schema)?;
             }
         }
         "registry" => {
-            if args.instance_path.is_some() {
-                return Err("--instance is not supported for 'registry' method".into());
-            }
             for _ in 0..args.iterations {
-                let input_resources = vec![(
-                    "http://example.com/schema",
-                    Draft::Draft202012.create_resource(schema.clone()),
-                )];
-                let _ = Registry::try_from_resources(input_resources.into_iter());
+                let _ = Registry::new()
+                    .extend([("http://example.com/schema", &schema)])
+                    .expect("Invalid resource")
+                    .prepare()
+                    .expect("Failed to build registry");
             }
         }
         "is_valid" | "validate" | "iter_errors" | "evaluate" => {
@@ -116,7 +115,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             return Err(
-                "Invalid method. Use 'registry', 'build', 'is_valid', 'validate', 'iter_errors', or 'evaluate'".into()
+                "Invalid method. Use 'registry', 'build', 'is_valid', 'validate', 'iter_errors', or 'evaluate'"
+                    .into(),
             );
         }
     }

@@ -56,9 +56,10 @@ define_rb_intern!(static SYM_CALL: "call");
 define_rb_intern!(static SYM_NEW: "new");
 define_rb_intern!(static SYM_VALIDATE: "validate");
 
-pub struct ParsedOptions {
+pub struct ParsedOptions<'i> {
     pub mask: Option<String>,
-    pub options: jsonschema::ValidationOptions,
+    pub options: jsonschema::ValidationOptions<'i>,
+    pub registry: Option<&'i jsonschema::Registry<'static>>,
     pub retriever: Option<RubyRetriever>,
     // Runtime callbacks invoked during `validator.*` calls (formats / custom keywords).
     // Retriever callbacks are used at build time and do not affect GVL behavior at runtime.
@@ -420,8 +421,9 @@ pub fn make_options_from_kwargs(
     pattern_options_val: Option<Value>,
     email_options_val: Option<Value>,
     http_options_val: Option<Value>,
-) -> Result<ParsedOptions, Error> {
+) -> Result<ParsedOptions<'_>, Error> {
     let mut opts = jsonschema::options();
+    let mut registry = None;
     let mut retriever = None;
     let retriever_was_provided = retriever_val.is_some();
     let mut has_ruby_callbacks = false;
@@ -473,7 +475,7 @@ pub fn make_options_from_kwargs(
                     "registry must be a JSONSchema::Registry instance",
                 )
             })?;
-            opts = opts.with_registry(reg.inner.clone());
+            registry = Some(&reg.inner);
 
             if !retriever_was_provided && retriever.is_none() {
                 if let Some(registry_retriever_value) = reg.retriever_value(ruby) {
@@ -763,6 +765,7 @@ pub fn make_options_from_kwargs(
     Ok(ParsedOptions {
         mask,
         options: opts,
+        registry,
         retriever,
         has_ruby_callbacks,
         callback_roots,

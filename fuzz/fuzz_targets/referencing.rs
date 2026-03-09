@@ -1,6 +1,6 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use referencing::{Draft, Registry};
+use referencing::{uri, Draft, Registry, RegistryBuilder};
 
 fuzz_target!(|data: (&[u8], &[u8], &[u8])| {
     let (schema, base, reference) = data;
@@ -14,11 +14,14 @@ fuzz_target!(|data: (&[u8], &[u8], &[u8])| {
                     Draft::Draft201909,
                     Draft::Draft202012,
                 ] {
-                    let resource = draft.create_resource(schema.clone());
-                    if let Ok(registry) = Registry::try_new(base, resource) {
-                        if let Ok(resolver) =
-                            registry.try_resolver("http://example.com/schema.json")
-                        {
+                    if let Ok(registry) = Registry::new()
+                        .draft(draft)
+                        .add(base, &schema)
+                        .and_then(RegistryBuilder::prepare)
+                    {
+                        if let Ok(index) = registry.build_index() {
+                            let resolver = index
+                                .resolver(uri::from_str("http://example.com/schema.json").unwrap());
                             let _resolved = resolver.lookup(reference);
                         }
                     }

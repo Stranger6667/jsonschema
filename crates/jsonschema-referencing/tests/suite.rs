@@ -43,15 +43,16 @@ fn test_suite(draft: &'static str, test: Test) {
         "json-schema-draft-2020-12" => Draft::Draft202012,
         _ => panic!("Unknown draft"),
     };
-    let registry = Registry::try_from_resources(
-        test.registry
-            .into_iter()
-            .map(|(uri, content)| (uri, draft.create_resource(content))),
-    )
-    .expect("Invalid registry");
-    let resolver = registry
-        .try_resolver(test.base_uri.unwrap_or_default())
-        .expect("Invalid base URI");
+    let mut registry = Registry::new().draft(draft);
+    for (uri, content) in test.registry {
+        registry = registry
+            .add(uri, draft.create_resource(content))
+            .expect("Invalid registry input");
+    }
+    let registry = registry.prepare().expect("Invalid registry");
+    let resolver = registry.resolver(
+        referencing::uri::from_str(test.base_uri.unwrap_or_default()).expect("Invalid base URI"),
+    );
     if test.error.is_some() {
         assert!(resolver.lookup(test.reference).is_err());
     } else {

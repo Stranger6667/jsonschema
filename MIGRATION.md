@@ -1,5 +1,74 @@
 # Migration Guide
 
+## Upgrading from 0.45.x to 0.46.0
+
+Registry construction is now explicit: add shared schemas first, then call
+`prepare()` to build a reusable registry. Validators no longer take ownership of
+that registry; pass it by reference with `with_registry(&registry)`.
+`ValidationOptions::with_resource` and `ValidationOptions::with_resources` were
+removed in favor of building a `Registry` first. For cases with multiple shared
+schemas, `extend([...])` is the batch form of `add(...)`.
+
+```rust
+// Old (0.45.x)
+use jsonschema::{Registry, Resource};
+
+// Inline shared schema
+let validator = jsonschema::options()
+    .with_resource(
+        "https://example.com/schema",
+        Resource::from_contents(shared_schema),
+    )
+    .build(&schema)?;
+
+// Multiple shared schemas
+let validator = jsonschema::options()
+    .with_resources([
+        (
+            "https://example.com/schema-1",
+            Resource::from_contents(schema_1),
+        ),
+        (
+            "https://example.com/schema-2",
+            Resource::from_contents(schema_2),
+        ),
+    ].into_iter())
+    .build(&schema)?;
+
+// Prebuilt registry
+let registry = Registry::try_from_resources([
+    (
+        "https://example.com/schema",
+        Resource::from_contents(shared_schema),
+    ),
+])?;
+let validator = jsonschema::options()
+    .with_registry(registry)
+    .build(&schema)?;
+
+// New (0.46.0)
+use jsonschema::Registry;
+
+// Shared registry + borrowed validator build
+let registry = Registry::new()
+    .add("https://example.com/schema", shared_schema)?
+    .prepare()?;
+let validator = jsonschema::options()
+    .with_registry(&registry)
+    .build(&schema)?;
+
+// Multiple shared schemas
+let registry = Registry::new()
+    .extend([
+        ("https://example.com/schema-1", schema_1),
+        ("https://example.com/schema-2", schema_2),
+    ])?
+    .prepare()?;
+let validator = jsonschema::options()
+    .with_registry(&registry)
+    .build(&schema)?;
+```
+
 ## Upgrading from 0.38.x to 0.39.0
 
 ### Custom keyword API simplified

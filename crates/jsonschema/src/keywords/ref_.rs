@@ -190,7 +190,7 @@ fn compile_reference_validator<'a>(
         Ok(resolved) => resolved.into_inner(),
         Err(error) => return Some(Err(ValidationError::from(error))),
     };
-    let vocabularies = ctx.registry.find_vocabularies(draft, contents);
+    let vocabularies = ctx.find_vocabularies(draft, contents);
     let resource_ref = draft.create_resource_ref(contents);
     let inner_ctx = ctx.with_resolver_and_draft(
         resolver,
@@ -241,7 +241,7 @@ fn compile_recursive_validator<'a>(
         .lookup_recursive_reference()
         .map_err(ValidationError::from)?;
     let (contents, resolver, draft) = resolved.into_inner();
-    let vocabularies = ctx.registry.find_vocabularies(draft, contents);
+    let vocabularies = ctx.find_vocabularies(draft, contents);
     let resource_ref = draft.create_resource_ref(contents);
     let inner_ctx = ctx.with_resolver_and_draft(
         resolver,
