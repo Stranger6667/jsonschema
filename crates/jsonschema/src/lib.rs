@@ -531,7 +531,7 @@
 //! ```rust
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use serde_json::json;
-//! use jsonschema::Resource;
+//! use jsonschema::{Registry, Resource};
 //!
 //! // Root schema with multiple definitions
 //! let root_schema = json!({
@@ -559,9 +559,22 @@
 //! // Create a schema that references the specific definition you want to validate against
 //! let user_schema = json!({"$ref": "https://example.com/root#/definitions/User"});
 //!
-//! // Register the root schema and build validator for the specific definition
+//! let registry = Registry::try_from_resources([
+//!     (
+//!         "https://example.com/root",
+//!         Resource::from_contents(root_schema),
+//!     ),
+//!     (
+//!         "https://example.com/user",
+//!         Resource::from_contents(user_schema.clone()),
+//!     ),
+//! ])?;
+//! let index = registry.build_index()?;
+//!
+//! // Build validator for the specific definition via prebuilt index
 //! let validator = jsonschema::options()
-//!     .with_resource("https://example.com/root", Resource::from_contents(root_schema))
+//!     .with_index(&index)
+//!     .with_base_uri("https://example.com/user")
 //!     .build(&user_schema)?;
 //!
 //! // Now validate data against just the User definition
@@ -886,9 +899,8 @@ pub use evaluation::{
 pub use http::HttpOptions;
 pub use keywords::custom::Keyword;
 pub use options::{EmailOptions, FancyRegex, PatternOptions, Regex, ValidationOptions};
-pub use referencing::{
-    Draft, Error as ReferencingError, Registry, RegistryOptions, Resource, Retrieve, Uri,
-};
+pub use referencing::{Draft, Error as ReferencingError, RegistryOptions, Resource, Retrieve, Uri};
+pub type Registry = referencing::Registry<'static>;
 #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
 pub use retriever::{HttpRetriever, HttpRetrieverError};
 pub use types::{JsonType, JsonTypeSet, JsonTypeSetIterator};
@@ -1165,7 +1177,7 @@ pub async fn async_validator_for(schema: &Value) -> Result<Validator, Validation
 ///
 /// See [`ValidationOptions`] for all available configuration options.
 #[must_use]
-pub fn options() -> ValidationOptions {
+pub fn options<'i>() -> ValidationOptions<'i> {
     Validator::options()
 }
 
@@ -1231,15 +1243,15 @@ pub fn options() -> ValidationOptions {
 /// See [`ValidationOptions`] for all available configuration options.
 #[cfg(feature = "resolve-async")]
 #[must_use]
-pub fn async_options() -> ValidationOptions<std::sync::Arc<dyn AsyncRetrieve>> {
+pub fn async_options<'i>() -> ValidationOptions<'i, std::sync::Arc<dyn AsyncRetrieve>> {
     Validator::async_options()
 }
 
 /// Functionality for validating JSON Schema documents against their meta-schemas.
 pub mod meta {
-    use crate::{error::ValidationError, Draft};
+    use crate::{error::ValidationError, Draft, Registry};
     use ahash::AHashSet;
-    use referencing::{Registry, Retrieve};
+    use referencing::Retrieve;
     use serde_json::Value;
 
     pub use validator_handle::MetaValidator;
@@ -1591,9 +1603,11 @@ pub mod meta {
                 if let Some(registry) = registry {
                     let (custom_meta_schema, resolved_draft) =
                         resolve_meta_schema_with_registry(meta_schema_uri, registry)?;
+                    let index = registry.build_index()?;
                     let validator = crate::options()
                         .with_draft(resolved_draft)
-                        .with_registry(registry.clone())
+                        .with_index(&index)
+                        .with_base_uri(meta_schema_uri.trim_end_matches('#'))
                         .without_schema_validation()
                         .build(&custom_meta_schema)?;
                     return Ok(MetaValidator::owned(validator));
@@ -1617,12 +1631,13 @@ pub mod meta {
         uri: &str,
         registry: &Registry,
     ) -> Result<(Value, Draft), ValidationError<'static>> {
-        let resolver = registry.try_resolver(uri)?;
+        let index = registry.build_index()?;
+        let resolver = index.resolver(referencing::uri::from_str(uri)?);
         let first_resolved = resolver.lookup("")?;
         let first_meta_schema = first_resolved.contents().clone();
 
         let draft = walk_meta_schema_chain(uri, |current_uri| {
-            let resolver = registry.try_resolver(current_uri)?;
+            let resolver = index.resolver(referencing::uri::from_str(current_uri)?);
             let resolved = resolver.lookup("")?;
             Ok(resolved.contents().clone())
         })?;
@@ -1790,7 +1805,7 @@ pub mod draft4 {
     ///
     /// See [`ValidationOptions`] for all available configuration options.
     #[must_use]
-    pub fn options() -> ValidationOptions {
+    pub fn options<'i>() -> ValidationOptions<'i> {
         crate::options().with_draft(Draft::Draft4)
     }
 
@@ -1971,7 +1986,7 @@ pub mod draft6 {
     ///
     /// See [`ValidationOptions`] for all available configuration options.
     #[must_use]
-    pub fn options() -> ValidationOptions {
+    pub fn options<'i>() -> ValidationOptions<'i> {
         crate::options().with_draft(Draft::Draft6)
     }
 
@@ -2152,7 +2167,7 @@ pub mod draft7 {
     ///
     /// See [`ValidationOptions`] for all available configuration options.
     #[must_use]
-    pub fn options() -> ValidationOptions {
+    pub fn options<'i>() -> ValidationOptions<'i> {
         crate::options().with_draft(Draft::Draft7)
     }
 
@@ -2333,7 +2348,7 @@ pub mod draft201909 {
     ///
     /// See [`ValidationOptions`] for all available configuration options.
     #[must_use]
-    pub fn options() -> ValidationOptions {
+    pub fn options<'i>() -> ValidationOptions<'i> {
         crate::options().with_draft(Draft::Draft201909)
     }
 
@@ -2516,7 +2531,7 @@ pub mod draft202012 {
     ///
     /// See [`ValidationOptions`] for all available configuration options.
     #[must_use]
-    pub fn options() -> ValidationOptions {
+    pub fn options<'i>() -> ValidationOptions<'i> {
         crate::options().with_draft(Draft::Draft202012)
     }
 
@@ -2770,8 +2785,8 @@ pub(crate) mod tests_util {
 
 #[cfg(test)]
 mod tests {
-    use crate::{validator_for, ValidationError};
-    use referencing::{Registry, Resource};
+    use crate::{validator_for, Registry, ValidationError};
+    use referencing::Resource;
 
     use super::Draft;
     use serde_json::json;
@@ -3233,15 +3248,19 @@ mod tests {
             }
         });
 
-        // Register the custom meta-schema as a resource
-        let resources = vec![(
-            "http://custom.example.com/schema".to_string(),
+        let registry = Registry::try_new(
+            "http://custom.example.com/schema",
             Resource::from_contents(meta_schema),
-        )];
+        )
+        .expect("Should create registry")
+        .try_with_resource("json-schema:///", Resource::from_contents(schema.clone()))
+        .expect("Should register schema");
+        let index = registry.build_index().expect("Should build index");
 
         let validator = crate::options()
             .without_schema_validation()
-            .with_resources(resources.into_iter())
+            .with_index(&index)
+            .with_base_uri("json-schema:///")
             .build(&schema)
             .expect("Should build validator");
 
@@ -3367,21 +3386,22 @@ mod tests {
             "type": "object"
         });
 
-        // Build the validator with both the meta-schema and the element schema as resources
-        let resources = vec![
-            (
-                "http://example.com/meta/schema".to_string(),
-                referencing::Resource::from_contents(meta_schema),
-            ),
-            (
-                "http://example.com/schemas/element".to_string(),
-                referencing::Resource::from_contents(element_schema.clone()),
-            ),
-        ];
+        let registry = Registry::try_new(
+            "http://example.com/meta/schema",
+            referencing::Resource::from_contents(meta_schema),
+        )
+        .expect("Should create registry")
+        .try_with_resource(
+            "http://example.com/schemas/element",
+            referencing::Resource::from_contents(element_schema.clone()),
+        )
+        .expect("Should register element schema");
+        let index = registry.build_index().expect("Should build index");
 
         let validator = crate::options()
             .without_schema_validation()
-            .with_resources(resources.into_iter())
+            .with_index(&index)
+            .with_base_uri("http://example.com/schemas/element")
             .build(&element_schema)
             .expect("Should successfully build validator with custom meta-schema");
 
@@ -3417,6 +3437,7 @@ mod tests {
         .expect("Should create registry");
 
         let schema = json!({
+            "$id": "http://example.com/subject",
             "$schema": "http://example.com/custom-with-unevaluated#",
             "type": "object",
             "properties": {
@@ -3425,9 +3446,16 @@ mod tests {
             "unevaluatedProperties": false
         });
 
+        let registry = registry
+            .try_with_resource(
+                "http://example.com/subject",
+                Resource::from_contents(schema.clone()),
+            )
+            .expect("Should register subject schema");
+        let index = registry.build_index().expect("Should build index");
         let validator = crate::options()
             .without_schema_validation()
-            .with_registry(registry)
+            .with_index(&index)
             .build(&schema)
             .expect("Should build validator");
 
@@ -3513,6 +3541,7 @@ mod tests {
         .expect("Should create registry");
 
         let schema = json!({
+            "$id": "http://example.com/subject",
             "$schema": "http://example.com/meta/draft7-custom",
             "$ref": "#/$defs/positiveNumber",
             "maximum": 5,
@@ -3524,9 +3553,17 @@ mod tests {
             }
         });
 
+        let registry = registry
+            .try_with_resource(
+                "http://example.com/subject",
+                Resource::from_contents(schema.clone()),
+            )
+            .expect("Should register subject schema");
+        let index = registry.build_index().expect("Should build index");
         let validator = crate::options()
             .without_schema_validation()
-            .with_registry(registry)
+            .with_index(&index)
+            .with_base_uri("http://example.com/subject")
             .build(&schema)
             .expect("Should build validator");
 
@@ -4231,7 +4268,7 @@ mod async_tests {
     }
 
     #[tokio::test]
-    async fn test_async_with_registry() {
+    async fn test_async_with_index() {
         use crate::Registry;
 
         // Create a registry with initial schemas
@@ -4251,9 +4288,11 @@ mod async_tests {
             .await
             .unwrap();
 
+        let index = registry.build_index().expect("Should build index");
         // Create a validator using the pre-populated registry
         let validator = crate::async_options()
-            .with_registry(registry)
+            .with_base_uri("https://example.com/user.json")
+            .with_index(&index)
             .build(&json!({
                 "$ref": "https://example.com/user.json"
             }))

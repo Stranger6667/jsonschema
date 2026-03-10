@@ -31,6 +31,7 @@ fn bench_pointers(c: &mut Criterion) {
     let resource = Draft::Draft202012.create_resource(data);
     let registry = Registry::try_new("http://example.com/schema.json", resource)
         .expect("Invalid registry input");
+    let index = registry.build_index().expect("Invalid index");
 
     let cases = [
         ("single", "#/properties"),
@@ -41,16 +42,13 @@ fn bench_pointers(c: &mut Criterion) {
     let mut group = c.benchmark_group("JSON Pointer");
 
     for (name, pointer) in cases {
-        group.bench_with_input(
-            BenchmarkId::new("pointer", name),
-            &registry,
-            |b, registry| {
-                let resolver = registry
-                    .try_resolver("http://example.com/schema.json")
-                    .expect("Invalid base URI");
-                b.iter_with_large_drop(|| resolver.lookup(black_box(pointer)));
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("pointer", name), &index, |b, index| {
+            let resolver = index.resolver(
+                referencing::uri::from_str("http://example.com/schema.json")
+                    .expect("Invalid base URI"),
+            );
+            b.iter_with_large_drop(|| resolver.lookup(black_box(pointer)));
+        });
     }
 
     group.finish();

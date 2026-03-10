@@ -447,7 +447,7 @@ fn path_to_uri(path: &std::path::Path) -> String {
 fn options_for_schema(
     schema_path: &Path,
     http_options: Option<&jsonschema::HttpOptions>,
-) -> Result<jsonschema::ValidationOptions, Box<dyn std::error::Error>> {
+) -> Result<jsonschema::ValidationOptions<'static>, Box<dyn std::error::Error>> {
     let base_uri = path_to_uri(schema_path);
     let base_uri = referencing::uri::from_str(&base_uri)?;
     let mut options = jsonschema::options().with_base_uri(base_uri);
@@ -694,17 +694,55 @@ fn run_bundle(args: BundleArgs) -> ExitCode {
         Ok(value) => value,
         Err(error) => return fail_with_error(error),
     };
-
+    let mut resource_documents = Vec::with_capacity(resources.len());
     for (uri, path) in &resources {
         let resource_json = match read_json(path) {
             Ok(value) => value,
             Err(error) => return fail_with_error(error),
         };
-        opts = opts.with_resource(
-            uri.as_str(),
-            referencing::Resource::from_contents(resource_json),
-        );
+        resource_documents.push((uri.clone(), resource_json));
     }
+
+    let root_uri = path_to_uri(&schema);
+    let root_draft = referencing::Draft::default().detect(&schema_json);
+    let mut pairs = Vec::with_capacity(resource_documents.len() + 1);
+    pairs.push((
+        root_uri.as_str(),
+        root_draft.create_resource_ref(&schema_json),
+    ));
+    for (uri, schema) in &resource_documents {
+        let draft = referencing::Draft::default().detect(schema);
+        pairs.push((uri.as_str(), draft.create_resource_ref(schema)));
+    }
+
+    let registry = if let Some(http_opts) = http_options.as_ref() {
+        let retriever = match jsonschema::HttpRetriever::new(http_opts) {
+            Ok(retriever) => retriever,
+            Err(error) => return fail_with_error(error),
+        };
+        match referencing::Registry::try_from_resources_and_retriever(
+            pairs,
+            &retriever,
+            referencing::Draft::default(),
+        ) {
+            Ok(registry) => registry,
+            Err(error) => return fail_with_error(error),
+        }
+    } else {
+        match referencing::Registry::try_from_resources_and_retriever(
+            pairs,
+            &referencing::DefaultRetriever,
+            referencing::Draft::default(),
+        ) {
+            Ok(registry) => registry,
+            Err(error) => return fail_with_error(error),
+        }
+    };
+    let index = match registry.build_index() {
+        Ok(index) => index,
+        Err(error) => return fail_with_error(error),
+    };
+    opts = opts.with_index(&index);
 
     match opts.bundle(&schema_json) {
         Ok(bundled) => {

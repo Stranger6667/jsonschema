@@ -1,4 +1,4 @@
-use referencing::{Draft, Registry};
+use referencing::{DefaultRetriever, Draft, Registry, ResourceRef};
 use serde_json::Value;
 use std::fs;
 
@@ -26,7 +26,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "citm" => ("../crates/benchmark/data/citm_catalog_schema.json".to_string(), Some("../crates/benchmark/data/citm_catalog.json".to_string())),
             "fast-valid" => ("../crates/benchmark/data/fast_schema.json".to_string(), Some("../crates/benchmark/data/fast_valid.json".to_string())),
             "fast-invalid" => ("../crates/benchmark/data/fast_schema.json".to_string(), Some("../crates/benchmark/data/fast_invalid.json".to_string())),
-            _ => return Err(format!("Unknown preset: {}. Available: openapi, swagger, geojson, citm, fast-valid, fast-invalid", preset).into()),
+            "fhir" => ("../crates/benchmark/data/fhir.schema.json".to_string(), None),
+            _ => return Err(format!("Unknown preset: {}. Available: openapi, swagger, geojson, citm, fast-valid, fast-invalid, fhir", preset).into()),
         }
     } else {
         let schema_path = pico_args
@@ -65,15 +66,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         "registry" => {
-            if args.instance_path.is_some() {
-                return Err("--instance is not supported for 'registry' method".into());
-            }
+            let draft = Draft::default().detect(&schema);
             for _ in 0..args.iterations {
-                let input_resources = vec![(
-                    "http://example.com/schema",
-                    Draft::Draft202012.create_resource(schema.clone()),
-                )];
-                let _ = Registry::try_from_resources(input_resources.into_iter());
+                let _ = Registry::try_from_resources_and_retriever(
+                    [("http://example.com/schema", ResourceRef::new(&schema, draft))],
+                    &DefaultRetriever,
+                    draft,
+                )?;
+            }
+        }
+        "index" => {
+            let draft = Draft::default().detect(&schema);
+            let registry = Registry::try_from_resources_and_retriever(
+                [("http://example.com/schema", ResourceRef::new(&schema, draft))],
+                &DefaultRetriever,
+                draft,
+            )?;
+            for _ in 0..args.iterations {
+                let _ = registry.build_index()?;
+            }
+        }
+        "compile" => {
+            let draft = Draft::default().detect(&schema);
+            let registry = Registry::try_from_resources_and_retriever(
+                [("http://example.com/schema", ResourceRef::new(&schema, draft))],
+                &DefaultRetriever,
+                draft,
+            )?;
+            let index = registry.build_index()?;
+            for _ in 0..args.iterations {
+                let _ = jsonschema::options()
+                    .with_index(&index)
+                    .with_base_uri("http://example.com/schema")
+                    .build(&schema)?;
             }
         }
         "is_valid" | "validate" | "iter_errors" | "evaluate" => {
@@ -116,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             return Err(
-                "Invalid method. Use 'registry', 'build', 'is_valid', 'validate', 'iter_errors', or 'evaluate'".into()
+                "Invalid method. Use 'registry', 'index', 'compile', 'build', 'is_valid', 'validate', 'iter_errors', or 'evaluate'".into()
             );
         }
     }

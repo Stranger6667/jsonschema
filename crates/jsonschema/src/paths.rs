@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use referencing::unescape_segment;
+use referencing::{unescape_segment, write_escaped_str};
 
 use crate::keywords::Keyword;
 
@@ -648,44 +648,6 @@ impl Location {
     #[must_use]
     pub fn iter(&self) -> std::vec::IntoIter<LocationSegment<'_>> {
         <&Self as IntoIterator>::into_iter(self)
-    }
-}
-
-pub fn write_escaped_str(buffer: &mut String, value: &str) {
-    match value.find(['~', '/']) {
-        Some(mut escape_idx) => {
-            let mut remaining = value;
-
-            // Loop through the string to replace `~` and `/`
-            loop {
-                let (before, after) = remaining.split_at(escape_idx);
-                // Copy everything before the escape char
-                buffer.push_str(before);
-
-                // Append the appropriate escape sequence
-                match after.as_bytes()[0] {
-                    b'~' => buffer.push_str("~0"),
-                    b'/' => buffer.push_str("~1"),
-                    _ => unreachable!(),
-                }
-
-                // Move past the escaped character
-                remaining = &after[1..];
-
-                // Find the next `~` or `/` to continue escaping
-                if let Some(next_escape_idx) = remaining.find(['~', '/']) {
-                    escape_idx = next_escape_idx;
-                } else {
-                    // Append any remaining part of the string
-                    buffer.push_str(remaining);
-                    break;
-                }
-            }
-        }
-        None => {
-            // If no escape characters are found, append the segment as is
-            buffer.push_str(value);
-        }
     }
 }
 

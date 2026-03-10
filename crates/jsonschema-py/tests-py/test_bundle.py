@@ -43,6 +43,24 @@ def test_bundle_validates_identically():
     assert not validator.is_valid({"age": 30})
 
 
+def test_bundle_with_registry_and_explicit_draft4_legacy_id_root():
+    root = {
+        "id": "urn:root",
+        "type": "object",
+        "properties": {"value": {"$ref": "urn:string"}},
+        "required": ["value"],
+    }
+    registry = jsonschema_rs.Registry(
+        resources=[("urn:string", {"type": "string"})],
+        draft=jsonschema_rs.Draft4,
+    )
+
+    bundled = jsonschema_rs.bundle(root, registry=registry, draft=jsonschema_rs.Draft4)
+
+    assert bundled["properties"]["value"]["$ref"] == "urn:string"
+    assert "urn:string" in bundled["definitions"]
+
+
 def test_bundle_unresolvable_raises():
     with pytest.raises(jsonschema_rs.ReferencingError):
         jsonschema_rs.bundle({"$ref": "https://example.com/missing.json"})

@@ -839,8 +839,10 @@ mod async_tests {
             .await
             .expect("Registry creation failed");
 
+        let index = registry.build_index().expect("Should build index");
         let validator = crate::options()
-            .with_registry(registry)
+            .with_base_uri("http://example.com/schema")
+            .with_index(&index)
             .build(&schema)
             .expect("Invalid schema");
 
@@ -912,8 +914,10 @@ mod async_tests {
             .await
             .expect("Registry creation failed");
 
+        let index = registry.build_index().expect("Should build index");
         let validator = crate::options()
-            .with_registry(registry)
+            .with_base_uri("http://example.com/schema")
+            .with_index(&index)
             .build(&schema)
             .expect("Invalid schema");
 

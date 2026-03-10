@@ -2,14 +2,25 @@ use crate::{compiler, options::ValidationOptions};
 use ahash::AHashSet;
 use referencing::{Draft, Resolver};
 use serde_json::{Map, Value};
+use std::io::{Error as IoError, ErrorKind};
 
-fn bundle_from_registry(
+fn root_uri_not_in_index(uri: &str) -> referencing::Error {
+    referencing::Error::unretrievable(
+        uri,
+        Box::new(IoError::new(
+            ErrorKind::NotFound,
+            "root URI is not present in the provided index",
+        )),
+    )
+}
+
+fn bundle_from_index(
     schema: &Value,
     draft: Draft,
-    registry: &referencing::Registry,
+    index: &referencing::Index<'_>,
     base_uri: &referencing::Uri<String>,
 ) -> Result<Value, referencing::Error> {
-    let resolver = registry.resolver(base_uri.clone());
+    let resolver = index.resolver(base_uri.clone());
     let mut defs: Map<String, Value> = Map::new();
     let mut visited: AHashSet<String> = AHashSet::new();
     // Seed visited with the root URI so back-references to root are not re-embedded
@@ -19,28 +30,42 @@ fn bundle_from_registry(
 }
 
 pub(crate) fn bundle_with_options(
-    config: &ValidationOptions,
+    config: &ValidationOptions<'_>,
     schema: &Value,
 ) -> Result<Value, referencing::Error> {
     let draft = config.draft_for(schema)?;
-    let resource = draft.create_resource(schema.clone());
     let resource_ref = draft.create_resource_ref(schema);
+    if let Some(index) = config.index {
+        let base_uri = compiler::resolve_base_uri(config.base_uri.as_ref(), resource_ref.id())?;
+        if !index.contains_resource_uri(base_uri.as_str()) {
+            return Err(root_uri_not_in_index(base_uri.as_str()));
+        }
+        return bundle_from_index(schema, draft, index, &base_uri);
+    }
     let (registry, base_uri) =
-        compiler::build_registry(config, draft, resource, resource_ref.id())?;
-    bundle_from_registry(schema, draft, &registry, &base_uri)
+        compiler::build_registry(config, draft, resource_ref, resource_ref.id())?;
+    let index = registry.build_index()?;
+    bundle_from_index(schema, draft, &index, &base_uri)
 }
 
 #[cfg(feature = "resolve-async")]
 pub(crate) async fn bundle_with_options_async(
-    config: &crate::options::ValidationOptions<std::sync::Arc<dyn referencing::AsyncRetrieve>>,
+    config: &crate::options::ValidationOptions<'_, std::sync::Arc<dyn referencing::AsyncRetrieve>>,
     schema: &Value,
 ) -> Result<Value, referencing::Error> {
     let draft = config.draft_for(schema).await?;
-    let resource = draft.create_resource(schema.clone());
     let resource_ref = draft.create_resource_ref(schema);
+    if let Some(index) = config.index {
+        let base_uri = compiler::resolve_base_uri(config.base_uri.as_ref(), resource_ref.id())?;
+        if !index.contains_resource_uri(base_uri.as_str()) {
+            return Err(root_uri_not_in_index(base_uri.as_str()));
+        }
+        return bundle_from_index(schema, draft, index, &base_uri);
+    }
     let (registry, base_uri) =
-        compiler::build_registry_async(config, draft, resource, resource_ref.id()).await?;
-    bundle_from_registry(schema, draft, &registry, &base_uri)
+        compiler::build_registry_async(config, draft, resource_ref, resource_ref.id()).await?;
+    let index = registry.build_index()?;
+    bundle_from_index(schema, draft, &index, &base_uri)
 }
 
 fn definitions_keyword(draft: Draft) -> &'static str {

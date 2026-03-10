@@ -81,6 +81,35 @@ fast-invalid-evaluate: (flame "fast-invalid" "evaluate" "10000")
 
 registry: (flame "citm" "registry" "1000")
 
+citm-registry: (flame "citm" "registry" "10000")
+citm-index: (flame "citm" "index" "10000")
+citm-compile: (flame "citm" "compile" "10000")
+
+openapi-registry: (flame "openapi" "registry" "10000")
+openapi-index: (flame "openapi" "index" "10000")
+openapi-compile: (flame "openapi" "compile" "10000")
+
+swagger-registry: (flame "swagger" "registry" "5000")
+swagger-index: (flame "swagger" "index" "5000")
+swagger-compile: (flame "swagger" "compile" "5000")
+
+geojson-registry: (flame "geojson" "registry" "5000")
+geojson-index: (flame "geojson" "index" "5000")
+geojson-compile: (flame "geojson" "compile" "5000")
+
+fast-valid-registry: (flame "fast-valid" "registry" "10000")
+fast-valid-index: (flame "fast-valid" "index" "10000")
+fast-valid-compile: (flame "fast-valid" "compile" "10000")
+
+fast-invalid-registry: (flame "fast-invalid" "registry" "10000")
+fast-invalid-index: (flame "fast-invalid" "index" "10000")
+fast-invalid-compile: (flame "fast-invalid" "compile" "10000")
+
+fhir-build: (flame "fhir" "build" "500")
+fhir-registry: (flame "fhir" "registry" "500")
+fhir-index: (flame "fhir" "index" "5000")
+fhir-compile: (flame "fhir" "compile" "500")
+
 dhat-citm-build: (dhat "citm" "build" "10000")
 dhat-citm-is-valid: (dhat "citm" "is_valid" "10000")
 dhat-citm-validate: (dhat "citm" "validate" "1000")
@@ -104,6 +133,14 @@ dhat-fast-invalid-is-valid: (dhat "fast-invalid" "is_valid" "10000")
 dhat-fast-invalid-validate: (dhat "fast-invalid" "validate" "10000")
 dhat-fast-invalid-iter-errors: (dhat "fast-invalid" "iter_errors" "10000")
 dhat-fast-invalid-evaluate: (dhat "fast-invalid" "evaluate" "10000")
+
+dhat-citm-registry: (dhat "citm" "registry" "10000")
+dhat-citm-index: (dhat "citm" "index" "10000")
+dhat-citm-compile: (dhat "citm" "compile" "10000")
+
+dhat-openapi-registry: (dhat "openapi" "registry" "10000")
+dhat-openapi-index: (dhat "openapi" "index" "10000")
+dhat-openapi-compile: (dhat "openapi" "compile" "10000")
 
 # Clean generated flamegraphs
 clean:

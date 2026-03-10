@@ -1,11 +1,75 @@
-use std::{
-    borrow::Cow,
-    sync::atomic::{AtomicPtr, Ordering},
-};
+use std::{borrow::Cow, fmt::Write};
 
 use serde_json::Value;
 
-use crate::{Anchor, Draft, Error, Resolved, Resolver, Segments};
+use crate::{Draft, Error, Resolved, Resolver, Segments};
+
+/// A segment in a JSON Pointer path, stored lazily to avoid string allocation during traversal.
+pub(crate) enum PathSegment<'a> {
+    Key(&'a str),
+    Index(usize),
+}
+
+/// A lazy JSON Pointer path that avoids string building during schema traversal.
+/// The path is only materialized to a `String` when actually needed (e.g., for skeleton entries).
+pub(crate) struct PathStack<'a> {
+    /// Owned initial path from the queue entry (empty string for root resources).
+    base: String,
+    /// Dynamically accumulated segments as the traversal descends.
+    segments: Vec<PathSegment<'a>>,
+}
+
+impl<'a> PathStack<'a> {
+    pub(crate) fn from_base(base: String) -> Self {
+        Self {
+            base,
+            segments: Vec::new(),
+        }
+    }
+
+    /// Push a key segment. Returns a checkpoint to restore with `truncate`.
+    #[inline]
+    pub(crate) fn push_key(&mut self, key: &'a str) -> usize {
+        let checkpoint = self.segments.len();
+        self.segments.push(PathSegment::Key(key));
+        checkpoint
+    }
+
+    /// Push a numeric index segment. Returns a checkpoint to restore with `truncate`.
+    #[inline]
+    pub(crate) fn push_index(&mut self, idx: usize) -> usize {
+        let checkpoint = self.segments.len();
+        self.segments.push(PathSegment::Index(idx));
+        checkpoint
+    }
+
+    /// Restore the stack to the given checkpoint (removing segments added after it).
+    #[inline]
+    pub(crate) fn truncate(&mut self, checkpoint: usize) {
+        self.segments.truncate(checkpoint);
+    }
+
+    /// Materialize the full JSON Pointer path as an owned `String`.
+    /// Only called when a skeleton entry is actually needed.
+    pub(crate) fn to_pointer(&self) -> String {
+        if self.segments.is_empty() {
+            return self.base.clone();
+        }
+        let mut s = self.base.clone();
+        for seg in &self.segments {
+            match seg {
+                PathSegment::Key(k) => {
+                    s.push('/');
+                    write_escaped_str(&mut s, k);
+                }
+                PathSegment::Index(i) => {
+                    write!(s, "/{i}").unwrap();
+                }
+            }
+        }
+        s
+    }
+}
 
 pub(crate) trait JsonSchemaResource {
     fn contents(&self) -> &Value;
@@ -96,60 +160,14 @@ impl JsonSchemaResource for ResourceRef<'_> {
     }
 }
 
-/// A pointer to a pinned resource.
-pub(crate) struct InnerResourcePtr {
-    contents: AtomicPtr<Value>,
-    draft: Draft,
-}
-
-impl Clone for InnerResourcePtr {
-    fn clone(&self) -> Self {
-        Self {
-            contents: AtomicPtr::new(self.contents.load(Ordering::Relaxed)),
-            draft: self.draft,
-        }
-    }
-}
-
-impl std::fmt::Debug for InnerResourcePtr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("InnerResourcePtr")
-            .field("contents", self.contents())
-            .field("draft", &self.draft)
-            .finish()
-    }
-}
-
-impl InnerResourcePtr {
-    pub(crate) fn new(contents: *const Value, draft: Draft) -> Self {
-        Self {
-            contents: AtomicPtr::new(contents.cast_mut()),
-            draft,
-        }
-    }
-
-    #[allow(unsafe_code)]
-    pub(crate) fn contents(&self) -> &Value {
-        // SAFETY: The pointer is valid as long as the registry exists
-        unsafe { &*self.contents.load(Ordering::Relaxed) }
-    }
-
-    #[inline]
-    pub(crate) fn draft(&self) -> Draft {
-        self.draft
-    }
-
-    pub(crate) fn anchors(&self) -> impl Iterator<Item = Anchor> + '_ {
-        self.draft().anchors(self.contents())
-    }
-
-    pub(crate) fn pointer<'r>(
-        &'r self,
+impl<'r> ResourceRef<'r> {
+    pub(crate) fn pointer(
+        self,
         pointer: &str,
         mut resolver: Resolver<'r>,
     ) -> Result<Resolved<'r>, Error> {
         // INVARIANT: Pointer always starts with `/`
-        let mut contents = self.contents();
+        let mut contents = self.contents;
         let mut segments = Segments::new();
         let original_pointer = pointer;
         let pointer = percent_encoding::percent_decode_str(&pointer[1..])
@@ -176,27 +194,45 @@ impl InnerResourcePtr {
                 segments.push(segment);
             }
             let last = &resolver;
-            let new_resolver = self.draft().maybe_in_subresource(
+            let new_resolver = self.draft.maybe_in_subresource(
                 &segments,
                 &resolver,
-                &InnerResourcePtr::new(contents, self.draft()),
+                ResourceRef::new(contents, self.draft),
             )?;
             if new_resolver != *last {
                 segments = Segments::new();
             }
             resolver = new_resolver;
         }
-        Ok(Resolved::new(contents, resolver, self.draft()))
+        Ok(Resolved::new(contents, resolver, self.draft))
     }
 }
 
-impl JsonSchemaResource for InnerResourcePtr {
-    fn contents(&self) -> &Value {
-        self.contents()
-    }
-
-    fn draft(&self) -> Draft {
-        self.draft
+/// Escape a key into a JSON Pointer segment: `~` → `~0`, `/` → `~1`.
+///
+/// Appends the escaped form of `value` directly to `buffer`.
+pub fn write_escaped_str(buffer: &mut String, value: &str) {
+    match value.find(['~', '/']) {
+        Some(mut escape_idx) => {
+            let mut remaining = value;
+            loop {
+                let (before, after) = remaining.split_at(escape_idx);
+                buffer.push_str(before);
+                match after.as_bytes()[0] {
+                    b'~' => buffer.push_str("~0"),
+                    b'/' => buffer.push_str("~1"),
+                    _ => unreachable!(),
+                }
+                remaining = &after[1..];
+                if let Some(next_escape_idx) = remaining.find(['~', '/']) {
+                    escape_idx = next_escape_idx;
+                } else {
+                    buffer.push_str(remaining);
+                    break;
+                }
+            }
+        }
+        None => buffer.push_str(value),
     }
 }
 
@@ -251,9 +287,9 @@ pub fn unescape_segment(mut segment: &str) -> Cow<'_, str> {
 
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, sync::Arc};
+    use std::error::Error;
 
-    use crate::{resource::InnerResourcePtr, Draft, Registry};
+    use crate::{Draft, Registry};
 
     use super::unescape_segment;
     use serde_json::json;
@@ -292,7 +328,7 @@ mod tests {
         assert_eq!(unescaped, double_replaced, "Failed for: {input}");
     }
 
-    fn create_test_registry() -> Registry {
+    fn create_test_registry() -> Registry<'static> {
         let schema = Draft::Draft202012.create_resource(json!({
             "type": "object",
             "properties": {
@@ -313,36 +349,20 @@ mod tests {
         }));
         let registry =
             Registry::try_new("http://example.com", schema.clone()).expect("Invalid resources");
-        let resolver = registry
-            .try_resolver("http://example.com")
-            .expect("Invalid base URI");
+        let index = registry.build_index().expect("Invalid index");
+        let resolver =
+            index.resolver(crate::uri::from_str("http://example.com").expect("Invalid base URI"));
 
         let resolved = resolver.lookup("#").expect("Lookup failed");
         assert_eq!(resolved.contents(), schema.contents());
     }
 
     #[test]
-    fn test_inner_resource_ptr_debug() {
-        let value = Arc::pin(json!({
-            "foo": "bar",
-            "number": 42
-        }));
-
-        let ptr = InnerResourcePtr::new(std::ptr::addr_of!(*value), Draft::Draft202012);
-
-        let expected = format!(
-            "InnerResourcePtr {{ contents: {:?}, draft: Draft202012 }}",
-            *value
-        );
-        assert_eq!(format!("{ptr:?}"), expected);
-    }
-
-    #[test]
     fn test_percent_encoded_non_utf8() {
         let registry = create_test_registry();
-        let resolver = registry
-            .try_resolver("http://example.com")
-            .expect("Invalid base URI");
+        let index = registry.build_index().expect("Invalid index");
+        let resolver =
+            index.resolver(crate::uri::from_str("http://example.com").expect("Invalid base URI"));
 
         let result = resolver.lookup("#/%FF");
         let error = result.expect_err("Should fail");
@@ -356,9 +376,9 @@ mod tests {
     #[test]
     fn test_array_index_as_string() {
         let registry = create_test_registry();
-        let resolver = registry
-            .try_resolver("http://example.com")
-            .expect("Invalid base URI");
+        let index = registry.build_index().expect("Invalid index");
+        let resolver =
+            index.resolver(crate::uri::from_str("http://example.com").expect("Invalid base URI"));
 
         let result = resolver.lookup("#/properties/bar/items/one");
         let error = result.expect_err("Should fail");
@@ -372,9 +392,9 @@ mod tests {
     #[test]
     fn test_array_index_out_of_bounds() {
         let registry = create_test_registry();
-        let resolver = registry
-            .try_resolver("http://example.com")
-            .expect("Invalid base URI");
+        let index = registry.build_index().expect("Invalid index");
+        let resolver =
+            index.resolver(crate::uri::from_str("http://example.com").expect("Invalid base URI"));
 
         let result = resolver.lookup("#/properties/bar/items/2");
         assert_eq!(
@@ -386,9 +406,9 @@ mod tests {
     #[test]
     fn test_unknown_property() {
         let registry = create_test_registry();
-        let resolver = registry
-            .try_resolver("http://example.com")
-            .expect("Invalid base URI");
+        let index = registry.build_index().expect("Invalid index");
+        let resolver =
+            index.resolver(crate::uri::from_str("http://example.com").expect("Invalid base URI"));
 
         let result = resolver.lookup("#/properties/baz");
         assert_eq!(
