@@ -454,7 +454,7 @@ class Draft202012Validator:
 Validator: TypeAlias = Draft4Validator | Draft6Validator | Draft7Validator | Draft201909Validator | Draft202012Validator
 
 def validator_for(
-    schema: _SchemaT,
+    schema: _SchemaT | str,
     formats: dict[str, _FormatFunc] | None = None,
     validate_formats: bool | None = None,
     ignore_unknown_formats: bool = True,
