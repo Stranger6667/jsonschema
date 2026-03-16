@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Incorrect handling of `duration` format when hours and seconds appear without minutes, or years and days without months.
+
 ## [0.45.0] - 2026-03-08
 
 ### Added

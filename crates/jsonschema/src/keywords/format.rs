@@ -861,7 +861,29 @@ fn is_valid_duration(duration: &str) -> bool {
         i += 1;
     }
 
-    has_component && (!has_time || has_time_component)
+    if !has_component || (has_time && !has_time_component) {
+        return false;
+    }
+
+    // RFC 3339 ABNF: dur-year = Y [dur-month], dur-month = M [dur-day]
+    // So Y+D without M is invalid
+    let has_date_y = seen_units & (1 << 0) != 0; // Y is index 0 in date_units
+    let has_date_m = seen_units & (1 << 1) != 0; // M is index 1 in date_units
+    let has_date_d = seen_units & (1 << 3) != 0; // D is index 3 in date_units
+    if has_date_y && has_date_d && !has_date_m {
+        return false;
+    }
+
+    // RFC 3339 ABNF: dur-hour = H [dur-minute], dur-minute = M [dur-second]
+    // So H+S without M is invalid
+    let has_time_h = seen_units & (1 << 4) != 0; // H is index 0 in time_units, stored at +4
+    let has_time_m = seen_units & (1 << 5) != 0; // M is index 1 in time_units, stored at +5
+    let has_time_s = seen_units & (1 << 6) != 0; // S is index 2 in time_units, stored at +6
+    if has_time_h && has_time_s && !has_time_m {
+        return false;
+    }
+
+    true
 }
 
 fn is_valid_ipv4(ip: &str) -> bool {
