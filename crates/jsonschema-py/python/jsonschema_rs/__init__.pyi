@@ -492,7 +492,7 @@ def bundle(
     """
     ...
 
-def validator_cls_for(schema: _SchemaT) -> type[Validator]:
+def validator_cls_for(schema: _SchemaT | str) -> type[Validator]:
     """Detect the JSON Schema draft for a schema and return the corresponding validator class.
 
     Draft is detected automatically from the $schema field. Defaults to Draft202012Validator.
