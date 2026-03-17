@@ -13,11 +13,12 @@ use serde_json::Value;
 use crate::{
     cache::{SharedUriCache, UriCache},
     meta::{self, metas_for_draft},
-    resource::{unescape_segment, PathSegment, PathStack},
+    resource::unescape_segment,
     small_map::SmallMap,
     uri,
     vocabularies::{self, VocabularySet},
-    Anchor, DefaultRetriever, Draft, Error, Resolver, Resource, ResourceRef, Retrieve,
+    Anchor, DefaultRetriever, Draft, Error, JsonPointerNode, JsonPointerSegment, Resolver,
+    Resource, ResourceRef, Retrieve,
 };
 
 #[derive(Debug)]
@@ -179,19 +180,20 @@ impl ParsedPointer {
         Some(Self { segments })
     }
 
-    fn from_path_stack(path: &PathStack<'_>) -> Option<Self> {
-        let mut pointer = Self::from_json_pointer(path.base_pointer())?;
-        for segment in path.segments() {
-            match segment {
-                PathSegment::Key(key) => pointer
-                    .segments
-                    .push(ParsedPointerSegment::Key((*key).into())),
-                PathSegment::Index(index) => {
-                    pointer.segments.push(ParsedPointerSegment::Index(*index));
-                }
-            }
+    fn from_pointer_node(path: &JsonPointerNode<'_, '_>) -> Self {
+        let mut segments = Vec::new();
+        let mut head = path;
+
+        while let Some(parent) = head.parent() {
+            segments.push(match head.segment() {
+                JsonPointerSegment::Key(key) => ParsedPointerSegment::Key(key.as_ref().into()),
+                JsonPointerSegment::Index(idx) => ParsedPointerSegment::Index(*idx),
+            });
+            head = parent;
         }
-        Some(pointer)
+
+        segments.reverse();
+        Self { segments }
     }
 
     fn lookup<'a>(&self, document: &'a Value) -> Option<&'a Value> {
@@ -832,101 +834,44 @@ fn build_prepared_index_for_documents<'a>(
     documents: &DocumentStore<'a>,
     resolution_cache: &mut UriCache,
 ) -> Result<PreparedIndex<'a>, Error> {
-    let mut index_data = PreparedIndex::default();
+    let mut state = ProcessingState::new();
+    let mut known_resources = KnownResources::default();
+
     for (doc_uri, document) in documents {
-        insert_root_index_entries(&mut index_data, doc_uri, document);
-        let root = document.contents();
-        let borrowed_root = document.borrowed_contents();
-        let initial_base = Arc::clone(doc_uri);
-        // Stack: (base_uri, json_pointer_from_root, draft)
-        let mut work: Vec<(Arc<Uri<String>>, String, Draft)> =
-            vec![(initial_base, String::new(), document.draft())];
-        while let Some((base, ptr_str, draft)) = work.pop() {
-            let contents = if ptr_str.is_empty() {
-                root
-            } else {
-                match pointer(root, &ptr_str) {
-                    Some(v) => v,
-                    None => continue,
-                }
-            };
-            let original_base = Arc::clone(&base);
-            let mut current_base = base;
-            let (id, has_anchors) = draft.id_and_has_anchors(contents);
-            let is_root_entry = ptr_str.is_empty();
-            let Some(parsed_pointer) = ParsedPointer::from_json_pointer(&ptr_str) else {
-                continue;
-            };
-            if let Some(id) = id {
-                current_base = resolve_id(&current_base, id, resolution_cache)?;
-                let insert_resource = current_base != original_base;
-                if !(is_root_entry && current_base == *doc_uri) && (insert_resource || has_anchors)
-                {
-                    if let Some(root) = borrowed_root {
-                        insert_borrowed_discovered_index_entries(
-                            &mut index_data,
-                            &current_base,
-                            draft,
-                            insert_resource,
-                            if ptr_str.is_empty() {
-                                root
-                            } else {
-                                pointer(root, &ptr_str)
-                                    .expect("borrowed root contents were already resolved")
-                            },
-                        );
-                    } else {
-                        insert_owned_discovered_index_entries(
-                            &mut index_data,
-                            &current_base,
-                            document,
-                            &parsed_pointer,
-                            draft,
-                            insert_resource,
-                            contents,
-                        );
-                    }
-                }
-            } else if has_anchors && !is_root_entry {
-                if let Some(root) = borrowed_root {
-                    insert_borrowed_discovered_index_entries(
-                        &mut index_data,
-                        &current_base,
-                        draft,
-                        false,
-                        if ptr_str.is_empty() {
-                            root
-                        } else {
-                            pointer(root, &ptr_str)
-                                .expect("borrowed root contents were already resolved")
-                        },
-                    );
-                } else {
-                    insert_owned_discovered_index_entries(
-                        &mut index_data,
-                        &current_base,
-                        document,
-                        &parsed_pointer,
-                        draft,
-                        false,
-                        contents,
-                    );
-                }
-            }
-            // Push children with their absolute paths
-            let base_for_children = Arc::clone(&current_base);
-            let mut path = PathStack::from_base(ptr_str);
-            let _ = draft.walk_subresources_with_path(
-                contents,
-                &mut path,
-                &mut |p, _child, child_draft| {
-                    work.push((Arc::clone(&base_for_children), p.to_pointer(), child_draft));
-                    Ok::<(), Error>(())
-                },
-            );
+        known_resources.insert((**doc_uri).clone());
+        insert_root_index_entries(&mut state.index_data, doc_uri, document);
+    }
+
+    for (doc_uri, document) in documents {
+        if document.borrowed_contents().is_some() {
+            let mut local_seen = LocalSeen::new();
+            process_borrowed_document(
+                Arc::clone(doc_uri),
+                doc_uri,
+                document,
+                "",
+                document.draft(),
+                &mut state,
+                &mut known_resources,
+                resolution_cache,
+                &mut local_seen,
+            )?;
+        } else {
+            let mut local_seen = LocalSeen::new();
+            process_owned_document(
+                Arc::clone(doc_uri),
+                doc_uri,
+                document,
+                "",
+                document.draft(),
+                &mut state,
+                &mut known_resources,
+                resolution_cache,
+                &mut local_seen,
+            )?;
         }
     }
-    Ok(index_data)
+    Ok(state.index_data)
 }
 
 type KnownResources = AHashSet<Uri<String>>;
@@ -1123,6 +1068,8 @@ struct ProcessingState<'a> {
     /// pre-stored value address; non-subresource paths (e.g. `#/components/schemas/Foo`)
     /// are still fully traversed.
     deferred_refs: Vec<DeferredRef>,
+    draft4_reference_scratch: Vec<(&'a str, &'static str)>,
+    draft4_child_scratch: Vec<(&'a Value, Draft)>,
     index_data: PreparedIndex<'a>,
 }
 
@@ -1137,6 +1084,8 @@ impl ProcessingState<'_> {
             custom_metaschemas: Vec::new(),
             visited_schemas: AHashSet::new(),
             deferred_refs: Vec::new(),
+            draft4_reference_scratch: Vec::new(),
+            draft4_child_scratch: Vec::new(),
             index_data: PreparedIndex::default(),
         }
     }
@@ -1204,167 +1153,481 @@ fn process_input_resources_mixed<'a>(
     }
 }
 
-fn process_queue<'a, 'r>(
+fn process_queue<'r>(
     state: &mut ProcessingState<'r>,
-    documents: &'a DocumentStore<'r>,
+    documents: &DocumentStore<'r>,
     known_resources: &mut KnownResources,
     resolution_cache: &mut UriCache,
-    local_seen: &mut LocalSeen<'a>,
 ) -> Result<(), Error> {
     while let Some((base, document_root_uri, pointer_path, draft)) = state.queue.pop_front() {
         let Some(document) = documents.get(&document_root_uri) else {
             continue;
         };
-        let root = document.contents();
-        let borrowed_root = document.borrowed_contents();
-        let borrowed_contents = if pointer_path.is_empty() {
-            borrowed_root
-        } else {
-            borrowed_root.and_then(|root| pointer(root, &pointer_path))
-        };
-        let Some(contents) = (if pointer_path.is_empty() {
-            Some(root)
-        } else {
-            pointer(root, &pointer_path)
-        }) else {
+        if document.borrowed_contents().is_some() {
+            let mut document_local_seen = LocalSeen::new();
+            process_borrowed_document(
+                base,
+                &document_root_uri,
+                document,
+                &pointer_path,
+                draft,
+                state,
+                known_resources,
+                resolution_cache,
+                &mut document_local_seen,
+            )?;
             continue;
-        };
-
-        let resource = ResourceRef::new(contents, draft);
-        let mut path = PathStack::from_base(pointer_path);
-        process_resource_tree(
+        }
+        let mut document_local_seen = LocalSeen::new();
+        process_owned_document(
             base,
-            root,
-            borrowed_contents,
-            resource,
-            &mut path,
             &document_root_uri,
             document,
+            &pointer_path,
+            draft,
             state,
             known_resources,
             resolution_cache,
-            local_seen,
+            &mut document_local_seen,
         )?;
     }
     Ok(())
 }
 
-fn process_resource_tree<'a, 'r>(
-    mut base: Arc<Uri<String>>,
-    root: &'a Value,
-    borrowed_contents: Option<&'r Value>,
-    resource: ResourceRef<'a>,
-    path: &mut PathStack<'a>,
-    doc_key: &Arc<Uri<String>>,
+fn process_borrowed_document<'r>(
+    current_base_uri: Arc<Uri<String>>,
+    document_root_uri: &Arc<Uri<String>>,
+    document: &Arc<StoredDocument<'r>>,
+    pointer_path: &str,
+    draft: Draft,
+    state: &mut ProcessingState<'r>,
+    known_resources: &mut KnownResources,
+    resolution_cache: &mut UriCache,
+    local_seen: &mut LocalSeen<'r>,
+) -> Result<(), Error> {
+    let Some(document_root) = document.borrowed_contents() else {
+        return Ok(());
+    };
+    let Some(subschema) = (if pointer_path.is_empty() {
+        Some(document_root)
+    } else {
+        pointer(document_root, pointer_path)
+    }) else {
+        return Ok(());
+    };
+
+    explore_borrowed_subtree(
+        current_base_uri,
+        document_root,
+        subschema,
+        draft,
+        pointer_path.is_empty(),
+        document_root_uri,
+        state,
+        known_resources,
+        resolution_cache,
+        local_seen,
+    )
+}
+
+fn explore_borrowed_subtree<'r>(
+    mut current_base_uri: Arc<Uri<String>>,
+    document_root: &'r Value,
+    subschema: &'r Value,
+    draft: Draft,
+    is_root_entry: bool,
+    document_root_uri: &Arc<Uri<String>>,
+    state: &mut ProcessingState<'r>,
+    known_resources: &mut KnownResources,
+    resolution_cache: &mut UriCache,
+    local_seen: &mut LocalSeen<'r>,
+) -> Result<(), Error> {
+    #[cfg(feature = "perf-observe-registry")]
+    if let Some(object) = subschema.as_object() {
+        crate::observe_registry!("registry.borrowed.object_len={}", object.len());
+    }
+    if draft == Draft::Draft4 {
+        let Some(probe) = draft.probe_draft4_borrowed_object(subschema) else {
+            return Ok(());
+        };
+        #[cfg(feature = "perf-observe-registry")]
+        {
+            let id_scan = match (probe.id.is_some(), probe.has_anchor) {
+                (false, false) => "none",
+                (true, false) => "id_only",
+                (false, true) => "anchor_only",
+                (true, true) => "id_and_anchor",
+            };
+            crate::observe_registry!("registry.id_scan={id_scan}");
+        }
+        if let Some(id) = probe.id {
+            let original_base_uri = Arc::clone(&current_base_uri);
+            current_base_uri = resolve_id(&current_base_uri, id, resolution_cache)?;
+            known_resources.insert((*current_base_uri).clone());
+            let insert_resource = current_base_uri != original_base_uri;
+            if !(is_root_entry && current_base_uri == *document_root_uri) {
+                insert_borrowed_discovered_index_entries(
+                    &mut state.index_data,
+                    &current_base_uri,
+                    draft,
+                    insert_resource,
+                    subschema,
+                );
+            }
+        } else if probe.has_anchor && !is_root_entry {
+            insert_borrowed_discovered_index_entries(
+                &mut state.index_data,
+                &current_base_uri,
+                draft,
+                false,
+                subschema,
+            );
+        }
+
+        let subschema_ptr = std::ptr::from_ref::<Value>(subschema) as usize;
+        if state.visited_schemas.insert(subschema_ptr)
+            && probe.has_ref_or_schema {
+                let ref_start = state.draft4_reference_scratch.len();
+                let child_start = state.draft4_child_scratch.len();
+                draft
+                    .scan_draft4_borrowed_object_into_scratch(
+                        subschema,
+                        &mut state.draft4_reference_scratch,
+                        &mut state.draft4_child_scratch,
+                    )
+                    .expect("draft4 scan should always see an object here");
+                let ref_end = state.draft4_reference_scratch.len();
+                let child_end = state.draft4_child_scratch.len();
+
+                for idx in ref_start..ref_end {
+                    let (reference, key) = state.draft4_reference_scratch[idx];
+                    if reference.starts_with("https://json-schema.org/draft/")
+                        || reference.starts_with("http://json-schema.org/draft-")
+                        || current_base_uri
+                            .as_str()
+                            .starts_with("https://json-schema.org/draft/")
+                    {
+                        if key == "$ref" {
+                            state.refers_metaschemas = true;
+                        }
+                        continue;
+                    }
+                    if reference == "#" {
+                        continue;
+                    }
+                    if reference.starts_with('#') {
+                        if mark_local_reference(local_seen, &current_base_uri, reference) {
+                            let ptr = reference.trim_start_matches('#');
+                            if let Some(referenced) = pointer(document_root, ptr) {
+                                let target_draft = draft.detect(referenced);
+                                let value_addr = std::ptr::from_ref::<Value>(referenced) as usize;
+                                state.deferred_refs.push((
+                                    Arc::clone(&current_base_uri),
+                                    Arc::clone(document_root_uri),
+                                    ptr.to_string(),
+                                    target_draft,
+                                    value_addr,
+                                ));
+                            }
+                        }
+                        continue;
+                    }
+                    if mark_reference(&mut state.seen, &current_base_uri, reference) {
+                        let resolved = if current_base_uri.has_fragment() {
+                            let mut base_without_fragment = current_base_uri.as_ref().clone();
+                            base_without_fragment.set_fragment(None);
+
+                            let (path, fragment) = match reference.split_once('#') {
+                                Some((path, fragment)) => (path, Some(fragment)),
+                                None => (reference, None),
+                            };
+
+                            let mut resolved = (*resolution_cache
+                                .resolve_against(&base_without_fragment.borrow(), path)?)
+                            .clone();
+                            if let Some(fragment) = fragment {
+                                if let Some(encoded) = uri::EncodedString::new(fragment) {
+                                    resolved = resolved.with_fragment(Some(encoded));
+                                } else {
+                                    uri::encode_to(fragment, &mut state.scratch);
+                                    resolved = resolved.with_fragment(Some(
+                                        uri::EncodedString::new_or_panic(&state.scratch),
+                                    ));
+                                    state.scratch.clear();
+                                }
+                            }
+                            resolved
+                        } else {
+                            (*resolution_cache
+                                .resolve_against(&current_base_uri.borrow(), reference)?)
+                            .clone()
+                        };
+
+                        let kind = if key == "$schema" {
+                            ReferenceKind::Schema
+                        } else {
+                            ReferenceKind::Ref
+                        };
+                        state
+                            .external
+                            .insert((reference.to_string(), resolved, kind));
+                    }
+                }
+
+                let mut idx = child_start;
+                while idx < child_end {
+                    let (child, child_draft) = state.draft4_child_scratch[idx];
+                    idx += 1;
+                    explore_borrowed_subtree(
+                        Arc::clone(&current_base_uri),
+                        document_root,
+                        child,
+                        child_draft,
+                        false,
+                        document_root_uri,
+                        state,
+                        known_resources,
+                        resolution_cache,
+                        local_seen,
+                    )?;
+                }
+
+                state.draft4_reference_scratch.truncate(ref_start);
+                state.draft4_child_scratch.truncate(child_start);
+                return Ok(());
+            }
+        draft.walk_borrowed_subresources(subschema, &mut |child, child_draft| {
+            explore_borrowed_subtree(
+                Arc::clone(&current_base_uri),
+                document_root,
+                child,
+                child_draft,
+                false,
+                document_root_uri,
+                state,
+                known_resources,
+                resolution_cache,
+                local_seen,
+            )
+        })?;
+        return Ok(());
+    }
+    let (id, has_anchors) = draft.id_and_has_anchors(subschema);
+    #[cfg(feature = "perf-observe-registry")]
+    {
+        let id_scan = match (id.is_some(), has_anchors) {
+            (false, false) => "none",
+            (true, false) => "id_only",
+            (false, true) => "anchor_only",
+            (true, true) => "id_and_anchor",
+        };
+        crate::observe_registry!("registry.id_scan={id_scan}");
+    }
+    if let Some(id) = id {
+        let original_base_uri = Arc::clone(&current_base_uri);
+        current_base_uri = resolve_id(&current_base_uri, id, resolution_cache)?;
+        known_resources.insert((*current_base_uri).clone());
+        let insert_resource = current_base_uri != original_base_uri;
+        if !(is_root_entry && current_base_uri == *document_root_uri) {
+            insert_borrowed_discovered_index_entries(
+                &mut state.index_data,
+                &current_base_uri,
+                draft,
+                insert_resource,
+                subschema,
+            );
+        }
+    } else if has_anchors && !is_root_entry {
+        insert_borrowed_discovered_index_entries(
+            &mut state.index_data,
+            &current_base_uri,
+            draft,
+            false,
+            subschema,
+        );
+    }
+
+    let subschema_ptr = std::ptr::from_ref::<Value>(subschema) as usize;
+    if state.visited_schemas.insert(subschema_ptr) {
+        collect_external_resources(
+            &current_base_uri,
+            document_root,
+            subschema,
+            &mut state.external,
+            &mut state.seen,
+            resolution_cache,
+            &mut state.scratch,
+            &mut state.refers_metaschemas,
+            draft,
+            document_root_uri,
+            &mut state.deferred_refs,
+            local_seen,
+        )?;
+    }
+
+    draft.walk_borrowed_subresources(subschema, &mut |child, child_draft| {
+        explore_borrowed_subtree(
+            Arc::clone(&current_base_uri),
+            document_root,
+            child,
+            child_draft,
+            false,
+            document_root_uri,
+            state,
+            known_resources,
+            resolution_cache,
+            local_seen,
+        )
+    })
+}
+
+fn process_owned_document<'a, 'r>(
+    current_base_uri: Arc<Uri<String>>,
+    document_root_uri: &Arc<Uri<String>>,
+    document: &'a Arc<StoredDocument<'r>>,
+    pointer_path: &str,
+    draft: Draft,
+    state: &mut ProcessingState<'r>,
+    known_resources: &mut KnownResources,
+    resolution_cache: &mut UriCache,
+    local_seen: &mut LocalSeen<'a>,
+) -> Result<(), Error> {
+    let document_root = document.contents();
+    let Some(subschema) = (if pointer_path.is_empty() {
+        Some(document_root)
+    } else {
+        pointer(document_root, pointer_path)
+    }) else {
+        return Ok(());
+    };
+    let parsed_pointer = ParsedPointer::from_json_pointer(pointer_path);
+
+    with_pointer_node_from_parsed(parsed_pointer.as_ref(), |path| {
+        explore_owned_subtree(
+            current_base_uri,
+            document_root,
+            subschema,
+            draft,
+            pointer_path.is_empty(),
+            path,
+            document_root_uri,
+            document,
+            state,
+            known_resources,
+            resolution_cache,
+            local_seen,
+        )
+    })
+}
+
+fn with_pointer_node_from_parsed<R>(
+    pointer: Option<&ParsedPointer>,
+    f: impl FnOnce(&JsonPointerNode<'_, '_>) -> R,
+) -> R {
+    fn descend<'a, 'node, R>(
+        segments: &'a [ParsedPointerSegment],
+        current: &'node JsonPointerNode<'a, 'node>,
+        f: impl FnOnce(&JsonPointerNode<'_, '_>) -> R,
+    ) -> R {
+        if let Some((head, tail)) = segments.split_first() {
+            let next = match head {
+                ParsedPointerSegment::Key(key) => current.push(key.as_ref()),
+                ParsedPointerSegment::Index(idx) => current.push(*idx),
+            };
+            descend(tail, &next, f)
+        } else {
+            f(current)
+        }
+    }
+
+    let root = JsonPointerNode::new();
+    match pointer {
+        Some(pointer) => descend(&pointer.segments, &root, f),
+        None => f(&root),
+    }
+}
+
+fn explore_owned_subtree<'a, 'r>(
+    mut current_base_uri: Arc<Uri<String>>,
+    document_root: &'a Value,
+    subschema: &'a Value,
+    draft: Draft,
+    is_root_entry: bool,
+    path: &JsonPointerNode<'_, '_>,
+    document_root_uri: &Arc<Uri<String>>,
     document: &Arc<StoredDocument<'r>>,
     state: &mut ProcessingState<'r>,
     known_resources: &mut KnownResources,
     resolution_cache: &mut UriCache,
     local_seen: &mut LocalSeen<'a>,
 ) -> Result<(), Error> {
-    let (id, has_anchors) = resource.draft().id_and_has_anchors(resource.contents());
-    let is_root_entry = path.base_pointer().is_empty() && path.segments().is_empty();
+    let (id, has_anchors) = draft.id_and_has_anchors(subschema);
     if let Some(id) = id {
-        let original_base = Arc::clone(&base);
-        base = resolve_id(&base, id, resolution_cache)?;
-        known_resources.insert((*base).clone());
-        let insert_resource = base != original_base;
-        if is_root_entry && base == *doc_key {
-            // Root resource / anchors were already inserted under the storage URI.
-        } else if let Some(contents) = borrowed_contents {
-            insert_borrowed_discovered_index_entries(
-                &mut state.index_data,
-                &base,
-                resource.draft(),
-                insert_resource,
-                contents,
-            );
-        } else if insert_resource || has_anchors {
-            if let Some(pointer) = ParsedPointer::from_path_stack(path) {
-                insert_owned_discovered_index_entries(
-                    &mut state.index_data,
-                    &base,
-                    document,
-                    &pointer,
-                    resource.draft(),
-                    insert_resource,
-                    resource.contents(),
-                );
-            }
-        }
-    } else if has_anchors {
-        if is_root_entry {
-            // Root anchors were already inserted under the storage URI.
-        } else if let Some(contents) = borrowed_contents {
-            insert_borrowed_discovered_index_entries(
-                &mut state.index_data,
-                &base,
-                resource.draft(),
-                false,
-                contents,
-            );
-        } else if let Some(pointer) = ParsedPointer::from_path_stack(path) {
+        let original_base_uri = Arc::clone(&current_base_uri);
+        current_base_uri = resolve_id(&current_base_uri, id, resolution_cache)?;
+        known_resources.insert((*current_base_uri).clone());
+        let insert_resource = current_base_uri != original_base_uri;
+        if !(is_root_entry && current_base_uri == *document_root_uri)
+            && (insert_resource || has_anchors)
+        {
+            let pointer = ParsedPointer::from_pointer_node(path);
             insert_owned_discovered_index_entries(
                 &mut state.index_data,
-                &base,
+                &current_base_uri,
                 document,
                 &pointer,
-                resource.draft(),
-                false,
-                resource.contents(),
+                draft,
+                insert_resource,
+                subschema,
             );
         }
+    } else if has_anchors && !is_root_entry {
+        let pointer = ParsedPointer::from_pointer_node(path);
+        insert_owned_discovered_index_entries(
+            &mut state.index_data,
+            &current_base_uri,
+            document,
+            &pointer,
+            draft,
+            false,
+            subschema,
+        );
     }
 
-    let contents_ptr = std::ptr::from_ref::<Value>(resource.contents()) as usize;
-    if state.visited_schemas.insert(contents_ptr) {
+    let subschema_ptr = std::ptr::from_ref::<Value>(subschema) as usize;
+    if state.visited_schemas.insert(subschema_ptr) {
         collect_external_resources(
-            &base,
-            root,
-            resource.contents(),
+            &current_base_uri,
+            document_root,
+            subschema,
             &mut state.external,
             &mut state.seen,
             resolution_cache,
             &mut state.scratch,
             &mut state.refers_metaschemas,
-            resource.draft(),
-            doc_key,
+            draft,
+            document_root_uri,
             &mut state.deferred_refs,
             local_seen,
         )?;
     }
 
-    resource.draft().walk_subresources_with_path(
-        resource.contents(),
-        path,
-        &mut |child_path, child, child_draft| {
-            let borrowed_child =
-                borrowed_contents.and_then(|contents| match child_path.segments().last() {
-                    Some(PathSegment::Key(key)) => match contents {
-                        Value::Object(map) => map.get(*key),
-                        _ => None,
-                    },
-                    Some(PathSegment::Index(index)) => match contents {
-                        Value::Array(list) => list.get(*index),
-                        _ => None,
-                    },
-                    None => Some(contents),
-                });
-            process_resource_tree(
-                Arc::clone(&base),
-                root,
-                borrowed_child,
-                ResourceRef::new(child, child_draft),
-                child_path,
-                doc_key,
-                document,
-                state,
-                known_resources,
-                resolution_cache,
-                local_seen,
-            )
-        },
-    )
+    draft.walk_owned_subresources(subschema, path, &mut |child_path, child, child_draft| {
+        explore_owned_subtree(
+            Arc::clone(&current_base_uri),
+            document_root,
+            child,
+            child_draft,
+            false,
+            child_path,
+            document_root_uri,
+            document,
+            state,
+            known_resources,
+            resolution_cache,
+            local_seen,
+        )
+    })
 }
 
 fn enqueue_fragment_entry(
@@ -1492,13 +1755,7 @@ fn run_sync_processing_loop<'a>(
         {
             // SAFETY: widens 'static → '_ (covariant); set is empty after reuse_local_seen clears it.
             let mut local_seen: LocalSeen<'_> = unsafe { reuse_local_seen(local_seen_buf) };
-            process_queue(
-                state,
-                documents,
-                known_resources,
-                resolution_cache,
-                &mut local_seen,
-            )?;
+            process_queue(state, documents, known_resources, resolution_cache)?;
             process_deferred_refs(state, documents, resolution_cache, &mut local_seen)?;
             // SAFETY: clears all '_ refs before narrowing back to 'static to reclaim the buffer.
             local_seen_buf = unsafe { reuse_local_seen(local_seen) };
@@ -1544,13 +1801,7 @@ fn run_sync_processing_loop<'a>(
     if !state.queue.is_empty() {
         // SAFETY: widens 'static → '_ (covariant); set is empty after reuse_local_seen clears it.
         let mut local_seen: LocalSeen<'_> = unsafe { reuse_local_seen(local_seen_buf) };
-        process_queue(
-            state,
-            documents,
-            known_resources,
-            resolution_cache,
-            &mut local_seen,
-        )?;
+        process_queue(state, documents, known_resources, resolution_cache)?;
         process_deferred_refs(state, documents, resolution_cache, &mut local_seen)?;
     }
 
@@ -1638,13 +1889,7 @@ async fn run_async_processing_loop<'a>(
         {
             // SAFETY: widens 'static → '_ (covariant); set is empty after reuse_local_seen clears it.
             let mut local_seen: LocalSeen<'_> = unsafe { reuse_local_seen(local_seen_buf) };
-            process_queue(
-                state,
-                documents,
-                known_resources,
-                resolution_cache,
-                &mut local_seen,
-            )?;
+            process_queue(state, documents, known_resources, resolution_cache)?;
             process_deferred_refs(state, documents, resolution_cache, &mut local_seen)?;
             // SAFETY: clears all '_ refs before narrowing back to 'static to reclaim the buffer.
             local_seen_buf = unsafe { reuse_local_seen(local_seen) };
@@ -1714,13 +1959,7 @@ async fn run_async_processing_loop<'a>(
     if !state.queue.is_empty() {
         // SAFETY: widens 'static → '_ (covariant); set is empty after reuse_local_seen clears it.
         let mut local_seen: LocalSeen<'_> = unsafe { reuse_local_seen(local_seen_buf) };
-        process_queue(
-            state,
-            documents,
-            known_resources,
-            resolution_cache,
-            &mut local_seen,
-        )?;
+        process_queue(state, documents, known_resources, resolution_cache)?;
         process_deferred_refs(state, documents, resolution_cache, &mut local_seen)?;
     }
 
@@ -1800,7 +2039,9 @@ fn collect_external_resources<'doc>(
                 }
             } else if $reference != "#" {
                 if $reference.starts_with('#') {
-                    if mark_local_reference(local_seen, base, $reference) {
+                    crate::observe_registry!("registry.local_ref={}", $reference);
+                    if draft == Draft::Draft4 || mark_local_reference(local_seen, base, $reference)
+                    {
                         let ptr = $reference.trim_start_matches('#');
                         if let Some(referenced) = pointer(root, ptr) {
                             let target_draft = draft.detect(referenced);
@@ -1815,6 +2056,11 @@ fn collect_external_resources<'doc>(
                         }
                     }
                 } else if mark_reference(seen, base, $reference) {
+                    if $key == "$schema" {
+                        crate::observe_registry!("registry.schema_ref={}", $reference);
+                    } else {
+                        crate::observe_registry!("registry.external_ref={}", $reference);
+                    }
                     let resolved = if base.has_fragment() {
                         let mut base_without_fragment = base.as_ref().clone();
                         base_without_fragment.set_fragment(None);
@@ -1854,6 +2100,7 @@ fn collect_external_resources<'doc>(
     }
 
     if let Some(object) = contents.as_object() {
+        crate::observe_registry!("registry.ref_scan.object_len={}", object.len());
         if object.len() < 3 {
             for (key, value) in object {
                 if key == "$ref" {
@@ -2027,6 +2274,14 @@ fn resolve_id(
 ///
 /// **NOTE**: A slightly faster version of pointer resolution based on `Value::pointer` from `serde_json`.
 pub fn pointer<'a>(document: &'a Value, pointer: &str) -> Option<&'a Value> {
+    crate::observe_registry!(
+        "registry.pointer_segments={}",
+        pointer
+            .as_bytes()
+            .iter()
+            .filter(|&&byte| byte == b'/')
+            .count()
+    );
     if pointer.is_empty() {
         return Some(document);
     }
@@ -2053,16 +2308,21 @@ pub fn parse_index(s: &str) -> Option<usize> {
 }
 #[cfg(test)]
 mod tests {
-    use std::error::Error as _;
+    use std::{error::Error as _, sync::Arc};
 
     use ahash::AHashMap;
     use fluent_uri::Uri;
     use serde_json::{json, Value};
     use test_case::test_case;
 
-    use crate::{resource::PathStack, uri::from_str, Anchor, Draft, Registry, Resource, Retrieve};
+    use crate::{uri::from_str, Anchor, Draft, JsonPointerNode, Registry, Resource, Retrieve};
 
-    use super::{pointer, ParsedPointer, SPECIFICATIONS};
+    use super::{
+        insert_root_index_entries, pointer, process_borrowed_document, process_owned_document,
+        IndexedResource, KnownResources, LocalSeen, ParsedPointer, ProcessingState, StoredDocument,
+        SPECIFICATIONS,
+    };
+    use crate::cache::UriCache;
 
     #[test]
     fn test_empty_pointer() {
@@ -2071,7 +2331,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parsed_pointer_from_path_stack_matches_pointer_lookup() {
+    fn test_parsed_pointer_from_json_pointer_node_matches_pointer_lookup() {
         let document = json!({
             "$defs": {
                 "foo/bar": [
@@ -2079,11 +2339,12 @@ mod tests {
                 ]
             }
         });
-        let mut path = PathStack::from_base("/$defs".to_string());
-        path.push_key("foo/bar");
-        path.push_index(0);
+        let root = JsonPointerNode::new();
+        let defs = root.push("$defs");
+        let entry = defs.push("foo/bar");
+        let node = entry.push(0);
 
-        let parsed = ParsedPointer::from_path_stack(&path).expect("Pointer should parse");
+        let parsed = ParsedPointer::from_pointer_node(&node);
         assert_eq!(
             parsed.lookup(&document),
             pointer(&document, "/$defs/foo~1bar/0")
@@ -2217,6 +2478,139 @@ mod tests {
                 })
             ),
             Anchor::Dynamic { .. } => panic!("Expected a default anchor"),
+        }
+    }
+
+    #[test]
+    fn test_process_borrowed_document_indexes_embedded_resource_as_borrowed() {
+        let schema = json!({
+            "$defs": {
+                "embedded": {
+                    "$id": "http://example.com/embedded",
+                    "type": "string"
+                }
+            }
+        });
+        let doc_key = Arc::new(from_str("http://example.com/root").expect("valid root URI"));
+        let document = Arc::new(StoredDocument::borrowed(&schema, Draft::Draft202012));
+        let mut state = ProcessingState::new();
+        let mut known_resources = KnownResources::default();
+        let mut resolution_cache = UriCache::new();
+        let mut local_seen = LocalSeen::new();
+
+        known_resources.insert((*doc_key).clone());
+        insert_root_index_entries(&mut state.index_data, &doc_key, &document);
+
+        process_borrowed_document(
+            Arc::clone(&doc_key),
+            &doc_key,
+            &document,
+            "",
+            Draft::Draft202012,
+            &mut state,
+            &mut known_resources,
+            &mut resolution_cache,
+            &mut local_seen,
+        )
+        .expect("borrowed document traversal should succeed");
+
+        let embedded_uri =
+            Arc::new(from_str("http://example.com/embedded").expect("valid embedded URI"));
+        match state.index_data.resources.get(&embedded_uri) {
+            Some(IndexedResource::Borrowed(resource)) => {
+                assert_eq!(
+                    resource.contents(),
+                    &json!({"$id": "http://example.com/embedded", "type": "string"})
+                );
+            }
+            other => panic!("expected borrowed embedded resource entry, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_process_owned_document_indexes_embedded_resource_as_owned() {
+        let schema = json!({
+            "$defs": {
+                "embedded": {
+                    "$id": "http://example.com/embedded",
+                    "type": "string"
+                }
+            }
+        });
+        let doc_key = Arc::new(from_str("http://example.com/root").expect("valid root URI"));
+        let document = Arc::new(StoredDocument::owned(schema, Draft::Draft202012));
+        let mut state = ProcessingState::new();
+        let mut known_resources = KnownResources::default();
+        let mut resolution_cache = UriCache::new();
+        let mut local_seen = LocalSeen::new();
+
+        known_resources.insert((*doc_key).clone());
+        insert_root_index_entries(&mut state.index_data, &doc_key, &document);
+
+        process_owned_document(
+            Arc::clone(&doc_key),
+            &doc_key,
+            &document,
+            "",
+            Draft::Draft202012,
+            &mut state,
+            &mut known_resources,
+            &mut resolution_cache,
+            &mut local_seen,
+        )
+        .expect("owned document traversal should succeed");
+
+        let embedded_uri =
+            Arc::new(from_str("http://example.com/embedded").expect("valid embedded URI"));
+        match state.index_data.resources.get(&embedded_uri) {
+            Some(IndexedResource::Owned { .. }) => {}
+            other => panic!("expected owned embedded resource entry, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_process_owned_document_indexes_fragment_root_with_pointer_prefix() {
+        let schema = json!({
+            "$defs": {
+                "embedded": {
+                    "$id": "http://example.com/embedded",
+                    "type": "string"
+                }
+            }
+        });
+        let doc_key = Arc::new(from_str("http://example.com/root").expect("valid root URI"));
+        let document = Arc::new(StoredDocument::owned(schema, Draft::Draft202012));
+        let mut state = ProcessingState::new();
+        let mut known_resources = KnownResources::default();
+        let mut resolution_cache = UriCache::new();
+        let mut local_seen = LocalSeen::new();
+
+        known_resources.insert((*doc_key).clone());
+        insert_root_index_entries(&mut state.index_data, &doc_key, &document);
+
+        process_owned_document(
+            Arc::clone(&doc_key),
+            &doc_key,
+            &document,
+            "/$defs/embedded",
+            Draft::Draft202012,
+            &mut state,
+            &mut known_resources,
+            &mut resolution_cache,
+            &mut local_seen,
+        )
+        .expect("owned fragment traversal should succeed");
+
+        let embedded_uri =
+            Arc::new(from_str("http://example.com/embedded").expect("valid embedded URI"));
+        match state.index_data.resources.get(&embedded_uri) {
+            Some(IndexedResource::Owned { pointer, .. }) => {
+                assert_eq!(
+                    pointer.lookup(document.contents()),
+                    Some(&json!({"$id": "http://example.com/embedded", "type": "string"}))
+                );
+            }
+            other => panic!("expected owned embedded resource entry, got {other:?}"),
         }
     }
 

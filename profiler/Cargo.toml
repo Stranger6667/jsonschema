@@ -16,6 +16,7 @@ serde_json = "1"
 
 [features]
 dhat-heap = []
+perf-observe-registry = ["referencing/perf-observe-registry"]
 
 [profile.release]
 debug = true

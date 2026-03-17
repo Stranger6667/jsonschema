@@ -11,7 +11,7 @@ mod subresources;
 use crate::{
     anchors,
     vocabularies::{VocabularySet, DRAFT_2019_09_VOCABULARIES, DRAFT_2020_12_VOCABULARIES},
-    Anchor, Error, Resolver, Resource, ResourceRef, Segments,
+    Anchor, Error, JsonPointerNode, Resolver, Resource, ResourceRef, Segments,
 };
 
 /// JSON Schema specification versions.
@@ -162,6 +162,65 @@ impl Draft {
             None => SubresourceIterator::Empty,
         }
     }
+    pub(crate) fn walk_borrowed_subresources<'a, E, F>(
+        self,
+        contents: &'a Value,
+        f: &mut F,
+    ) -> Result<(), E>
+    where
+        F: FnMut(&'a Value, Draft) -> Result<(), E>,
+    {
+        match self {
+            Draft::Draft4 => draft4::walk_borrowed_subresources(contents, self, f),
+            Draft::Draft6 => draft6::walk_borrowed_subresources(contents, self, f),
+            Draft::Draft7 => draft7::walk_borrowed_subresources(contents, self, f),
+            Draft::Draft201909 => draft201909::walk_borrowed_subresources(contents, self, f),
+            Draft::Draft202012 | Draft::Unknown => {
+                subresources::walk_borrowed_subresources(contents, self, f)
+            }
+        }
+    }
+    pub(crate) fn probe_draft4_borrowed_object(
+        self,
+        contents: &Value,
+    ) -> Option<draft4::BorrowedObjectProbe<'_>> {
+        match self {
+            Draft::Draft4 => draft4::probe_borrowed_object(contents),
+            _ => None,
+        }
+    }
+    pub(crate) fn scan_draft4_borrowed_object_into_scratch<'a>(
+        self,
+        contents: &'a Value,
+        references: &mut Vec<(&'a str, &'static str)>,
+        children: &mut Vec<(&'a Value, Draft)>,
+    ) -> Option<()> {
+        match self {
+            Draft::Draft4 => {
+                draft4::scan_borrowed_object_into_scratch(contents, self, references, children)
+            }
+            _ => None,
+        }
+    }
+    pub(crate) fn walk_owned_subresources<'a, E, F>(
+        self,
+        contents: &'a Value,
+        path: &JsonPointerNode<'_, '_>,
+        f: &mut F,
+    ) -> Result<(), E>
+    where
+        F: FnMut(&JsonPointerNode<'_, '_>, &'a Value, Draft) -> Result<(), E>,
+    {
+        match self {
+            Draft::Draft4 => draft4::walk_owned_subresources(contents, path, self, f),
+            Draft::Draft6 => draft6::walk_owned_subresources(contents, path, self, f),
+            Draft::Draft7 => draft7::walk_owned_subresources(contents, path, self, f),
+            Draft::Draft201909 => draft201909::walk_owned_subresources(contents, path, self, f),
+            Draft::Draft202012 | Draft::Unknown => {
+                subresources::walk_owned_subresources(contents, path, self, f)
+            }
+        }
+    }
     pub(crate) fn anchors(self, contents: &Value) -> impl Iterator<Item = Anchor<'_>> {
         match self {
             Draft::Draft4 => anchors::legacy_anchor_in_id(self, contents),
@@ -188,26 +247,6 @@ impl Draft {
             }
         }
     }
-    pub(crate) fn walk_subresources_with_path<'a, E, F>(
-        self,
-        contents: &'a Value,
-        path: &mut crate::resource::PathStack<'a>,
-        f: &mut F,
-    ) -> Result<(), E>
-    where
-        F: FnMut(&mut crate::resource::PathStack<'a>, &'a Value, Draft) -> Result<(), E>,
-    {
-        match self {
-            Draft::Draft4 => draft4::walk_subresources_with_path(contents, path, self, f),
-            Draft::Draft6 => draft6::walk_subresources_with_path(contents, path, self, f),
-            Draft::Draft7 => draft7::walk_subresources_with_path(contents, path, self, f),
-            Draft::Draft201909 => draft201909::walk_subresources_with_path(contents, path, self, f),
-            Draft::Draft202012 | Draft::Unknown => {
-                subresources::walk_subresources_with_path(contents, path, self, f)
-            }
-        }
-    }
-
     /// Identifies known JSON schema keywords per draft.
     #[must_use]
     pub fn is_known_keyword(&self, keyword: &str) -> bool {

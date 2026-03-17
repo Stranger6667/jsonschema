@@ -10,6 +10,10 @@ flame preset method iterations="10000":
     @echo "Opening {{preset}}-{{method}}.svg in browser..."
     @xdg-open {{preset}}-{{method}}.svg 2>/dev/null || open {{preset}}-{{method}}.svg 2>/dev/null || echo "Please open {{preset}}-{{method}}.svg manually"
 
+observe-registry preset iterations="1":
+    #!/bin/zsh
+    cargo run --release --features perf-observe-registry --package jsonschema-profiler -- --preset {{preset}} --method registry --iterations {{iterations}} | counts
+
 # Profile with dhat using a preset
 dhat preset method iterations="10000":
     cargo run --release --features dhat-heap --package jsonschema-profiler \

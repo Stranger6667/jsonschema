@@ -5,7 +5,9 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use referencing::{unescape_segment, write_escaped_str, write_index};
+use referencing::{
+    unescape_segment, write_escaped_str, write_index, JsonPointerNode, JsonPointerSegment,
+};
 
 use crate::keywords::Keyword;
 
@@ -31,39 +33,7 @@ impl fmt::Display for LocationSegment<'_> {
 ///
 /// [`LazyLocation`] builds a path incrementally during JSON Schema validation without allocating
 /// memory until required by storing each segment on the stack.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct LazyLocation<'a, 'b> {
-    pub(crate) segment: LocationSegment<'a>,
-    pub(crate) parent: Option<&'b LazyLocation<'b, 'a>>,
-}
-
-impl Default for LazyLocation<'_, '_> {
-    fn default() -> Self {
-        LazyLocation::new()
-    }
-}
-
-impl<'a> LazyLocation<'a, '_> {
-    /// Create a root node of a JSON pointer.
-    #[must_use]
-    pub const fn new() -> Self {
-        LazyLocation {
-            // The value does not matter, it will never be used
-            segment: LocationSegment::Index(0),
-            parent: None,
-        }
-    }
-
-    /// Push a new segment to the JSON pointer.
-    #[inline]
-    #[must_use]
-    pub fn push(&'a self, segment: impl Into<LocationSegment<'a>>) -> Self {
-        LazyLocation {
-            segment: segment.into(),
-            parent: Some(self),
-        }
-    }
-}
+pub type LazyLocation<'a, 'b> = JsonPointerNode<'a, 'b>;
 
 /// Cached empty location - very common for root-level errors.
 static EMPTY_LOCATION: OnceLock<Location> = OnceLock::new();
@@ -91,15 +61,15 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
         const STACK_CAPACITY: usize = 16;
 
         // Fast path: empty location
-        if value.parent.is_none() {
+        if value.parent().is_none() {
             return Location::new();
         }
 
         // Fast path: single index segment (very common for array validation)
         // Use cached locations for indices 0-15 to avoid allocation
-        if let Some(parent) = value.parent {
-            if parent.parent.is_none() {
-                if let LocationSegment::Index(idx) = &value.segment {
+        if let Some(parent) = value.parent() {
+            if parent.parent().is_none() {
+                if let JsonPointerSegment::Index(idx) = value.segment() {
                     if *idx < 16 {
                         return get_cached_index_paths()[*idx].clone();
                     }
@@ -121,11 +91,11 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
         let mut string_capacity = 0;
         let mut head = value;
 
-        while let Some(next) = head.parent {
+        while let Some(next) = head.parent() {
             capacity += 1;
-            string_capacity += match &head.segment {
-                LocationSegment::Property(property) => property.len() + 1,
-                LocationSegment::Index(idx) => idx.checked_ilog10().unwrap_or(0) as usize + 2,
+            string_capacity += match head.segment() {
+                JsonPointerSegment::Key(property) => property.len() + 1,
+                JsonPointerSegment::Index(idx) => idx.checked_ilog10().unwrap_or(0) as usize + 2,
             };
             head = next;
         }
@@ -134,20 +104,20 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
 
         if capacity <= STACK_CAPACITY {
             // Stack-allocated storage with references - no cloning needed
-            let mut stack_segments: [Option<&LocationSegment<'_>>; STACK_CAPACITY] =
+            let mut stack_segments: [Option<&JsonPointerSegment<'_>>; STACK_CAPACITY] =
                 [None; STACK_CAPACITY];
             let mut idx = 0;
             head = value;
 
-            if head.parent.is_some() {
-                stack_segments[idx] = Some(&head.segment);
+            if head.parent().is_some() {
+                stack_segments[idx] = Some(head.segment());
                 idx += 1;
             }
 
-            while let Some(next) = head.parent {
+            while let Some(next) = head.parent() {
                 head = next;
-                if head.parent.is_some() {
-                    stack_segments[idx] = Some(&head.segment);
+                if head.parent().is_some() {
+                    stack_segments[idx] = Some(head.segment());
                     idx += 1;
                 }
             }
@@ -156,37 +126,37 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
             for segment in stack_segments[..idx].iter().rev().flatten() {
                 buffer.push('/');
                 match segment {
-                    LocationSegment::Property(property) => {
+                    JsonPointerSegment::Key(property) => {
                         write_escaped_str(&mut buffer, property);
                     }
-                    LocationSegment::Index(idx) => {
+                    JsonPointerSegment::Index(idx) => {
                         write_index(&mut buffer, *idx);
                     }
                 }
             }
         } else {
             // Heap-allocated fallback for deep paths (>16 segments)
-            let mut segments: Vec<&LocationSegment<'_>> = Vec::with_capacity(capacity);
+            let mut segments: Vec<&JsonPointerSegment<'_>> = Vec::with_capacity(capacity);
             head = value;
 
-            if head.parent.is_some() {
-                segments.push(&head.segment);
+            if head.parent().is_some() {
+                segments.push(head.segment());
             }
 
-            while let Some(next) = head.parent {
+            while let Some(next) = head.parent() {
                 head = next;
-                if head.parent.is_some() {
-                    segments.push(&head.segment);
+                if head.parent().is_some() {
+                    segments.push(head.segment());
                 }
             }
 
             for segment in segments.iter().rev() {
                 buffer.push('/');
                 match segment {
-                    LocationSegment::Property(property) => {
+                    JsonPointerSegment::Key(property) => {
                         write_escaped_str(&mut buffer, property);
                     }
-                    LocationSegment::Index(idx) => {
+                    JsonPointerSegment::Index(idx) => {
                         write_index(&mut buffer, *idx);
                     }
                 }
@@ -571,6 +541,15 @@ impl From<usize> for LocationSegment<'_> {
     }
 }
 
+impl<'a> From<LocationSegment<'a>> for JsonPointerSegment<'a> {
+    fn from(value: LocationSegment<'a>) -> Self {
+        match value {
+            LocationSegment::Property(property) => JsonPointerSegment::Key(property),
+            LocationSegment::Index(idx) => JsonPointerSegment::Index(idx),
+        }
+    }
+}
+
 /// A cheap to clone JSON pointer that represents location with a JSON value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Location(Arc<str>);
@@ -750,6 +729,17 @@ mod tests {
         let loc = root.push(idx);
         let location: Location = (&loc).into();
         assert_eq!(location.as_str(), expected);
+    }
+
+    #[test]
+    fn test_lazy_location_converts_to_referencing_owned_json_pointer() {
+        let root = LazyLocation::new();
+        let nested = root.push("foo/bar~baz");
+        let loc = nested.push(2usize);
+
+        let pointer = referencing::OwnedJsonPointer::from(&loc);
+
+        assert_eq!(pointer.as_str(), "/foo~1bar~0baz/2");
     }
 
     #[test]

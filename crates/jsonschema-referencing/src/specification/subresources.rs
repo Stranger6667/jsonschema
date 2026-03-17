@@ -4,22 +4,18 @@ use std::iter::FlatMap;
 use serde_json::Value;
 
 use crate::{
-    resource::PathStack, segments::Segment, specification::Draft, Error, Resolver, ResourceRef,
+    segments::Segment, specification::Draft, Error, JsonPointerNode, Resolver, ResourceRef,
     Segments,
 };
 
-/// Walk the direct subresources of `contents` (Draft 2020-12 / Unknown),
-/// calling `f(path, &Value, Draft)` for each one.
-/// `path` is the lazy JSON pointer to the current node; segments are pushed before each
-/// call to `f` and popped afterward.
-pub(crate) fn walk_subresources_with_path<'a, E, F>(
+pub(crate) fn walk_owned_subresources<'a, E, F>(
     contents: &'a Value,
-    path: &mut PathStack<'a>,
+    path: &JsonPointerNode<'_, '_>,
     draft: Draft,
     f: &mut F,
 ) -> Result<(), E>
 where
-    F: FnMut(&mut PathStack<'a>, &'a Value, Draft) -> Result<(), E>,
+    F: FnMut(&JsonPointerNode<'_, '_>, &'a Value, Draft) -> Result<(), E>,
 {
     let Some(schema) = contents.as_object() else {
         return Ok(());
@@ -37,30 +33,69 @@ where
             | "then"
             | "unevaluatedItems"
             | "unevaluatedProperties" => {
-                let c = path.push_key(key);
-                f(path, value, draft.detect(value))?;
-                path.truncate(c);
+                let child_path = path.push(key.as_str());
+                f(&child_path, value, draft.detect(value))?;
             }
             "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
                 if let Some(arr) = value.as_array() {
-                    let c1 = path.push_key(key);
+                    let parent_path = path.push(key.as_str());
                     for (i, item) in arr.iter().enumerate() {
-                        let c2 = path.push_index(i);
-                        f(path, item, draft.detect(item))?;
-                        path.truncate(c2);
+                        let child_path = parent_path.push(i);
+                        f(&child_path, item, draft.detect(item))?;
                     }
-                    path.truncate(c1);
                 }
             }
             "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties" => {
                 if let Some(obj) = value.as_object() {
-                    let c1 = path.push_key(key);
+                    let parent_path = path.push(key.as_str());
                     for (child_key, child_value) in obj {
-                        let c2 = path.push_key(child_key);
-                        f(path, child_value, draft.detect(child_value))?;
-                        path.truncate(c2);
+                        let child_path = parent_path.push(child_key.as_str());
+                        f(&child_path, child_value, draft.detect(child_value))?;
                     }
-                    path.truncate(c1);
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn walk_borrowed_subresources<'a, E, F>(
+    contents: &'a Value,
+    draft: Draft,
+    f: &mut F,
+) -> Result<(), E>
+where
+    F: FnMut(&'a Value, Draft) -> Result<(), E>,
+{
+    let Some(schema) = contents.as_object() else {
+        return Ok(());
+    };
+    for (key, value) in schema {
+        match key.as_str() {
+            "additionalProperties"
+            | "contains"
+            | "contentSchema"
+            | "else"
+            | "if"
+            | "items"
+            | "not"
+            | "propertyNames"
+            | "then"
+            | "unevaluatedItems"
+            | "unevaluatedProperties" => f(value, draft.detect(value))?,
+            "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
+                if let Some(arr) = value.as_array() {
+                    for item in arr {
+                        f(item, draft.detect(item))?;
+                    }
+                }
+            }
+            "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties" => {
+                if let Some(obj) = value.as_object() {
+                    for child_value in obj.values() {
+                        f(child_value, draft.detect(child_value))?;
+                    }
                 }
             }
             _ => {}
@@ -402,6 +437,60 @@ mod tests {
                 .collect::<Vec<_>>()
                 .is_empty(),
             "Draft {draft:?} should return empty subresources for boolean schema",
+        );
+    }
+
+    #[test]
+    fn test_walk_borrowed_subresources_matches_iterator_order() {
+        let schema = json!({
+            "properties": {
+                "name": {"type": "string"}
+            },
+            "allOf": [
+                {"minimum": 1}
+            ]
+        });
+        let expected: Vec<_> = Draft::Draft202012
+            .subresources_of(&schema)
+            .map(|subschema| (subschema.clone(), Draft::Draft202012.detect(subschema)))
+            .collect();
+        let mut seen = Vec::new();
+
+        Draft::Draft202012
+            .walk_borrowed_subresources(&schema, &mut |subschema, draft| {
+                seen.push((subschema.clone(), draft));
+                Ok::<(), ()>(())
+            })
+            .unwrap();
+
+        assert_eq!(seen, expected);
+    }
+
+    #[test]
+    fn test_walk_owned_subresources_reports_pointer_path() {
+        let schema = json!({
+            "properties": {
+                "name": {"type": "string"}
+            }
+        });
+        let root = crate::JsonPointerNode::new();
+        let mut seen = Vec::new();
+
+        Draft::Draft202012
+            .walk_owned_subresources(&schema, &root, &mut |path, subschema, draft| {
+                let pointer = crate::OwnedJsonPointer::from(path);
+                seen.push((pointer.as_str().to_string(), subschema.clone(), draft));
+                Ok::<(), ()>(())
+            })
+            .unwrap();
+
+        assert_eq!(
+            seen,
+            vec![(
+                "/properties/name".to_string(),
+                json!({"type": "string"}),
+                Draft::Draft202012,
+            )]
         );
     }
 }
