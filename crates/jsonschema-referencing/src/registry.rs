@@ -983,6 +983,15 @@ enum ReferenceKind {
 /// Local `$ref`s are always resolved against the document root.
 type QueueEntry = (Arc<Uri<String>>, Arc<Uri<String>>, String, Draft);
 
+/// A deferred local `$ref` target.
+///
+/// Like [`QueueEntry`] but carries the pre-resolved value address (`value_addr`) obtained
+/// for free during the `pointer()` call at push time. Used in [`process_deferred_refs`] to
+/// skip already-visited targets without a second `pointer()` traversal.
+///
+/// `(base_uri, document_root_uri, pointer, draft, value_addr)`
+type DeferredRef = (Arc<Uri<String>>, Arc<Uri<String>>, String, Draft, usize);
+
 fn insert_borrowed_anchor_entries<'a>(
     index_data: &mut PreparedIndex<'a>,
     uri: &Arc<Uri<String>>,
@@ -1098,6 +1107,8 @@ fn insert_owned_discovered_index_entries<'a>(
 struct ProcessingState<'a> {
     queue: VecDeque<QueueEntry>,
     seen: ReferenceTracker,
+    // The String is the original reference text (e.g. "./foo.json"), kept solely for
+    // `json-schema://`-scheme error messages where the resolved URI is not user-friendly.
     external: AHashSet<(String, Uri<String>, ReferenceKind)>,
     scratch: String,
     refers_metaschemas: bool,
@@ -1108,9 +1119,10 @@ struct ProcessingState<'a> {
     /// Deferred local-ref targets. During the main traversal, instead of calling
     /// `collect_external_resources_recursive` immediately when a local `$ref` is found,
     /// the target is pushed here. After `process_queue` completes (full document traversal),
-    /// subresource targets are already in `visited_schemas` and return in O(1);
-    /// non-subresource paths (e.g. `#/components/schemas/Foo`) are still fully traversed.
-    deferred_refs: Vec<QueueEntry>,
+    /// subresource targets are already in `visited_schemas` and skipped in O(1) via the
+    /// pre-stored value address; non-subresource paths (e.g. `#/components/schemas/Foo`)
+    /// are still fully traversed.
+    deferred_refs: Vec<DeferredRef>,
     index_data: PreparedIndex<'a>,
 }
 
@@ -1717,6 +1729,8 @@ async fn run_async_processing_loop<'a>(
 
 fn handle_retrieve_error(
     uri: &Uri<String>,
+    // The original reference string is used in error messages for `json-schema://` URIs
+    // where the resolved URI is not user-friendly (e.g. "./foo.json" vs "json-schema:///foo.json").
     original: &str,
     fragmentless: &Uri<String>,
     error: Box<dyn std::error::Error + Send + Sync>,
@@ -1768,7 +1782,7 @@ fn collect_external_resources<'doc>(
     refers_metaschemas: &mut bool,
     draft: Draft,
     doc_key: &Arc<Uri<String>>,
-    deferred_refs: &mut Vec<QueueEntry>,
+    deferred_refs: &mut Vec<DeferredRef>,
     local_seen: &mut LocalSeen<'doc>,
 ) -> Result<(), Error> {
     if base.scheme().as_str() == "urn" {
@@ -1787,19 +1801,16 @@ fn collect_external_resources<'doc>(
             } else if $reference != "#" {
                 if $reference.starts_with('#') {
                     if mark_local_reference(local_seen, base, $reference) {
-                        if let Some((referenced, resolved_base)) = pointer_with_base(
-                            root,
-                            $reference.trim_start_matches('#'),
-                            base,
-                            resolution_cache,
-                            draft,
-                        )? {
+                        let ptr = $reference.trim_start_matches('#');
+                        if let Some(referenced) = pointer(root, ptr) {
                             let target_draft = draft.detect(referenced);
+                            let value_addr = std::ptr::from_ref::<Value>(referenced) as usize;
                             deferred_refs.push((
-                                resolved_base,
+                                Arc::clone(base),
                                 Arc::clone(doc_key),
-                                $reference.trim_start_matches('#').to_string(),
+                                ptr.to_string(),
                                 target_draft,
+                                value_addr,
                             ));
                         }
                     }
@@ -1879,7 +1890,7 @@ fn collect_external_resources_recursive<'doc>(
     draft: Draft,
     visited: &mut AHashSet<usize>,
     doc_key: &Arc<Uri<String>>,
-    deferred_refs: &mut Vec<QueueEntry>,
+    deferred_refs: &mut Vec<DeferredRef>,
     local_seen: &mut LocalSeen<'doc>,
 ) -> Result<(), Error> {
     let ptr = std::ptr::from_ref::<Value>(contents) as usize;
@@ -1931,7 +1942,9 @@ fn collect_external_resources_recursive<'doc>(
 /// Process deferred local-ref targets collected during the main traversal.
 ///
 /// Called after `process_queue` finishes so that all subresource nodes are already in
-/// `visited_schemas`. Subresource targets return in O(1); non-subresource targets
+/// `visited_schemas`. Targets that were visited by the main BFS (e.g. `#/definitions/Foo`
+/// under a JSON Schema keyword) are skipped in O(1) via the pre-stored value address,
+/// avoiding a redundant `pointer()` traversal. Non-subresource targets
 /// (e.g. `#/components/schemas/Foo`) are still fully traversed. New deferred entries
 /// added during traversal are also processed iteratively until none remain.
 fn process_deferred_refs<'a>(
@@ -1942,7 +1955,14 @@ fn process_deferred_refs<'a>(
 ) -> Result<(), Error> {
     while !state.deferred_refs.is_empty() {
         let batch = std::mem::take(&mut state.deferred_refs);
-        for (base, doc_key, pointer_path, draft) in batch {
+        for (base, doc_key, pointer_path, draft, value_addr) in batch {
+            // Fast path: if this target was already visited by the main BFS traversal
+            // (e.g. a `#/definitions/Foo` that `walk_subresources_with_path` descended into),
+            // all its subresources were processed and `collect_external_resources` was already
+            // called on each — skip without a redundant `pointer()` traversal.
+            if state.visited_schemas.contains(&value_addr) {
+                continue;
+            }
             let Some(document) = documents.get(&doc_key) else {
                 continue;
             };
@@ -2021,47 +2041,6 @@ pub fn pointer<'a>(document: &'a Value, pointer: &str) -> Option<&'a Value> {
             _ => None,
         },
     )
-}
-
-#[allow(clippy::type_complexity)]
-fn pointer_with_base<'a>(
-    document: &'a Value,
-    pointer: &str,
-    base: &Arc<Uri<String>>,
-    resolution_cache: &mut UriCache,
-    draft: Draft,
-) -> Result<Option<(&'a Value, Arc<Uri<String>>)>, Error> {
-    if pointer.is_empty() {
-        return Ok(Some((document, Arc::clone(base))));
-    }
-    if !pointer.starts_with('/') {
-        return Ok(None);
-    }
-
-    let mut current = document;
-    let mut current_base = Arc::clone(base);
-    let mut current_draft = draft;
-
-    for token in pointer.split('/').skip(1).map(unescape_segment) {
-        current_draft = current_draft.detect(current);
-        if let Some(id) = current_draft.id_of(current) {
-            current_base = resolve_id(&current_base, id, resolution_cache)?;
-        }
-
-        current = match current {
-            Value::Object(map) => match map.get(&*token) {
-                Some(v) => v,
-                None => return Ok(None),
-            },
-            Value::Array(list) => match parse_index(&token).and_then(|x| list.get(x)) {
-                Some(v) => v,
-                None => return Ok(None),
-            },
-            _ => return Ok(None),
-        };
-    }
-
-    Ok(Some((current, current_base)))
 }
 
 // Taken from `serde_json`.

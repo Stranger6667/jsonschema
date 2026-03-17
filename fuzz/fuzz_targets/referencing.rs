@@ -19,11 +19,9 @@ fuzz_target!(|data: (&[u8], &[u8], &[u8])| {
                         .add(base, &schema)
                         .and_then(RegistryBuilder::prepare)
                     {
-                        if let Ok(index) = registry.build_index() {
-                            let resolver = index
-                                .resolver(uri::from_str("http://example.com/schema.json").unwrap());
-                            let _resolved = resolver.lookup(reference);
-                        }
+                        let resolver = registry
+                            .resolver(uri::from_str("http://example.com/schema.json").unwrap());
+                        let _resolved = resolver.lookup(reference);
                     }
                 }
             }
