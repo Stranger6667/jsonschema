@@ -1,39 +1,18 @@
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::{
-    specification::{BorrowedObjectProbe, BorrowedReferenceSlots, Draft},
+    specification::{BorrowedReferenceSlots, Draft},
     Error, JsonPointerNode, Resolver, ResourceRef, Segments,
 };
 
 use super::subresources::{self, SubresourceIteratorInner};
 
-pub(crate) fn probe_borrowed_object(contents: &Value) -> Option<BorrowedObjectProbe<'_>> {
-    let schema = contents.as_object()?;
-
-    let raw_id = schema.get("$id").and_then(Value::as_str);
-    let has_ref = schema.get("$ref").and_then(Value::as_str).is_some();
-    let has_ref_or_schema = has_ref || schema.get("$schema").and_then(Value::as_str).is_some();
-    let has_anchor = raw_id.is_some_and(|id| id.starts_with('#'));
-    let id = match raw_id {
-        Some(id) if !id.starts_with('#') && !has_ref => Some(id),
-        _ => None,
-    };
-
-    Some(BorrowedObjectProbe {
-        id,
-        has_anchor,
-        has_ref_or_schema,
-    })
-}
-
-pub(crate) fn scan_borrowed_object_into_scratch<'a>(
-    contents: &'a Value,
+pub(crate) fn scan_borrowed_object_into_scratch_map<'a>(
+    schema: &'a Map<String, Value>,
     draft: Draft,
     references: &mut BorrowedReferenceSlots<'a>,
     children: &mut Vec<(&'a Value, Draft)>,
-) -> Option<()> {
-    let schema = contents.as_object()?;
-
+) {
     for (key, value) in schema {
         match key.as_str() {
             "$ref" => {
@@ -84,21 +63,16 @@ pub(crate) fn scan_borrowed_object_into_scratch<'a>(
             _ => {}
         }
     }
-
-    Some(())
 }
 
-pub(crate) fn walk_borrowed_subresources<'a, E, F>(
-    contents: &'a Value,
+pub(crate) fn walk_borrowed_subresources_map<'a, E, F>(
+    schema: &'a Map<String, Value>,
     draft: Draft,
     f: &mut F,
 ) -> Result<(), E>
 where
     F: FnMut(&'a Value, Draft) -> Result<(), E>,
 {
-    let Some(schema) = contents.as_object() else {
-        return Ok(());
-    };
     for (key, value) in schema {
         match key.as_str() {
             "additionalItems" | "additionalProperties" | "contains" | "not" | "propertyNames" => {
@@ -142,8 +116,8 @@ where
     Ok(())
 }
 
-pub(crate) fn walk_owned_subresources<'a, E, F>(
-    contents: &'a Value,
+pub(crate) fn walk_owned_subresources_map<'a, E, F>(
+    schema: &'a Map<String, Value>,
     path: &JsonPointerNode<'_, '_>,
     draft: Draft,
     f: &mut F,
@@ -151,9 +125,6 @@ pub(crate) fn walk_owned_subresources<'a, E, F>(
 where
     F: FnMut(&JsonPointerNode<'_, '_>, &'a Value, Draft) -> Result<(), E>,
 {
-    let Some(schema) = contents.as_object() else {
-        return Ok(());
-    };
     for (key, value) in schema {
         match key.as_str() {
             "additionalItems" | "additionalProperties" | "contains" | "not" | "propertyNames" => {

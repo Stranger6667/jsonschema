@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{Map, Value};
 use subresources::SubresourceIterator;
 
 mod draft201909;
@@ -18,6 +18,21 @@ pub(crate) struct BorrowedObjectProbe<'a> {
     pub(crate) id: Option<&'a str>,
     pub(crate) has_anchor: bool,
     pub(crate) has_ref_or_schema: bool,
+}
+
+#[inline]
+pub(crate) fn has_ref_or_schema_object(schema: &Map<String, Value>) -> bool {
+    if schema.len() <= 3 {
+        for (key, value) in schema {
+            if (key == "$ref" || key == "$schema") && value.is_string() {
+                return true;
+            }
+        }
+        false
+    } else {
+        schema.get("$ref").and_then(Value::as_str).is_some()
+            || schema.get("$schema").and_then(Value::as_str).is_some()
+    }
 }
 
 #[derive(Default)]
@@ -104,59 +119,29 @@ impl Draft {
         }
     }
 
-    /// Returns `(id, has_any_anchor)` when both pieces of information are needed
-    /// during registry preparation.
     #[inline]
-    pub(crate) fn id_and_has_anchors(self, contents: &Value) -> (Option<&str>, bool) {
-        let Some(obj) = contents.as_object() else {
-            return (None, false);
-        };
+    pub(crate) fn id_and_has_anchors_object(
+        self,
+        obj: &Map<String, Value>,
+    ) -> (Option<&str>, bool) {
         match self {
-            Draft::Draft4 => {
-                if obj.len() <= 3 {
-                    scan_legacy_id_small(obj)
-                } else {
-                    let raw_id = obj.get("id").and_then(Value::as_str);
-                    let is_anchor = raw_id.is_some_and(|id| id.starts_with('#'));
-                    let plain_id = match (is_anchor, obj.contains_key("$ref")) {
-                        (false, false) => raw_id,
-                        _ => None,
-                    };
-                    (plain_id, is_anchor)
-                }
-            }
-            Draft::Draft6 | Draft::Draft7 => {
-                if obj.len() <= 3 {
-                    scan_legacy_dollar_id_small(obj)
-                } else {
-                    let raw_id = obj.get("$id").and_then(Value::as_str);
-                    let is_anchor = raw_id.is_some_and(|id| id.starts_with('#'));
-                    let plain_id = match (is_anchor, obj.contains_key("$ref")) {
-                        (false, false) => raw_id,
-                        _ => None,
-                    };
-                    (plain_id, is_anchor)
-                }
-            }
-            Draft::Draft201909 => {
-                if obj.len() <= 2 {
-                    scan_id_and_anchor_small(obj)
-                } else {
-                    let id = obj.get("$id").and_then(Value::as_str);
-                    let has_anchor = obj.get("$anchor").and_then(Value::as_str).is_some();
-                    (id, has_anchor)
-                }
-            }
-            Draft::Draft202012 | Draft::Unknown => {
-                if obj.len() <= 3 {
-                    scan_id_and_any_anchor_small(obj)
-                } else {
-                    let id = obj.get("$id").and_then(Value::as_str);
-                    let has_anchor = obj.get("$anchor").and_then(Value::as_str).is_some()
-                        || obj.get("$dynamicAnchor").and_then(Value::as_str).is_some();
-                    (id, has_anchor)
-                }
-            }
+            Draft::Draft4 => id_and_has_legacy_id_object(obj),
+            Draft::Draft6 | Draft::Draft7 => id_and_has_legacy_dollar_id_object(obj),
+            Draft::Draft201909 => id_and_has_id_and_anchor_object(obj),
+            Draft::Draft202012 | Draft::Unknown => id_and_has_id_and_any_anchor_object(obj),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn probe_borrowed_object_map(
+        self,
+        obj: &Map<String, Value>,
+    ) -> BorrowedObjectProbe<'_> {
+        match self {
+            Draft::Draft4 => analyze_legacy_id_object(obj),
+            Draft::Draft6 | Draft::Draft7 => analyze_legacy_dollar_id_object(obj),
+            Draft::Draft201909 => analyze_id_and_anchor_object(obj),
+            Draft::Draft202012 | Draft::Unknown => analyze_id_and_any_anchor_object(obj),
         }
     }
     pub fn subresources_of(self, contents: &Value) -> impl Iterator<Item = &Value> {
@@ -174,60 +159,53 @@ impl Draft {
             None => SubresourceIterator::Empty,
         }
     }
-    pub(crate) fn walk_borrowed_subresources<'a, E, F>(
+    pub(crate) fn scan_borrowed_object_into_scratch_map<'a>(
         self,
-        contents: &'a Value,
+        contents: &'a Map<String, Value>,
+        references: &mut BorrowedReferenceSlots<'a>,
+        children: &mut Vec<(&'a Value, Draft)>,
+    ) {
+        match self {
+            Draft::Draft4 => {
+                draft4::scan_borrowed_object_into_scratch_map(contents, self, references, children);
+            }
+            Draft::Draft6 => {
+                draft6::scan_borrowed_object_into_scratch_map(contents, self, references, children);
+            }
+            Draft::Draft7 => {
+                draft7::scan_borrowed_object_into_scratch_map(contents, self, references, children);
+            }
+            Draft::Draft201909 => draft201909::scan_borrowed_object_into_scratch_map(
+                contents, self, references, children,
+            ),
+            Draft::Draft202012 | Draft::Unknown => {
+                subresources::scan_borrowed_object_into_scratch_map(
+                    contents, self, references, children,
+                )
+            }
+        }
+    }
+    pub(crate) fn walk_borrowed_subresources_map<'a, E, F>(
+        self,
+        contents: &'a Map<String, Value>,
         f: &mut F,
     ) -> Result<(), E>
     where
         F: FnMut(&'a Value, Draft) -> Result<(), E>,
     {
         match self {
-            Draft::Draft4 => draft4::walk_borrowed_subresources(contents, self, f),
-            Draft::Draft6 => draft6::walk_borrowed_subresources(contents, self, f),
-            Draft::Draft7 => draft7::walk_borrowed_subresources(contents, self, f),
-            Draft::Draft201909 => draft201909::walk_borrowed_subresources(contents, self, f),
+            Draft::Draft4 => draft4::walk_borrowed_subresources_map(contents, self, f),
+            Draft::Draft6 => draft6::walk_borrowed_subresources_map(contents, self, f),
+            Draft::Draft7 => draft7::walk_borrowed_subresources_map(contents, self, f),
+            Draft::Draft201909 => draft201909::walk_borrowed_subresources_map(contents, self, f),
             Draft::Draft202012 | Draft::Unknown => {
-                subresources::walk_borrowed_subresources(contents, self, f)
+                subresources::walk_borrowed_subresources_map(contents, self, f)
             }
         }
     }
-    pub(crate) fn probe_borrowed_object(self, contents: &Value) -> Option<BorrowedObjectProbe<'_>> {
-        match self {
-            Draft::Draft4 => draft4::probe_borrowed_object(contents),
-            Draft::Draft6 => draft6::probe_borrowed_object(contents),
-            Draft::Draft7 => draft7::probe_borrowed_object(contents),
-            Draft::Draft201909 => draft201909::probe_borrowed_object(contents),
-            Draft::Draft202012 | Draft::Unknown => subresources::probe_borrowed_object(contents),
-        }
-    }
-    pub(crate) fn scan_borrowed_object_into_scratch<'a>(
+    pub(crate) fn walk_owned_subresources_map<'a, E, F>(
         self,
-        contents: &'a Value,
-        references: &mut BorrowedReferenceSlots<'a>,
-        children: &mut Vec<(&'a Value, Draft)>,
-    ) -> Option<()> {
-        match self {
-            Draft::Draft4 => {
-                draft4::scan_borrowed_object_into_scratch(contents, self, references, children)
-            }
-            Draft::Draft6 => {
-                draft6::scan_borrowed_object_into_scratch(contents, self, references, children)
-            }
-            Draft::Draft7 => {
-                draft7::scan_borrowed_object_into_scratch(contents, self, references, children)
-            }
-            Draft::Draft201909 => {
-                draft201909::scan_borrowed_object_into_scratch(contents, self, references, children)
-            }
-            Draft::Draft202012 | Draft::Unknown => subresources::scan_borrowed_object_into_scratch(
-                contents, self, references, children,
-            ),
-        }
-    }
-    pub(crate) fn walk_owned_subresources<'a, E, F>(
-        self,
-        contents: &'a Value,
+        contents: &'a Map<String, Value>,
         path: &JsonPointerNode<'_, '_>,
         f: &mut F,
     ) -> Result<(), E>
@@ -235,12 +213,12 @@ impl Draft {
         F: FnMut(&JsonPointerNode<'_, '_>, &'a Value, Draft) -> Result<(), E>,
     {
         match self {
-            Draft::Draft4 => draft4::walk_owned_subresources(contents, path, self, f),
-            Draft::Draft6 => draft6::walk_owned_subresources(contents, path, self, f),
-            Draft::Draft7 => draft7::walk_owned_subresources(contents, path, self, f),
-            Draft::Draft201909 => draft201909::walk_owned_subresources(contents, path, self, f),
+            Draft::Draft4 => draft4::walk_owned_subresources_map(contents, path, self, f),
+            Draft::Draft6 => draft6::walk_owned_subresources_map(contents, path, self, f),
+            Draft::Draft7 => draft7::walk_owned_subresources_map(contents, path, self, f),
+            Draft::Draft201909 => draft201909::walk_owned_subresources_map(contents, path, self, f),
             Draft::Draft202012 | Draft::Unknown => {
-                subresources::walk_owned_subresources(contents, path, self, f)
+                subresources::walk_owned_subresources_map(contents, path, self, f)
             }
         }
     }
@@ -366,7 +344,42 @@ impl Draft {
     }
 }
 
-fn scan_legacy_id_small(obj: &serde_json::Map<String, Value>) -> (Option<&str>, bool) {
+fn id_and_has_legacy_id_object(obj: &Map<String, Value>) -> (Option<&str>, bool) {
+    if obj.len() <= 3 {
+        scan_legacy_id_small(obj)
+    } else {
+        let raw_id = obj.get("id").and_then(Value::as_str);
+        let is_anchor = raw_id.is_some_and(|id| id.starts_with('#'));
+        let plain_id = match (is_anchor, obj.contains_key("$ref")) {
+            (false, false) => raw_id,
+            _ => None,
+        };
+        (plain_id, is_anchor)
+    }
+}
+
+fn analyze_legacy_id_object(obj: &Map<String, Value>) -> BorrowedObjectProbe<'_> {
+    if obj.len() <= 3 {
+        return scan_legacy_id_probe_small(obj);
+    }
+
+    let raw_id = obj.get("id").and_then(Value::as_str);
+    let has_ref = obj.get("$ref").and_then(Value::as_str).is_some();
+    let has_ref_or_schema = has_ref || obj.get("$schema").and_then(Value::as_str).is_some();
+    let has_anchor = raw_id.is_some_and(|id| id.starts_with('#'));
+    let id = match raw_id {
+        Some(id) if !has_anchor && !has_ref => Some(id),
+        _ => None,
+    };
+
+    BorrowedObjectProbe {
+        id,
+        has_anchor,
+        has_ref_or_schema,
+    }
+}
+
+fn scan_legacy_id_small(obj: &Map<String, Value>) -> (Option<&str>, bool) {
     let mut raw_id = None;
     let mut has_ref = false;
 
@@ -386,7 +399,69 @@ fn scan_legacy_id_small(obj: &serde_json::Map<String, Value>) -> (Option<&str>, 
     (plain_id, is_anchor)
 }
 
-fn scan_legacy_dollar_id_small(obj: &serde_json::Map<String, Value>) -> (Option<&str>, bool) {
+fn scan_legacy_id_probe_small(obj: &Map<String, Value>) -> BorrowedObjectProbe<'_> {
+    let mut raw_id = None;
+    let mut has_ref = false;
+    let mut has_schema = false;
+
+    for (key, value) in obj {
+        match key.as_str() {
+            "id" => raw_id = value.as_str(),
+            "$ref" => has_ref = value.is_string(),
+            "$schema" => has_schema = value.is_string(),
+            _ => {}
+        }
+    }
+
+    let has_anchor = raw_id.is_some_and(|id| id.starts_with('#'));
+    let id = match raw_id {
+        Some(id) if !has_anchor && !has_ref => Some(id),
+        _ => None,
+    };
+
+    BorrowedObjectProbe {
+        id,
+        has_anchor,
+        has_ref_or_schema: has_ref || has_schema,
+    }
+}
+
+fn id_and_has_legacy_dollar_id_object(obj: &Map<String, Value>) -> (Option<&str>, bool) {
+    if obj.len() <= 3 {
+        scan_legacy_dollar_id_small(obj)
+    } else {
+        let raw_id = obj.get("$id").and_then(Value::as_str);
+        let is_anchor = raw_id.is_some_and(|id| id.starts_with('#'));
+        let plain_id = match (is_anchor, obj.contains_key("$ref")) {
+            (false, false) => raw_id,
+            _ => None,
+        };
+        (plain_id, is_anchor)
+    }
+}
+
+fn analyze_legacy_dollar_id_object(obj: &Map<String, Value>) -> BorrowedObjectProbe<'_> {
+    if obj.len() <= 3 {
+        return scan_legacy_dollar_id_probe_small(obj);
+    }
+
+    let raw_id = obj.get("$id").and_then(Value::as_str);
+    let has_ref = obj.get("$ref").and_then(Value::as_str).is_some();
+    let has_ref_or_schema = has_ref || obj.get("$schema").and_then(Value::as_str).is_some();
+    let has_anchor = raw_id.is_some_and(|id| id.starts_with('#'));
+    let id = match raw_id {
+        Some(id) if !has_anchor && !has_ref => Some(id),
+        _ => None,
+    };
+
+    BorrowedObjectProbe {
+        id,
+        has_anchor,
+        has_ref_or_schema,
+    }
+}
+
+fn scan_legacy_dollar_id_small(obj: &Map<String, Value>) -> (Option<&str>, bool) {
     let mut raw_id = None;
     let mut has_ref = false;
 
@@ -406,7 +481,56 @@ fn scan_legacy_dollar_id_small(obj: &serde_json::Map<String, Value>) -> (Option<
     (plain_id, is_anchor)
 }
 
-fn scan_id_and_anchor_small(obj: &serde_json::Map<String, Value>) -> (Option<&str>, bool) {
+fn scan_legacy_dollar_id_probe_small(obj: &Map<String, Value>) -> BorrowedObjectProbe<'_> {
+    let mut raw_id = None;
+    let mut has_ref = false;
+    let mut has_schema = false;
+
+    for (key, value) in obj {
+        match key.as_str() {
+            "$id" => raw_id = value.as_str(),
+            "$ref" => has_ref = value.is_string(),
+            "$schema" => has_schema = value.is_string(),
+            _ => {}
+        }
+    }
+
+    let has_anchor = raw_id.is_some_and(|id| id.starts_with('#'));
+    let id = match raw_id {
+        Some(id) if !has_anchor && !has_ref => Some(id),
+        _ => None,
+    };
+
+    BorrowedObjectProbe {
+        id,
+        has_anchor,
+        has_ref_or_schema: has_ref || has_schema,
+    }
+}
+
+fn id_and_has_id_and_anchor_object(obj: &Map<String, Value>) -> (Option<&str>, bool) {
+    if obj.len() <= 2 {
+        scan_id_and_anchor_small(obj)
+    } else {
+        let id = obj.get("$id").and_then(Value::as_str);
+        let has_anchor = obj.get("$anchor").and_then(Value::as_str).is_some();
+        (id, has_anchor)
+    }
+}
+
+fn analyze_id_and_anchor_object(obj: &Map<String, Value>) -> BorrowedObjectProbe<'_> {
+    if obj.len() <= 2 {
+        return scan_id_and_anchor_probe_small(obj);
+    }
+
+    BorrowedObjectProbe {
+        id: obj.get("$id").and_then(Value::as_str),
+        has_anchor: obj.get("$anchor").and_then(Value::as_str).is_some(),
+        has_ref_or_schema: has_ref_or_schema_object(obj),
+    }
+}
+
+fn scan_id_and_anchor_small(obj: &Map<String, Value>) -> (Option<&str>, bool) {
     let mut id = None;
     let mut has_anchor = false;
 
@@ -421,7 +545,52 @@ fn scan_id_and_anchor_small(obj: &serde_json::Map<String, Value>) -> (Option<&st
     (id, has_anchor)
 }
 
-fn scan_id_and_any_anchor_small(obj: &serde_json::Map<String, Value>) -> (Option<&str>, bool) {
+fn scan_id_and_anchor_probe_small(obj: &Map<String, Value>) -> BorrowedObjectProbe<'_> {
+    let mut id = None;
+    let mut has_anchor = false;
+    let mut has_ref_or_schema = false;
+
+    for (key, value) in obj {
+        match key.as_str() {
+            "$id" => id = value.as_str(),
+            "$anchor" => has_anchor |= value.as_str().is_some(),
+            "$ref" | "$schema" => has_ref_or_schema |= value.is_string(),
+            _ => {}
+        }
+    }
+
+    BorrowedObjectProbe {
+        id,
+        has_anchor,
+        has_ref_or_schema,
+    }
+}
+
+fn id_and_has_id_and_any_anchor_object(obj: &Map<String, Value>) -> (Option<&str>, bool) {
+    if obj.len() <= 3 {
+        scan_id_and_any_anchor_small(obj)
+    } else {
+        let id = obj.get("$id").and_then(Value::as_str);
+        let has_anchor = obj.get("$anchor").and_then(Value::as_str).is_some()
+            || obj.get("$dynamicAnchor").and_then(Value::as_str).is_some();
+        (id, has_anchor)
+    }
+}
+
+fn analyze_id_and_any_anchor_object(obj: &Map<String, Value>) -> BorrowedObjectProbe<'_> {
+    if obj.len() <= 3 {
+        return scan_id_and_any_anchor_probe_small(obj);
+    }
+
+    BorrowedObjectProbe {
+        id: obj.get("$id").and_then(Value::as_str),
+        has_anchor: obj.get("$anchor").and_then(Value::as_str).is_some()
+            || obj.get("$dynamicAnchor").and_then(Value::as_str).is_some(),
+        has_ref_or_schema: has_ref_or_schema_object(obj),
+    }
+}
+
+fn scan_id_and_any_anchor_small(obj: &Map<String, Value>) -> (Option<&str>, bool) {
     let mut id = None;
     let mut has_anchor = false;
 
@@ -434,6 +603,27 @@ fn scan_id_and_any_anchor_small(obj: &serde_json::Map<String, Value>) -> (Option
     }
 
     (id, has_anchor)
+}
+
+fn scan_id_and_any_anchor_probe_small(obj: &Map<String, Value>) -> BorrowedObjectProbe<'_> {
+    let mut id = None;
+    let mut has_anchor = false;
+    let mut has_ref_or_schema = false;
+
+    for (key, value) in obj {
+        match key.as_str() {
+            "$id" => id = value.as_str(),
+            "$anchor" | "$dynamicAnchor" => has_anchor |= value.as_str().is_some(),
+            "$ref" | "$schema" => has_ref_or_schema |= value.is_string(),
+            _ => {}
+        }
+    }
+
+    BorrowedObjectProbe {
+        id,
+        has_anchor,
+        has_ref_or_schema,
+    }
 }
 
 #[cfg(test)]

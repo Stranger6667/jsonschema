@@ -29,6 +29,7 @@ percent-encoding = "2.3.1"
 serde_json.workspace = true
 hashbrown = "0.16"
 micromap = "0.3.0"
+bytecount = { version = "0.6", features = ["runtime-dispatch-simd"] }
 
 [dev-dependencies]
 benchmark = { path = "../benchmark/" }

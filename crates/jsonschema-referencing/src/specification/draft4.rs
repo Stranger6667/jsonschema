@@ -1,61 +1,18 @@
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::{
-    specification::{BorrowedObjectProbe, BorrowedReferenceSlots, Draft},
+    specification::{BorrowedReferenceSlots, Draft},
     Error, JsonPointerNode, Resolver, ResourceRef, Segments,
 };
 
 use super::subresources::{self, SubresourceIteratorInner};
 
-pub(crate) fn probe_borrowed_object(contents: &Value) -> Option<BorrowedObjectProbe<'_>> {
-    let schema = contents.as_object()?;
-
-    let (raw_id, has_ref, has_ref_or_schema) = if schema.len() <= 3 {
-        let mut raw_id = None;
-        let mut has_ref = false;
-        let mut has_schema = false;
-
-        for (key, value) in schema {
-            match key.as_str() {
-                "id" => raw_id = value.as_str(),
-                "$ref" => has_ref = value.is_string(),
-                "$schema" => has_schema = value.is_string(),
-                _ => {}
-            }
-        }
-
-        (raw_id, has_ref, has_ref || has_schema)
-    } else {
-        let raw_id = schema.get("id").and_then(Value::as_str);
-        let has_ref = schema.get("$ref").and_then(Value::as_str).is_some();
-        let has_ref_or_schema = has_ref || schema.get("$schema").and_then(Value::as_str).is_some();
-        (raw_id, has_ref, has_ref_or_schema)
-    };
-    let mut has_anchor = false;
-    if let Some(id) = raw_id {
-        has_anchor = id.starts_with('#');
-    }
-
-    let id = match raw_id {
-        Some(id) if !id.starts_with('#') && !has_ref => Some(id),
-        _ => None,
-    };
-
-    Some(BorrowedObjectProbe {
-        id,
-        has_anchor,
-        has_ref_or_schema,
-    })
-}
-
-pub(crate) fn scan_borrowed_object_into_scratch<'a>(
-    contents: &'a Value,
+pub(crate) fn scan_borrowed_object_into_scratch_map<'a>(
+    schema: &'a Map<String, Value>,
     draft: Draft,
     references: &mut BorrowedReferenceSlots<'a>,
     children: &mut Vec<(&'a Value, Draft)>,
-) -> Option<()> {
-    let schema = contents.as_object()?;
-
+) {
     for (key, value) in schema {
         match key.as_str() {
             "$ref" => {
@@ -125,21 +82,16 @@ pub(crate) fn scan_borrowed_object_into_scratch<'a>(
             _ => {}
         }
     }
-
-    Some(())
 }
 
-pub(crate) fn walk_borrowed_subresources<'a, E, F>(
-    contents: &'a Value,
+pub(crate) fn walk_borrowed_subresources_map<'a, E, F>(
+    schema: &'a Map<String, Value>,
     draft: Draft,
     f: &mut F,
 ) -> Result<(), E>
 where
     F: FnMut(&'a Value, Draft) -> Result<(), E>,
 {
-    let Some(schema) = contents.as_object() else {
-        return Ok(());
-    };
     for (key, value) in schema {
         match key.as_str() {
             "additionalItems" | "additionalProperties" if value.is_object() => {
@@ -202,8 +154,8 @@ where
     Ok(())
 }
 
-pub(crate) fn walk_owned_subresources<'a, E, F>(
-    contents: &'a Value,
+pub(crate) fn walk_owned_subresources_map<'a, E, F>(
+    schema: &'a Map<String, Value>,
     path: &JsonPointerNode<'_, '_>,
     draft: Draft,
     f: &mut F,
@@ -211,9 +163,6 @@ pub(crate) fn walk_owned_subresources<'a, E, F>(
 where
     F: FnMut(&JsonPointerNode<'_, '_>, &'a Value, Draft) -> Result<(), E>,
 {
-    let Some(schema) = contents.as_object() else {
-        return Ok(());
-    };
     for (key, value) in schema {
         match key.as_str() {
             "additionalItems" | "additionalProperties" if value.is_object() => {
@@ -357,7 +306,6 @@ pub(crate) fn maybe_in_subresource<'r>(
 
 #[cfg(test)]
 mod tests {
-    use super::{probe_borrowed_object, scan_borrowed_object_into_scratch};
     use crate::{specification::BorrowedReferenceSlots, Draft};
     use serde_json::json;
 
@@ -371,7 +319,11 @@ mod tests {
             },
             "items": {"type": "integer"}
         });
-        let analysis = probe_borrowed_object(&schema).expect("schema object should be analyzed");
+        let analysis = Draft::Draft4.probe_borrowed_object_map(
+            schema
+                .as_object()
+                .expect("schema object should be analyzed"),
+        );
 
         assert_eq!(analysis.id, Some("http://example.com/node"));
         assert!(!analysis.has_anchor);
@@ -391,8 +343,11 @@ mod tests {
         let mut references = BorrowedReferenceSlots::default();
         let mut children = Vec::new();
 
-        scan_borrowed_object_into_scratch(&schema, Draft::Draft4, &mut references, &mut children)
-            .expect("schema object should be scanned");
+        Draft::Draft4.scan_borrowed_object_into_scratch_map(
+            schema.as_object().expect("schema object should be scanned"),
+            &mut references,
+            &mut children,
+        );
 
         assert_eq!(
             (
