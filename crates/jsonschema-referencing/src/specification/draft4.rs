@@ -1,21 +1,36 @@
 use serde_json::Value;
 
-use crate::{specification::Draft, Error, JsonPointerNode, Resolver, ResourceRef, Segments};
+use crate::{
+    specification::{BorrowedObjectProbe, BorrowedReferenceSlots, Draft},
+    Error, JsonPointerNode, Resolver, ResourceRef, Segments,
+};
 
 use super::subresources::{self, SubresourceIteratorInner};
-
-pub(crate) struct BorrowedObjectProbe<'a> {
-    pub(crate) id: Option<&'a str>,
-    pub(crate) has_anchor: bool,
-    pub(crate) has_ref_or_schema: bool,
-}
 
 pub(crate) fn probe_borrowed_object(contents: &Value) -> Option<BorrowedObjectProbe<'_>> {
     let schema = contents.as_object()?;
 
-    let raw_id = schema.get("id").and_then(Value::as_str);
-    let has_ref = schema.get("$ref").and_then(Value::as_str).is_some();
-    let has_ref_or_schema = has_ref || schema.get("$schema").and_then(Value::as_str).is_some();
+    let (raw_id, has_ref, has_ref_or_schema) = if schema.len() <= 3 {
+        let mut raw_id = None;
+        let mut has_ref = false;
+        let mut has_schema = false;
+
+        for (key, value) in schema {
+            match key.as_str() {
+                "id" => raw_id = value.as_str(),
+                "$ref" => has_ref = value.is_string(),
+                "$schema" => has_schema = value.is_string(),
+                _ => {}
+            }
+        }
+
+        (raw_id, has_ref, has_ref || has_schema)
+    } else {
+        let raw_id = schema.get("id").and_then(Value::as_str);
+        let has_ref = schema.get("$ref").and_then(Value::as_str).is_some();
+        let has_ref_or_schema = has_ref || schema.get("$schema").and_then(Value::as_str).is_some();
+        (raw_id, has_ref, has_ref_or_schema)
+    };
     let mut has_anchor = false;
     if let Some(id) = raw_id {
         has_anchor = id.starts_with('#');
@@ -36,7 +51,7 @@ pub(crate) fn probe_borrowed_object(contents: &Value) -> Option<BorrowedObjectPr
 pub(crate) fn scan_borrowed_object_into_scratch<'a>(
     contents: &'a Value,
     draft: Draft,
-    references: &mut Vec<(&'a str, &'static str)>,
+    references: &mut BorrowedReferenceSlots<'a>,
     children: &mut Vec<(&'a Value, Draft)>,
 ) -> Option<()> {
     let schema = contents.as_object()?;
@@ -45,12 +60,12 @@ pub(crate) fn scan_borrowed_object_into_scratch<'a>(
         match key.as_str() {
             "$ref" => {
                 if let Some(reference) = value.as_str() {
-                    references.push((reference, "$ref"));
+                    references.ref_ = Some(reference);
                 }
             }
             "$schema" => {
                 if let Some(reference) = value.as_str() {
-                    references.push((reference, "$schema"));
+                    references.schema = Some(reference);
                 }
             }
             "additionalItems" | "additionalProperties" if value.is_object() => {
@@ -343,7 +358,7 @@ pub(crate) fn maybe_in_subresource<'r>(
 #[cfg(test)]
 mod tests {
     use super::{probe_borrowed_object, scan_borrowed_object_into_scratch};
-    use crate::Draft;
+    use crate::{specification::BorrowedReferenceSlots, Draft};
     use serde_json::json;
 
     #[test]
@@ -373,20 +388,27 @@ mod tests {
             },
             "items": {"type": "integer"}
         });
-        let mut references = Vec::new();
+        let mut references = BorrowedReferenceSlots::default();
         let mut children = Vec::new();
 
         scan_borrowed_object_into_scratch(&schema, Draft::Draft4, &mut references, &mut children)
             .expect("schema object should be scanned");
 
         assert_eq!(
-            references
-                .iter()
-                .map(|(reference, key): &(&str, &'static str)| {
-                    (key.to_string(), reference.to_string())
-                })
-                .collect::<Vec<_>>(),
+            (
+                references.ref_.map(str::to_string),
+                references.schema.map(str::to_string)
+            ),
             vec![("$schema".to_string(), "http://example.com/meta".to_string())]
+                .into_iter()
+                .fold((None, None), |mut acc, (key, value)| {
+                    if key == "$ref" {
+                        acc.0 = Some(value);
+                    } else {
+                        acc.1 = Some(value);
+                    }
+                    acc
+                })
         );
         let children: Vec<_> = children
             .iter()

@@ -1,8 +1,98 @@
 use serde_json::Value;
 
-use crate::{specification::Draft, Error, JsonPointerNode, Resolver, ResourceRef, Segments};
+use crate::{
+    specification::{BorrowedObjectProbe, BorrowedReferenceSlots, Draft},
+    Error, JsonPointerNode, Resolver, ResourceRef, Segments,
+};
 
 use super::subresources::{self, SubresourceIteratorInner};
+
+pub(crate) fn probe_borrowed_object(contents: &Value) -> Option<BorrowedObjectProbe<'_>> {
+    let schema = contents.as_object()?;
+
+    let id = schema.get("$id").and_then(Value::as_str);
+    let has_anchor = schema.get("$anchor").and_then(Value::as_str).is_some();
+    let has_ref_or_schema = schema.get("$ref").and_then(Value::as_str).is_some()
+        || schema.get("$schema").and_then(Value::as_str).is_some();
+
+    Some(BorrowedObjectProbe {
+        id,
+        has_anchor,
+        has_ref_or_schema,
+    })
+}
+
+pub(crate) fn scan_borrowed_object_into_scratch<'a>(
+    contents: &'a Value,
+    draft: Draft,
+    references: &mut BorrowedReferenceSlots<'a>,
+    children: &mut Vec<(&'a Value, Draft)>,
+) -> Option<()> {
+    let schema = contents.as_object()?;
+
+    for (key, value) in schema {
+        match key.as_str() {
+            "$ref" => {
+                if let Some(reference) = value.as_str() {
+                    references.ref_ = Some(reference);
+                }
+            }
+            "$schema" => {
+                if let Some(reference) = value.as_str() {
+                    references.schema = Some(reference);
+                }
+            }
+            "additionalItems"
+            | "additionalProperties"
+            | "contains"
+            | "contentSchema"
+            | "else"
+            | "if"
+            | "not"
+            | "propertyNames"
+            | "then"
+            | "unevaluatedItems"
+            | "unevaluatedProperties" => {
+                children.push((value, draft.detect(value)));
+            }
+            "allOf" | "anyOf" | "oneOf" => {
+                if let Some(arr) = value.as_array() {
+                    for item in arr {
+                        children.push((item, draft.detect(item)));
+                    }
+                }
+            }
+            "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties" => {
+                if let Some(obj) = value.as_object() {
+                    for child_value in obj.values() {
+                        children.push((child_value, draft.detect(child_value)));
+                    }
+                }
+            }
+            "items" => match value {
+                Value::Array(arr) => {
+                    for item in arr {
+                        children.push((item, draft.detect(item)));
+                    }
+                }
+                _ => children.push((value, draft.detect(value))),
+            },
+            "dependencies" => {
+                if let Some(obj) = value.as_object() {
+                    for child_value in obj.values() {
+                        if !child_value.is_object() {
+                            continue;
+                        }
+                        children.push((child_value, draft.detect(child_value)));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Some(())
+}
 
 pub(crate) fn walk_borrowed_subresources<'a, E, F>(
     contents: &'a Value,

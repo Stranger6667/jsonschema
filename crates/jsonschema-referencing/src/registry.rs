@@ -1068,8 +1068,8 @@ struct ProcessingState<'a> {
     /// pre-stored value address; non-subresource paths (e.g. `#/components/schemas/Foo`)
     /// are still fully traversed.
     deferred_refs: Vec<DeferredRef>,
-    draft4_reference_scratch: Vec<(&'a str, &'static str)>,
-    draft4_child_scratch: Vec<(&'a Value, Draft)>,
+    borrowed_reference_scratch: crate::specification::BorrowedReferenceSlots<'a>,
+    borrowed_child_scratch: Vec<(&'a Value, Draft)>,
     index_data: PreparedIndex<'a>,
 }
 
@@ -1084,8 +1084,8 @@ impl ProcessingState<'_> {
             custom_metaschemas: Vec::new(),
             visited_schemas: AHashSet::new(),
             deferred_refs: Vec::new(),
-            draft4_reference_scratch: Vec::new(),
-            draft4_child_scratch: Vec::new(),
+            borrowed_reference_scratch: crate::specification::BorrowedReferenceSlots::default(),
+            borrowed_child_scratch: Vec::new(),
             index_data: PreparedIndex::default(),
         }
     }
@@ -1246,10 +1246,8 @@ fn explore_borrowed_subtree<'r>(
     if let Some(object) = subschema.as_object() {
         crate::observe_registry!("registry.borrowed.object_len={}", object.len());
     }
-    if draft == Draft::Draft4 {
-        let Some(probe) = draft.probe_draft4_borrowed_object(subschema) else {
-            return Ok(());
-        };
+    let probe = draft.probe_borrowed_object(subschema);
+    if let Some(probe) = probe.as_ref() {
         #[cfg(feature = "perf-observe-registry")]
         {
             let id_scan = match (probe.id.is_some(), probe.has_anchor) {
@@ -1283,120 +1281,106 @@ fn explore_borrowed_subtree<'r>(
                 subschema,
             );
         }
+    }
+
+    if probe.as_ref().is_some_and(|probe| probe.has_ref_or_schema) {
+        let child_start = state.borrowed_child_scratch.len();
+        draft
+            .scan_borrowed_object_into_scratch(
+                subschema,
+                &mut state.borrowed_reference_scratch,
+                &mut state.borrowed_child_scratch,
+            )
+            .expect("scratch scan should succeed when probe marked the object interesting");
+        let child_end = state.borrowed_child_scratch.len();
 
         let subschema_ptr = std::ptr::from_ref::<Value>(subschema) as usize;
-        if state.visited_schemas.insert(subschema_ptr)
-            && probe.has_ref_or_schema {
-                let ref_start = state.draft4_reference_scratch.len();
-                let child_start = state.draft4_child_scratch.len();
-                draft
-                    .scan_draft4_borrowed_object_into_scratch(
-                        subschema,
-                        &mut state.draft4_reference_scratch,
-                        &mut state.draft4_child_scratch,
-                    )
-                    .expect("draft4 scan should always see an object here");
-                let ref_end = state.draft4_reference_scratch.len();
-                let child_end = state.draft4_child_scratch.len();
-
-                for idx in ref_start..ref_end {
-                    let (reference, key) = state.draft4_reference_scratch[idx];
-                    if reference.starts_with("https://json-schema.org/draft/")
-                        || reference.starts_with("http://json-schema.org/draft-")
-                        || current_base_uri
-                            .as_str()
-                            .starts_with("https://json-schema.org/draft/")
-                    {
-                        if key == "$ref" {
-                            state.refers_metaschemas = true;
+        if state.visited_schemas.insert(subschema_ptr) {
+            for (reference, key) in [
+                (state.borrowed_reference_scratch.ref_, "$ref"),
+                (state.borrowed_reference_scratch.schema, "$schema"),
+            ] {
+                let Some(reference) = reference else {
+                    continue;
+                };
+                if reference.starts_with("https://json-schema.org/draft/")
+                    || reference.starts_with("http://json-schema.org/draft-")
+                    || current_base_uri
+                        .as_str()
+                        .starts_with("https://json-schema.org/draft/")
+                {
+                    if key == "$ref" {
+                        state.refers_metaschemas = true;
+                    }
+                    continue;
+                }
+                if reference == "#" {
+                    continue;
+                }
+                if reference.starts_with('#') {
+                    if mark_local_reference(local_seen, &current_base_uri, reference) {
+                        let ptr = reference.trim_start_matches('#');
+                        if let Some(referenced) = pointer(document_root, ptr) {
+                            let target_draft = draft.detect(referenced);
+                            let value_addr = std::ptr::from_ref::<Value>(referenced) as usize;
+                            state.deferred_refs.push((
+                                Arc::clone(&current_base_uri),
+                                Arc::clone(document_root_uri),
+                                ptr.to_string(),
+                                target_draft,
+                                value_addr,
+                            ));
                         }
-                        continue;
                     }
-                    if reference == "#" {
-                        continue;
-                    }
-                    if reference.starts_with('#') {
-                        if mark_local_reference(local_seen, &current_base_uri, reference) {
-                            let ptr = reference.trim_start_matches('#');
-                            if let Some(referenced) = pointer(document_root, ptr) {
-                                let target_draft = draft.detect(referenced);
-                                let value_addr = std::ptr::from_ref::<Value>(referenced) as usize;
-                                state.deferred_refs.push((
-                                    Arc::clone(&current_base_uri),
-                                    Arc::clone(document_root_uri),
-                                    ptr.to_string(),
-                                    target_draft,
-                                    value_addr,
+                    continue;
+                }
+                if mark_reference(&mut state.seen, &current_base_uri, reference) {
+                    let resolved = if current_base_uri.has_fragment() {
+                        let mut base_without_fragment = current_base_uri.as_ref().clone();
+                        base_without_fragment.set_fragment(None);
+
+                        let (path, fragment) = match reference.split_once('#') {
+                            Some((path, fragment)) => (path, Some(fragment)),
+                            None => (reference, None),
+                        };
+
+                        let mut resolved = (*resolution_cache
+                            .resolve_against(&base_without_fragment.borrow(), path)?)
+                        .clone();
+                        if let Some(fragment) = fragment {
+                            if let Some(encoded) = uri::EncodedString::new(fragment) {
+                                resolved = resolved.with_fragment(Some(encoded));
+                            } else {
+                                uri::encode_to(fragment, &mut state.scratch);
+                                resolved = resolved.with_fragment(Some(
+                                    uri::EncodedString::new_or_panic(&state.scratch),
                                 ));
+                                state.scratch.clear();
                             }
                         }
-                        continue;
-                    }
-                    if mark_reference(&mut state.seen, &current_base_uri, reference) {
-                        let resolved = if current_base_uri.has_fragment() {
-                            let mut base_without_fragment = current_base_uri.as_ref().clone();
-                            base_without_fragment.set_fragment(None);
+                        resolved
+                    } else {
+                        (*resolution_cache
+                            .resolve_against(&current_base_uri.borrow(), reference)?)
+                        .clone()
+                    };
 
-                            let (path, fragment) = match reference.split_once('#') {
-                                Some((path, fragment)) => (path, Some(fragment)),
-                                None => (reference, None),
-                            };
-
-                            let mut resolved = (*resolution_cache
-                                .resolve_against(&base_without_fragment.borrow(), path)?)
-                            .clone();
-                            if let Some(fragment) = fragment {
-                                if let Some(encoded) = uri::EncodedString::new(fragment) {
-                                    resolved = resolved.with_fragment(Some(encoded));
-                                } else {
-                                    uri::encode_to(fragment, &mut state.scratch);
-                                    resolved = resolved.with_fragment(Some(
-                                        uri::EncodedString::new_or_panic(&state.scratch),
-                                    ));
-                                    state.scratch.clear();
-                                }
-                            }
-                            resolved
-                        } else {
-                            (*resolution_cache
-                                .resolve_against(&current_base_uri.borrow(), reference)?)
-                            .clone()
-                        };
-
-                        let kind = if key == "$schema" {
-                            ReferenceKind::Schema
-                        } else {
-                            ReferenceKind::Ref
-                        };
-                        state
-                            .external
-                            .insert((reference.to_string(), resolved, kind));
-                    }
+                    let kind = if key == "$schema" {
+                        ReferenceKind::Schema
+                    } else {
+                        ReferenceKind::Ref
+                    };
+                    state
+                        .external
+                        .insert((reference.to_string(), resolved, kind));
                 }
-
-                let mut idx = child_start;
-                while idx < child_end {
-                    let (child, child_draft) = state.draft4_child_scratch[idx];
-                    idx += 1;
-                    explore_borrowed_subtree(
-                        Arc::clone(&current_base_uri),
-                        document_root,
-                        child,
-                        child_draft,
-                        false,
-                        document_root_uri,
-                        state,
-                        known_resources,
-                        resolution_cache,
-                        local_seen,
-                    )?;
-                }
-
-                state.draft4_reference_scratch.truncate(ref_start);
-                state.draft4_child_scratch.truncate(child_start);
-                return Ok(());
             }
-        draft.walk_borrowed_subresources(subschema, &mut |child, child_draft| {
+        }
+
+        let mut idx = child_start;
+        while idx < child_end {
+            let (child, child_draft) = state.borrowed_child_scratch[idx];
+            idx += 1;
             explore_borrowed_subtree(
                 Arc::clone(&current_base_uri),
                 document_root,
@@ -1408,47 +1392,18 @@ fn explore_borrowed_subtree<'r>(
                 known_resources,
                 resolution_cache,
                 local_seen,
-            )
-        })?;
+            )?;
+        }
+
+        state.borrowed_reference_scratch.ref_ = None;
+        state.borrowed_reference_scratch.schema = None;
+        state.borrowed_child_scratch.truncate(child_start);
         return Ok(());
     }
-    let (id, has_anchors) = draft.id_and_has_anchors(subschema);
-    #[cfg(feature = "perf-observe-registry")]
-    {
-        let id_scan = match (id.is_some(), has_anchors) {
-            (false, false) => "none",
-            (true, false) => "id_only",
-            (false, true) => "anchor_only",
-            (true, true) => "id_and_anchor",
-        };
-        crate::observe_registry!("registry.id_scan={id_scan}");
-    }
-    if let Some(id) = id {
-        let original_base_uri = Arc::clone(&current_base_uri);
-        current_base_uri = resolve_id(&current_base_uri, id, resolution_cache)?;
-        known_resources.insert((*current_base_uri).clone());
-        let insert_resource = current_base_uri != original_base_uri;
-        if !(is_root_entry && current_base_uri == *document_root_uri) {
-            insert_borrowed_discovered_index_entries(
-                &mut state.index_data,
-                &current_base_uri,
-                draft,
-                insert_resource,
-                subschema,
-            );
-        }
-    } else if has_anchors && !is_root_entry {
-        insert_borrowed_discovered_index_entries(
-            &mut state.index_data,
-            &current_base_uri,
-            draft,
-            false,
-            subschema,
-        );
-    }
-
     let subschema_ptr = std::ptr::from_ref::<Value>(subschema) as usize;
-    if state.visited_schemas.insert(subschema_ptr) {
+    if state.visited_schemas.insert(subschema_ptr)
+        && probe.as_ref().is_none_or(|probe| probe.has_ref_or_schema)
+    {
         collect_external_resources(
             &current_base_uri,
             document_root,

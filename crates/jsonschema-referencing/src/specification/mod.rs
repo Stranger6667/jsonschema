@@ -14,6 +14,18 @@ use crate::{
     Anchor, Error, JsonPointerNode, Resolver, Resource, ResourceRef, Segments,
 };
 
+pub(crate) struct BorrowedObjectProbe<'a> {
+    pub(crate) id: Option<&'a str>,
+    pub(crate) has_anchor: bool,
+    pub(crate) has_ref_or_schema: bool,
+}
+
+#[derive(Default)]
+pub(crate) struct BorrowedReferenceSlots<'a> {
+    pub(crate) ref_: Option<&'a str>,
+    pub(crate) schema: Option<&'a str>,
+}
+
 /// JSON Schema specification versions.
 #[non_exhaustive]
 #[derive(Debug, Default, PartialEq, Copy, Clone, Hash, Eq, PartialOrd, Ord)]
@@ -180,26 +192,37 @@ impl Draft {
             }
         }
     }
-    pub(crate) fn probe_draft4_borrowed_object(
-        self,
-        contents: &Value,
-    ) -> Option<draft4::BorrowedObjectProbe<'_>> {
+    pub(crate) fn probe_borrowed_object(self, contents: &Value) -> Option<BorrowedObjectProbe<'_>> {
         match self {
             Draft::Draft4 => draft4::probe_borrowed_object(contents),
-            _ => None,
+            Draft::Draft6 => draft6::probe_borrowed_object(contents),
+            Draft::Draft7 => draft7::probe_borrowed_object(contents),
+            Draft::Draft201909 => draft201909::probe_borrowed_object(contents),
+            Draft::Draft202012 | Draft::Unknown => subresources::probe_borrowed_object(contents),
         }
     }
-    pub(crate) fn scan_draft4_borrowed_object_into_scratch<'a>(
+    pub(crate) fn scan_borrowed_object_into_scratch<'a>(
         self,
         contents: &'a Value,
-        references: &mut Vec<(&'a str, &'static str)>,
+        references: &mut BorrowedReferenceSlots<'a>,
         children: &mut Vec<(&'a Value, Draft)>,
     ) -> Option<()> {
         match self {
             Draft::Draft4 => {
                 draft4::scan_borrowed_object_into_scratch(contents, self, references, children)
             }
-            _ => None,
+            Draft::Draft6 => {
+                draft6::scan_borrowed_object_into_scratch(contents, self, references, children)
+            }
+            Draft::Draft7 => {
+                draft7::scan_borrowed_object_into_scratch(contents, self, references, children)
+            }
+            Draft::Draft201909 => {
+                draft201909::scan_borrowed_object_into_scratch(contents, self, references, children)
+            }
+            Draft::Draft202012 | Draft::Unknown => subresources::scan_borrowed_object_into_scratch(
+                contents, self, references, children,
+            ),
         }
     }
     pub(crate) fn walk_owned_subresources<'a, E, F>(
