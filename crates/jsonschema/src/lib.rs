@@ -531,7 +531,7 @@
 //! ```rust
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use serde_json::json;
-//! use jsonschema::Resource;
+//! use jsonschema::{Registry, Resource};
 //!
 //! // Root schema with multiple definitions
 //! let root_schema = json!({
@@ -559,9 +559,13 @@
 //! // Create a schema that references the specific definition you want to validate against
 //! let user_schema = json!({"$ref": "https://example.com/root#/definitions/User"});
 //!
-//! // Register the root schema and build validator for the specific definition
+//! let registry = Registry::new()
+//!     .add("https://example.com/root", root_schema)?
+//!     .prepare()?;
+//!
+//! // Build validator for the specific definition via the shared prepared registry
 //! let validator = jsonschema::options()
-//!     .with_resource("https://example.com/root", Resource::from_contents(root_schema))
+//!     .with_registry(&registry)
 //!     .build(&user_schema)?;
 //!
 //! // Now validate data against just the User definition
@@ -887,7 +891,7 @@ pub use http::HttpOptions;
 pub use keywords::custom::Keyword;
 pub use options::{EmailOptions, FancyRegex, PatternOptions, Regex, ValidationOptions};
 pub use referencing::{
-    Draft, Error as ReferencingError, Registry, RegistryOptions, Resource, Retrieve, Uri,
+    Draft, Error as ReferencingError, Registry, RegistryBuilder, Resource, Retrieve, Uri,
 };
 #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
 pub use retriever::{HttpRetriever, HttpRetrieverError};
@@ -1165,7 +1169,7 @@ pub async fn async_validator_for(schema: &Value) -> Result<Validator, Validation
 ///
 /// See [`ValidationOptions`] for all available configuration options.
 #[must_use]
-pub fn options() -> ValidationOptions {
+pub fn options<'i>() -> ValidationOptions<'i> {
     Validator::options()
 }
 
@@ -1231,15 +1235,15 @@ pub fn options() -> ValidationOptions {
 /// See [`ValidationOptions`] for all available configuration options.
 #[cfg(feature = "resolve-async")]
 #[must_use]
-pub fn async_options() -> ValidationOptions<std::sync::Arc<dyn AsyncRetrieve>> {
+pub fn async_options<'i>() -> ValidationOptions<'i, std::sync::Arc<dyn AsyncRetrieve>> {
     Validator::async_options()
 }
 
 /// Functionality for validating JSON Schema documents against their meta-schemas.
 pub mod meta {
-    use crate::{error::ValidationError, Draft};
+    use crate::{error::ValidationError, Draft, Registry};
     use ahash::AHashSet;
-    use referencing::{Registry, Retrieve};
+    use referencing::Retrieve;
     use serde_json::Value;
 
     pub use validator_handle::MetaValidator;
@@ -1257,10 +1261,11 @@ pub mod meta {
     ///     "type": "object"
     /// }));
     ///
-    /// let registry = Registry::try_new(
-    ///     "http://example.com/meta",
-    ///     custom_meta
-    /// ).unwrap();
+    /// let registry = Registry::new()
+    ///     .add("http://example.com/meta", custom_meta)
+    ///     .unwrap()
+    ///     .prepare()
+    ///     .unwrap();
     ///
     /// let schema = json!({
     ///     "$schema": "http://example.com/meta",
@@ -1268,21 +1273,21 @@ pub mod meta {
     /// });
     ///
     /// assert!(jsonschema::meta::options()
-    ///     .with_registry(registry)
+    ///     .with_registry(&registry)
     ///     .is_valid(&schema));
     /// ```
     #[must_use]
-    pub fn options() -> MetaSchemaOptions {
+    pub fn options<'a>() -> MetaSchemaOptions<'a> {
         MetaSchemaOptions::default()
     }
 
     /// Options for meta-schema validation.
     #[derive(Clone, Default)]
-    pub struct MetaSchemaOptions {
-        registry: Option<Registry>,
+    pub struct MetaSchemaOptions<'a> {
+        registry: Option<&'a Registry<'a>>,
     }
 
-    impl MetaSchemaOptions {
+    impl<'a> MetaSchemaOptions<'a> {
         /// Use a registry for resolving custom meta-schemas.
         ///
         /// # Examples
@@ -1296,16 +1301,17 @@ pub mod meta {
         ///     "type": "object"
         /// }));
         ///
-        /// let registry = Registry::try_new(
-        ///     "http://example.com/meta",
-        ///     custom_meta
-        /// ).unwrap();
+        /// let registry = Registry::new()
+        ///     .add("http://example.com/meta", custom_meta)
+        ///     .unwrap()
+        ///     .prepare()
+        ///     .unwrap();
         ///
         /// let options = jsonschema::meta::options()
-        ///     .with_registry(registry);
+        ///     .with_registry(&registry);
         /// ```
         #[must_use]
-        pub fn with_registry(mut self, registry: Registry) -> Self {
+        pub fn with_registry(mut self, registry: &'a Registry<'a>) -> Self {
             self.registry = Some(registry);
             self
         }
@@ -1317,7 +1323,7 @@ pub mod meta {
         /// Panics if the meta-schema cannot be resolved.
         #[must_use]
         pub fn is_valid(&self, schema: &Value) -> bool {
-            match try_meta_validator_for(schema, self.registry.as_ref()) {
+            match try_meta_validator_for(schema, self.registry) {
                 Ok(validator) => validator.as_ref().is_valid(schema),
                 Err(e) => panic!("Failed to resolve meta-schema: {e}"),
             }
@@ -1328,8 +1334,11 @@ pub mod meta {
         /// # Errors
         ///
         /// Returns [`ValidationError`] if the schema is invalid or if the meta-schema cannot be resolved.
-        pub fn validate<'a>(&self, schema: &'a Value) -> Result<(), ValidationError<'a>> {
-            let validator = try_meta_validator_for(schema, self.registry.as_ref())?;
+        pub fn validate<'schema>(
+            &self,
+            schema: &'schema Value,
+        ) -> Result<(), ValidationError<'schema>> {
+            let validator = try_meta_validator_for(schema, self.registry)?;
             validator.as_ref().validate(schema)
         }
     }
@@ -1576,7 +1585,7 @@ pub mod meta {
 
     fn try_meta_validator_for<'a>(
         schema: &Value,
-        registry: Option<&Registry>,
+        registry: Option<&'a Registry<'a>>,
     ) -> Result<MetaValidator<'a>, ValidationError<'static>> {
         let draft = Draft::default().detect(schema);
 
@@ -1593,7 +1602,8 @@ pub mod meta {
                         resolve_meta_schema_with_registry(meta_schema_uri, registry)?;
                     let validator = crate::options()
                         .with_draft(resolved_draft)
-                        .with_registry(registry.clone())
+                        .with_registry(registry)
+                        .with_base_uri(meta_schema_uri.trim_end_matches('#'))
                         .without_schema_validation()
                         .build(&custom_meta_schema)?;
                     return Ok(MetaValidator::owned(validator));
@@ -1615,14 +1625,14 @@ pub mod meta {
 
     fn resolve_meta_schema_with_registry(
         uri: &str,
-        registry: &Registry,
+        registry: &Registry<'_>,
     ) -> Result<(Value, Draft), ValidationError<'static>> {
-        let resolver = registry.try_resolver(uri)?;
+        let resolver = registry.resolver(referencing::uri::from_str(uri)?);
         let first_resolved = resolver.lookup("")?;
         let first_meta_schema = first_resolved.contents().clone();
 
         let draft = walk_meta_schema_chain(uri, |current_uri| {
-            let resolver = registry.try_resolver(current_uri)?;
+            let resolver = registry.resolver(referencing::uri::from_str(current_uri)?);
             let resolved = resolver.lookup("")?;
             Ok(resolved.contents().clone())
         })?;
@@ -1790,7 +1800,7 @@ pub mod draft4 {
     ///
     /// See [`ValidationOptions`] for all available configuration options.
     #[must_use]
-    pub fn options() -> ValidationOptions {
+    pub fn options<'i>() -> ValidationOptions<'i> {
         crate::options().with_draft(Draft::Draft4)
     }
 
@@ -1971,7 +1981,7 @@ pub mod draft6 {
     ///
     /// See [`ValidationOptions`] for all available configuration options.
     #[must_use]
-    pub fn options() -> ValidationOptions {
+    pub fn options<'i>() -> ValidationOptions<'i> {
         crate::options().with_draft(Draft::Draft6)
     }
 
@@ -2152,7 +2162,7 @@ pub mod draft7 {
     ///
     /// See [`ValidationOptions`] for all available configuration options.
     #[must_use]
-    pub fn options() -> ValidationOptions {
+    pub fn options<'i>() -> ValidationOptions<'i> {
         crate::options().with_draft(Draft::Draft7)
     }
 
@@ -2333,7 +2343,7 @@ pub mod draft201909 {
     ///
     /// See [`ValidationOptions`] for all available configuration options.
     #[must_use]
-    pub fn options() -> ValidationOptions {
+    pub fn options<'i>() -> ValidationOptions<'i> {
         crate::options().with_draft(Draft::Draft201909)
     }
 
@@ -2516,7 +2526,7 @@ pub mod draft202012 {
     ///
     /// See [`ValidationOptions`] for all available configuration options.
     #[must_use]
-    pub fn options() -> ValidationOptions {
+    pub fn options<'i>() -> ValidationOptions<'i> {
         crate::options().with_draft(Draft::Draft202012)
     }
 
@@ -2770,8 +2780,7 @@ pub(crate) mod tests_util {
 
 #[cfg(test)]
 mod tests {
-    use crate::{validator_for, ValidationError};
-    use referencing::{Registry, Resource};
+    use crate::{validator_for, Registry, ValidationError};
 
     use super::Draft;
     use serde_json::json;
@@ -3233,15 +3242,14 @@ mod tests {
             }
         });
 
-        // Register the custom meta-schema as a resource
-        let resources = vec![(
-            "http://custom.example.com/schema".to_string(),
-            Resource::from_contents(meta_schema),
-        )];
-
+        let registry = Registry::new()
+            .add("http://custom.example.com/schema", meta_schema)
+            .expect("Should accept meta-schema")
+            .prepare()
+            .expect("Should create registry");
         let validator = crate::options()
             .without_schema_validation()
-            .with_resources(resources.into_iter())
+            .with_registry(&registry)
             .build(&schema)
             .expect("Should build validator");
 
@@ -3367,21 +3375,14 @@ mod tests {
             "type": "object"
         });
 
-        // Build the validator with both the meta-schema and the element schema as resources
-        let resources = vec![
-            (
-                "http://example.com/meta/schema".to_string(),
-                referencing::Resource::from_contents(meta_schema),
-            ),
-            (
-                "http://example.com/schemas/element".to_string(),
-                referencing::Resource::from_contents(element_schema.clone()),
-            ),
-        ];
-
+        let registry = Registry::new()
+            .add("http://example.com/meta/schema", meta_schema)
+            .expect("Should accept meta-schema")
+            .prepare()
+            .expect("Should create registry");
         let validator = crate::options()
             .without_schema_validation()
-            .with_resources(resources.into_iter())
+            .with_registry(&registry)
             .build(&element_schema)
             .expect("Should successfully build validator with custom meta-schema");
 
@@ -3410,13 +3411,14 @@ mod tests {
             }
         });
 
-        let registry = Registry::try_new(
-            "http://example.com/custom-with-unevaluated",
-            Resource::from_contents(custom_meta),
-        )
-        .expect("Should create registry");
+        let registry = Registry::new()
+            .add("http://example.com/custom-with-unevaluated", custom_meta)
+            .expect("Should accept meta-schema")
+            .prepare()
+            .expect("Should create registry");
 
         let schema = json!({
+            "$id": "http://example.com/subject",
             "$schema": "http://example.com/custom-with-unevaluated#",
             "type": "object",
             "properties": {
@@ -3427,7 +3429,7 @@ mod tests {
 
         let validator = crate::options()
             .without_schema_validation()
-            .with_registry(registry)
+            .with_registry(&registry)
             .build(&schema)
             .expect("Should build validator");
 
@@ -3448,11 +3450,11 @@ mod tests {
             "unevaluatedProperties": false
         });
 
-        let registry = Registry::try_new(
-            "https://json-schema.org/draft/2020-12/strict",
-            Resource::from_contents(strict_meta),
-        )
-        .expect("Should create registry");
+        let registry = Registry::new()
+            .add("https://json-schema.org/draft/2020-12/strict", strict_meta)
+            .expect("Should accept strict meta-schema")
+            .prepare()
+            .expect("Should create registry");
 
         // Valid schema - all keywords are recognized
         let valid_schema = json!({
@@ -3464,7 +3466,7 @@ mod tests {
         });
 
         assert!(crate::meta::options()
-            .with_registry(registry.clone())
+            .with_registry(&registry)
             .is_valid(&valid_schema));
 
         // Invalid schema - top-level typo "typ" instead of "type"
@@ -3474,7 +3476,7 @@ mod tests {
         });
 
         assert!(!crate::meta::options()
-            .with_registry(registry.clone())
+            .with_registry(&registry)
             .is_valid(&invalid_schema_top_level));
 
         // Invalid schema - nested invalid keyword "minSize" (not a real JSON Schema keyword)
@@ -3487,7 +3489,7 @@ mod tests {
         });
 
         assert!(!crate::meta::options()
-            .with_registry(registry)
+            .with_registry(&registry)
             .is_valid(&invalid_schema_nested));
     }
 
@@ -3506,13 +3508,14 @@ mod tests {
             }
         });
 
-        let registry = Registry::try_new(
-            "http://example.com/meta/draft7-custom",
-            Resource::from_contents(custom_meta_draft7),
-        )
-        .expect("Should create registry");
+        let registry = Registry::new()
+            .add("http://example.com/meta/draft7-custom", custom_meta_draft7)
+            .expect("Should accept meta-schema")
+            .prepare()
+            .expect("Should create registry");
 
         let schema = json!({
+            "$id": "http://example.com/subject",
             "$schema": "http://example.com/meta/draft7-custom",
             "$ref": "#/$defs/positiveNumber",
             "maximum": 5,
@@ -3526,7 +3529,7 @@ mod tests {
 
         let validator = crate::options()
             .without_schema_validation()
-            .with_registry(registry)
+            .with_registry(&registry)
             .build(&schema)
             .expect("Should build validator");
 
@@ -3537,11 +3540,11 @@ mod tests {
 
     mod meta_options_tests {
         use super::*;
-        use crate::{Registry, Resource};
+        use crate::Registry;
 
         #[test]
         fn test_meta_options_with_registry_valid_schema() {
-            let custom_meta = Resource::from_contents(json!({
+            let custom_meta = json!({
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
                 "properties": {
@@ -3550,9 +3553,13 @@ mod tests {
                     "maxLength": { "type": "integer" }
                 },
                 "additionalProperties": false
-            }));
+            });
 
-            let registry = Registry::try_new("http://example.com/meta", custom_meta).unwrap();
+            let registry = Registry::new()
+                .add("http://example.com/meta", custom_meta)
+                .unwrap()
+                .prepare()
+                .unwrap();
 
             let schema = json!({
                 "$schema": "http://example.com/meta",
@@ -3561,27 +3568,31 @@ mod tests {
             });
 
             assert!(crate::meta::options()
-                .with_registry(registry.clone())
+                .with_registry(&registry)
                 .is_valid(&schema));
 
             assert!(crate::meta::options()
-                .with_registry(registry)
+                .with_registry(&registry)
                 .validate(&schema)
                 .is_ok());
         }
 
         #[test]
         fn test_meta_options_with_registry_invalid_schema() {
-            let custom_meta = Resource::from_contents(json!({
+            let custom_meta = json!({
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
                 "properties": {
                     "type": { "type": "string" }
                 },
                 "additionalProperties": false
-            }));
+            });
 
-            let registry = Registry::try_new("http://example.com/meta", custom_meta).unwrap();
+            let registry = Registry::new()
+                .add("http://example.com/meta", custom_meta)
+                .unwrap()
+                .prepare()
+                .unwrap();
 
             // Schema has disallowed property
             let schema = json!({
@@ -3591,11 +3602,11 @@ mod tests {
             });
 
             assert!(!crate::meta::options()
-                .with_registry(registry.clone())
+                .with_registry(&registry)
                 .is_valid(&schema));
 
             assert!(crate::meta::options()
-                .with_registry(registry)
+                .with_registry(&registry)
                 .validate(&schema)
                 .is_err());
         }
@@ -3603,12 +3614,16 @@ mod tests {
         #[test]
         fn test_meta_options_with_registry_chain() {
             // Create a chain: custom-meta -> draft2020-12
-            let custom_meta = Resource::from_contents(json!({
+            let custom_meta = json!({
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object"
-            }));
+            });
 
-            let registry = Registry::try_new("http://example.com/custom", custom_meta).unwrap();
+            let registry = Registry::new()
+                .add("http://example.com/custom", custom_meta)
+                .unwrap()
+                .prepare()
+                .unwrap();
 
             let schema = json!({
                 "$schema": "http://example.com/custom",
@@ -3616,34 +3631,37 @@ mod tests {
             });
 
             assert!(crate::meta::options()
-                .with_registry(registry)
+                .with_registry(&registry)
                 .is_valid(&schema));
         }
 
         #[test]
         fn test_meta_options_with_registry_multi_level_chain() {
             // Create chain: schema -> meta-level-2 -> meta-level-1 -> draft2020-12
-            let meta_level_1 = Resource::from_contents(json!({
+            let meta_level_1 = json!({
                 "$id": "http://example.com/meta/level1",
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
                 "properties": {
                     "customProp": { "type": "boolean" }
                 }
-            }));
+            });
 
-            let meta_level_2 = Resource::from_contents(json!({
+            let meta_level_2 = json!({
                 "$id": "http://example.com/meta/level2",
                 "$schema": "http://example.com/meta/level1",
                 "type": "object",
                 "customProp": true
-            }));
+            });
 
-            let registry = Registry::try_from_resources([
-                ("http://example.com/meta/level1", meta_level_1),
-                ("http://example.com/meta/level2", meta_level_2),
-            ])
-            .unwrap();
+            let registry = Registry::new()
+                .extend([
+                    ("http://example.com/meta/level1", meta_level_1),
+                    ("http://example.com/meta/level2", meta_level_2),
+                ])
+                .unwrap()
+                .prepare()
+                .unwrap();
 
             let schema = json!({
                 "$schema": "http://example.com/meta/level2",
@@ -3652,22 +3670,22 @@ mod tests {
             });
 
             assert!(crate::meta::options()
-                .with_registry(registry)
+                .with_registry(&registry)
                 .is_valid(&schema));
         }
 
         #[test]
         fn test_meta_options_with_registry_multi_document_meta_schema() {
-            let shared_constraints = Resource::from_contents(json!({
+            let shared_constraints = json!({
                 "$id": "http://example.com/meta/shared",
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
                 "properties": {
                     "maxLength": { "type": "integer", "minimum": 0 }
                 }
-            }));
+            });
 
-            let root_meta = Resource::from_contents(json!({
+            let root_meta = json!({
                 "$id": "http://example.com/meta/root",
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
@@ -3678,13 +3696,16 @@ mod tests {
                 "allOf": [
                     { "$ref": "http://example.com/meta/shared" }
                 ]
-            }));
+            });
 
-            let registry = Registry::try_from_resources([
-                ("http://example.com/meta/root", root_meta),
-                ("http://example.com/meta/shared", shared_constraints),
-            ])
-            .unwrap();
+            let registry = Registry::new()
+                .extend([
+                    ("http://example.com/meta/root", root_meta),
+                    ("http://example.com/meta/shared", shared_constraints),
+                ])
+                .unwrap()
+                .prepare()
+                .unwrap();
 
             let schema = json!({
                 "$schema": "http://example.com/meta/root",
@@ -3693,7 +3714,7 @@ mod tests {
             });
 
             let result = crate::meta::options()
-                .with_registry(registry.clone())
+                .with_registry(&registry)
                 .validate(&schema);
 
             assert!(
@@ -3703,7 +3724,7 @@ mod tests {
             );
 
             assert!(crate::meta::options()
-                .with_registry(registry)
+                .with_registry(&registry)
                 .is_valid(&schema));
         }
 
@@ -3733,12 +3754,16 @@ mod tests {
 
         #[test]
         fn test_meta_options_with_registry_missing_metaschema() {
-            let custom_meta = Resource::from_contents(json!({
+            let custom_meta = json!({
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object"
-            }));
+            });
 
-            let registry = Registry::try_new("http://example.com/meta1", custom_meta).unwrap();
+            let registry = Registry::new()
+                .add("http://example.com/meta1", custom_meta)
+                .unwrap()
+                .prepare()
+                .unwrap();
 
             // Schema references a different meta-schema not in registry
             let schema = json!({
@@ -3747,7 +3772,7 @@ mod tests {
             });
 
             let result = crate::meta::options()
-                .with_registry(registry)
+                .with_registry(&registry)
                 .validate(&schema);
 
             assert!(result.is_err());
@@ -3756,23 +3781,26 @@ mod tests {
         #[test]
         fn test_meta_options_circular_reference_detection() {
             // Create a circular reference: meta1 -> meta2 -> meta1
-            let meta1 = Resource::from_contents(json!({
+            let meta1 = json!({
                 "$id": "http://example.com/meta1",
                 "$schema": "http://example.com/meta2",
                 "type": "object"
-            }));
+            });
 
-            let meta2 = Resource::from_contents(json!({
+            let meta2 = json!({
                 "$id": "http://example.com/meta2",
                 "$schema": "http://example.com/meta1",
                 "type": "object"
-            }));
+            });
 
-            let registry = Registry::try_from_resources([
-                ("http://example.com/meta1", meta1),
-                ("http://example.com/meta2", meta2),
-            ])
-            .unwrap();
+            let registry = Registry::new()
+                .extend([
+                    ("http://example.com/meta1", meta1),
+                    ("http://example.com/meta2", meta2),
+                ])
+                .unwrap()
+                .prepare()
+                .unwrap();
 
             let schema = json!({
                 "$schema": "http://example.com/meta1",
@@ -3780,7 +3808,7 @@ mod tests {
             });
 
             let result = crate::meta::options()
-                .with_registry(registry)
+                .with_registry(&registry)
                 .validate(&schema);
 
             assert!(result.is_err());
@@ -3810,13 +3838,17 @@ mod tests {
 
         #[test]
         fn test_meta_options_validate_returns_specific_errors() {
-            let custom_meta = Resource::from_contents(json!({
+            let custom_meta = json!({
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
                 "required": ["type"]
-            }));
+            });
 
-            let registry = Registry::try_new("http://example.com/meta", custom_meta).unwrap();
+            let registry = Registry::new()
+                .add("http://example.com/meta", custom_meta)
+                .unwrap()
+                .prepare()
+                .unwrap();
 
             // Schema missing required property
             let schema = json!({
@@ -3827,7 +3859,7 @@ mod tests {
             });
 
             let result = crate::meta::options()
-                .with_registry(registry)
+                .with_registry(&registry)
                 .validate(&schema);
 
             assert!(result.is_err());
@@ -3837,7 +3869,7 @@ mod tests {
 
         #[test]
         fn test_meta_options_builds_validator_with_resolved_draft() {
-            let custom_meta = Resource::from_contents(json!({
+            let custom_meta = json!({
                 "$id": "http://example.com/meta/draft7-based",
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "type": "object",
@@ -3847,10 +3879,13 @@ mod tests {
                     "minLength": { "type": "integer" }
                 },
                 "additionalProperties": false
-            }));
+            });
 
-            let registry =
-                Registry::try_new("http://example.com/meta/draft7-based", custom_meta).unwrap();
+            let registry = Registry::new()
+                .add("http://example.com/meta/draft7-based", custom_meta)
+                .unwrap()
+                .prepare()
+                .unwrap();
 
             let schema = json!({
                 "$schema": "http://example.com/meta/draft7-based",
@@ -3859,7 +3894,7 @@ mod tests {
             });
 
             let result = crate::meta::options()
-                .with_registry(registry)
+                .with_registry(&registry)
                 .validate(&schema);
 
             assert!(result.is_ok());
@@ -3867,7 +3902,7 @@ mod tests {
 
         #[test]
         fn test_meta_options_validator_uses_correct_draft() {
-            let custom_meta_draft6 = Resource::from_contents(json!({
+            let custom_meta_draft6 = json!({
                 "$id": "http://example.com/meta/draft6-based",
                 "$schema": "http://json-schema.org/draft-06/schema#",
                 "type": "object",
@@ -3877,11 +3912,13 @@ mod tests {
                     "exclusiveMinimum": { "type": "number" }
                 },
                 "additionalProperties": false
-            }));
+            });
 
-            let registry =
-                Registry::try_new("http://example.com/meta/draft6-based", custom_meta_draft6)
-                    .unwrap();
+            let registry = Registry::new()
+                .add("http://example.com/meta/draft6-based", custom_meta_draft6)
+                .unwrap()
+                .prepare()
+                .unwrap();
 
             let schema_valid_for_draft6 = json!({
                 "$schema": "http://example.com/meta/draft6-based",
@@ -3890,7 +3927,7 @@ mod tests {
             });
 
             let result = crate::meta::options()
-                .with_registry(registry)
+                .with_registry(&registry)
                 .validate(&schema_valid_for_draft6);
 
             assert!(result.is_ok());
@@ -3898,7 +3935,7 @@ mod tests {
 
         #[test]
         fn test_meta_options_without_schema_validation_in_built_validator() {
-            let custom_meta = Resource::from_contents(json!({
+            let custom_meta = json!({
                 "$id": "http://example.com/meta/custom",
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
@@ -3907,10 +3944,13 @@ mod tests {
                     "type": { "type": "string" }
                 },
                 "additionalProperties": false
-            }));
+            });
 
-            let registry =
-                Registry::try_new("http://example.com/meta/custom", custom_meta).unwrap();
+            let registry = Registry::new()
+                .add("http://example.com/meta/custom", custom_meta)
+                .unwrap()
+                .prepare()
+                .unwrap();
 
             let schema = json!({
                 "$schema": "http://example.com/meta/custom",
@@ -3918,7 +3958,7 @@ mod tests {
             });
 
             let result = crate::meta::options()
-                .with_registry(registry)
+                .with_registry(&registry)
                 .validate(&schema);
 
             assert!(result.is_ok());
@@ -3928,7 +3968,7 @@ mod tests {
         fn test_meta_validation_uses_resolved_draft_from_chain() {
             // Chain: user-schema -> custom-meta -> Draft 4
             // Validator should use Draft 4 rules to validate the schema
-            let custom_meta = Resource::from_contents(json!({
+            let custom_meta = json!({
                 "$id": "http://example.com/meta/draft4-based",
                 "$schema": "http://json-schema.org/draft-04/schema#",
                 "type": "object",
@@ -3939,10 +3979,13 @@ mod tests {
                     "const": { "type": "string" }
                 },
                 "additionalProperties": false
-            }));
+            });
 
-            let registry =
-                Registry::try_new("http://example.com/meta/draft4-based", custom_meta).unwrap();
+            let registry = Registry::new()
+                .add("http://example.com/meta/draft4-based", custom_meta)
+                .unwrap()
+                .prepare()
+                .unwrap();
 
             let schema = json!({
                 "$schema": "http://example.com/meta/draft4-based",
@@ -3951,7 +3994,7 @@ mod tests {
             });
 
             let result = crate::meta::options()
-                .with_registry(registry)
+                .with_registry(&registry)
                 .validate(&schema);
 
             assert!(result.is_ok());
@@ -3960,16 +4003,16 @@ mod tests {
         #[test]
         fn test_meta_validation_multi_level_chain_uses_resolved_draft() {
             // Multi-level chain: user-schema -> meta-2 -> meta-1 -> Draft 4
-            let meta_level_1 = Resource::from_contents(json!({
+            let meta_level_1 = json!({
                 "$id": "http://example.com/meta/level1",
                 "$schema": "http://json-schema.org/draft-04/schema#",
                 "type": "object",
                 "properties": {
                     "customKeyword": { "type": "boolean" }
                 }
-            }));
+            });
 
-            let meta_level_2 = Resource::from_contents(json!({
+            let meta_level_2 = json!({
                 "$id": "http://example.com/meta/level2",
                 "$schema": "http://example.com/meta/level1",
                 "type": "object",
@@ -3981,13 +4024,16 @@ mod tests {
                 },
                 "customKeyword": true,
                 "additionalProperties": false
-            }));
+            });
 
-            let registry = Registry::try_from_resources([
-                ("http://example.com/meta/level1", meta_level_1),
-                ("http://example.com/meta/level2", meta_level_2),
-            ])
-            .unwrap();
+            let registry = Registry::new()
+                .extend([
+                    ("http://example.com/meta/level1", meta_level_1),
+                    ("http://example.com/meta/level2", meta_level_2),
+                ])
+                .unwrap()
+                .prepare()
+                .unwrap();
 
             let schema = json!({
                 "$schema": "http://example.com/meta/level2",
@@ -3997,7 +4043,7 @@ mod tests {
             });
 
             let result = crate::meta::options()
-                .with_registry(registry)
+                .with_registry(&registry)
                 .validate(&schema);
 
             assert!(result.is_ok());
@@ -4084,7 +4130,6 @@ mod tests {
 
 #[cfg(all(test, feature = "resolve-async", not(target_family = "wasm")))]
 mod async_tests {
-    use referencing::Resource;
     use std::{collections::HashMap, sync::Arc};
 
     use serde_json::json;
@@ -4231,36 +4276,19 @@ mod async_tests {
     }
 
     #[tokio::test]
-    async fn test_async_with_registry() {
-        use crate::Registry;
+    async fn test_async_with_registry_uses_async_retriever_for_inline_only_refs() {
+        let registry = crate::Registry::new().prepare().unwrap();
+        let schema = json!({
+            "$ref": "https://example.com/user.json"
+        });
 
-        // Create a registry with initial schemas
-        let registry = Registry::options()
-            .async_retriever(TestRetriever::new())
-            .build([(
-                "https://example.com/user.json",
-                Resource::from_contents(json!({
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "age": {"type": "integer", "minimum": 0}
-                    },
-                    "required": ["name"]
-                })),
-            )])
-            .await
-            .unwrap();
-
-        // Create a validator using the pre-populated registry
         let validator = crate::async_options()
-            .with_registry(registry)
-            .build(&json!({
-                "$ref": "https://example.com/user.json"
-            }))
+            .with_registry(&registry)
+            .with_retriever(TestRetriever::new())
+            .build(&schema)
             .await
             .unwrap();
 
-        // Verify that validation works with the registry
         assert!(validator.is_valid(&json!({
             "name": "John Doe",
             "age": 30

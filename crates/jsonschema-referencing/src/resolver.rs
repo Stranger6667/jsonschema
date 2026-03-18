@@ -4,14 +4,14 @@ use std::sync::Arc;
 use fluent_uri::Uri;
 use serde_json::Value;
 
-use crate::{list::List, resource::JsonSchemaResource, Draft, Error, Registry, ResourceRef};
+use crate::{list::List, Anchor, Draft, Error, Registry, ResourceRef, VocabularySet};
 
 /// A reference resolver.
 ///
 /// Resolves references against the base URI and looks up the result in the registry.
 #[derive(Clone)]
 pub struct Resolver<'r> {
-    pub(crate) registry: &'r Registry,
+    pub(crate) registry: &'r Registry<'r>,
     base_uri: Arc<Uri<String>>,
     scopes: List<Uri<String>>,
 }
@@ -46,7 +46,8 @@ impl fmt::Debug for Resolver<'_> {
 
 impl<'r> Resolver<'r> {
     /// Create a new `Resolver` with the given registry and base URI.
-    pub(crate) fn new(registry: &'r Registry, base_uri: Arc<Uri<String>>) -> Self {
+    #[inline]
+    pub(crate) fn new(registry: &'r Registry<'r>, base_uri: Arc<Uri<String>>) -> Self {
         Self {
             registry,
             base_uri,
@@ -54,6 +55,7 @@ impl<'r> Resolver<'r> {
         }
     }
     #[must_use]
+    #[inline]
     pub fn base_uri(&self) -> Arc<Uri<String>> {
         self.base_uri.clone()
     }
@@ -77,7 +79,7 @@ impl<'r> Resolver<'r> {
             (uri, fragment)
         };
 
-        let Some(retrieved) = self.registry.resources.get(&*uri) else {
+        let Some(retrieved) = self.registry.resource_by_uri(&uri) else {
             return Err(Error::unretrievable(
                 uri.as_str(),
                 "Retrieving external resources is not supported once the registry is populated"
@@ -91,7 +93,7 @@ impl<'r> Resolver<'r> {
         }
 
         if !fragment.is_empty() {
-            let retrieved = self.registry.anchor(&uri, fragment)?;
+            let retrieved = self.lookup_anchor(&uri, fragment)?;
             let resolver = self.evolve(uri);
             return retrieved.resolve(resolver);
         }
@@ -146,19 +148,23 @@ impl<'r> Resolver<'r> {
 
         Ok(resolved)
     }
+
+    #[inline]
+    pub(crate) fn lookup_anchor<'a>(
+        &self,
+        uri: &'a Uri<String>,
+        name: &'a str,
+    ) -> Result<Anchor<'r>, Error> {
+        self.registry.anchor(uri, name)
+    }
+
     /// Create a resolver for a subresource.
     ///
     /// # Errors
     ///
     /// Returns an error if the resource id cannot be resolved against the base URI of this resolver.
+    #[inline]
     pub fn in_subresource(&self, subresource: ResourceRef<'_>) -> Result<Self, Error> {
-        self.in_subresource_inner(&subresource)
-    }
-
-    pub(crate) fn in_subresource_inner(
-        &self,
-        subresource: &impl JsonSchemaResource,
-    ) -> Result<Self, Error> {
         if let Some(id) = subresource.id() {
             let base_uri = self.registry.resolve_against(&self.base_uri.borrow(), id)?;
             Ok(Resolver {
@@ -171,9 +177,11 @@ impl<'r> Resolver<'r> {
         }
     }
     #[must_use]
+    #[inline]
     pub fn dynamic_scope(&self) -> List<Uri<String>> {
         self.scopes.clone()
     }
+    #[inline]
     fn evolve(&self, base_uri: Arc<Uri<String>>) -> Resolver<'r> {
         if !self.base_uri.as_str().is_empty()
             && (self.scopes.is_empty() || base_uri != self.base_uri)
@@ -196,8 +204,14 @@ impl<'r> Resolver<'r> {
     /// # Errors
     ///
     /// If the reference is invalid.
+    #[inline]
     pub fn resolve_against(&self, base: &Uri<&str>, uri: &str) -> Result<Arc<Uri<String>>, Error> {
         self.registry.resolve_against(base, uri)
+    }
+
+    #[must_use]
+    pub fn find_vocabularies(&self, draft: Draft, contents: &Value) -> VocabularySet {
+        self.registry.find_vocabularies(draft, contents)
     }
 }
 
