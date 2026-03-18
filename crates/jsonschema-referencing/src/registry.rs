@@ -858,6 +858,10 @@ fn build_prepared_index_for_documents<'a>(
             )?;
         } else {
             let mut local_seen = LocalSeen::new();
+            let mut owned_reference_scratch =
+                crate::specification::BorrowedReferenceSlots::default();
+            let mut owned_child_scratch: Vec<crate::specification::OwnedScratchChild<'_>> =
+                Vec::new();
             process_owned_document(
                 Arc::clone(doc_uri),
                 doc_uri,
@@ -867,6 +871,8 @@ fn build_prepared_index_for_documents<'a>(
                 &mut state,
                 &mut known_resources,
                 resolution_cache,
+                &mut owned_reference_scratch,
+                &mut owned_child_scratch,
                 &mut local_seen,
             )?;
         }
@@ -1179,6 +1185,8 @@ fn process_queue<'r>(
             continue;
         }
         let mut document_local_seen = LocalSeen::new();
+        let mut owned_reference_scratch = crate::specification::BorrowedReferenceSlots::default();
+        let mut owned_child_scratch = Vec::new();
         process_owned_document(
             base,
             &document_root_uri,
@@ -1188,6 +1196,8 @@ fn process_queue<'r>(
             state,
             known_resources,
             resolution_cache,
+            &mut owned_reference_scratch,
+            &mut owned_child_scratch,
             &mut document_local_seen,
         )?;
     }
@@ -1450,6 +1460,8 @@ fn process_owned_document<'a, 'r>(
     state: &mut ProcessingState<'r>,
     known_resources: &mut KnownResources,
     resolution_cache: &mut UriCache,
+    owned_reference_scratch: &mut crate::specification::BorrowedReferenceSlots<'a>,
+    owned_child_scratch: &mut Vec<crate::specification::OwnedScratchChild<'a>>,
     local_seen: &mut LocalSeen<'a>,
 ) -> Result<(), Error> {
     let document_root = document.contents();
@@ -1475,6 +1487,8 @@ fn process_owned_document<'a, 'r>(
             state,
             known_resources,
             resolution_cache,
+            owned_reference_scratch,
+            owned_child_scratch,
             local_seen,
         )
     })
@@ -1519,12 +1533,20 @@ fn explore_owned_subtree<'a, 'r>(
     state: &mut ProcessingState<'r>,
     known_resources: &mut KnownResources,
     resolution_cache: &mut UriCache,
+    owned_reference_scratch: &mut crate::specification::BorrowedReferenceSlots<'a>,
+    owned_child_scratch: &mut Vec<crate::specification::OwnedScratchChild<'a>>,
     local_seen: &mut LocalSeen<'a>,
 ) -> Result<(), Error> {
     let object = subschema.as_object();
-    let (id, has_anchors) = object.map_or((None, false), |schema| {
-        draft.id_and_has_anchors_object(schema)
-    });
+    #[cfg(feature = "perf-observe-registry")]
+    if let Some(object) = object {
+        crate::observe_registry!("registry.owned.object_len={}", object.len());
+    }
+    let child_start = owned_child_scratch.len();
+    let gate = object.map(|schema| draft.owned_object_gate_map(schema));
+    let (id, has_anchors) = gate
+        .as_ref()
+        .map_or((None, false), |gate| (gate.id, gate.has_anchor));
     if let Some(id) = id {
         let original_base_uri = Arc::clone(&current_base_uri);
         current_base_uri = resolve_id(&current_base_uri, id, resolution_cache)?;
@@ -1557,22 +1579,123 @@ fn explore_owned_subtree<'a, 'r>(
         );
     }
 
-    let subschema_ptr = std::ptr::from_ref::<Value>(subschema) as usize;
-    if state.visited_schemas.insert(subschema_ptr) {
-        collect_external_resources(
-            &current_base_uri,
-            document_root,
-            subschema,
-            &mut state.external,
-            &mut state.seen,
-            resolution_cache,
-            &mut state.scratch,
-            &mut state.refers_metaschemas,
-            draft,
-            document_root_uri,
-            &mut state.deferred_refs,
-            local_seen,
-        )?;
+    if let (Some(schema), Some(gate)) = (object, gate.as_ref()) {
+        if gate.ref_.is_some() || gate.schema.is_some() {
+            #[cfg(feature = "perf-observe-registry")]
+            {
+                let kind = if schema.len() == 1 {
+                    "ref_only_leaf"
+                } else if gate.has_children {
+                    "ref_with_children"
+                } else {
+                    "ref_no_children"
+                };
+                crate::observe_registry!("registry.owned.gate={kind}");
+            }
+            if schema.len() == 1 {
+                owned_reference_scratch.ref_ = gate.ref_;
+                owned_reference_scratch.schema = gate.schema;
+
+                let subschema_ptr = std::ptr::from_ref::<Value>(subschema) as usize;
+                if state.visited_schemas.insert(subschema_ptr) {
+                    collect_external_resources_from_slots(
+                        &current_base_uri,
+                        document_root,
+                        owned_reference_scratch,
+                        &mut state.external,
+                        &mut state.seen,
+                        resolution_cache,
+                        &mut state.scratch,
+                        &mut state.refers_metaschemas,
+                        draft,
+                        document_root_uri,
+                        &mut state.deferred_refs,
+                        local_seen,
+                    )?;
+                }
+                owned_reference_scratch.ref_ = None;
+                owned_reference_scratch.schema = None;
+                return Ok(());
+            }
+
+            if gate.has_children {
+                let (_, _) = draft.scan_owned_object_into_scratch_map(
+                    schema,
+                    owned_reference_scratch,
+                    owned_child_scratch,
+                );
+                let subschema_ptr = std::ptr::from_ref::<Value>(subschema) as usize;
+                if state.visited_schemas.insert(subschema_ptr) {
+                    collect_external_resources_from_slots(
+                        &current_base_uri,
+                        document_root,
+                        owned_reference_scratch,
+                        &mut state.external,
+                        &mut state.seen,
+                        resolution_cache,
+                        &mut state.scratch,
+                        &mut state.refers_metaschemas,
+                        draft,
+                        document_root_uri,
+                        &mut state.deferred_refs,
+                        local_seen,
+                    )?;
+                }
+
+                let child_end = owned_child_scratch.len();
+                let mut idx = child_start;
+                while idx < child_end {
+                    let child = owned_child_scratch[idx];
+                    idx += 1;
+                    with_owned_child_path(path, &child, |child_path| {
+                        explore_owned_subtree(
+                            Arc::clone(&current_base_uri),
+                            document_root,
+                            child.value,
+                            child.draft,
+                            false,
+                            child_path,
+                            document_root_uri,
+                            document,
+                            state,
+                            known_resources,
+                            resolution_cache,
+                            owned_reference_scratch,
+                            owned_child_scratch,
+                            local_seen,
+                        )
+                    })?;
+                }
+
+                owned_reference_scratch.ref_ = None;
+                owned_reference_scratch.schema = None;
+                owned_child_scratch.truncate(child_start);
+                return Ok(());
+            }
+
+            owned_reference_scratch.ref_ = gate.ref_;
+            owned_reference_scratch.schema = gate.schema;
+            let subschema_ptr = std::ptr::from_ref::<Value>(subschema) as usize;
+            if state.visited_schemas.insert(subschema_ptr) {
+                collect_external_resources_from_slots(
+                    &current_base_uri,
+                    document_root,
+                    owned_reference_scratch,
+                    &mut state.external,
+                    &mut state.seen,
+                    resolution_cache,
+                    &mut state.scratch,
+                    &mut state.refers_metaschemas,
+                    draft,
+                    document_root_uri,
+                    &mut state.deferred_refs,
+                    local_seen,
+                )?;
+            }
+            owned_reference_scratch.ref_ = None;
+            owned_reference_scratch.schema = None;
+            return Ok(());
+        }
     }
 
     if let Some(schema) = object {
@@ -1589,6 +1712,8 @@ fn explore_owned_subtree<'a, 'r>(
                 state,
                 known_resources,
                 resolution_cache,
+                owned_reference_scratch,
+                owned_child_scratch,
                 local_seen,
             )
         })
@@ -1957,6 +2082,122 @@ fn handle_retrieve_error(
     }
 }
 
+fn with_owned_child_path<R>(
+    path: &JsonPointerNode<'_, '_>,
+    child: &crate::specification::OwnedScratchChild<'_>,
+    f: impl FnOnce(&JsonPointerNode<'_, '_>) -> R,
+) -> R {
+    use crate::specification::OwnedPathSegment;
+
+    let first = match child.first {
+        OwnedPathSegment::Key(key) => path.push(key),
+        OwnedPathSegment::Index(index) => path.push(index),
+    };
+    match child.second {
+        Some(OwnedPathSegment::Key(key)) => {
+            let second = first.push(key);
+            f(&second)
+        }
+        Some(OwnedPathSegment::Index(index)) => {
+            let second = first.push(index);
+            f(&second)
+        }
+        None => f(&first),
+    }
+}
+
+fn collect_external_resources_from_slots<'doc>(
+    base: &Arc<Uri<String>>,
+    root: &'doc Value,
+    references: &crate::specification::BorrowedReferenceSlots<'doc>,
+    collected: &mut AHashSet<(String, Uri<String>, ReferenceKind)>,
+    seen: &mut ReferenceTracker,
+    resolution_cache: &mut UriCache,
+    scratch: &mut String,
+    refers_metaschemas: &mut bool,
+    draft: Draft,
+    doc_key: &Arc<Uri<String>>,
+    deferred_refs: &mut Vec<DeferredRef>,
+    local_seen: &mut LocalSeen<'doc>,
+) -> Result<(), Error> {
+    for (reference, key) in [(references.ref_, "$ref"), (references.schema, "$schema")] {
+        let Some(reference) = reference else {
+            continue;
+        };
+        if reference.starts_with("https://json-schema.org/draft/")
+            || reference.starts_with("http://json-schema.org/draft-")
+            || base.as_str().starts_with("https://json-schema.org/draft/")
+        {
+            if key == "$ref" {
+                *refers_metaschemas = true;
+            }
+            continue;
+        }
+        if reference == "#" {
+            continue;
+        }
+        if reference.starts_with('#') {
+            crate::observe_registry!("registry.local_ref={}", reference);
+            if mark_local_reference(local_seen, base, reference) {
+                let ptr = reference.trim_start_matches('#');
+                if let Some(referenced) = pointer(root, ptr) {
+                    let target_draft = draft.detect(referenced);
+                    let value_addr = std::ptr::from_ref::<Value>(referenced) as usize;
+                    deferred_refs.push((
+                        Arc::clone(base),
+                        Arc::clone(doc_key),
+                        ptr.to_string(),
+                        target_draft,
+                        value_addr,
+                    ));
+                }
+            }
+            continue;
+        }
+        if mark_reference(seen, base, reference) {
+            if key == "$schema" {
+                crate::observe_registry!("registry.schema_ref={}", reference);
+            } else {
+                crate::observe_registry!("registry.external_ref={}", reference);
+            }
+            let resolved = if base.has_fragment() {
+                let mut base_without_fragment = base.as_ref().clone();
+                base_without_fragment.set_fragment(None);
+
+                let (path, fragment) = match reference.split_once('#') {
+                    Some((path, fragment)) => (path, Some(fragment)),
+                    None => (reference, None),
+                };
+
+                let mut resolved = (*resolution_cache
+                    .resolve_against(&base_without_fragment.borrow(), path)?)
+                .clone();
+                if let Some(fragment) = fragment {
+                    if let Some(encoded) = uri::EncodedString::new(fragment) {
+                        resolved = resolved.with_fragment(Some(encoded));
+                    } else {
+                        uri::encode_to(fragment, scratch);
+                        resolved =
+                            resolved.with_fragment(Some(uri::EncodedString::new_or_panic(scratch)));
+                        scratch.clear();
+                    }
+                }
+                resolved
+            } else {
+                (*resolution_cache.resolve_against(&base.borrow(), reference)?).clone()
+            };
+
+            let kind = if key == "$schema" {
+                ReferenceKind::Schema
+            } else {
+                ReferenceKind::Ref
+            };
+            collected.insert((reference.to_string(), resolved, kind));
+        }
+    }
+    Ok(())
+}
+
 fn validate_custom_metaschemas(
     custom_metaschemas: &[String],
     known_resources: &KnownResources,
@@ -2007,8 +2248,7 @@ fn collect_external_resources<'doc>(
             } else if $reference != "#" {
                 if $reference.starts_with('#') {
                     crate::observe_registry!("registry.local_ref={}", $reference);
-                    if draft == Draft::Draft4 || mark_local_reference(local_seen, base, $reference)
-                    {
+                    if mark_local_reference(local_seen, base, $reference) {
                         let ptr = $reference.trim_start_matches('#');
                         if let Some(referenced) = pointer(root, ptr) {
                             let target_draft = draft.detect(referenced);
@@ -2505,6 +2745,8 @@ mod tests {
         let mut state = ProcessingState::new();
         let mut known_resources = KnownResources::default();
         let mut resolution_cache = UriCache::new();
+        let mut owned_reference_scratch = crate::specification::BorrowedReferenceSlots::default();
+        let mut owned_child_scratch: Vec<crate::specification::OwnedScratchChild<'_>> = Vec::new();
         let mut local_seen = LocalSeen::new();
 
         known_resources.insert((*doc_key).clone());
@@ -2519,6 +2761,8 @@ mod tests {
             &mut state,
             &mut known_resources,
             &mut resolution_cache,
+            &mut owned_reference_scratch,
+            &mut owned_child_scratch,
             &mut local_seen,
         )
         .expect("owned document traversal should succeed");
@@ -2546,6 +2790,8 @@ mod tests {
         let mut state = ProcessingState::new();
         let mut known_resources = KnownResources::default();
         let mut resolution_cache = UriCache::new();
+        let mut owned_reference_scratch = crate::specification::BorrowedReferenceSlots::default();
+        let mut owned_child_scratch: Vec<crate::specification::OwnedScratchChild<'_>> = Vec::new();
         let mut local_seen = LocalSeen::new();
 
         known_resources.insert((*doc_key).clone());
@@ -2560,6 +2806,8 @@ mod tests {
             &mut state,
             &mut known_resources,
             &mut resolution_cache,
+            &mut owned_reference_scratch,
+            &mut owned_child_scratch,
             &mut local_seen,
         )
         .expect("owned fragment traversal should succeed");

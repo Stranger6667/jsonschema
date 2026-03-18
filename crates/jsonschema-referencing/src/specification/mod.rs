@@ -20,6 +20,65 @@ pub(crate) struct BorrowedObjectProbe<'a> {
     pub(crate) has_ref_or_schema: bool,
 }
 
+pub(crate) struct OwnedObjectGate<'a> {
+    pub(crate) id: Option<&'a str>,
+    pub(crate) has_anchor: bool,
+    pub(crate) ref_: Option<&'a str>,
+    pub(crate) schema: Option<&'a str>,
+    pub(crate) has_children: bool,
+}
+
+#[derive(Copy, Clone)]
+pub(crate) enum OwnedPathSegment<'a> {
+    Key(&'a str),
+    Index(usize),
+}
+
+#[derive(Copy, Clone)]
+pub(crate) struct OwnedScratchChild<'a> {
+    pub(crate) first: OwnedPathSegment<'a>,
+    pub(crate) second: Option<OwnedPathSegment<'a>>,
+    pub(crate) value: &'a Value,
+    pub(crate) draft: Draft,
+}
+
+impl<'a> OwnedScratchChild<'a> {
+    #[inline]
+    pub(crate) fn key(key: &'a str, value: &'a Value, draft: Draft) -> Self {
+        Self {
+            first: OwnedPathSegment::Key(key),
+            second: None,
+            value,
+            draft,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn key_index(key: &'a str, index: usize, value: &'a Value, draft: Draft) -> Self {
+        Self {
+            first: OwnedPathSegment::Key(key),
+            second: Some(OwnedPathSegment::Index(index)),
+            value,
+            draft,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn key_key(
+        key: &'a str,
+        child_key: &'a str,
+        value: &'a Value,
+        draft: Draft,
+    ) -> Self {
+        Self {
+            first: OwnedPathSegment::Key(key),
+            second: Some(OwnedPathSegment::Key(child_key)),
+            value,
+            draft,
+        }
+    }
+}
+
 #[inline]
 pub(crate) fn has_ref_or_schema_object(schema: &Map<String, Value>) -> bool {
     if schema.len() <= 3 {
@@ -120,19 +179,6 @@ impl Draft {
     }
 
     #[inline]
-    pub(crate) fn id_and_has_anchors_object(
-        self,
-        obj: &Map<String, Value>,
-    ) -> (Option<&str>, bool) {
-        match self {
-            Draft::Draft4 => id_and_has_legacy_id_object(obj),
-            Draft::Draft6 | Draft::Draft7 => id_and_has_legacy_dollar_id_object(obj),
-            Draft::Draft201909 => id_and_has_id_and_anchor_object(obj),
-            Draft::Draft202012 | Draft::Unknown => id_and_has_id_and_any_anchor_object(obj),
-        }
-    }
-
-    #[inline]
     pub(crate) fn probe_borrowed_object_map(
         self,
         obj: &Map<String, Value>,
@@ -181,8 +227,46 @@ impl Draft {
             Draft::Draft202012 | Draft::Unknown => {
                 subresources::scan_borrowed_object_into_scratch_map(
                     contents, self, references, children,
+                );
+            }
+        }
+    }
+    pub(crate) fn scan_owned_object_into_scratch_map<'a>(
+        self,
+        contents: &'a Map<String, Value>,
+        references: &mut BorrowedReferenceSlots<'a>,
+        children: &mut Vec<OwnedScratchChild<'a>>,
+    ) -> (Option<&'a str>, bool) {
+        match self {
+            Draft::Draft4 => {
+                draft4::scan_owned_object_into_scratch_map(contents, self, references, children)
+            }
+            Draft::Draft6 => {
+                draft6::scan_owned_object_into_scratch_map(contents, self, references, children)
+            }
+            Draft::Draft7 => {
+                draft7::scan_owned_object_into_scratch_map(contents, self, references, children)
+            }
+            Draft::Draft201909 => draft201909::scan_owned_object_into_scratch_map(
+                contents, self, references, children,
+            ),
+            Draft::Draft202012 | Draft::Unknown => {
+                subresources::scan_owned_object_into_scratch_map(
+                    contents, self, references, children,
                 )
             }
+        }
+    }
+    pub(crate) fn owned_object_gate_map(
+        self,
+        contents: &Map<String, Value>,
+    ) -> OwnedObjectGate<'_> {
+        match self {
+            Draft::Draft4 => draft4::owned_object_gate_map(contents),
+            Draft::Draft6 => draft6::owned_object_gate_map(contents),
+            Draft::Draft7 => draft7::owned_object_gate_map(contents),
+            Draft::Draft201909 => draft201909::owned_object_gate_map(contents),
+            Draft::Draft202012 | Draft::Unknown => subresources::owned_object_gate_map(contents),
         }
     }
     pub(crate) fn walk_borrowed_subresources_map<'a, E, F>(
@@ -344,20 +428,6 @@ impl Draft {
     }
 }
 
-fn id_and_has_legacy_id_object(obj: &Map<String, Value>) -> (Option<&str>, bool) {
-    if obj.len() <= 3 {
-        scan_legacy_id_small(obj)
-    } else {
-        let raw_id = obj.get("id").and_then(Value::as_str);
-        let is_anchor = raw_id.is_some_and(|id| id.starts_with('#'));
-        let plain_id = match (is_anchor, obj.contains_key("$ref")) {
-            (false, false) => raw_id,
-            _ => None,
-        };
-        (plain_id, is_anchor)
-    }
-}
-
 fn analyze_legacy_id_object(obj: &Map<String, Value>) -> BorrowedObjectProbe<'_> {
     if obj.len() <= 3 {
         return scan_legacy_id_probe_small(obj);
@@ -377,26 +447,6 @@ fn analyze_legacy_id_object(obj: &Map<String, Value>) -> BorrowedObjectProbe<'_>
         has_anchor,
         has_ref_or_schema,
     }
-}
-
-fn scan_legacy_id_small(obj: &Map<String, Value>) -> (Option<&str>, bool) {
-    let mut raw_id = None;
-    let mut has_ref = false;
-
-    for (key, value) in obj {
-        match key.as_str() {
-            "id" => raw_id = value.as_str(),
-            "$ref" => has_ref = true,
-            _ => {}
-        }
-    }
-
-    let is_anchor = raw_id.is_some_and(|id| id.starts_with('#'));
-    let plain_id = match (is_anchor, has_ref) {
-        (false, false) => raw_id,
-        _ => None,
-    };
-    (plain_id, is_anchor)
 }
 
 fn scan_legacy_id_probe_small(obj: &Map<String, Value>) -> BorrowedObjectProbe<'_> {
@@ -426,20 +476,6 @@ fn scan_legacy_id_probe_small(obj: &Map<String, Value>) -> BorrowedObjectProbe<'
     }
 }
 
-fn id_and_has_legacy_dollar_id_object(obj: &Map<String, Value>) -> (Option<&str>, bool) {
-    if obj.len() <= 3 {
-        scan_legacy_dollar_id_small(obj)
-    } else {
-        let raw_id = obj.get("$id").and_then(Value::as_str);
-        let is_anchor = raw_id.is_some_and(|id| id.starts_with('#'));
-        let plain_id = match (is_anchor, obj.contains_key("$ref")) {
-            (false, false) => raw_id,
-            _ => None,
-        };
-        (plain_id, is_anchor)
-    }
-}
-
 fn analyze_legacy_dollar_id_object(obj: &Map<String, Value>) -> BorrowedObjectProbe<'_> {
     if obj.len() <= 3 {
         return scan_legacy_dollar_id_probe_small(obj);
@@ -459,26 +495,6 @@ fn analyze_legacy_dollar_id_object(obj: &Map<String, Value>) -> BorrowedObjectPr
         has_anchor,
         has_ref_or_schema,
     }
-}
-
-fn scan_legacy_dollar_id_small(obj: &Map<String, Value>) -> (Option<&str>, bool) {
-    let mut raw_id = None;
-    let mut has_ref = false;
-
-    for (key, value) in obj {
-        match key.as_str() {
-            "$id" => raw_id = value.as_str(),
-            "$ref" => has_ref = true,
-            _ => {}
-        }
-    }
-
-    let is_anchor = raw_id.is_some_and(|id| id.starts_with('#'));
-    let plain_id = match (is_anchor, has_ref) {
-        (false, false) => raw_id,
-        _ => None,
-    };
-    (plain_id, is_anchor)
 }
 
 fn scan_legacy_dollar_id_probe_small(obj: &Map<String, Value>) -> BorrowedObjectProbe<'_> {
@@ -508,16 +524,6 @@ fn scan_legacy_dollar_id_probe_small(obj: &Map<String, Value>) -> BorrowedObject
     }
 }
 
-fn id_and_has_id_and_anchor_object(obj: &Map<String, Value>) -> (Option<&str>, bool) {
-    if obj.len() <= 2 {
-        scan_id_and_anchor_small(obj)
-    } else {
-        let id = obj.get("$id").and_then(Value::as_str);
-        let has_anchor = obj.get("$anchor").and_then(Value::as_str).is_some();
-        (id, has_anchor)
-    }
-}
-
 fn analyze_id_and_anchor_object(obj: &Map<String, Value>) -> BorrowedObjectProbe<'_> {
     if obj.len() <= 2 {
         return scan_id_and_anchor_probe_small(obj);
@@ -528,21 +534,6 @@ fn analyze_id_and_anchor_object(obj: &Map<String, Value>) -> BorrowedObjectProbe
         has_anchor: obj.get("$anchor").and_then(Value::as_str).is_some(),
         has_ref_or_schema: has_ref_or_schema_object(obj),
     }
-}
-
-fn scan_id_and_anchor_small(obj: &Map<String, Value>) -> (Option<&str>, bool) {
-    let mut id = None;
-    let mut has_anchor = false;
-
-    for (key, value) in obj {
-        match key.as_str() {
-            "$id" => id = value.as_str(),
-            "$anchor" => has_anchor |= value.as_str().is_some(),
-            _ => {}
-        }
-    }
-
-    (id, has_anchor)
 }
 
 fn scan_id_and_anchor_probe_small(obj: &Map<String, Value>) -> BorrowedObjectProbe<'_> {
@@ -566,17 +557,6 @@ fn scan_id_and_anchor_probe_small(obj: &Map<String, Value>) -> BorrowedObjectPro
     }
 }
 
-fn id_and_has_id_and_any_anchor_object(obj: &Map<String, Value>) -> (Option<&str>, bool) {
-    if obj.len() <= 3 {
-        scan_id_and_any_anchor_small(obj)
-    } else {
-        let id = obj.get("$id").and_then(Value::as_str);
-        let has_anchor = obj.get("$anchor").and_then(Value::as_str).is_some()
-            || obj.get("$dynamicAnchor").and_then(Value::as_str).is_some();
-        (id, has_anchor)
-    }
-}
-
 fn analyze_id_and_any_anchor_object(obj: &Map<String, Value>) -> BorrowedObjectProbe<'_> {
     if obj.len() <= 3 {
         return scan_id_and_any_anchor_probe_small(obj);
@@ -588,21 +568,6 @@ fn analyze_id_and_any_anchor_object(obj: &Map<String, Value>) -> BorrowedObjectP
             || obj.get("$dynamicAnchor").and_then(Value::as_str).is_some(),
         has_ref_or_schema: has_ref_or_schema_object(obj),
     }
-}
-
-fn scan_id_and_any_anchor_small(obj: &Map<String, Value>) -> (Option<&str>, bool) {
-    let mut id = None;
-    let mut has_anchor = false;
-
-    for (key, value) in obj {
-        match key.as_str() {
-            "$id" => id = value.as_str(),
-            "$anchor" | "$dynamicAnchor" => has_anchor |= value.as_str().is_some(),
-            _ => {}
-        }
-    }
-
-    (id, has_anchor)
 }
 
 fn scan_id_and_any_anchor_probe_small(obj: &Map<String, Value>) -> BorrowedObjectProbe<'_> {

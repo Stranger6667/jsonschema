@@ -84,6 +84,8 @@ fast-invalid-iter-errors: (flame "fast-invalid" "iter_errors" "10000")
 fast-invalid-evaluate: (flame "fast-invalid" "evaluate" "10000")
 
 registry: (flame "citm" "registry" "1000")
+registry-owned: (flame "citm" "registry-owned" "1000")
+registry-owned-specifications: (flame "openapi" "registry-owned-with-specifications" "1000")
 fhir-build: (flame "fhir" "build" "500")
 
 dhat-citm-build: (dhat "citm" "build" "10000")
