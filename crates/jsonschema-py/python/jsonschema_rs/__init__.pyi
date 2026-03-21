@@ -454,7 +454,7 @@ class Draft202012Validator:
 Validator: TypeAlias = Draft4Validator | Draft6Validator | Draft7Validator | Draft201909Validator | Draft202012Validator
 
 def validator_for(
-    schema: _SchemaT,
+    schema: _SchemaT | str,
     formats: dict[str, _FormatFunc] | None = None,
     validate_formats: bool | None = None,
     ignore_unknown_formats: bool = True,
@@ -492,7 +492,7 @@ def bundle(
     """
     ...
 
-def validator_cls_for(schema: _SchemaT) -> type[Validator]:
+def validator_cls_for(schema: _SchemaT | str) -> type[Validator]:
     """Detect the JSON Schema draft for a schema and return the corresponding validator class.
 
     Draft is detected automatically from the $schema field. Defaults to Draft202012Validator.
