@@ -140,10 +140,4 @@ impl SharedUriCache {
 
         Ok(inserted)
     }
-
-    pub(crate) fn into_local(self) -> UriCache {
-        UriCache {
-            cache: self.cache.into_inner(),
-        }
-    }
 }

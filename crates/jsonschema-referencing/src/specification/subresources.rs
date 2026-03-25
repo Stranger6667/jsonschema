@@ -1,9 +1,267 @@
 use core::slice;
 use std::iter::FlatMap;
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 
-use crate::{resource::InnerResourcePtr, segments::Segment, Error, Resolver, Segments};
+use crate::{
+    segments::Segment,
+    specification::{BorrowedReferenceSlots, Draft, OwnedObjectGate, OwnedScratchChild},
+    Error, JsonPointerNode, Resolver, ResourceRef, Segments,
+};
+
+pub(crate) fn scan_borrowed_object_into_scratch_map<'a>(
+    schema: &'a Map<String, Value>,
+    draft: Draft,
+    references: &mut BorrowedReferenceSlots<'a>,
+    children: &mut Vec<(&'a Value, Draft)>,
+) {
+    for (key, value) in schema {
+        match key.as_str() {
+            "$ref" => {
+                if let Some(reference) = value.as_str() {
+                    references.ref_ = Some(reference);
+                }
+            }
+            "$schema" => {
+                if let Some(reference) = value.as_str() {
+                    references.schema = Some(reference);
+                }
+            }
+            "additionalProperties"
+            | "contains"
+            | "contentSchema"
+            | "else"
+            | "if"
+            | "items"
+            | "not"
+            | "propertyNames"
+            | "then"
+            | "unevaluatedItems"
+            | "unevaluatedProperties" => {
+                children.push((value, draft.detect(value)));
+            }
+            "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
+                if let Some(arr) = value.as_array() {
+                    for item in arr {
+                        children.push((item, draft.detect(item)));
+                    }
+                }
+            }
+            "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties" => {
+                if let Some(obj) = value.as_object() {
+                    for child_value in obj.values() {
+                        children.push((child_value, draft.detect(child_value)));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+pub(crate) fn owned_object_gate_map(schema: &Map<String, Value>) -> OwnedObjectGate<'_> {
+    let mut id = None;
+    let mut has_anchor = false;
+    let mut ref_ = None;
+    let mut schema_ref = None;
+    let mut has_children = false;
+
+    for (key, value) in schema {
+        match key.as_str() {
+            "$id" => id = value.as_str(),
+            "$anchor" | "$dynamicAnchor" => has_anchor |= value.as_str().is_some(),
+            "$ref" => ref_ = value.as_str(),
+            "$schema" => schema_ref = value.as_str(),
+            "additionalProperties"
+            | "contains"
+            | "contentSchema"
+            | "else"
+            | "if"
+            | "items"
+            | "not"
+            | "propertyNames"
+            | "then"
+            | "unevaluatedItems"
+            | "unevaluatedProperties" => has_children = true,
+            "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
+                has_children |= value.as_array().is_some_and(|items| !items.is_empty());
+            }
+            "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties" => {
+                has_children |= value.as_object().is_some_and(|items| !items.is_empty());
+            }
+            _ => {}
+        }
+    }
+
+    OwnedObjectGate {
+        id,
+        has_anchor,
+        ref_,
+        schema: schema_ref,
+        has_children,
+    }
+}
+
+pub(crate) fn scan_owned_object_into_scratch_map<'a>(
+    schema: &'a Map<String, Value>,
+    draft: Draft,
+    references: &mut BorrowedReferenceSlots<'a>,
+    children: &mut Vec<OwnedScratchChild<'a>>,
+) -> (Option<&'a str>, bool) {
+    let mut id = None;
+    let mut has_anchor = false;
+
+    for (key, value) in schema {
+        match key.as_str() {
+            "$id" => id = value.as_str(),
+            "$anchor" | "$dynamicAnchor" => has_anchor |= value.as_str().is_some(),
+            "$ref" => {
+                if let Some(reference) = value.as_str() {
+                    references.ref_ = Some(reference);
+                }
+            }
+            "$schema" => {
+                if let Some(reference) = value.as_str() {
+                    references.schema = Some(reference);
+                }
+            }
+            "additionalProperties"
+            | "contains"
+            | "contentSchema"
+            | "else"
+            | "if"
+            | "items"
+            | "not"
+            | "propertyNames"
+            | "then"
+            | "unevaluatedItems"
+            | "unevaluatedProperties" => {
+                children.push(OwnedScratchChild::key(
+                    key.as_str(),
+                    value,
+                    draft.detect(value),
+                ));
+            }
+            "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
+                if let Some(arr) = value.as_array() {
+                    for (index, item) in arr.iter().enumerate() {
+                        children.push(OwnedScratchChild::key_index(
+                            key.as_str(),
+                            index,
+                            item,
+                            draft.detect(item),
+                        ));
+                    }
+                }
+            }
+            "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties" => {
+                if let Some(obj) = value.as_object() {
+                    for (child_key, child_value) in obj {
+                        children.push(OwnedScratchChild::key_key(
+                            key.as_str(),
+                            child_key.as_str(),
+                            child_value,
+                            draft.detect(child_value),
+                        ));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    (id, has_anchor)
+}
+
+pub(crate) fn walk_owned_subresources_map<'a, E, F>(
+    schema: &'a Map<String, Value>,
+    path: &JsonPointerNode<'_, '_>,
+    draft: Draft,
+    f: &mut F,
+) -> Result<(), E>
+where
+    F: FnMut(&JsonPointerNode<'_, '_>, &'a Value, Draft) -> Result<(), E>,
+{
+    for (key, value) in schema {
+        match key.as_str() {
+            "additionalProperties"
+            | "contains"
+            | "contentSchema"
+            | "else"
+            | "if"
+            | "items"
+            | "not"
+            | "propertyNames"
+            | "then"
+            | "unevaluatedItems"
+            | "unevaluatedProperties" => {
+                let child_path = path.push(key.as_str());
+                f(&child_path, value, draft.detect(value))?;
+            }
+            "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
+                if let Some(arr) = value.as_array() {
+                    let parent_path = path.push(key.as_str());
+                    for (i, item) in arr.iter().enumerate() {
+                        let child_path = parent_path.push(i);
+                        f(&child_path, item, draft.detect(item))?;
+                    }
+                }
+            }
+            "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties" => {
+                if let Some(obj) = value.as_object() {
+                    let parent_path = path.push(key.as_str());
+                    for (child_key, child_value) in obj {
+                        let child_path = parent_path.push(child_key.as_str());
+                        f(&child_path, child_value, draft.detect(child_value))?;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn walk_borrowed_subresources_map<'a, E, F>(
+    schema: &'a Map<String, Value>,
+    draft: Draft,
+    f: &mut F,
+) -> Result<(), E>
+where
+    F: FnMut(&'a Value, Draft) -> Result<(), E>,
+{
+    for (key, value) in schema {
+        match key.as_str() {
+            "additionalProperties"
+            | "contains"
+            | "contentSchema"
+            | "else"
+            | "if"
+            | "items"
+            | "not"
+            | "propertyNames"
+            | "then"
+            | "unevaluatedItems"
+            | "unevaluatedProperties" => f(value, draft.detect(value))?,
+            "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
+                if let Some(arr) = value.as_array() {
+                    for item in arr {
+                        f(item, draft.detect(item))?;
+                    }
+                }
+            }
+            "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties" => {
+                if let Some(obj) = value.as_object() {
+                    for child_value in obj.values() {
+                        f(child_value, draft.detect(child_value))?;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
 
 type ObjectIter<'a> = FlatMap<
     serde_json::map::Iter<'a>,
@@ -101,7 +359,7 @@ pub(crate) fn object_iter<'a>(
 pub(crate) fn maybe_in_subresource<'r>(
     segments: &Segments,
     resolver: &Resolver<'r>,
-    subresource: &InnerResourcePtr,
+    subresource: ResourceRef<'_>,
 ) -> Result<Resolver<'r>, Error> {
     const IN_VALUE: &[&str] = &[
         "additionalProperties",
@@ -138,14 +396,14 @@ pub(crate) fn maybe_in_subresource<'r>(
             }
         }
     }
-    resolver.in_subresource_inner(subresource)
+    resolver.in_subresource(subresource)
 }
 
 #[inline]
 pub(crate) fn maybe_in_subresource_with_items_and_dependencies<'r>(
     segments: &Segments,
     resolver: &Resolver<'r>,
-    subresource: &InnerResourcePtr,
+    subresource: ResourceRef<'_>,
     in_value: &[&str],
     in_child: &[&str],
 ) -> Result<Resolver<'r>, Error> {
@@ -153,7 +411,7 @@ pub(crate) fn maybe_in_subresource_with_items_and_dependencies<'r>(
     while let Some(segment) = iter.next() {
         if let Segment::Key(key) = segment {
             if (*key == "items" || *key == "dependencies") && subresource.contents().is_object() {
-                return resolver.in_subresource_inner(subresource);
+                return resolver.in_subresource(subresource);
             }
             if !in_value.contains(&key.as_ref())
                 && (!in_child.contains(&key.as_ref()) || iter.next().is_none())
@@ -162,7 +420,7 @@ pub(crate) fn maybe_in_subresource_with_items_and_dependencies<'r>(
             }
         }
     }
-    resolver.in_subresource_inner(subresource)
+    resolver.in_subresource(subresource)
 }
 
 #[cfg(test)]
@@ -338,6 +596,67 @@ mod tests {
                 .collect::<Vec<_>>()
                 .is_empty(),
             "Draft {draft:?} should return empty subresources for boolean schema",
+        );
+    }
+
+    #[test]
+    fn test_walk_borrowed_subresources_matches_iterator_order() {
+        let schema = json!({
+            "properties": {
+                "name": {"type": "string"}
+            },
+            "allOf": [
+                {"minimum": 1}
+            ]
+        });
+        let expected: Vec<_> = Draft::Draft202012
+            .subresources_of(&schema)
+            .map(|subschema| (subschema.clone(), Draft::Draft202012.detect(subschema)))
+            .collect();
+        let mut seen = Vec::new();
+
+        Draft::Draft202012
+            .walk_borrowed_subresources_map(
+                schema.as_object().expect("schema object should be walked"),
+                &mut |subschema, draft| {
+                    seen.push((subschema.clone(), draft));
+                    Ok::<(), ()>(())
+                },
+            )
+            .unwrap();
+
+        assert_eq!(seen, expected);
+    }
+
+    #[test]
+    fn test_walk_owned_subresources_reports_pointer_path() {
+        let schema = json!({
+            "properties": {
+                "name": {"type": "string"}
+            }
+        });
+        let root = crate::JsonPointerNode::new();
+        let mut seen = Vec::new();
+
+        Draft::Draft202012
+            .walk_owned_subresources_map(
+                schema.as_object().expect("schema object should be walked"),
+                &root,
+                &mut |path, subschema, draft| {
+                    let pointer = crate::OwnedJsonPointer::from(path);
+                    seen.push((pointer.as_str().to_string(), subschema.clone(), draft));
+                    Ok::<(), ()>(())
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            seen,
+            vec![(
+                "/properties/name".to_string(),
+                json!({"type": "string"}),
+                Draft::Draft202012,
+            )]
         );
     }
 }

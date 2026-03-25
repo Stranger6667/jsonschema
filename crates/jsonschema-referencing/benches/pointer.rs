@@ -29,9 +29,11 @@ fn create_deep_nested_json(depth: usize) -> Value {
 fn bench_pointers(c: &mut Criterion) {
     let data = create_deep_nested_json(15);
     let resource = Draft::Draft202012.create_resource(data);
-    let registry = Registry::try_new("http://example.com/schema.json", resource)
+    let registry = Registry::new()
+        .add("http://example.com/schema.json", resource)
+        .expect("Invalid registry input")
+        .prepare()
         .expect("Invalid registry input");
-
     let cases = [
         ("single", "#/properties"),
         ("double", "#/properties/level_0"),
@@ -45,9 +47,10 @@ fn bench_pointers(c: &mut Criterion) {
             BenchmarkId::new("pointer", name),
             &registry,
             |b, registry| {
-                let resolver = registry
-                    .try_resolver("http://example.com/schema.json")
-                    .expect("Invalid base URI");
+                let resolver = registry.resolver(
+                    referencing::uri::from_str("http://example.com/schema.json")
+                        .expect("Invalid base URI"),
+                );
                 b.iter_with_large_drop(|| resolver.lookup(black_box(pointer)));
             },
         );

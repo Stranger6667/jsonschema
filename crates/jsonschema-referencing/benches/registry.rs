@@ -25,14 +25,34 @@ fn bench_subresources(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("try_new", name), &schema, |b, schema| {
             b.iter_batched(
-                || draft.create_resource(schema.clone()),
+                || draft.create_resource_ref(schema),
                 |resource| {
-                    Registry::try_new("http://example.com/schema.json", resource)
+                    Registry::new()
+                        .add("http://example.com/schema.json", resource)
                         .expect("Invalid registry input")
+                        .prepare()
                 },
                 BatchSize::SmallInput,
             );
         });
+
+        // Owned cases force the registry to store persistent pointers for discovered entries.
+        group.bench_with_input(
+            BenchmarkId::new("prepare_owned", name),
+            &schema,
+            |b, schema| {
+                b.iter_batched(
+                    || draft.create_resource(schema.clone()),
+                    |resource| {
+                        Registry::new()
+                            .add("http://example.com/schema.json", resource)
+                            .expect("Invalid registry input")
+                            .prepare()
+                    },
+                    BatchSize::SmallInput,
+                );
+            },
+        );
     }
     let drafts = [
         (Draft::Draft4, benchmark::GEOJSON, "GeoJSON"),
@@ -50,14 +70,29 @@ fn bench_subresources(c: &mut Criterion) {
             &schema,
             |b, schema| {
                 b.iter_batched(
-                    || {
-                        (
-                            draft.create_resource(schema.clone()),
-                            SPECIFICATIONS.clone(),
-                        )
-                    },
+                    || (draft.create_resource_ref(schema), &*SPECIFICATIONS),
                     |(resource, registry)| {
-                        registry.try_with_resource("http://example.com/schema.json", resource)
+                        registry
+                            .add("http://example.com/schema.json", resource)
+                            .expect("Invalid registry input")
+                            .prepare()
+                    },
+                    BatchSize::SmallInput,
+                );
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("prepare_owned_with_specifications", name),
+            &schema,
+            |b, schema| {
+                b.iter_batched(
+                    || (draft.create_resource(schema.clone()), &*SPECIFICATIONS),
+                    |(resource, registry)| {
+                        registry
+                            .add("http://example.com/schema.json", resource)
+                            .expect("Invalid registry input")
+                            .prepare()
                     },
                     BatchSize::SmallInput,
                 );

@@ -1,6 +1,37 @@
-use jsonschema::ReferencingError;
-use referencing::Resource;
+use jsonschema::{ReferencingError, Registry};
 use serde_json::{json, Value};
+
+const TEST_ROOT_URI: &str = "urn:jsonschema:test:root";
+
+fn registry_from_resources<'a>(resources: &'a [(&str, Value)]) -> Registry<'a> {
+    let mut registry = jsonschema::Registry::new();
+    for (uri, schema) in resources {
+        registry = registry
+            .add(*uri, schema)
+            .expect("resource should be accepted");
+    }
+    registry.prepare().expect("registry build failed")
+}
+
+fn try_bundle_with_resources(
+    root: &Value,
+    resources: &[(&str, Value)],
+) -> Result<Value, ReferencingError> {
+    let registry = registry_from_resources(resources);
+    jsonschema::options()
+        .with_registry(&registry)
+        .with_base_uri(TEST_ROOT_URI)
+        .bundle(root)
+}
+
+fn validator_with_resources(root: &Value, resources: &[(&str, Value)]) -> jsonschema::Validator {
+    let registry = registry_from_resources(resources);
+    jsonschema::options()
+        .with_registry(&registry)
+        .with_base_uri(TEST_ROOT_URI)
+        .build(root)
+        .expect("distributed compile failed")
+}
 
 #[cfg(all(feature = "resolve-async", not(target_arch = "wasm32")))]
 mod async_tests {
@@ -12,21 +43,21 @@ mod async_tests {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "$ref": "https://example.com/person.json"
         });
+        let registry = jsonschema::Registry::new()
+            .add("https://example.com/person.json", person_schema())
+            .expect("resource should be accepted")
+            .prepare()
+            .expect("registry build failed");
         let bundled = jsonschema::async_options()
-            .with_resource(
-                "https://example.com/person.json",
-                Resource::from_contents(person_schema()),
-            )
+            .with_registry(&registry)
+            .with_base_uri(TEST_ROOT_URI)
             .bundle(&schema)
             .await
             .expect("async bundle failed");
 
-        assert_eq!(
-            bundled.get("$ref"),
-            Some(&json!("https://example.com/person.json"))
-        );
-        let defs = bundled.get("$defs").unwrap().as_object().unwrap();
-        assert!(defs.contains_key("https://example.com/person.json"));
+        assert_eq!(bundled["$ref"], json!("https://example.com/person.json"));
+        let defs = bundled["$defs"].as_object().unwrap();
+        assert!(!defs["https://example.com/person.json"].is_null());
     }
 
     #[tokio::test]
@@ -74,27 +105,19 @@ fn test_bundle_single_external_ref() {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$ref": "https://example.com/person.json"
     });
-    let bundled = jsonschema::options()
-        .with_resource(
-            "https://example.com/person.json",
-            Resource::from_contents(person_schema()),
-        )
-        .bundle(&schema)
-        .expect("bundle failed");
+    let bundled = try_bundle_with_resources(
+        &schema,
+        &[("https://example.com/person.json", person_schema())],
+    )
+    .expect("bundle failed");
 
     // $ref MUST NOT be rewritten (spec requirement)
-    assert_eq!(
-        bundled.get("$ref"),
-        Some(&json!("https://example.com/person.json"))
-    );
-    let defs = bundled.get("$defs").expect("no $defs").as_object().unwrap();
-    assert!(defs.contains_key("https://example.com/person.json"));
+    assert_eq!(bundled["$ref"], json!("https://example.com/person.json"));
+    let defs = bundled["$defs"].as_object().unwrap();
+    assert!(!defs["https://example.com/person.json"].is_null());
     // embedded resource MUST have $id
     let embedded = &defs["https://example.com/person.json"];
-    assert_eq!(
-        embedded.get("$id"),
-        Some(&json!("https://example.com/person.json"))
-    );
+    assert_eq!(embedded["$id"], json!("https://example.com/person.json"));
 }
 
 #[test]
@@ -103,13 +126,11 @@ fn test_bundle_validates_identically() {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$ref": "https://example.com/person.json"
     });
-    let bundled = jsonschema::options()
-        .with_resource(
-            "https://example.com/person.json",
-            Resource::from_contents(person_schema()),
-        )
-        .bundle(&schema)
-        .expect("bundle failed");
+    let bundled = try_bundle_with_resources(
+        &schema,
+        &[("https://example.com/person.json", person_schema())],
+    )
+    .expect("bundle failed");
 
     let validator = jsonschema::validator_for(&bundled).expect("compile bundled failed");
     assert!(validator.is_valid(&json!({"name": "Alice"})));
@@ -145,25 +166,22 @@ fn test_bundle_transitive_refs() {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$ref": "https://example.com/person.json"
     });
-    let bundled = jsonschema::options()
-        .with_resource(
-            "https://example.com/person.json",
-            Resource::from_contents(person_with_address),
-        )
-        .with_resource(
-            "https://example.com/address.json",
-            Resource::from_contents(address_schema),
-        )
-        .bundle(&root)
-        .expect("bundle failed");
+    let bundled = try_bundle_with_resources(
+        &root,
+        &[
+            ("https://example.com/person.json", person_with_address),
+            ("https://example.com/address.json", address_schema),
+        ],
+    )
+    .expect("bundle failed");
 
-    let defs = bundled.get("$defs").unwrap().as_object().unwrap();
+    let defs = bundled["$defs"].as_object().unwrap();
     assert!(
-        defs.contains_key("https://example.com/person.json"),
+        !defs["https://example.com/person.json"].is_null(),
         "person missing"
     );
     assert!(
-        defs.contains_key("https://example.com/address.json"),
+        !defs["https://example.com/address.json"].is_null(),
         "address missing"
     );
 }
@@ -181,17 +199,13 @@ fn test_bundle_circular_ref() {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$ref": "https://example.com/node.json"
     });
-    let bundled = jsonschema::options()
-        .with_resource(
-            "https://example.com/node.json",
-            Resource::from_contents(node_schema),
-        )
-        .bundle(&root)
-        .expect("bundle failed");
+    let bundled =
+        try_bundle_with_resources(&root, &[("https://example.com/node.json", node_schema)])
+            .expect("bundle failed");
 
-    let defs = bundled.get("$defs").unwrap().as_object().unwrap();
+    let defs = bundled["$defs"].as_object().unwrap();
     assert_eq!(defs.len(), 1, "node.json should appear exactly once");
-    assert!(defs.contains_key("https://example.com/node.json"));
+    assert!(!defs["https://example.com/node.json"].is_null());
 }
 
 /// A `$ref` like `https://example.com/schema.json#/$defs/Name` should embed
@@ -210,12 +224,7 @@ fn test_bundle_fragment_qualified_external_ref() {
             "name": { "$ref": "https://example.com/schema.json#/$defs/Name" }
         }
     });
-    let bundled = jsonschema::options()
-        .with_resource(
-            "https://example.com/schema.json",
-            referencing::Resource::from_contents(schemas),
-        )
-        .bundle(&root)
+    let bundled = try_bundle_with_resources(&root, &[("https://example.com/schema.json", schemas)])
         .expect("bundle failed");
 
     // $ref must NOT be rewritten
@@ -225,8 +234,8 @@ fn test_bundle_fragment_qualified_external_ref() {
         json!("https://example.com/schema.json#/$defs/Name")
     );
     // The whole schema.json document is embedded
-    let defs = bundled.get("$defs").expect("no $defs").as_object().unwrap();
-    assert!(defs.contains_key("https://example.com/schema.json"));
+    let defs = bundled["$defs"].as_object().unwrap();
+    assert!(!defs["https://example.com/schema.json"].is_null());
 }
 
 /// An external schema that internally uses a relative $ref should have its
@@ -251,25 +260,22 @@ fn test_bundle_relative_ref_inside_external_schema() {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$ref": "https://example.com/schemas/address.json"
     });
-    let bundled = jsonschema::options()
-        .with_resource(
-            "https://example.com/schemas/address.json",
-            referencing::Resource::from_contents(address_schema),
-        )
-        .with_resource(
-            "https://example.com/schemas/country.json",
-            referencing::Resource::from_contents(country_schema),
-        )
-        .bundle(&root)
-        .expect("bundle failed");
+    let bundled = try_bundle_with_resources(
+        &root,
+        &[
+            ("https://example.com/schemas/address.json", address_schema),
+            ("https://example.com/schemas/country.json", country_schema),
+        ],
+    )
+    .expect("bundle failed");
 
-    let defs = bundled.get("$defs").expect("no $defs").as_object().unwrap();
+    let defs = bundled["$defs"].as_object().unwrap();
     assert!(
-        defs.contains_key("https://example.com/schemas/address.json"),
+        !defs["https://example.com/schemas/address.json"].is_null(),
         "address missing"
     );
     assert!(
-        defs.contains_key("https://example.com/schemas/country.json"),
+        !defs["https://example.com/schemas/country.json"].is_null(),
         "country missing (transitive)"
     );
 }
@@ -281,17 +287,14 @@ fn test_bundle_inner_ref_not_rewritten() {
     let middle = json!({ "$id": "https://example.com/middle", "$ref": "https://example.com/leaf", "maximum": 100 });
     let root = json!({ "$schema": "https://json-schema.org/draft/2020-12/schema", "$ref": "https://example.com/middle" });
 
-    let bundled = jsonschema::options()
-        .with_resource(
-            "https://example.com/leaf",
-            referencing::Resource::from_contents(leaf),
-        )
-        .with_resource(
-            "https://example.com/middle",
-            referencing::Resource::from_contents(middle),
-        )
-        .bundle(&root)
-        .expect("bundle failed");
+    let bundled = try_bundle_with_resources(
+        &root,
+        &[
+            ("https://example.com/leaf", leaf),
+            ("https://example.com/middle", middle),
+        ],
+    )
+    .expect("bundle failed");
 
     assert_eq!(
         bundled["$ref"],
@@ -321,18 +324,16 @@ fn test_bundle_resolves_ref_with_nested_id_scope() {
         }
     });
 
-    let bundled = jsonschema::options()
-        .with_resource(
-            "https://example.com/A/b.json",
-            Resource::from_contents(nested_dependency),
-        )
-        .bundle(&root)
-        .expect("bundle failed");
+    let bundled = try_bundle_with_resources(
+        &root,
+        &[("https://example.com/A/b.json", nested_dependency)],
+    )
+    .expect("bundle failed");
 
-    let defs = bundled.get("$defs").expect("no $defs").as_object().unwrap();
-    assert!(defs.contains_key("A"));
+    let defs = bundled["$defs"].as_object().unwrap();
+    assert!(!defs["A"].is_null());
     assert!(
-        defs.contains_key("https://example.com/A/b.json"),
+        !defs["https://example.com/A/b.json"].is_null(),
         "nested dependency was not embedded"
     );
 }
@@ -362,30 +363,27 @@ fn test_bundle_supports_legacy_drafts_using_definitions() {
             "$schema": schema_uri,
             "$ref": "https://example.com/person.json"
         });
-
-        let bundled = jsonschema::options()
-            .with_resource(
+        let bundled = try_bundle_with_resources(
+            &schema,
+            &[(
                 "https://example.com/person.json",
-                Resource::from_contents(json!({
+                json!({
                     "$id": "https://example.com/person.json",
                     "$schema": schema_uri,
                     "type": "object",
                     "properties": { "name": { "type": "string" } }
-                })),
-            )
-            .bundle(&schema)
-            .expect("bundle failed");
+                }),
+            )],
+        )
+        .expect("bundle failed");
 
         assert!(
             bundled.get("$defs").is_none(),
             "unexpected $defs for {schema_uri}"
         );
-        let definitions = bundled
-            .get("definitions")
-            .and_then(Value::as_object)
-            .expect("no definitions object");
+        let definitions = bundled["definitions"].as_object().unwrap();
         assert!(
-            definitions.contains_key("https://example.com/person.json"),
+            !definitions["https://example.com/person.json"].is_null(),
             "missing bundled resource for {schema_uri}"
         );
     }
@@ -397,23 +395,21 @@ fn test_bundle_draft4_embedded_resource_uses_id_keyword() {
         "$schema": "http://json-schema.org/draft-04/schema#",
         "$ref": "https://example.com/integer.json"
     });
-    let bundled = jsonschema::options()
-        .with_resource(
+    let bundled = try_bundle_with_resources(
+        &root,
+        &[(
             "https://example.com/integer.json",
-            Resource::from_contents(json!({
+            json!({
                 "$schema": "http://json-schema.org/draft-04/schema#",
                 "type": "integer"
-            })),
-        )
-        .bundle(&root)
-        .expect("bundle failed");
+            }),
+        )],
+    )
+    .expect("bundle failed");
 
     let embedded = &bundled["definitions"]["https://example.com/integer.json"];
-    assert_eq!(
-        embedded.get("id"),
-        Some(&json!("https://example.com/integer.json"))
-    );
-    assert!(embedded.get("$id").is_none());
+    assert_eq!(embedded["id"], json!("https://example.com/integer.json"));
+    assert!(embedded["$id"].is_null());
 }
 
 #[test]
@@ -519,21 +515,13 @@ fn test_bundle_202012_reuses_existing_definitions_container() {
         "type": "string"
     });
 
-    let bundled = jsonschema::options()
-        .with_resource(
-            "https://example.com/ext.json",
-            Resource::from_contents(external.clone()),
-        )
-        .bundle(&root)
+    let bundled = try_bundle_with_resources(&root, &[("https://example.com/ext.json", external)])
         .expect("bundle failed");
 
     assert!(bundled.get("$defs").is_none(), "unexpected $defs created");
-    let definitions = bundled
-        .get("definitions")
-        .and_then(Value::as_object)
-        .expect("missing definitions");
-    assert!(definitions.contains_key("localInt"));
-    assert!(definitions.contains_key("https://example.com/ext.json"));
+    let definitions = bundled["definitions"].as_object().unwrap();
+    assert!(!definitions["localInt"].is_null());
+    assert!(!definitions["https://example.com/ext.json"].is_null());
 
     let validator = jsonschema::validator_for(&bundled).expect("bundled compile failed");
     assert!(validator.is_valid(&json!({"local": 1, "external": "ok"})));
@@ -550,24 +538,21 @@ fn test_bundle_draft7_keeps_existing_defs_but_adds_definitions_for_resolution() 
         }
     });
 
-    let bundled = jsonschema::options()
-        .with_resource(
+    let bundled = try_bundle_with_resources(
+        &root,
+        &[(
             "https://example.com/ext.json",
-            Resource::from_contents(json!({
+            json!({
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "type": "integer"
-            })),
-        )
-        .bundle(&root)
-        .expect("bundle failed");
+            }),
+        )],
+    )
+    .expect("bundle failed");
 
-    assert!(bundled.get("$defs").is_some(), "existing $defs should stay");
+    assert!(bundled["$defs"].is_object(), "existing $defs should stay");
     assert!(
-        bundled
-            .get("definitions")
-            .and_then(Value::as_object)
-            .and_then(|defs| defs.get("https://example.com/ext.json"))
-            .is_some(),
+        !bundled["definitions"]["https://example.com/ext.json"].is_null(),
         "draft-07 bundles must embed into definitions for resolvability"
     );
 
@@ -582,19 +567,8 @@ fn assert_bundle_parity(
     valid_instances: &[Value],
     invalid_instances: &[Value],
 ) {
-    // Validator from distributed schemas (registered individually)
-    let mut opts = jsonschema::options();
-    for (uri, schema) in resources {
-        opts = opts.with_resource(*uri, Resource::from_contents(schema.clone()));
-    }
-    let distributed = opts.build(root).expect("distributed compile failed");
-
-    // Validator from bundled schema
-    let mut bundle_opts = jsonschema::options();
-    for (uri, schema) in resources {
-        bundle_opts = bundle_opts.with_resource(*uri, Resource::from_contents(schema.clone()));
-    }
-    let bundled = bundle_opts.bundle(root).expect("bundle failed");
+    let distributed = validator_with_resources(root, resources);
+    let bundled = try_bundle_with_resources(root, resources).expect("bundle failed");
     let bundled_validator = jsonschema::validator_for(&bundled).expect("bundled compile failed");
 
     for instance in valid_instances {
@@ -719,26 +693,20 @@ fn test_parity_merge_with_existing_defs() {
     );
 }
 
-/// Walk recurses into embedded schemas; an unresolvable $ref inside one must propagate.
+/// Missing refs reachable from the shared registry fail during registry preparation.
 #[test]
-fn test_bundle_error_propagates_from_recursive_walk() {
+fn test_registry_prepare_error_propagates_for_missing_transitive_ref() {
     // `middle` is registered, but it references `leaf` which is not registered.
-    // The walk recurses into `middle` and fails when resolving `leaf`.
+    // Preparation should fail before bundling starts.
     let middle = json!({
         "$id": "https://example.com/middle.json",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$ref": "https://example.com/leaf.json"
     });
-    let root = json!({
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$ref": "https://example.com/middle.json"
-    });
-    let result = jsonschema::options()
-        .with_resource(
-            "https://example.com/middle.json",
-            Resource::from_contents(middle),
-        )
-        .bundle(&root);
+    let result = jsonschema::Registry::new()
+        .add("https://example.com/middle.json", middle)
+        .expect("resource should be accepted")
+        .prepare();
     assert!(
         matches!(result, Err(ReferencingError::Unretrievable { .. })),
         "expected Unretrievable, got: {result:?}"

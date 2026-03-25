@@ -43,6 +43,23 @@ RSpec.describe "JSONSchema.bundle" do
     expect(validator.valid?({ "age" => 30 })).to be false
   end
 
+  it "bundles inline legacy-id root with registry and explicit draft4" do
+    root = {
+      "id" => "urn:root",
+      "type" => "object",
+      "properties" => { "value" => { "$ref" => "urn:string" } },
+      "required" => ["value"]
+    }
+    registry = JSONSchema::Registry.new(
+      [["urn:string", { "type" => "string" }]],
+      draft: :draft4
+    )
+
+    bundled = JSONSchema.bundle(root, registry: registry, draft: :draft4)
+    expect(bundled.dig("properties", "value", "$ref")).to eq("urn:string")
+    expect(bundled.dig("definitions", "urn:string")).not_to be_nil
+  end
+
   it "raises when a $ref cannot be resolved" do
     expect do
       JSONSchema.bundle({ "$ref" => "https://example.com/missing.json" })
