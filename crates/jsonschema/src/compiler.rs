@@ -12,7 +12,7 @@ use crate::{
     },
     node::{PendingSchemaNode, SchemaNode},
     options::{PatternEngineOptions, ValidationOptions},
-    paths::{Location, LocationSegment},
+    paths::{write_escaped_str, Location, LocationSegment},
     types::{JsonType, JsonTypeSet},
     validator::Validate,
     ValidationError, Validator,
@@ -729,7 +729,22 @@ pub(crate) fn build_validator(
     // Finally, compile the validator
     let root = compile(&ctx, resource_ref).map_err(ValidationError::to_owned)?;
     let draft = config.draft();
-    Ok(Validator { root, draft })
+
+    // Collect all subschemas with their JSON pointers
+    if config.collect_pointer_subschemas {
+        let subschemas = Some(collect_subschemas(&ctx, schema));
+        return Ok(Validator {
+            root,
+            draft,
+            subschemas,
+        });
+    }
+
+    Ok(Validator {
+        root,
+        draft,
+        subschemas: None,
+    })
 }
 
 #[cfg(feature = "resolve-async")]
@@ -801,7 +816,22 @@ pub(crate) async fn build_validator_async(
 
     let root = compile(&ctx, resource_ref).map_err(ValidationError::to_owned)?;
     let draft = config.draft();
-    Ok(Validator { root, draft })
+
+    // Collect all subschemas with their JSON pointers
+    if config.collect_pointer_subschemas {
+        let subschemas = Some(collect_subschemas(&ctx, schema));
+        return Ok(Validator {
+            root,
+            draft,
+            subschemas,
+        });
+    }
+
+    Ok(Validator {
+        root,
+        draft,
+        subschemas: None,
+    })
 }
 
 fn annotations_to_value(annotations: AHashMap<String, Value>) -> Arc<Value> {
@@ -822,6 +852,47 @@ fn collect_resource_pairs(
             .into_iter()
             .map(|(uri, resource)| (Cow::Owned(uri), resource)),
     )
+}
+
+/// Iteratively collect all subschemas from a schema document with their JSON pointers
+fn collect_subschemas(ctx: &Context, schema: &Value) -> AHashMap<String, SchemaNode> {
+    let mut subschemas = AHashMap::new();
+
+    // Stack to hold (schema, pointer) pairs to process
+    let mut stack = vec![(schema, "#".to_string())];
+
+    while let Some((current_schema, pointer)) = stack.pop() {
+        // Compile and store the current schema if it's not the root (empty pointer)
+        let resource_ref = ctx.as_resource_ref(current_schema);
+        let ctx_at_location = ctx.new_at_location(pointer.as_str());
+        if let Ok(node) = compile(&ctx_at_location, resource_ref) {
+            subschemas.insert(pointer.clone(), node);
+        } else {
+            // Skip schemas that fail to compile (e.g., invalid references)
+            // This allows the validator to still work with valid subschemas
+        }
+
+        // Process subschemas based on schema structure
+        match current_schema {
+            Value::Object(obj) => {
+                stack.extend(obj.iter().map(|(key, value)| {
+                    let mut buffer = String::new();
+                    write_escaped_str(&mut buffer, key);
+                    (value, format!("{pointer}/{buffer}"))
+                }));
+            }
+            Value::Array(arr) => {
+                stack.extend(
+                    arr.iter()
+                        .enumerate()
+                        .map(|(idx, item)| (item, format!("{pointer}/{idx}"))),
+                );
+            }
+            _ => {}
+        }
+    }
+
+    subschemas
 }
 
 fn validate_schema(draft: Draft, schema: &Value) -> Result<(), ValidationError<'static>> {
