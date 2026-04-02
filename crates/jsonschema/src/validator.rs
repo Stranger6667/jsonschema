@@ -272,6 +272,8 @@ impl From<EvaluationNode> for EvaluationResult {
 pub struct Validator {
     pub(crate) root: SchemaNode,
     pub(crate) draft: Draft,
+    /// Map of JSON pointers to compiled schema nodes for all subschemas
+    pub(crate) subschemas: Option<AHashMap<String, SchemaNode>>,
 }
 
 impl Validator {
@@ -349,6 +351,66 @@ impl Validator {
         self.root
             .validate(instance, &LazyLocation::new(), None, &mut ctx)
     }
+
+    /// Validate `instance` against a specific subschema identified by a JSON pointer.
+    ///
+    /// # Arguments
+    ///
+    /// * `instance` - The JSON value to validate
+    /// * `pointer` - A JSON pointer (e.g., "#/properties/name", "#/$defs/Person") identifying the subschema
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The JSON pointer doesn't exist in the schema
+    /// - The instance doesn't satisfy the subschema
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use serde_json::json;
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let schema = json!({
+    ///     "type": "object",
+    ///     "properties": {
+    ///         "name": {"type": "string"},
+    ///         "age": {"type": "integer"}
+    ///     },
+    ///     "$defs": {
+    ///         "Person": {
+    ///             "type": "object",
+    ///             "required": ["name", "age"]
+    ///         }
+    ///     }
+    /// });
+    ///
+    /// let validator = jsonschema::options().collect_pointer_subschemas().build(&schema)?;
+    ///
+    /// // Validate against the "name" property subschema
+    /// assert!(validator.validate_with_pointer(&json!("John"), "#/properties/name").is_ok());
+    /// assert!(validator.validate_with_pointer(&json!(42), "#/properties/name").is_err());
+    ///
+    /// // Validate against a definition
+    /// let person = json!({"name": "John", "age": 30});
+    /// assert!(validator.validate_with_pointer(&person, "#/$defs/Person").is_ok());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn validate_with_pointer<'i>(
+        &self,
+        instance: &'i Value,
+        pointer: &str,
+    ) -> Result<(), ValidationError<'i>> {
+        if let Some(subschemas) = &self.subschemas {
+            let node = subschemas.get(pointer).ok_or_else(|| {
+                ValidationError::custom(format!("JSON pointer '{pointer}' not found in schema"))
+            })?;
+            let mut ctx = ValidationContext::new();
+            node.validate(instance, &LazyLocation::new(), None, &mut ctx)
+        } else {
+            Err(ValidationError::custom("Invalid function call since validator did not collect all subschemas. Please recompile validator with collect_subschema option enabled."))
+        }
+    }
     /// Run validation against `instance` and return an iterator over [`ValidationError`] in the error case.
     #[inline]
     #[must_use]
@@ -357,6 +419,41 @@ impl Validator {
         self.root
             .iter_errors(instance, &LazyLocation::new(), None, &mut ctx)
     }
+
+    /// Run validation against `instance` using a specific subschema and return an iterator over errors.
+    ///
+    /// # Arguments
+    ///
+    /// * `instance` - The JSON value to validate
+    /// * `pointer` - A JSON pointer identifying the subschema
+    ///
+    /// # Returns
+    ///
+    /// An iterator over validation errors. If the pointer doesn't exist, returns an iterator with a single error.
+    #[must_use]
+    pub fn iter_errors_with_pointer<'i>(
+        &'i self,
+        instance: &'i Value,
+        pointer: &str,
+    ) -> ErrorIterator<'i> {
+        match &self.subschemas {
+            Some(subschemas) => {
+                if let Some(node) = subschemas.get(pointer) {
+                    let mut ctx = ValidationContext::new();
+                    node.iter_errors(instance, &LazyLocation::new(), None, &mut ctx)
+                } else {
+                    let err = ValidationError::custom(format!(
+                        "JSON pointer '{pointer}' not found in schema"
+                    ));
+                    crate::error::error(err)
+                }
+            },
+            None => {
+                crate::error::error(ValidationError::custom("Invalid function call since validator did not collect all subschemas. Please recompile validator with collect_subschema option enabled."))
+            }
+        }
+    }
+
     /// Run validation against `instance` but return a boolean result instead of an iterator.
     /// It is useful for cases, where it is important to only know the fact if the data is valid or not.
     /// This approach is much faster, than [`Validator::validate`].
@@ -365,6 +462,24 @@ impl Validator {
     pub fn is_valid(&self, instance: &Value) -> bool {
         let mut ctx = ValidationContext::new();
         self.root.is_valid(instance, &mut ctx)
+    }
+
+    /// Check if `instance` is valid against a specific subschema identified by a JSON pointer.
+    ///
+    /// # Arguments
+    ///
+    /// * `instance` - The JSON value to validate
+    /// * `pointer` - A JSON pointer identifying the subschema
+    ///
+    /// # Returns
+    ///
+    /// `false` if the pointer doesn't exist or the instance is invalid, `true` otherwise.
+    #[must_use]
+    pub fn is_valid_with_pointer(&self, instance: &Value, pointer: &str) -> bool {
+        self.subschemas
+            .as_ref()
+            .and_then(|subschemas| subschemas.get(pointer))
+            .is_some_and(|node| node.is_valid(instance, &mut ValidationContext::new()))
     }
     /// Evaluate the schema and expose structured output formats.
     #[must_use]
@@ -771,5 +886,330 @@ mod tests {
             assert_eq!(error.schema_path().as_str(), "/$defs/Person/required");
             assert_eq!(error.evaluation_path().as_str(), "/$ref/required");
         }
+    }
+
+    #[test]
+    fn test_validate_with_pointer_basic_properties() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "minLength": 3},
+                "age": {"type": "integer", "minimum": 0},
+            }
+        });
+
+        let validator = crate::options()
+            .collect_pointer_subschemas()
+            .build(&schema)
+            .expect("Good compilation");
+
+        // Test #/properties/name
+        assert!(validator.is_valid_with_pointer(&json!("John"), "#/properties/name"));
+        assert!(!validator.is_valid_with_pointer(&json!(123), "#/properties/name"));
+        assert!(!validator.is_valid_with_pointer(&json!("Jo"), "#/properties/name")); // Too short
+
+        // Test #/properties/age
+        assert!(validator.is_valid_with_pointer(&json!(30), "#/properties/age"));
+        assert!(!validator.is_valid_with_pointer(&json!("30"), "#/properties/age"));
+        assert!(!validator.is_valid_with_pointer(&json!(-5), "#/properties/age"));
+        // Negative
+    }
+
+    #[test]
+    fn test_validate_with_pointer_definitions() {
+        let schema = json!({
+            "type": "object",
+            "$defs": {
+                "Person": {
+                    "type": "object",
+                    "required": ["name", "age"],
+                    "properties": {
+                        "name": {"type": "string"},
+                        "age": {"type": "integer"}
+                    }
+                },
+                "Address": {
+                    "type": "object",
+                    "properties": {
+                        "street": {"type": "string"},
+                        "city": {"type": "string"}
+                    }
+                }
+            }
+        });
+
+        let validator = crate::options()
+            .collect_pointer_subschemas()
+            .build(&schema)
+            .expect("Good compilation");
+
+        // Test #/$defs/Person
+        let person = json!({"name": "Jane", "age": 25});
+        assert!(validator.is_valid_with_pointer(&person, "#/$defs/Person"));
+
+        let invalid_person = json!({"name": "Jane"}); // Missing required 'age'
+        assert!(!validator.is_valid_with_pointer(&invalid_person, "#/$defs/Person"));
+
+        // Test #/$defs/Address
+        let address = json!({"street": "123 Main St", "city": "Springfield"});
+        assert!(validator.is_valid_with_pointer(&address, "#/$defs/Address"));
+    }
+
+    #[test]
+    fn test_validate_with_pointer_nested_properties() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "object",
+                    "properties": {
+                        "profile": {
+                            "type": "object",
+                            "properties": {
+                                "bio": {"type": "string"}
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        let validator = crate::options()
+            .collect_pointer_subschemas()
+            .build(&schema)
+            .expect("Good compilation");
+
+        // Test nested property
+        assert!(validator.is_valid_with_pointer(
+            &json!("Hello world"),
+            "#/properties/user/properties/profile/properties/bio"
+        ));
+        assert!(!validator.is_valid_with_pointer(
+            &json!(123),
+            "#/properties/user/properties/profile/properties/bio"
+        ));
+    }
+
+    #[test]
+    fn test_validate_with_pointer_array_items() {
+        let schema = json!({
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"}
+                }
+            }
+        });
+
+        let validator = crate::options()
+            .collect_pointer_subschemas()
+            .build(&schema)
+            .expect("Good compilation");
+
+        assert!(validator.is_valid_with_pointer(&json!({"id": 1}), "#/items"));
+        assert!(!validator.is_valid_with_pointer(&json!({"id": "1"}), "#/items"));
+    }
+
+    #[test]
+    fn test_validate_with_pointer_returns_error() {
+        let schema = json!({
+            "properties": {
+                "name": {"type": "string", "minLength": 3}
+            }
+        });
+
+        let validator = crate::options()
+            .collect_pointer_subschemas()
+            .build(&schema)
+            .expect("Good compilation");
+
+        // Should return error for invalid data
+        let instance = json!("Jo");
+        let error = validator
+            .validate_with_pointer(&instance, "#/properties/name")
+            .expect_err("Should fail");
+        assert_eq!(error.to_string(), "\"Jo\" is shorter than 3 characters");
+    }
+
+    #[test]
+    fn test_validate_with_pointer_nonexistent() {
+        let schema = json!({
+            "properties": {
+                "name": {"type": "string"}
+            }
+        });
+
+        let validator = crate::options()
+            .collect_pointer_subschemas()
+            .build(&schema)
+            .expect("Good compilation");
+
+        // Non-existent pointer should return false
+        let instance = json!("test");
+        assert!(!validator.is_valid_with_pointer(&instance, "#/properties/nonexistent"));
+
+        // validate_with_pointer should return error for non-existent pointer
+        let error = validator
+            .validate_with_pointer(&instance, "#/properties/nonexistent")
+            .expect_err("Should fail");
+        assert_eq!(
+            error.to_string(),
+            "JSON pointer '#/properties/nonexistent' not found in schema"
+        );
+    }
+
+    #[test]
+    fn test_iter_errors_with_pointer() {
+        let schema = json!({
+            "properties": {
+                "name": {"type": "string"}
+            }
+        });
+
+        let validator = crate::options()
+            .collect_pointer_subschemas()
+            .build(&schema)
+            .expect("Good compilation");
+
+        // Should get errors for invalid data
+        let invalid_instance = json!(123);
+        let errors: Vec<_> = validator
+            .iter_errors_with_pointer(&invalid_instance, "#/properties/name")
+            .collect();
+        assert!(!errors.is_empty());
+        assert_eq!(errors.len(), 1);
+        let error = &errors[0];
+        assert_eq!(error.to_string(), "123 is not of type \"string\"");
+
+        // Should get no errors for valid data
+        let valid_instance = json!("John");
+        let errors: Vec<_> = validator
+            .iter_errors_with_pointer(&valid_instance, "#/properties/name")
+            .collect();
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_validate_with_pointer_allof() {
+        let schema = json!({
+            "allOf": [
+                {"type": "object"},
+                {"properties": {"name": {"type": "string"}}}
+            ]
+        });
+
+        let validator = crate::options()
+            .collect_pointer_subschemas()
+            .build(&schema)
+            .expect("Good compilation");
+
+        // Test first allOf item
+        assert!(validator.is_valid_with_pointer(&json!({}), "#/allOf/0"));
+        assert!(!validator.is_valid_with_pointer(&json!("not an object"), "#/allOf/0"));
+
+        // Test second allOf item
+        assert!(validator.is_valid_with_pointer(&json!({"name": "John"}), "#/allOf/1"));
+        assert!(!validator.is_valid_with_pointer(&json!({"name": 1}), "#/allOf/1"));
+        assert!(validator.is_valid_with_pointer(&json!("John"), "#/allOf/1/properties/name"));
+        assert!(!validator.is_valid_with_pointer(&json!(1), "#/allOf/1/properties/name"));
+        assert!(validator.is_valid_with_pointer(&json!([]), "#/allOf/1"));
+    }
+
+    #[test]
+    fn test_validate_with_pointer_anyof() {
+        let schema = json!({
+            "anyOf": [
+                {"type": "string"},
+                {"type": "number"}
+            ]
+        });
+
+        let validator = crate::options()
+            .collect_pointer_subschemas()
+            .build(&schema)
+            .expect("Good compilation");
+
+        // Test first anyOf item
+        assert!(validator.is_valid_with_pointer(&json!("hello"), "#/anyOf/0"));
+        assert!(!validator.is_valid_with_pointer(&json!(123), "#/anyOf/0"));
+
+        // Test second anyOf item
+        assert!(validator.is_valid_with_pointer(&json!(123), "#/anyOf/1"));
+        assert!(!validator.is_valid_with_pointer(&json!("hello"), "#/anyOf/1"));
+    }
+
+    #[test]
+    fn test_validate_with_pointer_arbitrary() {
+        let schema = json!({"a": {"type": "string"}});
+
+        let validator = crate::options()
+            .collect_pointer_subschemas()
+            .build(&schema)
+            .expect("Good compilation");
+
+        // Test first anyOf item
+        let instance = json!("hello");
+        assert!(validator.is_valid_with_pointer(&instance, "#/a"));
+        assert!(!validator.is_valid_with_pointer(&json!(123), "#/a"));
+
+        let error = validator
+            .validate_with_pointer(&instance, "#/b")
+            .expect_err("Should fail");
+        assert_eq!(error.to_string(), "JSON pointer '#/b' not found in schema");
+    }
+
+    #[test]
+    fn test_validate_with_pointer_escape() {
+        let schema = json!({
+            "~a": {"type": "string"},
+            "/a": {"type": "string"},
+            "~/a": {"type": "string"},
+            "a": {"~b": {"~c": {"type": "string"}}}
+        });
+
+        let validator = crate::options()
+            .collect_pointer_subschemas()
+            .build(&schema)
+            .expect("Good compilation");
+
+        // Test first anyOf item
+        let instance = json!("hello");
+        assert!(validator.is_valid_with_pointer(&instance, "#/~0a"));
+        assert!(!validator.is_valid_with_pointer(&json!(123), "#/~0a"));
+
+        assert!(validator.is_valid_with_pointer(&instance, "#/~1a"));
+        assert!(!validator.is_valid_with_pointer(&json!(123), "#/~1a"));
+
+        assert!(validator.is_valid_with_pointer(&instance, "#/~0~1a"));
+        assert!(!validator.is_valid_with_pointer(&json!(123), "#/~0~1a"));
+
+        assert!(validator.is_valid_with_pointer(&instance, "#/a/~0b/~0c"));
+        assert!(!validator.is_valid_with_pointer(&json!(123), "#/a/~0b/~0c"));
+    }
+
+    #[test]
+    fn test_validate_with_pointer_petstore() {
+        let schema = load("tests/petstore.json", 0);
+        let validator = crate::options()
+            .collect_pointer_subschemas()
+            .build(&schema)
+            .expect("Good compilation");
+
+        let root_value_ok = json!({"name":"Bob","photoUrls":[]});
+        let root_value_err = json!({"name":  1  ,"photoUrls":[]});
+
+        let sub_value_ok = json!("Bob");
+        let sub_value_err = json!(1);
+
+        assert!(validator.validate(&root_value_ok).is_ok());
+        assert!(validator.validate(&root_value_err).is_err());
+
+        assert!(validator
+            .validate_with_pointer(&sub_value_ok, "#/components/schemas/Pet/properties/name")
+            .is_ok());
+        assert!(validator
+            .validate_with_pointer(&sub_value_err, "#/components/schemas/Pet/properties/name")
+            .is_err());
     }
 }

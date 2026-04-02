@@ -32,6 +32,7 @@ pub struct ValidationOptions<R = Arc<dyn Retrieve>> {
     formats: AHashMap<String, Arc<dyn Format>>,
     validate_formats: Option<bool>,
     pub(crate) validate_schema: bool,
+    pub(crate) collect_pointer_subschemas: bool,
     ignore_unknown_formats: bool,
     keywords: AHashMap<String, Arc<dyn KeywordFactory>>,
     pattern_options: PatternEngineOptions,
@@ -51,6 +52,7 @@ impl Default for ValidationOptions<Arc<dyn Retrieve>> {
             formats: AHashMap::default(),
             validate_formats: None,
             validate_schema: true,
+            collect_pointer_subschemas: false,
             ignore_unknown_formats: true,
             keywords: AHashMap::default(),
             pattern_options: PatternEngineOptions::default(),
@@ -73,6 +75,7 @@ impl Default for ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             formats: AHashMap::default(),
             validate_formats: None,
             validate_schema: true,
+            collect_pointer_subschemas: false,
             ignore_unknown_formats: true,
             keywords: AHashMap::default(),
             pattern_options: PatternEngineOptions::default(),
@@ -413,6 +416,12 @@ impl<R> ValidationOptions<R> {
         self.validate_schema = false;
         self
     }
+    /// Collect JSON pointer subschemas during compilation.
+    #[must_use]
+    pub fn collect_pointer_subschemas(mut self) -> Self {
+        self.collect_pointer_subschemas = true;
+        self
+    }
     /// Set whether to validate formats.
     ///
     /// Default behavior depends on the draft version. This method overrides
@@ -748,6 +757,7 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             formats: self.formats,
             validate_formats: self.validate_formats,
             validate_schema: self.validate_schema,
+            collect_pointer_subschemas: self.collect_pointer_subschemas,
             ignore_unknown_formats: self.ignore_unknown_formats,
             keywords: self.keywords,
             pattern_options: self.pattern_options,
@@ -783,6 +793,7 @@ impl ValidationOptions<Arc<dyn referencing::AsyncRetrieve>> {
             formats: self.formats,
             validate_formats: self.validate_formats,
             validate_schema: self.validate_schema,
+            collect_pointer_subschemas: self.collect_pointer_subschemas,
             ignore_unknown_formats: self.ignore_unknown_formats,
             keywords: self.keywords,
             pattern_options: self.pattern_options,
