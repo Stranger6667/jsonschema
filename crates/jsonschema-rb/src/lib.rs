@@ -84,16 +84,21 @@ struct BuiltValidator {
 fn build_validator(
     ruby: &Ruby,
     options: ValidationOptions,
+    registry: Option<&jsonschema::Registry<'_>>,
     retriever: Option<RubyRetriever>,
     callback_roots: CallbackRoots,
     compilation_roots: Arc<CompilationRoots>,
     schema: &serde_json::Value,
 ) -> Result<BuiltValidator, Error> {
-    let validator = match retriever {
-        Some(ret) => options.with_retriever(ret).build(schema),
-        None => options.build(schema),
+    let mut options = match retriever {
+        Some(ret) => options.with_retriever(ret),
+        None => options,
+    };
+    if let Some(registry) = registry {
+        options = options.with_registry(registry);
     }
-    .map_err(|error| {
+
+    let validator = options.build(schema).map_err(|error| {
         if let jsonschema::error::ValidationErrorKind::Referencing(err) = error.kind() {
             if let Some(message) = retriever_error_message(err) {
                 Error::new(ruby.exception_arg_error(), message)
@@ -157,7 +162,7 @@ fn build_parsed_options(
     ruby: &Ruby,
     kw: ExtractedKwargs,
     draft_override: Option<jsonschema::Draft>,
-) -> Result<ParsedOptions, Error> {
+) -> Result<ParsedOptions<'_>, Error> {
     let (
         draft_val,
         validate_formats,
@@ -832,6 +837,7 @@ fn validator_for(ruby: &Ruby, args: &[Value]) -> Result<Validator, Error> {
     } = build_validator(
         ruby,
         parsed.options,
+        parsed.registry,
         parsed.retriever,
         parsed.callback_roots,
         parsed.compilation_roots,
@@ -853,7 +859,11 @@ fn bundle(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
 
     let json_schema = to_schema_value(ruby, schema)?;
     let parsed = build_parsed_options(ruby, kw, None)?;
-    match parsed.options.bundle(&json_schema) {
+    let mut options = parsed.options;
+    if let Some(registry) = parsed.registry {
+        options = options.with_registry(registry);
+    }
+    match options.bundle(&json_schema) {
         Ok(bundled) => ser::value_to_ruby(ruby, &bundled),
         Err(e @ jsonschema::ReferencingError::Unretrievable { .. }) => {
             Err(referencing_error(ruby, e.to_string()))
@@ -888,6 +898,7 @@ fn is_valid(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
     } = build_validator(
         ruby,
         parsed.options,
+        parsed.registry,
         parsed.retriever,
         parsed.callback_roots,
         parsed.compilation_roots,
@@ -927,6 +938,7 @@ fn validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
     } = build_validator(
         ruby,
         parsed.options,
+        parsed.registry,
         parsed.retriever,
         parsed.callback_roots,
         parsed.compilation_roots,
@@ -978,6 +990,7 @@ fn each_error(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
     } = build_validator(
         ruby,
         parsed.options,
+        parsed.registry,
         parsed.retriever,
         parsed.callback_roots,
         parsed.compilation_roots,
@@ -1073,6 +1086,7 @@ fn evaluate(ruby: &Ruby, args: &[Value]) -> Result<Evaluation, Error> {
     } = build_validator(
         ruby,
         parsed.options,
+        parsed.registry,
         parsed.retriever,
         parsed.callback_roots,
         parsed.compilation_roots,
@@ -1126,6 +1140,7 @@ macro_rules! define_draft_validator {
                 } = build_validator(
                     ruby,
                     parsed.options,
+                    parsed.registry,
                     parsed.retriever,
                     parsed.callback_roots,
                     parsed.compilation_roots,
@@ -1201,9 +1216,9 @@ fn meta_is_valid(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
 
     let json_schema = to_schema_value(ruby, schema)?;
 
-    let result = if let Some(reg) = registry {
+    let result = if let Some(registry) = registry {
         jsonschema::meta::options()
-            .with_registry(reg.inner.clone())
+            .with_registry(&registry.inner)
             .validate(&json_schema)
     } else {
         jsonschema::meta::validate(&json_schema)
@@ -1230,9 +1245,9 @@ fn meta_validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
 
     let json_schema = to_schema_value(ruby, schema)?;
 
-    let result = if let Some(reg) = registry {
+    let result = if let Some(registry) = registry {
         jsonschema::meta::options()
-            .with_registry(reg.inner.clone())
+            .with_registry(&registry.inner)
             .validate(&json_schema)
     } else {
         jsonschema::meta::validate(&json_schema)
