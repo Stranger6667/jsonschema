@@ -66,7 +66,7 @@ pub(crate) fn is_multiple_of_float(value: &Number, multiple: f64) -> bool {
         if value_f64.is_zero() {
             return true;
         }
-        if value_f64 < multiple {
+        if value_f64.abs() < multiple {
             return false;
         }
         // From the JSON Schema spec
