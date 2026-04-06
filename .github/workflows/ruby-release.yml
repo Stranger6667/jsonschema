@@ -54,6 +54,9 @@ jobs:
         with:
           ruby-version: "3.4"
 
+      - name: Expose Gemfile.lock for rb-sys-dock version detection
+        run: cp crates/jsonschema-rb/Gemfile.lock Gemfile.lock
+
       - uses: oxidize-rb/actions/cross-gem@v1
         id: cross-gem
         with:
