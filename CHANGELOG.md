@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.45.1] - 2026-04-06
+
 ### Fixed
 
 - Incorrect handling of `multipleOf` validation for negative numeric instances.
@@ -1231,7 +1233,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.45.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.45.1...HEAD
+[0.45.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.45.0...rust-v0.45.1
 [0.45.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.44.1...rust-v0.45.0
 [0.44.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.44.0...rust-v0.44.1
 [0.44.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.43.0...rust-v0.44.0
