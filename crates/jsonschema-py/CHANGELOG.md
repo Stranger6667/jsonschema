@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.45.1] - 2026-04-06
+
 ### Fixed
 
 - Incorrect handling of `multipleOf` validation for negative numeric instances.
@@ -974,7 +976,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.45.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.45.1...HEAD
+[0.45.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.45.0...python-v0.45.1
 [0.45.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.44.1...python-v0.45.0
 [0.44.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.44.0...python-v0.44.1
 [0.44.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.43.0...python-v0.44.0
