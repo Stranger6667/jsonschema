@@ -487,7 +487,7 @@
 //!
 //! And non-blocking version with the `resolve-async` feature enabled:
 //!
-//! ```rust
+//! ```rust,no_run
 //! # #[cfg(feature = "resolve-async")]
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! use jsonschema::{AsyncRetrieve, Registry, Resource, Uri};
