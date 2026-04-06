@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.45.1] - 2026-04-06
+
 ### Fixed
 
 - Incorrect handling of `multipleOf` validation for negative numeric instances.
@@ -71,7 +73,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.45.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.45.1...HEAD
+[0.45.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.45.0...ruby-v0.45.1
 [0.45.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.44.1...ruby-v0.45.0
 [0.44.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.44.0...ruby-v0.44.1
 [0.44.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.43.0...ruby-v0.44.0
