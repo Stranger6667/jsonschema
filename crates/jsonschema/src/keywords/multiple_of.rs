@@ -399,6 +399,7 @@ mod tests {
     #[test_case(&json!({"multipleOf": 0.1}), &json!(1.3))]
     #[test_case(&json!({"multipleOf": 0.02}), &json!(1.02))]
     #[test_case(&json!({"multipleOf": 1e-16}), &json!(1e-15))]
+    #[test_case(&json!({"multipleOf": 0.5}), &json!(-6))]
     fn multiple_of_is_valid(schema: &Value, instance: &Value) {
         tests_util::is_valid(schema, instance);
     }
