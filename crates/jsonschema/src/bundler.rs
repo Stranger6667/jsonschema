@@ -6,7 +6,7 @@ use serde_json::{Map, Value};
 fn bundle_from_registry(
     schema: &Value,
     draft: Draft,
-    registry: &referencing::Registry,
+    registry: &referencing::Registry<'_>,
     base_uri: &referencing::Uri<String>,
 ) -> Result<Value, referencing::Error> {
     let resolver = registry.resolver(base_uri.clone());
@@ -19,27 +19,45 @@ fn bundle_from_registry(
 }
 
 pub(crate) fn bundle_with_options(
-    config: &ValidationOptions,
+    config: &ValidationOptions<'_>,
     schema: &Value,
 ) -> Result<Value, referencing::Error> {
     let draft = config.draft_for(schema)?;
-    let resource = draft.create_resource(schema.clone());
-    let resource_ref = draft.create_resource_ref(schema);
-    let (registry, base_uri) =
-        compiler::build_registry(config, draft, resource, resource_ref.id())?;
+    let resource = draft.create_resource_ref(schema);
+    if let Some(registry) = config.registry {
+        let base_uri = compiler::resolve_base_uri(config.base_uri.as_ref(), resource.id())?;
+        let registry = registry
+            .add(base_uri.as_str(), resource)?
+            .retriever(config.retriever.clone())
+            .draft(draft)
+            .prepare()?;
+        let base_uri = compiler::normalize_base_uri(&registry, &base_uri);
+        return bundle_from_registry(schema, draft, &registry, &base_uri);
+    }
+    let (registry, base_uri) = compiler::build_registry(config, draft, resource, resource.id())?;
     bundle_from_registry(schema, draft, &registry, &base_uri)
 }
 
 #[cfg(feature = "resolve-async")]
 pub(crate) async fn bundle_with_options_async(
-    config: &crate::options::ValidationOptions<std::sync::Arc<dyn referencing::AsyncRetrieve>>,
+    config: &crate::options::ValidationOptions<'_, std::sync::Arc<dyn referencing::AsyncRetrieve>>,
     schema: &Value,
 ) -> Result<Value, referencing::Error> {
     let draft = config.draft_for(schema).await?;
-    let resource = draft.create_resource(schema.clone());
-    let resource_ref = draft.create_resource_ref(schema);
+    let resource = draft.create_resource_ref(schema);
+    if let Some(registry) = config.registry {
+        let base_uri = compiler::resolve_base_uri(config.base_uri.as_ref(), resource.id())?;
+        let registry = registry
+            .add(base_uri.as_str(), resource)?
+            .async_retriever(config.retriever.clone())
+            .draft(draft)
+            .async_prepare()
+            .await?;
+        let base_uri = compiler::normalize_base_uri(&registry, &base_uri);
+        return bundle_from_registry(schema, draft, &registry, &base_uri);
+    }
     let (registry, base_uri) =
-        compiler::build_registry_async(config, draft, resource, resource_ref.id()).await?;
+        compiler::build_registry_async(config, draft, resource, resource.id()).await?;
     bundle_from_registry(schema, draft, &registry, &base_uri)
 }
 

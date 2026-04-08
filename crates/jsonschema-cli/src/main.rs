@@ -444,10 +444,10 @@ fn path_to_uri(path: &std::path::Path) -> String {
     result
 }
 
-fn options_for_schema(
+fn options_for_schema<'a>(
     schema_path: &Path,
     http_options: Option<&jsonschema::HttpOptions>,
-) -> Result<jsonschema::ValidationOptions, Box<dyn std::error::Error>> {
+) -> Result<jsonschema::ValidationOptions<'a>, Box<dyn std::error::Error>> {
     let base_uri = path_to_uri(schema_path);
     let base_uri = referencing::uri::from_str(&base_uri)?;
     let mut options = jsonschema::options().with_base_uri(base_uri);
@@ -695,16 +695,30 @@ fn run_bundle(args: BundleArgs) -> ExitCode {
         Err(error) => return fail_with_error(error),
     };
 
+    let mut registry = if let Some(http_opts) = http_options.as_ref() {
+        let retriever = match jsonschema::HttpRetriever::new(http_opts) {
+            Ok(retriever) => retriever,
+            Err(error) => return fail_with_error(error),
+        };
+        jsonschema::Registry::new().retriever(retriever)
+    } else {
+        jsonschema::Registry::new()
+    };
     for (uri, path) in &resources {
         let resource_json = match read_json(path) {
             Ok(value) => value,
             Err(error) => return fail_with_error(error),
         };
-        opts = opts.with_resource(
-            uri.as_str(),
-            referencing::Resource::from_contents(resource_json),
-        );
+        registry = match registry.add(uri, resource_json) {
+            Ok(registry) => registry,
+            Err(error) => return fail_with_error(error),
+        };
     }
+    let registry = match registry.prepare() {
+        Ok(registry) => registry,
+        Err(error) => return fail_with_error(error),
+    };
+    opts = opts.with_registry(&registry);
 
     match opts.bundle(&schema_json) {
         Ok(bundled) => {

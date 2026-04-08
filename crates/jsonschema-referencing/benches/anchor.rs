@@ -14,9 +14,11 @@ fn bench_anchor_lookup(c: &mut Criterion) {
       }
     });
     let resource = Draft::Draft4.create_resource(data);
-    let registry =
-        Registry::try_new("http://example.com/", resource).expect("Invalid registry input");
-
+    let registry = Registry::new()
+        .add("http://example.com/", resource)
+        .expect("Invalid registry input")
+        .prepare()
+        .expect("Invalid registry input");
     let mut group = c.benchmark_group("Anchor Lookup");
 
     // Benchmark lookup of existing anchor
@@ -24,9 +26,9 @@ fn bench_anchor_lookup(c: &mut Criterion) {
         BenchmarkId::new("resolve", "small"),
         &registry,
         |b, registry| {
-            let resolver = registry
-                .try_resolver("http://example.com/")
-                .expect("Invalid base URI");
+            let resolver = registry.resolver(
+                referencing::uri::from_str("http://example.com/").expect("Invalid base URI"),
+            );
             b.iter_with_large_drop(|| resolver.lookup(black_box("#foo")));
         },
     );

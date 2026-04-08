@@ -96,12 +96,15 @@ def test_decimal_fractional():
     assert json.loads(to_string(Decimal("1.5"))) == pytest.approx(1.5)
 
 
-@pytest.mark.parametrize("value, expected", [
-    (Decimal("100E-2"), "1"),
-    (Decimal("1E-2"), "0.01"),
-    (Decimal("0E-1000"), "0"),
-    (Decimal("-0E-1000"), "0"),
-])
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (Decimal("100E-2"), "1"),
+        (Decimal("1E-2"), "0.01"),
+        (Decimal("0E-1000"), "0"),
+        (Decimal("-0E-1000"), "0"),
+    ],
+)
 def test_decimal_exponent_integrality(value, expected):
     assert to_string(value) == expected
 

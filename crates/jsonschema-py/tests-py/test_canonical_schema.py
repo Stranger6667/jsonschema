@@ -115,6 +115,7 @@ def test_tuple_is_returned_as_is():
 def test_unknown_object_is_returned_as_is():
     class Custom:
         pass
+
     obj = Custom()
     assert clone(obj) is obj
 

@@ -40,7 +40,7 @@ impl Drop for RetrieverBuildRootGuard {
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Registry", free_immediately, size, mark)]
 pub struct Registry {
-    pub inner: jsonschema::Registry,
+    pub inner: jsonschema::Registry<'static>,
     retriever_root: Option<Opaque<Value>>,
 }
 
@@ -72,7 +72,7 @@ impl Registry {
         let draft_val = kw.optional.0.flatten();
         let retriever_val = kw.optional.1;
 
-        let mut builder = jsonschema::Registry::options();
+        let mut builder = jsonschema::Registry::new();
         let mut retriever_root = None;
         let mut retriever_build_root = None;
 
@@ -89,29 +89,26 @@ impl Registry {
             }
         }
 
-        let pairs: Vec<(String, jsonschema::Resource)> = resources
-            .into_iter()
-            .map(|item| {
-                let pair: RArray = TryConvert::try_convert(item)?;
-                if pair.len() != 2 {
-                    return Err(Error::new(
-                        ruby.exception_arg_error(),
-                        "Each resource must be a [uri, schema] pair",
-                    ));
-                }
-                let uri: String = pair.entry(0)?;
-                let schema_val: Value = pair.entry(1)?;
-                let schema = to_value(ruby, schema_val)?;
-                let resource = jsonschema::Resource::from_contents(schema);
-                Ok((uri, resource))
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
-
         // Keep the retriever proc GC-rooted for the entire build, because `build`
         // may call into retriever callbacks while traversing referenced resources.
         let _retriever_build_guard = RetrieverBuildRootGuard::new(retriever_build_root);
+        for item in resources {
+            let pair: RArray = TryConvert::try_convert(item)?;
+            if pair.len() != 2 {
+                return Err(Error::new(
+                    ruby.exception_arg_error(),
+                    "Each resource must be a [uri, schema] pair",
+                ));
+            }
+            let uri: String = pair.entry(0)?;
+            let schema_val: Value = pair.entry(1)?;
+            let schema = to_value(ruby, schema_val)?;
+            builder = builder
+                .add(uri, schema)
+                .map_err(|e| Error::new(ruby.exception_arg_error(), e.to_string()))?;
+        }
         let registry = builder
-            .build(pairs)
+            .prepare()
             .map_err(|e| Error::new(ruby.exception_arg_error(), e.to_string()))?;
 
         Ok(Registry {

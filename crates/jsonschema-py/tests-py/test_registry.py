@@ -96,6 +96,21 @@ def test_validator_for_with_registry():
     assert not validator.is_valid(INVALID_PERSON)
 
 
+def test_validator_for_with_registry_and_explicit_draft4_legacy_id_root():
+    registry = Registry([("urn:string", {"type": "string"})], draft=Draft4)
+    schema = {
+        "id": "urn:root",
+        "type": "object",
+        "properties": {"value": {"$ref": "urn:string"}},
+        "required": ["value"],
+    }
+
+    validator = Draft4Validator(schema, registry=registry)
+
+    assert validator.is_valid({"value": "ok"})
+    assert not validator.is_valid({"value": 42})
+
+
 def test_registry_with_retriever_and_validation():
     def retrieve(uri: str):
         if uri == "https://example.com/dynamic.json":
@@ -116,6 +131,34 @@ def test_registry_with_retriever_and_validation():
     dynamic_validator = validator_for(dynamic_schema, registry=registry)
     assert dynamic_validator.is_valid(123)
     assert not dynamic_validator.is_valid("test")
+
+
+def test_validator_for_uses_call_retriever_when_inline_root_adds_external_ref():
+    def retrieve(uri: str):
+        if uri == "urn:external":
+            return {"type": "string"}
+        raise KeyError(f"Schema not found: {uri}")
+
+    registry = Registry([("urn:seed", {"type": "integer"})])
+    schema = {
+        "type": "object",
+        "properties": {"value": {"$ref": "urn:external"}},
+        "required": ["value"],
+    }
+
+    validator = validator_for(schema, registry=registry, retriever=retrieve)
+    assert validator.is_valid({"value": "ok"})
+    assert not validator.is_valid({"value": 42})
+
+
+def test_validator_for_with_registry_accepts_equivalent_base_uri_with_empty_fragment():
+    registry = Registry([("urn:shared", {"type": "integer"})])
+    schema = {"$id": "urn:root", "$ref": "urn:shared"}
+
+    validator = validator_for(schema, registry=registry, base_uri="urn:root#")
+
+    assert validator.is_valid(1)
+    assert not validator.is_valid("x")
 
 
 def test_registry_error_propagation():

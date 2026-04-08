@@ -66,7 +66,10 @@ ENUM_KEY_DICT_512 = {member: idx for idx, member in enumerate(list(EnumKey)[::-1
 
 INT_FLOAT_LIST_4096 = [float(i) for i in range(4096)]
 DECIMAL_FRACTIONAL_LIST_2048 = [Decimal(f"{i}.{(i * 37) % 1000:03d}") for i in range(1, 2049)]
-DECIMAL_SPECIAL_LIST_2048 = [Decimal("NaN"), Decimal("Infinity"), Decimal("-Infinity")] * 682 + [Decimal("NaN"), Decimal("Infinity")]
+DECIMAL_SPECIAL_LIST_2048 = [Decimal("NaN"), Decimal("Infinity"), Decimal("-Infinity")] * 682 + [
+    Decimal("NaN"),
+    Decimal("Infinity"),
+]
 
 
 MIXED_NESTED = {
