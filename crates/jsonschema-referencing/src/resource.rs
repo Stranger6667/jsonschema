@@ -1,21 +1,8 @@
-use std::{
-    borrow::Cow,
-    sync::atomic::{AtomicPtr, Ordering},
-};
+use std::borrow::Cow;
 
 use serde_json::Value;
 
-use crate::{Anchor, Draft, Error, Resolved, Resolver, Segments};
-
-pub(crate) trait JsonSchemaResource {
-    fn contents(&self) -> &Value;
-    fn draft(&self) -> Draft;
-    fn id(&self) -> Option<&str> {
-        self.draft()
-            .id_of(self.contents())
-            .map(|id| id.trim_end_matches('#'))
-    }
-}
+use crate::{Draft, Error, Resolved, Resolver, Segments};
 
 /// An owned document with a concrete interpretation under a JSON Schema specification.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,19 +12,23 @@ pub struct Resource {
 }
 
 impl Resource {
+    #[inline]
     pub(crate) fn new(contents: Value, draft: Draft) -> Self {
         Self { contents, draft }
     }
+    #[inline]
     pub(crate) fn into_inner(self) -> (Draft, Value) {
         (self.draft, self.contents)
     }
     /// Resource contents.
     #[must_use]
+    #[inline]
     pub fn contents(&self) -> &Value {
         &self.contents
     }
     /// JSON Schema draft under which this contents is interpreted.
     #[must_use]
+    #[inline]
     pub fn draft(&self) -> Draft {
         self.draft
     }
@@ -45,6 +36,7 @@ impl Resource {
     ///
     /// Unknown `$schema` values are treated as `Draft::Unknown`.
     #[must_use]
+    #[inline]
     pub fn from_contents(contents: Value) -> Resource {
         Draft::default().detect(&contents).create_resource(contents)
     }
@@ -59,14 +51,17 @@ pub struct ResourceRef<'a> {
 
 impl<'a> ResourceRef<'a> {
     #[must_use]
+    #[inline]
     pub fn new(contents: &'a Value, draft: Draft) -> Self {
         Self { contents, draft }
     }
     #[must_use]
+    #[inline]
     pub fn contents(&self) -> &'a Value {
         self.contents
     }
     #[must_use]
+    #[inline]
     pub fn draft(&self) -> Draft {
         self.draft
     }
@@ -75,81 +70,29 @@ impl<'a> ResourceRef<'a> {
     ///
     /// Unknown `$schema` values are treated as `Draft::Unknown`.
     #[must_use]
+    #[inline]
     pub fn from_contents(contents: &'a Value) -> Self {
         let draft = Draft::default().detect(contents);
         Self::new(contents, draft)
     }
 
     #[must_use]
-    pub fn id(&self) -> Option<&str> {
-        JsonSchemaResource::id(self)
-    }
-}
-
-impl JsonSchemaResource for ResourceRef<'_> {
-    fn contents(&self) -> &Value {
-        self.contents
-    }
-
-    fn draft(&self) -> Draft {
-        self.draft
-    }
-}
-
-/// A pointer to a pinned resource.
-pub(crate) struct InnerResourcePtr {
-    contents: AtomicPtr<Value>,
-    draft: Draft,
-}
-
-impl Clone for InnerResourcePtr {
-    fn clone(&self) -> Self {
-        Self {
-            contents: AtomicPtr::new(self.contents.load(Ordering::Relaxed)),
-            draft: self.draft,
-        }
-    }
-}
-
-impl std::fmt::Debug for InnerResourcePtr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("InnerResourcePtr")
-            .field("contents", self.contents())
-            .field("draft", &self.draft)
-            .finish()
-    }
-}
-
-impl InnerResourcePtr {
-    pub(crate) fn new(contents: *const Value, draft: Draft) -> Self {
-        Self {
-            contents: AtomicPtr::new(contents.cast_mut()),
-            draft,
-        }
-    }
-
-    #[allow(unsafe_code)]
-    pub(crate) fn contents(&self) -> &Value {
-        // SAFETY: The pointer is valid as long as the registry exists
-        unsafe { &*self.contents.load(Ordering::Relaxed) }
-    }
-
     #[inline]
-    pub(crate) fn draft(&self) -> Draft {
+    pub fn id(&self) -> Option<&str> {
         self.draft
+            .id_of(self.contents)
+            .map(|id| id.trim_end_matches('#'))
     }
+}
 
-    pub(crate) fn anchors(&self) -> impl Iterator<Item = Anchor> + '_ {
-        self.draft().anchors(self.contents())
-    }
-
-    pub(crate) fn pointer<'r>(
-        &'r self,
+impl<'r> ResourceRef<'r> {
+    pub(crate) fn pointer(
+        self,
         pointer: &str,
         mut resolver: Resolver<'r>,
     ) -> Result<Resolved<'r>, Error> {
         // INVARIANT: Pointer always starts with `/`
-        let mut contents = self.contents();
+        let mut contents = self.contents;
         let mut segments = Segments::new();
         let original_pointer = pointer;
         let pointer = percent_encoding::percent_decode_str(&pointer[1..])
@@ -176,27 +119,17 @@ impl InnerResourcePtr {
                 segments.push(segment);
             }
             let last = &resolver;
-            let new_resolver = self.draft().maybe_in_subresource(
+            let new_resolver = self.draft.maybe_in_subresource(
                 &segments,
                 &resolver,
-                &InnerResourcePtr::new(contents, self.draft()),
+                ResourceRef::new(contents, self.draft),
             )?;
             if new_resolver != *last {
                 segments = Segments::new();
             }
             resolver = new_resolver;
         }
-        Ok(Resolved::new(contents, resolver, self.draft()))
-    }
-}
-
-impl JsonSchemaResource for InnerResourcePtr {
-    fn contents(&self) -> &Value {
-        self.contents()
-    }
-
-    fn draft(&self) -> Draft {
-        self.draft
+        Ok(Resolved::new(contents, resolver, self.draft))
     }
 }
 
@@ -251,9 +184,9 @@ pub fn unescape_segment(mut segment: &str) -> Cow<'_, str> {
 
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, sync::Arc};
+    use std::error::Error;
 
-    use crate::{resource::InnerResourcePtr, Draft, Registry};
+    use crate::{Draft, Registry};
 
     use super::unescape_segment;
     use serde_json::json;
@@ -292,7 +225,7 @@ mod tests {
         assert_eq!(unescaped, double_replaced, "Failed for: {input}");
     }
 
-    fn create_test_registry() -> Registry {
+    fn create_test_registry() -> Registry<'static> {
         let schema = Draft::Draft202012.create_resource(json!({
             "type": "object",
             "properties": {
@@ -300,7 +233,11 @@ mod tests {
                 "bar": { "type": "array", "items": [{"type": "number"}, {"type": "boolean"}] }
             }
         }));
-        Registry::try_new("http://example.com", schema).expect("Invalid resources")
+        Registry::new()
+            .add("http://example.com", schema)
+            .expect("Invalid resources")
+            .prepare()
+            .expect("Invalid resources")
     }
 
     #[test]
@@ -311,38 +248,23 @@ mod tests {
                 "foo": { "type": "string" }
             }
         }));
-        let registry =
-            Registry::try_new("http://example.com", schema.clone()).expect("Invalid resources");
+        let registry = Registry::new()
+            .add("http://example.com", &schema)
+            .expect("Invalid resources")
+            .prepare()
+            .expect("Invalid resources");
         let resolver = registry
-            .try_resolver("http://example.com")
-            .expect("Invalid base URI");
+            .resolver(crate::uri::from_str("http://example.com").expect("Invalid base URI"));
 
         let resolved = resolver.lookup("#").expect("Lookup failed");
         assert_eq!(resolved.contents(), schema.contents());
     }
 
     #[test]
-    fn test_inner_resource_ptr_debug() {
-        let value = Arc::pin(json!({
-            "foo": "bar",
-            "number": 42
-        }));
-
-        let ptr = InnerResourcePtr::new(std::ptr::addr_of!(*value), Draft::Draft202012);
-
-        let expected = format!(
-            "InnerResourcePtr {{ contents: {:?}, draft: Draft202012 }}",
-            *value
-        );
-        assert_eq!(format!("{ptr:?}"), expected);
-    }
-
-    #[test]
     fn test_percent_encoded_non_utf8() {
         let registry = create_test_registry();
         let resolver = registry
-            .try_resolver("http://example.com")
-            .expect("Invalid base URI");
+            .resolver(crate::uri::from_str("http://example.com").expect("Invalid base URI"));
 
         let result = resolver.lookup("#/%FF");
         let error = result.expect_err("Should fail");
@@ -357,8 +279,7 @@ mod tests {
     fn test_array_index_as_string() {
         let registry = create_test_registry();
         let resolver = registry
-            .try_resolver("http://example.com")
-            .expect("Invalid base URI");
+            .resolver(crate::uri::from_str("http://example.com").expect("Invalid base URI"));
 
         let result = resolver.lookup("#/properties/bar/items/one");
         let error = result.expect_err("Should fail");
@@ -373,8 +294,7 @@ mod tests {
     fn test_array_index_out_of_bounds() {
         let registry = create_test_registry();
         let resolver = registry
-            .try_resolver("http://example.com")
-            .expect("Invalid base URI");
+            .resolver(crate::uri::from_str("http://example.com").expect("Invalid base URI"));
 
         let result = resolver.lookup("#/properties/bar/items/2");
         assert_eq!(
@@ -387,8 +307,7 @@ mod tests {
     fn test_unknown_property() {
         let registry = create_test_registry();
         let resolver = registry
-            .try_resolver("http://example.com")
-            .expect("Invalid base URI");
+            .resolver(crate::uri::from_str("http://example.com").expect("Invalid base URI"));
 
         let result = resolver.lookup("#/properties/baz");
         assert_eq!(

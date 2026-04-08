@@ -1,6 +1,5 @@
 from .. import JSONType
 
-
 def clone(object: JSONType) -> JSONType:
     """Deep-clone a JSON-compatible Python object.
 

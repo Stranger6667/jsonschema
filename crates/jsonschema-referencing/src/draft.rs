@@ -1,16 +1,9 @@
-use serde_json::Value;
-use subresources::SubresourceIterator;
-
-mod draft201909;
-mod draft4;
-mod draft6;
-mod draft7;
-mod ids;
-mod subresources;
+use serde_json::{Map, Value};
 
 use crate::{
-    anchors,
-    resource::InnerResourcePtr,
+    anchor,
+    path::JsonPointerSegment,
+    spec::{self, draft201909, draft202012, draft4, draft6, draft7, ObjectAnalysis},
     vocabularies::{VocabularySet, DRAFT_2019_09_VOCABULARIES, DRAFT_2020_12_VOCABULARIES},
     Anchor, Error, Resolver, Resource, ResourceRef, Segments,
 };
@@ -38,10 +31,12 @@ pub enum Draft {
 }
 
 impl Draft {
+    /// Wraps `contents` in a [`Resource`] tagged with this draft version.
     #[must_use]
     pub fn create_resource(self, contents: Value) -> Resource {
         Resource::new(contents, self)
     }
+    /// Wraps a reference to `contents` in a [`ResourceRef`] tagged with this draft version.
     #[must_use]
     pub fn create_resource_ref(self, contents: &Value) -> ResourceRef<'_> {
         ResourceRef::new(contents, self)
@@ -71,6 +66,9 @@ impl Draft {
     }
     /// Detect what specification could be applied to the given contents.
     ///
+    /// Inspects the `$schema` field and returns the matching draft. If no `$schema`
+    /// field is present, returns `self` unchanged — the caller's current draft is preserved.
+    ///
     /// Returns `Draft::Unknown` for custom/unknown `$schema` values.
     /// Validation of custom meta-schemas happens during registry building.
     #[must_use]
@@ -87,11 +85,14 @@ impl Draft {
     }
     pub(crate) fn id_of(self, contents: &Value) -> Option<&str> {
         match self {
-            Draft::Draft4 => ids::legacy_id(contents),
-            Draft::Draft6 | Draft::Draft7 => ids::legacy_dollar_id(contents),
-            Draft::Draft201909 | Draft::Draft202012 | Draft::Unknown => ids::dollar_id(contents),
+            Draft::Draft4 => spec::ids::legacy_id(contents),
+            Draft::Draft6 | Draft::Draft7 => spec::ids::legacy_dollar_id(contents),
+            Draft::Draft201909 | Draft::Draft202012 | Draft::Unknown => {
+                spec::ids::dollar_id(contents)
+            }
         }
     }
+
     pub fn subresources_of(self, contents: &Value) -> impl Iterator<Item = &Value> {
         match contents.as_object() {
             Some(schema) => {
@@ -100,26 +101,52 @@ impl Draft {
                     Draft::Draft6 => draft6::object_iter,
                     Draft::Draft7 => draft7::object_iter,
                     Draft::Draft201909 => draft201909::object_iter,
-                    Draft::Draft202012 | Draft::Unknown => subresources::object_iter,
+                    Draft::Draft202012 | Draft::Unknown => draft202012::object_iter,
                 };
-                SubresourceIterator::Object(schema.iter().flat_map(object_iter))
+                draft202012::ChildIter::Object(schema.iter().flat_map(object_iter))
             }
-            None => SubresourceIterator::Empty,
+            None => draft202012::ChildIter::Empty,
         }
     }
-    pub(crate) fn anchors(self, contents: &Value) -> impl Iterator<Item = Anchor> {
+    pub(crate) fn analyze_object(self, contents: &Map<String, Value>) -> ObjectAnalysis<'_> {
         match self {
-            Draft::Draft4 => anchors::legacy_anchor_in_id(self, contents),
-            Draft::Draft6 | Draft::Draft7 => anchors::legacy_anchor_in_dollar_id(self, contents),
-            Draft::Draft201909 => anchors::anchor_2019(self, contents),
-            Draft::Draft202012 | Draft::Unknown => anchors::anchor(self, contents),
+            Draft::Draft4 => spec::analyze_object_classic(contents, "id"),
+            Draft::Draft6 | Draft::Draft7 => spec::analyze_object_classic(contents, "$id"),
+            Draft::Draft201909 => spec::analyze_object_modern(contents, false),
+            Draft::Draft202012 | Draft::Unknown => spec::analyze_object_modern(contents, true),
+        }
+    }
+    pub(crate) fn walk_children<'a>(
+        self,
+        contents: &'a Map<String, Value>,
+        f: &mut impl FnMut(
+            &'a str,
+            Option<JsonPointerSegment<'a>>,
+            &'a Value,
+            Draft,
+        ) -> Result<(), Error>,
+    ) -> Result<(), Error> {
+        match self {
+            Draft::Draft4 => draft4::walk_children(contents, self, f),
+            Draft::Draft6 => draft6::walk_children(contents, self, f),
+            Draft::Draft7 => draft7::walk_children(contents, self, f),
+            Draft::Draft201909 => draft201909::walk_children(contents, self, f),
+            Draft::Draft202012 | Draft::Unknown => draft202012::walk_children(contents, self, f),
+        }
+    }
+    pub(crate) fn anchors(self, contents: &Value) -> impl Iterator<Item = Anchor<'_>> {
+        match self {
+            Draft::Draft4 => anchor::legacy_anchor_in_id(self, contents),
+            Draft::Draft6 | Draft::Draft7 => anchor::legacy_anchor_in_dollar_id(self, contents),
+            Draft::Draft201909 => anchor::anchor_2019(self, contents),
+            Draft::Draft202012 | Draft::Unknown => anchor::anchor(self, contents),
         }
     }
     pub(crate) fn maybe_in_subresource<'r>(
         self,
         segments: &Segments,
         resolver: &Resolver<'r>,
-        subresource: &InnerResourcePtr,
+        subresource: ResourceRef<'_>,
     ) -> Result<Resolver<'r>, Error> {
         match self {
             Draft::Draft4 => draft4::maybe_in_subresource(segments, resolver, subresource),
@@ -129,7 +156,7 @@ impl Draft {
                 draft201909::maybe_in_subresource(segments, resolver, subresource)
             }
             Draft::Draft202012 | Draft::Unknown => {
-                subresources::maybe_in_subresource(segments, resolver, subresource)
+                draft202012::maybe_in_subresource(segments, resolver, subresource)
             }
         }
     }

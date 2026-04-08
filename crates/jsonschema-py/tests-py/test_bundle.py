@@ -21,9 +21,7 @@ def test_bundle_single_external_ref():
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$ref": "https://example.com/person.json",
     }
-    registry = jsonschema_rs.Registry(
-        resources=[("https://example.com/person.json", PERSON_SCHEMA)]
-    )
+    registry = jsonschema_rs.Registry(resources=[("https://example.com/person.json", PERSON_SCHEMA)])
     bundled = jsonschema_rs.bundle(root, registry=registry)
     assert bundled["$ref"] == "https://example.com/person.json"  # must not be rewritten
     assert "https://example.com/person.json" in bundled["$defs"]
@@ -34,13 +32,58 @@ def test_bundle_validates_identically():
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$ref": "https://example.com/person.json",
     }
-    registry = jsonschema_rs.Registry(
-        resources=[("https://example.com/person.json", PERSON_SCHEMA)]
-    )
+    registry = jsonschema_rs.Registry(resources=[("https://example.com/person.json", PERSON_SCHEMA)])
     bundled = jsonschema_rs.bundle(root, registry=registry)
     validator = jsonschema_rs.validator_for(bundled)
     assert validator.is_valid({"name": "Alice"})
     assert not validator.is_valid({"age": 30})
+
+
+def test_bundle_with_registry_and_explicit_draft4_legacy_id_root():
+    root = {
+        "id": "urn:root",
+        "type": "object",
+        "properties": {"value": {"$ref": "urn:string"}},
+        "required": ["value"],
+    }
+    registry = jsonschema_rs.Registry(
+        resources=[("urn:string", {"type": "string"})],
+        draft=jsonschema_rs.Draft4,
+    )
+
+    bundled = jsonschema_rs.bundle(root, registry=registry, draft=jsonschema_rs.Draft4)
+
+    assert bundled["properties"]["value"]["$ref"] == "urn:string"
+    assert "urn:string" in bundled["definitions"]
+
+
+def test_bundle_uses_call_retriever_when_inline_root_adds_external_ref():
+    def retrieve(uri: str):
+        if uri == "urn:external":
+            return {"type": "string"}
+        raise KeyError(f"Schema not found: {uri}")
+
+    root = {
+        "type": "object",
+        "properties": {"value": {"$ref": "urn:external"}},
+        "required": ["value"],
+    }
+    registry = jsonschema_rs.Registry(resources=[("urn:seed", {"type": "integer"})])
+
+    bundled = jsonschema_rs.bundle(root, registry=registry, retriever=retrieve)
+
+    assert bundled["properties"]["value"]["$ref"] == "urn:external"
+    assert "urn:external" in bundled["$defs"]
+
+
+def test_bundle_with_registry_accepts_equivalent_base_uri_with_empty_fragment():
+    root = {"$id": "urn:root", "$ref": "urn:shared"}
+    registry = jsonschema_rs.Registry(resources=[("urn:shared", {"type": "integer"})])
+
+    bundled = jsonschema_rs.bundle(root, registry=registry, base_uri="urn:root#")
+
+    assert bundled["$ref"] == "urn:shared"
+    assert bundled["$defs"]["urn:shared"]["type"] == "integer"
 
 
 def test_bundle_unresolvable_raises():
@@ -53,9 +96,7 @@ def test_bundle_resolves_ref_with_nested_id_scope():
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {"A": {"$id": "https://example.com/A/", "$ref": "b.json"}},
     }
-    registry = jsonschema_rs.Registry(
-        resources=[("https://example.com/A/b.json", {"type": "integer"})]
-    )
+    registry = jsonschema_rs.Registry(resources=[("https://example.com/A/b.json", {"type": "integer"})])
     bundled = jsonschema_rs.bundle(root, registry=registry)
     assert "A" in bundled["$defs"]
     assert "https://example.com/A/b.json" in bundled["$defs"]

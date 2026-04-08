@@ -829,19 +829,11 @@ mod async_tests {
             }
         });
 
-        // Create registry with default async retriever
-        let registry = Registry::options()
-            .async_retriever(DefaultRetriever)
-            .build([(
-                "http://example.com/schema",
-                crate::Draft::Draft202012.create_resource(schema.clone()),
-            )])
-            .await
-            .expect("Registry creation failed");
-
-        let validator = crate::options()
-            .with_registry(registry)
+        let validator = crate::async_options()
+            .with_base_uri("http://example.com/schema")
+            .with_retriever(DefaultRetriever)
             .build(&schema)
+            .await
             .expect("Invalid schema");
 
         let valid = json!({"user": {"name": "John Doe"}});
@@ -860,12 +852,11 @@ mod async_tests {
             }
         });
 
-        let result = Registry::options()
+        let result = Registry::new()
             .async_retriever(DefaultRetriever)
-            .build([(
-                "http://example.com/schema",
-                crate::Draft::Draft202012.create_resource(schema),
-            )])
+            .add("http://example.com/schema", schema)
+            .expect("Resource should be accepted")
+            .async_prepare()
             .await;
 
         assert!(result.is_err());
@@ -903,18 +894,11 @@ mod async_tests {
             }
         });
 
-        let registry = Registry::options()
-            .async_retriever(DefaultRetriever)
-            .build([(
-                "http://example.com/schema",
-                crate::Draft::Draft202012.create_resource(schema.clone()),
-            )])
-            .await
-            .expect("Registry creation failed");
-
-        let validator = crate::options()
-            .with_registry(registry)
+        let validator = crate::async_options()
+            .with_base_uri("http://example.com/schema")
+            .with_retriever(DefaultRetriever)
             .build(&schema)
+            .await
             .expect("Invalid schema");
 
         let valid = json!({

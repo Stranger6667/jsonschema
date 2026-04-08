@@ -31,7 +31,7 @@ flame-custom method schema instance iterations="10000":
     @echo "Opening custom-{{method}}.svg in browser..."
     @xdg-open custom-{{method}}.svg 2>/dev/null || open custom-{{method}}.svg 2>/dev/null || echo "Please open custom-{{method}}.svg manually"
 
-# Profile with custom schema only (no instance needed for build/registry methods)
+# Profile with custom schema only (no instance needed for compile method)
 flame-schema method schema iterations="10000":
     CARGO_PROFILE_BENCH_DEBUG=true cargo flamegraph \
         -o schema-{{method}}.svg \
@@ -80,6 +80,8 @@ fast-invalid-iter-errors: (flame "fast-invalid" "iter_errors" "10000")
 fast-invalid-evaluate: (flame "fast-invalid" "evaluate" "10000")
 
 registry: (flame "citm" "registry" "1000")
+registry-owned: (flame "citm" "registry-owned" "1000")
+fhir-build: (flame "fhir" "build" "500")
 
 dhat-citm-build: (dhat "citm" "build" "10000")
 dhat-citm-is-valid: (dhat "citm" "is_valid" "10000")

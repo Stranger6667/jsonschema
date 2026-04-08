@@ -12,6 +12,7 @@ SUITE_PATH = os.path.join(
     "../../jsonschema/tests/suite/annotations/tests",
 )
 
+
 def load_test_cases():
     cases = []
     for filename in sorted(os.listdir(SUITE_PATH)):
