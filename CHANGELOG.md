@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **CLI**: Accept multiple values after `-i`/`--instance` (e.g. `jsonschema validate schema.json -i *.json`). [#1085](https://github.com/Stranger6667/jsonschema/issues/1085)
+
 ### Breaking Changes
 
 - Registry construction now uses an explicit prepare step, and `with_registry` now borrows the prepared registry. `ValidationOptions::with_resource` and `ValidationOptions::with_resources` were removed in favor of building a `Registry` first. See the [Migration Guide](MIGRATION.md) for the details.
