@@ -5,6 +5,7 @@
 ### Added
 
 - Accept JSON strings in `validator_cls_for`.
+- `Resolver` and `Resolved` types for programmatic schema resolution.
 
 ### Performance
 

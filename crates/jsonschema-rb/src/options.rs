@@ -475,7 +475,7 @@ pub fn make_options_from_kwargs(
                     "registry must be a JSONSchema::Registry instance",
                 )
             })?;
-            registry = Some(&reg.inner);
+            registry = Some(reg.inner.as_ref());
 
             if !retriever_was_provided && retriever.is_none() {
                 if let Some(registry_retriever_value) = reg.retriever_value(ruby) {
