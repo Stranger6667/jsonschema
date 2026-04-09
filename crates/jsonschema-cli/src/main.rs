@@ -37,7 +37,7 @@ struct Cli {
     // Hidden top-level flags for deprecated flat invocation (emits a warning, use `check` instead)
     #[arg(hide = true, value_parser)]
     schema: Option<PathBuf>,
-    #[arg(hide = true, short = 'i', long = "instance")]
+    #[arg(hide = true, short = 'i', long = "instance", num_args = 1..)]
     instances: Option<Vec<PathBuf>>,
     #[arg(hide = true, short = 'd', long = "draft", value_enum)]
     draft: Option<Draft>,
@@ -134,8 +134,8 @@ struct ValidateArgs {
     #[arg(value_parser)]
     schema: PathBuf,
 
-    /// A path to a JSON instance (i.e. filename.json) to validate (may be specified multiple times).
-    #[arg(short = 'i', long = "instance")]
+    /// A path to a JSON instance (i.e. filename.json) to validate. May be specified multiple times or with multiple values after a single flag (e.g. `-i a.json b.json`).
+    #[arg(short = 'i', long = "instance", num_args = 1..)]
     instances: Option<Vec<PathBuf>>,
 
     /// Which JSON Schema draft to enforce.

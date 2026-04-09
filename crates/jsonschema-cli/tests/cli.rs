@@ -156,6 +156,32 @@ fn test_multiple_instances() {
 }
 
 #[test]
+fn test_multiple_instances_single_flag() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"type": "object", "properties": {"name": {"type": "string"}}}"#,
+    );
+    let instance1 = create_temp_file(&dir, "instance1.json", r#"{"name": "John Doe"}"#);
+    let instance2 = create_temp_file(&dir, "instance2.json", r#"{"name": 123}"#);
+
+    let mut cmd = cli();
+    cmd.arg("validate")
+        .arg(&schema)
+        .arg("--instance")
+        .arg(&instance1)
+        .arg(&instance2);
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    let sanitized = sanitize_output(
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        &[&instance1, &instance2],
+    );
+    assert_snapshot!(sanitized);
+}
+
+#[test]
 fn test_no_instances() {
     let dir = tempdir().unwrap();
     let schema = create_temp_file(&dir, "schema.json", r#"{"type": "object"}"#);

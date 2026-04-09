@@ -1,0 +1,7 @@
+---
+source: crates/jsonschema-cli/tests/cli.rs
+expression: sanitized
+---
+{FILE_1} - VALID
+{FILE_2} - INVALID. Errors:
+1. 123 is not of type "string"
