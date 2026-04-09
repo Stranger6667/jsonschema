@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Accept JSON strings in `validator_cls_for`.
+
 ### Performance
 
 - Avoid registry clones and document clones during validator construction. This improves real-world schema compilation by roughly 10-20% in internal benchmarks.

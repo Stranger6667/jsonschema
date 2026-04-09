@@ -22,8 +22,8 @@ use magnus::{
     prelude::*,
     scan_args::scan_args,
     value::{Lazy, ReprValue},
-    DataTypeFunctions, Error, Exception, ExceptionClass, RClass, RHash, RModule, RObject, Ruby,
-    Value,
+    DataTypeFunctions, Error, Exception, ExceptionClass, RClass, RHash, RModule, RObject, RString,
+    Ruby, Value,
 };
 use referencing::unescape_segment;
 use std::{
@@ -804,6 +804,24 @@ fn validator_cls_for(ruby: &Ruby, schema: Value) -> Result<RClass, Error> {
     let draft = if let Some(hash) = RHash::from_value(schema) {
         if let Ok(uri) = hash.aref::<_, String>(ruby.str_new("$schema")) {
             jsonschema::Draft::from_schema_uri(&uri)
+        } else {
+            jsonschema::Draft::default()
+        }
+    } else if let Some(rstring) = RString::from_value(schema) {
+        #[allow(unsafe_code)]
+        let bytes = unsafe { rstring.as_slice() };
+        let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|e| {
+            Error::new(
+                ruby.exception_arg_error(),
+                format!("Invalid JSON string: {e}"),
+            )
+        })?;
+        if let serde_json::Value::Object(map) = &value {
+            if let Some(serde_json::Value::String(s)) = map.get("$schema") {
+                jsonschema::Draft::from_schema_uri(s)
+            } else {
+                jsonschema::Draft::default()
+            }
         } else {
             jsonschema::Draft::default()
         }

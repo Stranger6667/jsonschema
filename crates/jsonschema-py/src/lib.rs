@@ -1527,6 +1527,14 @@ fn parse_schema_str(schema: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
 }
 
 fn detect_draft(schema: &Bound<'_, PyAny>) -> PyResult<Draft> {
+    if let Ok(dict) = schema.cast::<PyDict>() {
+        if let Ok(Some(val)) = dict.get_item("$schema") {
+            if let Ok(s) = val.extract::<&str>() {
+                return Ok(Draft::from_schema_uri(s));
+            }
+        }
+        return Ok(Draft::default());
+    }
     let value = parse_schema_str(schema)?;
     if let serde_json::Value::Object(map) = &value {
         if let Some(serde_json::Value::String(s)) = map.get("$schema") {

@@ -17,9 +17,12 @@ from jsonschema_rs import (
         # No $schema defaults to Draft202012
         ({"type": "string"}, Draft202012Validator),
         ({}, Draft202012Validator),
-        # Boolean schemas (no $schema) → Draft202012
+        # Non-dict/non-string inputs → Draft202012
         (True, Draft202012Validator),
         (False, Draft202012Validator),
+        (None, Draft202012Validator),
+        (42, Draft202012Validator),
+        ([], Draft202012Validator),
         # Draft 4 - both HTTP and HTTPS, with and without trailing #
         ({"$schema": "http://json-schema.org/draft-04/schema#"}, Draft4Validator),
         ({"$schema": "https://json-schema.org/draft-04/schema#"}, Draft4Validator),
