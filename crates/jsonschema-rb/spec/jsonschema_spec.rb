@@ -225,13 +225,37 @@ RSpec.describe JSONSchema do
       expect(JSONSchema.validator_cls_for(schema)).to eq(JSONSchema::Draft202012Validator)
     end
 
-    it "defaults to Draft202012Validator for boolean schema" do
-      expect(JSONSchema.validator_cls_for(true)).to eq(JSONSchema::Draft202012Validator)
+    [true, false, nil, 42, []].each do |input|
+      it "defaults to Draft202012Validator for #{input.inspect}" do
+        expect(JSONSchema.validator_cls_for(input)).to eq(JSONSchema::Draft202012Validator)
+      end
     end
 
     it "rejects keyword arguments" do
       expect { JSONSchema.validator_cls_for({ "type" => "string" }, draft: :draft7) }
         .to raise_error(ArgumentError)
+    end
+
+    it "detects draft from a JSON string without $schema" do
+      expect(JSONSchema.validator_cls_for('{"type":"string"}')).to eq(JSONSchema::Draft202012Validator)
+    end
+
+    {
+      "http://json-schema.org/draft-04/schema#" => JSONSchema::Draft4Validator,
+      "http://json-schema.org/draft-06/schema#" => JSONSchema::Draft6Validator,
+      "http://json-schema.org/draft-07/schema#" => JSONSchema::Draft7Validator,
+      "https://json-schema.org/draft/2019-09/schema" => JSONSchema::Draft201909Validator,
+      "https://json-schema.org/draft/2020-12/schema" => JSONSchema::Draft202012Validator
+    }.each do |schema_uri, expected_cls|
+      it "returns #{expected_cls} for JSON string with $schema: #{schema_uri.inspect}" do
+        schema_str = "{\"$schema\":\"#{schema_uri}\"}"
+        expect(JSONSchema.validator_cls_for(schema_str)).to eq(expected_cls)
+      end
+    end
+
+    it "raises ArgumentError for invalid JSON string" do
+      expect { JSONSchema.validator_cls_for("not valid json") }
+        .to raise_error(ArgumentError, /Invalid JSON string/)
     end
   end
 end
