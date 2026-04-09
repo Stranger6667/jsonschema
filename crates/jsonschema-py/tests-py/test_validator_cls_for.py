@@ -59,3 +59,23 @@ def test_no_meta_validation():
     assert cls is Draft7Validator
     with pytest.raises(jsonschema_rs.ValidationError):
         cls(schema)
+
+
+@pytest.mark.parametrize(
+    ["schema_str", "expected_cls"],
+    [
+        ('{"type": "string"}', Draft202012Validator),
+        ('{"$schema": "http://json-schema.org/draft-04/schema#", "type": "string"}', Draft4Validator),
+        ('{"$schema": "http://json-schema.org/draft-06/schema#"}', Draft6Validator),
+        ('{"$schema": "http://json-schema.org/draft-07/schema#"}', Draft7Validator),
+        ('{"$schema": "https://json-schema.org/draft/2019-09/schema"}', Draft201909Validator),
+        ('{"$schema": "https://json-schema.org/draft/2020-12/schema"}', Draft202012Validator),
+    ],
+)
+def test_draft_detection_from_string(schema_str, expected_cls):
+    assert validator_cls_for(schema_str) is expected_cls
+
+
+def test_invalid_string_raises():
+    with pytest.raises(ValueError, match="Invalid string"):
+        validator_cls_for("not valid json")
