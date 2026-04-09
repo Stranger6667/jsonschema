@@ -475,4 +475,6 @@ jobs:
           make_latest: false
           draft: true
           name: "[Python] Release ${{ env.version }}"
-          files: dist-pyodide/*
+          files: |
+            dist/*
+            dist-pyodide/*
