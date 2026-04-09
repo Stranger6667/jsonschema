@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Compilation error on `wasm32` targets. [#1093](https://github.com/Stranger6667/jsonschema/issues/1093)
+
 ## [0.45.1] - 2026-04-06
 
 ### Fixed

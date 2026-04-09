@@ -18,6 +18,7 @@ env:
   PACKAGE_NAME: jsonschema_rs
   PYTHON_ABI_VERSION: "3.10"
   PYPY_VERSION: "pypy3.11"
+  PYODIDE_RUST_TOOLCHAIN: "nightly-2025-02-01"
 
 jobs:
   sdist:
@@ -388,6 +389,45 @@ jobs:
           name: ${{ matrix.artifact }}
           path: dist
 
+  pyodide:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          # nightly-2025-02-01 = rustc 1.86-nightly; 1.87+ is incompatible with pyodide as of now
+          toolchain: ${{ env.PYODIDE_RUST_TOOLCHAIN }}
+          components: rust-src
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: |
+          pip install "pyodide-build>=0.28.0"
+          echo EMSCRIPTEN_VERSION=$(pyodide config get emscripten_version) >> $GITHUB_ENV
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSCRIPTEN_VERSION }}
+      - name: Install Pyodide Rust sysroot
+        run: |
+          toolchain_root=$(rustup run "${{ env.PYODIDE_RUST_TOOLCHAIN }}" rustc --print sysroot)
+          rustlib="$toolchain_root/lib/rustlib"
+          sysroot_tag="emcc-${EMSCRIPTEN_VERSION}_${{ env.PYODIDE_RUST_TOOLCHAIN }}"
+          curl -fsSL --retry 5 --retry-all-errors \
+            -o "/tmp/${sysroot_tag}.tar.bz2" \
+            "https://github.com/pyodide/rust-emscripten-wasm-eh-sysroot/releases/download/${sysroot_tag}/${sysroot_tag}.tar.bz2"
+          tar -xjf "/tmp/${sysroot_tag}.tar.bz2" --directory="$rustlib"
+      - run: pyodide build
+        working-directory: crates/jsonschema-py
+        env:
+          RUSTUP_TOOLCHAIN: ${{ env.PYODIDE_RUST_TOOLCHAIN }}
+          RUSTFLAGS: "-C link-arg=-sSIDE_MODULE=2 -Z link-native-libraries=no -Z emscripten-wasm-eh"
+      - name: Upload wheels
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheel-pyodide
+          if-no-files-found: error
+          path: crates/jsonschema-py/dist
+
   release:
     name: Release
     runs-on: ubuntu-24.04
@@ -403,6 +443,7 @@ jobs:
       - macos-freethreaded
       - windows-freethreaded
       - pypy
+      - pyodide
     if: "startsWith(github.ref, 'refs/tags/')"
     permissions:
       contents: write
@@ -410,10 +451,16 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           path: all
-      - name: Merge files
+      - name: Separate pyodide wheel from the rest
         run: |
-          mkdir dist
-          mv all/*/* dist
+          mkdir dist dist-pyodide
+          for dir in all/*/; do
+            if [[ "$dir" == *"pyodide"* ]]; then
+              cp "$dir"* dist-pyodide/
+            else
+              cp "$dir"* dist/
+            fi
+          done
       - name: Publish distribution package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
@@ -428,3 +475,4 @@ jobs:
           make_latest: false
           draft: true
           name: "[Python] Release ${{ env.version }}"
+          files: dist-pyodide/*
