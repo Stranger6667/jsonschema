@@ -13,6 +13,7 @@ use std::{
 };
 
 use email::EmailOptions;
+#[cfg(not(target_arch = "wasm32"))]
 use http::HttpOptions;
 use jsonschema::{paths::LocationSegment, Draft};
 use pyo3::{
@@ -32,6 +33,7 @@ extern crate pyo3_built;
 mod canonical;
 mod clone;
 mod email;
+#[cfg(not(target_arch = "wasm32"))]
 mod http;
 mod regex;
 mod registry;
@@ -956,6 +958,7 @@ fn make_options<'a>(
         });
         options = options.with_email_options(email_opts);
     }
+    #[cfg(not(target_arch = "wasm32"))]
     if let Some(http_options) = http_options {
         let opts = http_options.extract::<HttpOptions>().map_err(|_| {
             exceptions::PyTypeError::new_err("http_options must be an instance of HttpOptions")
@@ -977,6 +980,12 @@ fn make_options<'a>(
         options = options.with_http_options(&http_opts).map_err(|e| {
             exceptions::PyRuntimeError::new_err(format!("Failed to configure HTTP options: {e}"))
         })?;
+    }
+    #[cfg(target_arch = "wasm32")]
+    if http_options.is_some() {
+        return Err(exceptions::PyValueError::new_err(
+            "http_options is not supported on WebAssembly targets (the built-in HTTP retriever is unavailable); use a custom retriever= instead",
+        ));
     }
     if let Some(keywords) = keywords {
         for (name, callback) in keywords.iter() {
@@ -2111,6 +2120,7 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<FancyRegexOptions>()?;
     module.add_class::<RegexOptions>()?;
     module.add_class::<EmailOptions>()?;
+    #[cfg(not(target_arch = "wasm32"))]
     module.add_class::<HttpOptions>()?;
     module.add("ValidationErrorKind", py.get_type::<ValidationErrorKind>())?;
     module.add("Draft4", DRAFT4)?;

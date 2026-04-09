@@ -17,6 +17,7 @@ defaults:
 env:
   PACKAGE_NAME: jsonschema_rs
   PYTHON_ABI_VERSION: "3.10"
+  PYODIDE_RUST_TOOLCHAIN: "nightly-2025-02-01"
 
 jobs:
   wheel-smoke-test:
@@ -73,3 +74,38 @@ jobs:
           target: aarch64
           manylinux: 2_28
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
+
+  pyodide-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    name: Verify pyodide build (wasm32-unknown-emscripten)
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          # nightly-2025-02-01 = rustc 1.86-nightly; 1.87+ is incompatible with pyodide as of now
+          toolchain: ${{ env.PYODIDE_RUST_TOOLCHAIN }}
+          components: rust-src
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: |
+          pip install "pyodide-build>=0.28.0"
+          echo EMSCRIPTEN_VERSION=$(pyodide config get emscripten_version) >> $GITHUB_ENV
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSCRIPTEN_VERSION }}
+      - name: Install Pyodide Rust sysroot
+        run: |
+          toolchain_root=$(rustup run "${{ env.PYODIDE_RUST_TOOLCHAIN }}" rustc --print sysroot)
+          rustlib="$toolchain_root/lib/rustlib"
+          sysroot_tag="emcc-${EMSCRIPTEN_VERSION}_${{ env.PYODIDE_RUST_TOOLCHAIN }}"
+          curl -fsSL --retry 5 --retry-all-errors \
+            -o "/tmp/${sysroot_tag}.tar.bz2" \
+            "https://github.com/pyodide/rust-emscripten-wasm-eh-sysroot/releases/download/${sysroot_tag}/${sysroot_tag}.tar.bz2"
+          tar -xjf "/tmp/${sysroot_tag}.tar.bz2" --directory="$rustlib"
+      - run: pyodide build
+        working-directory: crates/jsonschema-py
+        env:
+          RUSTUP_TOOLCHAIN: ${{ env.PYODIDE_RUST_TOOLCHAIN }}
+          RUSTFLAGS: "-C link-arg=-sSIDE_MODULE=2 -Z link-native-libraries=no -Z emscripten-wasm-eh"
