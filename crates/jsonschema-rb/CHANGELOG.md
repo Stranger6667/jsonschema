@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Avoid registry clones and document clones during validator construction. This improves real-world schema compilation by roughly 10-20% in internal benchmarks.
+
 ## [0.45.1] - 2026-04-06
 
 ### Fixed
