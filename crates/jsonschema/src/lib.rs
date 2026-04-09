@@ -891,7 +891,7 @@ pub use http::HttpOptions;
 pub use keywords::custom::Keyword;
 pub use options::{EmailOptions, FancyRegex, PatternOptions, Regex, ValidationOptions};
 pub use referencing::{
-    Draft, Error as ReferencingError, Registry, RegistryBuilder, Resource, Retrieve, Uri,
+    uri, Draft, Error as ReferencingError, Registry, RegistryBuilder, Resource, Retrieve, Uri,
 };
 #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
 pub use retriever::{HttpRetriever, HttpRetrieverError};

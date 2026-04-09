@@ -451,7 +451,7 @@ fn to_ruby_error_value(
     into_ruby_error(ruby, error, root_instance, &message, mask)
 }
 
-fn referencing_error(ruby: &Ruby, message: String) -> Error {
+pub(crate) fn referencing_error(ruby: &Ruby, message: String) -> Error {
     let exc_class = ruby.get_inner(&REFERENCING_ERROR_CLASS);
     Error::new(exc_class, message)
 }
@@ -1236,7 +1236,7 @@ fn meta_is_valid(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
 
     let result = if let Some(registry) = registry {
         jsonschema::meta::options()
-            .with_registry(&registry.inner)
+            .with_registry(registry.inner.as_ref())
             .validate(&json_schema)
     } else {
         jsonschema::meta::validate(&json_schema)
@@ -1265,7 +1265,7 @@ fn meta_validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
 
     let result = if let Some(registry) = registry {
         jsonschema::meta::options()
-            .with_registry(&registry.inner)
+            .with_registry(registry.inner.as_ref())
             .validate(&json_schema)
     } else {
         jsonschema::meta::validate(&json_schema)
@@ -1459,6 +1459,12 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
 
     // Internal implementation detail for shared validator behavior.
     let _: Value = module.funcall("private_constant", ("Validator",))?;
+
+    module.const_set("Draft4", 4u8)?;
+    module.const_set("Draft6", 6u8)?;
+    module.const_set("Draft7", 7u8)?;
+    module.const_set("Draft201909", 19u8)?;
+    module.const_set("Draft202012", 20u8)?;
 
     evaluation::define_class(ruby, &module)?;
     registry::define_class(ruby, &module)?;

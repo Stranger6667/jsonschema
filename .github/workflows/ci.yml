@@ -46,6 +46,7 @@ jobs:
       - run: cargo update -p idna_adapter --precise 1.2.0
       - run: cargo update -p litemap --precise 0.7.4
       - run: cargo update -p zerofrom --precise 0.1.5
+      - run: cargo update -p indexmap --precise 2.13.0
       - run: cargo build -p jsonschema
 
   test-native:

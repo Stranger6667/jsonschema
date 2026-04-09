@@ -60,7 +60,7 @@ fn referencing_error_type(py: Python<'_>) -> PyResult<Bound<'_, PyType>> {
 }
 
 /// Convert a serde_json::Value to a Python object, properly handling arbitrary precision numbers
-fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
+pub(crate) fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
     match value {
         serde_json::Value::Null => Ok(py.None()),
         serde_json::Value::Bool(b) => Ok(pyo3::types::PyBool::new(py, *b)
@@ -283,7 +283,7 @@ fn create_referencing_error_object(py: Python<'_>, message: String) -> PyResult<
     Ok(obj.into())
 }
 
-fn referencing_error_pyerr(py: Python<'_>, message: String) -> PyResult<PyErr> {
+pub(crate) fn referencing_error_pyerr(py: Python<'_>, message: String) -> PyResult<PyErr> {
     let obj = create_referencing_error_object(py, message)?;
     Ok(PyErr::from_value(obj.into_bound(py)))
 }
@@ -892,7 +892,7 @@ fn make_options<'a>(
         options = options.with_retriever(Retriever { func });
     }
     if let Some(registry) = registry {
-        options = options.with_registry(&registry.inner);
+        options = options.with_registry(registry.inner.as_ref());
     }
     if let Some(base_uri) = base_uri {
         options = options.with_base_uri(base_uri);
@@ -2039,7 +2039,7 @@ mod meta {
         let schema = crate::ser::to_value(schema)?;
         let result = if let Some(registry) = registry {
             jsonschema::meta::options()
-                .with_registry(&registry.inner)
+                .with_registry(registry.inner.as_ref())
                 .validate(&schema)
         } else {
             jsonschema::meta::validate(&schema)
@@ -2088,7 +2088,7 @@ mod meta {
         let schema = crate::ser::to_value(schema)?;
         let result = if let Some(registry) = registry {
             jsonschema::meta::options()
-                .with_registry(&registry.inner)
+                .with_registry(registry.inner.as_ref())
                 .validate(&schema)
         } else {
             jsonschema::meta::validate(&schema)
@@ -2126,6 +2126,8 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<Draft202012Validator>()?;
     module.add_class::<PyEvaluation>()?;
     module.add_class::<registry::Registry>()?;
+    module.add_class::<registry::Resolver>()?;
+    module.add_class::<registry::Resolved>()?;
     module.add_class::<FancyRegexOptions>()?;
     module.add_class::<RegexOptions>()?;
     module.add_class::<EmailOptions>()?;
