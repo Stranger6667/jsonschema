@@ -1512,6 +1512,30 @@ fn bundle(
     }
 }
 
+fn parse_schema_str(schema: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
+    let obj_ptr = schema.as_ptr();
+    let object_type = unsafe { pyo3::ffi::Py_TYPE(obj_ptr) };
+    if unsafe { object_type == types::STR_TYPE } {
+        let mut str_size: pyo3::ffi::Py_ssize_t = 0;
+        let ptr = unsafe { PyUnicode_AsUTF8AndSize(obj_ptr, &raw mut str_size) };
+        let slice = unsafe { std::slice::from_raw_parts(ptr.cast::<u8>(), str_size as usize) };
+        serde_json::from_slice(slice)
+            .map_err(|error| PyValueError::new_err(format!("Invalid string: {error}")))
+    } else {
+        ser::to_value(schema)
+    }
+}
+
+fn detect_draft(schema: &Bound<'_, PyAny>) -> PyResult<Draft> {
+    let value = parse_schema_str(schema)?;
+    if let serde_json::Value::Object(map) = &value {
+        if let Some(serde_json::Value::String(s)) = map.get("$schema") {
+            return Ok(Draft::from_schema_uri(s));
+        }
+    }
+    Ok(Draft::default())
+}
+
 /// validator_cls_for(schema)
 ///
 /// Detect the JSON Schema draft for a schema and return the corresponding validator class.
@@ -1523,28 +1547,15 @@ fn bundle(
 ///     >>> validator = cls({"$schema": "http://json-schema.org/draft-07/schema#", "type": "string"})
 ///
 #[pyfunction]
-fn validator_cls_for(py: Python<'_>, schema: &Bound<'_, PyAny>) -> Py<PyType> {
-    let draft = if let Ok(dict) = schema.cast::<PyDict>() {
-        if let Ok(Some(val)) = dict.get_item("$schema") {
-            if let Ok(s) = val.extract::<&str>() {
-                Draft::from_schema_uri(s)
-            } else {
-                Draft::default()
-            }
-        } else {
-            Draft::default()
-        }
-    } else {
-        Draft::default()
-    };
-    let cls: Bound<'_, PyType> = match draft {
+fn validator_cls_for(py: Python<'_>, schema: &Bound<'_, PyAny>) -> PyResult<Py<PyType>> {
+    let cls: Bound<'_, PyType> = match detect_draft(schema)? {
         Draft::Draft4 => py.get_type::<Draft4Validator>(),
         Draft::Draft6 => py.get_type::<Draft6Validator>(),
         Draft::Draft7 => py.get_type::<Draft7Validator>(),
         Draft::Draft201909 => py.get_type::<Draft201909Validator>(),
         Draft::Draft202012 | Draft::Unknown | _ => py.get_type::<Draft202012Validator>(),
     };
-    cls.unbind()
+    Ok(cls.unbind())
 }
 
 fn validator_for_impl(
@@ -1563,17 +1574,7 @@ fn validator_for_impl(
     http_options: Option<&Bound<'_, PyAny>>,
     keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Validator> {
-    let obj_ptr = schema.as_ptr();
-    let object_type = unsafe { pyo3::ffi::Py_TYPE(obj_ptr) };
-    let schema = if unsafe { object_type == types::STR_TYPE } {
-        let mut str_size: pyo3::ffi::Py_ssize_t = 0;
-        let ptr = unsafe { PyUnicode_AsUTF8AndSize(obj_ptr, &raw mut str_size) };
-        let slice = unsafe { std::slice::from_raw_parts(ptr.cast::<u8>(), str_size as usize) };
-        serde_json::from_slice(slice)
-            .map_err(|error| PyValueError::new_err(format!("Invalid string: {error}")))?
-    } else {
-        ser::to_value(schema)?
-    };
+    let schema = parse_schema_str(schema)?;
     let options = make_options(
         draft,
         formats,

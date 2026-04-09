@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Accept JSON strings in `validator_cls_for`.
+
 ### Fixed
 
 - Compilation error on `wasm32` targets. [#1093](https://github.com/Stranger6667/jsonschema/issues/1093)
