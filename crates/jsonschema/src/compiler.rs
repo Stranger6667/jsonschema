@@ -854,14 +854,6 @@ pub(crate) fn resolve_base_uri(
     }
 }
 
-fn annotations_to_value(annotations: AHashMap<String, Value>) -> Arc<Value> {
-    let mut object = Map::with_capacity(annotations.len());
-    for (key, value) in annotations {
-        object.insert(key, value);
-    }
-    Arc::new(Value::Object(object))
-}
-
 fn validate_schema(draft: Draft, schema: &Value) -> Result<(), ValidationError<'static>> {
     // Boolean schemas are always valid per the spec, skip validation
     if schema.is_boolean() {
@@ -978,20 +970,15 @@ fn compile_without_cache<'a>(
                 // Older drafts ignore all other keywords if `$ref` is present
                 if let Some(reference) = schema.get("$ref") {
                     // Treat all keywords other than `$ref` as annotations
-                    let annotations: AHashMap<String, Value> = schema
+                    let annotations: Map<String, Value> = schema
                         .iter()
-                        .filter_map(|(k, v)| {
-                            if k.as_str() == "$ref" {
-                                None
-                            } else {
-                                Some((k.clone(), v.clone()))
-                            }
-                        })
+                        .filter(|(k, _)| k.as_str() != "$ref")
+                        .map(|(k, v)| (k.clone(), v.clone()))
                         .collect();
                     let annotations = if annotations.is_empty() {
                         None
                     } else {
-                        Some(annotations_to_value(annotations))
+                        Some(Arc::new(Value::Object(annotations)))
                     };
                     return if let Some(validator) =
                         keywords::ref_::compile_ref(ctx, schema, reference)
@@ -1006,7 +993,7 @@ fn compile_without_cache<'a>(
             }
 
             let mut validators = Vec::with_capacity(schema.len());
-            let mut annotations = AHashMap::new();
+            let mut annotations = Map::new();
             for (keyword, value) in schema {
                 // Check if this keyword is overridden, then check the standard definitions
                 if let Some(factory) = ctx.get_keyword_factory(keyword) {
@@ -1030,7 +1017,7 @@ fn compile_without_cache<'a>(
             let annotations = if annotations.is_empty() {
                 None
             } else {
-                Some(annotations_to_value(annotations))
+                Some(Arc::new(Value::Object(annotations)))
             };
             Ok(SchemaNode::from_keywords(ctx, validators, annotations))
         }
