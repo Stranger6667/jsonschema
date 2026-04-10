@@ -6,6 +6,7 @@
 
 - Accept JSON strings in `validator_cls_for`.
 - `Resolver` and `Resolved` types for programmatic schema resolution.
+- `dereference` function to recursively inline `$ref` references. [#422](https://github.com/Stranger6667/jsonschema/issues/422)
 
 ### Fixed
 

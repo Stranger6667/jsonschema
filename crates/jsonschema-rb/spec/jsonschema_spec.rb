@@ -785,7 +785,7 @@ RSpec.describe "Custom keywords" do
         def initialize(_parent_schema, _value, _schema_path); end
 
         define_method(:validate) do |instance|
-          raise domain_error.new("value", "must be positive") unless instance.is_a?(Integer) && instance > 0
+          raise domain_error.new("value", "must be positive") unless instance.is_a?(Integer) && instance.positive?
         end
       end
 

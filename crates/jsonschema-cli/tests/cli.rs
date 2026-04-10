@@ -1338,7 +1338,6 @@ fn test_http_options_with_external_ref() {
 
 #[test]
 fn test_http_options_ndjson_output() {
-    // Test that HTTP options are applied in validate_meta_schema_ndjson (line 276)
     let dir = tempdir().unwrap();
     let schema = create_temp_file(
         &dir,
@@ -1536,4 +1535,201 @@ fn test_bundle_missing_schema_file_prints_error_on_stderr() {
     assert!(!output.status.success());
     let sanitized = sanitize_output(String::from_utf8(output.stderr).unwrap(), &[&missing]);
     assert!(sanitized.contains("error: failed to read {FILE_1}:"));
+}
+
+#[test]
+fn test_dereference_no_external_refs() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type":"string"}"#);
+
+    let output = cli().arg("dereference").arg(&schema).output().unwrap();
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let dereferenced: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(dereferenced, serde_json::json!({"type": "string"}));
+}
+
+#[test]
+fn test_dereference_with_resource_flag() {
+    let dir = tempdir().unwrap();
+    let address = create_temp_file(
+        &dir,
+        "address.json",
+        r#"{"$id":"https://example.com/address.json","type":"object","properties":{"street":{"type":"string"}},"required":["street"]}"#,
+    );
+    let root = create_temp_file(
+        &dir,
+        "root.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":"https://example.com/address.json"}"#,
+    );
+
+    let resource_arg = format!("https://example.com/address.json={address}");
+    let output = cli()
+        .arg("dereference")
+        .arg(&root)
+        .arg("--resource")
+        .arg(&resource_arg)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let dereferenced: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    // $ref should be replaced with the inlined content; $schema sibling is merged in
+    assert_eq!(
+        dereferenced,
+        serde_json::json!({
+            "$id": "https://example.com/address.json",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {"street": {"type": "string"}},
+            "required": ["street"]
+        })
+    );
+}
+
+#[test]
+fn test_dereference_output_to_file() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type":"integer"}"#);
+    let out_path = dir
+        .path()
+        .join("dereferenced.json")
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let output = cli()
+        .arg("dereference")
+        .arg(&schema)
+        .arg("--output")
+        .arg(&out_path)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+
+    let written = fs::read_to_string(&out_path).unwrap();
+    let dereferenced: serde_json::Value = serde_json::from_str(&written).unwrap();
+    assert_eq!(dereferenced, serde_json::json!({"type": "integer"}));
+}
+
+#[test]
+fn test_dereference_bad_schema_file_prints_error_on_stderr() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", "not-json{{");
+    let output = cli().arg("dereference").arg(&schema).output().unwrap();
+    assert!(!output.status.success());
+    let sanitized = sanitize_output(String::from_utf8(output.stderr).unwrap(), &[&schema]);
+    assert!(sanitized.contains("error: failed to parse JSON from {FILE_1}:"));
+}
+
+#[test]
+fn test_dereference_missing_schema_file_prints_error_on_stderr() {
+    let dir = tempdir().unwrap();
+    let missing = dir.path().join("missing-schema.json");
+    let missing = missing.to_string_lossy().to_string();
+    let output = cli().arg("dereference").arg(&missing).output().unwrap();
+    assert!(!output.status.success());
+    let sanitized = sanitize_output(String::from_utf8(output.stderr).unwrap(), &[&missing]);
+    assert!(sanitized.contains("error: failed to read {FILE_1}:"));
+}
+
+#[test]
+fn test_dereference_unresolvable_ref_prints_error_on_stderr() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":"https://example.com/does-not-exist.json"}"#,
+    );
+    let output = cli().arg("dereference").arg(&schema).output().unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("does-not-exist.json"),
+        "expected URI in error, got: {stderr}"
+    );
+}
+
+#[test]
+fn test_dereference_missing_resource_file_prints_error_on_stderr() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":"https://example.com/ext.json"}"#,
+    );
+    let missing = dir.path().join("missing.json");
+    let missing_str = missing.to_str().unwrap().to_string();
+    let resource_arg = format!("https://example.com/ext.json={missing_str}");
+    let output = cli()
+        .arg("dereference")
+        .arg(&schema)
+        .arg("--resource")
+        .arg(&resource_arg)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let sanitized = sanitize_output(String::from_utf8(output.stderr).unwrap(), &[&missing_str]);
+    assert!(sanitized.contains("error: failed to read {FILE_1}:"));
+}
+
+#[test]
+fn test_dereference_with_insecure_flag_succeeds() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type":"string"}"#);
+    let output = cli()
+        .arg("dereference")
+        .arg(&schema)
+        .arg("--insecure")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let result: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(result, serde_json::json!({"type": "string"}));
+}
+
+#[test]
+fn test_dereference_invalid_resource_uri_prints_error_on_stderr() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type":"string"}"#);
+    let resource = create_temp_file(&dir, "resource.json", r#"{"type":"number"}"#);
+    let output = cli()
+        .arg("dereference")
+        .arg(&schema)
+        .arg("--resource")
+        .arg(format!(":::invalid={resource}"))
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(!stderr.is_empty(), "expected error on stderr");
+}
+
+#[test]
+fn test_dereference_resource_with_transitive_unresolvable_ref_prints_error_on_stderr() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":"https://example.com/middle.json"}"#,
+    );
+    let middle = create_temp_file(
+        &dir,
+        "middle.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/middle.json","$ref":"https://example.com/leaf.json"}"#,
+    );
+    let output = cli()
+        .arg("dereference")
+        .arg(&schema)
+        .arg("--resource")
+        .arg(format!("https://example.com/middle.json={middle}"))
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(!stderr.is_empty(), "expected error on stderr");
 }

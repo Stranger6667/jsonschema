@@ -864,6 +864,7 @@ pub mod canonical;
 pub(crate) mod compiler;
 mod content_encoding;
 mod content_media_type;
+pub(crate) mod dereferencer;
 mod ecma;
 pub mod error;
 mod evaluation;
@@ -1069,6 +1070,34 @@ pub fn bundle(schema: &Value) -> Result<Value, ReferencingError> {
     options().bundle(schema)
 }
 
+/// Dereference a JSON Schema by recursively replacing all `$ref` values
+/// with the schemas they point to.
+///
+/// Circular references are left in place as `$ref` strings.
+///
+/// For custom retriever, registry, draft, or base URI, use [`options()`] and call `.dereference()`.
+///
+/// # Errors
+///
+/// Returns an error if any `$ref` cannot be resolved (e.g. points to an
+/// external URI not present in the schema and no retriever is available).
+///
+/// # Example
+///
+/// ```rust
+/// use serde_json::json;
+///
+/// let schema = json!({
+///     "$defs": {"tag": {"type": "string"}},
+///     "properties": {"name": {"$ref": "#/$defs/tag"}}
+/// });
+/// let result = jsonschema::dereference(&schema).expect("dereference failed");
+/// assert_eq!(result["properties"]["name"]["type"], "string");
+/// ```
+pub fn dereference(schema: &Value) -> Result<Value, ReferencingError> {
+    options().dereference(schema)
+}
+
 /// Bundle a JSON Schema into a Compound Schema Document,
 /// using async retrieval for external references.
 ///
@@ -1082,6 +1111,19 @@ pub fn bundle(schema: &Value) -> Result<Value, ReferencingError> {
 #[cfg(feature = "resolve-async")]
 pub async fn async_bundle(schema: &Value) -> Result<Value, ReferencingError> {
     async_options().bundle(schema).await
+}
+
+/// Dereference a JSON Schema asynchronously.
+///
+/// Async counterpart to [`dereference`]. For custom resources or retrievers,
+/// use [`async_options()`] and call `.dereference()`.
+///
+/// # Errors
+///
+/// Returns an error if any `$ref` cannot be resolved.
+#[cfg(feature = "resolve-async")]
+pub async fn async_dereference(schema: &Value) -> Result<Value, ReferencingError> {
+    async_options().dereference(schema).await
 }
 
 /// Create a validator for the input schema with automatic draft detection and default options,

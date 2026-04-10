@@ -489,6 +489,26 @@ impl ValidationOptions<'_, Arc<dyn referencing::Retrieve>> {
         crate::bundler::bundle_with_options(self, schema)
     }
 
+    /// Dereference a JSON Schema by recursively replacing all `$ref` values
+    /// with the schemas they point to.
+    ///
+    /// Circular references are left in place as `$ref` strings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if draft detection fails, registry construction fails,
+    /// subresource scope resolution fails, or any `$ref` cannot be resolved.
+    ///
+    /// # Panics
+    ///
+    /// This method **must not** be called from within an async runtime if the schema contains
+    /// external references that require network requests, or it will panic when attempting to block.
+    /// Use `async_options` and its async `dereference` method for async contexts, or run this
+    /// in a separate blocking thread via `tokio::task::spawn_blocking`.
+    pub fn dereference(&self, schema: &Value) -> Result<Value, referencing::Error> {
+        crate::dereferencer::dereference_with_options(self, schema)
+    }
+
     pub(crate) fn draft_for(&self, contents: &Value) -> Result<Draft, referencing::Error> {
         // Preference:
         //  - Explicitly set
@@ -639,6 +659,17 @@ impl<'i> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>> {
     /// than 2019-09.
     pub async fn bundle(&self, schema: &Value) -> Result<Value, referencing::Error> {
         crate::bundler::bundle_with_options_async(self, schema).await
+    }
+
+    /// Dereference a JSON Schema using async retrieval for external references.
+    ///
+    /// Async counterpart to [`ValidationOptions::dereference`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any `$ref` cannot be resolved.
+    pub async fn dereference(&self, schema: &Value) -> Result<Value, referencing::Error> {
+        crate::dereferencer::dereference_with_options_async(self, schema).await
     }
 
     #[must_use]

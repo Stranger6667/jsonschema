@@ -88,6 +88,8 @@ enum Command {
     Validate(ValidateArgs),
     /// Bundle a JSON Schema into a Compound Schema Document.
     Bundle(BundleArgs),
+    /// Dereference a JSON Schema, inlining all $ref targets.
+    Dereference(DereferenceArgs),
 }
 
 #[derive(Args, Clone)]
@@ -193,6 +195,24 @@ struct BundleArgs {
     resources: Vec<(String, PathBuf)>,
 
     /// Write bundled output to FILE instead of stdout.
+    #[arg(short = 'o', long = "output")]
+    output: Option<PathBuf>,
+
+    #[command(flatten)]
+    http: HttpArgs,
+}
+
+#[derive(Args)]
+struct DereferenceArgs {
+    /// Path to the root JSON Schema file to dereference.
+    #[arg(value_parser)]
+    schema: PathBuf,
+
+    /// Register an external schema resource: URI=FILE (may be repeated).
+    #[arg(long = "resource", value_parser = parse_resource_pair)]
+    resources: Vec<(String, PathBuf)>,
+
+    /// Write dereferenced output to FILE instead of stdout.
     #[arg(short = 'o', long = "output")]
     output: Option<PathBuf>,
 
@@ -742,6 +762,71 @@ fn run_bundle(args: BundleArgs) -> ExitCode {
     }
 }
 
+fn run_dereference(args: DereferenceArgs) -> ExitCode {
+    let DereferenceArgs {
+        schema,
+        resources,
+        output,
+        http,
+    } = args;
+
+    let schema_json = match read_json(&schema) {
+        Ok(value) => value,
+        Err(error) => return fail_with_error(error),
+    };
+    let http_options = http.into_http_options();
+    let mut opts = match options_for_schema(&schema, http_options.as_ref()) {
+        Ok(value) => value,
+        Err(error) => return fail_with_error(error),
+    };
+
+    let mut registry = if let Some(http_opts) = http_options.as_ref() {
+        let retriever = match jsonschema::HttpRetriever::new(http_opts) {
+            Ok(retriever) => retriever,
+            Err(error) => return fail_with_error(error),
+        };
+        jsonschema::Registry::new().retriever(retriever)
+    } else {
+        jsonschema::Registry::new()
+    };
+    for (uri, path) in &resources {
+        let resource_json = match read_json(path) {
+            Ok(value) => value,
+            Err(error) => return fail_with_error(error),
+        };
+        registry = match registry.add(uri, resource_json) {
+            Ok(registry) => registry,
+            Err(error) => return fail_with_error(error),
+        };
+    }
+    let registry = match registry.prepare() {
+        Ok(registry) => registry,
+        Err(error) => return fail_with_error(error),
+    };
+    opts = opts.with_registry(&registry);
+
+    match opts.dereference(&schema_json) {
+        Ok(dereferenced) => {
+            let json = match serde_json::to_string_pretty(&dereferenced) {
+                Ok(s) => s,
+                Err(error) => return fail_with_error(error),
+            };
+            match output {
+                Some(path) => {
+                    if let Err(error) = std::fs::write(&path, &json) {
+                        return fail_with_error(format!("{}: {error}", path.display()));
+                    }
+                }
+                None => {
+                    println!("{json}");
+                }
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => fail_with_error(error),
+    }
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
@@ -753,6 +838,7 @@ fn main() -> ExitCode {
     match cli.command {
         Some(Command::Validate(args)) => run_validate(args),
         Some(Command::Bundle(args)) => run_bundle(args),
+        Some(Command::Dereference(args)) => run_dereference(args),
         None => {
             // Flat invocation is deprecated — emit a warning, then proceed as `validate`
             if let Some(schema) = cli.schema {
@@ -776,7 +862,7 @@ fn main() -> ExitCode {
                     },
                 })
             } else {
-                eprintln!("A schema argument is required. Use `jsonschema validate --help` or `jsonschema bundle --help`.");
+                eprintln!("A schema argument is required. Use `jsonschema validate --help`, `jsonschema bundle --help`, or `jsonschema dereference --help`.");
                 ExitCode::FAILURE
             }
         }
