@@ -170,6 +170,7 @@ impl Draft {
             | "additionalProperties"
             | "allOf"
             | "anyOf"
+            | "definitions"
             | "dependencies"
             | "enum"
             | "exclusiveMaximum"
