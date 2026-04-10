@@ -15,11 +15,12 @@ use crate::{
     paths::{Location, LocationSegment},
     types::{JsonType, JsonTypeSet},
     validator::Validate,
-    ValidationError, Validator,
+    ValidationError, Validator, ValidatorMap,
 };
 use ahash::{AHashMap, AHashSet};
 use referencing::{
-    uri, Draft, List, Registry, Resolved, Resolver, ResourceRef, Uri, Vocabulary, VocabularySet,
+    uri, write_escaped_str, Draft, List, Registry, Resolved, Resolver, ResourceRef, Uri,
+    Vocabulary, VocabularySet,
 };
 use serde_json::{Map, Value};
 use std::{cell::RefCell, rc::Rc, sync::Arc};
@@ -1046,4 +1047,129 @@ fn compile_without_cache<'a>(
             ))
         }
     }
+}
+
+/// Iteratively traverse a schema document and compile a [`Validator`] for every
+/// reachable subschema, keyed by URI-fragment JSON pointer.
+///
+/// Each subschema is compiled with its own fresh [`Context`] so that caches from
+/// sibling compilations do not interfere. Nodes that fail to compile (e.g.
+/// unresolvable `$ref`) are silently skipped.
+fn collect_validators<'a>(
+    config: &'a dyn CompilationOptions,
+    resolver: &Resolver<'a>,
+    vocabularies: &VocabularySet,
+    schema: &'a Value,
+    draft: Draft,
+) -> AHashMap<String, Validator> {
+    let mut validators: AHashMap<String, Validator> = AHashMap::new();
+    let mut stack: Vec<(&'a Value, String)> = vec![(schema, "#".to_string())];
+
+    while let Some((current, pointer)) = stack.pop() {
+        // Only Object and Bool are valid JSON schemas — skip compilation for everything else
+        if matches!(current, Value::Object(_) | Value::Bool(_)) {
+            let ctx = Context::new(
+                config,
+                resolver.clone(),
+                vocabularies.clone(),
+                draft,
+                Location::new(),
+            );
+            let resource_ref = ctx.as_resource_ref(current);
+            if let Ok(node) = compile(&ctx, resource_ref) {
+                // Store each sub-validator with the same draft as the top-level schema.
+                // Per-subschema draft detection is not performed here; subschemas that
+                // declare their own `$schema` will still compile correctly since the
+                // registry handles resolution, but their Validator::draft() will reflect
+                // the top-level draft.
+                validators.insert(pointer.clone(), Validator { root: node, draft });
+            }
+        }
+
+        match current {
+            Value::Object(obj) => {
+                for (key, value) in obj {
+                    let mut escaped = String::new();
+                    write_escaped_str(&mut escaped, key);
+                    stack.push((value, format!("{pointer}/{escaped}")));
+                }
+            }
+            Value::Array(arr) => {
+                for (idx, item) in arr.iter().enumerate() {
+                    stack.push((item, format!("{pointer}/{idx}")));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    validators
+}
+
+fn build_validator_map_with_registry<R>(
+    config: &ValidationOptions<'_, R>,
+    schema: &Value,
+    draft: Draft,
+    resource: ResourceRef<'_>,
+    registry: &Registry<'_>,
+) -> Result<ValidatorMap, ValidationError<'static>> {
+    let requested_base_uri = resolve_base_uri(config.base_uri.as_ref(), resource.id())?;
+    let base_uri = normalize_base_uri(registry, &requested_base_uri);
+    let vocabularies = registry.find_vocabularies(draft, schema);
+    let resolver = registry.resolver(base_uri);
+    let validators = collect_validators(config, &resolver, &vocabularies, schema, draft);
+    Ok(ValidatorMap { validators })
+}
+
+pub(crate) fn build_validator_map(
+    config: &ValidationOptions<'_>,
+    schema: &Value,
+) -> Result<ValidatorMap, ValidationError<'static>> {
+    let draft = config.draft_for(schema)?;
+    let resource = draft.create_resource_ref(schema);
+
+    if config.validate_schema {
+        validate_schema(draft, schema)?;
+    }
+
+    if let Some(registry) = config.registry {
+        let base_uri = resolve_base_uri(config.base_uri.as_ref(), resource.id())?;
+        let overlay = registry
+            .add(base_uri.as_str(), resource)?
+            .retriever(config.retriever.clone())
+            .draft(draft)
+            .prepare()?;
+        return build_validator_map_with_registry(config, schema, draft, resource, &overlay);
+    }
+
+    let (registry, _) = build_registry(config, draft, resource, resource.id())?;
+    build_validator_map_with_registry(config, schema, draft, resource, &registry)
+}
+
+#[cfg(feature = "resolve-async")]
+pub(crate) async fn build_validator_map_async(
+    config: &ValidationOptions<'_, Arc<dyn referencing::AsyncRetrieve>>,
+    schema: &Value,
+) -> Result<ValidatorMap, ValidationError<'static>> {
+    let draft = config.draft_for(schema).await?;
+    let resource_ref = draft.create_resource_ref(schema);
+
+    if config.validate_schema {
+        validate_schema(draft, schema)?;
+    }
+
+    if let Some(registry) = config.registry {
+        let base_uri = resolve_base_uri(config.base_uri.as_ref(), resource_ref.id())?;
+        let overlay = registry
+            .add(base_uri.as_str(), resource_ref)?
+            .async_retriever(config.retriever.clone())
+            .draft(draft)
+            .async_prepare()
+            .await?;
+        return build_validator_map_with_registry(config, schema, draft, resource_ref, &overlay);
+    }
+
+    let (registry, _) =
+        build_registry_async(config, draft, resource_ref, resource_ref.id()).await?;
+    build_validator_map_with_registry(config, schema, draft, resource_ref, &registry)
 }

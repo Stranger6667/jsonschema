@@ -41,6 +41,22 @@ module JSONSchema
     ?http_options: HttpOptions?
   ) -> Validator
 
+  # Create a map of validators for all sub-schemas in a JSON Schema.
+  def self.validator_map_for: (
+    untyped schema,
+    ?validate_formats: bool?,
+    ?ignore_unknown_formats: bool?,
+    ?mask: ::String?,
+    ?base_uri: ::String?,
+    ?retriever: (^(::String) -> untyped)?,
+    ?registry: Registry?,
+    ?formats: ::Hash[::String, ^(::String) -> bool]?,
+    ?keywords: ::Hash[::String, untyped]?,
+    ?pattern_options: (RegexOptions | FancyRegexOptions)?,
+    ?email_options: EmailOptions?,
+    ?http_options: HttpOptions?
+  ) -> ValidatorMap
+
   # Bundle a JSON Schema into a Compound Schema Document.
   # All externally-referenced schemas reachable via $ref are embedded in a
   # draft-appropriate container (definitions for Draft 4/6/7, $defs for
@@ -174,6 +190,16 @@ module JSONSchema
     def inspect: () -> String
   end
   public
+
+  # Map of validators for all sub-schemas in a JSON Schema, keyed by JSON Pointer.
+  class ValidatorMap
+    def []: (::String pointer) -> Validator?
+    def fetch: (::String pointer) -> Validator
+    def key?: (::String pointer) -> bool
+    def keys: () -> ::Array[::String]
+    def length: () -> ::Integer
+    def size: () -> ::Integer
+  end
 
   # JSON Schema Draft 4 validator.
   class Draft4Validator < Validator

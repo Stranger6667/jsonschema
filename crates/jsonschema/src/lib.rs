@@ -897,7 +897,7 @@ pub use referencing::{
 #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
 pub use retriever::{HttpRetriever, HttpRetrieverError};
 pub use types::{JsonType, JsonTypeSet, JsonTypeSetIterator};
-pub use validator::{ValidationContext, Validator};
+pub use validator::{ValidationContext, Validator, ValidatorMap};
 
 #[cfg(feature = "resolve-async")]
 pub use referencing::AsyncRetrieve;
@@ -1033,6 +1033,48 @@ pub fn validator_for(schema: &Value) -> Result<Validator, ValidationError<'stati
     Validator::new(schema)
 }
 
+/// Create a [`ValidatorMap`] from the input schema using automatic draft detection and
+/// default options.
+///
+/// Every reachable subschema is compiled eagerly. The root schema is always present
+/// under the key `"#"`. Subschemas that fail to compile (e.g. unresolvable `$ref`) are
+/// silently omitted.
+///
+/// # Examples
+///
+/// ```rust
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// use serde_json::json;
+///
+/// let schema = json!({
+///     "$defs": {
+///         "User": {"type": "object", "required": ["name"]}
+///     }
+/// });
+///
+/// let map = jsonschema::validator_map_for(&schema)?;
+///
+/// let user_validator = map.get("#/$defs/User").unwrap();
+/// assert!(user_validator.is_valid(&json!({"name": "Alice"})));
+/// assert!(!user_validator.is_valid(&json!({})));
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Errors
+///
+/// Returns an error if the schema is invalid or external references cannot be resolved.
+///
+/// # Panics
+///
+/// This function **must not** be called from within an async runtime if the schema contains
+/// external references that require network requests, or it will panic when attempting to block.
+/// Use `async_validator_map_for` for async contexts, or run this in a separate blocking thread
+/// via `tokio::task::spawn_blocking`.
+pub fn validator_map_for(schema: &Value) -> Result<ValidatorMap, ValidationError<'static>> {
+    options().build_map(schema)
+}
+
 /// Embed all external `$ref` targets into a draft-appropriate container,
 /// producing a Compound Schema Document that validates identically to the original.
 /// Draft 4/6/7 use `definitions`; Draft 2019-09/2020-12 use `$defs`.
@@ -1157,6 +1199,34 @@ pub async fn async_dereference(schema: &Value) -> Result<Value, ReferencingError
 #[cfg(feature = "resolve-async")]
 pub async fn async_validator_for(schema: &Value) -> Result<Validator, ValidationError<'static>> {
     Validator::async_new(schema).await
+}
+
+/// Create a [`ValidatorMap`] from the input schema using async retrieval for external references.
+///
+/// Async counterpart to [`validator_map_for`]. Note that only construction is asynchronous —
+/// validation itself is always synchronous.
+///
+/// # Examples
+///
+/// ```rust
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// use serde_json::json;
+///
+/// let schema = json!({"$defs": {"User": {"type": "object", "required": ["name"]}}});
+/// let map = jsonschema::async_validator_map_for(&schema).await?;
+/// assert!(map["#/$defs/User"].is_valid(&json!({"name": "Bob"})));
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Errors
+///
+/// Returns an error if the schema is invalid or external references cannot be resolved.
+#[cfg(feature = "resolve-async")]
+pub async fn async_validator_map_for(
+    schema: &Value,
+) -> Result<ValidatorMap, ValidationError<'static>> {
+    async_options().build_map(schema).await
 }
 
 /// Create a builder for configuring JSON Schema validation options.

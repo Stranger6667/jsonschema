@@ -463,6 +463,30 @@ impl ValidationOptions<'_, Arc<dyn referencing::Retrieve>> {
         compiler::build_validator(self, schema)
     }
 
+    /// Build a [`ValidatorMap`](crate::ValidatorMap) — a map of compiled validators keyed by
+    /// URI-fragment JSON pointer — from a schema document.
+    ///
+    /// Every reachable subschema is compiled eagerly. The root schema is always
+    /// present under the key `"#"`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `schema` is invalid for the selected draft or if referenced
+    /// resources cannot be retrieved or resolved.
+    ///
+    /// # Panics
+    ///
+    /// This method **must not** be called from within an async runtime if the schema contains
+    /// external references that require network requests, or it will panic when attempting to block.
+    /// Use `async_options` and its async `build_map` method for async contexts, or run this
+    /// in a separate blocking thread via `tokio::task::spawn_blocking`.
+    pub fn build_map(
+        &self,
+        schema: &Value,
+    ) -> Result<crate::ValidatorMap, ValidationError<'static>> {
+        compiler::build_validator_map(self, schema)
+    }
+
     /// Bundle a JSON Schema into a Compound Schema Document.
     ///
     /// All externally-referenced schemas reachable via `$ref` are embedded in a
@@ -647,6 +671,21 @@ impl<'i> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>> {
     /// cannot be retrieved or resolved.
     pub async fn build(&self, schema: &Value) -> Result<Validator, ValidationError<'static>> {
         compiler::build_validator_async(self, schema).await
+    }
+
+    /// Build a [`ValidatorMap`](crate::ValidatorMap) using async retrieval for external references.
+    ///
+    /// Async counterpart to [`ValidationOptions::build_map`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `schema` is invalid for the selected draft or if referenced
+    /// resources cannot be retrieved or resolved.
+    pub async fn build_map(
+        &self,
+        schema: &Value,
+    ) -> Result<crate::ValidatorMap, ValidationError<'static>> {
+        compiler::build_validator_map_async(self, schema).await
     }
 
     /// Bundle a JSON Schema using async retrieval for external references.

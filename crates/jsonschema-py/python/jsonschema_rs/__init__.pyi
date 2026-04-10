@@ -474,6 +474,45 @@ def validator_for(
     """
     ...
 
+class ValidatorMap:
+    """Map of compiled validators keyed by URI-fragment JSON pointer.
+
+    Obtained via :func:`validator_map_for`. Use it to validate instances against
+    named subschemas identified by JSON pointer (e.g. ``"#/$defs/User"``).
+    """
+
+    def get(self, pointer: str) -> Validator | None:
+        """Return the validator for *pointer*, or ``None`` if not found."""
+        ...
+
+    def __getitem__(self, pointer: str) -> Validator:
+        """Return the validator for *pointer*, raising ``KeyError`` if not found."""
+        ...
+
+    def __contains__(self, pointer: object) -> bool: ...
+    def keys(self) -> list[str]: ...
+    def __len__(self) -> int: ...
+
+def validator_map_for(
+    schema: _SchemaT | str,
+    formats: dict[str, _FormatFunc] | None = None,
+    validate_formats: bool | None = None,
+    ignore_unknown_formats: bool = True,
+    retriever: RetrieverProtocol | None = None,
+    registry: Registry | None = None,
+    mask: str | None = None,
+    base_uri: str | None = None,
+    pattern_options: PatternOptionsType | None = None,
+    email_options: EmailOptions | None = None,
+    http_options: HttpOptions | None = None,
+    keywords: dict[str, type[KeywordValidator]] | None = None,
+) -> ValidatorMap:
+    """Compile all subschemas in *schema* into a map keyed by URI-fragment JSON pointer.
+
+    The root schema is always included as ``"#"``.
+    """
+    ...
+
 def bundle(
     schema: Any,
     /,

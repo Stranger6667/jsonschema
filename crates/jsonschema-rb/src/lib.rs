@@ -12,6 +12,7 @@ mod registry;
 mod retriever;
 mod ser;
 mod static_id;
+mod validator_map;
 
 use jsonschema::{paths::LocationSegment, ValidationOptions};
 use magnus::{
@@ -603,6 +604,22 @@ impl DataTypeFunctions for Validator {
 }
 
 impl Validator {
+    pub(crate) fn from_jsonschema_with_roots(
+        validator: jsonschema::Validator,
+        mask: Option<String>,
+        has_ruby_callbacks: bool,
+        callback_roots: CallbackRoots,
+        compilation_roots: CompilationRootsRef,
+    ) -> Self {
+        Self {
+            validator,
+            mask,
+            has_ruby_callbacks,
+            callback_roots,
+            _compilation_roots: compilation_roots,
+        }
+    }
+
     fn mark_callback_roots(&self, marker: &magnus::gc::Marker) {
         // Avoid panicking in Ruby GC mark paths; preserving existing roots is safer than aborting.
         let roots = match self.callback_roots.lock() {
@@ -868,6 +885,49 @@ fn validator_for(ruby: &Ruby, args: &[Value]) -> Result<Validator, Error> {
         callback_roots,
         _compilation_roots: compilation_roots,
     })
+}
+
+fn validator_map_for(ruby: &Ruby, args: &[Value]) -> Result<validator_map::ValidatorMap, Error> {
+    let parsed_args = scan_args::<(Value,), (), (), (), _, ()>(args)?;
+    let (schema,) = parsed_args.required;
+    let kw = extract_kwargs_no_draft(ruby, parsed_args.keywords)?;
+
+    let json_schema = to_schema_value(ruby, schema)?;
+    let parsed = build_parsed_options(ruby, kw, None)?;
+    let has_ruby_callbacks = parsed.has_ruby_callbacks;
+    let callback_roots = parsed.callback_roots;
+    let compilation_roots = parsed.compilation_roots;
+    let mask = parsed.mask;
+
+    let mut options = match parsed.retriever {
+        Some(ret) => parsed.options.with_retriever(ret),
+        None => parsed.options,
+    };
+    if let Some(registry) = parsed.registry {
+        options = options.with_registry(registry);
+    }
+
+    match options.build_map(&json_schema) {
+        Ok(inner) => Ok(validator_map::ValidatorMap {
+            inner,
+            has_ruby_callbacks,
+            callback_roots,
+            compilation_roots,
+            mask,
+        }),
+        // Error handling mirrors build_validator: retriever_error_message → referencing_error → ArgumentError
+        Err(error) => {
+            if let jsonschema::error::ValidationErrorKind::Referencing(err) = error.kind() {
+                if let Some(message) = retriever_error_message(err) {
+                    Err(Error::new(ruby.exception_arg_error(), message))
+                } else {
+                    Err(referencing_error(ruby, err.to_string()))
+                }
+            } else {
+                Err(Error::new(ruby.exception_arg_error(), error.to_string()))
+            }
+        }
+    }
 }
 
 fn bundle(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
@@ -1412,6 +1472,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     // Module-level functions
     module.define_singleton_method("validator_cls_for", function!(validator_cls_for, 1))?;
     module.define_singleton_method("validator_for", function!(validator_for, -1))?;
+    module.define_singleton_method("validator_map_for", function!(validator_map_for, -1))?;
     module.define_singleton_method("bundle", function!(bundle, -1))?;
     module.define_singleton_method("dereference", function!(dereference, -1))?;
     module.define_singleton_method("valid?", function!(is_valid, -1))?;
@@ -1494,6 +1555,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     registry::define_class(ruby, &module)?;
     error_kind::define_class(ruby, &module)?;
     options::define_classes(ruby, &module)?;
+    validator_map::define_class(ruby, &module)?;
 
     let meta_module = module.define_module("Meta")?;
     meta_module.define_singleton_method("valid?", function!(meta_is_valid, -1))?;
