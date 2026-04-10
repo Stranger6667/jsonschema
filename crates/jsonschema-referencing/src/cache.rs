@@ -1,13 +1,30 @@
-use std::sync::Arc;
+use std::{
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use fluent_uri::Uri;
-use hashbrown::hash_map::{EntryRef, HashMap};
+use hashbrown::{Equivalent, HashMap};
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 
 use crate::{uri, Error};
 
-type CacheBucket = HashMap<String, Arc<Uri<String>>>;
-type CacheMap = HashMap<String, CacheBucket>;
+type CacheMap = HashMap<(String, String), Arc<Uri<String>>>;
+
+struct StrPair<'a>(&'a str, &'a str);
+
+impl Hash for StrPair<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+        self.1.hash(state);
+    }
+}
+
+impl Equivalent<(String, String)> for StrPair<'_> {
+    fn equivalent(&self, (a, b): &(String, String)) -> bool {
+        self.0 == a && self.1 == b
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct UriCache {
@@ -34,28 +51,14 @@ impl UriCache {
     ) -> Result<Arc<Uri<String>>, Error> {
         let base_str = base.as_str();
         let reference = uri.as_ref();
-
-        let resolved = match self.cache.entry_ref(base_str) {
-            EntryRef::Occupied(mut entry) => {
-                if let Some(cached) = entry.get().get(reference) {
-                    return Ok(Arc::clone(cached));
-                }
-
-                let resolved = Arc::new(uri::resolve_against(base, reference)?);
-                entry
-                    .get_mut()
-                    .insert(reference.to_owned(), Arc::clone(&resolved));
-                resolved
-            }
-            EntryRef::Vacant(entry) => {
-                let resolved = Arc::new(uri::resolve_against(base, reference)?);
-                let mut inner = HashMap::with_capacity(1);
-                inner.insert(reference.to_owned(), Arc::clone(&resolved));
-                entry.insert(inner);
-                resolved
-            }
-        };
-
+        if let Some(cached) = self.cache.get(&StrPair(base_str, reference)) {
+            return Ok(Arc::clone(cached));
+        }
+        let resolved = Arc::new(uri::resolve_against(base, reference)?);
+        self.cache.insert(
+            (base_str.to_owned(), reference.to_owned()),
+            Arc::clone(&resolved),
+        );
         Ok(resolved)
     }
 
@@ -79,15 +82,7 @@ impl Clone for SharedUriCache {
                 self.cache
                     .read()
                     .iter()
-                    .map(|(base, entries)| {
-                        (
-                            base.clone(),
-                            entries
-                                .iter()
-                                .map(|(reference, value)| (reference.clone(), Arc::clone(value)))
-                                .collect(),
-                        )
-                    })
+                    .map(|(key, value)| (key.clone(), Arc::clone(value)))
                     .collect(),
             ),
         }
@@ -102,42 +97,23 @@ impl SharedUriCache {
     ) -> Result<Arc<Uri<String>>, Error> {
         let base_str = base.as_str();
         let reference = uri.as_ref();
+        let lookup = StrPair(base_str, reference);
 
-        if let Some(cached) = self
-            .cache
-            .read()
-            .get(base_str)
-            .and_then(|inner| inner.get(reference))
-        {
+        if let Some(cached) = self.cache.read().get(&lookup) {
             return Ok(Arc::clone(cached));
         }
 
         let cache = self.cache.upgradable_read();
-        if let Some(inner) = cache.get(base_str).and_then(|inner| inner.get(reference)) {
-            return Ok(Arc::clone(inner));
+        if let Some(cached) = cache.get(&lookup) {
+            return Ok(Arc::clone(cached));
         }
 
         let resolved = Arc::new(uri::resolve_against(base, reference)?);
-
         let mut cache = RwLockUpgradableReadGuard::upgrade(cache);
-        let inserted = match cache.entry_ref(base_str) {
-            EntryRef::Occupied(mut entry) => {
-                if let Some(existing) = entry.get().get(reference) {
-                    return Ok(Arc::clone(existing));
-                }
-                entry
-                    .get_mut()
-                    .insert(reference.to_owned(), Arc::clone(&resolved));
-                resolved
-            }
-            EntryRef::Vacant(entry) => {
-                let mut inner = HashMap::with_capacity(1);
-                inner.insert(reference.to_owned(), Arc::clone(&resolved));
-                entry.insert(inner);
-                resolved
-            }
-        };
-
-        Ok(inserted)
+        cache.insert(
+            (base_str.to_owned(), reference.to_owned()),
+            Arc::clone(&resolved),
+        );
+        Ok(resolved)
     }
 }
