@@ -14,13 +14,25 @@ use std::{
     sync::{Arc, OnceLock, Weak},
 };
 
+struct SchemaNodeInner {
+    validators: NodeValidators,
+    formatted_schema_location: OnceLock<Arc<str>>,
+}
+
+impl fmt::Debug for SchemaNodeInner {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SchemaNodeInner")
+            .field("validators", &self.validators)
+            .finish_non_exhaustive()
+    }
+}
+
 /// A node in the schema tree, returned by `compiler::compile`
 #[derive(Clone, Debug)]
 pub(crate) struct SchemaNode {
-    validators: Arc<NodeValidators>,
+    inner: Arc<SchemaNodeInner>,
     location: Location,
     absolute_path: Option<Arc<Uri<String>>>,
-    formatted_schema_location: Arc<OnceLock<Arc<str>>>,
 }
 
 // Separate type used only during compilation for handling recursive references
@@ -30,10 +42,9 @@ pub(crate) struct PendingSchemaNode {
 }
 
 struct PendingTarget {
-    validators: Weak<NodeValidators>,
+    inner: Weak<SchemaNodeInner>,
     location: Location,
     absolute_path: Option<Arc<Uri<String>>>,
-    formatted_schema_location: Arc<OnceLock<Arc<str>>>,
     /// Cached materialized `SchemaNode` to avoid cloning on every access.
     cached_node: OnceLock<SchemaNode>,
 }
@@ -110,10 +121,9 @@ impl PendingSchemaNode {
 
     pub(crate) fn initialize(&self, node: &SchemaNode) {
         let target = PendingTarget {
-            validators: Arc::downgrade(&node.validators),
+            inner: Arc::downgrade(&node.inner),
             location: node.location.clone(),
             absolute_path: node.absolute_path.clone(),
-            formatted_schema_location: node.formatted_schema_location.clone(),
             cached_node: OnceLock::new(),
         };
         self.cell
@@ -148,15 +158,11 @@ impl PendingTarget {
     /// Get or create the cached `SchemaNode`. Only clones on first access.
     fn get_or_materialize(&self) -> &SchemaNode {
         self.cached_node.get_or_init(|| {
-            let validators = self
-                .validators
-                .upgrade()
-                .expect("pending schema target dropped");
+            let inner = self.inner.upgrade().expect("pending schema target dropped");
             SchemaNode {
-                validators,
+                inner,
                 location: self.location.clone(),
                 absolute_path: self.absolute_path.clone(),
-                formatted_schema_location: self.formatted_schema_location.clone(),
             }
         })
     }
@@ -230,10 +236,12 @@ impl SchemaNode {
         let location = ctx.location().clone();
         let absolute_path = ctx.base_uri();
         SchemaNode {
+            inner: Arc::new(SchemaNodeInner {
+                validators: NodeValidators::Boolean { validator },
+                formatted_schema_location: OnceLock::new(),
+            }),
             location,
             absolute_path,
-            formatted_schema_location: Arc::new(OnceLock::new()),
-            validators: Arc::new(NodeValidators::Boolean { validator }),
         }
     }
 
@@ -263,13 +271,15 @@ impl SchemaNode {
             })
             .collect();
         SchemaNode {
+            inner: Arc::new(SchemaNodeInner {
+                validators: NodeValidators::Keyword(KeywordValidators {
+                    unmatched_keywords,
+                    validators,
+                }),
+                formatted_schema_location: OnceLock::new(),
+            }),
             location,
             absolute_path,
-            formatted_schema_location: Arc::new(OnceLock::new()),
-            validators: Arc::new(NodeValidators::Keyword(KeywordValidators {
-                unmatched_keywords,
-                validators,
-            })),
         }
     }
 
@@ -291,15 +301,17 @@ impl SchemaNode {
             })
             .collect();
         SchemaNode {
+            inner: Arc::new(SchemaNodeInner {
+                validators: NodeValidators::Array { validators },
+                formatted_schema_location: OnceLock::new(),
+            }),
             location,
             absolute_path,
-            formatted_schema_location: Arc::new(OnceLock::new()),
-            validators: Arc::new(NodeValidators::Array { validators }),
         }
     }
 
     pub(crate) fn validators(&self) -> impl ExactSizeIterator<Item = &BoxedValidator> {
-        match self.validators.as_ref() {
+        match &self.inner.validators {
             NodeValidators::Boolean { validator } => {
                 if let Some(v) = validator {
                     NodeValidatorsIter::BooleanValidators(std::iter::once(v))
@@ -326,7 +338,7 @@ impl SchemaNode {
         let instance_location: Location = location.into();
 
         let keyword_location = crate::paths::evaluation_path(tracker, &self.location);
-        let schema_location = Arc::clone(self.formatted_schema_location.get_or_init(|| {
+        let schema_location = Arc::clone(self.inner.formatted_schema_location.get_or_init(|| {
             crate::evaluation::format_schema_location(&self.location, self.absolute_path.as_ref())
         }));
 
@@ -461,7 +473,7 @@ impl SchemaNode {
 
 impl Validate for SchemaNode {
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        match self.validators.as_ref() {
+        match &self.inner.validators {
             // Single validator fast path
             NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
                 kvs.validators[0].validator.is_valid(instance, ctx)
@@ -489,7 +501,7 @@ impl Validate for SchemaNode {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        match self.validators.as_ref() {
+        match &self.inner.validators {
             NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
                 let entry = &kvs.validators[0];
                 return entry
@@ -540,7 +552,7 @@ impl Validate for SchemaNode {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        match self.validators.as_ref() {
+        match &self.inner.validators {
             NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
                 let entry = &kvs.validators[0];
                 let absolute_location = entry.absolute_location.clone();
@@ -605,7 +617,7 @@ impl Validate for SchemaNode {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        match self.validators.as_ref() {
+        match &self.inner.validators {
             NodeValidators::Array { ref validators } => Self::evaluate_subschemas(
                 instance,
                 location,
