@@ -1512,6 +1512,44 @@ fn bundle(
     }
 }
 
+/// dereference(schema, /, *, retriever=None, registry=None, draft=None, base_uri=None)
+///
+/// Recursively inline all `$ref` values in a JSON Schema.
+///
+/// Circular references are left in place as `$ref` strings.
+///
+/// :param schema: The JSON Schema to dereference.
+/// :param retriever: Optional callable ``(uri: str) -> dict`` for fetching external schemas.
+/// :param registry: Optional pre-built :class:`Registry` of known schemas.
+/// :param draft: Optional draft version (e.g. ``jsonschema_rs.Draft202012``).
+/// :param base_uri: Optional base URI for the root schema.
+/// :raises ReferencingError: if any `$ref` cannot be resolved.
+///
+///     >>> result = dereference({"$defs": {"t": {"type": "string"}}, "properties": {"x": {"$ref": "#/$defs/t"}}})
+///
+#[pyfunction]
+#[pyo3(signature = (schema, /, *, retriever=None, registry=None, draft=None, base_uri=None))]
+fn dereference(
+    py: Python<'_>,
+    schema: &Bound<'_, PyAny>,
+    retriever: Option<&Bound<'_, PyAny>>,
+    registry: Option<&registry::Registry>,
+    draft: Option<u8>,
+    base_uri: Option<String>,
+) -> PyResult<Py<PyAny>> {
+    let schema_value = ser::to_value(schema)?;
+    let options = make_options(
+        draft, None, None, None, retriever, registry, base_uri, None, None, None, None,
+    )?;
+    match options.dereference(&schema_value) {
+        Ok(result) => value_to_python(py, &result),
+        Err(e @ jsonschema::ReferencingError::Unretrievable { .. }) => {
+            Err(referencing_error_pyerr(py, e.to_string())?)
+        }
+        Err(e) => Err(exceptions::PyValueError::new_err(e.to_string())),
+    }
+}
+
 fn parse_schema_str(schema: &Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
     let obj_ptr = schema.as_ptr();
     let object_type = unsafe { pyo3::ffi::Py_TYPE(obj_ptr) };
@@ -2118,6 +2156,7 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_wrapped(wrap_pyfunction!(evaluate))?;
     module.add_wrapped(wrap_pyfunction!(validator_for))?;
     module.add_wrapped(wrap_pyfunction!(bundle))?;
+    module.add_wrapped(wrap_pyfunction!(dereference))?;
     module.add_wrapped(wrap_pyfunction!(validator_cls_for))?;
     module.add_class::<Draft4Validator>()?;
     module.add_class::<Draft6Validator>()?;

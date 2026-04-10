@@ -54,6 +54,16 @@ module JSONSchema
     ?base_uri: String?
   ) -> Hash[String, untyped]
 
+  # Dereference a JSON Schema by recursively replacing all $ref values
+  # with the schemas they point to.
+  def self.dereference: (
+    untyped schema,
+    ?draft: draft?,
+    ?retriever: (^(String) -> untyped)?,
+    ?registry: Registry?,
+    ?base_uri: String?
+  ) -> untyped
+
   # Detect the JSON Schema draft for a schema and return the corresponding validator class.
   # Draft is detected automatically from the `$schema` field. Defaults to Draft202012Validator.
   def self.validator_cls_for: (untyped schema) -> (singleton(Draft4Validator) | singleton(Draft6Validator) | singleton(Draft7Validator) | singleton(Draft201909Validator) | singleton(Draft202012Validator))
@@ -279,6 +289,20 @@ module JSONSchema
     def errors: () -> Array[Hash[Symbol, untyped]]
 
     def inspect: () -> String
+  end
+
+  # Resolver for JSON Schema references.
+  class Resolver
+    def base_uri: () -> String
+    def dynamic_scope: () -> Array[String]
+    def lookup: (String reference) -> Resolved
+  end
+
+  # Resolved reference containing the dereferenced schema and its context.
+  class Resolved
+    def contents: () -> untyped
+    def resolver: () -> Resolver
+    def draft: () -> Integer
   end
 
   # Schema registry for reference resolution.

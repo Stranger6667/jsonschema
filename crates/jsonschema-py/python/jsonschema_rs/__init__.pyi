@@ -492,6 +492,23 @@ def bundle(
     """
     ...
 
+def dereference(
+    schema: _SchemaT,
+    /,
+    *,
+    retriever: RetrieverProtocol | None = None,
+    registry: Registry | None = None,
+    draft: int | None = None,
+    base_uri: str | None = None,
+) -> _SchemaT:
+    """Recursively inline all $ref values in a JSON Schema.
+
+    Circular references are left in place as `$ref` strings.
+
+    Raises ReferencingError if any $ref cannot be resolved.
+    """
+    ...
+
 def validator_cls_for(schema: _SchemaT | str) -> type[Validator]:
     """Detect the JSON Schema draft for a schema and return the corresponding validator class.
 
