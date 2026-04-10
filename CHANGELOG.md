@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-04-10
+
 ### Added
 
 - `ValidatorMap` for validating instances against subschemas identified by URI-fragment JSON pointer. [#1075](https://github.com/Stranger6667/jsonschema/pull/1075)
@@ -1248,7 +1250,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.45.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.0...HEAD
+[0.46.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.45.1...rust-v0.46.0
 [0.45.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.45.0...rust-v0.45.1
 [0.45.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.44.1...rust-v0.45.0
 [0.44.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.44.0...rust-v0.44.1
