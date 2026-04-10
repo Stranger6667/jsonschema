@@ -17,7 +17,7 @@ use email::EmailOptions;
 use http::HttpOptions;
 use jsonschema::{paths::LocationSegment, Draft};
 use pyo3::{
-    exceptions::{self, PyValueError},
+    exceptions::{self, PyKeyError, PyValueError},
     ffi::{PyList_New, PyList_SetItem, PyUnicode_AsUTF8AndSize, Py_DECREF},
     prelude::*,
     types::{PyAny, PyDict, PyList, PyString, PyType},
@@ -1436,6 +1436,54 @@ struct Validator {
     mask: Option<String>,
 }
 
+#[pyclass(module = "jsonschema_rs")]
+struct ValidatorMap {
+    inner: jsonschema::ValidatorMap,
+    mask: Option<String>,
+}
+
+#[pymethods]
+impl ValidatorMap {
+    /// get(pointer)
+    ///
+    /// Return the validator for the given URI-fragment JSON pointer, or ``None`` if not found.
+    ///
+    ///     >>> m = validator_map_for({"$defs": {"T": {"type": "string"}}})
+    ///     >>> v = m.get("#/$defs/T")
+    ///
+    fn get(&self, pointer: &str) -> Option<Validator> {
+        self.inner.get(pointer).map(|v| Validator {
+            validator: v.clone(),
+            mask: self.mask.clone(),
+        })
+    }
+
+    fn __getitem__(&self, pointer: &str) -> PyResult<Validator> {
+        match self.inner.get(pointer) {
+            Some(v) => Ok(Validator {
+                validator: v.clone(),
+                mask: self.mask.clone(),
+            }),
+            None => Err(PyKeyError::new_err(pointer.to_owned())),
+        }
+    }
+
+    fn __contains__(&self, pointer: &str) -> bool {
+        self.inner.contains_key(pointer)
+    }
+
+    /// keys()
+    ///
+    /// Return all URI-fragment JSON pointer keys in this map.
+    fn keys(&self) -> Vec<String> {
+        self.inner.keys().map(str::to_owned).collect()
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.len()
+    }
+}
+
 /// validator_for(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None)
 ///
 /// Create a validator for the input schema with automatic draft detection and default options.
@@ -1477,6 +1525,53 @@ fn validator_for(
         http_options,
         keywords,
     )
+}
+
+/// validator_map_for(schema, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None)
+///
+/// Compile all subschemas in ``schema`` into a map keyed by URI-fragment JSON pointer.
+///
+///     >>> schema = {"$defs": {"User": {"type": "object"}}}
+///     >>> m = validator_map_for(schema)
+///     >>> v = m.get("#/$defs/User")
+///     >>> v.is_valid({})
+///     True
+///
+#[pyfunction]
+#[pyo3(signature = (schema, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None))]
+fn validator_map_for(
+    py: Python<'_>,
+    schema: &Bound<'_, PyAny>,
+    formats: Option<&Bound<'_, PyDict>>,
+    validate_formats: Option<bool>,
+    ignore_unknown_formats: Option<bool>,
+    retriever: Option<&Bound<'_, PyAny>>,
+    registry: Option<&registry::Registry>,
+    mask: Option<String>,
+    base_uri: Option<String>,
+    pattern_options: Option<&Bound<'_, PyAny>>,
+    email_options: Option<&Bound<'_, PyAny>>,
+    http_options: Option<&Bound<'_, PyAny>>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<ValidatorMap> {
+    let schema = parse_schema_str(schema)?;
+    let options = make_options(
+        None,
+        formats,
+        validate_formats,
+        ignore_unknown_formats,
+        retriever,
+        registry,
+        base_uri,
+        pattern_options,
+        email_options,
+        http_options,
+        keywords,
+    )?;
+    match options.build_map(&schema) {
+        Ok(inner) => Ok(ValidatorMap { inner, mask }),
+        Err(error) => Err(into_py_err(py, error, mask.as_deref())?),
+    }
 }
 
 /// bundle(schema, /, *, retriever=None, registry=None, draft=None, base_uri=None)
@@ -2155,6 +2250,8 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_wrapped(wrap_pyfunction!(iter_errors))?;
     module.add_wrapped(wrap_pyfunction!(evaluate))?;
     module.add_wrapped(wrap_pyfunction!(validator_for))?;
+    module.add_wrapped(wrap_pyfunction!(validator_map_for))?;
+    module.add_class::<ValidatorMap>()?;
     module.add_wrapped(wrap_pyfunction!(bundle))?;
     module.add_wrapped(wrap_pyfunction!(dereference))?;
     module.add_wrapped(wrap_pyfunction!(validator_cls_for))?;
