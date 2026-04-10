@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-04-10
+
 ### Added
 
 - Accept JSON strings in `validator_cls_for`.
@@ -991,7 +993,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.45.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.0...HEAD
+[0.46.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.45.1...python-v0.46.0
 [0.45.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.45.0...python-v0.45.1
 [0.45.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.44.1...python-v0.45.0
 [0.44.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.44.0...python-v0.44.1
