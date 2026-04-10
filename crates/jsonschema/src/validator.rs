@@ -384,9 +384,67 @@ impl Validator {
     }
 }
 
+/// A map of compiled JSON Schema validators keyed by URI-fragment JSON pointers.
+///
+/// Built via [`ValidationOptions::build_map`] or the [`validator_map_for`](crate::validator_map_for)
+/// convenience function.
+///
+/// Each key is a URI-fragment JSON pointer (e.g. `"#"`, `"#/$defs/User"`).
+/// The root schema is always present under the key `"#"`.
+#[derive(Debug)]
+pub struct ValidatorMap {
+    pub(crate) validators: AHashMap<String, Validator>,
+}
+
+impl ValidatorMap {
+    /// Returns the validator for the given URI-fragment pointer, or `None` if not found.
+    #[must_use]
+    pub fn get(&self, pointer: &str) -> Option<&Validator> {
+        self.validators.get(pointer)
+    }
+
+    /// Returns `true` if the map contains a validator for the given pointer.
+    #[must_use]
+    pub fn contains_key(&self, pointer: &str) -> bool {
+        self.validators.contains_key(pointer)
+    }
+
+    /// Returns an iterator over all URI-fragment pointers in the map.
+    pub fn keys(&self) -> impl Iterator<Item = &str> {
+        self.validators.keys().map(String::as_str)
+    }
+
+    /// Returns the number of compiled subschema validators in the map.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.validators.len()
+    }
+
+    /// Returns `true` if the map contains no validators.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.validators.is_empty()
+    }
+}
+
+impl std::ops::Index<&str> for ValidatorMap {
+    type Output = Validator;
+
+    /// # Panics
+    ///
+    /// Panics if the pointer is not found in the map.
+    fn index(&self, pointer: &str) -> &Validator {
+        self.validators
+            .get(pointer)
+            .unwrap_or_else(|| panic!("JSON pointer '{pointer}' not found in ValidatorMap"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{error::ValidationError, keywords::custom::Keyword, paths::Location, Validator};
+    use crate::{
+        error::ValidationError, keywords::custom::Keyword, paths::Location, Validator, ValidatorMap,
+    };
     use fancy_regex::Regex;
     use num_cmp::NumCmp;
     use serde_json::{json, Map, Value};
@@ -724,6 +782,12 @@ mod tests {
     }
 
     #[test]
+    fn test_validator_map_is_send_and_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<ValidatorMap>();
+    }
+
+    #[test]
     fn test_validator_clone() {
         let schema = json!({"type": "string", "minLength": 3});
         let validator = crate::validator_for(&schema).expect("Valid schema");
@@ -772,5 +836,260 @@ mod tests {
             assert_eq!(error.schema_path().as_str(), "/$defs/Person/required");
             assert_eq!(error.evaluation_path().as_str(), "/$ref/required");
         }
+    }
+
+    #[test]
+    fn test_validator_map_get_existing() {
+        let schema = json!({
+            "$defs": {
+                "User": {"type": "object", "required": ["name"]}
+            }
+        });
+        let map = crate::validator_map_for(&schema).unwrap();
+        let v = map.get("#/$defs/User").unwrap();
+        assert!(v.is_valid(&json!({"name": "Alice"})));
+        assert!(!v.is_valid(&json!({})));
+    }
+
+    #[test]
+    fn test_validator_map_root_always_present() {
+        let schema = json!({"type": "string"});
+        let map = crate::validator_map_for(&schema).unwrap();
+        assert!(map.get("#").unwrap().is_valid(&json!("hello")));
+        assert!(!map.get("#").unwrap().is_valid(&json!(42)));
+    }
+
+    #[test]
+    fn test_validator_map_get_missing_returns_none() {
+        let schema = json!({"type": "object"});
+        let map = crate::validator_map_for(&schema).unwrap();
+        assert!(map.get("#/nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_validator_map_contains_key() {
+        let schema = json!({"$defs": {"Foo": {"type": "string"}}});
+        let map = crate::validator_map_for(&schema).unwrap();
+        assert!(map.contains_key("#/$defs/Foo"));
+        assert!(!map.contains_key("#/missing"));
+    }
+
+    #[test]
+    fn test_validator_map_keys_includes_root_and_defs() {
+        let schema = json!({
+            "type": "object",
+            "$defs": {"Foo": {"type": "string"}}
+        });
+        let map = crate::validator_map_for(&schema).unwrap();
+        let keys: std::collections::HashSet<&str> = map.keys().collect();
+        assert!(keys.contains("#"));
+        assert!(keys.contains("#/$defs/Foo"));
+    }
+
+    #[test]
+    fn test_validator_map_index() {
+        let schema = json!({"$defs": {"Bar": {"type": "integer"}}});
+        let map = crate::validator_map_for(&schema).unwrap();
+        assert!(map["#/$defs/Bar"].is_valid(&json!(42)));
+        assert!(!map["#/$defs/Bar"].is_valid(&json!("nope")));
+    }
+
+    #[test]
+    #[should_panic(expected = "JSON pointer '#/nonexistent' not found in ValidatorMap")]
+    fn test_validator_map_index_panics_on_missing() {
+        let schema = json!({"type": "object"});
+        let map = crate::validator_map_for(&schema).unwrap();
+        let _ = &map["#/nonexistent"];
+    }
+
+    #[test]
+    fn test_validator_map_via_options() {
+        let schema = json!({"$defs": {"S": {"type": "string"}}});
+        let map = crate::options().build_map(&schema).unwrap();
+        assert!(map.get("#/$defs/S").unwrap().is_valid(&json!("hello")));
+    }
+
+    #[cfg(all(feature = "resolve-async", not(target_family = "wasm")))]
+    #[tokio::test]
+    async fn test_async_validator_map_for() {
+        let schema = json!({"$defs": {"T": {"type": "string"}}});
+        let map = crate::async_validator_map_for(&schema).await.unwrap();
+        assert!(map["#/$defs/T"].is_valid(&json!("hello")));
+        assert!(!map["#/$defs/T"].is_valid(&json!(42)));
+    }
+
+    #[cfg(all(feature = "resolve-async", not(target_family = "wasm")))]
+    #[tokio::test]
+    async fn test_async_build_map_via_options() {
+        let schema = json!({"$defs": {"N": {"type": "integer"}}});
+        let map = crate::async_options().build_map(&schema).await.unwrap();
+        assert!(map["#/$defs/N"].is_valid(&json!(7)));
+        assert!(!map["#/$defs/N"].is_valid(&json!("not an int")));
+    }
+
+    #[test]
+    fn test_validator_map_len() {
+        let schema = json!({
+            "$defs": {
+                "A": {"type": "string"},
+                "B": {"type": "integer"}
+            }
+        });
+        let map = crate::validator_map_for(&schema).unwrap();
+        assert!(map.len() >= 3); // root + A + B
+    }
+
+    #[test]
+    fn test_validator_map_is_empty_false() {
+        let schema = json!({"type": "string"});
+        let map = crate::validator_map_for(&schema).unwrap();
+        assert!(!map.is_empty());
+    }
+
+    #[test]
+    fn test_validator_map_nested_pointer() {
+        let schema = json!({
+            "properties": {
+                "name": {"type": "string", "minLength": 2}
+            }
+        });
+        let map = crate::validator_map_for(&schema).unwrap();
+        assert!(map["#/properties/name"].is_valid(&json!("Al")));
+        assert!(!map["#/properties/name"].is_valid(&json!("A")));
+    }
+
+    #[test]
+    fn test_validator_map_with_registry() {
+        let address_schema = json!({
+            "type": "object",
+            "properties": {
+                "city": {"type": "string"},
+                "zip": {"type": "string"}
+            },
+            "required": ["city"]
+        });
+        let registry = crate::Registry::new()
+            .add("https://example.com/address.json", &address_schema)
+            .expect("valid resource")
+            .prepare()
+            .expect("registry build failed");
+
+        let schema = json!({
+            "$defs": {
+                "Address": {"$ref": "https://example.com/address.json"}
+            }
+        });
+        let map = crate::options()
+            .with_registry(&registry)
+            .build_map(&schema)
+            .unwrap();
+
+        let v = map.get("#/$defs/Address").unwrap();
+        assert!(v.is_valid(&json!({"city": "NYC", "zip": "10001"})));
+        assert!(!v.is_valid(&json!({"zip": "10001"}))); // missing required "city"
+    }
+
+    #[test]
+    fn test_validator_map_with_registry_multiple_refs() {
+        let user_schema = json!({
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+        let role_schema = json!({
+            "type": "string",
+            "enum": ["admin", "user", "guest"]
+        });
+        let registry = crate::Registry::new()
+            .add("https://example.com/user.json", &user_schema)
+            .expect("valid resource")
+            .add("https://example.com/role.json", &role_schema)
+            .expect("valid resource")
+            .prepare()
+            .expect("registry build failed");
+
+        let schema = json!({
+            "$defs": {
+                "User": {"$ref": "https://example.com/user.json"},
+                "Role": {"$ref": "https://example.com/role.json"}
+            }
+        });
+        let map = crate::options()
+            .with_registry(&registry)
+            .build_map(&schema)
+            .unwrap();
+
+        assert!(map["#/$defs/User"].is_valid(&json!({"name": "Alice"})));
+        assert!(!map["#/$defs/User"].is_valid(&json!({})));
+        assert!(map["#/$defs/Role"].is_valid(&json!("admin")));
+        assert!(!map["#/$defs/Role"].is_valid(&json!("superuser")));
+    }
+
+    #[cfg(all(feature = "resolve-async", not(target_family = "wasm")))]
+    #[tokio::test]
+    async fn test_async_validator_map_with_registry() {
+        let address_schema = json!({
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"]
+        });
+        let registry = crate::Registry::new()
+            .add("https://example.com/address.json", &address_schema)
+            .expect("valid resource")
+            .prepare()
+            .expect("registry build failed");
+
+        let schema = json!({
+            "$defs": {
+                "Address": {"$ref": "https://example.com/address.json"}
+            }
+        });
+        let map = crate::async_options()
+            .with_registry(&registry)
+            .build_map(&schema)
+            .await
+            .unwrap();
+
+        let v = map.get("#/$defs/Address").unwrap();
+        assert!(v.is_valid(&json!({"city": "NYC"})));
+        assert!(!v.is_valid(&json!({})));
+    }
+
+    #[cfg(all(feature = "resolve-async", not(target_family = "wasm")))]
+    #[tokio::test]
+    async fn test_async_validator_map_with_registry_multiple_refs() {
+        let user_schema = json!({
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        });
+        let role_schema = json!({
+            "type": "string",
+            "enum": ["admin", "user", "guest"]
+        });
+        let registry = crate::Registry::new()
+            .add("https://example.com/user.json", &user_schema)
+            .expect("valid resource")
+            .add("https://example.com/role.json", &role_schema)
+            .expect("valid resource")
+            .prepare()
+            .expect("registry build failed");
+
+        let schema = json!({
+            "$defs": {
+                "User": {"$ref": "https://example.com/user.json"},
+                "Role": {"$ref": "https://example.com/role.json"}
+            }
+        });
+        let map = crate::async_options()
+            .with_registry(&registry)
+            .build_map(&schema)
+            .await
+            .unwrap();
+
+        assert!(map["#/$defs/User"].is_valid(&json!({"name": "Alice"})));
+        assert!(!map["#/$defs/User"].is_valid(&json!({})));
+        assert!(map["#/$defs/Role"].is_valid(&json!("admin")));
+        assert!(!map["#/$defs/Role"].is_valid(&json!("superuser")));
     }
 }

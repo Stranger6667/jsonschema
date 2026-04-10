@@ -4,6 +4,7 @@
 
 ### Added
 
+- `ValidatorMap` for validating instances against subschemas identified by URI-fragment JSON pointer. [#1075](https://github.com/Stranger6667/jsonschema/pull/1075)
 - **CLI**: Accept multiple values after `-i`/`--instance` (e.g. `jsonschema validate schema.json -i *.json`). [#1085](https://github.com/Stranger6667/jsonschema/issues/1085)
 - `dereference` function to recursively inline `$ref` references. [#422](https://github.com/Stranger6667/jsonschema/issues/422)
 - **CLI**: `jsonschema dereference` subcommand to dereference a schema from the command line.
