@@ -11,6 +11,7 @@ use crate::{
 };
 use ahash::AHashMap;
 use serde_json::{Map, Value};
+use std::cmp::Ordering;
 
 pub(crate) struct SmallPropertiesValidator {
     pub(crate) properties: Vec<(String, SchemaNode)>,
@@ -97,10 +98,28 @@ impl SmallPropertiesWithRequired2Validator {
 impl Validate for SmallPropertiesValidator {
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
-            for (name, node) in &self.properties {
-                if let Some(prop) = item.get(name) {
-                    if !node.is_valid(prop, ctx) {
-                        return false;
+            // Both self.properties (built from a BTreeMap) and item (a BTreeMap) are
+            // sorted by key. Use a merge-scan to avoid O(m log n) individual BTreeMap
+            // lookups, replacing them with a single O(m + n) sequential pass.
+            let mut prop_iter = self.properties.iter();
+            let mut item_iter = item.iter();
+            let mut next_prop = prop_iter.next();
+            let mut next_item = item_iter.next();
+            loop {
+                match (next_prop, next_item) {
+                    (None, _) | (_, None) => break,
+                    (Some((schema_key, node)), Some((instance_key, instance_val))) => {
+                        match schema_key.as_str().cmp(instance_key.as_str()) {
+                            Ordering::Equal => {
+                                if !node.is_valid(instance_val, ctx) {
+                                    return false;
+                                }
+                                next_prop = prop_iter.next();
+                                next_item = item_iter.next();
+                            }
+                            Ordering::Less => next_prop = prop_iter.next(),
+                            Ordering::Greater => next_item = item_iter.next(),
+                        }
                     }
                 }
             }
@@ -178,20 +197,70 @@ impl Validate for SmallPropertiesValidator {
 impl Validate for SmallPropertiesWithRequired2Validator {
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
-            // Check required first (fast fail)
-            if item.len() < 2 || !item.contains_key(&self.first) || !item.contains_key(&self.second)
-            {
+            if item.len() < 2 {
                 return false;
             }
-            // Validate properties
-            for (name, node) in &self.properties {
-                if let Some(prop) = item.get(name) {
-                    if !node.is_valid(prop, ctx) {
-                        return false;
+            // Both self.properties (built from a sorted BTreeMap) and item (a BTreeMap)
+            // are sorted by key. Use a single merge-scan to simultaneously validate
+            // properties and check required fields, eliminating separate contains_key
+            // calls and O(m log n) BTreeMap lookups.
+            let mut found_first = false;
+            let mut found_second = false;
+            let mut prop_iter = self.properties.iter();
+            let mut item_iter = item.iter();
+            let mut next_prop = prop_iter.next();
+            let mut next_item = item_iter.next();
+            loop {
+                match (next_prop, next_item) {
+                    (None, mut curr_item) => {
+                        // No more schema props; scan remaining instance keys for required fields.
+                        while let Some((k, _)) = curr_item {
+                            if k == &self.first {
+                                found_first = true;
+                            }
+                            if k == &self.second {
+                                found_second = true;
+                            }
+                            if found_first && found_second {
+                                break;
+                            }
+                            curr_item = item_iter.next();
+                        }
+                        break;
+                    }
+                    (_, None) => break,
+                    (Some((schema_key, node)), Some((instance_key, instance_val))) => {
+                        match schema_key.as_str().cmp(instance_key.as_str()) {
+                            Ordering::Equal => {
+                                if schema_key == &self.first {
+                                    found_first = true;
+                                }
+                                if schema_key == &self.second {
+                                    found_second = true;
+                                }
+                                if !node.is_valid(instance_val, ctx) {
+                                    return false;
+                                }
+                                next_prop = prop_iter.next();
+                                next_item = item_iter.next();
+                            }
+                            Ordering::Less => next_prop = prop_iter.next(),
+                            Ordering::Greater => {
+                                // Instance key not matched by any schema prop;
+                                // still check if it satisfies a required field.
+                                if instance_key == &self.first {
+                                    found_first = true;
+                                }
+                                if instance_key == &self.second {
+                                    found_second = true;
+                                }
+                                next_item = item_iter.next();
+                            }
+                        }
                     }
                 }
             }
-            true
+            found_first && found_second
         } else {
             true
         }
