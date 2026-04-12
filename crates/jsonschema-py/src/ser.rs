@@ -20,9 +20,6 @@ use pyo3::ffi::{
     PyFloat_AS_DOUBLE, PyList_GET_ITEM, PyList_GET_SIZE, PyTuple_GET_ITEM, PyTuple_GET_SIZE,
 };
 
-#[cfg(all(not(Py_LIMITED_API), not(PyPy)))]
-use pyo3::ffi::PyDictObject;
-
 pub const RECURSION_LIMIT: u8 = 255;
 
 #[derive(Clone, Copy)]
@@ -138,13 +135,11 @@ pub(crate) unsafe fn pytuple_get_item(
 
 #[inline]
 pub(crate) unsafe fn dict_len(object: *mut pyo3::ffi::PyObject) -> usize {
-    #[cfg(any(Py_LIMITED_API, PyPy))]
-    {
-        pyo3::ffi::PyDict_Size(object) as usize
-    }
-    #[cfg(all(not(Py_LIMITED_API), not(PyPy)))]
-    {
-        (*object.cast::<PyDictObject>()).ma_used as usize
+    let len = pyo3::ffi::PyDict_Size(object);
+    if len < 0 {
+        0
+    } else {
+        len as usize
     }
 }
 
