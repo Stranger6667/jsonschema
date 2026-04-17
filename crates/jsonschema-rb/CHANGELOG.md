@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `required` not enforced when `properties` has 15 or more entries and `required` lists exactly 2 keys.
+
 ## [0.46.0] - 2026-04-10
 
 ### Added
