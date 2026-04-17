@@ -3,6 +3,7 @@ use crate::{
     error::{no_error, ErrorIterator, ValidationError},
     keywords::CompilationResult,
     paths::{LazyLocation, Location, RefTracker},
+    properties::HASHMAP_THRESHOLD,
     types::JsonType,
     validator::{Validate, ValidationContext},
 };
@@ -389,8 +390,17 @@ pub(crate) fn compile<'a>(
         }
 
         // Case 2: properties + required: [2 items], no additionalProperties: false, no patternProperties
-        // Handled by SmallPropertiesWithRequired2Validator
-        if items.len() == 2 && has_properties && !additional_props_false && !has_pattern_properties
+        // Handled by SmallPropertiesWithRequired2Validator — only when the map is below the
+        // threshold; above it BigPropertiesValidator is used and does not include required checks.
+        let properties_below_threshold = parent
+            .get("properties")
+            .and_then(Value::as_object)
+            .is_some_and(|m| m.len() < HASHMAP_THRESHOLD);
+        if items.len() == 2
+            && has_properties
+            && properties_below_threshold
+            && !additional_props_false
+            && !has_pattern_properties
         {
             return None;
         }
@@ -474,6 +484,7 @@ pub(crate) fn compile_with_path(
 
 #[cfg(test)]
 mod tests {
+    use super::HASHMAP_THRESHOLD;
     use crate::tests_util;
     use serde_json::{json, Value};
     use test_case::test_case;
@@ -557,5 +568,31 @@ mod tests {
         let instance = json!({"a": 1, "b": 2, "c": 3});
         let errors: Vec<_> = validator.iter_errors(&instance).collect();
         assert!(errors.is_empty());
+    }
+
+    // When `properties` has >= HASHMAP_THRESHOLD entries the fused SmallPropertiesWithRequired2
+    // is not used; the standalone required validator must still fire.
+    #[test]
+    fn required_2_enforced_with_large_properties_map() {
+        let mut props = serde_json::Map::new();
+        for i in 0..HASHMAP_THRESHOLD {
+            props.insert(format!("prop{i}"), json!({"type": "string"}));
+        }
+        props.insert("vmSize".to_string(), json!({"type": "string"}));
+        props.insert("count".to_string(), json!({"type": "integer"}));
+
+        let schema = json!({
+            "properties": Value::Object(props),
+            "required": ["vmSize", "count"]
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+
+        assert!(!validator.is_valid(&json!({"count": 1})));
+        assert!(!validator.is_valid(&json!({"vmSize": "x"})));
+        assert!(validator.is_valid(&json!({"vmSize": "x", "count": 1})));
+
+        let instance = json!({"count": 1});
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+        assert_eq!(errors.len(), 1);
     }
 }
