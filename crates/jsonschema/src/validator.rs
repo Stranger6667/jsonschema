@@ -616,16 +616,14 @@ mod tests {
                         }
                     }
                     // String comparison should cast currency-formatted
-                    Value::String(instance) => {
-                        if self.with_currency_format && currency_format_checker(instance) {
-                            // all preconditions for minimum applying are met
-                            let value = instance
-                                .parse::<f64>()
-                                .expect("format validated by regex checker");
-                            !NumCmp::num_lt(value, self.limit)
-                        } else {
-                            true
-                        }
+                    Value::String(instance)
+                        if self.with_currency_format && currency_format_checker(instance) =>
+                    {
+                        // all preconditions for minimum applying are met
+                        let value = instance
+                            .parse::<f64>()
+                            .expect("format validated by regex checker");
+                        !NumCmp::num_lt(value, self.limit)
                     }
                     // In all other cases, the "minimum" keyword should not apply
                     _ => true,
