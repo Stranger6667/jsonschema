@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.1] - 2026-04-18
+
 ### Fixed
 
 - `required` not enforced when `properties` has 15 or more entries and `required` lists exactly 2 keys.
@@ -90,7 +92,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.1...HEAD
+[0.46.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.0...ruby-v0.46.1
 [0.46.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.45.1...ruby-v0.46.0
 [0.45.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.45.0...ruby-v0.45.1
 [0.45.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.44.1...ruby-v0.45.0
