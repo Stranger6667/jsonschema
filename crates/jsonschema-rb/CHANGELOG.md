@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `required` not enforced when `additionalProperties` is a schema object and `required` lists exactly 2 keys.
+
 ## [0.46.1] - 2026-04-18
 
 ### Fixed
