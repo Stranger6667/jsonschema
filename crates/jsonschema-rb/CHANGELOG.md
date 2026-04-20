@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.2] - 2026-04-20
+
 ### Fixed
 
 - `required` not enforced when `additionalProperties` is a schema object and `required` lists exactly 2 keys.
@@ -96,7 +98,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.2...HEAD
+[0.46.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.1...ruby-v0.46.2
 [0.46.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.0...ruby-v0.46.1
 [0.46.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.45.1...ruby-v0.46.0
 [0.45.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.45.0...ruby-v0.45.1

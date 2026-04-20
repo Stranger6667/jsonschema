@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    jsonschema_rs (0.46.1)
+    jsonschema_rs (0.46.2)
       bigdecimal (>= 3.1, < 5)
       rb_sys (~> 0.9.124)
 
