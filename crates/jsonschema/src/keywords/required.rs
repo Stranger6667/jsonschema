@@ -389,9 +389,14 @@ pub(crate) fn compile<'a>(
             return None;
         }
 
-        // Case 2: properties + required: [2 items], no additionalProperties: false, no patternProperties
+        // Case 2: properties + required: [2 items], no additionalProperties, no patternProperties
         // Handled by SmallPropertiesWithRequired2Validator — only when the map is below the
         // threshold; above it BigPropertiesValidator is used and does not include required checks.
+        // Must NOT skip when additionalProperties is a schema object: properties::compile returns
+        // None in that case (AdditionalPropertiesNotEmptyValidator takes over), so
+        // SmallPropertiesWithRequired2Validator is never created — required would be silently dropped.
+        let additional_props_is_schema =
+            matches!(parent.get("additionalProperties"), Some(Value::Object(_)));
         let properties_below_threshold = parent
             .get("properties")
             .and_then(Value::as_object)
@@ -400,6 +405,7 @@ pub(crate) fn compile<'a>(
             && has_properties
             && properties_below_threshold
             && !additional_props_false
+            && !additional_props_is_schema
             && !has_pattern_properties
         {
             return None;
@@ -568,6 +574,26 @@ mod tests {
         let instance = json!({"a": 1, "b": 2, "c": 3});
         let errors: Vec<_> = validator.iter_errors(&instance).collect();
         assert!(errors.is_empty());
+    }
+
+    // When `additionalProperties` is a schema object, properties::compile returns None so
+    // SmallPropertiesWithRequired2Validator is never created; required must still be enforced.
+    #[test]
+    fn required_2_enforced_with_additional_properties_schema() {
+        let schema = json!({
+            "properties": {
+                "type": {"type": "string"},
+                "linkedServiceName": {"type": "object"},
+            },
+            "additionalProperties": {"type": "object"},
+            "required": ["type", "linkedServiceName"],
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+
+        assert!(!validator.is_valid(&json!({"type": "x"})));
+        assert!(!validator.is_valid(&json!({"linkedServiceName": {}})));
+        assert!(!validator.is_valid(&json!({})));
+        assert!(validator.is_valid(&json!({"type": "x", "linkedServiceName": {}})));
     }
 
     // When `properties` has >= HASHMAP_THRESHOLD entries the fused SmallPropertiesWithRequired2
