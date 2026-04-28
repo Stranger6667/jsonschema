@@ -48,6 +48,7 @@ jobs:
       - run: cargo update -p zerofrom --precise 0.1.5
       - run: cargo update -p indexmap --precise 2.13.0
       - run: cargo update -p hyper-rustls --precise 0.27.7
+      - run: cargo update -p rustls-platform-verifier --precise 0.6.2
       - run: cargo build -p jsonschema
 
   test-native:
