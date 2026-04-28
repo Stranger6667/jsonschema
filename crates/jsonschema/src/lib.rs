@@ -488,7 +488,13 @@
 //! And non-blocking version with the `resolve-async` feature enabled:
 //!
 //! ```rust,no_run
-//! # #[cfg(feature = "resolve-async")]
+//! # #[cfg(all(
+//! #     feature = "resolve-async",
+//! #     any(
+//! #         not(target_arch = "wasm32"),
+//! #         all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none")),
+//! #     ),
+//! # ))]
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! use jsonschema::{AsyncRetrieve, Registry, Resource, Uri};
 //! use serde_json::{Value, json};

@@ -38,12 +38,13 @@ reqwest = { version = "0.13", default-features = false, features = [
 ], optional = true }
 # Crypto provider for TLS: aws-lc-rs by default, or ring when tls-ring feature is enabled
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12"], optional = true }
-tokio = { version = "1.0", features = ["fs", "rt"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.3.4", features = ["wasm_js"] }
+
+# Mirror reqwest's wasm cfg; other wasm targets get native deps that don't build.
+[target.'cfg(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none")))'.dependencies]
 reqwest = { version = "0.13", features = ["json"], default-features = false, optional = true }
-tokio = { version = "1.0", features = ["rt"], optional = true }
 
 [dependencies]
 ahash.workspace = true
@@ -66,6 +67,7 @@ regex = "1.11.1"
 regex-syntax = "0.8.5"
 serde.workspace = true
 serde_json.workspace = true
+tokio = { version = "1", default-features = false, features = ["rt"], optional = true }
 unicode-general-category = "1.1"
 uuid-simd = { version = "0.8", default-features = false, features = ["std", "detect"] }
 
