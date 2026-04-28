@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.3] - 2026-04-28
+
 ### Fixed
 
 - Memory not reclaimed when a validator for a schema with recursive `$ref` or `$dynamicRef` is dropped. [#1125](https://github.com/Stranger6667/jsonschema/issues/1125)
@@ -1009,7 +1011,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.2...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.3...HEAD
+[0.46.3]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.2...python-v0.46.3
 [0.46.2]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.1...python-v0.46.2
 [0.46.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.0...python-v0.46.1
 [0.46.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.45.1...python-v0.46.0
