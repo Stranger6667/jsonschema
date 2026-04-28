@@ -41,21 +41,11 @@ pub(crate) struct PendingSchemaNode {
     cell: Arc<OnceLock<PendingTarget>>,
 }
 
+#[derive(Debug)]
 struct PendingTarget {
     inner: Weak<SchemaNodeInner>,
     location: Location,
     absolute_path: Option<Arc<Uri<String>>>,
-    /// Cached materialized `SchemaNode` to avoid cloning on every access.
-    cached_node: OnceLock<SchemaNode>,
-}
-
-impl fmt::Debug for PendingTarget {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PendingTarget")
-            .field("location", &self.location)
-            .field("absolute_path", &self.absolute_path)
-            .finish_non_exhaustive()
-    }
 }
 
 enum NodeValidators {
@@ -124,15 +114,14 @@ impl PendingSchemaNode {
             inner: Arc::downgrade(&node.inner),
             location: node.location.clone(),
             absolute_path: node.absolute_path.clone(),
-            cached_node: OnceLock::new(),
         };
         self.cell
             .set(target)
             .expect("pending node initialized twice");
     }
 
-    pub(crate) fn get(&self) -> Option<&SchemaNode> {
-        self.cell.get().map(PendingTarget::get_or_materialize)
+    pub(crate) fn get(&self) -> Option<SchemaNode> {
+        self.cell.get().map(PendingTarget::materialize)
     }
 
     fn with_node<F, R>(&self, f: F) -> R
@@ -143,7 +132,8 @@ impl PendingSchemaNode {
             .cell
             .get()
             .expect("pending node accessed before initialization");
-        f(target.get_or_materialize())
+        let node = target.materialize();
+        f(&node)
     }
 
     /// Get a unique identifier for this pending node.
@@ -155,16 +145,13 @@ impl PendingSchemaNode {
 }
 
 impl PendingTarget {
-    /// Get or create the cached `SchemaNode`. Only clones on first access.
-    fn get_or_materialize(&self) -> &SchemaNode {
-        self.cached_node.get_or_init(|| {
-            let inner = self.inner.upgrade().expect("pending schema target dropped");
-            SchemaNode {
-                inner,
-                location: self.location.clone(),
-                absolute_path: self.absolute_path.clone(),
-            }
-        })
+    fn materialize(&self) -> SchemaNode {
+        let inner = self.inner.upgrade().expect("pending schema target dropped");
+        SchemaNode {
+            inner,
+            location: self.location.clone(),
+            absolute_path: self.absolute_path.clone(),
+        }
     }
 }
 
