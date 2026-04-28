@@ -5,6 +5,7 @@
 ### Fixed
 
 - Memory not reclaimed when a `Validator` for a schema with recursive `$ref` or `$dynamicRef` is dropped. [#1125](https://github.com/Stranger6667/jsonschema/issues/1125)
+- Compilation failure on `wasm32-wasip1` and `wasm32-unknown-emscripten` targets.
 
 ## [0.46.2] - 2026-04-20
 

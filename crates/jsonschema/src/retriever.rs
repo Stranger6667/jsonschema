@@ -328,6 +328,7 @@ impl Retrieve for DefaultRetriever {
 #[cfg_attr(target_family = "wasm", async_trait::async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait::async_trait)]
 impl referencing::AsyncRetrieve for DefaultRetriever {
+    #[allow(unused)]
     async fn retrieve(
         &self,
         uri: &Uri<String>,
@@ -345,9 +346,21 @@ impl referencing::AsyncRetrieve for DefaultRetriever {
 
                     Ok(reqwest::get(uri.as_str()).await?.json().await?)
                 }
-                #[cfg(all(feature = "resolve-http", target_arch = "wasm32"))]
+                #[cfg(all(
+                    feature = "resolve-http",
+                    target_arch = "wasm32",
+                    any(target_os = "unknown", target_os = "none"),
+                ))]
                 {
                     Ok(reqwest::get(uri.as_str()).await?.json().await?)
+                }
+                #[cfg(all(
+                    feature = "resolve-http",
+                    target_arch = "wasm32",
+                    not(any(target_os = "unknown", target_os = "none")),
+                ))]
+                {
+                    Err("HTTP retrieval is not supported on this wasm32 target; provide a custom `AsyncRetrieve` to resolve external schemas via HTTP".into())
                 }
                 #[cfg(not(feature = "resolve-http"))]
                 Err("`resolve-http` feature or a custom resolver is required to resolve external schemas via HTTP".into())
