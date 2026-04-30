@@ -296,6 +296,7 @@ enum ValidationErrorKind {
     AdditionalProperties { unexpected: Py<PyList> },
     AnyOf { context: Py<PyList> },
     BacktrackLimitExceeded { error: String },
+    RegexEngineFailure { message: String },
     Constant { expected_value: Py<PyAny> },
     Contains {},
     ContentEncoding { content_encoding: String },
@@ -353,6 +354,9 @@ impl ValidationErrorKind {
                 ValidationErrorKind::BacktrackLimitExceeded {
                     error: error.to_string(),
                 }
+            }
+            jsonschema::error::ValidationErrorKind::RegexEngineFailure { message } => {
+                ValidationErrorKind::RegexEngineFailure { message }
             }
             jsonschema::error::ValidationErrorKind::Constant { expected_value } => {
                 ValidationErrorKind::Constant {
@@ -500,7 +504,9 @@ impl ValidationErrorKind {
             Self::AdditionalItems { .. } => "additionalItems",
             Self::AdditionalProperties { .. } => "additionalProperties",
             Self::AnyOf { .. } => "anyOf",
-            Self::BacktrackLimitExceeded { .. } | Self::Pattern { .. } => "pattern",
+            Self::BacktrackLimitExceeded { .. }
+            | Self::RegexEngineFailure { .. }
+            | Self::Pattern { .. } => "pattern",
             Self::Constant { .. } => "const",
             Self::Contains { .. } => "contains",
             Self::ContentEncoding { .. } | Self::FromUtf8 { .. } => "contentEncoding",
@@ -544,6 +550,9 @@ impl ValidationErrorKind {
             | Self::OneOfNotValid { context } => context.clone_ref(py).into_any(),
             Self::BacktrackLimitExceeded { error } | Self::FromUtf8 { error } => {
                 error.into_pyobject(py).unwrap().into_any().unbind()
+            }
+            Self::RegexEngineFailure { message } => {
+                message.into_pyobject(py).unwrap().into_any().unbind()
             }
             Self::Constant { expected_value } => expected_value.clone_ref(py),
             Self::Contains {} | Self::FalseSchema {} | Self::UniqueItems {} => py.None(),
@@ -594,6 +603,7 @@ impl ValidationErrorKind {
             Self::BacktrackLimitExceeded { error } | Self::FromUtf8 { error } => {
                 dict.set_item("error", error)?;
             }
+            Self::RegexEngineFailure { message } => dict.set_item("message", message)?,
             Self::Constant { expected_value } => dict.set_item("expected_value", expected_value)?,
             Self::Contains {} | Self::FalseSchema {} | Self::UniqueItems {} => {}
             Self::ContentEncoding { content_encoding } => {

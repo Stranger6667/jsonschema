@@ -6,7 +6,10 @@ use crate::{
     keywords::CompilationResult,
     options::PatternEngineOptions,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
-    regex::{analyze_pattern, is_ecma_whitespace, PatternOptimization, RegexEngine, RegexError},
+    regex::{
+        analyze_pattern, is_ecma_whitespace, PatternOptimization, RegexEngine, RegexError,
+        RegexFailureReason,
+    },
     types::JsonType,
     validator::{Validate, ValidationContext},
 };
@@ -196,14 +199,24 @@ impl<R: RegexEngine> Validate for PatternValidator<R> {
                     }
                 }
                 Err(e) => {
-                    return Err(ValidationError::backtrack_limit(
-                        self.location.clone(),
-                        crate::paths::capture_evaluation_path(tracker, &self.location),
-                        location.into(),
-                        instance,
-                        e.into_backtrack_error()
-                            .expect("Can only fail with the fancy-regex crate"),
-                    ));
+                    let pattern = self.regex.pattern().to_string();
+                    let tracker = crate::paths::capture_evaluation_path(tracker, &self.location);
+                    return Err(match e.into_failure_reason() {
+                        RegexFailureReason::FancyRegex(error) => ValidationError::backtrack_limit(
+                            self.location.clone(),
+                            tracker,
+                            location.into(),
+                            instance,
+                            error,
+                        ),
+                        RegexFailureReason::Panicked => ValidationError::regex_engine_failure(
+                            self.location.clone(),
+                            tracker,
+                            location.into(),
+                            instance,
+                            format!("Regex engine failed to evaluate pattern '{pattern}'"),
+                        ),
+                    });
                 }
             }
         }
@@ -383,5 +396,77 @@ mod tests {
         assert!(validator.is_valid(&valid));
         let invalid = json!("Hello123");
         assert!(!validator.is_valid(&invalid));
+    }
+
+    // `catch_unwind` is a no-op under `panic = "abort"` (e.g. the wasm32-wasip1 default), so the
+    // recovery path can't be exercised there.
+    #[cfg(panic = "unwind")]
+    #[test]
+    fn empty_string_with_large_bounded_quantifier_fancy_regex() {
+        // Recovery for https://github.com/rust-lang/regex/issues/1344.
+        let schema = json!({"type": "string", "pattern": r"^.{0,404600}$"});
+        let validator = crate::options()
+            .with_pattern_options(PatternOptions::fancy_regex().size_limit(1_000_000_000))
+            .build(&schema)
+            .expect("Schema should be valid");
+
+        assert!(validator.is_valid(&json!("x")));
+        assert!(!validator.is_valid(&json!("")));
+        let empty = json!("");
+        let error = validator
+            .validate(&empty)
+            .expect_err("expected a validation error");
+        assert_eq!(
+            error.to_string(),
+            "Regex engine failed to evaluate pattern '^.{0,404600}$'"
+        );
+    }
+
+    #[test]
+    fn fancy_regex_backtrack_limit_exceeded() {
+        let schema = json!({"type": "string", "pattern": r"(?<=ab)c"});
+        let validator = crate::options()
+            .with_pattern_options(PatternOptions::fancy_regex().backtrack_limit(1))
+            .build(&schema)
+            .expect("Schema should be valid");
+
+        let instance = json!("abc");
+        let error = validator
+            .validate(&instance)
+            .expect_err("expected a validation error");
+        assert!(
+            matches!(
+                error.kind(),
+                crate::error::ValidationErrorKind::BacktrackLimitExceeded { .. }
+            ),
+            "expected BacktrackLimitExceeded, got {:?}",
+            error.kind()
+        );
+        assert_eq!(
+            error.to_string(),
+            "Error executing regex: Max limit for backtracking count exceeded"
+        );
+    }
+
+    #[cfg(panic = "unwind")]
+    #[test]
+    fn empty_string_with_large_bounded_quantifier_regex() {
+        // Recovery for https://github.com/rust-lang/regex/issues/1344.
+        let schema = json!({"type": "string", "pattern": r"^.{0,404600}$"});
+        let validator = crate::options()
+            .with_pattern_options(PatternOptions::regex().size_limit(1_000_000_000))
+            .build(&schema)
+            .expect("Schema should be valid");
+
+        assert!(validator.is_valid(&json!("x")));
+        assert!(!validator.is_valid(&json!("")));
+        let empty = json!("");
+        let error = validator
+            .validate(&empty)
+            .expect_err("expected a validation error");
+        assert_eq!(
+            error.to_string(),
+            "Regex engine failed to evaluate pattern '^.{0,404600}$'"
+        );
     }
 }

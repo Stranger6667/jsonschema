@@ -164,7 +164,7 @@ impl ValidationErrorKind {
                 ID_CONTENT_MEDIA_TYPE.to_symbol(),
                 ruby.into_value(content_media_type.as_str()),
             )?,
-            K::Custom { message, .. } => rb_hash1(
+            K::Custom { message, .. } | K::RegexEngineFailure { message } => rb_hash1(
                 ruby,
                 ID_MESSAGE.to_symbol(),
                 ruby.into_value(message.as_str()),

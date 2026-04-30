@@ -266,6 +266,9 @@ pub enum ValidationErrorKind {
     },
     /// Results from a [`fancy_regex::RuntimeError::BacktrackLimitExceeded`] variant when matching
     BacktrackLimitExceeded { error: fancy_regex::Error },
+    /// The regex engine failed to evaluate a `pattern` (e.g. recovered panic from
+    /// [`regex-automata`](https://github.com/rust-lang/regex/issues/1344)).
+    RegexEngineFailure { message: String },
     /// The input value doesn't match expected constant.
     Constant { expected_value: Value },
     /// The input array doesn't contain items conforming to the specified schema.
@@ -349,6 +352,7 @@ impl ValidationErrorKind {
             ValidationErrorKind::AdditionalProperties { .. } => "additionalProperties",
             ValidationErrorKind::AnyOf { .. } => "anyOf",
             ValidationErrorKind::BacktrackLimitExceeded { .. }
+            | ValidationErrorKind::RegexEngineFailure { .. }
             | ValidationErrorKind::Pattern { .. } => "pattern",
             ValidationErrorKind::Constant { .. } => "const",
             ValidationErrorKind::Contains => "contains",
@@ -618,6 +622,21 @@ impl<'a> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::BacktrackLimitExceeded { error },
+            instance_path,
+            schema_path,
+            tracker,
+        )
+    }
+    pub(crate) fn regex_engine_failure(
+        schema_path: Location,
+        tracker: impl Into<LazyEvaluationPath>,
+        instance_path: Location,
+        instance: &'a Value,
+        message: String,
+    ) -> ValidationError<'a> {
+        Self::borrowed(
+            instance,
+            ValidationErrorKind::RegexEngineFailure { message },
             instance_path,
             schema_path,
             tracker,
@@ -1593,7 +1612,8 @@ impl fmt::Display for ValidationError<'_> {
                 }
                 Ok(())
             }
-            ValidationErrorKind::Custom { message, .. } => f.write_str(message),
+            ValidationErrorKind::Custom { message, .. }
+            | ValidationErrorKind::RegexEngineFailure { message } => f.write_str(message),
         }
     }
 }
@@ -1782,7 +1802,8 @@ impl fmt::Display for MaskedValidationError<'_, '_, '_> {
                 }
                 Ok(())
             }
-            ValidationErrorKind::Custom { message, .. } => f.write_str(message),
+            ValidationErrorKind::Custom { message, .. }
+            | ValidationErrorKind::RegexEngineFailure { message } => f.write_str(message),
         }
     }
 }

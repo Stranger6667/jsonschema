@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Panic in the regex engine when matching against patterns with very large `{0,N}` quantifiers.
+
 ## [0.46.3] - 2026-04-28
 
 ### Fixed
