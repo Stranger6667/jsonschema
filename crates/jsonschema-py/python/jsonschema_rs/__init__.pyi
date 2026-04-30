@@ -235,6 +235,9 @@ class ValidationErrorKind:
     class BacktrackLimitExceeded:
         error: str
 
+    class RegexEngineFailure:
+        message: str
+
     class Constant:
         expected_value: JSONType
 
