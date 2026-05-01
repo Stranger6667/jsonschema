@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.4] - 2026-05-01
+
 ### Fixed
 
 - Panic in the regex engine when matching against patterns with very large `{0,N}` quantifiers.
@@ -1273,7 +1275,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.3...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.4...HEAD
+[0.46.4]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.3...rust-v0.46.4
 [0.46.3]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.2...rust-v0.46.3
 [0.46.2]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.1...rust-v0.46.2
 [0.46.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.0...rust-v0.46.1
