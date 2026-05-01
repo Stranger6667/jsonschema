@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.4] - 2026-05-01
+
 ### Fixed
 
 - Panic in the regex engine when matching against patterns with very large `{0,N}` quantifiers.
@@ -1015,7 +1017,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.3...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.4...HEAD
+[0.46.4]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.3...python-v0.46.4
 [0.46.3]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.2...python-v0.46.3
 [0.46.2]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.1...python-v0.46.2
 [0.46.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.0...python-v0.46.1
