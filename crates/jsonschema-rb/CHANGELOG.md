@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.4] - 2026-05-02
+
 ### Fixed
 
 - Panic in the regex engine when matching against patterns with very large `{0,N}` quantifiers.
@@ -108,7 +110,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.3...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.4...HEAD
+[0.46.4]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.3...ruby-v0.46.4
 [0.46.3]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.2...ruby-v0.46.3
 [0.46.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.1...ruby-v0.46.2
 [0.46.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.0...ruby-v0.46.1
