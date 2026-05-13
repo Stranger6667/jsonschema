@@ -115,6 +115,14 @@ pub(crate) struct AlternationPatternValidator {
 }
 
 impl Validate for AlternationPatternValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
+
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::String(item) = instance {
             self.alternatives
@@ -158,6 +166,14 @@ pub(crate) struct NoWhitespacePatternValidator {
 }
 
 impl Validate for NoWhitespacePatternValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
+
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::String(item) = instance {
             !item.chars().any(is_ecma_whitespace)
