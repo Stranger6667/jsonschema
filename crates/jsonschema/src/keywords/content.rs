@@ -324,17 +324,19 @@ pub(crate) fn compile_content_encoding<'a>(
 /// Per spec, annotations are only produced for string instances.
 pub(crate) struct ContentMediaTypeAnnotationValidator {
     annotation: Arc<Value>,
+    location: Location,
 }
 
 impl ContentMediaTypeAnnotationValidator {
     pub(crate) fn compile<'a>(
-        _ctx: &compiler::Context,
+        ctx: &compiler::Context,
         _schema: &'a Map<String, Value>,
         subschema: &'a Value,
     ) -> Option<CompilationResult<'a>> {
         if let Value::String(_) = subschema {
             Some(Ok(Box::new(ContentMediaTypeAnnotationValidator {
                 annotation: Arc::new(subschema.clone()),
+                location: ctx.location().join("contentMediaType"),
             })))
         } else {
             None
@@ -343,6 +345,14 @@ impl ContentMediaTypeAnnotationValidator {
 }
 
 impl Validate for ContentMediaTypeAnnotationValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
+
     fn is_valid(&self, _instance: &Value, _ctx: &mut ValidationContext) -> bool {
         true
     }
@@ -387,17 +397,19 @@ pub(crate) fn compile_media_type_annotation<'a>(
 /// Per spec, annotations are only produced for string instances.
 pub(crate) struct ContentEncodingAnnotationValidator {
     annotation: Arc<Value>,
+    location: Location,
 }
 
 impl ContentEncodingAnnotationValidator {
     pub(crate) fn compile<'a>(
-        _ctx: &compiler::Context,
+        ctx: &compiler::Context,
         _schema: &'a Map<String, Value>,
         subschema: &'a Value,
     ) -> Option<CompilationResult<'a>> {
         if let Value::String(_) = subschema {
             Some(Ok(Box::new(ContentEncodingAnnotationValidator {
                 annotation: Arc::new(subschema.clone()),
+                location: ctx.location().join("contentEncoding"),
             })))
         } else {
             None
@@ -406,6 +418,14 @@ impl ContentEncodingAnnotationValidator {
 }
 
 impl Validate for ContentEncodingAnnotationValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
+
     fn is_valid(&self, _instance: &Value, _ctx: &mut ValidationContext) -> bool {
         true
     }
@@ -451,11 +471,12 @@ pub(crate) fn compile_content_encoding_annotation<'a>(
 /// `contentMediaType` is also present in the same schema object.
 pub(crate) struct ContentSchemaAnnotationValidator {
     annotation: Arc<Value>,
+    location: Location,
 }
 
 impl ContentSchemaAnnotationValidator {
     pub(crate) fn compile<'a>(
-        _ctx: &compiler::Context,
+        ctx: &compiler::Context,
         schema: &'a Map<String, Value>,
         subschema: &'a Value,
     ) -> Option<CompilationResult<'a>> {
@@ -463,6 +484,7 @@ impl ContentSchemaAnnotationValidator {
         if schema.contains_key("contentMediaType") {
             Some(Ok(Box::new(ContentSchemaAnnotationValidator {
                 annotation: Arc::new(subschema.clone()),
+                location: ctx.location().join("contentSchema"),
             })))
         } else {
             None
@@ -471,6 +493,14 @@ impl ContentSchemaAnnotationValidator {
 }
 
 impl Validate for ContentSchemaAnnotationValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
+
     fn is_valid(&self, _instance: &Value, _ctx: &mut ValidationContext) -> bool {
         true
     }
