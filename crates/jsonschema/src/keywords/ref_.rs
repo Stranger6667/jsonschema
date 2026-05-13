@@ -20,8 +20,12 @@ struct RefValidator {
     inner: Box<dyn Validate>,
     /// Path of this `$ref` keyword relative to its resource base.
     /// E.g., `/properties/foo/$ref` (not the full canonical path).
-    /// Used both as the tracker prefix and as the schema_path for tracing.
+    /// Used as the tracker prefix.
     ref_suffix: Location,
+    /// Absolute path of this `$ref` keyword from the spec root.
+    /// E.g., `/components/schemas/Foo/properties/bar/$ref`.
+    /// Used as `schema_path` for tracing — consumers key their coverage maps on this form.
+    ref_keyword_location: Location,
     /// The resource base of the `$ref` target.
     /// E.g., `/$defs/Item` when `$ref` points to `#/$defs/Item`.
     /// Used as the canonical location (schemaLocation per spec) and for runtime suffixes.
@@ -78,7 +82,7 @@ impl Validate for RefValidator {
     }
 
     fn schema_path(&self) -> &Location {
-        &self.ref_suffix
+        &self.ref_keyword_location
     }
 
     fn trace(
@@ -153,6 +157,11 @@ impl Validate for DirectRefValidator {
 ///
 /// JSON Pointer fragments (starting with `/`) become the location path.
 /// Anchor fragments (plain names like `#node`) resolve to root.
+///
+/// The URI fragment is percent-encoded per RFC 3986 (e.g. `%20` for space),
+/// while `Location::from_escaped` expects JSON-Pointer escaping (`~0`/`~1`).
+/// Percent-decode first so the resulting `Location` matches the JSON Pointer
+/// form used elsewhere.
 fn extract_ref_target_base(alias: &referencing::Uri<String>) -> Location {
     if let Some(fragment) = alias.fragment() {
         let fragment = fragment.as_str();
@@ -190,6 +199,7 @@ fn compile_reference_validator<'a>(
     }
 
     let ref_suffix = ctx.suffix().join(keyword);
+    let ref_keyword_location = ctx.location().join(keyword);
     let ref_target_base = extract_ref_target_base(&alias);
 
     match ctx.lookup_maybe_recursive(reference) {
@@ -197,6 +207,7 @@ fn compile_reference_validator<'a>(
             return Some(Ok(Box::new(RefValidator {
                 inner: validator,
                 ref_suffix,
+                ref_keyword_location,
                 ref_target_base,
             })));
         }
@@ -226,6 +237,7 @@ fn compile_reference_validator<'a>(
                 Box::new(DirectRefValidator {
                     inner: node,
                     ref_suffix,
+                    ref_keyword_location,
                     ref_target_base,
                 }) as Box<dyn Validate>
             })
@@ -238,6 +250,7 @@ fn compile_recursive_validator<'a>(
     reference: &str,
 ) -> CompilationResult<'a> {
     let ref_suffix = ctx.suffix().join("$recursiveRef");
+    let ref_keyword_location = ctx.location().join("$recursiveRef");
     let alias = ctx
         .resolve_reference_uri(reference)
         .map_err(ValidationError::from)?;
@@ -248,6 +261,7 @@ fn compile_recursive_validator<'a>(
             return Ok(Box::new(RefValidator {
                 inner: validator,
                 ref_suffix,
+                ref_keyword_location,
                 ref_target_base,
             }));
         }
@@ -276,6 +290,7 @@ fn compile_recursive_validator<'a>(
             Box::new(RefValidator {
                 inner: Box::new(node),
                 ref_suffix,
+                ref_keyword_location,
                 ref_target_base,
             }) as Box<dyn Validate>
         })
