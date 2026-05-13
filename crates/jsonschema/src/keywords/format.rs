@@ -1273,9 +1273,18 @@ impl Validate for CustomFormatValidator {
 /// Always validates successfully but emits the required annotation per spec §7.2.1.
 struct AnnotationOnlyFormatValidator {
     annotation: Arc<Value>,
+    location: Location,
 }
 
 impl Validate for AnnotationOnlyFormatValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
+
     fn is_valid(&self, _instance: &Value, _ctx: &mut ValidationContext) -> bool {
         true
     }
@@ -1428,6 +1437,7 @@ pub(crate) fn compile<'a>(
             // Format validation disabled: annotation-only per spec §7.2.1
             Some(Ok(Box::new(AnnotationOnlyFormatValidator {
                 annotation: Arc::new(Value::String(format.clone())),
+                location: ctx.location().join("format"),
             })))
         }
     } else {
