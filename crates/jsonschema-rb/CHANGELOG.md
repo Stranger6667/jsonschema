@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.5] - 2026-05-13
+
 ### Fixed
 
 - Percent-encoded characters in `$ref` URI fragments (e.g. `#/$defs/Request%20class`) are now decoded when stored as `schema_path`.
@@ -114,7 +116,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.4...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.5...HEAD
+[0.46.5]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.4...ruby-v0.46.5
 [0.46.4]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.3...ruby-v0.46.4
 [0.46.3]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.2...ruby-v0.46.3
 [0.46.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.1...ruby-v0.46.2
