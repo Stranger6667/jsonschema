@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.5] - 2026-05-13
+
 ### Fixed
 
 - Percent-encoded characters in `$ref` URI fragments (e.g. `#/$defs/Request%20class`) are now decoded when stored as `schema_path`.
@@ -1279,7 +1281,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.4...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.5...HEAD
+[0.46.5]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.4...rust-v0.46.5
 [0.46.4]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.3...rust-v0.46.4
 [0.46.3]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.2...rust-v0.46.3
 [0.46.2]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.1...rust-v0.46.2
