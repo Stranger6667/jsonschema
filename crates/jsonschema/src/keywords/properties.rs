@@ -241,6 +241,85 @@ impl Validate for SmallPropertiesWithRequired2Validator {
         matches!(instance, Value::Object(_))
     }
 
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Object(object) = instance {
+            let mut properties_valid = true;
+            let mut at_least_one = false;
+            for (name, node) in &self.properties {
+                let path = instance_path.push(name);
+                let schema_path = node.schema_path();
+                if let Some(item) = object.get(name) {
+                    at_least_one = true;
+                    let schema_is_valid = node.trace(item, &path, callback, ctx);
+                    crate::tracing::TracingContext::new(
+                        instance_path,
+                        schema_path,
+                        schema_is_valid,
+                    )
+                    .call(callback);
+                    properties_valid &= schema_is_valid;
+                } else {
+                    crate::tracing::TracingContext::new(instance_path, schema_path, None)
+                        .call(callback);
+                }
+            }
+            let first_present = object.contains_key(&self.first);
+            let second_present = object.contains_key(&self.second);
+            let required_valid = first_present && second_present;
+            let is_valid = properties_valid && required_valid;
+            let rv = if at_least_one {
+                Some(properties_valid)
+            } else {
+                None
+            };
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), rv)
+                .call(callback);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.required_location.join(0usize),
+                first_present,
+            )
+            .call(callback);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.required_location.join(1usize),
+                second_present,
+            )
+            .call(callback);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.required_location,
+                required_valid,
+            )
+            .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.required_location.join(0usize),
+                None,
+            )
+            .call(callback);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.required_location.join(1usize),
+                None,
+            )
+            .call(callback);
+            crate::tracing::TracingContext::new(instance_path, &self.required_location, None)
+                .call(callback);
+            true
+        }
+    }
+
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
             // Check required first (fast fail)

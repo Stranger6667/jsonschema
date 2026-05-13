@@ -407,6 +407,35 @@ impl Validate for ItemsNumberTypeValidator {
         matches!(instance, Value::Array(_))
     }
 
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        let type_location = self.location.join("type");
+        if let Value::Array(items) = instance {
+            let mut is_valid = true;
+            for (idx, item) in items.iter().enumerate() {
+                let item_valid = item.is_number();
+                if !item_valid {
+                    is_valid = false;
+                }
+                let item_path = instance_path.push(idx);
+                crate::tracing::TracingContext::new(&item_path, &type_location, item_valid)
+                    .call(callback);
+            }
+            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, &type_location, None).call(callback);
+            true
+        }
+    }
+
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
@@ -522,6 +551,35 @@ impl Validate for ItemsStringTypeValidator {
         matches!(instance, Value::Array(_))
     }
 
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        let type_location = self.location.join("type");
+        if let Value::Array(items) = instance {
+            let mut is_valid = true;
+            for (idx, item) in items.iter().enumerate() {
+                let item_valid = item.is_string();
+                if !item_valid {
+                    is_valid = false;
+                }
+                let item_path = instance_path.push(idx);
+                crate::tracing::TracingContext::new(&item_path, &type_location, item_valid)
+                    .call(callback);
+            }
+            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, &type_location, None).call(callback);
+            true
+        }
+    }
+
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
@@ -635,6 +693,35 @@ impl Validate for ItemsIntegerTypeValidator {
 
     fn matches_type(&self, instance: &Value) -> bool {
         matches!(instance, Value::Array(_))
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        let type_location = self.location.join("type");
+        if let Value::Array(items) = instance {
+            let mut is_valid = true;
+            for (idx, item) in items.iter().enumerate() {
+                let item_valid = matches!(item, Value::Number(n) if super::type_::is_integer(n));
+                if !item_valid {
+                    is_valid = false;
+                }
+                let item_path = instance_path.push(idx);
+                crate::tracing::TracingContext::new(&item_path, &type_location, item_valid)
+                    .call(callback);
+            }
+            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, &type_location, None).call(callback);
+            true
+        }
     }
 
     #[inline]
@@ -776,6 +863,36 @@ impl Validate for ItemsIntegerTypeValidatorDraft4 {
         matches!(instance, Value::Array(_))
     }
 
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        let type_location = self.location.join("type");
+        if let Value::Array(items) = instance {
+            let mut is_valid = true;
+            for (idx, item) in items.iter().enumerate() {
+                let item_valid =
+                    matches!(item, Value::Number(n) if super::legacy::type_draft_4::is_integer(n));
+                if !item_valid {
+                    is_valid = false;
+                }
+                let item_path = instance_path.push(idx);
+                crate::tracing::TracingContext::new(&item_path, &type_location, item_valid)
+                    .call(callback);
+            }
+            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, &type_location, None).call(callback);
+            true
+        }
+    }
+
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
@@ -914,6 +1031,35 @@ impl Validate for ItemsBooleanTypeValidator {
         matches!(instance, Value::Array(_))
     }
 
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        let type_location = self.location.join("type");
+        if let Value::Array(items) = instance {
+            let mut is_valid = true;
+            for (idx, item) in items.iter().enumerate() {
+                let item_valid = item.is_boolean();
+                if !item_valid {
+                    is_valid = false;
+                }
+                let item_path = instance_path.push(idx);
+                crate::tracing::TracingContext::new(&item_path, &type_location, item_valid)
+                    .call(callback);
+            }
+            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, &type_location, None).call(callback);
+            true
+        }
+    }
+
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Array(items) = instance {
@@ -1036,7 +1182,7 @@ pub(crate) fn compile<'a>(
             }
             // Try to use specialized validators for simple type schemas
             if let Some(type_name) = get_simple_type_schema(schema) {
-                let location = ctx.location().join("items").join("type");
+                let location = ctx.location().join("items");
                 match type_name {
                     "number" => return Some(ItemsNumberTypeValidator::compile(location)),
                     "string" => return Some(ItemsStringTypeValidator::compile(location)),

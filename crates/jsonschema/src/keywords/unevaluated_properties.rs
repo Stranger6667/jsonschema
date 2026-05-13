@@ -229,7 +229,7 @@ impl PropertyValidators {
     /// Mark properties evaluated by OTHER keywords, excluding unevaluatedProperties itself.
     /// Used for tracing to ensure we trace all properties that unevaluatedProperties validates.
     ///
-    /// Note: Nested validators use regular mark_evaluated_properties because nested
+    /// Note: Nested validators use regular `mark_evaluated_properties` because nested
     /// unevaluatedProperties: true SHOULD mark properties as evaluated for the outer validator.
     fn mark_evaluated_properties_for_trace<'i>(
         &self,
