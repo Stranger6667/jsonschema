@@ -152,7 +152,8 @@ impl Validate for AnyOfValidator {
         let mut is_valid = false;
         for node in &self.schemas {
             let schema_is_valid = node.trace(instance, instance_path, callback, ctx);
-            TracingContext::new(instance_path, node.schema_path(), Some(schema_is_valid)).call(callback);
+            TracingContext::new(instance_path, node.schema_path(), Some(schema_is_valid))
+                .call(callback);
             is_valid |= schema_is_valid;
         }
         TracingContext::new(instance_path, self.schema_path(), Some(is_valid)).call(callback);

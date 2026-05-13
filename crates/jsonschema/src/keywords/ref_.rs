@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 /// Wrapper validator for `$ref` used for recursive references where the target is behind
 /// `Box<dyn Validate>` (a `PendingSchemaNode` or a cached node returned by
 /// `lookup_maybe_recursive`). Also:
-/// - tracks `$ref` traversals for the evaluation_path tracker (JSON Schema 2020-12 Core 12.4.2),
+/// - tracks `$ref` traversals for the `evaluation_path` tracker (JSON Schema 2020-12 Core 12.4.2),
 /// - ensures the `$ref` keyword is reported during tracing.
 struct RefValidator {
     inner: Box<dyn Validate>,

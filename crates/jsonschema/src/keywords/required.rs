@@ -242,6 +242,32 @@ impl Validate for Required2Validator {
         matches!(instance, Value::Object(_))
     }
 
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let first_present = item.contains_key(&self.first);
+            let second_present = item.contains_key(&self.second);
+            let item_path0 = self.location.join(0usize);
+            let item_path1 = self.location.join(1usize);
+            crate::tracing::TracingContext::new(instance_path, &item_path0, first_present)
+                .call(callback);
+            crate::tracing::TracingContext::new(instance_path, &item_path1, second_present)
+                .call(callback);
+            let is_valid = first_present && second_present;
+            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            true
+        }
+    }
+
     #[inline]
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::Object(item) = instance {
@@ -350,6 +376,45 @@ impl Validate for Required3Validator {
 
     fn matches_type(&self, instance: &Value) -> bool {
         matches!(instance, Value::Object(_))
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Object(item) = instance {
+            let first_present = item.contains_key(&self.first);
+            let second_present = item.contains_key(&self.second);
+            let third_present = item.contains_key(&self.third);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.location.join(0usize),
+                first_present,
+            )
+            .call(callback);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.location.join(1usize),
+                second_present,
+            )
+            .call(callback);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.location.join(2usize),
+                third_present,
+            )
+            .call(callback);
+            let is_valid = first_present && second_present && third_present;
+            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            true
+        }
     }
 
     #[inline]
