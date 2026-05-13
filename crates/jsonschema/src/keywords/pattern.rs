@@ -69,6 +69,14 @@ pub(crate) struct ExactPatternValidator {
 }
 
 impl Validate for ExactPatternValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
+
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         if let Value::String(item) = instance {
             item.as_str() == self.exact

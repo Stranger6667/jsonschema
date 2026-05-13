@@ -1059,6 +1059,10 @@ impl RegexValidator {
 }
 
 impl Validate for RegexValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
     fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
         if let Value::String(item) = instance {
             ctx.is_valid_ecma_regex(item)

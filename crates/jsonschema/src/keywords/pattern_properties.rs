@@ -20,170 +20,6 @@ pub(crate) struct PatternPropertiesValidator<R> {
     location: Location,
 }
 
-    fn schema_path(&self) -> &Location {
-        &self.location
-    }
-
-    fn matches_type(&self, instance: &Value) -> bool {
-        matches!(instance, Value::Object(_))
-    }
-
-    fn trace(
-        &self,
-        instance: &Value,
-        instance_path: &LazyLocation,
-        callback: crate::tracing::TracingCallback<'_>,
-        ctx: &mut ValidationContext,
-    ) -> bool {
-        if let Value::Object(item) = instance {
-            let mut is_valid = true;
-            let mut at_least_one = false;
-            for (key, value) in item {
-                if key.starts_with(self.prefix.as_ref()) {
-                    at_least_one = true;
-                    let path = instance_path.push(key.as_str());
-                    let schema_is_valid = self.node.trace(value, &path, callback, ctx);
-                    crate::tracing::TracingContext::new(
-                        instance_path,
-                        self.node.schema_path(),
-                        schema_is_valid,
-                    )
-                    .call(callback);
-                    is_valid &= schema_is_valid;
-                }
-            }
-            let rv = if at_least_one { Some(is_valid) } else { None };
-            crate::tracing::TracingContext::new(instance_path, self.schema_path(), rv)
-                .call(callback);
-            is_valid
-        } else {
-            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
-                .call(callback);
-            true
-        }
-    }
-
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if let Value::Object(item) = instance {
-            for (key, value) in item {
-                if key.starts_with(self.prefix.as_ref()) && !self.node.is_valid(value, ctx) {
-                    return false;
-                }
-            }
-            true
-        } else {
-            true
-        }
-    }
-
-    fn validate<'i>(
-        &self,
-        instance: &'i Value,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> Result<(), ValidationError<'i>> {
-        if let Value::Object(item) = instance {
-            for (key, value) in item {
-                if key.starts_with(self.prefix.as_ref()) {
-                    self.node
-                        .validate(value, &location.push(key), tracker, ctx)?;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn iter_errors<'i>(
-        &self,
-        instance: &'i Value,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Value::Object(item) = instance {
-            let mut errors = Vec::new();
-            for (key, value) in item {
-                if key.starts_with(self.prefix.as_ref()) {
-                    errors.extend(self.node.iter_errors(
-                        value,
-                        &location.push(key.as_str()),
-                        tracker,
-                        ctx,
-                    ));
-                }
-            }
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
-        }
-    }
-
-    fn evaluate(
-        &self,
-        instance: &Value,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        if let Value::Object(item) = instance {
-            let mut matched_propnames = Vec::with_capacity(item.len());
-            let mut children = Vec::new();
-            for (key, value) in item {
-                if key.starts_with(self.prefix.as_ref()) {
-                    matched_propnames.push(key.clone());
-                    children.push(self.node.evaluate_instance(
-                        value,
-                        &location.push(key.as_str()),
-                        tracker,
-                        ctx,
-                    ));
-                }
-            }
-            let mut result = EvaluationResult::from_children(children);
-            result.annotate(Annotations::new(Value::from(matched_propnames)));
-            result
-        } else {
-            EvaluationResult::valid_empty()
-        }
-    }
-
-    fn trace(
-        &self,
-        instance: &Value,
-        instance_path: &LazyLocation,
-        callback: crate::tracing::TracingCallback<'_>,
-        ctx: &mut ValidationContext,
-    ) -> bool {
-        if let Value::Object(item) = instance {
-            let mut is_valid = true;
-            let mut at_least_one = false;
-            for (key, value) in item {
-                if key.starts_with(self.prefix.as_ref()) {
-                    at_least_one = true;
-                    let path = instance_path.push(key.as_str());
-                    let schema_is_valid = self.node.trace(value, &path, callback, ctx);
-                    crate::tracing::TracingContext::new(
-                        instance_path,
-                        self.node.schema_path(),
-                        schema_is_valid,
-                    )
-                    .call(callback);
-                    is_valid &= schema_is_valid;
-                }
-            }
-            let rv = if at_least_one { Some(is_valid) } else { None };
-            crate::tracing::TracingContext::new(instance_path, self.schema_path(), rv)
-                .call(callback);
-            is_valid
-        } else {
-            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
-                .call(callback);
-            true
-        }
-    }
-}
-
 impl<R: RegexEngine> Validate for PatternPropertiesValidator<R> {
     fn schema_path(&self) -> &Location {
         &self.location
@@ -552,9 +388,14 @@ fn try_compile_as_literals<'a>(
         };
         entries.push((Arc::new(matcher), node));
     }
-    Some(Ok(build_validator_from_entries(entries, |regex, node| {
-        Box::new(SingleValuePatternPropertiesValidator { regex, node }) as Box<dyn Validate>
-    })))
+    let location = ctx.location().clone();
+    Some(Ok(build_validator_from_entries(
+        entries,
+        location,
+        |regex, node| {
+            Box::new(SingleValuePatternPropertiesValidator { regex, node }) as Box<dyn Validate>
+        },
+    )))
 }
 
 fn invalid_regex<'a>(ctx: &compiler::Context, schema: &'a Value) -> ValidationError<'a> {
