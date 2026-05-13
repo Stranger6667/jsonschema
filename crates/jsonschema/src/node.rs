@@ -696,26 +696,18 @@ impl Validate for SchemaNode {
         callback: TracingCallback<'_>,
         ctx: &mut ValidationContext,
     ) -> bool {
-        match self.validators.as_ref() {
-            NodeValidators::Array { ref validators } => {
-                let mut is_valid = true;
-                // Walk through all validators without short-circuiting
-                for entry in validators {
-                    is_valid &= entry.validator.trace(instance, location, callback, ctx);
-                }
-                is_valid
-            }
-            NodeValidators::Keyword(ref kvals) => {
-                let mut is_valid = true;
-                // Walk through all validators without short-circuiting
-                for entry in &kvals.validators {
-                    is_valid &= entry.validator.trace(instance, location, callback, ctx);
-                }
-                is_valid
-            }
-            NodeValidators::Boolean { validator: Some(_) } => false,
-            NodeValidators::Boolean { validator: None } => true,
+        let mut is_valid = true;
+        let mut walked_any = false;
+        // Walk through all validators without short-circuiting
+        for validator in self.validators() {
+            walked_any = true;
+            is_valid &= validator.trace(instance, location, callback, ctx);
         }
+        if !walked_any {
+            // Boolean schema with no validators: treat as `true` (valid for any instance).
+            return true;
+        }
+        is_valid
     }
 }
 
