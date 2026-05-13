@@ -390,12 +390,19 @@ impl Validate for ItemsObjectSkipPrefixValidator {
 
 pub(crate) struct ItemsNumberTypeValidator {
     location: Location,
+    items_location: Location,
 }
 
 impl ItemsNumberTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(ItemsNumberTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        location: Location,
+        items_location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(ItemsNumberTypeValidator {
+            location,
+            items_location,
+        }))
     }
 }
 
@@ -415,7 +422,8 @@ impl Validate for ItemsNumberTypeValidator {
         callback: crate::tracing::TracingCallback<'_>,
         _ctx: &mut ValidationContext,
     ) -> bool {
-        let type_location = self.location.join("type");
+        let type_location = &self.location;
+        let items_location = &self.items_location;
         if let Value::Array(items) = instance {
             let mut is_valid = true;
             for (idx, item) in items.iter().enumerate() {
@@ -424,15 +432,15 @@ impl Validate for ItemsNumberTypeValidator {
                     is_valid = false;
                 }
                 let item_path = instance_path.push(idx);
-                crate::tracing::TracingContext::new(&item_path, &type_location, item_valid)
+                crate::tracing::TracingContext::new(&item_path, type_location, item_valid)
                     .call(callback);
             }
-            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+            crate::tracing::TracingContext::new(instance_path, items_location, is_valid)
                 .call(callback);
             is_valid
         } else {
-            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
-            crate::tracing::TracingContext::new(instance_path, &type_location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, items_location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, type_location, None).call(callback);
             true
         }
     }
@@ -534,12 +542,19 @@ impl Validate for ItemsNumberTypeValidator {
 
 pub(crate) struct ItemsStringTypeValidator {
     location: Location,
+    items_location: Location,
 }
 
 impl ItemsStringTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(ItemsStringTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        location: Location,
+        items_location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(ItemsStringTypeValidator {
+            location,
+            items_location,
+        }))
     }
 }
 
@@ -559,7 +574,8 @@ impl Validate for ItemsStringTypeValidator {
         callback: crate::tracing::TracingCallback<'_>,
         _ctx: &mut ValidationContext,
     ) -> bool {
-        let type_location = self.location.join("type");
+        let type_location = &self.location;
+        let items_location = &self.items_location;
         if let Value::Array(items) = instance {
             let mut is_valid = true;
             for (idx, item) in items.iter().enumerate() {
@@ -568,15 +584,15 @@ impl Validate for ItemsStringTypeValidator {
                     is_valid = false;
                 }
                 let item_path = instance_path.push(idx);
-                crate::tracing::TracingContext::new(&item_path, &type_location, item_valid)
+                crate::tracing::TracingContext::new(&item_path, type_location, item_valid)
                     .call(callback);
             }
-            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+            crate::tracing::TracingContext::new(instance_path, items_location, is_valid)
                 .call(callback);
             is_valid
         } else {
-            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
-            crate::tracing::TracingContext::new(instance_path, &type_location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, items_location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, type_location, None).call(callback);
             true
         }
     }
@@ -678,12 +694,19 @@ impl Validate for ItemsStringTypeValidator {
 
 pub(crate) struct ItemsIntegerTypeValidator {
     location: Location,
+    items_location: Location,
 }
 
 impl ItemsIntegerTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(ItemsIntegerTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        location: Location,
+        items_location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(ItemsIntegerTypeValidator {
+            location,
+            items_location,
+        }))
     }
 }
 
@@ -703,7 +726,8 @@ impl Validate for ItemsIntegerTypeValidator {
         callback: crate::tracing::TracingCallback<'_>,
         _ctx: &mut ValidationContext,
     ) -> bool {
-        let type_location = self.location.join("type");
+        let type_location = &self.location;
+        let items_location = &self.items_location;
         if let Value::Array(items) = instance {
             let mut is_valid = true;
             for (idx, item) in items.iter().enumerate() {
@@ -712,15 +736,15 @@ impl Validate for ItemsIntegerTypeValidator {
                     is_valid = false;
                 }
                 let item_path = instance_path.push(idx);
-                crate::tracing::TracingContext::new(&item_path, &type_location, item_valid)
+                crate::tracing::TracingContext::new(&item_path, type_location, item_valid)
                     .call(callback);
             }
-            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+            crate::tracing::TracingContext::new(instance_path, items_location, is_valid)
                 .call(callback);
             is_valid
         } else {
-            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
-            crate::tracing::TracingContext::new(instance_path, &type_location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, items_location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, type_location, None).call(callback);
             true
         }
     }
@@ -846,12 +870,19 @@ impl Validate for ItemsIntegerTypeValidator {
 // Draft 4 has stricter integer semantics: numbers with decimal points are NOT integers
 pub(crate) struct ItemsIntegerTypeValidatorDraft4 {
     location: Location,
+    items_location: Location,
 }
 
 impl ItemsIntegerTypeValidatorDraft4 {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(ItemsIntegerTypeValidatorDraft4 { location }))
+    pub(crate) fn compile<'a>(
+        location: Location,
+        items_location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(ItemsIntegerTypeValidatorDraft4 {
+            location,
+            items_location,
+        }))
     }
 }
 
@@ -871,7 +902,8 @@ impl Validate for ItemsIntegerTypeValidatorDraft4 {
         callback: crate::tracing::TracingCallback<'_>,
         _ctx: &mut ValidationContext,
     ) -> bool {
-        let type_location = self.location.join("type");
+        let type_location = &self.location;
+        let items_location = &self.items_location;
         if let Value::Array(items) = instance {
             let mut is_valid = true;
             for (idx, item) in items.iter().enumerate() {
@@ -881,15 +913,15 @@ impl Validate for ItemsIntegerTypeValidatorDraft4 {
                     is_valid = false;
                 }
                 let item_path = instance_path.push(idx);
-                crate::tracing::TracingContext::new(&item_path, &type_location, item_valid)
+                crate::tracing::TracingContext::new(&item_path, type_location, item_valid)
                     .call(callback);
             }
-            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+            crate::tracing::TracingContext::new(instance_path, items_location, is_valid)
                 .call(callback);
             is_valid
         } else {
-            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
-            crate::tracing::TracingContext::new(instance_path, &type_location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, items_location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, type_location, None).call(callback);
             true
         }
     }
@@ -1014,12 +1046,19 @@ impl Validate for ItemsIntegerTypeValidatorDraft4 {
 
 pub(crate) struct ItemsBooleanTypeValidator {
     location: Location,
+    items_location: Location,
 }
 
 impl ItemsBooleanTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
-        Ok(Box::new(ItemsBooleanTypeValidator { location }))
+    pub(crate) fn compile<'a>(
+        location: Location,
+        items_location: Location,
+    ) -> CompilationResult<'a> {
+        Ok(Box::new(ItemsBooleanTypeValidator {
+            location,
+            items_location,
+        }))
     }
 }
 
@@ -1039,7 +1078,8 @@ impl Validate for ItemsBooleanTypeValidator {
         callback: crate::tracing::TracingCallback<'_>,
         _ctx: &mut ValidationContext,
     ) -> bool {
-        let type_location = self.location.join("type");
+        let type_location = &self.location;
+        let items_location = &self.items_location;
         if let Value::Array(items) = instance {
             let mut is_valid = true;
             for (idx, item) in items.iter().enumerate() {
@@ -1048,15 +1088,15 @@ impl Validate for ItemsBooleanTypeValidator {
                     is_valid = false;
                 }
                 let item_path = instance_path.push(idx);
-                crate::tracing::TracingContext::new(&item_path, &type_location, item_valid)
+                crate::tracing::TracingContext::new(&item_path, type_location, item_valid)
                     .call(callback);
             }
-            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+            crate::tracing::TracingContext::new(instance_path, items_location, is_valid)
                 .call(callback);
             is_valid
         } else {
-            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
-            crate::tracing::TracingContext::new(instance_path, &type_location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, items_location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, type_location, None).call(callback);
             true
         }
     }
@@ -1185,19 +1225,38 @@ pub(crate) fn compile<'a>(
             // the validation vocabulary that defines `type` is in effect.
             if ctx.has_vocabulary(&Vocabulary::Validation) {
                 if let Some(type_name) = get_simple_type_schema(schema) {
-                    let location = ctx.location().join("items");
+                    let items_location = ctx.location().join("items");
+                    let location = items_location.join("type");
                     match type_name {
-                        "number" => return Some(ItemsNumberTypeValidator::compile(location)),
-                        "string" => return Some(ItemsStringTypeValidator::compile(location)),
+                        "number" => {
+                            return Some(ItemsNumberTypeValidator::compile(
+                                location,
+                                items_location,
+                            ));
+                        }
+                        "string" => {
+                            return Some(ItemsStringTypeValidator::compile(
+                                location,
+                                items_location,
+                            ));
+                        }
                         "integer" => {
                             // Draft 4 has stricter integer semantics
                             return if ctx.draft() == Draft::Draft4 {
-                                Some(ItemsIntegerTypeValidatorDraft4::compile(location))
+                                Some(ItemsIntegerTypeValidatorDraft4::compile(
+                                    location,
+                                    items_location,
+                                ))
                             } else {
-                                Some(ItemsIntegerTypeValidator::compile(location))
+                                Some(ItemsIntegerTypeValidator::compile(location, items_location))
                             };
                         }
-                        "boolean" => return Some(ItemsBooleanTypeValidator::compile(location)),
+                        "boolean" => {
+                            return Some(ItemsBooleanTypeValidator::compile(
+                                location,
+                                items_location,
+                            ));
+                        }
                         _ => {}
                     }
                 }

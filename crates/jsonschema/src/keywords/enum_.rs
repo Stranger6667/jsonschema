@@ -161,6 +161,10 @@ impl SmallStringEnumValidator {
 }
 
 impl Validate for SmallStringEnumValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
     fn validate<'i>(
         &self,
         instance: &'i Value,
@@ -217,6 +221,10 @@ impl BigStringEnumValidator {
 }
 
 impl Validate for BigStringEnumValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
     fn validate<'i>(
         &self,
         instance: &'i Value,

@@ -104,6 +104,9 @@ impl Validate for RefValidator {
 struct DirectRefValidator {
     inner: SchemaNode,
     ref_suffix: Location,
+    /// Absolute path of this `$ref` keyword from the spec root.
+    /// Used as `schema_path` for tracing.
+    ref_keyword_location: Location,
     ref_target_base: Location,
 }
 
@@ -150,6 +153,22 @@ impl Validate for DirectRefValidator {
 
     fn canonical_location(&self) -> Option<&Location> {
         Some(&self.ref_target_base)
+    }
+
+    fn schema_path(&self) -> &Location {
+        &self.ref_keyword_location
+    }
+
+    fn trace(
+        &self,
+        instance: &Value,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let is_valid = self.inner.trace(instance, location, callback, ctx);
+        TracingContext::new(location, self.schema_path(), Some(is_valid)).call(callback);
+        is_valid
     }
 }
 
