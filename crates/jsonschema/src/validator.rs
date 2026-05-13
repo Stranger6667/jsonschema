@@ -542,12 +542,8 @@ impl std::ops::Index<&str> for ValidatorMap {
 #[cfg(test)]
 mod tests {
     use crate::{
-        error::ValidationError,
-        keywords::custom::Keyword,
-        paths::{LazyLocation, Location},
-        tracing::NodeEvaluationResult,
-        types::JsonType,
-        Validator, ValidatorMap,
+        error::ValidationError, keywords::custom::Keyword, paths::Location,
+        tracing::NodeEvaluationResult, Validator, ValidatorMap,
     };
     use fancy_regex::Regex;
     use num_cmp::NumCmp;
@@ -1042,7 +1038,6 @@ mod tests {
             assert_eq!(error.evaluation_path().as_str(), "/$ref/required");
         }
     }
-<<<<<<< HEAD
 
     #[test]
     fn test_validator_map_get_existing() {
