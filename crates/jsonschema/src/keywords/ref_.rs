@@ -137,7 +137,9 @@ fn extract_ref_target_base(alias: &referencing::Uri<String>) -> Location {
     if let Some(fragment) = alias.fragment() {
         let fragment = fragment.as_str();
         if fragment.starts_with('/') {
-            return Location::from_escaped(fragment);
+            // Fragment is URI percent-encoded (RFC 3986); Location stores JSON Pointers (RFC 6901).
+            let decoded = percent_encoding::percent_decode_str(fragment).decode_utf8_lossy();
+            return Location::from_escaped(&decoded);
         }
     }
     Location::new()
@@ -1438,5 +1440,28 @@ mod tests {
 
         // schema_path should have the unescaped key (type/name), re-escaped properly
         assert_eq!(error.schema_path().as_str(), "/$defs/type~1name/type");
+    }
+
+    #[test]
+    fn schema_path_with_url_encoded_key() {
+        // $defs key contains characters that get percent-encoded in the URI fragment
+        // (here: a literal space). The $ref value uses URL-encoded form ("%20")
+        // because JSON Schema $ref values are URI-Reference per RFC 3986.
+        // schema_path is JSON-Pointer-encoded (RFC 6901), so the space must be
+        // percent-decoded before being stored as a Location segment.
+        let schema = json!({
+            "properties": {
+                "data": {"$ref": "#/$defs/Request%20class"}
+            },
+            "$defs": {
+                "Request class": {"type": "string"}
+            }
+        });
+        let instance = json!({"data": 42});
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        let error = validator.validate(&instance).expect_err("Should fail");
+
+        // JSON Pointer form holds the literal space ' ', not the URI-encoded "%20".
+        assert_eq!(error.schema_path().as_str(), "/$defs/Request class/type",);
     }
 }

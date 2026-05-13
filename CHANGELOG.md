@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Percent-encoded characters in `$ref` URI fragments (e.g. `#/$defs/Request%20class`) are now decoded when stored as `schema_path`.
+
 ## [0.46.4] - 2026-05-01
 
 ### Fixed
