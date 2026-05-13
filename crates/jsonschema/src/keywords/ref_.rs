@@ -93,7 +93,14 @@ impl Validate for RefValidator {
         ctx: &mut ValidationContext,
     ) -> bool {
         let is_valid = self.inner.trace(instance, location, callback, ctx);
+        // Emit at the `$ref` keyword location, then at the target's canonical
+        // location so consumers can track target coverage without resolving
+        // `$ref` chains. Skip the target emit when the alias has no
+        // JSON-Pointer fragment (e.g. `$ref` to a bare schema URI).
         TracingContext::new(location, self.schema_path(), Some(is_valid)).call(callback);
+        if !self.ref_target_base.as_str().is_empty() {
+            TracingContext::new(location, &self.ref_target_base, Some(is_valid)).call(callback);
+        }
         is_valid
     }
 }
@@ -167,7 +174,14 @@ impl Validate for DirectRefValidator {
         ctx: &mut ValidationContext,
     ) -> bool {
         let is_valid = self.inner.trace(instance, location, callback, ctx);
+        // Emit at the `$ref` keyword location, then at the target's canonical
+        // location so consumers can track target coverage without resolving
+        // `$ref` chains. Skip the target emit when the alias has no
+        // JSON-Pointer fragment (e.g. `$ref` to a bare schema URI).
         TracingContext::new(location, self.schema_path(), Some(is_valid)).call(callback);
+        if !self.ref_target_base.as_str().is_empty() {
+            TracingContext::new(location, &self.ref_target_base, Some(is_valid)).call(callback);
+        }
         is_valid
     }
 }
