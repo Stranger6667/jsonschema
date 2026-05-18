@@ -34,6 +34,10 @@ jobs:
             package: referencing
             features: ""
             benches: ""
+          - name: canonicalize
+            package: jsonschema
+            features: ""
+            benches: "--bench canonicalize"
     name: "Run benchmarks (${{ matrix.name }})"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -50,6 +54,6 @@ jobs:
 
       - uses: CodSpeedHQ/action@f99becdce5e5d51fd556489ebef684f4ecfd6286 # v4.18.5
         with:
-          run: cargo codspeed run -p ${{ matrix.package }}
+          run: cargo codspeed run
           mode: "instrumentation"
           token: ${{ secrets.CODSPEED_TOKEN }}

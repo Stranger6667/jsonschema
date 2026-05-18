@@ -107,6 +107,15 @@ dhat-fast-invalid-validate: (dhat "fast-invalid" "validate" "10000")
 dhat-fast-invalid-iter-errors: (dhat "fast-invalid" "iter_errors" "10000")
 dhat-fast-invalid-evaluate: (dhat "fast-invalid" "evaluate" "10000")
 
+azure-pipelines-canonicalize: (flame "azure-pipelines" "canonicalize" "1")
+openapi-canonicalize: (flame "openapi" "canonicalize" "100")
+citm-canonicalize: (flame "citm" "canonicalize" "100")
+swagger-canonicalize: (flame "swagger" "canonicalize" "100")
+
+dhat-azure-pipelines-canonicalize: (dhat "azure-pipelines" "canonicalize" "1")
+dhat-openapi-canonicalize: (dhat "openapi" "canonicalize" "100")
+dhat-citm-canonicalize: (dhat "citm" "canonicalize" "100")
+
 # Clean generated flamegraphs
 clean:
-    rm -f *.svg perf.data perf.data.old
+    rm -f *.svg perf.data perf.data.old dhat-heap.json

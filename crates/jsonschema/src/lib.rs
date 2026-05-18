@@ -7,6 +7,7 @@
 //! - 🔧 Custom keywords and format validators
 //! - 🌐 Blocking & non-blocking remote reference fetching (network/file)
 //! - 🎨 Structured Output v1 reports (flag/list/hierarchical)
+//! - 🧮 Schema canonicalization for normalizing, negating, intersecting & unioning schemas
 //! - ✨ Meta-schema validation for schema documents
 //! - 🚀 WebAssembly support
 //!
@@ -934,6 +935,7 @@ mod retriever;
 pub mod types;
 mod validator;
 
+pub use canonical::CanonicalizationError;
 pub use error::{
     ErrorIterator, MaskedValidationError, ValidationError, ValidationErrorParts, ValidationErrors,
 };
@@ -1195,6 +1197,37 @@ pub fn dereference(schema: &Value) -> Result<Value, ReferencingError> {
     options().dereference(schema)
 }
 
+/// Reduce a JSON Schema to its canonical IR form.
+///
+/// Use [`canonical::options`](fn@canonical::options) to configure canonicalization.
+///
+/// Inputs the canonical form cannot model exactly succeed as an opaque `Raw` pass-through of the original document;
+/// see the [`canonical`] module's Limitations section.
+///
+/// # Errors
+///
+/// Returns [`CanonicalizationError`] when the input is not a valid JSON Schema document or cannot be represented in
+/// canonical form.
+pub fn canonicalize(value: &Value) -> Result<canonical::CanonicalSchema, CanonicalizationError> {
+    canonical::options().canonicalize(value)
+}
+
+/// Reduce a JSON Schema to its canonical IR form using async retrieval for external references.
+///
+/// Async counterpart to [`canonicalize`]. For custom resources or retrievers, use
+/// [`canonical::async_options`] and call `.canonicalize()`.
+///
+/// # Errors
+///
+/// Returns [`CanonicalizationError`] when the input is not a valid JSON Schema document or cannot be represented in
+/// canonical form.
+#[cfg(feature = "resolve-async")]
+pub async fn async_canonicalize(
+    value: &Value,
+) -> Result<canonical::CanonicalSchema, CanonicalizationError> {
+    canonical::async_options().canonicalize(value).await
+}
+
 /// Bundle a JSON Schema into a Compound Schema Document,
 /// using async retrieval for external references.
 ///
@@ -1291,7 +1324,7 @@ pub async fn async_validator_map_for(
 /// the draft version, set custom formats, and more.
 ///
 /// If [`with_draft`](ValidationOptions::with_draft) is not called, the draft is
-/// auto-detected from the schema's `$schema` field — the same behaviour as [`validator_for`].
+/// auto-detected from the schema's `$schema` field — the same behavior as [`validator_for`].
 ///
 /// **Note:** When calling [`ValidationOptions::build`], it **must not** be called from within
 /// an async runtime if the schema contains external references that require network requests,
@@ -5196,7 +5229,7 @@ mod async_tests {
 
     use serde_json::json;
 
-    use crate::{AsyncRetrieve, Draft, Uri};
+    use crate::{canonical::CanonicalView, AsyncRetrieve, Draft, Uri};
 
     /// Mock async retriever for testing
     #[derive(Clone)]
@@ -5393,5 +5426,112 @@ mod async_tests {
             "name": "John Doe",
             "age": 30
         })));
+    }
+
+    #[tokio::test]
+    async fn test_async_canonicalize_basic() {
+        let schema = json!({"type": "integer", "minimum": 0});
+
+        let canonical = crate::async_canonicalize(&schema).await.unwrap();
+
+        assert!(matches!(canonical.view(), CanonicalView::Integer(_)));
+    }
+
+    #[tokio::test]
+    async fn test_async_canonicalize_resolves_external_reference() {
+        let schema = json!({
+            "$ref": "https://example.com/user.json"
+        });
+
+        let canonical = crate::canonical::async_options()
+            .with_retriever(TestRetriever::new())
+            .canonicalize(&schema)
+            .await
+            .unwrap();
+        let emitted = canonical.to_json_schema();
+        let validator = crate::validator_for(&emitted).unwrap();
+
+        assert!(validator.is_valid(&json!({
+            "name": "John Doe",
+            "age": 30
+        })));
+        assert!(!validator.is_valid(&json!({"age": -5})));
+    }
+
+    #[tokio::test]
+    async fn test_async_canonicalize_retrieval_failure_preserves_raw() {
+        let schema = json!({
+            "$ref": "https://example.com/nonexistent.json"
+        });
+
+        let canonical = crate::canonical::async_options()
+            .with_retriever(TestRetriever::new())
+            .canonicalize(&schema)
+            .await
+            .unwrap();
+
+        assert!(matches!(canonical.view(), CanonicalView::Raw(_)));
+    }
+
+    #[tokio::test]
+    async fn test_async_canonicalize_with_registry_uses_async_retriever() {
+        let registry = crate::Registry::new().prepare().unwrap();
+        let schema = json!({
+            "$ref": "https://example.com/user.json"
+        });
+
+        let canonical = crate::canonical::async_options()
+            .with_registry(&registry)
+            .with_retriever(TestRetriever::new())
+            .canonicalize(&schema)
+            .await
+            .unwrap();
+        let emitted = canonical.to_json_schema();
+        let validator = crate::validator_for(&emitted).unwrap();
+
+        assert!(validator.is_valid(&json!({"name": "John Doe"})));
+        assert!(!validator.is_valid(&json!({"name": 123})));
+    }
+
+    #[tokio::test]
+    async fn test_async_canonicalize_inline_budget_zero_keeps_symbolic_reference() {
+        let schema = json!({
+            "$ref": "https://example.com/user.json"
+        });
+
+        let canonical = crate::canonical::async_options()
+            .with_retriever(TestRetriever::new())
+            .with_inline_budget(0)
+            .canonicalize(&schema)
+            .await
+            .unwrap();
+
+        assert!(canonical.definitions().len() > 0);
+        assert!(matches!(canonical.view(), CanonicalView::Reference(_)));
+    }
+
+    #[tokio::test]
+    async fn test_async_canonicalize_future_is_send() {
+        let schema = Arc::new(json!({
+            "$ref": "https://example.com/user.json"
+        }));
+        let retriever = TestRetriever::new();
+
+        let handle = tokio::spawn({
+            let schema = Arc::clone(&schema);
+            let retriever = retriever.clone();
+            async move {
+                crate::canonical::async_options()
+                    .with_retriever(retriever)
+                    .canonicalize(&schema)
+                    .await
+            }
+        });
+
+        let canonical = handle.await.unwrap().unwrap();
+        let emitted = canonical.to_json_schema();
+        let validator = crate::validator_for(&emitted).unwrap();
+
+        assert!(validator.is_valid(&json!({"name": "John Doe"})));
     }
 }

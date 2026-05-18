@@ -130,9 +130,9 @@ RSpec.describe JSONSchema do
       end
     end
 
-    it "keeps non-integer floats in exponent form when needed" do
-      expect(JSONSchema::Canonical::JSON.to_string(1e-6)).to eq("1e-6")
-      expect(JSONSchema::Canonical::JSON.to_string(1e-7)).to eq("1e-7")
+    it "normalizes small-exponent floats to the decimal form used for equal BigDecimal input" do
+      expect(JSONSchema::Canonical::JSON.to_string(1e-6)).to eq("0.000001")
+      expect(JSONSchema::Canonical::JSON.to_string(1e-7)).to eq("0.0000001")
     end
 
     it "supports BigDecimal values" do

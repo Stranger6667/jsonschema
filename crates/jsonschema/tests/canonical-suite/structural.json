@@ -1,0 +1,2083 @@
+[
+  {
+    "description": "intersect_typed_with_enum_applies_typed_bound",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer",
+          "minimum": 2
+        },
+        {
+          "enum": [
+            1,
+            2,
+            3
+          ]
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": 2,
+        "valid": true
+      },
+      {
+        "data": 3,
+        "valid": true
+      },
+      {
+        "data": 4,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "const_intersect_numeric_forms_arbitrary_precision",
+    "schema": {
+      "allOf": [
+        {
+          "const": 1
+        },
+        {
+          "const": 1.0
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "merged_pattern_guards_keep_non_string_exemption",
+    "schema": {
+      "allOf": [
+        {
+          "pattern": "a"
+        },
+        {
+          "pattern": "b"
+        }
+      ]
+    },
+    "witnesses": [
+      1,
+      null,
+      [
+        "x"
+      ],
+      {
+        "a": 1
+      },
+      "ab",
+      "a",
+      "b",
+      "x"
+    ]
+  },
+  {
+    "description": "canonicalize_is_idempotent_for_oneof_of_integer_number_multiples",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "multipleOf": 1
+        },
+        {
+          "type": "number",
+          "multipleOf": 2
+        },
+        {
+          "type": "number",
+          "multipleOf": 3
+        }
+      ]
+    }
+  },
+  {
+    "description": "any_of_drops_value_set_member_covered_by_sibling",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "enum": [
+              "",
+              false
+            ]
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "const": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "description": "array_normalization_parity prefix_truncated_by_max_items",
+    "schema": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        }
+      ],
+      "maxItems": 1
+    },
+    "witnesses": [
+      {
+        "data": [],
+        "valid": true
+      },
+      {
+        "data": [
+          "x"
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          5
+        ],
+        "valid": false
+      },
+      {
+        "data": [
+          "x",
+          1
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "array_normalization_parity true_contains_max_no_existing_max",
+    "schema": {
+      "type": "array",
+      "contains": true,
+      "maxContains": 2
+    },
+    "witnesses": [
+      {
+        "data": [],
+        "valid": false
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1,
+          2
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1,
+          2,
+          3
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "array_normalization_parity true_contains_max_with_existing_max",
+    "schema": {
+      "type": "array",
+      "contains": true,
+      "maxContains": 2,
+      "maxItems": 5
+    },
+    "witnesses": [
+      {
+        "data": [],
+        "valid": false
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1,
+          2
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1,
+          2,
+          3
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "array_normalization_parity unique_exceeds_finite_universe",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 3,
+      "items": {
+        "enum": [
+          1,
+          2
+        ]
+      }
+    },
+    "witnesses": [
+      {
+        "data": [
+          1,
+          2
+        ],
+        "valid": false
+      },
+      {
+        "data": [
+          1,
+          2,
+          1
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "array_normalization_parity false_prefix_slot_below_min_items",
+    "schema": {
+      "type": "array",
+      "minItems": 2,
+      "prefixItems": [
+        true,
+        false
+      ]
+    },
+    "witnesses": [
+      {
+        "data": [
+          1
+        ],
+        "valid": false
+      },
+      {
+        "data": [
+          1,
+          2
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "array_normalization_parity false_tail_below_min_items",
+    "schema": {
+      "type": "array",
+      "minItems": 2,
+      "items": false
+    },
+    "witnesses": [
+      {
+        "data": [],
+        "valid": false
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "array_normalization_parity false_tail_with_sufficient_prefix",
+    "schema": {
+      "type": "array",
+      "minItems": 1,
+      "prefixItems": [
+        {
+          "type": "string"
+        }
+      ],
+      "items": false
+    },
+    "witnesses": [
+      {
+        "data": [],
+        "valid": false
+      },
+      {
+        "data": [
+          "x"
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          "x",
+          1
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "array_normalization_parity contains_with_untyped_prefix_slot",
+    "schema": {
+      "type": "array",
+      "minItems": 1,
+      "prefixItems": [
+        true
+      ],
+      "items": {
+        "type": "string"
+      },
+      "contains": {
+        "type": "integer"
+      }
+    },
+    "witnesses": [
+      {
+        "data": [
+          1
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          "a"
+        ],
+        "valid": false
+      },
+      {
+        "data": [
+          1,
+          "a"
+        ],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "array_normalization_parity contains_min_zero_is_vacuous",
+    "schema": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      },
+      "contains": {
+        "type": "integer"
+      },
+      "minContains": 0
+    },
+    "witnesses": [
+      {
+        "data": [],
+        "valid": false
+      },
+      {
+        "data": [
+          "a"
+        ],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "object_normalization_parity property_names_false_blocks_required",
+    "schema": {
+      "required": [
+        "a"
+      ],
+      "propertyNames": false
+    },
+    "witnesses": [
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      },
+      {
+        "data": 5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "object_normalization_parity property_names_min_length_blocks_required",
+    "schema": {
+      "required": [
+        "a"
+      ],
+      "propertyNames": {
+        "type": "string",
+        "minLength": 5
+      }
+    },
+    "witnesses": [
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      },
+      {
+        "data": 5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "object_normalization_parity property_names_max_length_blocks_required",
+    "schema": {
+      "required": [
+        "abc"
+      ],
+      "propertyNames": {
+        "type": "string",
+        "maxLength": 1
+      }
+    },
+    "witnesses": [
+      {
+        "data": {
+          "abc": 1
+        },
+        "valid": false
+      },
+      {
+        "data": 5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "object_normalization_parity property_names_length_admits_required",
+    "schema": {
+      "required": [
+        "abcdef"
+      ],
+      "propertyNames": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 10
+      }
+    },
+    "witnesses": [
+      {
+        "data": {
+          "abcdef": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "ab": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "abcdefghijk": 1
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "object_normalization_parity property_names_value_set_survives",
+    "schema": {
+      "required": [
+        "a"
+      ],
+      "propertyNames": {
+        "enum": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    "witnesses": [
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "c": 1
+        },
+        "valid": false
+      },
+      {
+        "data": 5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "object_normalization_parity additional_false_with_allowing_pattern_closes_required",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "xa"
+      ],
+      "dependentRequired": {
+        "xa": [
+          "xb"
+        ]
+      }
+    },
+    "witnesses": [
+      {
+        "data": {
+          "xa": "1"
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "xa": "1",
+          "xb": "2"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "xa": "1",
+          "xb": "2",
+          "y": 3
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "object_normalization_parity required_false_property_is_empty",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "a": false
+      },
+      "required": [
+        "a"
+      ]
+    },
+    "witnesses": [
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": false
+      },
+      {
+        "data": 5,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "object_normalization_parity conflicting_max_and_min_properties",
+    "schema": {
+      "allOf": [
+        {
+          "maxProperties": 2
+        },
+        {
+          "maxProperties": 3,
+          "minProperties": 3
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": {
+          "a": 1,
+          "b": 2,
+          "c": 3
+        },
+        "valid": false
+      },
+      {
+        "data": 5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "type_guard_parity true_body_is_true",
+    "schema": {
+      "if": {
+        "type": "string"
+      },
+      "then": true
+    },
+    "witnesses": [
+      "x",
+      5,
+      null,
+      []
+    ]
+  },
+  {
+    "description": "type_guard_parity not_integer_survives",
+    "schema": {
+      "not": {
+        "type": "integer"
+      }
+    },
+    "witnesses": [
+      5,
+      5.5,
+      "x",
+      null
+    ]
+  },
+  {
+    "description": "draft4 negate homogeneous array items preserves validation",
+    "draft": "draft4",
+    "schema": {
+      "not": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        }
+      }
+    },
+    "witnesses": [
+      {
+        "data": [
+          1
+        ],
+        "valid": false
+      },
+      {
+        "data": [
+          "x"
+        ],
+        "valid": true
+      },
+      {
+        "data": [],
+        "valid": false
+      },
+      {
+        "data": "not an array",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "condition_is_vacuous_when_then_branch_covers_it",
+    "schema": {
+      "if": {
+        "type": "integer"
+      },
+      "then": {
+        "type": "number"
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "linear_encode_canonicalization disjoint branches",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array"
+        },
+        {
+          "type": "object"
+        },
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 15
+        },
+        {
+          "type": "integer",
+          "minimum": 20
+        }
+      ]
+    },
+    "witnesses": [
+      null,
+      true,
+      "x",
+      [],
+      {},
+      3,
+      12,
+      25,
+      7,
+      3.5
+    ]
+  },
+  {
+    "description": "linear_encode_canonicalization overlapping branches",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "integer",
+          "minimum": 2
+        },
+        {
+          "type": "integer",
+          "minimum": 3
+        },
+        {
+          "type": "integer",
+          "minimum": 4
+        },
+        {
+          "type": "integer",
+          "minimum": 5
+        },
+        {
+          "type": "integer",
+          "minimum": 6
+        }
+      ]
+    },
+    "witnesses": [
+      0,
+      1,
+      3,
+      6,
+      100,
+      -1,
+      "x"
+    ]
+  },
+  {
+    "description": "overlapping_value_sets_keep_one_of_semantics overlapping enums",
+    "schema": {
+      "oneOf": [
+        {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        {
+          "enum": [
+            2,
+            3
+          ]
+        }
+      ]
+    },
+    "witnesses": [
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "description": "overlapping_value_sets_keep_one_of_semantics duplicate consts",
+    "schema": {
+      "oneOf": [
+        {
+          "const": 1
+        },
+        {
+          "const": 1
+        }
+      ]
+    },
+    "witnesses": [
+      1,
+      2
+    ]
+  },
+  {
+    "description": "nested_one_of_recurses",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    "witnesses": [
+      {
+        "a": 1
+      },
+      {
+        "a": "x"
+      },
+      {
+        "a": true
+      },
+      {}
+    ]
+  },
+  {
+    "description": "integer_valued_decimal_count_keywords array",
+    "draft": "draft2020-12",
+    "schema": {
+      "type": "array",
+      "minItems": 1.0,
+      "maxItems": 2.0
+    },
+    "witnesses": [
+      {
+        "data": [],
+        "valid": false
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1,
+          2
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1,
+          2,
+          3
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "integer_valued_decimal_count_keywords string",
+    "draft": "draft2020-12",
+    "schema": {
+      "type": "string",
+      "minLength": 1.0,
+      "maxLength": 2.0
+    },
+    "witnesses": [
+      {
+        "data": "",
+        "valid": false
+      },
+      {
+        "data": "ab",
+        "valid": true
+      },
+      {
+        "data": "abc",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "integer_valued_decimal_count_keywords object",
+    "draft": "draft2020-12",
+    "schema": {
+      "type": "object",
+      "minProperties": 1.0,
+      "maxProperties": 2.0
+    },
+    "witnesses": [
+      {
+        "data": {},
+        "valid": false
+      },
+      {
+        "data": {
+          "a": 1,
+          "b": 2
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1,
+          "b": 2,
+          "c": 3
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "ir_raw_preserves_custom_dialect_root",
+    "schema": {
+      "$schema": "https://example.com/custom-meta-schema",
+      "type": "string"
+    },
+    "expected": {
+      "$schema": "https://example.com/custom-meta-schema",
+      "type": "string"
+    }
+  },
+  {
+    "description": "ir_raw_preserves_draft4_unsupported_defs",
+    "draft": "draft4",
+    "schema": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "$defs": {
+        "stage": {
+          "type": "object",
+          "additionalProperties": "false"
+        }
+      },
+      "$ref": "#/$defs/stage"
+    },
+    "expected": {
+      "$defs": {
+        "stage": {
+          "additionalProperties": "false",
+          "type": "object"
+        }
+      },
+      "$ref": "#/$defs/stage",
+      "$schema": "http://json-schema.org/draft-04/schema#"
+    }
+  },
+  {
+    "description": "ir_raw_preserves_custom_metaschema_with_draft",
+    "draft": "draft2019-09",
+    "schema": {
+      "$schema": "http://localhost:1234/draft2019-09/metaschema-no-validation.json",
+      "properties": {
+        "numberProperty": {
+          "minimum": 10
+        }
+      }
+    },
+    "expected": {
+      "$schema": "http://localhost:1234/draft2019-09/metaschema-no-validation.json",
+      "properties": {
+        "numberProperty": {
+          "minimum": 10
+        }
+      }
+    }
+  },
+  {
+    "description": "one_of_disjoint_value_sets_fold_to_enum",
+    "schema": {
+      "oneOf": [
+        {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        {
+          "enum": [
+            3,
+            4
+          ]
+        },
+        {
+          "const": 7
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        1,
+        2,
+        3,
+        4,
+        7
+      ]
+    }
+  },
+  {
+    "description": "unique_items_cardinality_nested_unique_array_universe",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "array",
+        "uniqueItems": true,
+        "items": {
+          "type": "boolean"
+        },
+        "maxItems": 2
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "items": {
+          "type": [
+            "boolean"
+          ]
+        },
+        "maxItems": 2,
+        "type": "array",
+        "uniqueItems": true
+      },
+      "maxItems": 7,
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  {
+    "description": "unique_items_cardinality_nested_empty_item_universe",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "array",
+        "items": false,
+        "minItems": 0,
+        "maxItems": 2
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "items": false,
+        "maxItems": 2,
+        "type": "array"
+      },
+      "maxItems": 1,
+      "type": "array"
+    }
+  },
+  {
+    "description": "unique_items_cardinality_boolean_items_capped_to_two",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "boolean"
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "type": [
+          "boolean"
+        ]
+      },
+      "maxItems": 2,
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  {
+    "description": "unique_items_cardinality_infinite_type_set_uncapped",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  {
+    "description": "unique_items_cardinality_prefix_false_tail_universe_fifteen",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "array",
+        "uniqueItems": true,
+        "prefixItems": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "boolean"
+          }
+        ],
+        "items": false,
+        "maxItems": 4
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "items": false,
+        "maxItems": 4,
+        "prefixItems": [
+          {
+            "type": [
+              "boolean"
+            ]
+          },
+          {
+            "type": [
+              "boolean"
+            ]
+          },
+          {
+            "type": [
+              "boolean"
+            ]
+          }
+        ],
+        "type": "array",
+        "uniqueItems": true
+      },
+      "maxItems": 15,
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  {
+    "description": "unique_items_cardinality_heterogeneous_prefix_tail",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "array",
+        "uniqueItems": true,
+        "prefixItems": [
+          {
+            "const": "a"
+          }
+        ],
+        "items": {
+          "type": "boolean"
+        },
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "items": {
+          "type": [
+            "boolean"
+          ]
+        },
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "const": "a"
+          }
+        ],
+        "type": "array",
+        "uniqueItems": true
+      },
+      "maxItems": 2,
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  {
+    "description": "not_multiple_of_absorbed_into_integer_leaf",
+    "schema": {
+      "type": "integer",
+      "not": {
+        "type": "integer",
+        "multipleOf": 3
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "not": {
+            "multipleOf": 3,
+            "type": "integer"
+          }
+        }
+      ],
+      "type": "integer"
+    }
+  },
+  {
+    "description": "not_pattern_canonicalizes_to_string_leaf",
+    "schemas": [
+      {
+        "type": "string",
+        "not": {
+          "type": "string",
+          "pattern": "^a"
+        }
+      },
+      {
+        "not": {
+          "pattern": "^a"
+        }
+      },
+      {
+        "type": "string",
+        "not": {
+          "pattern": "^a"
+        }
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "not": {
+            "pattern": "^a",
+            "type": "string"
+          }
+        }
+      ],
+      "type": "string"
+    }
+  },
+  {
+    "description": "untyped_pattern_and_not_pattern_merge_into_string_leaf",
+    "schema": {
+      "pattern": "x",
+      "not": {
+        "pattern": "a"
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "not": {
+            "pattern": "a",
+            "type": "string"
+          }
+        }
+      ],
+      "pattern": "x",
+      "type": "string"
+    }
+  },
+  {
+    "description": "untyped_not_pattern_contradicts_positive_pattern_is_unsatisfiable",
+    "schema": {
+      "allOf": [
+        {
+          "type": "string",
+          "pattern": "^a"
+        },
+        {
+          "type": "string",
+          "not": {
+            "pattern": "^a"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "repeated_items_absorbed_into_array_leaf",
+    "schemas": [
+      {
+        "type": "array",
+        "not": {
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      {
+        "not": {
+          "uniqueItems": true
+        }
+      },
+      {
+        "type": "array",
+        "not": {
+          "uniqueItems": true
+        }
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "not": {
+            "type": "array",
+            "uniqueItems": true
+          }
+        }
+      ],
+      "minItems": 2,
+      "type": "array"
+    }
+  },
+  {
+    "description": "uniqueItems over a huge inner-array universe canonicalizes without hanging",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 1,
+      "items": {
+        "type": "array",
+        "maxItems": 1000000000000,
+        "items": {
+          "const": 0
+        }
+      }
+    }
+  },
+  {
+    "description": "uniqueItems over the full i64 integer universe canonicalizes without overflow",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "integer",
+        "minimum": -9223372036854775808,
+        "maximum": 9223372036854775807
+      }
+    }
+  },
+  {
+    "description": "collapse: contradictory format+length facets merge to false",
+    "schema": {
+      "allOf": [
+        {
+          "type": "string",
+          "format": "email",
+          "minLength": 5
+        },
+        {
+          "type": "string",
+          "format": "date",
+          "maxLength": 2
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": "a@b.com",
+        "valid": false
+      },
+      {
+        "data": "ab",
+        "valid": false
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "collapse: absorb not-pattern skips non-string positive branch first",
+    "schema": {
+      "allOf": [
+        {
+          "not": {
+            "const": 0
+          }
+        },
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "not": {
+            "type": "string",
+            "pattern": "^a"
+          }
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": "b",
+        "valid": true
+      },
+      {
+        "data": "ab",
+        "valid": false
+      },
+      {
+        "data": "",
+        "valid": false
+      },
+      {
+        "data": 0,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "collapse: drop string pattern facet already covered by sibling",
+    "schema": {
+      "oneOf": [
+        {
+          "properties": {
+            "resources": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "containers": {
+                      "items": {
+                        "properties": {
+                          "type": {
+                            "anyOf": [
+                              {
+                                "pattern": "^ACR$"
+                              },
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": {
+          "resources": {
+            "containers": [
+              {
+                "type": "ACR"
+              }
+            ]
+          }
+        },
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "collapse: absorb repeated-items skips non-array positive branch first",
+    "schema": {
+      "allOf": [
+        {
+          "not": {
+            "const": 0
+          }
+        },
+        {
+          "type": "array"
+        },
+        {
+          "not": {
+            "type": "array",
+            "uniqueItems": true
+          }
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": [
+          1,
+          1
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1,
+          2
+        ],
+        "valid": false
+      },
+      {
+        "data": [],
+        "valid": false
+      },
+      {
+        "data": 0,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "collapse: anyOf siblings over the pairwise limit skip pairwise merge (idempotent)",
+    "schema": {
+      "properties": {
+        "steps": {
+          "items": {
+            "allOf": [
+              {
+                "if": {
+                  "required": []
+                },
+                "then": {
+                  "properties": {
+                    "with": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": []
+                },
+                "then": {
+                  "properties": {
+                    "with": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": []
+                },
+                "then": {
+                  "properties": {
+                    "with": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": []
+                },
+                "then": {
+                  "properties": {
+                    "with": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": []
+                },
+                "then": {
+                  "properties": {
+                    "with": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": []
+                },
+                "then": {
+                  "properties": {
+                    "with": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": []
+                },
+                "then": {
+                  "properties": {
+                    "with": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": []
+                },
+                "then": {
+                  "properties": {
+                    "with": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": []
+                },
+                "then": {
+                  "properties": {
+                    "with": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": []
+                },
+                "then": {
+                  "properties": {
+                    "with": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": []
+                },
+                "then": {
+                  "properties": {
+                    "with": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": []
+                },
+                "then": {
+                  "properties": {
+                    "with": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": []
+                },
+                "then": {
+                  "properties": {
+                    "with": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": []
+                },
+                "then": {
+                  "properties": {
+                    "with": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": []
+                },
+                "then": {
+                  "properties": {
+                    "with": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": []
+                },
+                "then": {
+                  "properties": {
+                    "with": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": []
+                },
+                "then": {
+                  "properties": {
+                    "with": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "description": "collapse: unresolved pairwise anyOf merge re-wraps as allOf (idempotent)",
+    "schema": {
+      "patternProperties": {
+        ".": {
+          "oneOf": [
+            {
+              "required": [
+                "user"
+              ]
+            },
+            {
+              "required": [
+                "base_uri"
+              ]
+            },
+            {
+              "properties": {
+                "type": {
+                  "const": "mysql"
+                }
+              }
+            },
+            {
+              "type": "object"
+            },
+            {},
+            {},
+            {}
+          ]
+        }
+      }
+    }
+  },
+  {
+    "description": "collapse: enum branch fully covered by sibling pattern branches is dropped (idempotent)",
+    "schema": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/tsNodeDefinition"
+        }
+      ],
+      "definitions": {
+        "compilerOptionsDefinition": {
+          "properties": {
+            "compilerOptions": {
+              "properties": {
+                "lib": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "ES2023.Intl",
+                          "ESNext.TypedArrays"
+                        ]
+                      },
+                      {
+                        "pattern": "^[Ee][Ss]2023(\\.([Ii][Nn][Tt][Ll]|[Aa][Rr][Rr][Aa][Yy]|[Cc][Oo][Ll][Ll][Ee][Cc][Tt][Ii][Oo][Nn]))?$"
+                      },
+                      {
+                        "pattern": "^[Ee][Ss][Nn][Ee][Xx][Tt](\\.([Aa][Rr][Rr][Aa][Yy]|[Aa][Ss][Yy][Nn][Cc][Ii][Tt][Ee][Rr][Aa][Bb][Ll][Ee]|[Bb][Ii][Gg][Ii][Nn][Tt]|[Cc][Oo][Ll][Ll][Ee][Cc][Tt][Ii][Oo][Nn]|[Dd][Aa][Tt][Ee]|[Dd][Ee][Cc][Oo][Rr][Aa][Tt][Oo][Rr][Ss]|[Dd][Ii][Ss][Pp][Oo][Ss][Aa][Bb][Ll][Ee]|[Ee][Rr][Rr][Oo][Rr]|[Ff][Ll][Oo][Aa][Tt]16|[Ii][Nn][Tt][Ll]|[Ii][Tt][Ee][Rr][Aa][Tt][Oo][Rr]|[Oo][Bb][Jj][Ee][Cc][Tt]|[Pp][Rr][Oo][Mm][Ii][Ss][Ee]|[Rr][Ee][Gg][Ee][Xx][Pp]|[Ss][Hh][Aa][Rr][Ee][Dd][Mm][Ee][Mm][Oo][Rr][Yy]|[Ss][Tt][Rr][Ii][Nn][Gg]|[Ss][Yy][Mm][Bb][Oo][Ll]|[Tt][Ee][Mm][Pp][Oo][Rr][Aa][Ll]|[Tt][Yy][Pp][Ee][Dd][Aa][Rr][Rr][Aa][Yy][Ss]))?$"
+                      }
+                    ],
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tsNodeDefinition": {
+          "properties": {
+            "ts-node": {
+              "properties": {
+                "compilerOptions": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/compilerOptionsDefinition/properties/compilerOptions"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "description": "collapse: split guard conjunction with overlapping same-kind guards aborts (idempotent)",
+    "schema": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/baseFile"
+        },
+        {
+          "$ref": "#/definitions/inheritingFile"
+        }
+      ],
+      "definitions": {
+        "inheritingFile": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/inheritingProperties"
+            },
+            {
+              "required": [
+                "inherit"
+              ]
+            },
+            {
+              "properties": {
+                "inherit": {
+                  "enum": []
+                }
+              }
+            }
+          ]
+        },
+        "inheritingProperties": {
+          "properties": {
+            "prerelease": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "description": "collapse: array length rays disagreeing on a non-length facet are not rejoined (idempotent)",
+    "schema": {
+      "properties": {
+        "node": {
+          "properties": {
+            "externalPackages": {
+              "items": {
+                "type": "string"
+              },
+              "oneOf": [
+                {
+                  "contains": {},
+                  "maxItems": 1
+                },
+                {
+                  "not": {
+                    "contains": {}
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "description": "parse: draft7 items-array with additionalItems tuple validation",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "additionalItems": {
+        "type": "boolean"
+      }
+    },
+    "witnesses": [
+      {
+        "data": [
+          1,
+          "x"
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1,
+          "x",
+          true,
+          false
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          "a",
+          "x"
+        ],
+        "valid": false
+      },
+      {
+        "data": [
+          1,
+          2
+        ],
+        "valid": false
+      },
+      {
+        "data": [
+          1,
+          "x",
+          5
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "parse: root $id that is not a URI reference falls back to synthetic base",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ht tp://bad id",
+      "type": "integer"
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ht tp://bad id",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir: type array covering every JSON type canonicalizes to the always-true schema",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "object"
+        },
+        {
+          "type": "array"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "leaf algebra: negating an inclusive bounded integer round-trips through validation",
+    "schema": {
+      "not": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10
+      }
+    },
+    "witnesses": [
+      -1,
+      0,
+      5,
+      10,
+      11,
+      2.5,
+      "x",
+      null
+    ]
+  }
+]

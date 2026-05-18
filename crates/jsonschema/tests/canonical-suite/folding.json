@@ -1,0 +1,3104 @@
+[
+  {
+    "description": "to_expected empty_required_folds",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "required": []
+      },
+      {}
+    ],
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "to_expected any_of_with_true_collapses_to_true",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          {},
+          {
+            "type": "null"
+          }
+        ]
+      },
+      {}
+    ],
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "to_expected integer_multiple_of_small_float_drops",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "integer",
+        "multipleOf": 0.03125
+      },
+      {
+        "type": "integer"
+      }
+    ]
+  },
+  {
+    "description": "to_expected integer_exclusive_min_subsumed",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "integer",
+        "minimum": 1,
+        "exclusiveMinimum": 0
+      },
+      {
+        "type": "integer",
+        "minimum": 1
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "to_expected integer_exclusive_max_subsumed",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "integer",
+        "maximum": 0,
+        "exclusiveMaximum": 1
+      },
+      {
+        "type": "integer",
+        "maximum": 0
+      }
+    ]
+  },
+  {
+    "description": "to_expected integer_exclusive_min_eq_min_excludes",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "integer",
+        "minimum": 5,
+        "exclusiveMinimum": 5
+      },
+      {
+        "type": "integer",
+        "exclusiveMinimum": 5
+      }
+    ]
+  },
+  {
+    "description": "to_expected integer_exclusive_max_eq_max_excludes",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "integer",
+        "maximum": 5,
+        "exclusiveMaximum": 5
+      },
+      {
+        "type": "integer",
+        "exclusiveMaximum": 5
+      }
+    ]
+  },
+  {
+    "description": "to_expected number_exclusive_min_eq_min_excludes",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "number",
+        "minimum": 5,
+        "exclusiveMinimum": 5
+      },
+      {
+        "type": "number",
+        "exclusiveMinimum": 5
+      }
+    ]
+  },
+  {
+    "description": "to_expected number_exclusive_max_eq_max_excludes",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "number",
+        "maximum": 5,
+        "exclusiveMaximum": 5
+      },
+      {
+        "type": "number",
+        "exclusiveMaximum": 5
+      }
+    ]
+  },
+  {
+    "description": "to_expected required_with_dependencies_chain",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "required": [
+          "a"
+        ],
+        "dependencies": {
+          "a": [
+            "b"
+          ],
+          "b": [
+            "c"
+          ],
+          "x": [
+            "y"
+          ]
+        }
+      },
+      {
+        "required": [
+          "a",
+          "b",
+          "c"
+        ],
+        "dependencies": {
+          "x": [
+            "y"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "description": "to_expected unique_items_false_drops",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "uniqueItems": false
+      },
+      {}
+    ],
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "to_expected all_of_duplicate_multiple_of",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "allOf": [
+          {
+            "multipleOf": 1.5
+          }
+        ],
+        "multipleOf": 1.5
+      },
+      {
+        "multipleOf": 1.5
+      }
+    ]
+  },
+  {
+    "description": "to_expected number_multiple_of_with_not_multiple_of_passthrough",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "number",
+        "multipleOf": 0.75,
+        "not": {
+          "multipleOf": 1.25
+        }
+      },
+      {
+        "type": "number",
+        "multipleOf": 0.75,
+        "not": {
+          "multipleOf": 1.25
+        }
+      }
+    ]
+  },
+  {
+    "description": "to_expected integer_and_not_multiple_of_three_halves",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "allOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number",
+            "not": {
+              "type": "number",
+              "multipleOf": 1.5
+            }
+          }
+        ]
+      },
+      {
+        "type": "integer",
+        "not": {
+          "type": "integer",
+          "multipleOf": 3
+        }
+      }
+    ]
+  },
+  {
+    "description": "to_expected number_full_bounds_with_multiple_of_passthrough",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "number",
+        "minimum": 1.5,
+        "exclusiveMaximum": 2.5,
+        "multipleOf": 0.5
+      },
+      {
+        "type": "number",
+        "minimum": 1.5,
+        "exclusiveMaximum": 2.5,
+        "multipleOf": 0.5
+      }
+    ]
+  },
+  {
+    "description": "to_expected_full_type_list all_types_folds_to_empty",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": [
+          "null",
+          "boolean",
+          "integer",
+          "number",
+          "string",
+          "array",
+          "object"
+        ]
+      },
+      {}
+    ]
+  },
+  {
+    "description": "to_expected_enum_sort enum_sorted_canonical",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "enum": [
+          "aa",
+          2,
+          "z",
+          null,
+          1
+        ]
+      },
+      {
+        "enum": [
+          null,
+          1,
+          2,
+          "z",
+          "aa"
+        ]
+      }
+    ]
+  },
+  {
+    "description": "to_expected_not_disjoint integer_not_string_drops_not",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "integer",
+        "not": {
+          "type": "string"
+        }
+      },
+      {
+        "type": "integer"
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "to_expected_multiple_of_promotes number_multiple_of_one_promotes_to_integer",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "number",
+        "multipleOf": 1.0
+      },
+      {
+        "type": "integer"
+      }
+    ]
+  },
+  {
+    "description": "to_expected_bound_snap integer_minimum_snaps_to_multiple",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "integer",
+        "minimum": 1,
+        "multipleOf": 2
+      },
+      {
+        "type": "integer",
+        "minimum": 2,
+        "multipleOf": 2
+      }
+    ]
+  },
+  {
+    "description": "to_expected_bound_snap integer_maximum_snaps_to_multiple",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "integer",
+        "maximum": 1,
+        "multipleOf": 2
+      },
+      {
+        "type": "integer",
+        "maximum": 0,
+        "multipleOf": 2
+      }
+    ]
+  },
+  {
+    "description": "to_expected_bound_snap number_interval_with_multiple_of_integer_promotion",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "number",
+        "minimum": 0,
+        "exclusiveMaximum": 6,
+        "multipleOf": 3
+      },
+      {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 3,
+        "multipleOf": 3
+      }
+    ]
+  },
+  {
+    "description": "to_expected_any_of_collapse any_of_flattens_to_type_list",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "array"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": [
+          "number",
+          "string",
+          "array"
+        ]
+      }
+    ]
+  },
+  {
+    "description": "to_expected_any_of_collapse any_of_nested_collapses_to_const_null",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "const": null
+      }
+    ]
+  },
+  {
+    "description": "to_expected_any_of_collapse any_of_intersected_with_outer_type",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          }
+        ],
+        "type": [
+          "string",
+          "object"
+        ]
+      },
+      {
+        "type": "string"
+      }
+    ]
+  },
+  {
+    "description": "to_expected_any_of_integer_number_subsumes",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      {
+        "type": "number"
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "to_expected_array_normalisation array_items_drop_false_tail",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "array",
+        "items": [
+          true,
+          false,
+          true
+        ]
+      },
+      {
+        "type": "array",
+        "items": [
+          {}
+        ],
+        "maxItems": 1
+      }
+    ]
+  },
+  {
+    "description": "to_expected_array_normalisation array_contains_true_implies_min_one",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "contains": {},
+        "items": {},
+        "type": "array"
+      },
+      {
+        "minItems": 1,
+        "type": "array"
+      }
+    ]
+  },
+  {
+    "description": "to_expected_array_normalisation array_additional_items_normalized",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "array",
+        "items": [
+          true,
+          true
+        ],
+        "minItems": 3,
+        "additionalItems": {
+          "type": "null"
+        }
+      },
+      {
+        "type": "array",
+        "items": [
+          {},
+          {}
+        ],
+        "minItems": 3,
+        "additionalItems": {
+          "const": null
+        }
+      }
+    ]
+  },
+  {
+    "description": "to_expected_array_normalisation array_contains_adds_min_items",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "multipleOf": 0.5
+        },
+        "contains": {
+          "type": "number",
+          "multipleOf": 0.75
+        }
+      },
+      {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "number",
+          "multipleOf": 0.5
+        },
+        "contains": {
+          "type": "number",
+          "multipleOf": 0.75
+        }
+      }
+    ]
+  },
+  {
+    "description": "to_expected_array_normalisation array_unique_const_caps_max_items",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "array",
+        "items": {
+          "const": 1
+        },
+        "uniqueItems": true
+      },
+      {
+        "type": "array",
+        "items": {
+          "const": 1
+        },
+        "uniqueItems": true,
+        "maxItems": 1
+      }
+    ]
+  },
+  {
+    "description": "to_expected_array_normalisation array_unique_boolean_caps_max_items",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "array",
+        "items": {
+          "type": "boolean"
+        },
+        "uniqueItems": true
+      },
+      {
+        "type": "array",
+        "items": {
+          "type": "boolean"
+        },
+        "uniqueItems": true,
+        "maxItems": 2
+      }
+    ]
+  },
+  {
+    "description": "to_expected_array_normalisation array_unique_bounded_integer_caps_max_items",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "uniqueItems": true
+      },
+      {
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "uniqueItems": true,
+        "maxItems": 5
+      }
+    ]
+  },
+  {
+    "description": "to_expected_array_normalisation array_unique_multi_type_caps_max_items",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "array",
+        "items": {
+          "type": [
+            "null",
+            "boolean"
+          ]
+        },
+        "uniqueItems": true
+      },
+      {
+        "type": "array",
+        "items": {
+          "type": [
+            "null",
+            "boolean"
+          ]
+        },
+        "uniqueItems": true,
+        "maxItems": 3
+      }
+    ]
+  },
+  {
+    "description": "to_expected_array_normalisation array_unique_nested_array_universe_caps_max_items",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 2
+        },
+        "uniqueItems": true
+      },
+      {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 2
+        },
+        "uniqueItems": true,
+        "maxItems": 7
+      }
+    ]
+  },
+  {
+    "description": "to_expected_array_normalisation array_unique_nested_array_unit_tail_caps_max_items",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": {
+            "const": 5
+          },
+          "maxItems": 3
+        },
+        "uniqueItems": true
+      },
+      {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": {
+            "const": 5
+          },
+          "maxItems": 3
+        },
+        "uniqueItems": true,
+        "maxItems": 4
+      }
+    ]
+  },
+  {
+    "description": "to_expected_array_normalisation array_unique_nested_array_prefix_caps_max_items",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "boolean"
+            }
+          ],
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 3
+        },
+        "uniqueItems": true
+      },
+      {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "boolean"
+            }
+          ],
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 3
+        },
+        "uniqueItems": true,
+        "maxItems": 15
+      }
+    ]
+  },
+  {
+    "description": "to_expected_array_normalisation array_unique_nested_array_min_items_caps_max_items",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "minItems": 1,
+          "maxItems": 2
+        },
+        "uniqueItems": true
+      },
+      {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "minItems": 1,
+          "maxItems": 2
+        },
+        "uniqueItems": true,
+        "maxItems": 6
+      }
+    ]
+  },
+  {
+    "description": "to_expected_array_normalisation array_unique_false_items_caps_max_items_to_zero",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "array",
+        "items": false,
+        "uniqueItems": true
+      },
+      {
+        "type": "array",
+        "items": false,
+        "uniqueItems": true,
+        "maxItems": 0
+      }
+    ]
+  },
+  {
+    "description": "to_expected_array_normalisation array_unique_infinite_multi_type_is_not_capped",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": [
+          "null",
+          "integer"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "witnesses": [
+      {
+        "data": [
+          0,
+          1,
+          2,
+          3,
+          null
+        ],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "to_expected_if_then_else if_then_tautology_collapses",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "if": {
+          "type": "null"
+        },
+        "then": {
+          "type": "null"
+        }
+      },
+      {}
+    ]
+  },
+  {
+    "description": "to_expected_if_then_else if_then_tautology_with_true_else",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "if": {
+          "type": "null"
+        },
+        "then": {
+          "type": "null"
+        },
+        "else": {}
+      },
+      {}
+    ]
+  },
+  {
+    "description": "to_expected_if_then_else if_both_branches_true",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "if": {
+          "type": "null"
+        },
+        "then": {},
+        "else": {}
+      },
+      {}
+    ]
+  },
+  {
+    "description": "to_expected_if_then_else if_both_branches_true_with_outer_type",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "if": {
+          "type": "integer"
+        },
+        "then": {},
+        "else": {},
+        "type": "number"
+      },
+      {
+        "type": "number"
+      }
+    ]
+  },
+  {
+    "description": "to_expected_any_of_flatten any_of_nested_consts_flattens",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "const": "a"
+          },
+          {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "const": "c"
+                  }
+                ]
+              },
+              {
+                "const": "b"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "const": "a"
+          },
+          {
+            "const": "b"
+          },
+          {
+            "const": "c"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "description": "to_expected_object_normalisation object_all_false_collapses_to_max_zero",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "additionalProperties": {
+          "not": {}
+        },
+        "properties": {
+          "a": {
+            "not": {}
+          }
+        },
+        "type": "object"
+      },
+      {
+        "maxProperties": 0,
+        "type": "object"
+      }
+    ]
+  },
+  {
+    "description": "to_expected_object_normalisation object_prunes_false_props_and_caps_max",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "additionalProperties": {
+          "not": {}
+        },
+        "properties": {
+          "a": {
+            "not": {}
+          },
+          "b": {}
+        },
+        "type": "object"
+      },
+      {
+        "additionalProperties": {
+          "not": {}
+        },
+        "properties": {
+          "b": {}
+        },
+        "maxProperties": 1,
+        "type": "object"
+      }
+    ]
+  },
+  {
+    "description": "to_expected_object_normalisation object_drops_catch_all_equivalent_property",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "properties": {
+          "a": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "type": "object"
+      }
+    ]
+  },
+  {
+    "description": "all_of_constrained_leaf_disjoint_from_multi_type_is_false",
+    "schema": {
+      "allOf": [
+        {
+          "type": "object",
+          "required": [
+            "a"
+          ]
+        },
+        {
+          "type": [
+            "integer",
+            "string"
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "drops_true_object_defaults",
+    "schema": {
+      "type": "object",
+      "additionalProperties": true,
+      "unevaluatedProperties": true
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    }
+  },
+  {
+    "description": "const_null_emits_as_type_null",
+    "schema": {
+      "const": null
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "null"
+    }
+  },
+  {
+    "description": "boolean_restricted_to_true_folds_to_const",
+    "schema": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": true
+    }
+  },
+  {
+    "description": "any_of_open_leaves_folds_to_type_list",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "object"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "integer",
+        "object"
+      ]
+    }
+  },
+  {
+    "description": "ir_contradictory_untyped_numeric_guard_to_type_list",
+    "schema": {
+      "allOf": [
+        {
+          "minimum": 0
+        },
+        {
+          "maximum": -1
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "null",
+        "boolean",
+        "string",
+        "array",
+        "object"
+      ]
+    }
+  },
+  {
+    "description": "ir_enum_null_boolean_branch_folds_into_type_list",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array"
+        },
+        {
+          "type": "object"
+        },
+        {
+          "enum": [
+            false,
+            null,
+            true
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "null",
+        "boolean",
+        "string",
+        "array",
+        "object"
+      ]
+    }
+  },
+  {
+    "description": "ir_allof_untyped_numeric_bounds_collapse",
+    "schemas": [
+      {
+        "allOf": [
+          {
+            "minimum": 0
+          },
+          {
+            "maximum": 10
+          }
+        ]
+      },
+      {
+        "minimum": 0,
+        "maximum": 10
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "maximum": 10,
+      "minimum": 0
+    }
+  },
+  {
+    "description": "ir_oneof_two_branches_to_multi_type",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "integer",
+        "string"
+      ]
+    }
+  },
+  {
+    "description": "ir_oneof_single_branch_collapses",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_if_then_else_rewrites",
+    "schema": {
+      "if": {
+        "type": "integer"
+      },
+      "then": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "else": {
+        "type": "number"
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "not": {
+            "multipleOf": 1
+          }
+        }
+      ]
+    }
+  },
+  {
+    "description": "ir_if_then_else_conflicting_then_drops_branch",
+    "schema": {
+      "if": {
+        "type": "integer"
+      },
+      "then": {
+        "type": "string"
+      },
+      "else": {
+        "type": "number"
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {
+        "multipleOf": 1
+      }
+    }
+  },
+  {
+    "description": "ir_if_only_collapses_to_true",
+    "schema": {
+      "if": {
+        "type": "integer"
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "ir_if_then_only_conflicting_then_else_passthrough",
+    "schema": {
+      "if": {
+        "type": "integer"
+      },
+      "then": {
+        "type": "string"
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {
+        "type": "integer"
+      }
+    }
+  },
+  {
+    "description": "ir_if_then_only_compatible_then_else_passthrough",
+    "schema": {
+      "if": {
+        "type": "integer"
+      },
+      "then": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "not": {
+            "type": "integer"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "description": "ir_type_list_unwraps_typed_group_wrappers",
+    "schema": {
+      "type": [
+        "integer",
+        "string"
+      ],
+      "minLength": 3
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "minLength": 3,
+          "type": "string"
+        }
+      ]
+    }
+  },
+  {
+    "description": "ir_anyof_unconstrained_types_to_type_array",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "integer",
+        "object"
+      ]
+    }
+  },
+  {
+    "description": "ir_allof_compatible_typed_branches_merge",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "integer",
+          "maximum": 10
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "maximum": 10,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_trivial_allof_singleton",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_trivial_anyof_singleton",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_trivial_allof_drops_true",
+    "schema": {
+      "allOf": [
+        true,
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_trivial_anyof_drops_false",
+    "schema": {
+      "anyOf": [
+        false,
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_trivial_anyof_true_short_circuits",
+    "schema": {
+      "anyOf": [
+        true,
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "ir_oneof_false_branches_collapse_to_remaining",
+    "schema": {
+      "oneOf": [
+        false,
+        {
+          "type": "integer"
+        },
+        false
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_subsumed_integer_interval",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 10
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_subsumed_number_interval",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 0.0
+        },
+        {
+          "type": "number",
+          "minimum": 1.5,
+          "maximum": 2.5
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minimum": 0,
+      "type": "number"
+    }
+  },
+  {
+    "description": "ir_bounded_number_covers_bounded_integer",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 0.0
+        },
+        {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 10
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minimum": 0,
+      "type": "number"
+    }
+  },
+  {
+    "description": "ir_subsumption_does_not_drop_when_max_too_low",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "number",
+          "maximum": 5.0
+        },
+        {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 10
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "maximum": 10,
+          "minimum": 5,
+          "type": "integer"
+        },
+        {
+          "maximum": 5,
+          "type": "number"
+        }
+      ]
+    }
+  },
+  {
+    "description": "ir_multiple_of_subset",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "multipleOf": 2
+        },
+        {
+          "type": "integer",
+          "multipleOf": 4
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "multipleOf": 2,
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_object_wider_property_covers_narrower",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "number"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "integer"
+            }
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "a": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "description": "ir_object_different_matchers_keep_separate",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "patternProperties": {
+            "^a": {
+              "type": "integer"
+            }
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "properties": {
+            "a": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "patternProperties": {
+            "^a": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  {
+    "description": "ir_object_open_covers_constrained",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "object",
+          "required": [
+            "a"
+          ],
+          "properties": {
+            "a": {
+              "type": "integer"
+            }
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    }
+  },
+  {
+    "description": "ir_object_wider_length_covers_narrower",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object",
+          "minProperties": 0
+        },
+        {
+          "type": "object",
+          "minProperties": 3,
+          "maxProperties": 5
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    }
+  },
+  {
+    "description": "ir_array_wider_length_covers_narrower",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "array",
+          "minItems": 0
+        },
+        {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 10
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array"
+    }
+  },
+  {
+    "description": "ir_array_wider_items_covers_narrower",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "type": "number"
+      },
+      "type": "array"
+    }
+  },
+  {
+    "description": "ir_array_unique_not_covered",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "array",
+          "uniqueItems": true
+        },
+        {
+          "type": "array"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array"
+    }
+  },
+  {
+    "description": "ir_strictly_disjoint_number_intervals_keep_separate",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 0.0,
+          "exclusiveMaximum": 5.0
+        },
+        {
+          "type": "number",
+          "exclusiveMinimum": 5.0,
+          "maximum": 10.0
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "exclusiveMaximum": 5,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "exclusiveMinimum": 5,
+          "maximum": 10,
+          "type": "number"
+        }
+      ]
+    }
+  },
+  {
+    "description": "ir_subsumed_string_length_drops_redundant",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 0
+        },
+        {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 10
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string"
+    }
+  },
+  {
+    "description": "ir_subsumed_string_pattern_drops_redundant",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^a"
+        },
+        {
+          "type": "string",
+          "allOf": [
+            {
+              "pattern": "^a"
+            },
+            {
+              "pattern": "b$"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "pattern": "^a",
+      "type": "string"
+    }
+  },
+  {
+    "description": "ir_anyof_of_enums_merges",
+    "schema": {
+      "anyOf": [
+        {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        {
+          "enum": [
+            5,
+            9
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        1,
+        2,
+        5,
+        9
+      ]
+    }
+  },
+  {
+    "description": "ir_anyof_enum_and_const_merges",
+    "schema": {
+      "anyOf": [
+        {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        {
+          "const": 9
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        1,
+        2,
+        9
+      ]
+    }
+  },
+  {
+    "description": "ir_multiple_of_disjoint_preserves_both",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "multipleOf": 2
+        },
+        {
+          "type": "integer",
+          "multipleOf": 3
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "multipleOf": 2,
+          "type": "integer"
+        },
+        {
+          "multipleOf": 3,
+          "type": "integer"
+        }
+      ]
+    }
+  },
+  {
+    "description": "unknown_keyword_ignored draft4_if_then",
+    "draft": "draft4",
+    "schemas": [
+      {
+        "if": {},
+        "then": false
+      },
+      {}
+    ]
+  },
+  {
+    "description": "unknown_keyword_ignored draft4_const",
+    "draft": "draft4",
+    "schemas": [
+      {
+        "const": 5
+      },
+      {}
+    ]
+  },
+  {
+    "description": "unknown_keyword_ignored draft4_contains",
+    "draft": "draft4",
+    "schemas": [
+      {
+        "contains": {
+          "type": "string"
+        }
+      },
+      {}
+    ]
+  },
+  {
+    "description": "unknown_keyword_ignored draft7_prefix_items",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "prefixItems": [
+          false
+        ]
+      },
+      {}
+    ]
+  },
+  {
+    "description": "unknown_keyword_ignored draft7_unevaluated_properties",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "unevaluatedProperties": false
+      },
+      {}
+    ]
+  },
+  {
+    "description": "unknown_keyword_ignored draft7_dynamic_ref",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "$dynamicRef": "#x"
+      },
+      {}
+    ]
+  },
+  {
+    "description": "unknown_keyword_ignored draft7_dependent_required",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "dependentRequired": {
+          "a": [
+            "b"
+          ]
+        }
+      },
+      {}
+    ]
+  },
+  {
+    "description": "top_level_canonicalize_inlines_same_document_ref json_pointer",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/$defs/a",
+      "$defs": {
+        "a": {
+          "type": "integer"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "top_level_canonicalize_inlines_same_document_ref plain_anchor",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#foo",
+      "$defs": {
+        "x": {
+          "$anchor": "foo",
+          "type": "integer"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "top_level_canonicalize_inlines_same_document_ref percent_encoded_pointer",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/$defs/a%20b",
+      "$defs": {
+        "a b": {
+          "type": "integer"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "any_of_of_complements_with_disjoint_negations_is_true object_leaf",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "not": {
+              "required": [
+                "a"
+              ],
+              "type": "object"
+            }
+          }
+        ]
+      },
+      {}
+    ]
+  },
+  {
+    "description": "any_of_of_complements_with_disjoint_negations_is_true any_of_of_objects",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "a"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "properties": {
+                    "a": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {}
+    ]
+  },
+  {
+    "description": "large_modular_set_with_outlier_is_one_value_set",
+    "draft": "draft2020-12",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16,
+          "multipleOf": 2
+        },
+        {
+          "const": 3
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        0,
+        10,
+        12,
+        14,
+        16,
+        2,
+        3,
+        4,
+        6,
+        8
+      ]
+    }
+  },
+  {
+    "description": "draft4_integer_enum_grid_stays_enum enum_form",
+    "draft": "draft4",
+    "schema": {
+      "enum": [
+        0,
+        1,
+        2
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "enum": [
+        0,
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "description": "draft4_integer_enum_grid_stays_enum window_form",
+    "draft": "draft4",
+    "schema": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "maximum": 2,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  {
+    "description": "tight_bound_collapses singleton_number_collapses",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "minimum": 1.5,
+      "maximum": 1.5
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": 1.5
+    }
+  },
+  {
+    "description": "tight_bound_collapses singleton_integer_collapses",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 42,
+      "maximum": 42
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": 42
+    }
+  },
+  {
+    "description": "tight_bound_collapses snap_makes_singleton_integer",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 4,
+      "maximum": 6,
+      "multipleOf": 5
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": 5
+    }
+  },
+  {
+    "description": "to_expected_all_of_merging all_of_multiple_of_picks_lcm",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "integer",
+        "allOf": [
+          {
+            "multipleOf": 0.5
+          },
+          {
+            "multipleOf": 6
+          }
+        ]
+      },
+      {
+        "type": "integer",
+        "multipleOf": 6
+      }
+    ]
+  },
+  {
+    "description": "full_type_union_collapses_to_true",
+    "draft": "draft2020-12",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "anyOf": [
+            {
+              "not": {
+                "type": "null"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    }
+  },
+  {
+    "description": "min_properties_above_required_count_is_kept",
+    "draft": "draft2020-12",
+    "schema": {
+      "type": "object",
+      "required": [
+        "a"
+      ],
+      "minProperties": 2
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minProperties": 2,
+      "required": [
+        "a"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "empty_array_branch_is_absorbed",
+    "draft": "draft7",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "array",
+          "maxItems": 0
+        },
+        {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "integer"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "array"
+    }
+  },
+  {
+    "description": "null_boolean_multi_type_merges_with_enum_siblings",
+    "draft": "draft7",
+    "schema": {
+      "type": [
+        "boolean",
+        "null",
+        "string"
+      ],
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "oneOf": [
+            {
+              "enum": [
+                "a"
+              ]
+            },
+            {
+              "enum": [
+                "b"
+              ]
+            }
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "enum": [
+        "a",
+        "b",
+        false,
+        null,
+        true
+      ]
+    }
+  },
+  {
+    "description": "string combined pattern negations fold into not_patterns idempotently",
+    "draft": "draft2020-12",
+    "schema": {
+      "allOf": [
+        {
+          "type": "string",
+          "pattern": "^a"
+        },
+        {
+          "not": {
+            "pattern": "^b"
+          }
+        },
+        {
+          "not": {
+            "pattern": "^c"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "not": {
+            "pattern": "^b",
+            "type": "string"
+          }
+        },
+        {
+          "not": {
+            "pattern": "^c",
+            "type": "string"
+          }
+        }
+      ],
+      "pattern": "^a",
+      "type": "string"
+    }
+  },
+  {
+    "description": "negated numeric type guard round trips through emitted form",
+    "draft": "draft2020-12",
+    "schema": {
+      "not": {
+        "type": "number",
+        "const": -1
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {
+        "const": -1
+      }
+    }
+  },
+  {
+    "description": "integer_extreme_bounds_no_overflow excl_min_i64_max_multiple_of",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "exclusiveMinimum": 9223372036854775807,
+      "multipleOf": 2
+    }
+  },
+  {
+    "description": "integer_extreme_bounds_no_overflow excl_max_i64_min_multiple_of_empty",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "exclusiveMaximum": -9223372036854775808,
+      "multipleOf": 2
+    }
+  },
+  {
+    "description": "integer_extreme_bounds_no_overflow any_of_excl_min_i64_max_merge",
+    "draft": "draft7",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "exclusiveMinimum": 9223372036854775807
+        },
+        {
+          "type": "integer",
+          "maximum": 0
+        }
+      ]
+    }
+  },
+  {
+    "description": "integer_extreme_bounds_no_overflow inclusive_max_i64_min",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "maximum": -9223372036854775808
+    }
+  },
+  {
+    "description": "integer_extreme_bounds_no_overflow inclusive_min_i64_min",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": -9223372036854775808
+    }
+  },
+  {
+    "description": "integer_extreme_bounds_no_overflow exclusive_max_i64_min",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "exclusiveMaximum": -9223372036854775808
+    }
+  },
+  {
+    "description": "integer_extreme_bounds_no_overflow anyof_exclusive_max_i64_min",
+    "draft": "draft7",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "exclusiveMaximum": -9223372036854775808
+        },
+        {
+          "type": "integer",
+          "minimum": 0
+        }
+      ]
+    }
+  },
+  {
+    "description": "ir_allof_string_facets_split_across_conjuncts_subsumed",
+    "schema": {
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "pattern": "^a",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "format": "email",
+          "type": "string"
+        },
+        {
+          "anyOf": [
+            {
+              "enum": [
+                null
+              ]
+            },
+            {
+              "type": "string"
+            },
+            {
+              "format": "date",
+              "type": "string"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "format": "email",
+      "pattern": "^a",
+      "type": "string"
+    }
+  },
+  {
+    "description": "two_value_window_enumerates",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 1
+      },
+      {
+        "enum": [
+          0,
+          1
+        ]
+      }
+    ]
+  },
+  {
+    "description": "two_value_window_enumerates_negative",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "integer",
+        "minimum": -1,
+        "maximum": 0
+      },
+      {
+        "enum": [
+          -1,
+          0
+        ]
+      }
+    ]
+  },
+  {
+    "description": "two_multiples_enumerate",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 5,
+        "multipleOf": 5
+      },
+      {
+        "enum": [
+          0,
+          5
+        ]
+      }
+    ]
+  },
+  {
+    "description": "two_survivors_of_exclusion_enumerate",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 3,
+        "not": {
+          "type": "integer",
+          "multipleOf": 2
+        }
+      },
+      {
+        "enum": [
+          1,
+          3
+        ]
+      }
+    ]
+  },
+  {
+    "description": "aligned_progression_converges_to_enum",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "enum": [
+          0,
+          5,
+          10
+        ]
+      },
+      {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10,
+        "multipleOf": 5
+      }
+    ]
+  },
+  {
+    "description": "negative_aligned_progression_converges_to_enum",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "enum": [
+          -4,
+          -2,
+          0
+        ]
+      },
+      {
+        "type": "integer",
+        "minimum": -4,
+        "maximum": 0,
+        "multipleOf": 2
+      }
+    ]
+  },
+  {
+    "description": "misaligned_progression_stays_enum",
+    "draft": "draft7",
+    "schema": {
+      "enum": [
+        1,
+        3,
+        5
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "enum": [
+        1,
+        3,
+        5
+      ]
+    }
+  },
+  {
+    "description": "irregular_set_stays_enum",
+    "draft": "draft7",
+    "schema": {
+      "enum": [
+        0,
+        1,
+        5
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "enum": [
+        0,
+        1,
+        5
+      ]
+    }
+  },
+  {
+    "description": "string_min_length_subsumption",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 5
+          },
+          {
+            "type": "string",
+            "minLength": 2
+          }
+        ]
+      },
+      {
+        "type": "string",
+        "minLength": 2
+      }
+    ]
+  },
+  {
+    "description": "string_pattern_subsumption",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^a",
+            "minLength": 5
+          },
+          {
+            "type": "string",
+            "pattern": "^a"
+          }
+        ]
+      },
+      {
+        "type": "string",
+        "pattern": "^a"
+      }
+    ]
+  },
+  {
+    "description": "array_min_items_subsumption",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "array",
+            "minItems": 3
+          },
+          {
+            "type": "array",
+            "minItems": 1
+          }
+        ]
+      },
+      {
+        "type": "array",
+        "minItems": 1
+      }
+    ]
+  },
+  {
+    "description": "array_items_subsumption",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          }
+        ]
+      },
+      {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        }
+      }
+    ]
+  },
+  {
+    "description": "object_requirement_union",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "allOf": [
+          {
+            "required": [
+              "a"
+            ]
+          },
+          {
+            "required": [
+              "b"
+            ],
+            "dependentRequired": {
+              "x": [
+                "y"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "required": [
+          "a",
+          "b"
+        ],
+        "dependentRequired": {
+          "x": [
+            "y"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "description": "integer_valued_number_meets_type_list",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "allOf": [
+          {
+            "multipleOf": 1,
+            "type": "number"
+          },
+          {
+            "type": [
+              "number",
+              "string"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "integer"
+      }
+    ]
+  },
+  {
+    "description": "disjoint_kind_guards_union_to_true",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "pattern": "^a"
+          },
+          {
+            "uniqueItems": true
+          }
+        ]
+      },
+      true
+    ]
+  },
+  {
+    "description": "divisible_not_multiple_of_is_redundant",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "type": "number",
+        "allOf": [
+          {
+            "not": {
+              "multipleOf": 1,
+              "type": "number"
+            }
+          },
+          {
+            "not": {
+              "multipleOf": 2,
+              "type": "number"
+            }
+          }
+        ]
+      },
+      {
+        "not": {
+          "multipleOf": 1
+        }
+      }
+    ]
+  },
+  {
+    "description": "min_properties_implied_by_required",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "type": "object",
+        "required": [
+          "a"
+        ],
+        "minProperties": 1
+      },
+      {
+        "type": "object",
+        "required": [
+          "a"
+        ]
+      }
+    ]
+  },
+  {
+    "description": "min_properties_implied_by_two_required",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "type": "object",
+        "required": [
+          "a",
+          "b"
+        ],
+        "minProperties": 2
+      },
+      {
+        "type": "object",
+        "required": [
+          "a",
+          "b"
+        ]
+      }
+    ]
+  },
+  {
+    "description": "interior_leftover_folds_modular_union_to_enum",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1
+          },
+          {
+            "enum": [
+              0,
+              2,
+              -2
+            ]
+          }
+        ]
+      },
+      {
+        "enum": [
+          -2,
+          0,
+          1,
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "description": "interior_leftover_folds_longer_modular_run_to_enum",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1
+          },
+          {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 6,
+            "multipleOf": 2
+          }
+        ]
+      },
+      {
+        "enum": [
+          0,
+          1,
+          2,
+          4,
+          6
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,2122 @@
+[
+  {
+    "description": "canonicalize_preserves_validation integer_range",
+    "schema": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10
+    },
+    "witnesses": [
+      0,
+      5,
+      10,
+      -1,
+      11,
+      5.5,
+      "x",
+      null
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation number_bounds",
+    "schema": {
+      "type": "number",
+      "minimum": 1.5,
+      "exclusiveMaximum": 2.5
+    },
+    "witnesses": [
+      1.5,
+      2.0,
+      2.5,
+      1.0,
+      3.0,
+      "x"
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation string_length",
+    "schema": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 3
+    },
+    "witnesses": [
+      "",
+      "a",
+      "abc",
+      "abcd",
+      1
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation boolean",
+    "schema": {
+      "type": "boolean"
+    },
+    "witnesses": [
+      true,
+      false,
+      0,
+      "true"
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation null",
+    "schema": {
+      "type": "null"
+    },
+    "witnesses": [
+      null,
+      0,
+      false,
+      ""
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation anyof_int_or_string",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "witnesses": [
+      0,
+      "x",
+      0.5,
+      null,
+      []
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation const_string",
+    "schema": {
+      "const": "hello"
+    },
+    "witnesses": [
+      "hello",
+      "world",
+      null,
+      0
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation enum_ints",
+    "schema": {
+      "enum": [
+        1,
+        2,
+        3
+      ]
+    },
+    "witnesses": [
+      1,
+      2,
+      3,
+      4,
+      "1"
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation array_int_items_min",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      },
+      "minItems": 1
+    },
+    "witnesses": [
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        "x"
+      ],
+      "x"
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation object_required_property",
+    "schema": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "witnesses": [
+      {},
+      {
+        "name": "x"
+      },
+      {
+        "name": 1
+      },
+      {
+        "name": "x",
+        "extra": 1
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation not_string",
+    "schema": {
+      "not": {
+        "type": "string"
+      }
+    },
+    "witnesses": [
+      0,
+      "x",
+      null,
+      []
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation if_then_else",
+    "schema": {
+      "if": {
+        "type": "integer"
+      },
+      "then": {
+        "minimum": 0
+      },
+      "else": {
+        "type": "string"
+      }
+    },
+    "witnesses": [
+      0,
+      -1,
+      "x",
+      null,
+      5
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation unique_booleans",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "boolean"
+      }
+    },
+    "witnesses": [
+      [],
+      [
+        true
+      ],
+      [
+        true,
+        false
+      ],
+      [
+        true,
+        true
+      ],
+      [
+        true,
+        false,
+        true
+      ]
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation additional_properties_false",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "a": {
+          "type": "integer"
+        }
+      }
+    },
+    "witnesses": [
+      {},
+      {
+        "a": 1
+      },
+      {
+        "a": 1,
+        "b": 2
+      },
+      {
+        "a": "x"
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation true_schema",
+    "schema": true,
+    "witnesses": [
+      null,
+      0,
+      "x",
+      []
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation false_schema",
+    "schema": false,
+    "witnesses": [
+      null,
+      0,
+      "x",
+      []
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation type_list_int_string",
+    "schema": {
+      "type": [
+        "integer",
+        "string"
+      ]
+    },
+    "witnesses": [
+      0,
+      "x",
+      null,
+      0.5,
+      []
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation number_multiple_of_one_becomes_integer",
+    "schema": {
+      "type": "number",
+      "multipleOf": 1.0
+    },
+    "witnesses": [
+      0,
+      1,
+      1.5,
+      -2,
+      "x"
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation integer_snap_minimum_to_multiple",
+    "schema": {
+      "type": "integer",
+      "minimum": 1,
+      "multipleOf": 2
+    },
+    "witnesses": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation tight_bound_collapses_to_const_zero",
+    "schema": {
+      "type": "number",
+      "minimum": 0,
+      "exclusiveMaximum": 5e-324
+    },
+    "witnesses": [
+      0,
+      0.0,
+      -1,
+      1e-300
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation all_of_integer_with_minimum",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "minimum": 0
+        }
+      ]
+    },
+    "witnesses": [
+      -1,
+      0,
+      5,
+      0.5,
+      "x"
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation any_of_intersected_with_outer_type",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "type": [
+        "string",
+        "object"
+      ]
+    },
+    "witnesses": [
+      "x",
+      0,
+      {},
+      null
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation array_false_in_prefix_caps_max",
+    "schema": {
+      "type": "array",
+      "prefixItems": [
+        true,
+        false,
+        true
+      ]
+    },
+    "witnesses": [
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        2,
+        3
+      ]
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation object_required_with_dependencies_chain",
+    "schema": {
+      "type": "object",
+      "required": [
+        "a"
+      ],
+      "dependencies": {
+        "a": [
+          "b"
+        ],
+        "b": [
+          "c"
+        ]
+      }
+    },
+    "witnesses": [
+      {},
+      {
+        "a": 1
+      },
+      {
+        "a": 1,
+        "b": 2
+      },
+      {
+        "a": 1,
+        "b": 2,
+        "c": 3
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation draft7_content_encoding",
+    "schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "contentEncoding": "base64"
+    },
+    "witnesses": [
+      "e30=",
+      "%%%",
+      0,
+      null
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation draft202012_unevaluated_properties",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "a": true
+      },
+      "unevaluatedProperties": false
+    },
+    "witnesses": [
+      {},
+      {
+        "a": 1
+      },
+      {
+        "b": 1
+      },
+      {
+        "a": 1,
+        "b": 2
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation draft202012_unevaluated_properties_with_applicator",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "properties": {
+            "a": {
+              "type": "integer"
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "witnesses": [
+      {},
+      {
+        "a": 1
+      },
+      {
+        "b": 1
+      },
+      {
+        "a": 1,
+        "b": 2
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation draft202012_unevaluated_items",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "integer"
+        }
+      ],
+      "unevaluatedItems": false
+    },
+    "witnesses": [
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        "x"
+      ]
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation draft202012_unevaluated_items_with_contains",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "contains": {
+        "type": "string"
+      },
+      "unevaluatedItems": false
+    },
+    "witnesses": [
+      [],
+      [
+        "x"
+      ],
+      [
+        1
+      ],
+      [
+        "x",
+        1
+      ]
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation draft202012_differing_formats_are_annotations_by_default",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "type": "string",
+          "format": "date"
+        },
+        {
+          "type": "string",
+          "format": "uuid"
+        }
+      ]
+    },
+    "witnesses": [
+      "2024-01-01",
+      "550e8400-e29b-41d4-a716-446655440000",
+      "neither",
+      1
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation allOf_with_if_then_else",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "type": "null"
+        },
+        {
+          "else": {},
+          "if": {
+            "type": "boolean"
+          },
+          "then": {
+            "type": "boolean"
+          }
+        }
+      ]
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation array_of_several_unique_jsonpointers",
+    "draft": "draft7",
+    "schema": {
+      "items": {
+        "format": "json-pointer",
+        "type": "string"
+      },
+      "minItems": 2,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation array_of_several_unique_relative_jsonpointers",
+    "draft": "draft7",
+    "schema": {
+      "items": {
+        "format": "relative-json-pointer",
+        "type": "string"
+      },
+      "minItems": 2,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation array_where_contains_can_be_merged_with_list_items",
+    "draft": "draft7",
+    "schema": {
+      "additionalItems": {
+        "type": "string"
+      },
+      "contains": {
+        "const": "abc"
+      },
+      "items": [
+        {
+          "type": "string"
+        }
+      ],
+      "type": "array"
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation array_where_contains_cannot_be_merged_with_items",
+    "draft": "draft7",
+    "schema": {
+      "contains": {
+        "pattern": ".",
+        "type": "string"
+      },
+      "items": {
+        "pattern": "..",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation array_where_contains_cannot_be_merged_with_list_items",
+    "draft": "draft7",
+    "schema": {
+      "additionalItems": {
+        "pattern": "...",
+        "type": "string"
+      },
+      "contains": {
+        "pattern": ".",
+        "type": "string"
+      },
+      "items": [
+        {
+          "pattern": "..",
+          "type": "string"
+        }
+      ],
+      "type": "array"
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation array_with_list_items_and_too_high_maxItems",
+    "draft": "draft7",
+    "schema": {
+      "additionalItems": false,
+      "items": [
+        {}
+      ],
+      "maxItems": 3,
+      "type": "array"
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation close_bounds_for_integers_with_multiple_and_exMax",
+    "draft": "draft7",
+    "schema": {
+      "exclusiveMaximum": 1,
+      "minimum": 0,
+      "multipleOf": 2,
+      "type": "integer"
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation custom_jsonpointer_strategy_is_valid",
+    "draft": "draft7",
+    "schema": {
+      "format": "json-pointer",
+      "type": "string"
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation disallowed_object_but_allows_other_type",
+    "draft": "draft7",
+    "schema": {
+      "maxProperties": 1,
+      "required": [
+        "0",
+        "1"
+      ],
+      "type": [
+        "null",
+        "object"
+      ]
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation float_bounds_that_are_not_floats",
+    "draft": "draft7",
+    "schema": {
+      "maximum": 18014398509481983,
+      "minimum": -18014398509481983
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation impossible_integer_or_valid_number",
+    "draft": "draft7",
+    "schema": {
+      "maximum": 1.9,
+      "minimum": 1.2,
+      "type": [
+        "integer",
+        "number"
+      ]
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation integer_with_numeric_maximum_and_exclusiveMaximum",
+    "draft": "draft7",
+    "schema": {
+      "exclusiveMaximum": 0,
+      "maximum": 1
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation integer_with_numeric_minimum_and_exclusiveMinimum",
+    "draft": "draft7",
+    "schema": {
+      "exclusiveMinimum": 1,
+      "minimum": 0
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation issue12_longer",
+    "draft": "draft7",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^\\d+$",
+          "type": "string"
+        },
+        "title": {
+          "enum": [
+            "theonlyvalue"
+          ],
+          "type": "string"
+        },
+        "value": {
+          "additionalProperties": false,
+          "properties": {
+            "flag": {
+              "type": "boolean"
+            },
+            "ids": {
+              "items": {
+                "pattern": "^\\d+$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "string": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "ids",
+            "flag",
+            "string"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "title",
+        "value",
+        "id"
+      ],
+      "type": "object"
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation issue12_simple",
+    "draft": "draft7",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "ids": {
+          "items": {
+            "pattern": "^\\d+$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "type": "object"
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation non_integer_numbers_only",
+    "draft": "draft7",
+    "schema": {
+      "not": {
+        "type": "integer"
+      },
+      "type": "number"
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation object_with_dependencies_and_size_limits",
+    "draft": "draft7",
+    "schema": {
+      "additionalProperties": false,
+      "dependencies": {
+        "a": [
+          "b"
+        ]
+      },
+      "maxProperties": 1,
+      "minProperties": 1,
+      "properties": {
+        "a": true,
+        "b": true
+      },
+      "type": "object"
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation ref_in_nested_object_properties",
+    "draft": "draft7",
+    "schema": {
+      "additionalProperties": false,
+      "definitions": {
+        "another": {
+          "type": "object"
+        }
+      },
+      "properties": {
+        "something": {
+          "properties": {
+            "another": {
+              "$ref": "#/definitions/another"
+            }
+          },
+          "type": "object"
+        }
+      }
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation relative_jsonpointer_strategy_is_valid",
+    "draft": "draft7",
+    "schema": {
+      "format": "relative-json-pointer",
+      "type": "string"
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation string_with_format_and_pattern",
+    "draft": "draft7",
+    "schema": {
+      "format": "email",
+      "pattern": "^\\w+@",
+      "type": "string"
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation string_with_unknown_format",
+    "draft": "draft7",
+    "schema": {
+      "format": "Unknown formats should be treated as annotations and pass validation",
+      "type": "string"
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation unique_array_with_list_items_and_required_additionalItems",
+    "draft": "draft7",
+    "schema": {
+      "additionalItems": {
+        "const": 2
+      },
+      "items": [
+        {
+          "const": 1
+        }
+      ],
+      "minItems": 2,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation unique_array_with_list_items_without_additionalItems",
+    "draft": "draft7",
+    "schema": {
+      "items": [
+        {}
+      ],
+      "maxItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation unmergeable_allOf_schema_can_still_be_resolved",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "patternProperties": {
+            ".": {}
+          }
+        },
+        {
+          "patternProperties": {
+            "ab": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation very_rarely_satisfied_contains",
+    "draft": "draft7",
+    "schema": {
+      "contains": {
+        "const": "A"
+      },
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "witnesses": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_matches_expected_verdict partial_if_then_admits_non_matching",
+    "schema": {
+      "if": {
+        "type": "integer"
+      },
+      "then": {
+        "minimum": 0
+      }
+    },
+    "witnesses": [
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": null,
+        "valid": true
+      },
+      {
+        "data": 5,
+        "valid": true
+      },
+      {
+        "data": -1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_matches_expected_verdict partial_if_else_admits_matching",
+    "schema": {
+      "if": {
+        "type": "integer"
+      },
+      "else": {
+        "type": "string"
+      }
+    },
+    "witnesses": [
+      {
+        "data": 5,
+        "valid": true
+      },
+      {
+        "data": -1,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": null,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_matches_expected_verdict integer_fractional_minimum_rounds_up",
+    "schema": {
+      "type": "integer",
+      "minimum": 1.5
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": 2,
+        "valid": true
+      },
+      {
+        "data": 0,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_matches_expected_verdict integer_fractional_multiple_of_filters",
+    "schema": {
+      "type": "integer",
+      "multipleOf": 1.5
+    },
+    "witnesses": [
+      {
+        "data": 0,
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": 2,
+        "valid": false
+      },
+      {
+        "data": 3,
+        "valid": true
+      },
+      {
+        "data": 6,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_matches_expected_verdict numeric_equality_across_forms",
+    "schema": {
+      "allOf": [
+        {
+          "const": 1
+        },
+        {
+          "const": 1.0
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 2,
+        "valid": false
+      },
+      {
+        "data": "1",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_matches_expected_verdict array_prefix_satisfies_contains",
+    "schema": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string"
+        }
+      ],
+      "items": {
+        "type": "integer"
+      },
+      "contains": {
+        "type": "string"
+      }
+    },
+    "witnesses": [
+      {
+        "data": [
+          "a"
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          "a",
+          1,
+          2
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_matches_expected_verdict property_names_with_sibling_facets",
+    "schema": {
+      "propertyNames": {
+        "minLength": 1,
+        "enum": [
+          "a"
+        ]
+      }
+    },
+    "witnesses": [
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_matches_expected_verdict intersect_dependencies_same_trigger_merge",
+    "schema": {
+      "allOf": [
+        {
+          "dependencies": {
+            "a": [
+              "b"
+            ]
+          }
+        },
+        {
+          "dependencies": {
+            "a": [
+              "c"
+            ]
+          }
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": {
+          "a": 1,
+          "b": 2,
+          "c": 3
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1,
+          "b": 2
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "a": 1,
+          "c": 3
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_matches_expected_verdict definition_with_slash_resolves",
+    "schema": {
+      "$defs": {
+        "a/b": {
+          "type": "integer"
+        }
+      },
+      "$ref": "#/$defs/a~1b"
+    },
+    "witnesses": [
+      {
+        "data": 5,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_matches_expected_verdict array_universe_size_ignores_prefix_items",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "array",
+        "prefixItems": [
+          {}
+        ],
+        "items": false,
+        "minItems": 1,
+        "maxItems": 1
+      },
+      "minItems": 5
+    },
+    "witnesses": [
+      {
+        "data": [
+          [
+            null
+          ],
+          [
+            true
+          ],
+          [
+            false
+          ],
+          [
+            0
+          ],
+          [
+            "x"
+          ]
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          [
+            null
+          ]
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_matches_expected_verdict true_schema_unbounded_in_array_universe",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": true,
+      "minItems": 5
+    },
+    "witnesses": [
+      {
+        "data": [
+          null,
+          true,
+          0,
+          "x",
+          []
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          null
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_matches_expected_verdict enum_dedup_across_numeric_forms",
+    "schema": {
+      "allOf": [
+        {
+          "enum": [
+            1,
+            1.0,
+            "x"
+          ]
+        },
+        {
+          "enum": [
+            1,
+            "x"
+          ]
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 1.0,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": 2,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "draft4_float_without_frac_is_not_integer",
+    "draft": "draft4",
+    "schema": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "integer"
+    },
+    "witnesses": [
+      1.0
+    ]
+  },
+  {
+    "description": "double_negation_preserves_integer_branch",
+    "schemas": [
+      {
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "required": [
+                  "a"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          {
+            "not": {
+              "properties": {
+                "a": {
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            }
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "allOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "required": [
+                      "a"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "not": {
+                  "properties": {
+                    "a": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      0,
+      42,
+      null,
+      "x",
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "description": "intersect_number_leaf_drops_unrepresentable_out_of_bound_member",
+    "schema": {
+      "allOf": [
+        {
+          "enum": [
+            1e+22,
+            3
+          ]
+        },
+        {
+          "type": "number",
+          "maximum": 5
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 1e+22,
+        "valid": false
+      },
+      {
+        "data": 3,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_ignores_unguarded_cycles_outside_schema_positions const_payload",
+    "schema": {
+      "const": {
+        "not": {
+          "$ref": "#/const"
+        }
+      }
+    }
+  },
+  {
+    "description": "canonicalize_ignores_unguarded_cycles_outside_schema_positions unknown_keyword_payload",
+    "schema": {
+      "x-data": {
+        "not": {
+          "$ref": "#/x-data"
+        }
+      }
+    }
+  },
+  {
+    "description": "property_named_const_keeps_subschema_bound_when_numeric_bound_is_unsupported",
+    "draft": "draft2020-12",
+    "schema": {
+      "properties": {
+        "const": {
+          "type": "number",
+          "minimum": 1e+300
+        }
+      }
+    },
+    "witnesses": [
+      {
+        "data": {
+          "const": 0
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "const": 1e+300
+        },
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "ir_anyof_untyped_sibling_preserves_unconstrained_branch",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "minimum": 2
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 2.5,
+        "valid": true
+      },
+      {
+        "data": 1.5,
+        "valid": false
+      }
+    ]
+  }
+]
