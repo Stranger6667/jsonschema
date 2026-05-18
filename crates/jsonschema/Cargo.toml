@@ -10,9 +10,19 @@ repository.workspace = true
 rust-version.workspace = true
 edition.workspace = true
 authors.workspace = true
+exclude = ["tests/fixtures/schemastore/corpus-schemastore-catalog.json"]
 
 [features]
-default = ["resolve-http", "resolve-file", "tls-aws-lc-rs"]
+default = ["resolve-http", "resolve-file", "tls-aws-lc-rs", "canonical"]
+# Schema canonicalization and the schema algebra (`canonicalize`, `CanonicalSchema`).
+# `serde_json/float_roundtrip`: canonicalization re-parses emitted schemas; the default parser would perturb floats, breaking idempotence.
+# `serde_json/unbounded_depth`: Raw-preserved schemas can contain payloads deeper than serde_json's default parser limit.
+canonical = [
+    "dep:strum",
+    "dep:num-integer",
+    "serde_json/float_roundtrip",
+    "serde_json/unbounded_depth",
+]
 resolve-http = ["reqwest", "dep:rustls"]
 resolve-file = []
 resolve-async = [
@@ -61,12 +71,14 @@ idna = "1.0.2"
 itoa = "1"
 num-bigint = { version = "0.4", optional = true }
 num-cmp = "0.1"
+num-integer = { version = "0.1", optional = true }
 num-traits = "0.2.19"
 percent-encoding = "2.3"
 referencing = { version = "0.46.9", path = "../jsonschema-referencing" }
 regex = "1.11.1"
 serde.workspace = true
 serde_json.workspace = true
+strum = { version = "0.28.0", features = ["derive"], optional = true }
 tokio = { version = "1", default-features = false, features = ["rt"], optional = true }
 unicode-general-category = "1.1"
 uuid-simd = { version = "0.8", default-features = false, features = ["std", "detect"] }
@@ -83,6 +95,7 @@ wasm-bindgen-test = "0.3.55"
 benchmark = { path = "../benchmark/" }
 codspeed-criterion-compat = { version = "5.0", default-features = false }
 criterion = { version = "0.8", default-features = false }
+hegeltest = "0.18"
 tempfile = "3.13.0"
 test-case = "3"
 tokio = { version = "1", features = ["macros", "rt"] }
@@ -117,3 +130,8 @@ name = "unevaluated_items"
 [[bench]]
 harness = false
 name = "metaschema"
+
+[[bench]]
+harness = false
+name = "canonicalize"
+required-features = ["canonical"]

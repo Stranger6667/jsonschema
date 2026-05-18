@@ -124,6 +124,44 @@ pub(crate) enum PatternOptimization {
     NoWhitespace,
 }
 
+/// Build a fancy-regex matcher from an already-ECMA-translated pattern, applying engine limits; `Err(())` on a
+/// rejected pattern. The one place these limits are wired onto a `fancy_regex::RegexBuilder`.
+pub(crate) fn build_fancy_regex(
+    translated: &str,
+    backtrack_limit: Option<usize>,
+    size_limit: Option<usize>,
+    dfa_size_limit: Option<usize>,
+) -> Result<fancy_regex::Regex, ()> {
+    let mut builder = fancy_regex::RegexBuilder::new(translated);
+    if let Some(limit) = backtrack_limit {
+        builder.backtrack_limit(limit);
+    }
+    if let Some(limit) = size_limit {
+        builder.delegate_size_limit(limit);
+    }
+    if let Some(limit) = dfa_size_limit {
+        builder.delegate_dfa_size_limit(limit);
+    }
+    builder.build().map_err(|_| ())
+}
+
+/// Build a standard-regex matcher from an already-ECMA-translated pattern, applying engine limits; `Err(())` on a
+/// rejected pattern. The one place these limits are wired onto a `regex::RegexBuilder`.
+pub(crate) fn build_standard_regex(
+    translated: &str,
+    size_limit: Option<usize>,
+    dfa_size_limit: Option<usize>,
+) -> Result<regex::Regex, ()> {
+    let mut builder = regex::RegexBuilder::new(translated);
+    if let Some(limit) = size_limit {
+        builder.size_limit(limit);
+    }
+    if let Some(limit) = dfa_size_limit {
+        builder.dfa_size_limit(limit);
+    }
+    builder.build().map_err(|_| ())
+}
+
 /// Returns `true` for ECMA-262 whitespace characters (`\s` in ECMA regex).
 ///
 /// This is the union of ASCII whitespace, `\u{00a0}` (non-breaking space), and the Unicode

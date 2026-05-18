@@ -3,7 +3,7 @@ use fluent_uri::{
     pct_enc::{encoder::Fragment, EStr, Encoder},
     Uri, UriRef,
 };
-use std::sync::LazyLock;
+use std::{borrow::Cow, sync::LazyLock};
 
 use crate::Error;
 pub use fluent_uri::pct_enc::encoder::Path;
@@ -49,6 +49,35 @@ pub(crate) static DEFAULT_ROOT_URI: LazyLock<Uri<String>> =
 
 pub type EncodedString = EStr<Fragment>;
 
+/// Percent-encode URI-illegal characters in a fragment (e.g. `<`/`>` in a `$ref` JSON pointer), borrowing
+/// unchanged when nothing needs escaping. A `%` starting a valid `%XX` triplet is treated as already encoded
+/// so encoded fragments pass through unchanged (idempotent); a stray `%` is encoded to `%25`.
+#[must_use]
+pub fn encode_fragment(fragment: &str) -> Cow<'_, str> {
+    let bytes = fragment.as_bytes();
+    let starts_triplet = |index: usize| {
+        bytes.get(index + 1).is_some_and(u8::is_ascii_hexdigit)
+            && bytes.get(index + 2).is_some_and(u8::is_ascii_hexdigit)
+    };
+    let allowed =
+        |index: usize, ch: char| (ch == '%' && starts_triplet(index)) || Path::TABLE.allows(ch);
+    if fragment
+        .char_indices()
+        .all(|(index, ch)| allowed(index, ch))
+    {
+        return Cow::Borrowed(fragment);
+    }
+    let mut buffer = String::with_capacity(fragment.len() + 8);
+    for (index, ch) in fragment.char_indices() {
+        if allowed(index, ch) {
+            buffer.push(ch);
+        } else {
+            encode_to(ch.encode_utf8(&mut [0; 4]), &mut buffer);
+        }
+    }
+    Cow::Owned(buffer)
+}
+
 // Adapted from `https://github.com/yescallop/fluent-uri-rs/blob/main/src/encoding/table.rs#L153`
 pub fn encode_to(input: &str, buffer: &mut String) {
     const HEX_TABLE: [u8; 512] = {
@@ -74,5 +103,41 @@ pub fn encode_to(input: &str, buffer: &mut String) {
                 buffer.push(HEX_TABLE[x as usize * 2 + 1] as char);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::encode_fragment;
+    use std::borrow::Cow;
+
+    #[test]
+    fn encode_fragment_behavior() {
+        // Clean fragment: borrowed unchanged, no allocation.
+        assert!(matches!(
+            encode_fragment("/definitions/Foo"),
+            Cow::Borrowed("/definitions/Foo")
+        ));
+        // URI-illegal `<`/`>` get encoded.
+        assert_eq!(
+            encode_fragment("/definitions/A<B>"),
+            "/definitions/A%3CB%3E"
+        );
+        // Already-encoded `%XX` is preserved (idempotent), not doubled into `%2520`.
+        assert!(matches!(
+            encode_fragment("/definitions/foo%20bar"),
+            Cow::Borrowed(_)
+        ));
+        assert_eq!(
+            encode_fragment(&encode_fragment("/A<B>")),
+            encode_fragment("/A<B>")
+        );
+        // A stray `%` that does not start a `%XX` triplet is itself encoded; the result is a valid URI fragment.
+        assert_eq!(encode_fragment("/definitions/100%"), "/definitions/100%25");
+        assert_eq!(encode_fragment("/definitions/a%zz"), "/definitions/a%25zz");
+        assert_eq!(
+            encode_fragment(&encode_fragment("/definitions/100%")),
+            "/definitions/100%25"
+        );
     }
 }

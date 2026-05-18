@@ -8,3 +8,11 @@ begin
 rescue LoadError
   require "jsonschema/jsonschema_rb"
 end
+
+module JSONSchema
+  module Canonical
+    class InvalidPattern
+      attr_reader :location
+    end
+  end
+end

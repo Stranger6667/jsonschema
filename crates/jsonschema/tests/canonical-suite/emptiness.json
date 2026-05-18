@@ -1,0 +1,1756 @@
+[
+  {
+    "description": "subtract const from superset enum is unsatisfiable - const 1 minus superset enum collapses to empty",
+    "schema": {
+      "allOf": [
+        {
+          "const": 1
+        },
+        {
+          "not": {
+            "enum": [
+              1,
+              "two",
+              true,
+              null
+            ]
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "subtract object pattern properties from itself is unsatisfiable - X minus X is empty",
+    "schema": {
+      "allOf": [
+        {
+          "type": "object",
+          "patternProperties": {
+            "^x": {
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "not": {
+            "type": "object",
+            "patternProperties": {
+              "^x": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "subtract not-of-allof from itself is unsatisfiable - X minus X is empty for not(allOf[not(obj), int-point])",
+    "schema": {
+      "allOf": [
+        {
+          "not": {
+            "allOf": [
+              {
+                "not": {
+                  "required": [
+                    "a"
+                  ],
+                  "type": "object"
+                }
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 0
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "not": {
+              "allOf": [
+                {
+                  "not": {
+                    "required": [
+                      "a"
+                    ],
+                    "type": "object"
+                  }
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 0
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "subtract integer range minus enum from itself is unsatisfiable - X minus X is empty for int-range not-enum",
+    "schema": {
+      "allOf": [
+        {
+          "allOf": [
+            {
+              "not": {
+                "enum": [
+                  1,
+                  "two",
+                  true,
+                  null
+                ]
+              }
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1
+            }
+          ]
+        },
+        {
+          "not": {
+            "allOf": [
+              {
+                "not": {
+                  "enum": [
+                    1,
+                    "two",
+                    true,
+                    null
+                  ]
+                }
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "subtract not-of-anyof with multitype branch is unsatisfiable - X minus X is empty for not(anyOf[null,string,obj])",
+    "schema": {
+      "allOf": [
+        {
+          "not": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "required": [
+                  "a"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "not": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "required": [
+                    "a"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "subtract object additional properties via anyof is unsatisfiable - P minus anyOf[P,..] is empty",
+    "schema": {
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer"
+                }
+              },
+              {
+                "not": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "patternProperties": {
+                        "^x": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "integer drops disjoint negated range - allOf with negated integer range collapses to positive branch",
+    "schemas": [
+      {
+        "allOf": [
+          {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          {
+            "not": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 0
+            }
+          }
+        ]
+      },
+      {
+        "type": "integer",
+        "exclusiveMinimum": 0
+      }
+    ]
+  },
+  {
+    "description": "number intersect multitype with integer is not empty - admits integer witness",
+    "schema": {
+      "allOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": [
+            "null",
+            "integer"
+          ]
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 0,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "subtract array items schema from itself is unsatisfiable - X minus X is empty for not(allOf[array-maxItems, prefixItems, not-items])",
+    "schema": {
+      "allOf": [
+        {
+          "not": {
+            "allOf": [
+              {
+                "type": "array",
+                "maxItems": 0
+              },
+              {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "integer"
+                  }
+                ]
+              },
+              {
+                "not": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "not": {
+              "allOf": [
+                {
+                  "type": "array",
+                  "maxItems": 0
+                },
+                {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "integer"
+                    }
+                  ]
+                },
+                {
+                  "not": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "subtract object empty vs additional properties is unsatisfiable - L minus R is empty when L is subschema of R",
+    "schema": {
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "not": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "a": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "required": [
+                      "a"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "not": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "a": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "subtract not-of-allof-of-negations is unsatisfiable - X minus X is empty for integer-or-string",
+    "schema": {
+      "allOf": [
+        {
+          "not": {
+            "allOf": [
+              {
+                "not": {
+                  "type": "integer"
+                }
+              },
+              {
+                "not": {
+                  "type": "string"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "not": {
+              "allOf": [
+                {
+                  "not": {
+                    "type": "integer"
+                  }
+                },
+                {
+                  "not": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "subtract object pattern and additional props from itself is unsatisfiable - X minus X is empty for allOf[patternProps, additionalProperties:false]",
+    "schema": {
+      "allOf": [
+        {
+          "allOf": [
+            {
+              "type": "object",
+              "patternProperties": {
+                "^x": {
+                  "type": "integer"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "a": {
+                  "type": "integer"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "not": {
+            "allOf": [
+              {
+                "type": "object",
+                "patternProperties": {
+                  "^x": {
+                    "type": "integer"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "a": {
+                    "type": "integer"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "negated format membership stays satisfiable - allOf const-x not-email admits x",
+    "schema": {
+      "allOf": [
+        {
+          "const": "x"
+        },
+        {
+          "not": {
+            "type": "string",
+            "format": "email"
+          }
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": "x"
+      }
+    ]
+  },
+  {
+    "description": "the false schema canonicalizes to its empty not form",
+    "schema": false,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "ir_contradictory_string_bounds_minlength_exceeds_maxlength",
+    "schema": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 3
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "ir_contradictory_string_bounds_maxlength_below_minlength",
+    "schema": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 0
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "ir_typed_value_set_with_conflicting_type_is_empty",
+    "schema": {
+      "allOf": [
+        {
+          "type": "null"
+        },
+        {
+          "const": 1
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "ir_allof_conflicting_types_collapses_to_false",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "ir_trivial_allof_false_short_circuits",
+    "schema": {
+      "allOf": [
+        false,
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "ir_positive_and_negation_integer_multiple_of",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer",
+          "multipleOf": 3
+        },
+        {
+          "not": {
+            "type": "integer",
+            "multipleOf": 3
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "ir_positive_and_negation_integer_bounded_subset",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "multipleOf": 3
+        },
+        {
+          "not": {
+            "type": "integer",
+            "multipleOf": 3
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "ir_positive_and_negation_array_unique_items",
+    "schema": {
+      "allOf": [
+        {
+          "type": "array",
+          "uniqueItems": true
+        },
+        {
+          "not": {
+            "type": "array",
+            "uniqueItems": true
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "numeric_bounds_empty integer_closed_minimum_exclusive_maximum_equal",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 5,
+      "exclusiveMaximum": 5
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "numeric_bounds_empty integer_exclusive_minimum_equal_maximum",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "exclusiveMinimum": 5,
+      "maximum": 5
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "numeric_bounds_empty integer_no_multiple_of_singleton",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1,
+      "multipleOf": 2
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "numeric_bounds_empty number_multiple_of_too_large",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 0.2,
+      "multipleOf": 0.3
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "const_enum_filter_empty integer_const_with_fraction",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "const": 2.5
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "const_enum_filter_empty array_const_object_value",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "const": {}
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "const_enum_filter_empty string_const_integer",
+    "draft": "draft7",
+    "schema": {
+      "type": "string",
+      "const": 5
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "not_contradictions_empty string_and_not_string",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "type": "string"
+        },
+        {
+          "not": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "not_contradictions_empty structural_equality",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "type": "string",
+          "minLength": 3
+        },
+        {
+          "not": {
+            "type": "string",
+            "minLength": 3
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "array_empty items_false_min_one",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": false,
+      "minItems": 1
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "array_empty false_in_required_prefix",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": [
+        {
+          "type": "string"
+        },
+        false
+      ],
+      "minItems": 2
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "array_empty contains_false_default_min",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "contains": false
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "array_empty draft7_ignores_min_contains",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "contains": false,
+      "minContains": 0
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "array_empty min_gt_max",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 3
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "array_empty repeated_items_max_one",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "maxItems": 1,
+      "not": {
+        "type": "array",
+        "uniqueItems": true
+      }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "array_empty three_unique_booleans_impossible",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 3,
+      "items": {
+        "type": "boolean"
+      }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "array_empty unique_finite_int_overflow",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 100,
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 5
+      }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "object_empty required_property_is_false",
+    "draft": "draft7",
+    "schema": {
+      "type": "object",
+      "required": [
+        "a"
+      ],
+      "properties": {
+        "a": false
+      }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "object_empty max_lt_required",
+    "draft": "draft7",
+    "schema": {
+      "type": "object",
+      "required": [
+        "a",
+        "b",
+        "c"
+      ],
+      "maxProperties": 2
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "object_empty min_gt_max",
+    "draft": "draft7",
+    "schema": {
+      "type": "object",
+      "minProperties": 5,
+      "maxProperties": 3
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "integer_subtype_of_number_empty integer_minus_number_is_empty",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "not": {
+            "type": "number"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "integer_subtype_of_number_empty integer_and_string_disjoint",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "numeric_promotion_empty snap_pushes_min_past_max",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 3,
+      "maximum": 5,
+      "multipleOf": 7
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "numeric_promotion_empty multof_one_with_only_fractional_window_empty",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "multipleOf": 1,
+      "minimum": 0.5,
+      "maximum": 0.9
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "type_pin_simplification_empty null_const_zero_disjoint",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "type": "null"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "type_pin_simplification_empty null_enum_no_null_disjoint",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            0,
+            "a",
+            true
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "array_normalisation_empty array_false_in_prefix_drives_max_below_min",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": [
+        true,
+        false,
+        true
+      ],
+      "minItems": 2
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "object_and_not_merge_empty required_property_type_collides",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "properties": {
+            "": {
+              "type": "string"
+            }
+          },
+          "required": [
+            ""
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": {
+            "type": "null"
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "tight_bound_empty empty_zero_open_window",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "exclusiveMaximum": 0
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "tight_bound_empty singleton_int_violates_multiple_of",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 5,
+      "multipleOf": 3
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty one_of_two_trues",
+    "draft": "draft7",
+    "schema": {
+      "oneOf": [
+        {},
+        {}
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty one_of_two_trues_and_false",
+    "draft": "draft7",
+    "schema": {
+      "oneOf": [
+        true,
+        false,
+        {}
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty any_of_only_false_branches",
+    "draft": "draft7",
+    "schema": {
+      "anyOf": [
+        false,
+        {
+          "not": {}
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty integer_min_gt_max",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 1
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty integer_no_multiple_in_interval",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2,
+      "multipleOf": 3
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty number_excl_min_eq_max",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 0
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty number_excl_min_eq_max_neg_zero",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "exclusiveMinimum": -0.0,
+      "maximum": -0.0
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty number_min_eq_excl_max",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "minimum": 0,
+      "exclusiveMaximum": 0
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty number_min_eq_excl_max_neg_zero",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "minimum": -0.0,
+      "exclusiveMaximum": -0.0
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty number_no_multiple_in_open_interval",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "exclusiveMaximum": 3,
+      "multipleOf": 3
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty null_enum_excludes_null",
+    "draft": "draft7",
+    "schema": {
+      "type": "null",
+      "enum": [
+        false,
+        true
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty boolean_const_null",
+    "draft": "draft7",
+    "schema": {
+      "type": "boolean",
+      "const": null
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty const_excluded_by_not_enum",
+    "draft": "draft7",
+    "schema": {
+      "not": {
+        "enum": [
+          1,
+          2,
+          3
+        ]
+      },
+      "const": 2
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty not_number_and_number",
+    "draft": "draft7",
+    "schema": {
+      "not": {
+        "type": [
+          "integer",
+          "number"
+        ]
+      },
+      "type": "number"
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty not_any_of_number_and_number",
+    "draft": "draft7",
+    "schema": {
+      "not": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "type": "number"
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty fractional_numbers_and_integer_string_types",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "not": {
+            "multipleOf": 1
+          }
+        },
+        {
+          "type": [
+            "integer",
+            "string"
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty fractional_numbers_and_integer_boolean_types",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "not": {
+            "multipleOf": 1
+          }
+        },
+        {
+          "type": [
+            "integer",
+            "boolean"
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty fractional_numbers_and_integer_null_types",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "not": {
+            "multipleOf": 1
+          }
+        },
+        {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty fractional_window_and_integer_boolean_types",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        {
+          "type": [
+            "integer",
+            "boolean"
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty array_unique_null_min_two",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "null"
+      },
+      "uniqueItems": true,
+      "minItems": 2
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty array_unique_null_or_boolean_min_four",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": [
+          "null",
+          "boolean"
+        ]
+      },
+      "uniqueItems": true,
+      "minItems": 4
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty array_prefix_false_min_two",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": [
+        true,
+        false
+      ],
+      "minItems": 2
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty array_additional_items_false_min_two",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": [
+        true
+      ],
+      "minItems": 2,
+      "additionalItems": false
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty array_prefix_false_in_middle",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": [
+        true,
+        false,
+        true
+      ],
+      "minItems": 3,
+      "additionalItems": {
+        "type": "null"
+      }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty array_unique_single_int_min_two",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 0
+      },
+      "uniqueItems": true,
+      "minItems": 2
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty integer_and_not_multiple_of_half",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number",
+          "not": {
+            "type": "number",
+            "multipleOf": 0.5
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty array_int_items_string_contains",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      },
+      "contains": {
+        "type": "string"
+      }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty array_unique_nested_finite_universe",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "maxItems": 2
+      },
+      "minItems": 8,
+      "uniqueItems": true
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty object_max_properties_lt_required",
+    "draft": "draft7",
+    "schema": {
+      "type": "object",
+      "maxProperties": 1,
+      "required": [
+        "0",
+        "1"
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty object_required_violates_property_names",
+    "draft": "draft7",
+    "schema": {
+      "type": "object",
+      "required": [
+        ""
+      ],
+      "propertyNames": {
+        "minLength": 1
+      }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty object_max_lt_min",
+    "draft": "draft7",
+    "schema": {
+      "type": "object",
+      "maxProperties": 2,
+      "minProperties": 3
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty object_required_violates_property_names_and_max",
+    "draft": "draft7",
+    "schema": {
+      "type": "object",
+      "maxProperties": 1,
+      "required": [
+        "",
+        "0"
+      ],
+      "propertyNames": {
+        "minLength": 2
+      }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty array contains clauses with conflicting count windows on the same schema",
+    "schema": {
+      "allOf": [
+        {
+          "type": "array",
+          "contains": {
+            "type": "integer"
+          },
+          "maxContains": 0
+        },
+        {
+          "type": "array",
+          "contains": {
+            "type": "integer"
+          },
+          "minContains": 1
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty unique array minItems exceeds the prefix-plus-tail element universe",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 5,
+      "prefixItems": [
+        {
+          "type": "boolean"
+        }
+      ],
+      "items": {
+        "type": "boolean"
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  }
+]

@@ -1381,6 +1381,11 @@ enum BuiltinFormat {
     Uuid,
 }
 
+#[cfg(feature = "canonical")]
+pub(crate) fn is_known_format(draft: Draft, format: &str) -> bool {
+    builtin_format(draft, format).is_some()
+}
+
 fn builtin_format(draft: Draft, format: &str) -> Option<BuiltinFormat> {
     match format {
         "date" => Some(BuiltinFormat::Date),

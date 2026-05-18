@@ -1,0 +1,411 @@
+[
+  {
+    "description": "legacy_root_plain_name_id_survives_emit draft4",
+    "draft": "draft4",
+    "schema": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "id": "#node",
+      "type": "object",
+      "properties": {
+        "next": {
+          "$ref": "#node"
+        }
+      }
+    },
+    "witnesses": [
+      {},
+      {
+        "next": {}
+      },
+      {
+        "next": {
+          "next": {}
+        }
+      },
+      {
+        "next": 5
+      },
+      5
+    ]
+  },
+  {
+    "description": "legacy_root_plain_name_id_survives_emit draft6",
+    "draft": "draft6",
+    "schema": {
+      "$schema": "http://json-schema.org/draft-06/schema#",
+      "$id": "#node",
+      "type": "object",
+      "properties": {
+        "next": {
+          "$ref": "#node"
+        }
+      }
+    },
+    "witnesses": [
+      {},
+      {
+        "next": {}
+      },
+      {
+        "next": {
+          "next": {}
+        }
+      },
+      {
+        "next": 5
+      },
+      5
+    ]
+  },
+  {
+    "description": "legacy_root_plain_name_id_survives_emit draft7",
+    "draft": "draft7",
+    "schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "$id": "#node",
+      "type": "object",
+      "properties": {
+        "next": {
+          "$ref": "#node"
+        }
+      }
+    },
+    "witnesses": [
+      {},
+      {
+        "next": {}
+      },
+      {
+        "next": {
+          "next": {}
+        }
+      },
+      {
+        "next": 5
+      },
+      5
+    ]
+  },
+  {
+    "description": "nested_id_local_ref_uses_nested_resource_scope",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "A": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "properties": {
+        "nested": {
+          "$id": "https://example.com/nested",
+          "$defs": {
+            "A": {
+              "type": "integer"
+            }
+          },
+          "$ref": "#/$defs/A"
+        }
+      }
+    },
+    "witnesses": [
+      {
+        "data": {
+          "nested": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "nested": "x"
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "nested_schema_resource_ref_is_not_root_self_cycle",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "FileInfo": {
+          "$id": "https://example.com/file-info",
+          "$defs": {
+            "FileInfo": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "$ref": "#/$defs/FileInfo"
+        }
+      },
+      "$ref": "#/$defs/FileInfo"
+    },
+    "witnesses": [
+      {
+        "name": "hello"
+      }
+    ]
+  },
+  {
+    "description": "root_anchor_ref_round_trips_without_dangling_anchor",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$anchor": "node",
+      "type": "object",
+      "properties": {
+        "child": {
+          "$ref": "#node"
+        }
+      }
+    },
+    "witnesses": [
+      {
+        "data": {
+          "child": {
+            "child": {}
+          }
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "child": []
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_prunes_unreachable_self_reference_definition",
+    "draft": "draft2020-12",
+    "schema": {
+      "$id": "x",
+      "allOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "properties": {
+            "a": {
+              "$ref": "#"
+            }
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "local_pointer_outside_defs_inlines",
+    "draft": "draft2020-12",
+    "schema": {
+      "$ref": "#/foo",
+      "foo": {
+        "type": "integer"
+      }
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "percent_encoded_local_pointer_decodes",
+    "draft": "draft2020-12",
+    "schema": {
+      "$ref": "#/$defs/a%20b",
+      "$defs": {
+        "a b": {
+          "type": "integer"
+        }
+      }
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "percent_encoded_local_pointer_prefers_decoded_definition_key",
+    "draft": "draft2020-12",
+    "schema": {
+      "$ref": "#/$defs/foo%20bar",
+      "$defs": {
+        "foo bar": {
+          "type": "integer"
+        },
+        "foo%20bar": {
+          "type": "string"
+        }
+      }
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "plain_name_anchor_in_defs_inlines",
+    "draft": "draft2020-12",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#foo",
+      "$defs": {
+        "x": {
+          "$anchor": "foo",
+          "type": "integer"
+        }
+      }
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "ir_local_ref_already_inlined_by_parse",
+    "schema": {
+      "$ref": "#/$defs/foo",
+      "$defs": {
+        "foo": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_nested_schema_resource_ref_resolves_through_id_scope",
+    "draft": "draft2020-12",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "FileInfo": {
+          "$id": "https://example.com/file-info",
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "$defs": {
+            "FileInfo": {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "$ref": "#/$defs/FileInfo"
+        }
+      },
+      "$ref": "#/$defs/FileInfo"
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "mode": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "description": "a stray percent in a $ref fragment is encoded into the symbolic path, not degraded to Raw",
+    "inline_budget": 0,
+    "schema": {
+      "definitions": {
+        "100%": {
+          "type": "integer"
+        }
+      },
+      "$ref": "#/definitions/100%"
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/definitions/100%25",
+      "definitions": {
+        "100%": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  {
+    "description": "parse: capped inline budget forces the node-count walk over a shared ref",
+    "inline_budget": 2,
+    "schema": {
+      "$defs": {
+        "inner": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "node": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/inner"
+            },
+            {
+              "$ref": "#/$defs/inner"
+            }
+          ]
+        }
+      },
+      "type": "object",
+      "properties": {
+        "x": {
+          "$ref": "#/$defs/node"
+        }
+      }
+    },
+    "witnesses": [
+      {
+        "x": 5
+      },
+      {
+        "x": -1
+      },
+      {
+        "x": "s"
+      }
+    ]
+  }
+]

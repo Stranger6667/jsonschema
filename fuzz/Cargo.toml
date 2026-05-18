@@ -40,3 +40,10 @@ path = "fuzz_targets/referencing.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "canonical"
+path = "fuzz_targets/canonical.rs"
+test = false
+doc = false
+bench = false

@@ -586,6 +586,91 @@ class Resolved:
     @property
     def draft(self) -> int: ...
 
+class CanonicalSchema:
+    """Canonical representation of a JSON Schema.
+
+    Obtained via :func:`canonicalize`. Semantically equivalent to the input
+    but in a stable, reduced representation.
+    """
+
+    @property
+    def draft(self) -> int:
+        """The JSON Schema draft as an integer: 4, 6, 7, 19 (2019-09), or 20 (2020-12)."""
+        ...
+
+    @property
+    def kind(self) -> str:
+        """Structural kind label (e.g. ``"integer"``, ``"any_of"``, ``"type_guard"``)."""
+        ...
+
+    def view(self) -> canonical.CanonicalViewType:
+        """Return the single view object for this node; dispatch with ``match``."""
+        ...
+
+    def definitions(self) -> dict[str, CanonicalSchema]:
+        """Map of reference uri -> canonical target.
+
+        ``ReferenceView.uri`` and ``RecursiveView.uri`` are keys in this map; an absent uri is dangling/unresolvable.
+        Values may themselves contain references into the same map.
+        """
+        ...
+
+    def to_json_schema(self) -> JsonValue:
+        """Convert this canonical schema back to a plain Python JSON value."""
+        ...
+
+    def intersect(self, other: CanonicalSchema) -> CanonicalSchema:
+        """Return a new schema that validates iff both this schema and ``other`` validate."""
+        ...
+
+    def union(self, other: CanonicalSchema) -> CanonicalSchema:
+        """Return a new schema that validates iff either this schema or ``other`` validates."""
+        ...
+
+    def negate(self) -> CanonicalSchema:
+        """Return a new schema that validates iff this schema does not."""
+        ...
+
+    def subtract(self, other: CanonicalSchema) -> CanonicalSchema:
+        r"""Return a schema validating iff ``self`` validates but ``other`` does not (``self \\ other``)."""
+        ...
+
+    def is_subschema_of(self, other: CanonicalSchema) -> bool | None:
+        """Return whether every value satisfying ``self`` also satisfies ``other`` (``self ⊆ other``).
+
+        ``True`` = proven; ``False`` = proven not; ``None`` = inconclusive.
+        """
+        ...
+
+    def is_satisfiable(self) -> bool:
+        """Return False when this schema canonicalized to ``false`` or provably admits no instances."""
+        ...
+
+    def __hash__(self) -> int: ...
+    def __eq__(self, other: object) -> bool: ...
+    def __repr__(self) -> str: ...
+
+def canonicalize(
+    schema: _SchemaT,
+    /,
+    *,
+    draft: int | None = None,
+    validate_formats: bool | None = None,
+    retriever: RetrieverProtocol | None = None,
+    registry: Registry | None = None,
+    base_uri: str | None = None,
+    pattern_options: PatternOptionsType | None = None,
+    inline_budget: int | None = None,
+) -> CanonicalSchema:
+    """Parse and normalize a JSON Schema to its canonical form.
+
+    Returns a :class:`CanonicalSchema` that is semantically equivalent to the
+    input but in a stable, reduced representation.
+
+    Raises ``ValueError`` if the schema is invalid or cannot be canonicalized.
+    """
+    ...
+
 class _Meta:
     def is_valid(self, schema: _SchemaT, registry: Registry | None = None) -> bool: ...
     def validate(self, schema: _SchemaT, registry: Registry | None = None) -> None: ...

@@ -4,7 +4,13 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from jsonschema_rs import canonical
+from jsonschema_rs import (
+    CanonicalSchema,
+    FancyRegexOptions,
+    RegexOptions,
+    canonical,
+    canonicalize,
+)
 
 clone = canonical.schema.clone
 
@@ -178,3 +184,37 @@ def test_refcount_stable_for_string():
     for _ in range(100):
         clone(d)
     assert sys.getrefcount(s) == baseline
+
+
+def test_canonicalize_returns_canonical_schema():
+    assert isinstance(canonicalize({"type": "integer"}), CanonicalSchema)
+
+
+def test_hash_is_stable_across_calls():
+    schema = canonicalize({"type": "integer", "minimum": 0})
+    assert hash(schema) == hash(schema)
+
+
+def test_equivalent_schemas_are_equal_and_hash_equal():
+    a = canonicalize({"type": "integer", "minimum": 0})
+    b = canonicalize({"minimum": 0, "type": "integer"})
+    assert a == b
+    assert hash(a) == hash(b)
+
+
+def test_distinct_schemas_dedup_in_set():
+    a = canonicalize({"minimum": 0, "type": "integer"})
+    b = canonicalize({"type": "integer", "minimum": 0})
+    c = canonicalize({"type": "string"})
+    assert len({a, b, c}) == 2
+
+
+@pytest.mark.parametrize("pattern_options", [RegexOptions(), FancyRegexOptions()])
+def test_canonicalize_accepts_pattern_options(pattern_options):
+    result = canonicalize({"type": "string", "pattern": "^a+$"}, pattern_options=pattern_options)
+    assert isinstance(result, CanonicalSchema)
+
+
+def test_canonicalize_rejects_invalid_pattern_options():
+    with pytest.raises(TypeError):
+        canonicalize({"type": "string"}, pattern_options=123)

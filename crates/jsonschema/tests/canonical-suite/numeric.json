@@ -1,0 +1,1069 @@
+[
+  {
+    "description": "integer minimum near i64::MAX stays exact",
+    "schema": {
+      "type": "integer",
+      "minimum": 9223372036854775806
+    },
+    "witnesses": [
+      {
+        "data": 9223372036854775806,
+        "valid": true
+      },
+      {
+        "data": 9223372036854775805,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "integer maximum near i64::MIN stays exact",
+    "schema": {
+      "type": "integer",
+      "maximum": -9223372036854775807
+    },
+    "witnesses": [
+      {
+        "data": -9223372036854775807,
+        "valid": true
+      },
+      {
+        "data": -9223372036854775806,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "intersecting a multipleOf leaf with bounds at the i64::MAX edge does not overflow",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer",
+          "minimum": 9223372036854775806,
+          "multipleOf": 4
+        },
+        {
+          "type": "integer",
+          "maximum": 9223372036854775807
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 4,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "number minimum near i64::MAX stays exact",
+    "schema": {
+      "type": "number",
+      "minimum": 9223372036854775806
+    },
+    "witnesses": [
+      {
+        "data": 9223372036854775806,
+        "valid": true
+      },
+      {
+        "data": 9223372036854775805,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "string length bounds above u32::MAX are preserved in canonical form",
+    "schema": {
+      "type": "string",
+      "minLength": 4294967296,
+      "maxLength": 4294967296
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "maxLength": 4294967296,
+      "minLength": 4294967296,
+      "type": "string"
+    }
+  },
+  {
+    "description": "string minLength above u32::MAX rejects the empty string",
+    "schema": {
+      "type": "string",
+      "minLength": 4294967296
+    },
+    "witnesses": [
+      {
+        "data": "",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "oversized lower cardinality minItems rejects empty array",
+    "schema": {
+      "type": "array",
+      "minItems": 18446744073709551616
+    },
+    "witnesses": [
+      {
+        "data": [],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "oversized lower cardinality minContains rejects array with one match",
+    "schema": {
+      "type": "array",
+      "contains": true,
+      "minContains": 18446744073709551616,
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "witnesses": [
+      {
+        "data": [
+          null
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "oversized lower cardinality minProperties rejects empty object",
+    "schema": {
+      "type": "object",
+      "minProperties": 18446744073709551616
+    },
+    "witnesses": [
+      {
+        "data": {},
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "oversized lower cardinality minLength rejects empty string",
+    "schema": {
+      "type": "string",
+      "minLength": 18446744073709551616
+    },
+    "witnesses": [
+      {
+        "data": "",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "fractional spellings unify: const 3.14e-3 intersects enum 0.00314",
+    "schema": {
+      "allOf": [
+        {
+          "const": 0.00314
+        },
+        {
+          "enum": [
+            0.00314
+          ]
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 0.00314,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "fractional spellings unify: exponent vs decimal 5e-1 vs 0.5",
+    "schema": {
+      "allOf": [
+        {
+          "const": 0.5
+        },
+        {
+          "enum": [
+            0.5
+          ]
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 0.5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "fractional spellings unify: trailing zero 1.50 vs plain 1.5",
+    "schema": {
+      "allOf": [
+        {
+          "const": 1.5
+        },
+        {
+          "enum": [
+            1.5
+          ]
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 1.5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "fractional spellings unify: oneOf consts overlap across spellings",
+    "schema": {
+      "oneOf": [
+        {
+          "const": 0.00314
+        },
+        {
+          "const": 0.00314
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 0.00314,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "fractional spellings unify: past-cap fractional alias",
+    "schema": {
+      "allOf": [
+        {
+          "const": 0.0
+        },
+        {
+          "enum": [
+            0.0
+          ]
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 0.0,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric normalization: integer snap to multiple collapses to const",
+    "schema": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 3,
+      "multipleOf": 2
+    },
+    "witnesses": [
+      {
+        "data": 2,
+        "valid": true
+      },
+      {
+        "data": 3,
+        "valid": false
+      },
+      {
+        "data": 4,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "numeric normalization: number singleton missing multipleOf is empty",
+    "schema": {
+      "type": "number",
+      "minimum": 1.5,
+      "maximum": 1.5,
+      "multipleOf": 0.4
+    },
+    "witnesses": [
+      {
+        "data": 1.5,
+        "valid": false
+      },
+      {
+        "data": 1.6,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "numeric normalization: integer equal bounds with exclusiveMinimum is empty",
+    "schema": {
+      "type": "integer",
+      "exclusiveMinimum": 5,
+      "maximum": 5
+    },
+    "witnesses": [
+      {
+        "data": 5,
+        "valid": false
+      },
+      {
+        "data": 6,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "integer schema validates consistently after canonicalization",
+    "schema": {
+      "type": "integer"
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 1.5,
+        "valid": false
+      },
+      {
+        "data": "not an integer",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "allOf of two integer ranges converges with the intersected range",
+    "schemas": [
+      {
+        "allOf": [
+          {
+            "type": "integer",
+            "minimum": 0
+          },
+          {
+            "type": "integer",
+            "maximum": 10
+          }
+        ]
+      },
+      {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10
+      }
+    ],
+    "witnesses": [
+      {
+        "data": 5,
+        "valid": true
+      },
+      {
+        "data": -1,
+        "valid": false
+      },
+      {
+        "data": 11,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "snap_integer_bounds_preserves_not_multiple_of",
+    "schema": {
+      "type": "integer",
+      "minimum": 1,
+      "multipleOf": 2,
+      "not": {
+        "multipleOf": 3
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer",
+      "minimum": 2,
+      "multipleOf": 2,
+      "allOf": [
+        {
+          "not": {
+            "type": "integer",
+            "multipleOf": 3
+          }
+        }
+      ]
+    }
+  },
+  {
+    "description": "collapse_integer_to_const_is_false_when_only_value_excluded excluded",
+    "schema": {
+      "type": "integer",
+      "minimum": 6,
+      "maximum": 6,
+      "not": {
+        "multipleOf": 3
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "collapse_integer_to_const_is_false_when_only_value_excluded kept",
+    "schema": {
+      "type": "integer",
+      "minimum": 7,
+      "maximum": 7,
+      "not": {
+        "multipleOf": 3
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": 7
+    }
+  },
+  {
+    "description": "collapse_number_to_const_is_false_when_only_value_excluded",
+    "schema": {
+      "type": "number",
+      "minimum": 1.5,
+      "maximum": 1.5,
+      "not": {
+        "multipleOf": 0.5
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "promote_number_carries_integer_not_multiple_of",
+    "schema": {
+      "type": "number",
+      "multipleOf": 2,
+      "not": {
+        "multipleOf": 3
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer",
+      "multipleOf": 2,
+      "allOf": [
+        {
+          "not": {
+            "type": "integer",
+            "multipleOf": 3
+          }
+        }
+      ]
+    }
+  },
+  {
+    "description": "promote_number_bails_on_fractional_multiple_of",
+    "schema": {
+      "type": "number",
+      "multipleOf": 1.5
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "multipleOf": 1.5
+    }
+  },
+  {
+    "description": "bounded integer grid with odd exclusion materializes to value set",
+    "schema": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "not": {
+        "multipleOf": 2
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        1,
+        3,
+        5
+      ]
+    }
+  },
+  {
+    "description": "ir_number_with_integer_modulus_folds_to_integer",
+    "schema": {
+      "type": "number",
+      "multipleOf": 3
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "multipleOf": 3,
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_number_modulus_one_is_bare_integer",
+    "schema": {
+      "type": "number",
+      "multipleOf": 1
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "bounded fractional grid past the domain cap stays a range leaf",
+    "schema": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 200,
+      "multipleOf": 0.5
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 200,
+      "multipleOf": 0.5
+    },
+    "witnesses": [
+      {
+        "data": 1.5,
+        "valid": true
+      },
+      {
+        "data": 1.25,
+        "valid": false
+      },
+      {
+        "data": 200.5,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "fractional not-multipleOf over wide number bounds canonicalizes without overflow",
+    "schema": {
+      "type": "number",
+      "minimum": -9000000000000000000,
+      "maximum": 9000000000000000000,
+      "not": {
+        "multipleOf": 0.5
+      }
+    }
+  },
+  {
+    "description": "emit: terminating fraction bound renders as exact decimal",
+    "schema": {
+      "type": "number",
+      "minimum": 0.5
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "minimum": 0.5
+    }
+  },
+  {
+    "description": "emit: terminating fraction multipleOf renders as exact decimal",
+    "schema": {
+      "type": "number",
+      "multipleOf": 0.25
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "multipleOf": 0.25
+    }
+  },
+  {
+    "description": "emit: fraction bound trailing zero trims",
+    "schema": {
+      "type": "number",
+      "minimum": 12.5
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "minimum": 12.5
+    }
+  },
+  {
+    "description": "emit: sub-one fraction bound zero-pads",
+    "schema": {
+      "type": "number",
+      "minimum": 0.05
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "minimum": 0.05
+    }
+  },
+  {
+    "description": "number multipleOf 1.0 promotes to integer",
+    "schema": {
+      "type": "number",
+      "multipleOf": 1.0
+    },
+    "witnesses": [
+      1.5,
+      2
+    ]
+  },
+  {
+    "description": "number multipleOf 3.0 promotes to integer",
+    "schema": {
+      "type": "number",
+      "multipleOf": 3.0
+    },
+    "witnesses": [
+      4,
+      6,
+      4.5
+    ]
+  },
+  {
+    "description": "number promotes to integer with integer not-multipleOf exclusion",
+    "schema": {
+      "type": "number",
+      "multipleOf": 2.0,
+      "not": {
+        "multipleOf": 4.0
+      }
+    },
+    "witnesses": [
+      2,
+      4,
+      6,
+      3,
+      2.5
+    ]
+  },
+  {
+    "description": "integer exclusiveMinimum folds to inclusive neighbor",
+    "schema": {
+      "type": "integer",
+      "exclusiveMinimum": 0
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  {
+    "description": "integer exclusiveMaximum folds to inclusive neighbor",
+    "schema": {
+      "type": "integer",
+      "exclusiveMaximum": 5
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer",
+      "maximum": 4
+    }
+  },
+  {
+    "description": "integer bounds snap up to the nearest multiple",
+    "schema": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000,
+      "multipleOf": 2
+    },
+    "witnesses": [
+      0,
+      1,
+      2,
+      3,
+      9998,
+      9999,
+      10000
+    ]
+  },
+  {
+    "description": "integer bounds snap down to the nearest multiple",
+    "schema": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9999,
+      "multipleOf": 2
+    },
+    "witnesses": [
+      0,
+      1,
+      9998,
+      9999
+    ]
+  },
+  {
+    "description": "integer bounds snap both ends to multiples of three",
+    "schema": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000,
+      "multipleOf": 3
+    },
+    "witnesses": [
+      1,
+      2,
+      3,
+      9999,
+      10000
+    ]
+  },
+  {
+    "description": "negative integer interval snaps to multiples of three",
+    "schema": {
+      "type": "integer",
+      "minimum": -10000,
+      "maximum": -1,
+      "multipleOf": 3
+    },
+    "witnesses": [
+      -1,
+      -3,
+      -9999,
+      -10000
+    ]
+  },
+  {
+    "description": "integer singleton interval collapses to const",
+    "schema": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 5
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": 5
+    }
+  },
+  {
+    "description": "number singleton interval collapses to const",
+    "schema": {
+      "type": "number",
+      "minimum": 3,
+      "maximum": 3
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": 3
+    }
+  },
+  {
+    "description": "modular exclusion reduces multiple-of-six against multiple-of-two",
+    "schema": {
+      "type": "integer",
+      "multipleOf": 2,
+      "not": {
+        "multipleOf": 6
+      }
+    },
+    "witnesses": [
+      6,
+      2,
+      12,
+      3
+    ]
+  },
+  {
+    "description": "modular exclusion reduces multiple-of-four against multiple-of-six",
+    "schema": {
+      "type": "integer",
+      "multipleOf": 6,
+      "not": {
+        "multipleOf": 4
+      }
+    },
+    "witnesses": [
+      12,
+      6,
+      24
+    ]
+  },
+  {
+    "description": "number window with integer exclusion splits into fractional plus integer",
+    "schema": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "not": {
+        "multipleOf": 2
+      }
+    },
+    "witnesses": [
+      0,
+      0.5,
+      1,
+      2
+    ]
+  },
+  {
+    "description": "number window excluding all integers plus a redundant integer modulus",
+    "schema": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 3,
+      "allOf": [
+        {
+          "not": {
+            "multipleOf": 1
+          }
+        },
+        {
+          "not": {
+            "multipleOf": 2
+          }
+        }
+      ]
+    },
+    "witnesses": [
+      0,
+      0.5,
+      2,
+      1.5
+    ]
+  },
+  {
+    "description": "trim both-sided integer exclusion endpoints",
+    "schema": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 10,
+      "not": {
+        "multipleOf": 2
+      }
+    },
+    "witnesses": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "description": "trim both-sided integer exclusion with a step window",
+    "schema": {
+      "type": "integer",
+      "minimum": 4,
+      "maximum": 8,
+      "multipleOf": 2,
+      "not": {
+        "multipleOf": 4
+      }
+    },
+    "witnesses": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ]
+  },
+  {
+    "description": "trim single-sided minimum integer exclusion endpoint",
+    "schema": {
+      "type": "integer",
+      "minimum": 2,
+      "not": {
+        "multipleOf": 2
+      }
+    },
+    "witnesses": [
+      -3,
+      -2,
+      -1,
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  {
+    "description": "trim single-sided maximum integer exclusion endpoint",
+    "schema": {
+      "type": "integer",
+      "maximum": 4,
+      "not": {
+        "multipleOf": 2
+      }
+    },
+    "witnesses": [
+      -3,
+      -1,
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      8
+    ]
+  },
+  {
+    "description": "trim retains exclusion whose multiple falls outside the window",
+    "schema": {
+      "type": "integer",
+      "minimum": 3,
+      "maximum": 5,
+      "not": {
+        "multipleOf": 100
+      }
+    },
+    "witnesses": [
+      3,
+      4,
+      5,
+      100
+    ]
+  },
+  {
+    "description": "number singleton satisfying multipleOf collapses to const",
+    "schema": {
+      "type": "number",
+      "minimum": 4,
+      "maximum": 4,
+      "multipleOf": 2
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": 4
+    }
+  },
+  {
+    "description": "fractional boundary exclusion folds at the minimum",
+    "schema": {
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 0.9,
+      "not": {
+        "multipleOf": 0.5
+      }
+    },
+    "witnesses": [
+      0.5,
+      0.7
+    ]
+  },
+  {
+    "description": "fractional boundary exclusion folds at the maximum",
+    "schema": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 0.5,
+      "not": {
+        "multipleOf": 0.5
+      }
+    },
+    "witnesses": [
+      0.5,
+      0.3
+    ]
+  },
+  {
+    "description": "vacuous minLength zero folds to true",
+    "schema": {
+      "minLength": 0
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "empty string-length window folds to the non-string complement",
+    "schema": {
+      "minLength": 5,
+      "maxLength": 3
+    },
+    "witnesses": [
+      "x",
+      1,
+      null
+    ]
+  },
+  {
+    "description": "empty array-length window folds to the non-array complement",
+    "schema": {
+      "minItems": 5,
+      "maxItems": 3
+    },
+    "witnesses": [
+      [
+        1,
+        2
+      ],
+      "x",
+      null
+    ]
+  },
+  {
+    "description": "empty numeric window folds to the non-number complement",
+    "schema": {
+      "minimum": 10,
+      "maximum": 5
+    },
+    "witnesses": [
+      7,
+      "x",
+      null
+    ]
+  },
+  {
+    "description": "integer exclusiveMinimum at the i64 max declines to snap",
+    "schema": {
+      "type": "integer",
+      "exclusiveMinimum": 9223372036854775807,
+      "multipleOf": 3
+    }
+  },
+  {
+    "description": "integer minimum one below the i64 max where the next multiple overflows",
+    "schema": {
+      "type": "integer",
+      "minimum": 9223372036854775806,
+      "multipleOf": 3
+    }
+  },
+  {
+    "description": "integer exclusiveMaximum at the i64 min declines to snap",
+    "schema": {
+      "type": "integer",
+      "exclusiveMaximum": -9223372036854775808,
+      "multipleOf": 3
+    }
+  },
+  {
+    "description": "integer maximum near the i64 min where the previous multiple underflows",
+    "schema": {
+      "type": "integer",
+      "maximum": -9223372036854775807,
+      "multipleOf": 3
+    }
+  }
+]

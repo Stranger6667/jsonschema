@@ -64,6 +64,7 @@ See more usage examples in the [documentation](https://docs.rs/jsonschema).
 - 🔧 Custom keywords and format validators
 - 🌐 Blocking & non-blocking remote reference fetching (network/file)
 - 🎨 Structured Output v1 reports (flag/list/hierarchical)
+- 🧮 Schema canonicalization for normalizing, negating, intersecting & unioning schemas
 - ✨ Meta-schema validation for schema documents, including custom metaschemas
 - 🔗 Bindings for [Python](https://github.com/Stranger6667/jsonschema/tree/master/crates/jsonschema-py) and [Ruby](https://github.com/Stranger6667/jsonschema/tree/master/crates/jsonschema-rb)
 - 🚀 WebAssembly support

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- `jsonschema::canonicalize` for reducing a JSON Schema to a canonical form with support for negation, intersection, union, subtraction, and draft-independent structural inspection.
+- **CLI**: `jsonschema canonicalize` subcommand to canonicalize a schema from the command line.
+
 ## [0.46.9] - 2026-07-02
 
 ### Fixed
@@ -29,7 +34,7 @@
 
 ### Fixed
 
-- `prefixItems` incorrectly recognised as a known keyword in Draft 2019-09 and earlier (it is 2020-12 only).
+- `prefixItems` incorrectly recognized as a known keyword in Draft 2019-09 and earlier (it is 2020-12 only).
 - `pattern` validation errors displayed the internally translated regex instead of the original schema pattern. [#1149](https://github.com/Stranger6667/jsonschema/issues/1149)
 
 ## [0.46.5] - 2026-05-13

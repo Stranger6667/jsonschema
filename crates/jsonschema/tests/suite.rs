@@ -63,6 +63,80 @@ mod tests {
                 .build(&test.schema)
                 .expect("Failed to build a schema");
 
+            #[cfg(feature = "canonical")]
+            {
+                // Verify canonicalization preserves validation semantics. Use the same retriever as the validator so
+                // external $refs are resolved.
+                let mut canonicalize_options = jsonschema::canonical::options()
+                    .with_draft(draft)
+                    .with_retriever(testsuite_retriever());
+                match engine {
+                    RegexEngine::Regex => {
+                        canonicalize_options =
+                            canonicalize_options.with_pattern_options(&PatternOptions::regex());
+                    }
+                    RegexEngine::FancyRegex => {
+                        canonicalize_options = canonicalize_options
+                            .with_pattern_options(&PatternOptions::fancy_regex());
+                    }
+                }
+                let canonical = canonicalize_options
+                    .canonicalize(&test.schema)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "Canonicalization failed:\nCase: {}\nTest: {}\nSchema: {}\nError: {error}",
+                            test.case,
+                            test.description,
+                            pretty_json(&test.schema),
+                        )
+                    });
+                let canonical_value = canonical.to_json_schema();
+                // Raw-preserved emits carry no `$schema`; the draft travels on the handle instead.
+                let mut canonical_validator_options = jsonschema::options()
+                    .with_draft(canonical.draft())
+                    .with_retriever(testsuite_retriever());
+                if test.is_optional {
+                    canonical_validator_options =
+                        canonical_validator_options.should_validate_formats(true);
+                }
+                match engine {
+                    RegexEngine::Regex => {
+                        canonical_validator_options = canonical_validator_options
+                            .with_pattern_options(PatternOptions::regex());
+                    }
+                    RegexEngine::FancyRegex => {
+                        canonical_validator_options = canonical_validator_options
+                            .with_pattern_options(PatternOptions::fancy_regex());
+                    }
+                }
+                match canonical_validator_options.build(&canonical_value) {
+                    Ok(canonical_validator) => {
+                        let original_valid = validator.is_valid(&test.data);
+                        let canonical_valid = canonical_validator.is_valid(&test.data);
+                        assert_eq!(
+                            original_valid, canonical_valid,
+                            "Canonicalization changed validation result:\nCase: {}\nTest: {}\nSchema: {}\nCanonical: {}\nInstance: {}\nOriginal valid: {}\nCanonical valid: {}",
+                            test.case,
+                            test.description,
+                            pretty_json(&test.schema),
+                            pretty_json(&canonical_value),
+                            pretty_json(&test.data),
+                            original_valid,
+                            canonical_valid,
+                        );
+                    }
+                    Err(error) => {
+                        panic!(
+                            "Canonical schema failed to compile:\nCase: {}\nTest: {}\nSchema: {}\nCanonical: {}\nError: {error}",
+                            test.case,
+                            test.description,
+                            pretty_json(&test.schema),
+                            pretty_json(&canonical_value),
+                        );
+                    }
+                }
+            }
+
             if test.valid {
                 if let Some(first) = validator.iter_errors(&test.data).next() {
                     panic!(
