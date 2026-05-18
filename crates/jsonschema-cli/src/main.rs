@@ -90,6 +90,8 @@ enum Command {
     Bundle(BundleArgs),
     /// Dereference a JSON Schema, inlining all $ref targets.
     Dereference(DereferenceArgs),
+    /// Canonicalize a JSON Schema to its simplified canonical form.
+    Canonicalize(CanonicalizeArgs),
 }
 
 #[derive(Args, Clone)]
@@ -238,6 +240,31 @@ struct DereferenceArgs {
     resources: Vec<(String, PathBuf)>,
 
     /// Write dereferenced output to FILE instead of stdout.
+    #[arg(short = 'o', long = "output")]
+    output: Option<PathBuf>,
+
+    #[command(flatten)]
+    http: HttpArgs,
+}
+
+#[derive(Args)]
+struct CanonicalizeArgs {
+    /// Path to the JSON Schema file to canonicalize.
+    #[arg(value_parser)]
+    schema: PathBuf,
+
+    /// Which JSON Schema draft to enforce (else auto-detected from $schema).
+    #[arg(short = 'd', long = "draft", value_enum)]
+    draft: Option<Draft>,
+
+    #[command(flatten)]
+    format: FormatAssertionArgs,
+
+    /// Register an external schema resource: URI=FILE (may be repeated).
+    #[arg(long = "resource", value_parser = parse_resource_pair)]
+    resources: Vec<(String, PathBuf)>,
+
+    /// Write canonical output to FILE instead of stdout.
     #[arg(short = 'o', long = "output")]
     output: Option<PathBuf>,
 
@@ -503,7 +530,7 @@ fn options_for_schema<'a>(
 }
 
 // Read `--resource URI=FILE` pairs into a prepared Registry, seeded with an HTTP retriever
-// when HTTP options are set. Shared by bundle and dereference.
+// when HTTP options are set. Shared by bundle, dereference, and canonicalize.
 fn build_resource_registry(
     resources: &[(String, PathBuf)],
     http_options: Option<&jsonschema::HttpOptions>,
@@ -832,6 +859,70 @@ fn run_dereference(args: DereferenceArgs) -> ExitCode {
     }
 }
 
+fn run_canonicalize(args: CanonicalizeArgs) -> ExitCode {
+    let CanonicalizeArgs {
+        schema,
+        draft,
+        format,
+        resources,
+        output,
+        http,
+    } = args;
+
+    let schema_json = match read_json(&schema) {
+        Ok(value) => value,
+        Err(error) => return fail_with_error(error),
+    };
+
+    let http_options = http.into_http_options();
+
+    let registry = if resources.is_empty() && http_options.is_none() {
+        None
+    } else {
+        match build_resource_registry(&resources, http_options.as_ref()) {
+            Ok(registry) => Some(registry),
+            Err(error) => return fail_with_error(error),
+        }
+    };
+
+    let mut options = jsonschema::canonical::options().with_base_uri(path_to_uri(&schema));
+    if let Some(registry) = registry.as_ref() {
+        options = options.with_registry(registry);
+    }
+    if let Some(draft) = draft {
+        options = options.with_draft(draft.into());
+    }
+    if let Some(validate_formats) = format.validate_formats() {
+        options = options.should_validate_formats(validate_formats);
+    }
+    if let Some(http_opts) = http_options.as_ref() {
+        let retriever = jsonschema::HttpRetriever::new(http_opts)
+            .expect("HttpRetriever construction already succeeded during registry build");
+        options = options.with_retriever(retriever);
+    }
+
+    let canonical = match options.canonicalize(&schema_json) {
+        Ok(canonical) => canonical,
+        Err(error) => return fail_with_error(error),
+    };
+
+    if !canonical.is_satisfiable() {
+        eprintln!("note: schema is unsatisfiable; it accepts no instances");
+    }
+
+    let json = serde_json::to_string_pretty(&canonical.to_json_schema())
+        .expect("canonical schema serializes to JSON");
+    match output {
+        Some(path) => {
+            if let Err(error) = std::fs::write(&path, &json) {
+                return fail_with_error(format!("{}: {error}", path.display()));
+            }
+        }
+        None => println!("{json}"),
+    }
+    ExitCode::SUCCESS
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
@@ -844,6 +935,7 @@ fn main() -> ExitCode {
         Some(Command::Validate(args)) => run_validate(args),
         Some(Command::Bundle(args)) => run_bundle(args),
         Some(Command::Dereference(args)) => run_dereference(args),
+        Some(Command::Canonicalize(args)) => run_canonicalize(args),
         None => {
             // Flat invocation is deprecated — emit a warning, then proceed as `validate`
             if let Some(schema) = cli.schema {

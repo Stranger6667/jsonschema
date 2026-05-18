@@ -10,6 +10,7 @@ repository.workspace = true
 rust-version.workspace = true
 edition.workspace = true
 authors.workspace = true
+exclude = ["tests/fixtures/schemastore/corpus-schemastore-catalog.json"]
 
 [features]
 default = ["resolve-http", "resolve-file", "tls-aws-lc-rs"]
@@ -65,6 +66,7 @@ idna = "1.0.2"
 itoa = "1"
 num-bigint = { version = "0.4", optional = true }
 num-cmp = "0.1"
+num-integer = "0.1"
 num-traits = "0.2.19"
 percent-encoding = "2.3"
 referencing = { version = "0.47.0", path = "../jsonschema-referencing" }
@@ -73,6 +75,7 @@ serde.workspace = true
 # `float_roundtrip`: canonical JSON serialization round-trips floats through re-parses downstream.
 # `unbounded_depth`: consumers of canonical text re-parse payloads deeper than serde_json's default limit.
 serde_json = { workspace = true, features = ["float_roundtrip", "unbounded_depth"] }
+strum = { version = "0.28.0", features = ["derive"] }
 tokio = { version = "1", default-features = false, features = ["rt"], optional = true }
 unicode-general-category = "1.1"
 uuid-simd = { version = "0.8", default-features = false, features = ["std", "detect"] }
@@ -89,6 +92,7 @@ wasm-bindgen-test = "0.3.55"
 benchmark = { path = "../benchmark/" }
 codspeed-criterion-compat = { version = "5.0", default-features = false }
 criterion = { version = "0.8", default-features = false }
+hegeltest = "0.18"
 tempfile = "3.13.0"
 test-case = "3"
 tokio = { version = "1", features = ["macros", "rt"] }
@@ -142,3 +146,6 @@ harness = false
 name = "metaschema"
 required-features = ["macros"]
 
+[[bench]]
+harness = false
+name = "canonicalize"

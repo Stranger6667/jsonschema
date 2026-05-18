@@ -1,4 +1,7 @@
-use std::hash::{Hash, Hasher};
+use std::{
+    fmt::Write,
+    hash::{Hash, Hasher},
+};
 
 use pyo3::{exceptions::PyValueError, prelude::*};
 
@@ -57,7 +60,6 @@ impl HttpOptions {
     }
 
     fn __repr__(&self) -> String {
-        use std::fmt::Write;
         let mut s = String::from("HttpOptions(timeout=");
         match self.timeout {
             Some(t) => write!(s, "{t}"),

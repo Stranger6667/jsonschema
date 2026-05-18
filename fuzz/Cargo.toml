@@ -10,7 +10,9 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 # `resolve-http` disabled: network `$ref`s would stall iterations on the HTTP timeout.
-jsonschema = { path = "../crates/jsonschema/", default-features = false, features = ["resolve-file", "macros"] }
+# `arbitrary-precision` on: the canonical number cluster (exact decimals, BigInt exponents) is the
+# most cfg-divergent code and is unreachable without it.
+jsonschema = { path = "../crates/jsonschema/", default-features = false, features = ["resolve-file", "macros", "arbitrary-precision"] }
 referencing = { path = "../crates/jsonschema-referencing" }
 serde_json = "1"
 
@@ -44,6 +46,13 @@ bench = false
 [[bin]]
 name = "codegen"
 path = "fuzz_targets/codegen.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "canonical"
+path = "fuzz_targets/canonical.rs"
 test = false
 doc = false
 bench = false

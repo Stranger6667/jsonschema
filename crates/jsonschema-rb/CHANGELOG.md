@@ -2,13 +2,18 @@
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- `JSONSchema::Meta.valid?` and `JSONSchema::Meta.validate!` incorrectly accepted some Draft 2019-09 schemas that the meta-schema rejects.
+- `JSONSchema.canonicalize` for reducing a JSON Schema to a canonical form with support for negation, intersection, union, subtraction, and draft-independent structural inspection.
 
 ### Performance
 
 - Faster `multipleOf` validation for integer instances with integer divisors, via integer arithmetic instead of floating-point modulo.
+
+### Fixed
+
+- `JSONSchema::Meta.valid?` and `JSONSchema::Meta.validate!` incorrectly accepted some Draft 2019-09 schemas that the meta-schema rejects.
+- `JSONSchema::Canonical::JSON.to_string` incorrectly preserved exponent spellings for `Float` input (it should emit the decimal form used for equal `BigDecimal` input).
 
 ## [0.47.0] - 2026-07-08
 

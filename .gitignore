@@ -4,6 +4,7 @@
 /profiler/target
 .hypothesis
 .benchmarks
+.hegel/
 
 /profiler/dhat-heap.json
 

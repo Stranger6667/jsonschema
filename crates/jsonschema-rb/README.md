@@ -50,6 +50,7 @@ end
 - 🔧 Custom keywords and format validators
 - ✨ Meta-schema validation for schema documents
 - 📦 Schema bundling into Compound Schema Documents
+- 🧮 Schema canonicalization for normalizing, negating, intersecting & unioning schemas
 - ♦️ Supports Ruby 3.2, 3.4 and 4.0
 
 ### Supported drafts
@@ -271,6 +272,122 @@ valid_eval.annotations
 #      instanceLocation: "", annotations: ["age", "name"]}]
 ```
 
+## Schema Canonicalization
+
+`JSONSchema.canonicalize` reduces a schema to a stable, normalized form. Two schemas that accept the same set of instances reduce to **equal** `CanonicalSchema` objects. This turns otherwise-awkward questions into easy ones: equivalence becomes `==`, satisfiability becomes a single check, containment becomes `subschema_of?`, and schemas gain an algebra (`intersect`, `union`, `negate`, `subtract`).
+
+Format handling follows validator defaults unless overridden:
+
+| Case | Behavior |
+| --- | --- |
+| Draft 4/6/7 | Known `format`s are assertions. |
+| Draft 2019-09/2020-12 | `format` is annotation-only unless `validate_formats: true`. |
+| Assertions enabled | Known incompatible formats such as `date` and `uuid` can make the canonical schema unsatisfiable. |
+| Emitted schema | Preserves the selected assertion policy under draft defaults where JSON Schema can express it. |
+
+Pass `base_uri:` to resolve relative `$ref` targets against a registry or retriever.
+
+Combining canonical schemas from different drafts emits under the newer draft. Format assertions from either operand
+remain assertions; annotation-only formats are not reinterpreted under the promoted draft.
+
+```ruby
+# Nested `allOf` constraints are flattened and merged,
+# keeping only the tightest bounds
+canonical = JSONSchema.canonicalize({
+  "allOf" => [
+    { "type" => "integer", "minimum" => 0 },
+    { "minimum" => 10, "maximum" => 100 }
+  ]
+})
+canonical.to_json_schema
+# => {"$schema"=>"https://json-schema.org/draft/2020-12/schema",
+#     "type"=>"integer", "minimum"=>10, "maximum"=>100}
+
+# Equivalent schemas canonicalize to equal values, regardless of how they were written
+canonical == JSONSchema.canonicalize({ "type" => "integer", "maximum" => 100, "minimum" => 10 })
+# => true
+
+# `intersect` combines two schemas into one that validates iff both validate
+positive = JSONSchema.canonicalize({ "type" => "integer", "minimum" => 0 })
+bounded  = JSONSchema.canonicalize({ "type" => "integer", "maximum" => 100 })
+combined = positive.intersect(bounded)
+combined.to_json_schema
+# => {"$schema"=>"https://json-schema.org/draft/2020-12/schema",
+#     "type"=>"integer", "minimum"=>0, "maximum"=>100}
+
+# `union` combines two schemas into one that validates iff either validates
+integers = JSONSchema.canonicalize({ "type" => "integer" })
+strings  = JSONSchema.canonicalize({ "type" => "string" })
+either   = integers.union(strings)
+either.to_json_schema
+# => {"$schema"=>"https://json-schema.org/draft/2020-12/schema",
+#     "type"=>["integer", "string"]}
+
+# Contradictory constraints are detected as unsatisfiable
+impossible = JSONSchema.canonicalize({ "allOf" => [{ "type" => "string" }, { "type" => "integer" }] })
+impossible.satisfiable? # => false
+
+# Draft 2020-12 keeps formats as annotations by default; enable assertions
+# when the canonical form should use known format incompatibilities.
+formats = {
+  "$schema" => "https://json-schema.org/draft/2020-12/schema",
+  "allOf" => [
+    { "type" => "string", "format" => "date" },
+    { "type" => "string", "format" => "uuid" }
+  ]
+}
+JSONSchema.canonicalize(formats).satisfiable?                          # => true
+JSONSchema.canonicalize(formats, validate_formats: true).satisfiable?  # => false
+
+# `subschema_of?` asks whether every value matching one schema also matches
+# another. It returns nil when containment cannot be decided structurally.
+narrow = JSONSchema.canonicalize({ "type" => "integer", "minimum" => 10, "maximum" => 20 })
+wide   = JSONSchema.canonicalize({ "type" => "integer", "minimum" => 0, "maximum" => 100 })
+narrow.subschema_of?(wide) # => true
+wide.subschema_of?(narrow) # => false
+```
+
+### Negation
+
+`negate` returns the complement of a schema: it accepts exactly the values the original rejects.
+Because JSON Schema is untyped by default, the complement spans every other JSON type, not just the one you started with.
+
+```ruby
+# The complement of "any string" is "anything that is not a string"
+not_string = JSONSchema.canonicalize({ "type" => "string" }).negate
+not_string.to_json_schema
+# => {"$schema"=>"https://json-schema.org/draft/2020-12/schema",
+#     "type"=>["null", "boolean", "number", "array", "object"]}
+```
+
+`subtract` expresses **set difference** — values that satisfy one schema but not another.
+Subtract `{minimum: 10}` from `{minimum: 0}` to keep only the integers `0` through `9`:
+
+```ruby
+non_negative = JSONSchema.canonicalize({ "type" => "integer", "minimum" => 0 })
+ten_or_more  = JSONSchema.canonicalize({ "type" => "integer", "minimum" => 10 })
+
+below_ten = non_negative.subtract(ten_or_more)
+below_ten.to_json_schema
+# => {"$schema"=>"https://json-schema.org/draft/2020-12/schema",
+#     "type"=>"integer", "minimum"=>0, "maximum"=>9}
+
+# `subtract` is shorthand for intersecting with the negation:
+non_negative.intersect(ten_or_more.negate) == below_ten # => true
+```
+
+Negation obeys the usual set-algebra laws:
+
+```ruby
+schema = JSONSchema.canonicalize({ "type" => "integer", "minimum" => 0 })
+
+# Double negation returns the original schema
+schema.negate.negate == schema                        # => true
+
+# A schema and its complement never overlap
+schema.intersect(schema.negate).satisfiable?          # => false
+```
+
 ### Canonical JSON serialization
 
 Use `Canonical::JSON.to_string` when you need a stable JSON representation:
@@ -279,13 +396,9 @@ Use `Canonical::JSON.to_string` when you need a stable JSON representation:
 schema_a = { "type" => "object", "properties" => { "b" => { "type" => "integer" }, "a" => { "type" => "string" } } }
 schema_b = { "properties" => { "a" => { "type" => "string" }, "b" => { "type" => "integer" } }, "type" => "object" }
 
-dump_a = JSONSchema::Canonical::JSON.to_string(schema_a)
-dump_b = JSONSchema::Canonical::JSON.to_string(schema_b)
-
-dump_a == dump_b # => true
+JSONSchema::Canonical::JSON.to_string(schema_a) == JSONSchema::Canonical::JSON.to_string(schema_b)
+# => true
 ```
-
-Main use case: deduplicating equivalent JSON Schemas.
 
 ## Schema Bundling
 

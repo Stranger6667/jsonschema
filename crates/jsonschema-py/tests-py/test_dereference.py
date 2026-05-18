@@ -83,15 +83,11 @@ import pytest
         pytest.param(
             {
                 "$defs": {"base": {"type": "integer"}},
-                "properties": {
-                    "count": {"$ref": "#/$defs/base", "description": "how many"}
-                },
+                "properties": {"count": {"$ref": "#/$defs/base", "description": "how many"}},
             },
             {
                 "$defs": {"base": {"type": "integer"}},
-                "properties": {
-                    "count": {"type": "integer", "description": "how many"}
-                },
+                "properties": {"count": {"type": "integer", "description": "how many"}},
             },
             id="sibling_keys_merged",
         ),

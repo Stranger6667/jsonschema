@@ -1,0 +1,461 @@
+[
+  {
+    "description": "bare_types_fold_into_multitype_alongside_constrained_branch",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "required": [
+              "a"
+            ]
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "type": [
+              "boolean",
+              "string"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "a"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "description": "union_to_expected disjoint_types_fold_to_type_list",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "type": [
+          "integer",
+          "string"
+        ]
+      }
+    ]
+  },
+  {
+    "description": "union_to_expected covered_range_drops",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+          },
+          {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 5
+          }
+        ]
+      },
+      {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10
+      }
+    ]
+  },
+  {
+    "description": "union_to_expected enums_merge",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "enum": [
+              1,
+              2
+            ]
+          },
+          {
+            "enum": [
+              2,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "enum": [
+          1,
+          2,
+          3
+        ]
+      }
+    ]
+  },
+  {
+    "description": "union_to_expected consts_merge_to_enum",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "const": 1
+          },
+          {
+            "const": 2
+          }
+        ]
+      },
+      {
+        "enum": [
+          1,
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "description": "union_to_expected true_absorbs",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          true,
+          {
+            "type": "integer"
+          }
+        ]
+      },
+      true
+    ]
+  },
+  {
+    "description": "union_to_expected false_is_identity",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          false,
+          {
+            "type": "integer"
+          }
+        ]
+      },
+      {
+        "type": "integer"
+      }
+    ]
+  },
+  {
+    "description": "equivalent_modular_exclusions_converge modular_exclusion_six_reduces_to_three",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "type": "integer",
+        "multipleOf": 2,
+        "not": {
+          "multipleOf": 6
+        }
+      },
+      {
+        "type": "integer",
+        "multipleOf": 2,
+        "not": {
+          "multipleOf": 3
+        }
+      }
+    ]
+  },
+  {
+    "description": "equivalent_modular_exclusions_converge modular_exclusion_six_in_mult4",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "type": "integer",
+        "multipleOf": 4,
+        "not": {
+          "multipleOf": 6
+        }
+      },
+      {
+        "type": "integer",
+        "multipleOf": 4,
+        "not": {
+          "multipleOf": 3
+        }
+      }
+    ]
+  },
+  {
+    "description": "fractional_lattice_absorbs_covered_integer_submodulus left_right",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "allOf": [
+              {
+                "multipleOf": 1.5
+              }
+            ]
+          },
+          {
+            "multipleOf": 6
+          }
+        ]
+      },
+      {
+        "multipleOf": 1.5
+      }
+    ]
+  },
+  {
+    "description": "fractional_lattice_absorbs_covered_integer_submodulus right_left",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "multipleOf": 6
+          },
+          {
+            "allOf": [
+              {
+                "multipleOf": 1.5
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "multipleOf": 1.5
+      }
+    ]
+  },
+  {
+    "description": "array_contains_order_is_independent_of_all_of_order",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "allOf": [
+          {
+            "type": "array",
+            "contains": {
+              "const": "kya:SolvencyCredential"
+            }
+          },
+          {
+            "type": "array",
+            "contains": {
+              "const": "VerifiableCredential"
+            }
+          }
+        ]
+      },
+      {
+        "allOf": [
+          {
+            "type": "array",
+            "contains": {
+              "const": "VerifiableCredential"
+            }
+          },
+          {
+            "type": "array",
+            "contains": {
+              "const": "kya:SolvencyCredential"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "description": "unevaluated_simplifies unevaluated_props_without_applicators_equals_additional",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "string"
+          }
+        },
+        "unevaluatedProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    ]
+  },
+  {
+    "description": "unevaluated_simplifies additional_wins_over_unevaluated",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "unevaluatedProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": {
+          "type": "integer"
+        }
+      }
+    ]
+  },
+  {
+    "description": "unevaluated_simplifies unevaluated_items_without_applicators_equals_items",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "string"
+          }
+        ],
+        "unevaluatedItems": false
+      },
+      {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "string"
+          }
+        ],
+        "items": false
+      }
+    ]
+  },
+  {
+    "description": "unevaluated_simplifies items_tail_wins_over_unevaluated_items",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "string"
+          }
+        ],
+        "items": {
+          "type": "integer"
+        },
+        "unevaluatedItems": false
+      },
+      {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "string"
+          }
+        ],
+        "items": {
+          "type": "integer"
+        }
+      }
+    ]
+  },
+  {
+    "description": "unevaluated_simplifies explicit_items_true_makes_unevaluated_items_vacuous",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "string"
+          }
+        ],
+        "items": true,
+        "unevaluatedItems": false
+      },
+      {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "string"
+          }
+        ],
+        "items": true
+      }
+    ]
+  },
+  {
+    "description": "const_null_canonicalizes_to_null_type",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "const": null
+      },
+      {
+        "type": "null"
+      }
+    ]
+  },
+  {
+    "description": "vacuous_array_tail_is_reset",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "allOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          {
+            "type": "array",
+            "maxItems": 0
+          }
+        ]
+      },
+      {
+        "type": "array",
+        "maxItems": 0
+      }
+    ]
+  }
+]

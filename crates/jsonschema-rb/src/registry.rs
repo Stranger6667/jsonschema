@@ -16,14 +16,14 @@ use crate::{
     ser::{to_value, value_to_ruby},
 };
 
-struct RetrieverBuildRootGuard {
+pub(crate) struct RetrieverBuildRootGuard {
     // Keep roots in a heap allocation so addresses passed to Ruby GC are stable
     // even if the guard value itself is moved.
     roots: Vec<Value>,
 }
 
 impl RetrieverBuildRootGuard {
-    fn new(root: Option<Value>) -> Self {
+    pub(crate) fn new(root: Option<Value>) -> Self {
         let mut roots = Vec::new();
         if let Some(value) = root {
             roots.push(value);

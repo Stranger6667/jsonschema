@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `canonicalize` for reducing a JSON Schema to a canonical form with support for negation, intersection, union, subtraction, and draft-independent structural inspection.
+
+### Changed
+
+- One canonical number spelling from `canonical.json.to_string` (`Decimal("1.50")` serializes as `"1.5"`, integral values past 2^20 digits scientifically).
+
 ### Fixed
 
 - `meta.is_valid` and `meta.validate` incorrectly accepted some Draft 2019-09 schemas that the meta-schema rejects.

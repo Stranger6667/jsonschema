@@ -1,4 +1,5 @@
 use std::{
+    fmt::Write,
     pin::Pin,
     sync::{Arc, Mutex},
     time::Duration,
@@ -25,7 +26,7 @@ use crate::{
 
 // Base kwarg names
 define_rb_intern!(static KW_DRAFT: "draft");
-define_rb_intern!(static KW_VALIDATE_FORMATS: "validate_formats");
+define_rb_intern!(pub(crate) static KW_VALIDATE_FORMATS: "validate_formats");
 define_rb_intern!(static KW_IGNORE_UNKNOWN_FORMATS: "ignore_unknown_formats");
 define_rb_intern!(static KW_MASK: "mask");
 define_rb_intern!(static KW_BASE_URI: "base_uri");
@@ -881,7 +882,6 @@ impl EmailOptions {
     }
 
     fn inspect(&self) -> String {
-        use std::fmt::Write;
         let mut s = String::from("#<JSONSchema::EmailOptions require_tld=");
         s.push_str(if self.require_tld { "true" } else { "false" });
         s.push_str(", allow_domain_literal=");
@@ -934,7 +934,6 @@ impl RegexOptions {
     }
 
     fn inspect(&self) -> String {
-        use std::fmt::Write;
         let mut s = String::from("#<JSONSchema::RegexOptions size_limit=");
         match self.size_limit {
             Some(n) => write!(s, "{n}").expect("Failed to write size_limit"),
@@ -985,7 +984,6 @@ impl FancyRegexOptions {
     }
 
     fn inspect(&self) -> String {
-        use std::fmt::Write;
         let mut s = String::from("#<JSONSchema::FancyRegexOptions backtrack_limit=");
         match self.backtrack_limit {
             Some(n) => write!(s, "{n}").expect("Failed to write backtrack_limit"),
@@ -1052,7 +1050,6 @@ impl HttpOptions {
     }
 
     fn inspect(&self) -> String {
-        use std::fmt::Write;
         let mut s = String::from("#<JSONSchema::HttpOptions timeout=");
         match self.timeout {
             Some(t) => write!(s, "{t}").expect("Failed to write timeout"),

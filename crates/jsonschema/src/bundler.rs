@@ -69,7 +69,7 @@ fn definitions_keyword(draft: Draft) -> &'static str {
     }
 }
 
-fn id_keyword(draft: Draft) -> &'static str {
+pub(crate) fn id_keyword(draft: Draft) -> &'static str {
     if matches!(draft, Draft::Draft4) {
         "id"
     } else {

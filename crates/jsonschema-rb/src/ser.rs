@@ -1,4 +1,5 @@
 //! Serialization between Ruby values and `serde_json::Value`.
+use jsonschema::canonical::json::{NumberToken, SERDE_JSON_NUMBER_TOKEN};
 use magnus::{
     error::ErrorType,
     exception::ExceptionClass,
@@ -390,6 +391,19 @@ impl Drop for HashEntryScratch<'_> {
     }
 }
 
+#[inline]
+fn serialize_canonical_number<S>(value: &JsonValue, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    if let JsonValue::Number(number) = value {
+        if let Some(text) = jsonschema::canonical::json::canonical_number(number.as_str()) {
+            return serializer.serialize_some(&NumberToken(&text));
+        }
+    }
+    value.serialize(serializer)
+}
+
 struct CanonicalRubyValue<'scratch> {
     ruby: &'scratch Ruby,
     value: Value,
@@ -432,12 +446,12 @@ impl Serialize for CanonicalRubyValue<'_> {
             ruby_value_type::RUBY_T_FIXNUM | ruby_value_type::RUBY_T_BIGNUM => {
                 let number = convert_integer(self.ruby, self.value)
                     .map_err(|error| ruby_error_to_canonical_serde::<S>(self.ruby, &error))?;
-                number.serialize(serializer)
+                serialize_canonical_number(&number, serializer)
             }
             ruby_value_type::RUBY_T_FLOAT => {
                 let number = convert_float_for_canonical(self.ruby, self.value)
                     .map_err(|error| ruby_error_to_canonical_serde::<S>(self.ruby, &error))?;
-                number.serialize(serializer)
+                serialize_canonical_number(&number, serializer)
             }
             ruby_value_type::RUBY_T_STRING => {
                 let value =
@@ -532,7 +546,7 @@ impl Serialize for CanonicalRubyValue<'_> {
             {
                 let number = convert_big_decimal_for_canonical(self.ruby, self.value)
                     .map_err(|error| ruby_error_to_canonical_serde::<S>(self.ruby, &error))?;
-                number.serialize(serializer)
+                serialize_canonical_number(&number, serializer)
             }
             _ => {
                 let class = self.value.class();
@@ -808,9 +822,6 @@ fn number_string_to_ruby(ruby: &Ruby, number: &str) -> Result<Value, Error> {
     let _ = ruby.get_inner(&BIG_DECIMAL_CLASS);
     ruby.module_kernel().funcall("BigDecimal", (number,))
 }
-
-/// Token used by serde_json with the `arbitrary_precision` feature.
-const SERDE_JSON_NUMBER_TOKEN: &str = "$serde_json::private::Number";
 
 #[derive(Debug)]
 struct RubySerError(String);

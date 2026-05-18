@@ -1,0 +1,217 @@
+[
+  {
+    "description": "recursive_def_toplevel_ref_is_idempotent",
+    "draft": "draft2020-12",
+    "schema": {"$ref": "#/$defs/list", "$defs": {"list": {"type": "object", "properties": {"next": {"$ref": "#/$defs/list"}}}}},
+    "witnesses": [
+      {"data": {}, "valid": true},
+      {"data": {"next": {}}, "valid": true},
+      {"data": {"next": {"next": {}}}, "valid": true},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "recursive_def_ref_merged_with_root_constraint_is_idempotent",
+    "draft": "draft2020-12",
+    "schema": {"$ref": "#/$defs/list", "required": ["v"], "properties": {"v": {"const": true}}, "$defs": {"list": {"type": "object", "properties": {"next": {"$ref": "#/$defs/list"}}}}},
+    "witnesses": [
+      {"data": {"v": true}, "valid": true},
+      {"data": {"v": true, "next": {"v": true}}, "valid": true},
+      {"data": {"v": false}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "root_self_reference_object_is_idempotent",
+    "draft": "draft2020-12",
+    "schema": {"type": "object", "properties": {"next": {"$ref": "#"}}},
+    "witnesses": [
+      {"data": {}, "valid": true},
+      {"data": {"next": {"next": {}}}, "valid": true},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "nested_id_self_reference_is_idempotent",
+    "draft": "draft2020-12",
+    "schema": {"$ref": "#/$defs/node", "$defs": {"node": {"$id": "node", "type": "object", "properties": {"child": {"$ref": "#"}}}}},
+    "witnesses": [
+      {"data": {}, "valid": true},
+      {"data": {"child": {"child": {}}}, "valid": true},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "nested_id_self_reference_merged_with_root_constraint_preserves_base_after_emit",
+    "draft": "draft2020-12",
+    "schema": {"$id": "https://example.com/root", "$ref": "#/$defs/node", "required": ["rootOnly"], "properties": {"rootOnly": {"const": true}}, "$defs": {"node": {"$id": "node", "type": "object", "properties": {"child": {"$ref": "#"}}}}},
+    "witnesses": [
+      {"data": {"rootOnly": true, "child": {"child": {}}}, "valid": true},
+      {"data": {"rootOnly": true}, "valid": true},
+      {"data": {"rootOnly": false}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "emit_recursion_validates_like self_referential_object",
+    "draft": "draft2020-12",
+    "schema": {"$defs": {"node": {"type": "object", "properties": {"next": {"$ref": "#/$defs/node"}}}}, "$ref": "#/$defs/node"},
+    "witnesses": [{}, {"next": {}}, {"next": {"next": {}}}, {"next": 5}, 5]
+  },
+  {
+    "description": "emit_recursion_validates_like two_independent_defs",
+    "draft": "draft2020-12",
+    "schema": {"type": "object", "properties": {"a": {"$ref": "#/$defs/a"}, "b": {"$ref": "#/$defs/b"}}, "$defs": {"a": {"type": "array", "items": {"$ref": "#/$defs/a"}}, "b": {"type": "object", "properties": {"next": {"$ref": "#/$defs/b"}}}}},
+    "witnesses": [{}, {"a": [], "b": {}}, {"a": [[], [[]]]}, {"a": [5]}, {"b": {"next": {"next": {}}}}, {"a": "x"}]
+  },
+  {
+    "description": "emit_recursion_validates_like nested_position",
+    "draft": "draft2020-12",
+    "schema": {"type": "object", "properties": {"tree": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"type": "object", "properties": {"left": {"$ref": "#/$defs/node"}, "right": {"$ref": "#/$defs/node"}}}}},
+    "witnesses": [{}, {"tree": {}}, {"tree": {"left": {}, "right": {"left": {}}}}, {"tree": 5}]
+  },
+  {
+    "description": "emit_recursion_validates_like under_array_items",
+    "draft": "draft2020-12",
+    "schema": {"$defs": {"list": {"type": "array", "items": {"$ref": "#/$defs/list"}}}, "$ref": "#/$defs/list"},
+    "witnesses": [[], [[]], [[[]], []], ["x"], {}]
+  },
+  {
+    "description": "emit_recursion_validates_like root_self_reference",
+    "draft": "draft2020-12",
+    "schema": {"type": "object", "properties": {"next": {"$ref": "#"}}},
+    "witnesses": [{}, {"next": {}}, {"next": {"next": {}}}, {"next": 5}, 5]
+  },
+  {
+    "description": "mutual_optional_recursion_canonicalizes",
+    "draft": "draft2020-12",
+    "schema": {"$ref": "#/$defs/a", "$defs": {"a": {"type": "object", "properties": {"b": {"$ref": "#/$defs/b"}}}, "b": {"type": "object", "properties": {"a": {"$ref": "#/$defs/a"}}}}},
+    "witnesses": [{"data": {}, "valid": true}, {"data": {"b": {"a": {}}}, "valid": true}, {"data": {"b": 5}, "valid": false}]
+  },
+  {
+    "description": "productive recursion is satisfiable - optional self-reference: empty object is the base case",
+    "inline_budget": 0,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "next": {
+          "$ref": "#"
+        }
+      }
+    },
+    "satisfiable": true
+  },
+  {
+    "description": "productive recursion is satisfiable - minProperties met by counting productive named properties",
+    "inline_budget": 0,
+    "schema": {
+      "type": "object",
+      "minProperties": 2,
+      "properties": {
+        "a": {
+          "type": "integer"
+        },
+        "b": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#"
+      }
+    },
+    "satisfiable": true
+  },
+  {
+    "description": "productive recursion is satisfiable - minProperties met by a productive non-universal patternProperty",
+    "inline_budget": 0,
+    "schema": {
+      "type": "object",
+      "minProperties": 2,
+      "properties": {
+        "a": {
+          "type": "integer"
+        }
+      },
+      "patternProperties": {
+        "^z": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#"
+      }
+    },
+    "satisfiable": true
+  },
+  {
+    "description": "productive recursion is satisfiable - required property matched by a productive pattern continues past the match",
+    "inline_budget": 0,
+    "schema": {
+      "type": "object",
+      "required": [
+        "abc"
+      ],
+      "minProperties": 2,
+      "patternProperties": {
+        "^a": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#"
+      }
+    },
+    "satisfiable": true
+  },
+  {
+    "description": "productive recursion is satisfiable - required property under an uncompilable pattern stays productive",
+    "inline_budget": 0,
+    "schema": {
+      "type": "object",
+      "required": [
+        "x"
+      ],
+      "patternProperties": {
+        "\\1": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#"
+      }
+    },
+    "satisfiable": true
+  },
+  {
+    "description": "productive recursion is satisfiable - $id-qualified mutual recursion with an optional back-edge",
+    "inline_budget": 0,
+    "schema": {
+      "$id": "https://e.test/root",
+      "$ref": "https://e.test/a",
+      "$defs": {
+        "a": {
+          "$id": "https://e.test/a",
+          "type": "object",
+          "required": [
+            "b"
+          ],
+          "properties": {
+            "b": {
+              "$ref": "https://e.test/b"
+            }
+          }
+        },
+        "b": {
+          "$id": "https://e.test/b",
+          "type": "object",
+          "properties": {
+            "a": {
+              "$ref": "https://e.test/a"
+            }
+          }
+        }
+      }
+    },
+    "satisfiable": true
+  }
+]

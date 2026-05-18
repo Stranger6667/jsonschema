@@ -89,6 +89,25 @@ jobs:
 
       - run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py --exclude jsonschema-rb
 
+  test-schemastore-corpus:
+    name: Test SchemaStore corpus
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: "true"
+          key: schemastore-corpus
+
+      - name: Run SchemaStore corpus
+        run: cargo test --release --features arbitrary-precision -p jsonschema --lib canonical::tests::schemastore::corpus -- --ignored --exact --nocapture
+
   test-cross:
     strategy:
       fail-fast: false
@@ -713,6 +732,10 @@ jobs:
       - name: Check features for jsonschema
         run: cargo hack check --target ${{ matrix.target }} ${{ matrix.flags }} -p jsonschema
 
+      - name: Check all targets
+        if: ${{ matrix.name == 'native' }}
+        run: cargo check --all-targets -p jsonschema
+
       - name: Check features for referencing
         run: cargo hack check --target ${{ matrix.target }} ${{ matrix.flags }} -p referencing
 
@@ -720,7 +743,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: ["builder", "validation", "referencing", "codegen"]
+        target: ["builder", "validation", "referencing", "codegen", "canonical"]
     name: Fuzz ${{ matrix.target }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
