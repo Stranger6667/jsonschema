@@ -25,7 +25,8 @@ use crate::{
 ///
 /// Single-pass parser with no allocations, early exit on invalid input.
 /// Supports all operators (+, #, ., /, ;, ?, &, =, ,, !, @, |) and modifiers (:prefix, *explode).
-fn is_valid_uri_template(template: &str) -> bool {
+#[must_use] 
+pub fn is_valid_uri_template(template: &str) -> bool {
     let bytes = template.as_bytes();
     let len = bytes.len();
     let mut i = 0;
@@ -248,7 +249,8 @@ fn is_literal_char(b: u8) -> bool {
     )
 }
 
-fn is_valid_json_pointer(pointer: &str) -> bool {
+#[must_use] 
+pub fn is_valid_json_pointer(pointer: &str) -> bool {
     if pointer.is_empty() {
         // An empty string is a valid JSON Pointer
         return true;
@@ -263,7 +265,8 @@ fn is_valid_json_pointer(pointer: &str) -> bool {
     is_valid_json_pointer_impl(chars)
 }
 
-fn is_valid_relative_json_pointer(s: &str) -> bool {
+#[must_use] 
+pub fn is_valid_relative_json_pointer(s: &str) -> bool {
     let mut chars = s.chars();
 
     // Parse the non-negative integer part
@@ -313,7 +316,8 @@ fn is_valid_json_pointer_impl<I: Iterator<Item = char>>(chars: I) -> bool {
     !escaped
 }
 
-fn is_valid_date(date: &str) -> bool {
+#[must_use] 
+pub fn is_valid_date(date: &str) -> bool {
     if date.len() != 10 {
         return false;
     }
@@ -437,7 +441,8 @@ macro_rules! handle_offset {
     }};
 }
 
-fn is_valid_time(time: &str) -> bool {
+#[must_use] 
+pub fn is_valid_time(time: &str) -> bool {
     let bytes = time.as_bytes();
     let len = bytes.len();
 
@@ -496,7 +501,8 @@ fn is_valid_time(time: &str) -> bool {
     }
 }
 
-fn is_valid_datetime(datetime: &str) -> bool {
+#[must_use] 
+pub fn is_valid_datetime(datetime: &str) -> bool {
     // Find the position of 'T' or 't' separator
     let Some(t_pos) = datetime.bytes().position(|b| b == b'T' || b == b't') else {
         return false;
@@ -538,11 +544,11 @@ where
     }
 }
 
-fn is_valid_email(email: &str, options: Option<&EmailAddressOptions>) -> bool {
+pub(crate) fn is_valid_email(email: &str, options: Option<&EmailAddressOptions>) -> bool {
     is_valid_email_impl(email, is_valid_hostname, options)
 }
 
-fn is_valid_idn_email(email: &str, options: Option<&EmailAddressOptions>) -> bool {
+pub(crate) fn is_valid_idn_email(email: &str, options: Option<&EmailAddressOptions>) -> bool {
     is_valid_email_impl(email, is_valid_idn_hostname, options)
 }
 
@@ -592,11 +598,13 @@ fn is_valid_ascii_hostname(hostname: &str) -> bool {
     validate_hostname_label(&hostname_bytes[label_start..])
 }
 
-fn is_valid_hostname_rfc1034(hostname: &str) -> bool {
+#[must_use] 
+pub fn is_valid_hostname_rfc1034(hostname: &str) -> bool {
     is_valid_ascii_hostname(hostname)
 }
 
-fn is_valid_hostname(hostname: &str) -> bool {
+#[must_use] 
+pub fn is_valid_hostname(hostname: &str) -> bool {
     if !is_valid_ascii_hostname(hostname) {
         return false;
     }
@@ -754,7 +762,8 @@ fn validate_unicode_label(label: &str) -> bool {
     true
 }
 
-fn is_valid_idn_hostname(hostname: &str) -> bool {
+#[must_use] 
+pub fn is_valid_idn_hostname(hostname: &str) -> bool {
     use idna::uts46::{AsciiDenyList, DnsLength, Hyphens, Uts46};
 
     let Ok(ascii_hostname) = Uts46::new().to_ascii(
@@ -787,7 +796,8 @@ fn unit_index(units: &[u8], unit: u8) -> Option<usize> {
     units.iter().position(|&u| u == unit)
 }
 
-fn is_valid_duration(duration: &str) -> bool {
+#[must_use] 
+pub fn is_valid_duration(duration: &str) -> bool {
     let bytes = duration.as_bytes();
     let len = bytes.len();
 
@@ -886,31 +896,38 @@ fn is_valid_duration(duration: &str) -> bool {
     true
 }
 
-fn is_valid_ipv4(ip: &str) -> bool {
+#[must_use] 
+pub fn is_valid_ipv4(ip: &str) -> bool {
     Ipv4Addr::from_str(ip).is_ok()
 }
 
-fn is_valid_ipv6(ip: &str) -> bool {
+#[must_use] 
+pub fn is_valid_ipv6(ip: &str) -> bool {
     Ipv6Addr::from_str(ip).is_ok()
 }
 
-fn is_valid_iri(iri: &str) -> bool {
+#[must_use] 
+pub fn is_valid_iri(iri: &str) -> bool {
     referencing::Iri::parse(iri).is_ok()
 }
 
-fn is_valid_iri_reference(iri_reference: &str) -> bool {
+#[must_use] 
+pub fn is_valid_iri_reference(iri_reference: &str) -> bool {
     referencing::IriRef::parse(iri_reference).is_ok()
 }
 
-fn is_valid_uri(uri: &str) -> bool {
+#[must_use] 
+pub fn is_valid_uri(uri: &str) -> bool {
     referencing::Uri::parse(uri).is_ok()
 }
 
-fn is_valid_uri_reference(uri_reference: &str) -> bool {
+#[must_use] 
+pub fn is_valid_uri_reference(uri_reference: &str) -> bool {
     referencing::UriRef::parse(uri_reference).is_ok()
 }
 
-fn is_valid_uuid(uuid: &str) -> bool {
+#[must_use] 
+pub fn is_valid_uuid(uuid: &str) -> bool {
     let mut out = [0; 16];
     parse_hyphenated(uuid.as_bytes(), Out::from_mut(&mut out)).is_ok()
 }
