@@ -919,6 +919,7 @@ pub mod error;
 mod evaluation;
 #[doc(hidden)]
 pub mod ext;
+pub mod formats;
 mod http;
 mod keywords;
 #[cfg(all(feature = "macros", not(target_family = "wasm")))]
