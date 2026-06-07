@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `prefixItems` incorrectly recognised as a known keyword in Draft 2019-09 and earlier (it is 2020-12 only).
+
 ## [0.46.5] - 2026-05-13
 
 ### Fixed
