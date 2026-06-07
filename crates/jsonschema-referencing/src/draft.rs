@@ -228,7 +228,6 @@ impl Draft {
             | "dependentSchemas"
             | "maxContains"
             | "minContains"
-            | "prefixItems"
             | "unevaluatedItems"
             | "unevaluatedProperties"
                 if *self >= Draft::Draft201909 || *self == Draft::Unknown =>
@@ -236,7 +235,8 @@ impl Draft {
                 true
             }
 
-            "$dynamicAnchor" | "$dynamicRef"
+            // `prefixItems` is 2020-12 only; 2019-09 and earlier use array-form `items`.
+            "$dynamicAnchor" | "$dynamicRef" | "prefixItems"
                 if *self == Draft::Draft202012 || *self == Draft::Unknown =>
             {
                 true
@@ -282,6 +282,14 @@ mod tests {
     fn test_unknown_specification() {
         let draft = Draft::Draft7.detect(&json!({"$schema": "invalid"}));
         assert_eq!(draft, Draft::Unknown);
+    }
+
+    // `prefixItems` is a 2020-12 keyword; 2019-09 and earlier use array-form `items`.
+    #[test_case(Draft::Draft7, false; "draft7 unknown")]
+    #[test_case(Draft::Draft201909, false; "draft2019-09 unknown")]
+    #[test_case(Draft::Draft202012, true; "draft2020-12 known")]
+    fn prefix_items_known_only_in_2020_12(draft: Draft, expected: bool) {
+        assert_eq!(draft.is_known_keyword("prefixItems"), expected);
     }
 
     #[test_case(Draft::Draft4; "Draft 4 stays Draft 4")]
