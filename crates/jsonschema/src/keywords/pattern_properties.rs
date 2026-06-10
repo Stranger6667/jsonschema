@@ -276,21 +276,12 @@ fn try_compile_as_literals<'a>(
     for (pattern, subschema) in map {
         let pctx = ctx.new_at_location(pattern.as_str());
         let matcher = match analyze_pattern(pattern)? {
-            PatternOptimization::Prefix(literal) => LiteralMatcher::Prefix {
-                literal,
-                original: pattern.clone(),
-            },
-            PatternOptimization::Exact(exact) => LiteralMatcher::Exact {
-                exact,
-                original: pattern.clone(),
-            },
-            PatternOptimization::Alternation(alternatives) => LiteralMatcher::Alternation {
-                alternatives,
-                original: pattern.clone(),
-            },
-            PatternOptimization::NoWhitespace => LiteralMatcher::NoWhitespace {
-                original: pattern.clone(),
-            },
+            PatternOptimization::Prefix(literal) => LiteralMatcher::Prefix { literal },
+            PatternOptimization::Exact(exact) => LiteralMatcher::Exact { exact },
+            PatternOptimization::Alternation(alternatives) => {
+                LiteralMatcher::Alternation { alternatives }
+            }
+            PatternOptimization::NoWhitespace => LiteralMatcher::NoWhitespace,
         };
         let node = match compiler::compile(&pctx, pctx.as_resource_ref(subschema)) {
             Ok(node) => node,

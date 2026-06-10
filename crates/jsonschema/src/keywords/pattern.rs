@@ -174,6 +174,9 @@ impl Validate for NoWhitespacePatternValidator {
 
 pub(crate) struct PatternValidator<R> {
     regex: Arc<R>,
+    /// Original schema pattern, kept for error messages. The compiled `regex` stores the
+    /// ECMA->Rust translated form (e.g. `\S` expanded into a verbose class), which is unreadable.
+    pattern: String,
     location: Location,
 }
 
@@ -194,12 +197,12 @@ impl<R: RegexEngine> Validate for PatternValidator<R> {
                             crate::paths::capture_evaluation_path(tracker, &self.location),
                             location.into(),
                             instance,
-                            self.regex.pattern().to_string(),
+                            self.pattern.clone(),
                         ));
                     }
                 }
                 Err(e) => {
-                    let pattern = self.regex.pattern().to_string();
+                    let pattern = &self.pattern;
                     let tracker = crate::paths::capture_evaluation_path(tracker, &self.location);
                     return Err(match e.into_failure_reason() {
                         RegexFailureReason::FancyRegex(error) => ValidationError::backtrack_limit(
@@ -277,6 +280,7 @@ pub(crate) fn compile<'a>(
                 };
                 Some(Ok(Box::new(PatternValidator {
                     regex,
+                    pattern: item.clone(),
                     location: ctx.location().join("pattern"),
                 })))
             }
@@ -286,6 +290,7 @@ pub(crate) fn compile<'a>(
                 };
                 Some(Ok(Box::new(PatternValidator {
                     regex,
+                    pattern: item.clone(),
                     location: ctx.location().join("pattern"),
                 })))
             }
@@ -382,6 +387,33 @@ mod tests {
         let validator = crate::validator_for(&schema).unwrap();
         assert_eq!(validator.is_valid(&text), is_matching);
         assert_eq!(validator.validate(&text).is_ok(), is_matching);
+    }
+
+    // Error messages must show the original schema pattern, not the ECMA->Rust translated form
+    // (e.g. `\S` expanded into a verbose Unicode class).
+    fn assert_original_pattern_in_error(validator: &crate::Validator) {
+        let instance = json!("");
+        let error = validator
+            .validate(&instance)
+            .expect_err("expected a validation error");
+        assert_eq!(error.to_string(), r#""" does not match "^[\S]{1,5}$""#);
+    }
+
+    #[test]
+    fn original_pattern_in_error() {
+        let schema = json!({"pattern": r"^[\S]{1,5}$"});
+        assert_original_pattern_in_error(
+            &crate::options()
+                .with_pattern_options(PatternOptions::fancy_regex())
+                .build(&schema)
+                .expect("Schema should be valid"),
+        );
+        assert_original_pattern_in_error(
+            &crate::options()
+                .with_pattern_options(PatternOptions::regex())
+                .build(&schema)
+                .expect("Schema should be valid"),
+        );
     }
 
     #[test]

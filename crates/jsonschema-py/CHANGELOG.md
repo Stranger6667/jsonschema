@@ -5,6 +5,7 @@
 ### Fixed
 
 - `prefixItems` incorrectly recognised as a known keyword in Draft 2019-09 and earlier (it is 2020-12 only).
+- `pattern` validation errors displayed the internally translated regex instead of the original schema pattern. [#1149](https://github.com/Stranger6667/jsonschema/issues/1149)
 
 ## [0.46.5] - 2026-05-13
 
