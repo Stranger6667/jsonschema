@@ -1,8 +1,6 @@
 pub(crate) trait RegexEngine: Sized + Send + Sync {
     type Error: RegexError;
     fn is_match(&self, text: &str) -> Result<bool, Self::Error>;
-
-    fn pattern(&self) -> &str;
 }
 
 /// Reason a regex match failed, distinguishing real engine errors from recovered panics.
@@ -47,10 +45,6 @@ impl RegexEngine for fancy_regex::Regex {
             Err(_) => Err(FancyRegexError::Panicked),
         }
     }
-
-    fn pattern(&self) -> &str {
-        self.as_str()
-    }
 }
 
 /// Marker error for `regex::Regex::is_match` panics. The underlying `is_match` is otherwise infallible.
@@ -73,10 +67,6 @@ impl RegexEngine for regex::Regex {
         }))
         .map_err(|_| RegexBackendPanic)
     }
-
-    fn pattern(&self) -> &str {
-        self.as_str()
-    }
 }
 
 /// Uninhabited error type for literal matchers — matching never fails.
@@ -93,21 +83,16 @@ impl RegexError for LiteralMatchError {
 pub(crate) enum LiteralMatcher {
     Prefix {
         literal: String,
-        original: String,
     },
     Exact {
         exact: String,
-        original: String,
     },
     /// `^(a|b|c)$` — linear scan over a small sorted array.
     Alternation {
         alternatives: Vec<String>,
-        original: String,
     },
     /// `^\S*$` — no ECMA-262 whitespace characters.
-    NoWhitespace {
-        original: String,
-    },
+    NoWhitespace,
 }
 
 impl RegexEngine for LiteralMatcher {
@@ -116,21 +101,12 @@ impl RegexEngine for LiteralMatcher {
     #[inline]
     fn is_match(&self, text: &str) -> Result<bool, Self::Error> {
         match self {
-            Self::Prefix { literal, .. } => Ok(text.starts_with(literal.as_str())),
-            Self::Exact { exact, .. } => Ok(text == exact.as_str()),
-            Self::Alternation { alternatives, .. } => {
+            Self::Prefix { literal } => Ok(text.starts_with(literal.as_str())),
+            Self::Exact { exact } => Ok(text == exact.as_str()),
+            Self::Alternation { alternatives } => {
                 Ok(alternatives.iter().any(|a| a.as_str() == text))
             }
-            Self::NoWhitespace { .. } => Ok(!text.chars().any(is_ecma_whitespace)),
-        }
-    }
-
-    fn pattern(&self) -> &str {
-        match self {
-            Self::Prefix { original, .. }
-            | Self::Exact { original, .. }
-            | Self::Alternation { original, .. }
-            | Self::NoWhitespace { original } => original.as_str(),
+            Self::NoWhitespace => Ok(!text.chars().any(is_ecma_whitespace)),
         }
     }
 }
