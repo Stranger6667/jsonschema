@@ -454,6 +454,23 @@ jobs:
         with:
           submodules: true
 
+      # ECR Public rate-limits anonymous pulls per source IP, and shared
+      # GitHub-runner IPs intermittently hit `toomanyrequests`. Retry the pull
+      # with backoff so the run step below works from the local cache.
+      - name: Pull Ruby Alpine image
+        run: |
+          image=public.ecr.aws/docker/library/ruby:3.4-alpine3.21
+          for attempt in 1 2 3 4 5; do
+            if docker pull "$image"; then
+              exit 0
+            fi
+            delay=$((attempt * 15))
+            echo "::warning::docker pull failed (attempt $attempt/5), retrying in ${delay}s"
+            sleep "$delay"
+          done
+          echo "::error::docker pull failed after 5 attempts"
+          exit 1
+
       - name: Test gem install on Alpine/musl
         run: |
           docker run --rm \
