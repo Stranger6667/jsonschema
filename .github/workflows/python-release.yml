@@ -236,6 +236,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
+          maturin-version: "1.13.2"
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter 3.13t 3.14t
       - name: Upload wheels
         uses: actions/upload-artifact@v7
@@ -261,6 +262,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           manylinux: musllinux_1_2
+          maturin-version: "1.13.2"
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter 3.13t 3.14t
       - name: Upload wheels
         uses: actions/upload-artifact@v7
@@ -289,6 +291,7 @@ jobs:
         uses: messense/maturin-action@v1
         with:
           target: ${{ matrix.target }}
+          maturin-version: "1.13.2"
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter 3.13t 3.14t
       - name: Upload wheels
         uses: actions/upload-artifact@v7
@@ -316,6 +319,7 @@ jobs:
         uses: messense/maturin-action@v1
         with:
           target: x64
+          maturin-version: "1.13.2"
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ steps.python-paths.outputs.py313t }} ${{ steps.python-paths.outputs.py314t }}
       - name: Upload wheels
         uses: actions/upload-artifact@v7
