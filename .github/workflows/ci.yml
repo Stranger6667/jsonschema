@@ -50,6 +50,7 @@ jobs:
       - run: cargo update -p hyper-rustls --precise 0.27.7
       - run: cargo update -p rustls-platform-verifier --precise 0.6.2
       - run: cargo update -p reqwest --precise 0.13.3
+      - run: cargo update -p zeroize --precise 1.8.2
       - run: cargo build -p jsonschema
 
   test-native:
@@ -339,12 +340,14 @@ jobs:
         if: runner.os == 'Windows'
         uses: messense/maturin-action@v1
         with:
+          maturin-version: "1.13.2"
           args: --release -m crates/jsonschema-py/Cargo.toml --out crates/jsonschema-py/dist --interpreter ${{ steps.python-path-windows.outputs.path }}
 
       - name: Build wheel (Unix)
         if: runner.os != 'Windows'
         uses: messense/maturin-action@v1
         with:
+          maturin-version: "1.13.2"
           args: --release -m crates/jsonschema-py/Cargo.toml --out crates/jsonschema-py/dist --interpreter ${{ matrix.python-version }}
 
       - name: Test wheel
@@ -643,6 +646,7 @@ jobs:
       - name: Build wheel
         uses: messense/maturin-action@v1
         with:
+          maturin-version: "1.13.2"
           args: --release -m crates/jsonschema-py/Cargo.toml --out crates/jsonschema-py/dist --interpreter 3.13t
 
       - name: Install and verify wheel
