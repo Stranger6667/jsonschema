@@ -291,7 +291,10 @@ impl Serialize for SerializePyObject {
                         let exception = unsafe { pyo3::ffi::PyErr_GetRaisedException() };
                         // Check if this is actually an overflow error
                         if !exception.is_null() {
-                            unsafe { pyo3::ffi::PyErr_Clear() };
+                            unsafe {
+                                pyo3::ffi::PyErr_Clear();
+                                pyo3::ffi::Py_DecRef(exception);
+                            };
                             return serialize_large_int(self.object, serializer);
                         }
                     };

@@ -1,4 +1,5 @@
 import enum
+import gc
 import json
 import sys
 from decimal import Decimal
@@ -10,6 +11,8 @@ from hypothesis import strategies as st
 from jsonschema_rs import canonical
 
 to_string = canonical.json.to_string
+LARGE_INTEGER = 2**128
+SERIALIZATION_ATTEMPTS = 25
 
 # Recursive strategy for JSON-compatible values (no NaN/Inf — those don't roundtrip)
 _json_scalars = st.one_of(
@@ -35,6 +38,17 @@ class Color(enum.Enum):
 
 class StrColor(str, enum.Enum):
     BLUE = "blue"
+
+
+def large_integer_overflow_error_count():
+    gc.collect()
+    return sum(
+        1
+        for obj in gc.get_objects()
+        if type(obj) is OverflowError
+        and "convert" in str(obj)
+        and ("too big" in str(obj) or "too large" in str(obj))
+    )
 
 
 @pytest.mark.parametrize(
@@ -85,6 +99,13 @@ def test_to_string(value, expected):
 def test_float_large_integer_valued():
     result = to_string(1e300)
     assert result == str(int(1e300))
+
+
+def test_large_integer_serialization_does_not_leak_overflow_errors():
+    baseline = large_integer_overflow_error_count()
+    for _ in range(SERIALIZATION_ATTEMPTS):
+        assert to_string(LARGE_INTEGER) == str(LARGE_INTEGER)
+    assert large_integer_overflow_error_count() == baseline
 
 
 @pytest.mark.parametrize("value", [float(2**63), float(-(2**63)), float(2**64)])
