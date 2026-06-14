@@ -867,6 +867,7 @@ fn make_options<'a>(
     if let Some(yes) = ignore_unknown_formats {
         options = options.should_ignore_unknown_formats(yes);
     }
+    let retriever_was_provided = retriever.is_some();
     if let Some(formats) = formats {
         for (name, callback) in formats.iter() {
             if !callback.is_callable() {
@@ -902,6 +903,12 @@ fn make_options<'a>(
         options = options.with_retriever(Retriever { func });
     }
     if let Some(registry) = registry {
+        if !retriever_was_provided {
+            if let Some(registry_retriever) = registry.retriever() {
+                let func = Python::attach(|py| into_retriever(registry_retriever.bind(py)))?;
+                options = options.with_retriever(Retriever { func });
+            }
+        }
         options = options.with_registry(registry.inner.as_ref());
     }
     if let Some(base_uri) = base_uri {

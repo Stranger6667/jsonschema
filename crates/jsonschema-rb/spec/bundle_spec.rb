@@ -31,6 +31,27 @@ RSpec.describe "JSONSchema.bundle" do
     expect(bundled.dig("$defs", "https://example.com/person.json")).not_to be_nil
   end
 
+  it "uses registry retriever when only registry is provided" do
+    calls = []
+    registry = JSONSchema::Registry.new(
+      [],
+      retriever: lambda do |uri|
+        calls << uri
+        { "type" => "string" } if uri == "https://example.com/string.json"
+      end
+    )
+    root = {
+      "$schema" => "https://json-schema.org/draft/2020-12/schema",
+      "$ref" => "https://example.com/string.json"
+    }
+
+    bundled = JSONSchema.bundle(root, registry: registry)
+
+    expect(bundled["$ref"]).to eq("https://example.com/string.json")
+    expect(bundled.dig("$defs", "https://example.com/string.json", "type")).to eq("string")
+    expect(calls).to eq(["https://example.com/string.json"])
+  end
+
   it "produces a bundled schema that validates identically" do
     root = {
       "$schema" => "https://json-schema.org/draft/2020-12/schema",

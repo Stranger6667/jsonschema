@@ -151,6 +151,28 @@ def test_validator_for_uses_call_retriever_when_inline_root_adds_external_ref():
     assert not validator.is_valid({"value": 42})
 
 
+def test_validator_for_uses_registry_retriever_when_inline_root_adds_external_ref():
+    calls = []
+
+    def retrieve(uri: str):
+        calls.append(uri)
+        if uri == "urn:external":
+            return {"type": "string"}
+        raise KeyError(f"Schema not found: {uri}")
+
+    registry = Registry([("urn:seed", {"type": "integer"})], retriever=retrieve)
+    schema = {
+        "type": "object",
+        "properties": {"value": {"$ref": "urn:external"}},
+        "required": ["value"],
+    }
+
+    validator = validator_for(schema, registry=registry)
+    assert validator.is_valid({"value": "ok"})
+    assert not validator.is_valid({"value": 42})
+    assert calls == ["urn:external"]
+
+
 def test_validator_for_with_registry_accepts_equivalent_base_uri_with_empty_fragment():
     registry = Registry([("urn:shared", {"type": "integer"})])
     schema = {"$id": "urn:root", "$ref": "urn:shared"}

@@ -11,6 +11,7 @@ use crate::{
 #[pyclass(module = "jsonschema_rs")]
 pub(crate) struct Registry {
     pub(crate) inner: Arc<jsonschema::Registry<'static>>,
+    retriever: Option<Py<PyAny>>,
 }
 
 #[pyclass(module = "jsonschema_rs", skip_from_py_object)]
@@ -57,9 +58,11 @@ impl Registry {
             builder = builder.draft(get_draft(draft)?);
         }
 
+        let mut retriever_value = None;
         if let Some(retriever) = retriever {
             let func = into_retriever(retriever)?;
             builder = builder.retriever(Retriever { func });
+            retriever_value = Some(retriever.clone().unbind());
         }
 
         for item in resources.try_iter()? {
@@ -78,6 +81,7 @@ impl Registry {
 
         Ok(Registry {
             inner: Arc::new(registry),
+            retriever: retriever_value,
         })
     }
 
@@ -87,6 +91,12 @@ impl Registry {
             base_uri: parse_uri(base_uri)?,
             dynamic_scope: Vec::new(),
         })
+    }
+}
+
+impl Registry {
+    pub(crate) fn retriever(&self) -> Option<&Py<PyAny>> {
+        self.retriever.as_ref()
     }
 }
 
