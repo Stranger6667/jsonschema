@@ -406,7 +406,10 @@ impl Serialize for CanonicalPyObject<'_> {
                     {
                         let exception = unsafe { ffi::PyErr_GetRaisedException() };
                         if !exception.is_null() {
-                            unsafe { ffi::PyErr_Clear() };
+                            unsafe {
+                                ffi::PyErr_Clear();
+                                ffi::Py_DecRef(exception);
+                            };
                             return serialize_large_int(self.object, serializer);
                         }
                     };

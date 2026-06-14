@@ -1,5 +1,10 @@
+import gc
+
 import jsonschema_rs
 import pytest
+
+LARGE_INTEGER = 2**128
+SERIALIZATION_ATTEMPTS = 25
 
 PERSON_SCHEMA = {
     "$id": "https://example.com/person.json",
@@ -8,6 +13,17 @@ PERSON_SCHEMA = {
     "properties": {"name": {"type": "string"}},
     "required": ["name"],
 }
+
+
+def large_integer_overflow_error_count():
+    gc.collect()
+    return sum(
+        1
+        for obj in gc.get_objects()
+        if type(obj) is OverflowError
+        and "convert" in str(obj)
+        and ("too big" in str(obj) or "too large" in str(obj))
+    )
 
 
 def test_bundle_no_external_refs():
@@ -110,6 +126,13 @@ def test_bundle_ignores_ref_inside_const_annotation_payload():
     bundled = jsonschema_rs.bundle(schema)
     assert bundled == schema
     assert "$defs" not in bundled
+
+
+def test_bundle_large_integer_serialization_does_not_leak_overflow_errors():
+    baseline = large_integer_overflow_error_count()
+    for _ in range(SERIALIZATION_ATTEMPTS):
+        assert jsonschema_rs.bundle({"const": LARGE_INTEGER})["const"] == LARGE_INTEGER
+    assert large_integer_overflow_error_count() == baseline
 
 
 def test_bundle_supports_legacy_drafts():
