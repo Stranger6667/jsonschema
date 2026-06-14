@@ -937,7 +937,10 @@ fn bundle(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
 
     let json_schema = to_schema_value(ruby, schema)?;
     let parsed = build_parsed_options(ruby, kw, None)?;
-    let mut options = parsed.options;
+    let mut options = match parsed.retriever {
+        Some(ret) => parsed.options.with_retriever(ret),
+        None => parsed.options,
+    };
     if let Some(registry) = parsed.registry {
         options = options.with_registry(registry);
     }
