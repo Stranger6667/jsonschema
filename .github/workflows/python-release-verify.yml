@@ -28,7 +28,7 @@ jobs:
     name: Verify wheel for ${{ matrix.python-version }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
 
       - name: Setup Python interpreter
@@ -64,7 +64,7 @@ jobs:
     timeout-minutes: 30
     name: Verify cross-compilation for aarch64
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_ABI_VERSION }}
@@ -80,7 +80,7 @@ jobs:
     timeout-minutes: 30
     name: Verify pyodide build (wasm32-unknown-emscripten)
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
         with:
           # nightly-2025-02-01 = rustc 1.86-nightly; 1.87+ is incompatible with pyodide as of now

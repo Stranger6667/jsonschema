@@ -24,7 +24,7 @@ jobs:
   sdist:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -54,7 +54,7 @@ jobs:
   macos-x86_64:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - name: Install Python
         run: uv python install ${{ env.PYTHON_ABI_VERSION }}
@@ -79,7 +79,7 @@ jobs:
   macos-universal:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - name: Install Python
         run: uv python install ${{ env.PYTHON_ABI_VERSION }}
@@ -106,7 +106,7 @@ jobs:
       matrix:
         target: [ x64, x86 ]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - uses: actions/setup-python@v6
         with:
@@ -141,7 +141,7 @@ jobs:
           - target: aarch64
             manylinux: 2_28
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - uses: actions/setup-python@v6
         with:
@@ -191,7 +191,7 @@ jobs:
           - target: aarch64
             arch: aarch64
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - uses: actions/setup-python@v6
         with:
@@ -226,7 +226,7 @@ jobs:
           - target: aarch64
             manylinux: 2_28
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - uses: actions/setup-python@v6
         with:
@@ -252,7 +252,7 @@ jobs:
           - target: x86_64
           - target: aarch64
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - uses: actions/setup-python@v6
         with:
@@ -280,7 +280,7 @@ jobs:
           - target: aarch64
             artifact: wheel-macos-freethreaded-aarch64
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - name: Install Python
         run: uv python install 3.13t 3.14t
@@ -302,7 +302,7 @@ jobs:
   windows-freethreaded:
     runs-on: windows-2025
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - name: Install Python
         run: |
@@ -350,7 +350,7 @@ jobs:
             manylinux: 2_28
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - uses: actions/setup-python@v6
         with:
@@ -396,7 +396,7 @@ jobs:
   pyodide:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
         with:
           # nightly-2025-02-01 = rustc 1.86-nightly; 1.87+ is incompatible with pyodide as of now
