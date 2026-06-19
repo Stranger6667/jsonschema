@@ -46,7 +46,7 @@ jobs:
       matrix:
         platform: ${{ fromJSON(needs.ci-data.outputs.supported-ruby-platforms) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: true
 
@@ -85,7 +85,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: true
 
