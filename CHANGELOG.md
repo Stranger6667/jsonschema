@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `IntoRegistryResource` for `Arc<Value>`. [#1129](https://github.com/Stranger6667/jsonschema/issues/1129)
+
 ### Fixed
 
 - `prefixItems` incorrectly recognised as a known keyword in Draft 2019-09 and earlier (it is 2020-12 only).

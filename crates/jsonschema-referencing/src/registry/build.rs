@@ -5,10 +5,10 @@
 //! - [`build_index_from_stored`]: builds an index from pre-stored documents
 //!   (used by the static [`super::SPECIFICATIONS`] registry).
 //!
-//! [`StoredResource`] wraps a [`Cow<Value>`](std::borrow::Cow) so the registry holds
-//! both borrowed (externally-owned, zero-copy) and owned (retrieved) documents uniformly.
+//! [`StoredResource`] holds borrowed (externally-owned, zero-copy), owned (retrieved),
+//! or shared ([`Arc<Value>`]) documents uniformly.
 
-use std::{borrow::Cow, collections::VecDeque, num::NonZeroUsize, sync::Arc};
+use std::{collections::VecDeque, num::NonZeroUsize, sync::Arc};
 
 use ahash::{AHashMap, AHashSet};
 use fluent_uri::Uri;
@@ -24,10 +24,17 @@ use crate::{
 
 use super::{index::Index, input::PendingResource};
 
-/// A schema document stored in the registry, either borrowed from the caller or owned.
+#[derive(Debug)]
+enum StoredValue<'a> {
+    Borrowed(&'a Value),
+    Owned(Value),
+    Shared(Arc<Value>),
+}
+
+/// A schema document stored in the registry: borrowed from the caller, owned, or shared.
 #[derive(Debug)]
 pub(super) struct StoredResource<'a> {
-    value: Cow<'a, Value>,
+    value: StoredValue<'a>,
     draft: Draft,
 }
 
@@ -35,7 +42,7 @@ impl<'a> StoredResource<'a> {
     #[inline]
     pub(super) fn owned(value: Value, draft: Draft) -> Self {
         Self {
-            value: Cow::Owned(value),
+            value: StoredValue::Owned(value),
             draft,
         }
     }
@@ -43,21 +50,33 @@ impl<'a> StoredResource<'a> {
     #[inline]
     pub(super) fn borrowed(value: &'a Value, draft: Draft) -> Self {
         Self {
-            value: Cow::Borrowed(value),
+            value: StoredValue::Borrowed(value),
+            draft,
+        }
+    }
+
+    #[inline]
+    pub(super) fn shared(value: Arc<Value>, draft: Draft) -> Self {
+        Self {
+            value: StoredValue::Shared(value),
             draft,
         }
     }
 
     #[inline]
     pub(super) fn contents(&self) -> &Value {
-        &self.value
+        match &self.value {
+            StoredValue::Borrowed(value) => value,
+            StoredValue::Owned(value) => value,
+            StoredValue::Shared(value) => value,
+        }
     }
 
     #[inline]
     pub(super) fn borrowed_contents(&self) -> Option<&'a Value> {
         match &self.value {
-            Cow::Borrowed(value) => Some(value),
-            Cow::Owned(_) => None,
+            StoredValue::Borrowed(value) => Some(value),
+            StoredValue::Owned(_) | StoredValue::Shared(_) => None,
         }
     }
 
@@ -340,6 +359,10 @@ fn enqueue_resources<'a>(
             PendingResource::ValueRef(value) => {
                 let draft = draft.unwrap_or_else(|| Draft::default().detect(value));
                 (draft, StoredResource::borrowed(value, draft))
+            }
+            PendingResource::SharedValue(value) => {
+                let draft = draft.unwrap_or_else(|| Draft::default().detect(&value));
+                (draft, StoredResource::shared(value, draft))
             }
             PendingResource::Resource(resource) => {
                 let (draft, contents) = resource.into_inner();
@@ -1300,7 +1323,7 @@ fn resolve_subresource_id(
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error as _;
+    use std::{error::Error as _, sync::Arc};
 
     use ahash::AHashMap;
     use fluent_uri::Uri;
@@ -1833,6 +1856,30 @@ mod tests {
             .expect("Registry should prepare");
 
         assert!(registry.contains_resource("urn:test"));
+    }
+
+    #[test]
+    fn test_registry_builder_accepts_arc_values() {
+        let schema = Arc::new(json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/root",
+            "$defs": { "item": { "type": "string" } },
+            "items": { "$ref": "#/$defs/item" }
+        }));
+        let registry = Registry::new()
+            .add("https://example.com/root", Arc::clone(&schema))
+            .expect("Resource should be accepted")
+            .prepare()
+            .expect("Registry should prepare");
+
+        assert!(registry.contains_resource("https://example.com/root"));
+        let uri = from_str("https://example.com/root").expect("Invalid test URI");
+        let resource = registry.resource_by_uri(&uri).unwrap();
+        // Draft detected from the shared contents, which flowed through the crawl.
+        assert_eq!(resource.draft(), Draft::Draft202012);
+        assert!(resource.contents().get("$defs").is_some());
+        // Adding the Arc must not consume or clone the contents; the caller keeps it.
+        assert_eq!(schema["$id"], json!("https://example.com/root"));
     }
 
     #[test]

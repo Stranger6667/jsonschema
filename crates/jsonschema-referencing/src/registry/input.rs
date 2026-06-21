@@ -12,6 +12,7 @@ use crate::{Resource, ResourceRef, Retrieve};
 pub(crate) enum PendingResource<'a> {
     Value(Value),
     ValueRef(&'a Value),
+    SharedValue(Arc<Value>),
     Resource(Resource),
     ResourceRef(ResourceRef<'a>),
 }
@@ -86,6 +87,16 @@ impl<'a> private::Sealed<'a> for Value {
         uri: Uri<String>,
     ) {
         pending.insert(uri, PendingResource::Value(self));
+    }
+}
+
+impl<'a> private::Sealed<'a> for Arc<Value> {
+    fn insert_into(
+        self,
+        pending: &mut AHashMap<Uri<String>, PendingResource<'a>>,
+        uri: Uri<String>,
+    ) {
+        pending.insert(uri, PendingResource::SharedValue(self));
     }
 }
 
