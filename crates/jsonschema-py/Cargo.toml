@@ -7,7 +7,7 @@ categories = ["web-programming"]
 readme = "README.md"
 license.workspace = true
 repository.workspace = true
-rust-version.workspace = true
+rust-version = "1.87"
 edition.workspace = true
 authors.workspace = true
 
