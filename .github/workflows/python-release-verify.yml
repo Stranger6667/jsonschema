@@ -17,7 +17,7 @@ defaults:
 env:
   PACKAGE_NAME: jsonschema_rs
   PYTHON_ABI_VERSION: "3.10"
-  PYODIDE_RUST_TOOLCHAIN: "nightly-2025-02-01"
+  PYODIDE_RUST_TOOLCHAIN: "nightly-2025-06-27"
 
 jobs:
   wheel-smoke-test:
@@ -83,7 +83,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
         with:
-          # nightly-2025-02-01 = rustc 1.86-nightly; 1.87+ is incompatible with pyodide as of now
+          # nightly-2025-06-27 = rustc 1.90-nightly; pinned to a nightly with a prebuilt pyodide emscripten sysroot
           toolchain: ${{ env.PYODIDE_RUST_TOOLCHAIN }}
           components: rust-src
       - uses: actions/setup-python@v6
