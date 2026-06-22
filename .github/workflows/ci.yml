@@ -74,6 +74,9 @@ jobs:
           cache-all-crates: "true"
           key: ${{ matrix.os }}
 
+      - uses: astral-sh/setup-uv@v8.1.0
+        if: runner.os == 'Windows'
+
       - run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py --exclude jsonschema-rb
 
   test-cross:
@@ -101,6 +104,10 @@ jobs:
       - uses: taiki-e/install-action@cross
 
       - name: Run tests on ${{ matrix.target }}
+        env:
+          CROSS_CONTAINER_OPTS: >-
+            --env XDG_CACHE_HOME=/tmp/.cache
+            --env XDG_DATA_HOME=/tmp/.local/share
         run: cross test --target ${{ matrix.target }} --no-fail-fast --all-features -p jsonschema
 
   test-wasm:
