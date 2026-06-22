@@ -532,9 +532,7 @@ pub(crate) fn compile<'a>(
                 location,
                 Location::new(),
                 schema,
-                JsonTypeSet::empty()
-                    .insert(JsonType::String)
-                    .insert(JsonType::Array),
+                JsonTypeSet::from(JsonType::String).insert(JsonType::Array),
             )))
         }
     }

@@ -1998,9 +1998,7 @@ mod tests {
     #[test]
     fn multiple_types_error() {
         let instance = json!(42);
-        let types = JsonTypeSet::empty()
-            .insert(JsonType::String)
-            .insert(JsonType::Number);
+        let types = JsonTypeSet::from(JsonType::String).insert(JsonType::Number);
         let err = ValidationError::multiple_type_error(
             Location::new(),
             Location::new(),

@@ -9,16 +9,19 @@ use std::str::FromStr;
 use serde_json::Value;
 
 /// Represents a JSON value type.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+///
+/// Discriminant order is `Null < Boolean < Integer < Number < String < Array < Object`
+/// (primitives before compounds, integers before numbers); [`JsonTypeSet`] iterates in this order.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(u8)]
 pub enum JsonType {
-    Array = 1 << 0,
+    Null = 1 << 0,
     Boolean = 1 << 1,
     Integer = 1 << 2,
-    Null = 1 << 3,
-    Number = 1 << 4,
-    Object = 1 << 5,
-    String = 1 << 6,
+    Number = 1 << 3,
+    String = 1 << 4,
+    Array = 1 << 5,
+    Object = 1 << 6,
 }
 
 impl fmt::Display for JsonType {
@@ -43,13 +46,13 @@ impl JsonType {
 
     pub(crate) fn from_repr(repr: u8) -> Self {
         match repr {
-            1 => JsonType::Array,
+            1 => JsonType::Null,
             2 => JsonType::Boolean,
             4 => JsonType::Integer,
-            8 => JsonType::Null,
-            16 => JsonType::Number,
-            32 => JsonType::Object,
-            64 => JsonType::String,
+            8 => JsonType::Number,
+            16 => JsonType::String,
+            32 => JsonType::Array,
+            64 => JsonType::Object,
             _ => panic!("Invalid JsonType representation: {repr}"),
         }
     }
@@ -86,12 +89,19 @@ impl FromStr for JsonType {
 }
 
 /// A set of JSON types.
-#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct JsonTypeSet(u8);
 
 impl Default for JsonTypeSet {
     fn default() -> Self {
         Self::empty()
+    }
+}
+
+impl From<JsonType> for JsonTypeSet {
+    #[inline]
+    fn from(ty: JsonType) -> Self {
+        Self(ty as u8)
     }
 }
 
@@ -333,15 +343,22 @@ mod tests {
         assert!(!set.contains(JsonType::Array));
     }
 
-    #[test_case(&json!(null), JsonTypeSet::empty().insert(JsonType::Null) => true ; "null type")]
-    #[test_case(&json!(true), JsonTypeSet::empty().insert(JsonType::Boolean) => true ; "boolean type")]
-    #[test_case(&json!("test"), JsonTypeSet::empty().insert(JsonType::String) => true ; "string type")]
-    #[test_case(&json!([1,2]), JsonTypeSet::empty().insert(JsonType::Array) => true ; "array type")]
-    #[test_case(&json!({"a": 1}), JsonTypeSet::empty().insert(JsonType::Object) => true ; "object type")]
-    #[test_case(&json!(42), JsonTypeSet::empty().insert(JsonType::Number) => true ; "number matches number")]
-    #[test_case(&json!(42), JsonTypeSet::empty().insert(JsonType::Integer) => true ; "int matches integer")]
-    #[test_case(&json!(1.23), JsonTypeSet::empty().insert(JsonType::Number) => true ; "float matches number")]
-    #[test_case(&json!(1.23), JsonTypeSet::empty().insert(JsonType::Integer) => false ; "float doesn't match integer")]
+    #[test]
+    fn test_from_json_type() {
+        let set = JsonTypeSet::from(JsonType::String);
+        assert!(set.contains(JsonType::String));
+        assert_eq!(set.len(), 1);
+    }
+
+    #[test_case(&json!(null), JsonTypeSet::from(JsonType::Null) => true ; "null type")]
+    #[test_case(&json!(true), JsonTypeSet::from(JsonType::Boolean) => true ; "boolean type")]
+    #[test_case(&json!("test"), JsonTypeSet::from(JsonType::String) => true ; "string type")]
+    #[test_case(&json!([1,2]), JsonTypeSet::from(JsonType::Array) => true ; "array type")]
+    #[test_case(&json!({"a": 1}), JsonTypeSet::from(JsonType::Object) => true ; "object type")]
+    #[test_case(&json!(42), JsonTypeSet::from(JsonType::Number) => true ; "number matches number")]
+    #[test_case(&json!(42), JsonTypeSet::from(JsonType::Integer) => true ; "int matches integer")]
+    #[test_case(&json!(1.23), JsonTypeSet::from(JsonType::Number) => true ; "float matches number")]
+    #[test_case(&json!(1.23), JsonTypeSet::from(JsonType::Integer) => false ; "float doesn't match integer")]
     fn test_contains_value_type(value: &Value, set: JsonTypeSet) -> bool {
         set.contains_value_type(value)
     }
@@ -373,15 +390,13 @@ mod tests {
     fn test_debug_format() {
         assert_eq!(format!("{:?}", JsonTypeSet::default()), "()");
         assert_eq!(
-            format!("{:?}", JsonTypeSet::empty().insert(JsonType::String)),
+            format!("{:?}", JsonTypeSet::from(JsonType::String)),
             "(string)"
         );
         assert_eq!(
             format!(
                 "{:?}",
-                JsonTypeSet::empty()
-                    .insert(JsonType::String)
-                    .insert(JsonType::Number)
+                JsonTypeSet::from(JsonType::String).insert(JsonType::Number)
             ),
             "(number, string)"
         );
@@ -397,7 +412,7 @@ mod tests {
 
     #[test]
     fn test_single_type_iterator() {
-        let set = JsonTypeSet::empty().insert(JsonType::String);
+        let set = JsonTypeSet::from(JsonType::String);
         let mut iter = set.iter();
         assert_eq!(iter.size_hint(), (1, Some(1)));
         assert_eq!(iter.next(), Some(JsonType::String));
@@ -408,8 +423,7 @@ mod tests {
 
     #[test]
     fn test_multiple_types_iterator() {
-        let set = JsonTypeSet::empty()
-            .insert(JsonType::String)
+        let set = JsonTypeSet::from(JsonType::String)
             .insert(JsonType::Number)
             .insert(JsonType::Boolean);
 
