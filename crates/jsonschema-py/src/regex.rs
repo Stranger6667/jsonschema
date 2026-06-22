@@ -1,4 +1,28 @@
-use pyo3::prelude::*;
+use jsonschema::{FancyRegex, PatternOptions, Regex};
+use pyo3::{exceptions::PyTypeError, prelude::*};
+
+/// A `pattern_options` argument resolved to a concrete engine.
+pub(crate) enum PyPatternOptions {
+    Fancy(PatternOptions<FancyRegex>),
+    Regex(PatternOptions<Regex>),
+}
+
+/// Convert a Python `pattern_options` argument into [`PatternOptions`].
+pub(crate) fn extract_pattern_options(value: &Bound<'_, PyAny>) -> PyResult<PyPatternOptions> {
+    if let Ok(opts) = value.extract::<Py<FancyRegexOptions>>() {
+        Ok(PyPatternOptions::Fancy(Python::attach(|py| {
+            opts.borrow(py).to_pattern_options()
+        })))
+    } else if let Ok(opts) = value.extract::<Py<RegexOptions>>() {
+        Ok(PyPatternOptions::Regex(Python::attach(|py| {
+            opts.borrow(py).to_pattern_options()
+        })))
+    } else {
+        Err(PyTypeError::new_err(
+            "pattern_options must be an instance of FancyRegexOptions or RegexOptions",
+        ))
+    }
+}
 
 /// FancyRegexOptions(backtrack_limit=None, size_limit=None, dfa_size_limit=None)
 ///
@@ -39,6 +63,22 @@ impl FancyRegexOptions {
     }
 }
 
+impl FancyRegexOptions {
+    pub(crate) fn to_pattern_options(&self) -> PatternOptions<FancyRegex> {
+        let mut options = PatternOptions::fancy_regex();
+        if let Some(limit) = self.backtrack_limit {
+            options = options.backtrack_limit(limit);
+        }
+        if let Some(limit) = self.size_limit {
+            options = options.size_limit(limit);
+        }
+        if let Some(limit) = self.dfa_size_limit {
+            options = options.dfa_size_limit(limit);
+        }
+        options
+    }
+}
+
 /// RegexOptions(size_limit=None, dfa_size_limit=None)
 ///
 /// Configuration for the standard regex engine, which guarantees linear-time matching
@@ -69,5 +109,18 @@ impl RegexOptions {
             size_limit,
             dfa_size_limit,
         }
+    }
+}
+
+impl RegexOptions {
+    pub(crate) fn to_pattern_options(&self) -> PatternOptions<Regex> {
+        let mut options = PatternOptions::regex();
+        if let Some(limit) = self.size_limit {
+            options = options.size_limit(limit);
+        }
+        if let Some(limit) = self.dfa_size_limit {
+            options = options.dfa_size_limit(limit);
+        }
+        options
     }
 }
