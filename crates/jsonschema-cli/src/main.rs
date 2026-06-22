@@ -131,6 +131,46 @@ struct HttpArgs {
 }
 
 #[derive(Args)]
+struct FormatAssertionArgs {
+    /// Enable validation of `format` keywords.
+    #[arg(
+        long = "assert-format",
+        action = ArgAction::SetTrue,
+        overrides_with = "no_assert_format",
+        help = "Turn ON format validation"
+    )]
+    assert_format: Option<bool>,
+
+    /// Disable validation of `format` keywords.
+    #[arg(
+        long = "no-assert-format",
+        action = ArgAction::SetTrue,
+        overrides_with = "assert_format",
+        help = "Turn OFF format validation"
+    )]
+    no_assert_format: Option<bool>,
+}
+
+impl FormatAssertionArgs {
+    const fn from_flags(assert_format: Option<bool>, no_assert_format: Option<bool>) -> Self {
+        Self {
+            assert_format,
+            no_assert_format,
+        }
+    }
+
+    const fn validate_formats(&self) -> Option<bool> {
+        if matches!(self.assert_format, Some(true)) {
+            Some(true)
+        } else if matches!(self.no_assert_format, Some(true)) {
+            Some(false)
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Args)]
 struct ValidateArgs {
     /// The JSON Schema to validate with (i.e. schema.json).
     #[arg(value_parser)]
@@ -149,23 +189,8 @@ struct ValidateArgs {
     )]
     draft: Option<Draft>,
 
-    /// Enable validation of `format` keywords.
-    #[arg(
-        long = "assert-format",
-        action = ArgAction::SetTrue,
-        overrides_with = "no_assert_format",
-        help = "Turn ON format validation"
-    )]
-    assert_format: Option<bool>,
-
-    /// Disable validation of `format` keywords.
-    #[arg(
-        long = "no-assert-format",
-        action = ArgAction::SetTrue,
-        overrides_with = "assert_format",
-        help = "Turn OFF format validation"
-    )]
-    no_assert_format: Option<bool>,
+    #[command(flatten)]
+    format: FormatAssertionArgs,
 
     /// Select the output format (text, flag, list, hierarchical). All modes emit newline-delimited JSON records.
     #[arg(
@@ -416,7 +441,7 @@ fn path_to_uri(path: &std::path::Path) -> String {
         .add(b'/')
         .add(b'%');
 
-    let path = path.canonicalize().expect("Failed to canonicalise path");
+    let path = path.canonicalize().expect("Failed to canonicalize path");
 
     let mut result = "file://".to_owned();
 
@@ -475,6 +500,25 @@ fn options_for_schema<'a>(
         options = options.with_http_options(http_opts)?;
     }
     Ok(options)
+}
+
+// Read `--resource URI=FILE` pairs into a prepared Registry, seeded with an HTTP retriever
+// when HTTP options are set. Shared by bundle and dereference.
+fn build_resource_registry(
+    resources: &[(String, PathBuf)],
+    http_options: Option<&jsonschema::HttpOptions>,
+) -> Result<jsonschema::Registry<'static>, Box<dyn std::error::Error>> {
+    let mut builder = if let Some(http_opts) = http_options {
+        let retriever = jsonschema::HttpRetriever::new(http_opts)?;
+        jsonschema::Registry::new().retriever(retriever)
+    } else {
+        jsonschema::Registry::new()
+    };
+    for (uri, path) in resources {
+        let resource_json = read_json(path)?;
+        builder = builder.add(uri, resource_json)?;
+    }
+    Ok(builder.prepare()?)
 }
 
 fn output_schema_validation(
@@ -668,8 +712,7 @@ fn run_validate(args: ValidateArgs) -> ExitCode {
         schema,
         instances,
         draft,
-        assert_format,
-        no_assert_format,
+        format,
         output,
         errors_only,
         http,
@@ -682,7 +725,7 @@ fn run_validate(args: ValidateArgs) -> ExitCode {
             &instances,
             &schema,
             draft,
-            assert_format.or(no_assert_format),
+            format.validate_formats(),
             output,
             errors_only,
             http_options.as_ref(),
@@ -715,26 +758,7 @@ fn run_bundle(args: BundleArgs) -> ExitCode {
         Err(error) => return fail_with_error(error),
     };
 
-    let mut registry = if let Some(http_opts) = http_options.as_ref() {
-        let retriever = match jsonschema::HttpRetriever::new(http_opts) {
-            Ok(retriever) => retriever,
-            Err(error) => return fail_with_error(error),
-        };
-        jsonschema::Registry::new().retriever(retriever)
-    } else {
-        jsonschema::Registry::new()
-    };
-    for (uri, path) in &resources {
-        let resource_json = match read_json(path) {
-            Ok(value) => value,
-            Err(error) => return fail_with_error(error),
-        };
-        registry = match registry.add(uri, resource_json) {
-            Ok(registry) => registry,
-            Err(error) => return fail_with_error(error),
-        };
-    }
-    let registry = match registry.prepare() {
+    let registry = match build_resource_registry(&resources, http_options.as_ref()) {
         Ok(registry) => registry,
         Err(error) => return fail_with_error(error),
     };
@@ -780,26 +804,7 @@ fn run_dereference(args: DereferenceArgs) -> ExitCode {
         Err(error) => return fail_with_error(error),
     };
 
-    let mut registry = if let Some(http_opts) = http_options.as_ref() {
-        let retriever = match jsonschema::HttpRetriever::new(http_opts) {
-            Ok(retriever) => retriever,
-            Err(error) => return fail_with_error(error),
-        };
-        jsonschema::Registry::new().retriever(retriever)
-    } else {
-        jsonschema::Registry::new()
-    };
-    for (uri, path) in &resources {
-        let resource_json = match read_json(path) {
-            Ok(value) => value,
-            Err(error) => return fail_with_error(error),
-        };
-        registry = match registry.add(uri, resource_json) {
-            Ok(registry) => registry,
-            Err(error) => return fail_with_error(error),
-        };
-    }
-    let registry = match registry.prepare() {
+    let registry = match build_resource_registry(&resources, http_options.as_ref()) {
         Ok(registry) => registry,
         Err(error) => return fail_with_error(error),
     };
@@ -850,8 +855,10 @@ fn main() -> ExitCode {
                     schema,
                     instances: cli.instances,
                     draft: cli.draft,
-                    assert_format: cli.assert_format,
-                    no_assert_format: cli.no_assert_format,
+                    format: FormatAssertionArgs::from_flags(
+                        cli.assert_format,
+                        cli.no_assert_format,
+                    ),
                     output: cli.output,
                     errors_only: cli.errors_only,
                     http: HttpArgs {
