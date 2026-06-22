@@ -915,41 +915,13 @@ fn make_options<'a>(
         options = options.with_base_uri(base_uri);
     }
     if let Some(pattern_options) = pattern_options {
-        if let Ok(fancy_options) = pattern_options.extract::<Py<FancyRegexOptions>>() {
-            let pattern_options = Python::attach(|py| {
-                let fancy_options = fancy_options.borrow(py);
-                let mut pattern_options = jsonschema::PatternOptions::fancy_regex();
-
-                if let Some(limit) = fancy_options.backtrack_limit {
-                    pattern_options = pattern_options.backtrack_limit(limit);
-                }
-                if let Some(limit) = fancy_options.size_limit {
-                    pattern_options = pattern_options.size_limit(limit);
-                }
-                if let Some(limit) = fancy_options.dfa_size_limit {
-                    pattern_options = pattern_options.dfa_size_limit(limit);
-                }
-                pattern_options
-            });
-            options = options.with_pattern_options(pattern_options);
-        } else if let Ok(regex_opts) = pattern_options.extract::<Py<RegexOptions>>() {
-            let pattern_options = Python::attach(|py| {
-                let regex_opts = regex_opts.borrow(py);
-                let mut pattern_options = jsonschema::PatternOptions::regex();
-
-                if let Some(limit) = regex_opts.size_limit {
-                    pattern_options = pattern_options.size_limit(limit);
-                }
-                if let Some(limit) = regex_opts.dfa_size_limit {
-                    pattern_options = pattern_options.dfa_size_limit(limit);
-                }
-                pattern_options
-            });
-            options = options.with_pattern_options(pattern_options);
-        } else {
-            return Err(exceptions::PyTypeError::new_err(
-                "pattern_options must be an instance of FancyRegexOptions or RegexOptions",
-            ));
+        match crate::regex::extract_pattern_options(pattern_options)? {
+            crate::regex::PyPatternOptions::Fancy(p) => {
+                options = options.with_pattern_options(p);
+            }
+            crate::regex::PyPatternOptions::Regex(p) => {
+                options = options.with_pattern_options(p);
+            }
         }
     }
     if let Some(email_options) = email_options {
