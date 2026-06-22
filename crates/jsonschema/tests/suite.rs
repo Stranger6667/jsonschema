@@ -28,20 +28,15 @@ mod tests {
             FancyRegex,
         }
 
-        let mut options = jsonschema::options();
-        match test.draft {
-            "draft4" => {
-                options = options.with_draft(Draft::Draft4);
-            }
-            "draft6" => {
-                options = options.with_draft(Draft::Draft6);
-            }
-            "draft7" => {
-                options = options.with_draft(Draft::Draft7);
-            }
-            "draft2019-09" | "draft2020-12" => {}
+        let draft = match test.draft {
+            "draft4" => Draft::Draft4,
+            "draft6" => Draft::Draft6,
+            "draft7" => Draft::Draft7,
+            "draft2019-09" => Draft::Draft201909,
+            "draft2020-12" => Draft::Draft202012,
             _ => panic!("Unsupported draft"),
-        }
+        };
+        let mut options = jsonschema::options().with_draft(draft);
         if should_skip_draft(test.draft) {
             return;
         }
