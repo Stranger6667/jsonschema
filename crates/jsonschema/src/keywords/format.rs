@@ -1306,6 +1306,60 @@ where
     }
 }
 
+#[derive(Clone, Copy)]
+enum BuiltinFormat {
+    Date,
+    DateTime,
+    Duration,
+    Email,
+    Hostname,
+    HostnameDraft4,
+    IdnEmail,
+    IdnHostname,
+    Ipv4,
+    Ipv6,
+    Iri,
+    IriReference,
+    JsonPointer,
+    Regex,
+    RelativeJsonPointer,
+    Time,
+    Uri,
+    UriReference,
+    UriTemplate,
+    Uuid,
+}
+
+fn builtin_format(draft: Draft, format: &str) -> Option<BuiltinFormat> {
+    match format {
+        "date" => Some(BuiltinFormat::Date),
+        "date-time" => Some(BuiltinFormat::DateTime),
+        "duration" if draft >= Draft::Draft201909 => Some(BuiltinFormat::Duration),
+        "email" => Some(BuiltinFormat::Email),
+        "hostname" if matches!(draft, Draft::Draft4 | Draft::Draft6) => {
+            Some(BuiltinFormat::HostnameDraft4)
+        }
+        "hostname" => Some(BuiltinFormat::Hostname),
+        "idn-email" => Some(BuiltinFormat::IdnEmail),
+        "idn-hostname" if draft >= Draft::Draft7 => Some(BuiltinFormat::IdnHostname),
+        "ipv4" => Some(BuiltinFormat::Ipv4),
+        "ipv6" => Some(BuiltinFormat::Ipv6),
+        "iri" if draft >= Draft::Draft7 => Some(BuiltinFormat::Iri),
+        "iri-reference" if draft >= Draft::Draft7 => Some(BuiltinFormat::IriReference),
+        "json-pointer" if draft >= Draft::Draft6 => Some(BuiltinFormat::JsonPointer),
+        "regex" => Some(BuiltinFormat::Regex),
+        "relative-json-pointer" if draft >= Draft::Draft7 => {
+            Some(BuiltinFormat::RelativeJsonPointer)
+        }
+        "time" => Some(BuiltinFormat::Time),
+        "uri" => Some(BuiltinFormat::Uri),
+        "uri-reference" if draft >= Draft::Draft6 => Some(BuiltinFormat::UriReference),
+        "uri-template" if draft >= Draft::Draft6 => Some(BuiltinFormat::UriTemplate),
+        "uuid" if draft >= Draft::Draft201909 => Some(BuiltinFormat::Uuid),
+        _ => None,
+    }
+}
+
 #[inline]
 pub(crate) fn compile<'a>(
     ctx: &compiler::Context,
@@ -1323,42 +1377,30 @@ pub(crate) fn compile<'a>(
                 ));
             }
             let draft = ctx.draft();
-            match format.as_str() {
-                "date" => Some(DateValidator::compile(ctx)),
-                "date-time" => Some(DateTimeValidator::compile(ctx)),
-                "duration" if draft >= Draft::Draft201909 => Some(DurationValidator::compile(ctx)),
-                "email" => Some(EmailValidator::compile(ctx)),
-                "hostname" if matches!(draft, Draft::Draft4 | Draft::Draft6) => {
-                    Some(HostnameValidatorDraft4::compile(ctx))
-                }
-                "hostname" => Some(HostnameValidator::compile(ctx)),
-                "idn-email" => Some(IdnEmailValidator::compile(ctx)),
-                "idn-hostname" if draft >= Draft::Draft7 => {
-                    Some(IdnHostnameValidator::compile(ctx))
-                }
-                "ipv4" => Some(IpV4Validator::compile(ctx)),
-                "ipv6" => Some(IpV6Validator::compile(ctx)),
-                "iri" if draft >= Draft::Draft7 => Some(IriValidator::compile(ctx)),
-                "iri-reference" if draft >= Draft::Draft7 => {
-                    Some(IriReferenceValidator::compile(ctx))
-                }
-                "json-pointer" if draft >= Draft::Draft6 => {
-                    Some(JsonPointerValidator::compile(ctx))
-                }
-                "regex" => Some(RegexValidator::compile(ctx)),
-                "relative-json-pointer" if draft >= Draft::Draft7 => {
+            match builtin_format(draft, format) {
+                Some(BuiltinFormat::Date) => Some(DateValidator::compile(ctx)),
+                Some(BuiltinFormat::DateTime) => Some(DateTimeValidator::compile(ctx)),
+                Some(BuiltinFormat::Duration) => Some(DurationValidator::compile(ctx)),
+                Some(BuiltinFormat::Email) => Some(EmailValidator::compile(ctx)),
+                Some(BuiltinFormat::Hostname) => Some(HostnameValidator::compile(ctx)),
+                Some(BuiltinFormat::HostnameDraft4) => Some(HostnameValidatorDraft4::compile(ctx)),
+                Some(BuiltinFormat::IdnEmail) => Some(IdnEmailValidator::compile(ctx)),
+                Some(BuiltinFormat::IdnHostname) => Some(IdnHostnameValidator::compile(ctx)),
+                Some(BuiltinFormat::Ipv4) => Some(IpV4Validator::compile(ctx)),
+                Some(BuiltinFormat::Ipv6) => Some(IpV6Validator::compile(ctx)),
+                Some(BuiltinFormat::Iri) => Some(IriValidator::compile(ctx)),
+                Some(BuiltinFormat::IriReference) => Some(IriReferenceValidator::compile(ctx)),
+                Some(BuiltinFormat::JsonPointer) => Some(JsonPointerValidator::compile(ctx)),
+                Some(BuiltinFormat::Regex) => Some(RegexValidator::compile(ctx)),
+                Some(BuiltinFormat::RelativeJsonPointer) => {
                     Some(RelativeJsonPointerValidator::compile(ctx))
                 }
-                "time" => Some(TimeValidator::compile(ctx)),
-                "uri" => Some(UriValidator::compile(ctx)),
-                "uri-reference" if draft >= Draft::Draft6 => {
-                    Some(UriReferenceValidator::compile(ctx))
-                }
-                "uri-template" if draft >= Draft::Draft6 => {
-                    Some(UriTemplateValidator::compile(ctx))
-                }
-                "uuid" if draft >= Draft::Draft201909 => Some(UuidValidator::compile(ctx)),
-                name => {
+                Some(BuiltinFormat::Time) => Some(TimeValidator::compile(ctx)),
+                Some(BuiltinFormat::Uri) => Some(UriValidator::compile(ctx)),
+                Some(BuiltinFormat::UriReference) => Some(UriReferenceValidator::compile(ctx)),
+                Some(BuiltinFormat::UriTemplate) => Some(UriTemplateValidator::compile(ctx)),
+                Some(BuiltinFormat::Uuid) => Some(UuidValidator::compile(ctx)),
+                None => {
                     if ctx.are_unknown_formats_ignored() {
                         None
                     } else {
@@ -1369,7 +1411,7 @@ pub(crate) fn compile<'a>(
                             Location::new(),
                             schema,
                             format!(
-                                "Unknown format: '{name}'. Adjust configuration to ignore unrecognized formats"
+                                "Unknown format: '{format}'. Adjust configuration to ignore unrecognized formats"
                             ),
                         )))
                     }
