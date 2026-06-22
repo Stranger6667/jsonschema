@@ -400,10 +400,10 @@ impl referencing::AsyncRetrieve for DefaultRetriever {
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(all(test, not(target_arch = "wasm32"), feature = "resolve-file"))]
 use percent_encoding::{AsciiSet, CONTROLS};
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(all(test, not(target_arch = "wasm32"), feature = "resolve-file"))]
 const URI_SEGMENT: &AsciiSet = &CONTROLS
     .add(b' ')
     .add(b'"')
@@ -417,10 +417,15 @@ const URI_SEGMENT: &AsciiSet = &CONTROLS
     .add(b'/')
     .add(b'%');
 
-#[cfg(all(test, not(target_arch = "wasm32"), not(target_os = "windows")))]
+#[cfg(all(
+    test,
+    not(target_arch = "wasm32"),
+    not(target_os = "windows"),
+    feature = "resolve-file"
+))]
 const UNIX_URI_SEGMENT: &AsciiSet = &URI_SEGMENT.add(b'\\');
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(all(test, not(target_arch = "wasm32"), feature = "resolve-file"))]
 pub(crate) fn path_to_uri(path: &std::path::Path) -> String {
     use percent_encoding::percent_encode;
 
@@ -471,7 +476,7 @@ pub(crate) fn path_to_uri(path: &std::path::Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "resolve-file"))]
     use super::path_to_uri;
     #[cfg(all(
         feature = "resolve-http",
@@ -482,7 +487,7 @@ mod tests {
     #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
     use crate::{HttpOptions, HttpRetriever, HttpRetrieverError};
     use serde_json::json;
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "resolve-file"))]
     use std::io::Write;
 
     #[test]
@@ -535,7 +540,7 @@ mod tests {
         assert!(error.contains("External references are not supported on wasm32-unknown-unknown"));
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "resolve-file"))]
     fn create_temp_file(dir: &tempfile::TempDir, name: &str, content: &str) -> String {
         let file_path = dir.path().join(name);
         std::fs::write(&file_path, content).unwrap();
@@ -818,6 +823,7 @@ mod async_tests {
     use super::*;
     use crate::Registry;
     use serde_json::json;
+    #[cfg(feature = "resolve-file")]
     use std::io::Write;
 
     #[tokio::test]
