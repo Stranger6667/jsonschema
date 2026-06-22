@@ -6,7 +6,10 @@ from . import canonical as canonical
 
 _SchemaT = TypeVar("_SchemaT", bool, dict[str, Any])
 _FormatFunc = TypeVar("_FormatFunc", bound=Callable[[str], bool])
+# Loose JSON for inputs the caller supplies
 JSONType: TypeAlias = dict[str, Any] | list | str | int | float | Decimal | bool | None
+# Precise recursive JSON the library returns
+JsonValue: TypeAlias = dict[str, "JsonValue"] | list["JsonValue"] | str | int | float | Decimal | bool | None
 JSONPrimitive: TypeAlias = str | int | float | Decimal | bool | None
 
 class KeywordValidator(Protocol):
@@ -38,7 +41,7 @@ class EvaluationAnnotation(TypedDict):
     schemaLocation: str
     absoluteKeywordLocation: str | None
     instanceLocation: str
-    annotations: JSONType
+    annotations: JsonValue
 
 class EvaluationErrorEntry(TypedDict):
     schemaLocation: str
@@ -59,8 +62,8 @@ class OutputUnit(TypedDict, total=False):
     schemaLocation: str
     instanceLocation: str
     errors: dict[str, str]
-    annotations: JSONType
-    droppedAnnotations: JSONType
+    annotations: JsonValue
+    droppedAnnotations: JsonValue
     details: List["OutputUnit"]
 
 class ListOutput(TypedDict):
@@ -122,7 +125,7 @@ class HttpOptions:
 PatternOptionsType = Union[FancyRegexOptions, RegexOptions]
 
 class RetrieverProtocol(Protocol):
-    def __call__(self, uri: str) -> JSONType: ...
+    def __call__(self, uri: str) -> JsonValue: ...
 
 def is_valid(
     schema: _SchemaT,
@@ -239,7 +242,7 @@ class ValidationErrorKind:
         message: str
 
     class Constant:
-        expected_value: JSONType
+        expected_value: JsonValue
 
     class Contains: ...
 
@@ -254,7 +257,7 @@ class ValidationErrorKind:
         message: str
 
     class Enum:
-        options: list[JSONType]
+        options: list[JsonValue]
 
     class ExclusiveMaximum:
         limit: JSONPrimitive
@@ -298,7 +301,7 @@ class ValidationErrorKind:
         multiple_of: int | float | Decimal
 
     class Not:
-        schema: JSONType
+        schema: JsonValue
 
     class OneOfMultipleValid:
         context: list[list["ValidationError"]]
@@ -336,7 +339,7 @@ class ValidationError(ValueError):
     instance_path: list[str | int]
     evaluation_path: list[str | int]
     kind: ValidationErrorKind
-    instance: JSONType
+    instance: JsonValue
 
 Draft4: int
 Draft6: int
@@ -577,7 +580,7 @@ class Resolver:
 
 class Resolved:
     @property
-    def contents(self) -> JSONType: ...
+    def contents(self) -> JsonValue: ...
     @property
     def resolver(self) -> Resolver: ...
     @property
