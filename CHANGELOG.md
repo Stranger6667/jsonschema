@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.6] - 2026-06-24
+
 ### Added
 
 - `IntoRegistryResource` for `Arc<Value>`. [#1129](https://github.com/Stranger6667/jsonschema/issues/1129)
@@ -1290,7 +1292,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.5...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.6...HEAD
+[0.46.6]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.5...rust-v0.46.6
 [0.46.5]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.4...rust-v0.46.5
 [0.46.4]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.3...rust-v0.46.4
 [0.46.3]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.2...rust-v0.46.3
