@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.6] - 2026-06-24
+
 ### Fixed
 
 - `prefixItems` incorrectly recognised as a known keyword in Draft 2019-09 and earlier (it is 2020-12 only).
@@ -1030,7 +1032,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.5...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.6...HEAD
+[0.46.6]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.5...python-v0.46.6
 [0.46.5]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.4...python-v0.46.5
 [0.46.4]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.3...python-v0.46.4
 [0.46.3]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.2...python-v0.46.3
