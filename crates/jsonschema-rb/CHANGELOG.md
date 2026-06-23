@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.6] - 2026-06-24
+
 ### Fixed
 
 - `prefixItems` incorrectly recognised as a known keyword in Draft 2019-09 and earlier (it is 2020-12 only).
@@ -122,7 +124,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.5...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.6...HEAD
+[0.46.6]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.5...ruby-v0.46.6
 [0.46.5]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.4...ruby-v0.46.5
 [0.46.4]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.3...ruby-v0.46.4
 [0.46.3]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.2...ruby-v0.46.3
