@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.7] - 2026-06-30
+
 ### Fixed
 
 - `idn-hostname` format accepted A-labels that decode to a disallowed code point (e.g. `xn--7a`).
@@ -128,7 +130,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.6...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.7...HEAD
+[0.46.7]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.6...ruby-v0.46.7
 [0.46.6]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.5...ruby-v0.46.6
 [0.46.5]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.4...ruby-v0.46.5
 [0.46.4]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.3...ruby-v0.46.4
