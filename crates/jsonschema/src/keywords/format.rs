@@ -621,6 +621,21 @@ fn is_valid_hostname(hostname: &str) -> bool {
     true
 }
 
+// RFC 5892 derives the PVALID property primarily from these general categories.
+fn is_idna_pvalid_category(category: GeneralCategory) -> bool {
+    matches!(
+        category,
+        GeneralCategory::UppercaseLetter
+            | GeneralCategory::LowercaseLetter
+            | GeneralCategory::TitlecaseLetter
+            | GeneralCategory::ModifierLetter
+            | GeneralCategory::OtherLetter
+            | GeneralCategory::NonspacingMark
+            | GeneralCategory::SpacingMark
+            | GeneralCategory::DecimalNumber
+    )
+}
+
 fn validate_unicode_label(label: &str) -> bool {
     let mut chars = label.chars().peekable();
     if let Some(&first) = chars.peek() {
@@ -739,6 +754,15 @@ fn validate_unicode_label(label: &str) -> bool {
             // DISALLOWED
             '\u{0640}' | '\u{07FA}' | '\u{302E}' | '\u{302F}' | '\u{3031}' | '\u{3032}'
             | '\u{3033}' | '\u{3034}' | '\u{3035}' | '\u{303B}' => return false,
+            // Contextual joiners/punctuation already validated above, plus the RFC 5892
+            // PVALID exceptions whose general category would otherwise be disallowed.
+            '\u{200C}' | '\u{200D}' | '\u{00B7}' | '\u{0375}' | '\u{05F3}' | '\u{05F4}'
+            | '\u{06FD}' | '\u{06FE}' | '\u{0F0B}' | '\u{3007}' => {}
+            // Per RFC 5892 a code point is PVALID only when it is a letter, a combining
+            // mark, or a decimal digit; any other decoded code point is disallowed.
+            other if !other.is_ascii() && !is_idna_pvalid_category(get_general_category(other)) => {
+                return false;
+            }
 
             _ => {}
         }

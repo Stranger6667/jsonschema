@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `idn-hostname` format accepted A-labels that decode to a disallowed code point (e.g. `xn--7a`).
+
 ## [0.46.6] - 2026-06-24
 
 ### Fixed
