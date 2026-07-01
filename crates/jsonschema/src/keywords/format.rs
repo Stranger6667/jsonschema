@@ -508,42 +508,69 @@ fn is_valid_datetime(datetime: &str) -> bool {
     is_valid_date(date_part) && is_valid_time(&time_part[1..])
 }
 
+fn parse_email(email: &str, options: Option<&EmailAddressOptions>) -> Option<EmailAddress> {
+    if let Some(opts) = options {
+        EmailAddress::parse_with_options(email, *opts)
+    } else {
+        EmailAddress::from_str(email)
+    }
+    .ok()
+}
+
+fn validate_email_domain<F>(domain: &str, is_valid_hostname_impl: &F) -> bool
+where
+    F: Fn(&str) -> bool,
+{
+    if let Some(domain) = domain.strip_prefix('[').and_then(|d| d.strip_suffix(']')) {
+        if let Some(domain) = domain.strip_prefix("IPv6:") {
+            domain.parse::<Ipv6Addr>().is_ok()
+        } else {
+            domain.parse::<Ipv4Addr>().is_ok()
+        }
+    } else {
+        is_valid_hostname_impl(domain)
+    }
+}
+
 fn is_valid_email_impl<F>(
     email: &str,
     is_valid_hostname_impl: F,
     options: Option<&EmailAddressOptions>,
+    allow_non_ascii_local_part: bool,
 ) -> bool
 where
     F: Fn(&str) -> bool,
 {
-    let parsed = if let Some(opts) = options {
-        EmailAddress::parse_with_options(email, *opts)
-    } else {
-        EmailAddress::from_str(email)
-    };
-
-    if let Ok(parsed) = parsed {
-        let domain = parsed.domain();
-        if let Some(domain) = domain.strip_prefix('[').and_then(|d| d.strip_suffix(']')) {
-            if let Some(domain) = domain.strip_prefix("IPv6:") {
-                domain.parse::<Ipv6Addr>().is_ok()
-            } else {
-                domain.parse::<Ipv4Addr>().is_ok()
-            }
-        } else {
-            is_valid_hostname_impl(domain)
-        }
-    } else {
-        false
+    if let Some(parsed) = parse_email(email, options) {
+        return validate_email_domain(parsed.domain(), &is_valid_hostname_impl);
     }
+    // `email_address` 0.2.9 rejects non-ASCII in quoted local parts, which `idn-email`
+    // must accept. Mask non-ASCII to pass the structural check, then validate the real
+    // domain (after the last `@`, which a local part never holds unquoted).
+    if !allow_non_ascii_local_part || email.is_ascii() {
+        return false;
+    }
+    let masked: String = email
+        .chars()
+        .map(|c| if c.is_ascii() { c } else { 'a' })
+        .collect();
+    if parse_email(&masked, options).is_none() {
+        return false;
+    }
+    let mut parts = email.rsplitn(2, '@');
+    let domain = parts.next().unwrap_or_default();
+    if parts.next().is_none() {
+        return false;
+    }
+    validate_email_domain(domain, &is_valid_hostname_impl)
 }
 
 fn is_valid_email(email: &str, options: Option<&EmailAddressOptions>) -> bool {
-    is_valid_email_impl(email, is_valid_hostname, options)
+    is_valid_email_impl(email, is_valid_hostname, options, false)
 }
 
 fn is_valid_idn_email(email: &str, options: Option<&EmailAddressOptions>) -> bool {
-    is_valid_email_impl(email, is_valid_idn_hostname, options)
+    is_valid_email_impl(email, is_valid_idn_hostname, options, true)
 }
 
 const VALID_HOSTNAME_CHARS: [bool; 256] = {
@@ -1873,6 +1900,32 @@ mod tests {
 
         assert!(validator.is_valid(&json!("user@example.com")));
         assert!(!validator.is_valid(&json!("not-an-email")));
+    }
+
+    #[test_case("δοκιμή@example.com", true; "non-ASCII local part")]
+    #[test_case("\"δοκιμή\"@example.com", true; "non-ASCII quoted local part")]
+    #[test_case("user@example.com", true; "ascii local part")]
+    #[test_case("not-an-email", false; "no domain")]
+    #[test_case("δοκιμή@-bad-.com", false; "non-ASCII local part with invalid domain")]
+    fn idn_email_non_ascii(input: &str, expected: bool) {
+        let validator = crate::options()
+            .should_validate_formats(true)
+            .build(&json!({"format": "idn-email", "type": "string"}))
+            .expect("Schema should compile");
+        assert_eq!(validator.is_valid(&json!(input)), expected);
+    }
+
+    // `email` keeps `email_address` parsing: it rejects a non-ASCII quoted local part,
+    // unlike `idn-email` which masks it through. (An unquoted non-ASCII local part is
+    // accepted by the crate for both.)
+    #[test_case("\"δοκιμή\"@example.com", false; "non-ASCII quoted local part")]
+    #[test_case("user@example.com", true; "ascii local part")]
+    fn email_ascii_only_local_part(input: &str, expected: bool) {
+        let validator = crate::options()
+            .should_validate_formats(true)
+            .build(&json!({"format": "email", "type": "string"}))
+            .expect("Schema should compile");
+        assert_eq!(validator.is_valid(&json!(input)), expected);
     }
 
     #[test]

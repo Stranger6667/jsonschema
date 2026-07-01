@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `idn-email` format rejected non-ASCII characters in quoted local parts (e.g. `"δοκιμή"@example.com`).
+
 ## [0.46.7] - 2026-06-30
 
 ### Fixed

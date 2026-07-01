@@ -20,6 +20,11 @@ mod tests {
     xfail = [
         "draft4::optional::bignum::integer::a_bignum_is_an_integer",
         "draft4::optional::bignum::integer::a_negative_bignum_is_an_integer",
+        // Lone surrogate: unrepresentable as a Rust string; the loader rewrites it to
+        // U+FFFD, a valid idn-email local part, so the rejection can't be exercised.
+        "draft7::optional::format::idn_email::validation_of_an_internationalized_e_mail_addresses::a_local_part_with_a_lone_utf_16_surrogate_is_invalid",
+        "draft2019-09::optional::format::idn_email::validation_of_an_internationalized_e_mail_addresses::a_local_part_with_a_lone_utf_16_surrogate_is_invalid",
+        "draft2020-12::optional::format::idn_email::validation_of_an_internationalized_e_mail_addresses::a_local_part_with_a_lone_utf_16_surrogate_is_invalid",
     ]
 )]
     fn test_suite(test: &Test) {

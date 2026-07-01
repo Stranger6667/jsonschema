@@ -55,10 +55,23 @@ def load_file(path):
             yield block
 
 
+# A lone UTF-16 surrogate has no UTF-8 representation and cannot cross into Rust.
+def unencodable_string(value):
+    if not isinstance(value, str):
+        return False
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return True
+    return False
+
+
 def maybe_optional(draft, schema, instance, expected, description, filename, is_optional):
     output = (filename, draft, schema, instance, expected, description, is_optional)
     if filename in NOT_SUPPORTED_CASES.get(draft, ()):
         output = pytest.param(*output, marks=pytest.mark.skip(reason=f"{filename} is not supported"))
+    elif unencodable_string(instance):
+        output = pytest.param(*output, marks=pytest.mark.skip(reason="instance has no UTF-8 representation"))
     return output
 
 

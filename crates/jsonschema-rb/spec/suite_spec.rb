@@ -21,6 +21,23 @@ module SuiteHelpers
     name.gsub(/[^a-zA-Z0-9_]/, "_").gsub(/_+/, "_").gsub(/^_|_$/, "")
   end
 
+  # Lone surrogate: unrepresentable as a Rust string; rewrite unpaired escapes to U+FFFD.
+  HIGH_SURROGATE = "d[89ab][0-9a-f]{2}"
+  LOW_SURROGATE = "d[c-f][0-9a-f]{2}"
+
+  REPLACEMENT_CHARACTER = "�"
+
+  def self.sanitize_lone_surrogates(text)
+    # Block form keeps the replacement UTF-8 instead of transcoding it to the file's ASCII.
+    text
+      .gsub(/\\u(#{HIGH_SURROGATE})(?!\\u#{LOW_SURROGATE})/i) { REPLACEMENT_CHARACTER }
+      .gsub(/(?<!\\u#{HIGH_SURROGATE})\\u(#{LOW_SURROGATE})/i) { REPLACEMENT_CHARACTER }
+  end
+
+  def self.unencodable?(value)
+    value.is_a?(String) && value.include?(REPLACEMENT_CHARACTER)
+  end
+
   # Build a retriever proc for remote schemas
   def self.build_retriever
     return @build_retriever if defined?(@build_retriever)
@@ -50,7 +67,7 @@ RSpec.describe "JSON Schema Test Suite" do
         is_optional = relative_path.start_with?("optional/")
 
         context relative_path do
-          test_cases = JSON.parse(test_file.read)
+          test_cases = JSON.parse(SuiteHelpers.sanitize_lone_surrogates(test_file.read))
 
           test_cases.each do |test_case|
             case_description = test_case["description"]
@@ -63,6 +80,8 @@ RSpec.describe "JSON Schema Test Suite" do
                 expected_valid = test["valid"]
 
                 it test_description do
+                  skip("instance has no UTF-8 representation") if SuiteHelpers.unencodable?(data)
+
                   opts = {
                     draft: draft_const,
                     validate_formats: is_optional,
