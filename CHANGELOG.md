@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `multipleOf` incorrectly rounds integer instances above 2^53 to `f64` before the divisibility check on builds without the `arbitrary-precision` feature.
+
 ## [0.46.8] - 2026-07-01
 
 ### Fixed
