@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.8] - 2026-07-01
+
 ### Fixed
 
 - `idn-email` format rejected non-ASCII characters in quoted local parts (e.g. `"δοκιμή"@example.com`).
@@ -1042,7 +1044,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.7...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.8...HEAD
+[0.46.8]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.7...python-v0.46.8
 [0.46.7]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.6...python-v0.46.7
 [0.46.6]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.5...python-v0.46.6
 [0.46.5]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.4...python-v0.46.5
