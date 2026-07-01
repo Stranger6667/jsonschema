@@ -88,7 +88,6 @@ pub(crate) fn is_multiple_of_float(value: &Number, multiple: f64) -> bool {
 
 /// The maximum integer that can be exactly represented in f64.
 /// Beyond this value, f64 loses precision and arithmetic operations become unreliable.
-#[cfg(feature = "arbitrary-precision")]
 const MAX_SAFE_INTEGER: u64 = 1u64 << 53;
 
 pub(crate) fn is_multiple_of_integer(value: &Number, multiple: f64) -> bool {
@@ -96,25 +95,22 @@ pub(crate) fn is_multiple_of_integer(value: &Number, multiple: f64) -> bool {
     // Use integer arithmetic directly for these cases, but only when the divisor
     // itself can be exactly represented in f64 (i.e., <= 2^53). Divisors > 2^53
     // may have already lost precision when converted to f64 during schema compilation.
-    #[cfg(feature = "arbitrary-precision")]
-    {
-        if let Some(v) = value.as_u64() {
-            if v > MAX_SAFE_INTEGER
-                && multiple > 0.0
-                && multiple <= MAX_SAFE_INTEGER as f64
-                && multiple.fract() == 0.0
-            {
-                return (v % (multiple as u64)) == 0;
-            }
+    if let Some(v) = value.as_u64() {
+        if v > MAX_SAFE_INTEGER
+            && multiple > 0.0
+            && multiple <= MAX_SAFE_INTEGER as f64
+            && multiple.fract() == 0.0
+        {
+            return (v % (multiple as u64)) == 0;
         }
-        if let Some(v) = value.as_i64() {
-            if v.unsigned_abs() > MAX_SAFE_INTEGER
-                && multiple > 0.0
-                && multiple <= MAX_SAFE_INTEGER as f64
-                && multiple.fract() == 0.0
-            {
-                return (v % (multiple as i64)) == 0;
-            }
+    }
+    if let Some(v) = value.as_i64() {
+        if v.unsigned_abs() > MAX_SAFE_INTEGER
+            && multiple > 0.0
+            && multiple <= MAX_SAFE_INTEGER as f64
+            && multiple.fract() == 0.0
+        {
+            return (v % (multiple as i64)) == 0;
         }
     }
 

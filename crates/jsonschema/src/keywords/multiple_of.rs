@@ -419,6 +419,21 @@ mod tests {
         tests_util::assert_schema_location(schema, instance, expected);
     }
 
+    // Integers above 2^53 must use exact integer arithmetic; as_f64() rounds them and gives
+    // wrong verdicts in both directions even on the default (non arbitrary-precision) build.
+    #[test_case(&json!({"multipleOf": 4}), &json!(9_223_372_036_854_775_806_u64), false; "2^63-2 not multiple of 4")]
+    #[test_case(&json!({"multipleOf": 4}), &json!(18_446_744_073_709_551_615_u64), false; "u64 max not multiple of 4")]
+    #[test_case(&json!({"multipleOf": 3}), &json!(9_223_372_036_854_775_806_u64), true; "2^63-2 is multiple of 3")]
+    #[test_case(&json!({"multipleOf": 10}), &json!(-9_223_372_036_854_775_800_i64), true; "negative beyond 2^53 multiple of 10")]
+    #[test_case(&json!({"multipleOf": 10}), &json!(-9_223_372_036_854_775_801_i64), false; "negative beyond 2^53 not multiple of 10")]
+    fn multiple_of_large_integers(schema: &Value, instance: &Value, expected: bool) {
+        if expected {
+            tests_util::is_valid(schema, instance);
+        } else {
+            tests_util::is_not_valid(schema, instance);
+        }
+    }
+
     #[cfg(feature = "arbitrary-precision")]
     mod arbitrary_precision {
         use crate::tests_util;
