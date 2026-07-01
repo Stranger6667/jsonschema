@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.8] - 2026-07-01
+
 ### Fixed
 
 - `idn-email` format rejected non-ASCII characters in quoted local parts (e.g. `"δοκιμή"@example.com`).
@@ -1302,7 +1304,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.7...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.8...HEAD
+[0.46.8]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.7...rust-v0.46.8
 [0.46.7]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.6...rust-v0.46.7
 [0.46.6]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.5...rust-v0.46.6
 [0.46.5]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.4...rust-v0.46.5
