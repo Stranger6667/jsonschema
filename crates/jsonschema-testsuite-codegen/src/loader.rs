@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fs::File, io::BufReader, path::Path};
+use std::{borrow::Cow, collections::BTreeMap, fs, path::Path};
 
 use testsuite_internal::Case;
 use walkdir::WalkDir;
@@ -34,15 +34,73 @@ pub(crate) fn load_suite(
         let path = entry.path();
         if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {
             let relative_path = path.strip_prefix(&full_path)?;
-            let file = File::open(path)?;
-            let reader = BufReader::new(file);
-            let cases: Vec<Case> = serde_json::from_reader(reader)?;
+            let contents = fs::read_to_string(path)?;
+            let cases: Vec<Case> = serde_json::from_str(&sanitize_lone_surrogates(&contents))?;
 
             insert_into_module_tree(&mut root, relative_path, cases)?;
         }
     }
 
     Ok(root)
+}
+
+/// Rewrite unpaired surrogate `\uXXXX` escapes to U+FFFD; `serde_json` cannot decode a
+/// lone surrogate into a Rust string. Valid pairs are untouched.
+fn sanitize_lone_surrogates(input: &str) -> Cow<'_, str> {
+    if !input.contains("\\u") {
+        return Cow::Borrowed(input);
+    }
+    let chars: Vec<char> = input.chars().collect();
+    let mut out = String::with_capacity(input.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] != '\\' {
+            out.push(chars[i]);
+            i += 1;
+            continue;
+        }
+        if let Some(code) = chars
+            .get(i + 1)
+            .filter(|c| **c == 'u')
+            .and(hex4(&chars, i + 2))
+        {
+            if (0xD800..=0xDBFF).contains(&code) {
+                // High surrogate: valid only if a low surrogate follows.
+                let low = (chars.get(i + 6) == Some(&'\\') && chars.get(i + 7) == Some(&'u'))
+                    .then(|| hex4(&chars, i + 8))
+                    .flatten();
+                if low.is_some_and(|low| (0xDC00..=0xDFFF).contains(&low)) {
+                    out.extend(&chars[i..i + 12]);
+                    i += 12;
+                } else {
+                    out.push('\u{FFFD}');
+                    i += 6;
+                }
+            } else if (0xDC00..=0xDFFF).contains(&code) {
+                out.push('\u{FFFD}');
+                i += 6;
+            } else {
+                out.extend(&chars[i..i + 6]);
+                i += 6;
+            }
+            continue;
+        }
+        // Other escape: copy verbatim so its char never starts a new escape.
+        out.push('\\');
+        i += 1;
+        if let Some(&c) = chars.get(i) {
+            out.push(c);
+            i += 1;
+        }
+    }
+    Cow::Owned(out)
+}
+
+fn hex4(chars: &[char], start: usize) -> Option<u32> {
+    let slice = chars.get(start..start + 4)?;
+    slice
+        .iter()
+        .try_fold(0u32, |acc, c| Some(acc * 16 + c.to_digit(16)?))
 }
 
 fn insert_into_module_tree(
