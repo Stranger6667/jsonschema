@@ -871,7 +871,6 @@ pub(crate) mod compiler;
 mod content_encoding;
 mod content_media_type;
 pub(crate) mod dereferencer;
-mod ecma;
 pub mod error;
 mod evaluation;
 #[doc(hidden)]

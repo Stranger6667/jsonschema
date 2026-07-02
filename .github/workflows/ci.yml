@@ -596,9 +596,8 @@ jobs:
         with:
           cache-all-crates: "true"
 
-      - run: cargo publish --dry-run -p referencing
-      - run: cargo publish --dry-run -p jsonschema
-      - run: cargo publish --dry-run -p jsonschema-cli
+      # One invocation: separate dry-runs would need every dependency version already on crates.io.
+      - run: cargo publish --dry-run -p referencing -p jsonschema-regex -p jsonschema -p jsonschema-cli
 
   check-release-python:
     name: Check Python release

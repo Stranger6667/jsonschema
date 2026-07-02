@@ -5,10 +5,15 @@ use regex_syntax::ast::{
     LiteralKind, Span, SpecialLiteralKind, Visitor,
 };
 
-/// Convert ECMA Script 262 regex to Rust regex on the best effort basiso.
+/// Convert ECMA Script 262 regex to Rust regex on the best effort basis.
 ///
-/// NOTE: Patterns with look arounds and backreferecnes are not supported.
-pub(crate) fn to_rust_regex(pattern: &str) -> Result<Cow<'_, str>, ()> {
+/// NOTE: Patterns with look arounds and backreferences are not supported.
+///
+/// # Errors
+///
+/// Errors are returned on unsupported or invalid regular expressions.
+#[allow(clippy::result_unit_err)]
+pub fn to_rust_regex(pattern: &str) -> Result<Cow<'_, str>, ()> {
     let mut pattern = Cow::Borrowed(pattern);
     let mut ast = loop {
         match Parser::new().parse(&pattern) {
