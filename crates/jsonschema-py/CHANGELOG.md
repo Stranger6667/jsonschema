@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Stack overflow while preparing a registry containing deeply nested schema documents.
+
 ## [0.46.8] - 2026-07-01
 
 ### Fixed
