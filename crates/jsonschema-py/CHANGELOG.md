@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.9] - 2026-07-02
+
 ### Fixed
 
 - Stack overflow while preparing a registry containing deeply nested schema documents.
@@ -1048,7 +1050,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.8...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.9...HEAD
+[0.46.9]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.8...python-v0.46.9
 [0.46.8]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.7...python-v0.46.8
 [0.46.7]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.6...python-v0.46.7
 [0.46.6]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.5...python-v0.46.6
