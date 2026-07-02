@@ -1,6 +1,8 @@
+import copy
 import enum
 import gc
 import json
+import pickle
 import sys
 from decimal import Decimal
 
@@ -8,6 +10,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+import jsonschema_rs
 from jsonschema_rs import canonical
 
 to_string = canonical.json.to_string
@@ -45,9 +48,7 @@ def large_integer_overflow_error_count():
     return sum(
         1
         for obj in gc.get_objects()
-        if type(obj) is OverflowError
-        and "convert" in str(obj)
-        and ("too big" in str(obj) or "too large" in str(obj))
+        if type(obj) is OverflowError and "convert" in str(obj) and ("too big" in str(obj) or "too large" in str(obj))
     )
 
 
@@ -235,3 +236,88 @@ def test_enum_value_refcount_is_stable():
     for _ in range(200):
         assert to_string(PayloadEnum.ITEM) == "[1]"
     assert sys.getrefcount(payload) == baseline
+
+
+def test_canonicalize_meta_failure_raises_validation_error():
+    with pytest.raises(jsonschema_rs.ValidationError) as exc:
+        jsonschema_rs.canonicalize({"type": "int"})
+    assert exc.value.schema_path == ["properties", "type", "anyOf"]
+
+
+def test_canonicalize_invalid_pattern_raises_invalid_pattern():
+    with pytest.raises(jsonschema_rs.canonical.InvalidPattern) as exc:
+        jsonschema_rs.canonicalize({"pattern": "["})
+    assert exc.value.location == "/pattern"
+    assert isinstance(exc.value, jsonschema_rs.canonical.CanonicalizationError)
+    assert isinstance(exc.value, ValueError)
+
+
+def test_canonicalize_non_object_root_raises_invalid_schema_type():
+    with pytest.raises(jsonschema_rs.canonical.InvalidSchemaType):
+        jsonschema_rs.canonicalize(42)
+
+
+def test_canonicalize_accepts_validate_formats():
+    # date and email are both rigid in all drafts (uuid is only rigid from 2019-09+).
+    # date forbids '@'; email requires '@' — so they are always disjoint when format assertions are on.
+    schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "allOf": [
+            {"type": "string", "format": "date"},
+            {"type": "string", "format": "email"},
+        ],
+    }
+
+    assert jsonschema_rs.canonicalize(schema).is_satisfiable() is True
+    assert jsonschema_rs.canonicalize(schema, validate_formats=True).is_satisfiable() is False
+    assert jsonschema_rs.canonicalize(schema, draft=7).is_satisfiable() is False
+    assert jsonschema_rs.canonicalize(schema, draft=7, validate_formats=False).is_satisfiable() is True
+
+
+def test_canonicalize_resolves_relative_refs_against_base_uri():
+    registry = jsonschema_rs.Registry([("https://example.com/schemas/other", {"type": "integer"})])
+
+    canonical = jsonschema_rs.canonicalize(
+        {"$ref": "other"},
+        registry=registry,
+        base_uri="https://example.com/schemas/root",
+    )
+
+    assert canonical.to_json_schema()["type"] == "integer"
+
+
+@pytest.mark.parametrize("transform", [copy.deepcopy, lambda e: pickle.loads(pickle.dumps(e))])
+def test_invalid_pattern_survives_pickle_and_deepcopy(transform):
+    with pytest.raises(jsonschema_rs.canonical.InvalidPattern) as exc:
+        jsonschema_rs.canonicalize({"pattern": "["})
+    revived = transform(exc.value)
+    assert revived.location == exc.value.location
+    assert revived.message == exc.value.message
+
+
+def test_canonicalize_uses_registry_retriever_when_only_registry_provided():
+    registry = jsonschema_rs.Registry(
+        [],
+        retriever=lambda uri: {"type": "string"} if uri == "https://example.com/string.json" else None,
+    )
+
+    canonical = jsonschema_rs.canonicalize({"$ref": "https://example.com/string.json"}, registry=registry)
+
+    assert canonical.to_json_schema()["type"] == "string"
+
+
+def test_canonicalize_infinite_recursion_raises():
+    schema = {
+        "$defs": {
+            "node": {
+                "type": "object",
+                "required": ["child"],
+                "properties": {"child": {"$ref": "#/$defs/node"}},
+            }
+        },
+        "$ref": "#/$defs/node",
+    }
+    with pytest.raises(jsonschema_rs.canonical.InfiniteRecursion) as exc:
+        jsonschema_rs.canonicalize(schema)
+    assert isinstance(exc.value, jsonschema_rs.canonical.CanonicalizationError)
+    assert isinstance(exc.value, ValueError)

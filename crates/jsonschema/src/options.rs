@@ -785,7 +785,14 @@ pub struct PatternOptions<E> {
     _marker: PhantomData<E>,
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+impl<E> PatternOptions<E> {
+    #[cfg(feature = "canonical")]
+    pub(crate) fn inner(&self) -> PatternEngineOptions {
+        self.inner
+    }
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum PatternEngineOptions {
     FancyRegex {
         backtrack_limit: Option<usize>,

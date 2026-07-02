@@ -17,6 +17,7 @@ from .jsonschema_rs import (
     Draft202012,
     Draft202012Validator,
     EmailOptions,
+    CanonicalSchema,
     Evaluation,
     FancyRegexOptions,
     HttpOptions,
@@ -26,7 +27,7 @@ from .jsonschema_rs import (
     Resolved,
     ValidationErrorKind,
     ValidatorMap,
-    canonical,
+    canonicalize,
     dereference,
     evaluate,
     is_valid,
@@ -38,6 +39,7 @@ from .jsonschema_rs import (
     bundle,
     validator_for,
 )
+from . import canonical
 
 Validator = Draft4Validator | Draft6Validator | Draft7Validator | Draft201909Validator | Draft202012Validator
 
@@ -122,6 +124,8 @@ __all__ = [
     "ReferencingError",
     "ValidationError",
     "canonical",
+    "canonicalize",
+    "CanonicalSchema",
     "ValidationErrorKind",
     "Evaluation",
     "bundle",

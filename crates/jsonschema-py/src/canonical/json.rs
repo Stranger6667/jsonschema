@@ -20,9 +20,8 @@ use pyo3::ffi::{
 
 /// A serde_json Formatter that writes integer-valued floats as integers.
 ///
-/// NaN and Infinity are NOT handled here — the Float serialization path
-/// checks for those before calling `serialize_f64`, so `write_f64` only
-/// receives finite values.
+/// NaN and Infinity are NOT handled here — the Float serialization path checks for those before calling
+/// `serialize_f64`, so `write_f64` only receives finite values.
 struct CanonicalFormatter {
     default: CompactFormatter,
 }
@@ -61,8 +60,8 @@ fn classify_decimal_kind(bytes: &[u8]) -> DecimalKind {
     }
 
     let mut seen_digit = false;
-    let mut seen_dot = false;
-    let mut frac_digits: i64 = 0;
+    let mut seen_decimal_point = false;
+    let mut fraction_digits: i64 = 0;
     let mut suffix_zeros: i64 = 0;
     let mut all_digits_zero = true;
 
@@ -76,14 +75,14 @@ fn classify_decimal_kind(bytes: &[u8]) -> DecimalKind {
                 suffix_zeros = 0;
                 all_digits_zero = false;
             }
-            if seen_dot {
-                frac_digits = frac_digits.saturating_add(1);
+            if seen_decimal_point {
+                fraction_digits = fraction_digits.saturating_add(1);
             }
             idx += 1;
             continue;
         }
-        if byte == b'.' && !seen_dot {
-            seen_dot = true;
+        if byte == b'.' && !seen_decimal_point {
+            seen_decimal_point = true;
             idx += 1;
             continue;
         }
@@ -97,23 +96,23 @@ fn classify_decimal_kind(bytes: &[u8]) -> DecimalKind {
     let mut exponent: i64 = 0;
     if idx < bytes.len() && matches!(bytes[idx], b'e' | b'E') {
         idx += 1;
-        let mut negative = false;
+        let mut exponent_negative = false;
         if idx < bytes.len() && matches!(bytes[idx], b'+' | b'-') {
-            negative = bytes[idx] == b'-';
+            exponent_negative = bytes[idx] == b'-';
             idx += 1;
         }
-        let mut has_exp_digit = false;
+        let mut has_exponent_digit = false;
         while idx < bytes.len() && bytes[idx].is_ascii_digit() {
-            has_exp_digit = true;
+            has_exponent_digit = true;
             exponent = exponent
                 .saturating_mul(10)
                 .saturating_add(i64::from(bytes[idx] - b'0'));
             idx += 1;
         }
-        if !has_exp_digit {
+        if !has_exponent_digit {
             return DecimalKind::Fractional;
         }
-        if negative {
+        if exponent_negative {
             exponent = -exponent;
         }
     }
@@ -122,11 +121,11 @@ fn classify_decimal_kind(bytes: &[u8]) -> DecimalKind {
         return DecimalKind::Fractional;
     }
 
-    if exponent >= frac_digits {
+    if exponent >= fraction_digits {
         return DecimalKind::Integral;
     }
 
-    let required_zeros = frac_digits.saturating_sub(exponent);
+    let required_zeros = fraction_digits.saturating_sub(exponent);
     if all_digits_zero || suffix_zeros >= required_zeros {
         DecimalKind::Integral
     } else {
@@ -142,8 +141,8 @@ impl Serialize for BorrowedNumber<'_> {
     where
         S: Serializer,
     {
-        // Emit an arbitrary-precision number directly without parsing or allocating.
-        // This follows serde_json's internal Number serialization token contract.
+        // Emit an arbitrary-precision number directly without parsing or allocating. This follows serde_json's internal
+        // Number serialization token contract.
         let mut s = serializer.serialize_struct(SERDE_JSON_NUMBER_TOKEN, 1)?;
         s.serialize_field(SERDE_JSON_NUMBER_TOKEN, self.0)?;
         s.end()
@@ -157,50 +156,49 @@ where
     S: Serializer,
 {
     // Get string representation of the Decimal
-    let str_obj = unsafe { ffi::PyObject_Str(object) };
-    if str_obj.is_null() {
+    let string_object = unsafe { ffi::PyObject_Str(object) };
+    if string_object.is_null() {
         return Err(ser::Error::custom("Failed to convert Decimal to string"));
     }
-    let mut str_size: ffi::Py_ssize_t = 0;
-    let ptr = unsafe { ffi::PyUnicode_AsUTF8AndSize(str_obj, &raw mut str_size) };
+    let mut string_size: ffi::Py_ssize_t = 0;
+    let ptr = unsafe { ffi::PyUnicode_AsUTF8AndSize(string_object, &raw mut string_size) };
     if ptr.is_null() {
-        unsafe { ffi::Py_DECREF(str_obj) };
+        unsafe { ffi::Py_DECREF(string_object) };
         return Err(ser::Error::custom("Failed to get UTF-8 representation"));
     }
     let slice = unsafe {
         std::str::from_utf8_unchecked(std::slice::from_raw_parts(
             ptr.cast::<u8>(),
-            str_size as usize,
+            string_size as usize,
         ))
     };
 
-    // Classify from string representation in one pass:
-    // special values -> null, integral values -> integer path.
+    // Classify from string representation in one pass: special values -> null, integral values -> integer path.
     let bytes = slice.as_bytes();
     match classify_decimal_kind(bytes) {
         DecimalKind::Special => {
-            unsafe { ffi::Py_DECREF(str_obj) };
+            unsafe { ffi::Py_DECREF(string_object) };
             serializer.serialize_unit()
         }
         DecimalKind::Integral => {
-            let py_int = unsafe { ffi::PyNumber_Long(object) };
-            if py_int.is_null() {
+            let python_integer = unsafe { ffi::PyNumber_Long(object) };
+            if python_integer.is_null() {
                 unsafe {
                     ffi::PyErr_Clear();
-                    ffi::Py_DECREF(str_obj);
+                    ffi::Py_DECREF(string_object);
                 }
                 return Err(ser::Error::custom("Failed to convert Decimal to integer"));
             }
-            let result = serialize_large_int(py_int, serializer);
+            let result = serialize_large_int(python_integer, serializer);
             unsafe {
-                ffi::Py_DECREF(py_int);
-                ffi::Py_DECREF(str_obj);
+                ffi::Py_DECREF(python_integer);
+                ffi::Py_DECREF(string_object);
             }
             result
         }
         DecimalKind::Fractional => {
             let result = serializer.serialize_some(&BorrowedNumber(slice));
-            unsafe { ffi::Py_DECREF(str_obj) };
+            unsafe { ffi::Py_DECREF(string_object) };
             result
         }
     }
@@ -220,33 +218,33 @@ impl Formatter for CanonicalFormatter {
                 let int = unsafe { value.to_int_unchecked::<i64>() };
                 return self.default.write_i64(writer, int);
             }
-            // Integer-valued float: convert to integer via Python FFI.
-            // The GIL is held because we are always called from within a #[pyfunction].
+            // Integer-valued float: convert to integer via Python FFI. The GIL is held because we are always called
+            // from within a #[pyfunction].
             unsafe {
                 let py_float = ffi::PyFloat_FromDouble(value);
                 if py_float.is_null() {
                     return Err(io::Error::other("PyFloat_FromDouble failed"));
                 }
-                let py_int = ffi::PyNumber_Long(py_float);
+                let python_integer = ffi::PyNumber_Long(py_float);
                 ffi::Py_DECREF(py_float);
-                if py_int.is_null() {
+                if python_integer.is_null() {
                     ffi::PyErr_Clear();
                     return Err(io::Error::other("PyNumber_Long failed"));
                 }
-                let str_obj = ffi::PyObject_Str(py_int);
-                ffi::Py_DECREF(py_int);
-                if str_obj.is_null() {
+                let string_object = ffi::PyObject_Str(python_integer);
+                ffi::Py_DECREF(python_integer);
+                if string_object.is_null() {
                     return Err(io::Error::other("PyObject_Str failed"));
                 }
-                let mut str_size: ffi::Py_ssize_t = 0;
-                let ptr = ffi::PyUnicode_AsUTF8AndSize(str_obj, &raw mut str_size);
+                let mut string_size: ffi::Py_ssize_t = 0;
+                let ptr = ffi::PyUnicode_AsUTF8AndSize(string_object, &raw mut string_size);
                 if ptr.is_null() {
-                    ffi::Py_DECREF(str_obj);
+                    ffi::Py_DECREF(string_object);
                     return Err(io::Error::other("PyUnicode_AsUTF8AndSize failed"));
                 }
-                let bytes = std::slice::from_raw_parts(ptr.cast::<u8>(), str_size as usize);
+                let bytes = std::slice::from_raw_parts(ptr.cast::<u8>(), string_size as usize);
                 let result = writer.write_all(bytes);
-                ffi::Py_DECREF(str_obj);
+                ffi::Py_DECREF(string_object);
                 result
             }
         } else {
@@ -382,8 +380,8 @@ impl Serialize for CanonicalPyObject<'_> {
     {
         match self.object_type {
             ObjectType::Str => {
-                let mut str_size: ffi::Py_ssize_t = 0;
-                let ptr = unsafe { PyUnicode_AsUTF8AndSize(self.object, &raw mut str_size) };
+                let mut string_size: ffi::Py_ssize_t = 0;
+                let ptr = unsafe { PyUnicode_AsUTF8AndSize(self.object, &raw mut string_size) };
                 if ptr.is_null() {
                     let py = unsafe { Python::assume_attached() };
                     let py_error = pyo3::PyErr::fetch(py);
@@ -394,7 +392,7 @@ impl Serialize for CanonicalPyObject<'_> {
                 let slice = unsafe {
                     std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                         ptr.cast::<u8>(),
-                        str_size as usize,
+                        string_size as usize,
                     ))
                 };
                 serializer.serialize_str(slice)
@@ -462,7 +460,7 @@ impl Serialize for CanonicalPyObject<'_> {
                 } else if length == 1 {
                     // Fast path: single key — no allocation or sorting needed
                     let mut pos = 0_isize;
-                    let mut str_size: ffi::Py_ssize_t = 0;
+                    let mut string_size: ffi::Py_ssize_t = 0;
                     let mut key: *mut ffi::PyObject = std::ptr::null_mut();
                     let mut value: *mut ffi::PyObject = std::ptr::null_mut();
                     unsafe {
@@ -495,7 +493,7 @@ impl Serialize for CanonicalPyObject<'_> {
                             )));
                         }
                     };
-                    let ptr = unsafe { PyUnicode_AsUTF8AndSize(key_unicode, &raw mut str_size) };
+                    let ptr = unsafe { PyUnicode_AsUTF8AndSize(key_unicode, &raw mut string_size) };
                     if ptr.is_null() {
                         let py = unsafe { Python::assume_attached() };
                         let py_error = pyo3::PyErr::fetch(py);
@@ -509,7 +507,7 @@ impl Serialize for CanonicalPyObject<'_> {
                     let key_str = unsafe {
                         std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                             ptr.cast::<u8>(),
-                            str_size as usize,
+                            string_size as usize,
                         ))
                     };
                     let mut map = tri!(serializer.serialize_map(Some(1)));
@@ -528,7 +526,7 @@ impl Serialize for CanonicalPyObject<'_> {
                     let entries = scratch.entries_mut();
                     let mut owned_key_refs = OwnedKeyRefs::default();
                     let mut pos = 0_isize;
-                    let mut str_size: ffi::Py_ssize_t = 0;
+                    let mut string_size: ffi::Py_ssize_t = 0;
                     let mut key: *mut ffi::PyObject = std::ptr::null_mut();
                     let mut value: *mut ffi::PyObject = std::ptr::null_mut();
                     for _ in 0..length {
@@ -570,7 +568,7 @@ impl Serialize for CanonicalPyObject<'_> {
                         };
 
                         let ptr =
-                            unsafe { PyUnicode_AsUTF8AndSize(key_unicode, &raw mut str_size) };
+                            unsafe { PyUnicode_AsUTF8AndSize(key_unicode, &raw mut string_size) };
                         if ptr.is_null() {
                             let py = unsafe { Python::assume_attached() };
                             let py_error = pyo3::PyErr::fetch(py);
@@ -580,7 +578,7 @@ impl Serialize for CanonicalPyObject<'_> {
                         }
                         entries.push(DictEntry {
                             key_ptr: ptr.cast::<u8>(),
-                            key_len: str_size as usize,
+                            key_len: string_size as usize,
                             value,
                         });
                     }
@@ -741,25 +739,4 @@ fn to_canonical_string(object: *mut ffi::PyObject) -> serde_json::Result<String>
 pub(crate) fn canonical_json_to_string(object: &Bound<'_, PyAny>) -> PyResult<String> {
     to_canonical_string(object.as_ptr())
         .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))
-}
-
-pub(crate) fn init_module(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
-    let canonical_module = PyModule::new(py, "canonical")?;
-
-    let canonical_json_module = PyModule::new(py, "json")?;
-    canonical_json_module.add_function(pyo3::wrap_pyfunction!(
-        canonical_json_to_string,
-        &canonical_json_module
-    )?)?;
-    canonical_module.add_submodule(&canonical_json_module)?;
-
-    let canonical_schema_module = PyModule::new(py, "schema")?;
-    canonical_schema_module.add_function(pyo3::wrap_pyfunction!(
-        crate::clone::canonical_schema_clone,
-        &canonical_schema_module
-    )?)?;
-    canonical_module.add_submodule(&canonical_schema_module)?;
-
-    module.add_submodule(&canonical_module)?;
-    Ok(())
 }

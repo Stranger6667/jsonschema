@@ -1,0 +1,2295 @@
+[
+  {
+    "description": "emit_keeps_lightly_shared_subtree_inline",
+    "draft": "draft7",
+    "schema": {
+      "$defs": {
+        "small": {
+          "type": "integer",
+          "minimum": 5
+        }
+      },
+      "type": "object",
+      "properties": {
+        "a": {
+          "$ref": "#/$defs/small"
+        },
+        "b": {
+          "$ref": "#/$defs/small"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "a": {
+          "minimum": 5,
+          "type": "integer"
+        },
+        "b": {
+          "minimum": 5,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "description": "emit_extracts_heavily_shared_subtree",
+    "draft": "draft7",
+    "schema": {
+      "$defs": {
+        "big": {
+          "type": "object",
+          "properties": {
+            "p0": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "p1": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "p2": {
+              "type": "integer",
+              "minimum": 2
+            },
+            "p3": {
+              "type": "integer",
+              "minimum": 3
+            },
+            "p4": {
+              "type": "integer",
+              "minimum": 4
+            },
+            "p5": {
+              "type": "integer",
+              "minimum": 5
+            },
+            "p6": {
+              "type": "integer",
+              "minimum": 6
+            },
+            "p7": {
+              "type": "integer",
+              "minimum": 7
+            },
+            "p8": {
+              "type": "integer",
+              "minimum": 8
+            },
+            "p9": {
+              "type": "integer",
+              "minimum": 9
+            },
+            "p10": {
+              "type": "integer",
+              "minimum": 10
+            },
+            "p11": {
+              "type": "integer",
+              "minimum": 11
+            },
+            "p12": {
+              "type": "integer",
+              "minimum": 12
+            },
+            "p13": {
+              "type": "integer",
+              "minimum": 13
+            },
+            "p14": {
+              "type": "integer",
+              "minimum": 14
+            },
+            "p15": {
+              "type": "integer",
+              "minimum": 15
+            },
+            "p16": {
+              "type": "integer",
+              "minimum": 16
+            },
+            "p17": {
+              "type": "integer",
+              "minimum": 17
+            },
+            "p18": {
+              "type": "integer",
+              "minimum": 18
+            },
+            "p19": {
+              "type": "integer",
+              "minimum": 19
+            },
+            "p20": {
+              "type": "integer",
+              "minimum": 20
+            },
+            "p21": {
+              "type": "integer",
+              "minimum": 21
+            },
+            "p22": {
+              "type": "integer",
+              "minimum": 22
+            },
+            "p23": {
+              "type": "integer",
+              "minimum": 23
+            },
+            "p24": {
+              "type": "integer",
+              "minimum": 24
+            },
+            "p25": {
+              "type": "integer",
+              "minimum": 25
+            },
+            "p26": {
+              "type": "integer",
+              "minimum": 26
+            },
+            "p27": {
+              "type": "integer",
+              "minimum": 27
+            },
+            "p28": {
+              "type": "integer",
+              "minimum": 28
+            },
+            "p29": {
+              "type": "integer",
+              "minimum": 29
+            }
+          },
+          "required": [
+            "p0"
+          ]
+        }
+      },
+      "type": "object",
+      "properties": {
+        "r0": {
+          "$ref": "#/$defs/big"
+        },
+        "r1": {
+          "$ref": "#/$defs/big"
+        },
+        "r2": {
+          "$ref": "#/$defs/big"
+        },
+        "r3": {
+          "$ref": "#/$defs/big"
+        },
+        "r4": {
+          "$ref": "#/$defs/big"
+        },
+        "r5": {
+          "$ref": "#/$defs/big"
+        },
+        "r6": {
+          "$ref": "#/$defs/big"
+        },
+        "r7": {
+          "$ref": "#/$defs/big"
+        },
+        "r8": {
+          "$ref": "#/$defs/big"
+        },
+        "r9": {
+          "$ref": "#/$defs/big"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "shared0": {
+          "properties": {
+            "p0": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "p1": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "p10": {
+              "minimum": 10,
+              "type": "integer"
+            },
+            "p11": {
+              "minimum": 11,
+              "type": "integer"
+            },
+            "p12": {
+              "minimum": 12,
+              "type": "integer"
+            },
+            "p13": {
+              "minimum": 13,
+              "type": "integer"
+            },
+            "p14": {
+              "minimum": 14,
+              "type": "integer"
+            },
+            "p15": {
+              "minimum": 15,
+              "type": "integer"
+            },
+            "p16": {
+              "minimum": 16,
+              "type": "integer"
+            },
+            "p17": {
+              "minimum": 17,
+              "type": "integer"
+            },
+            "p18": {
+              "minimum": 18,
+              "type": "integer"
+            },
+            "p19": {
+              "minimum": 19,
+              "type": "integer"
+            },
+            "p2": {
+              "minimum": 2,
+              "type": "integer"
+            },
+            "p20": {
+              "minimum": 20,
+              "type": "integer"
+            },
+            "p21": {
+              "minimum": 21,
+              "type": "integer"
+            },
+            "p22": {
+              "minimum": 22,
+              "type": "integer"
+            },
+            "p23": {
+              "minimum": 23,
+              "type": "integer"
+            },
+            "p24": {
+              "minimum": 24,
+              "type": "integer"
+            },
+            "p25": {
+              "minimum": 25,
+              "type": "integer"
+            },
+            "p26": {
+              "minimum": 26,
+              "type": "integer"
+            },
+            "p27": {
+              "minimum": 27,
+              "type": "integer"
+            },
+            "p28": {
+              "minimum": 28,
+              "type": "integer"
+            },
+            "p29": {
+              "minimum": 29,
+              "type": "integer"
+            },
+            "p3": {
+              "minimum": 3,
+              "type": "integer"
+            },
+            "p4": {
+              "minimum": 4,
+              "type": "integer"
+            },
+            "p5": {
+              "minimum": 5,
+              "type": "integer"
+            },
+            "p6": {
+              "minimum": 6,
+              "type": "integer"
+            },
+            "p7": {
+              "minimum": 7,
+              "type": "integer"
+            },
+            "p8": {
+              "minimum": 8,
+              "type": "integer"
+            },
+            "p9": {
+              "minimum": 9,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "p0"
+          ],
+          "type": "object"
+        }
+      },
+      "properties": {
+        "r0": {
+          "$ref": "#/definitions/shared0"
+        },
+        "r1": {
+          "$ref": "#/definitions/shared0"
+        },
+        "r2": {
+          "$ref": "#/definitions/shared0"
+        },
+        "r3": {
+          "$ref": "#/definitions/shared0"
+        },
+        "r4": {
+          "$ref": "#/definitions/shared0"
+        },
+        "r5": {
+          "$ref": "#/definitions/shared0"
+        },
+        "r6": {
+          "$ref": "#/definitions/shared0"
+        },
+        "r7": {
+          "$ref": "#/definitions/shared0"
+        },
+        "r8": {
+          "$ref": "#/definitions/shared0"
+        },
+        "r9": {
+          "$ref": "#/definitions/shared0"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "description": "emit_type_guard_with_extracted_shared_body_keeps_exemption",
+    "draft": "draft7",
+    "schema": {
+      "$defs": {
+        "typed": {
+          "type": "object",
+          "properties": {
+            "p0": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "p1": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "p2": {
+              "type": "integer",
+              "minimum": 2
+            },
+            "p3": {
+              "type": "integer",
+              "minimum": 3
+            },
+            "p4": {
+              "type": "integer",
+              "minimum": 4
+            },
+            "p5": {
+              "type": "integer",
+              "minimum": 5
+            },
+            "p6": {
+              "type": "integer",
+              "minimum": 6
+            },
+            "p7": {
+              "type": "integer",
+              "minimum": 7
+            },
+            "p8": {
+              "type": "integer",
+              "minimum": 8
+            },
+            "p9": {
+              "type": "integer",
+              "minimum": 9
+            },
+            "p10": {
+              "type": "integer",
+              "minimum": 10
+            },
+            "p11": {
+              "type": "integer",
+              "minimum": 11
+            },
+            "p12": {
+              "type": "integer",
+              "minimum": 12
+            },
+            "p13": {
+              "type": "integer",
+              "minimum": 13
+            },
+            "p14": {
+              "type": "integer",
+              "minimum": 14
+            },
+            "p15": {
+              "type": "integer",
+              "minimum": 15
+            },
+            "p16": {
+              "type": "integer",
+              "minimum": 16
+            },
+            "p17": {
+              "type": "integer",
+              "minimum": 17
+            },
+            "p18": {
+              "type": "integer",
+              "minimum": 18
+            },
+            "p19": {
+              "type": "integer",
+              "minimum": 19
+            },
+            "p20": {
+              "type": "integer",
+              "minimum": 20
+            },
+            "p21": {
+              "type": "integer",
+              "minimum": 21
+            },
+            "p22": {
+              "type": "integer",
+              "minimum": 22
+            },
+            "p23": {
+              "type": "integer",
+              "minimum": 23
+            },
+            "p24": {
+              "type": "integer",
+              "minimum": 24
+            },
+            "p25": {
+              "type": "integer",
+              "minimum": 25
+            },
+            "p26": {
+              "type": "integer",
+              "minimum": 26
+            },
+            "p27": {
+              "type": "integer",
+              "minimum": 27
+            },
+            "p28": {
+              "type": "integer",
+              "minimum": 28
+            },
+            "p29": {
+              "type": "integer",
+              "minimum": 29
+            },
+            "p30": {
+              "type": "integer",
+              "minimum": 30
+            },
+            "p31": {
+              "type": "integer",
+              "minimum": 31
+            },
+            "p32": {
+              "type": "integer",
+              "minimum": 32
+            },
+            "p33": {
+              "type": "integer",
+              "minimum": 33
+            },
+            "p34": {
+              "type": "integer",
+              "minimum": 34
+            },
+            "p35": {
+              "type": "integer",
+              "minimum": 35
+            },
+            "p36": {
+              "type": "integer",
+              "minimum": 36
+            },
+            "p37": {
+              "type": "integer",
+              "minimum": 37
+            },
+            "p38": {
+              "type": "integer",
+              "minimum": 38
+            },
+            "p39": {
+              "type": "integer",
+              "minimum": 39
+            },
+            "p40": {
+              "type": "integer",
+              "minimum": 40
+            },
+            "p41": {
+              "type": "integer",
+              "minimum": 41
+            },
+            "p42": {
+              "type": "integer",
+              "minimum": 42
+            },
+            "p43": {
+              "type": "integer",
+              "minimum": 43
+            },
+            "p44": {
+              "type": "integer",
+              "minimum": 44
+            },
+            "p45": {
+              "type": "integer",
+              "minimum": 45
+            },
+            "p46": {
+              "type": "integer",
+              "minimum": 46
+            },
+            "p47": {
+              "type": "integer",
+              "minimum": 47
+            },
+            "p48": {
+              "type": "integer",
+              "minimum": 48
+            },
+            "p49": {
+              "type": "integer",
+              "minimum": 49
+            }
+          },
+          "required": [
+            "p0"
+          ]
+        }
+      },
+      "type": "object",
+      "properties": {
+        "r0": {
+          "$ref": "#/$defs/typed"
+        },
+        "r1": {
+          "$ref": "#/$defs/typed"
+        },
+        "r2": {
+          "$ref": "#/$defs/typed"
+        },
+        "r3": {
+          "$ref": "#/$defs/typed"
+        },
+        "r4": {
+          "$ref": "#/$defs/typed"
+        },
+        "r5": {
+          "$ref": "#/$defs/typed"
+        },
+        "c": {
+          "properties": {
+            "p0": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "p1": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "p2": {
+              "type": "integer",
+              "minimum": 2
+            },
+            "p3": {
+              "type": "integer",
+              "minimum": 3
+            },
+            "p4": {
+              "type": "integer",
+              "minimum": 4
+            },
+            "p5": {
+              "type": "integer",
+              "minimum": 5
+            },
+            "p6": {
+              "type": "integer",
+              "minimum": 6
+            },
+            "p7": {
+              "type": "integer",
+              "minimum": 7
+            },
+            "p8": {
+              "type": "integer",
+              "minimum": 8
+            },
+            "p9": {
+              "type": "integer",
+              "minimum": 9
+            },
+            "p10": {
+              "type": "integer",
+              "minimum": 10
+            },
+            "p11": {
+              "type": "integer",
+              "minimum": 11
+            },
+            "p12": {
+              "type": "integer",
+              "minimum": 12
+            },
+            "p13": {
+              "type": "integer",
+              "minimum": 13
+            },
+            "p14": {
+              "type": "integer",
+              "minimum": 14
+            },
+            "p15": {
+              "type": "integer",
+              "minimum": 15
+            },
+            "p16": {
+              "type": "integer",
+              "minimum": 16
+            },
+            "p17": {
+              "type": "integer",
+              "minimum": 17
+            },
+            "p18": {
+              "type": "integer",
+              "minimum": 18
+            },
+            "p19": {
+              "type": "integer",
+              "minimum": 19
+            },
+            "p20": {
+              "type": "integer",
+              "minimum": 20
+            },
+            "p21": {
+              "type": "integer",
+              "minimum": 21
+            },
+            "p22": {
+              "type": "integer",
+              "minimum": 22
+            },
+            "p23": {
+              "type": "integer",
+              "minimum": 23
+            },
+            "p24": {
+              "type": "integer",
+              "minimum": 24
+            },
+            "p25": {
+              "type": "integer",
+              "minimum": 25
+            },
+            "p26": {
+              "type": "integer",
+              "minimum": 26
+            },
+            "p27": {
+              "type": "integer",
+              "minimum": 27
+            },
+            "p28": {
+              "type": "integer",
+              "minimum": 28
+            },
+            "p29": {
+              "type": "integer",
+              "minimum": 29
+            },
+            "p30": {
+              "type": "integer",
+              "minimum": 30
+            },
+            "p31": {
+              "type": "integer",
+              "minimum": 31
+            },
+            "p32": {
+              "type": "integer",
+              "minimum": 32
+            },
+            "p33": {
+              "type": "integer",
+              "minimum": 33
+            },
+            "p34": {
+              "type": "integer",
+              "minimum": 34
+            },
+            "p35": {
+              "type": "integer",
+              "minimum": 35
+            },
+            "p36": {
+              "type": "integer",
+              "minimum": 36
+            },
+            "p37": {
+              "type": "integer",
+              "minimum": 37
+            },
+            "p38": {
+              "type": "integer",
+              "minimum": 38
+            },
+            "p39": {
+              "type": "integer",
+              "minimum": 39
+            },
+            "p40": {
+              "type": "integer",
+              "minimum": 40
+            },
+            "p41": {
+              "type": "integer",
+              "minimum": 41
+            },
+            "p42": {
+              "type": "integer",
+              "minimum": 42
+            },
+            "p43": {
+              "type": "integer",
+              "minimum": 43
+            },
+            "p44": {
+              "type": "integer",
+              "minimum": 44
+            },
+            "p45": {
+              "type": "integer",
+              "minimum": 45
+            },
+            "p46": {
+              "type": "integer",
+              "minimum": 46
+            },
+            "p47": {
+              "type": "integer",
+              "minimum": 47
+            },
+            "p48": {
+              "type": "integer",
+              "minimum": 48
+            },
+            "p49": {
+              "type": "integer",
+              "minimum": 49
+            }
+          },
+          "required": [
+            "p0"
+          ]
+        },
+        "d": {
+          "properties": {
+            "p0": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "p1": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "p2": {
+              "type": "integer",
+              "minimum": 2
+            },
+            "p3": {
+              "type": "integer",
+              "minimum": 3
+            },
+            "p4": {
+              "type": "integer",
+              "minimum": 4
+            },
+            "p5": {
+              "type": "integer",
+              "minimum": 5
+            },
+            "p6": {
+              "type": "integer",
+              "minimum": 6
+            },
+            "p7": {
+              "type": "integer",
+              "minimum": 7
+            },
+            "p8": {
+              "type": "integer",
+              "minimum": 8
+            },
+            "p9": {
+              "type": "integer",
+              "minimum": 9
+            },
+            "p10": {
+              "type": "integer",
+              "minimum": 10
+            },
+            "p11": {
+              "type": "integer",
+              "minimum": 11
+            },
+            "p12": {
+              "type": "integer",
+              "minimum": 12
+            },
+            "p13": {
+              "type": "integer",
+              "minimum": 13
+            },
+            "p14": {
+              "type": "integer",
+              "minimum": 14
+            },
+            "p15": {
+              "type": "integer",
+              "minimum": 15
+            },
+            "p16": {
+              "type": "integer",
+              "minimum": 16
+            },
+            "p17": {
+              "type": "integer",
+              "minimum": 17
+            },
+            "p18": {
+              "type": "integer",
+              "minimum": 18
+            },
+            "p19": {
+              "type": "integer",
+              "minimum": 19
+            },
+            "p20": {
+              "type": "integer",
+              "minimum": 20
+            },
+            "p21": {
+              "type": "integer",
+              "minimum": 21
+            },
+            "p22": {
+              "type": "integer",
+              "minimum": 22
+            },
+            "p23": {
+              "type": "integer",
+              "minimum": 23
+            },
+            "p24": {
+              "type": "integer",
+              "minimum": 24
+            },
+            "p25": {
+              "type": "integer",
+              "minimum": 25
+            },
+            "p26": {
+              "type": "integer",
+              "minimum": 26
+            },
+            "p27": {
+              "type": "integer",
+              "minimum": 27
+            },
+            "p28": {
+              "type": "integer",
+              "minimum": 28
+            },
+            "p29": {
+              "type": "integer",
+              "minimum": 29
+            },
+            "p30": {
+              "type": "integer",
+              "minimum": 30
+            },
+            "p31": {
+              "type": "integer",
+              "minimum": 31
+            },
+            "p32": {
+              "type": "integer",
+              "minimum": 32
+            },
+            "p33": {
+              "type": "integer",
+              "minimum": 33
+            },
+            "p34": {
+              "type": "integer",
+              "minimum": 34
+            },
+            "p35": {
+              "type": "integer",
+              "minimum": 35
+            },
+            "p36": {
+              "type": "integer",
+              "minimum": 36
+            },
+            "p37": {
+              "type": "integer",
+              "minimum": 37
+            },
+            "p38": {
+              "type": "integer",
+              "minimum": 38
+            },
+            "p39": {
+              "type": "integer",
+              "minimum": 39
+            },
+            "p40": {
+              "type": "integer",
+              "minimum": 40
+            },
+            "p41": {
+              "type": "integer",
+              "minimum": 41
+            },
+            "p42": {
+              "type": "integer",
+              "minimum": 42
+            },
+            "p43": {
+              "type": "integer",
+              "minimum": 43
+            },
+            "p44": {
+              "type": "integer",
+              "minimum": 44
+            },
+            "p45": {
+              "type": "integer",
+              "minimum": 45
+            },
+            "p46": {
+              "type": "integer",
+              "minimum": 46
+            },
+            "p47": {
+              "type": "integer",
+              "minimum": 47
+            },
+            "p48": {
+              "type": "integer",
+              "minimum": 48
+            },
+            "p49": {
+              "type": "integer",
+              "minimum": 49
+            }
+          },
+          "required": [
+            "p0"
+          ]
+        }
+      }
+    },
+    "witnesses": [
+      {
+        "data": {
+          "c": 5
+        },
+        "valid": true
+      }
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "shared0": {
+          "properties": {
+            "p0": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "p1": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "p10": {
+              "minimum": 10,
+              "type": "integer"
+            },
+            "p11": {
+              "minimum": 11,
+              "type": "integer"
+            },
+            "p12": {
+              "minimum": 12,
+              "type": "integer"
+            },
+            "p13": {
+              "minimum": 13,
+              "type": "integer"
+            },
+            "p14": {
+              "minimum": 14,
+              "type": "integer"
+            },
+            "p15": {
+              "minimum": 15,
+              "type": "integer"
+            },
+            "p16": {
+              "minimum": 16,
+              "type": "integer"
+            },
+            "p17": {
+              "minimum": 17,
+              "type": "integer"
+            },
+            "p18": {
+              "minimum": 18,
+              "type": "integer"
+            },
+            "p19": {
+              "minimum": 19,
+              "type": "integer"
+            },
+            "p2": {
+              "minimum": 2,
+              "type": "integer"
+            },
+            "p20": {
+              "minimum": 20,
+              "type": "integer"
+            },
+            "p21": {
+              "minimum": 21,
+              "type": "integer"
+            },
+            "p22": {
+              "minimum": 22,
+              "type": "integer"
+            },
+            "p23": {
+              "minimum": 23,
+              "type": "integer"
+            },
+            "p24": {
+              "minimum": 24,
+              "type": "integer"
+            },
+            "p25": {
+              "minimum": 25,
+              "type": "integer"
+            },
+            "p26": {
+              "minimum": 26,
+              "type": "integer"
+            },
+            "p27": {
+              "minimum": 27,
+              "type": "integer"
+            },
+            "p28": {
+              "minimum": 28,
+              "type": "integer"
+            },
+            "p29": {
+              "minimum": 29,
+              "type": "integer"
+            },
+            "p3": {
+              "minimum": 3,
+              "type": "integer"
+            },
+            "p30": {
+              "minimum": 30,
+              "type": "integer"
+            },
+            "p31": {
+              "minimum": 31,
+              "type": "integer"
+            },
+            "p32": {
+              "minimum": 32,
+              "type": "integer"
+            },
+            "p33": {
+              "minimum": 33,
+              "type": "integer"
+            },
+            "p34": {
+              "minimum": 34,
+              "type": "integer"
+            },
+            "p35": {
+              "minimum": 35,
+              "type": "integer"
+            },
+            "p36": {
+              "minimum": 36,
+              "type": "integer"
+            },
+            "p37": {
+              "minimum": 37,
+              "type": "integer"
+            },
+            "p38": {
+              "minimum": 38,
+              "type": "integer"
+            },
+            "p39": {
+              "minimum": 39,
+              "type": "integer"
+            },
+            "p4": {
+              "minimum": 4,
+              "type": "integer"
+            },
+            "p40": {
+              "minimum": 40,
+              "type": "integer"
+            },
+            "p41": {
+              "minimum": 41,
+              "type": "integer"
+            },
+            "p42": {
+              "minimum": 42,
+              "type": "integer"
+            },
+            "p43": {
+              "minimum": 43,
+              "type": "integer"
+            },
+            "p44": {
+              "minimum": 44,
+              "type": "integer"
+            },
+            "p45": {
+              "minimum": 45,
+              "type": "integer"
+            },
+            "p46": {
+              "minimum": 46,
+              "type": "integer"
+            },
+            "p47": {
+              "minimum": 47,
+              "type": "integer"
+            },
+            "p48": {
+              "minimum": 48,
+              "type": "integer"
+            },
+            "p49": {
+              "minimum": 49,
+              "type": "integer"
+            },
+            "p5": {
+              "minimum": 5,
+              "type": "integer"
+            },
+            "p6": {
+              "minimum": 6,
+              "type": "integer"
+            },
+            "p7": {
+              "minimum": 7,
+              "type": "integer"
+            },
+            "p8": {
+              "minimum": 8,
+              "type": "integer"
+            },
+            "p9": {
+              "minimum": 9,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "p0"
+          ],
+          "type": "object"
+        }
+      },
+      "properties": {
+        "c": {
+          "properties": {
+            "p0": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "p1": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "p10": {
+              "minimum": 10,
+              "type": "integer"
+            },
+            "p11": {
+              "minimum": 11,
+              "type": "integer"
+            },
+            "p12": {
+              "minimum": 12,
+              "type": "integer"
+            },
+            "p13": {
+              "minimum": 13,
+              "type": "integer"
+            },
+            "p14": {
+              "minimum": 14,
+              "type": "integer"
+            },
+            "p15": {
+              "minimum": 15,
+              "type": "integer"
+            },
+            "p16": {
+              "minimum": 16,
+              "type": "integer"
+            },
+            "p17": {
+              "minimum": 17,
+              "type": "integer"
+            },
+            "p18": {
+              "minimum": 18,
+              "type": "integer"
+            },
+            "p19": {
+              "minimum": 19,
+              "type": "integer"
+            },
+            "p2": {
+              "minimum": 2,
+              "type": "integer"
+            },
+            "p20": {
+              "minimum": 20,
+              "type": "integer"
+            },
+            "p21": {
+              "minimum": 21,
+              "type": "integer"
+            },
+            "p22": {
+              "minimum": 22,
+              "type": "integer"
+            },
+            "p23": {
+              "minimum": 23,
+              "type": "integer"
+            },
+            "p24": {
+              "minimum": 24,
+              "type": "integer"
+            },
+            "p25": {
+              "minimum": 25,
+              "type": "integer"
+            },
+            "p26": {
+              "minimum": 26,
+              "type": "integer"
+            },
+            "p27": {
+              "minimum": 27,
+              "type": "integer"
+            },
+            "p28": {
+              "minimum": 28,
+              "type": "integer"
+            },
+            "p29": {
+              "minimum": 29,
+              "type": "integer"
+            },
+            "p3": {
+              "minimum": 3,
+              "type": "integer"
+            },
+            "p30": {
+              "minimum": 30,
+              "type": "integer"
+            },
+            "p31": {
+              "minimum": 31,
+              "type": "integer"
+            },
+            "p32": {
+              "minimum": 32,
+              "type": "integer"
+            },
+            "p33": {
+              "minimum": 33,
+              "type": "integer"
+            },
+            "p34": {
+              "minimum": 34,
+              "type": "integer"
+            },
+            "p35": {
+              "minimum": 35,
+              "type": "integer"
+            },
+            "p36": {
+              "minimum": 36,
+              "type": "integer"
+            },
+            "p37": {
+              "minimum": 37,
+              "type": "integer"
+            },
+            "p38": {
+              "minimum": 38,
+              "type": "integer"
+            },
+            "p39": {
+              "minimum": 39,
+              "type": "integer"
+            },
+            "p4": {
+              "minimum": 4,
+              "type": "integer"
+            },
+            "p40": {
+              "minimum": 40,
+              "type": "integer"
+            },
+            "p41": {
+              "minimum": 41,
+              "type": "integer"
+            },
+            "p42": {
+              "minimum": 42,
+              "type": "integer"
+            },
+            "p43": {
+              "minimum": 43,
+              "type": "integer"
+            },
+            "p44": {
+              "minimum": 44,
+              "type": "integer"
+            },
+            "p45": {
+              "minimum": 45,
+              "type": "integer"
+            },
+            "p46": {
+              "minimum": 46,
+              "type": "integer"
+            },
+            "p47": {
+              "minimum": 47,
+              "type": "integer"
+            },
+            "p48": {
+              "minimum": 48,
+              "type": "integer"
+            },
+            "p49": {
+              "minimum": 49,
+              "type": "integer"
+            },
+            "p5": {
+              "minimum": 5,
+              "type": "integer"
+            },
+            "p6": {
+              "minimum": 6,
+              "type": "integer"
+            },
+            "p7": {
+              "minimum": 7,
+              "type": "integer"
+            },
+            "p8": {
+              "minimum": 8,
+              "type": "integer"
+            },
+            "p9": {
+              "minimum": 9,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "p0"
+          ]
+        },
+        "d": {
+          "properties": {
+            "p0": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "p1": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "p10": {
+              "minimum": 10,
+              "type": "integer"
+            },
+            "p11": {
+              "minimum": 11,
+              "type": "integer"
+            },
+            "p12": {
+              "minimum": 12,
+              "type": "integer"
+            },
+            "p13": {
+              "minimum": 13,
+              "type": "integer"
+            },
+            "p14": {
+              "minimum": 14,
+              "type": "integer"
+            },
+            "p15": {
+              "minimum": 15,
+              "type": "integer"
+            },
+            "p16": {
+              "minimum": 16,
+              "type": "integer"
+            },
+            "p17": {
+              "minimum": 17,
+              "type": "integer"
+            },
+            "p18": {
+              "minimum": 18,
+              "type": "integer"
+            },
+            "p19": {
+              "minimum": 19,
+              "type": "integer"
+            },
+            "p2": {
+              "minimum": 2,
+              "type": "integer"
+            },
+            "p20": {
+              "minimum": 20,
+              "type": "integer"
+            },
+            "p21": {
+              "minimum": 21,
+              "type": "integer"
+            },
+            "p22": {
+              "minimum": 22,
+              "type": "integer"
+            },
+            "p23": {
+              "minimum": 23,
+              "type": "integer"
+            },
+            "p24": {
+              "minimum": 24,
+              "type": "integer"
+            },
+            "p25": {
+              "minimum": 25,
+              "type": "integer"
+            },
+            "p26": {
+              "minimum": 26,
+              "type": "integer"
+            },
+            "p27": {
+              "minimum": 27,
+              "type": "integer"
+            },
+            "p28": {
+              "minimum": 28,
+              "type": "integer"
+            },
+            "p29": {
+              "minimum": 29,
+              "type": "integer"
+            },
+            "p3": {
+              "minimum": 3,
+              "type": "integer"
+            },
+            "p30": {
+              "minimum": 30,
+              "type": "integer"
+            },
+            "p31": {
+              "minimum": 31,
+              "type": "integer"
+            },
+            "p32": {
+              "minimum": 32,
+              "type": "integer"
+            },
+            "p33": {
+              "minimum": 33,
+              "type": "integer"
+            },
+            "p34": {
+              "minimum": 34,
+              "type": "integer"
+            },
+            "p35": {
+              "minimum": 35,
+              "type": "integer"
+            },
+            "p36": {
+              "minimum": 36,
+              "type": "integer"
+            },
+            "p37": {
+              "minimum": 37,
+              "type": "integer"
+            },
+            "p38": {
+              "minimum": 38,
+              "type": "integer"
+            },
+            "p39": {
+              "minimum": 39,
+              "type": "integer"
+            },
+            "p4": {
+              "minimum": 4,
+              "type": "integer"
+            },
+            "p40": {
+              "minimum": 40,
+              "type": "integer"
+            },
+            "p41": {
+              "minimum": 41,
+              "type": "integer"
+            },
+            "p42": {
+              "minimum": 42,
+              "type": "integer"
+            },
+            "p43": {
+              "minimum": 43,
+              "type": "integer"
+            },
+            "p44": {
+              "minimum": 44,
+              "type": "integer"
+            },
+            "p45": {
+              "minimum": 45,
+              "type": "integer"
+            },
+            "p46": {
+              "minimum": 46,
+              "type": "integer"
+            },
+            "p47": {
+              "minimum": 47,
+              "type": "integer"
+            },
+            "p48": {
+              "minimum": 48,
+              "type": "integer"
+            },
+            "p49": {
+              "minimum": 49,
+              "type": "integer"
+            },
+            "p5": {
+              "minimum": 5,
+              "type": "integer"
+            },
+            "p6": {
+              "minimum": 6,
+              "type": "integer"
+            },
+            "p7": {
+              "minimum": 7,
+              "type": "integer"
+            },
+            "p8": {
+              "minimum": 8,
+              "type": "integer"
+            },
+            "p9": {
+              "minimum": 9,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "p0"
+          ]
+        },
+        "r0": {
+          "$ref": "#/definitions/shared0"
+        },
+        "r1": {
+          "$ref": "#/definitions/shared0"
+        },
+        "r2": {
+          "$ref": "#/definitions/shared0"
+        },
+        "r3": {
+          "$ref": "#/definitions/shared0"
+        },
+        "r4": {
+          "$ref": "#/definitions/shared0"
+        },
+        "r5": {
+          "$ref": "#/definitions/shared0"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "description": "recursive_root_round_trip_is_identity",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "node": {
+          "type": "object",
+          "properties": {
+            "next": {
+              "$ref": "#/$defs/node"
+            },
+            "value": {
+              "type": "null"
+            }
+          }
+        }
+      },
+      "$ref": "#/$defs/node"
+    },
+    "expected": {
+      "$defs": {
+        "node": {
+          "properties": {
+            "next": {
+              "$ref": "#/$defs/node"
+            },
+            "value": {
+              "type": "null"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "$ref": "#/$defs/node",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "percent_encoded_symbolic_ref_is_self_contained",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/$defs/a%20b",
+      "$defs": {
+        "a b": {
+          "type": "integer"
+        }
+      }
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "draft7_ignores_unevaluated_items_when_emitting_canonical_schema",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "contains": {
+        "type": "integer"
+      },
+      "unevaluatedItems": false
+    },
+    "witnesses": [
+      {
+        "data": [
+          1,
+          "x"
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          "x"
+        ],
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "contains": {
+        "type": "integer"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  {
+    "description": "multiple_of_lcm_overflow_no_panic integer",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "allOf": [
+        {
+          "multipleOf": 5000000000
+        },
+        {
+          "multipleOf": 4000000001
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 0,
+        "valid": true
+      },
+      {
+        "data": 5000000000,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "multiple_of_lcm_overflow_no_panic number",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "multipleOf": 5000000000
+        },
+        {
+          "multipleOf": 4000000001
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 0,
+        "valid": true
+      },
+      {
+        "data": 5000000000,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "emit_number exclusive_minimum",
+    "schema": {
+      "type": "number",
+      "exclusiveMinimum": 1.5
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "exclusiveMinimum": 1.5
+    }
+  },
+  {
+    "description": "emit_number multiple_of_half",
+    "schema": {
+      "type": "number",
+      "multipleOf": 0.5
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "multipleOf": 0.5
+    }
+  },
+  {
+    "description": "emit_number multiple_of_quarter",
+    "schema": {
+      "type": "number",
+      "multipleOf": 0.25
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "multipleOf": 0.25
+    }
+  },
+  {
+    "description": "emit_number multiple_of_eighth",
+    "schema": {
+      "type": "number",
+      "multipleOf": 0.125
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "multipleOf": 0.125
+    }
+  },
+  {
+    "description": "emit_number minimum_and_multiple_of_tenth",
+    "schema": {
+      "type": "number",
+      "minimum": 0.1,
+      "multipleOf": 0.1
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "minimum": 0.1,
+      "multipleOf": 0.1
+    }
+  },
+  {
+    "description": "emit_refs external_ref",
+    "schema": {
+      "$ref": "https://example.com/s"
+    },
+    "expected": {
+      "$ref": "https://example.com/s"
+    }
+  },
+  {
+    "description": "emit_refs dynamic_ref",
+    "schema": {
+      "$dynamicRef": "#node"
+    },
+    "expected": {
+      "$dynamicRef": "#node"
+    }
+  },
+  {
+    "description": "emit_refs local_fragment_ref",
+    "schema": {
+      "$ref": "#/a"
+    },
+    "expected": {
+      "$ref": "#/a",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "emit_refs relative_path_ref",
+    "schema": {
+      "$ref": "foo.json"
+    },
+    "expected": {
+      "$ref": "foo.json"
+    }
+  },
+  {
+    "description": "emit_nested_local_ref_is_relative",
+    "schema": {
+      "properties": {
+        "p": {
+          "$ref": "#/x"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "p": {
+          "$ref": "#/x"
+        }
+      }
+    }
+  },
+  {
+    "description": "emit_tuple_with_additional_items_pre_2020 draft7",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": [
+        {
+          "type": "integer"
+        }
+      ],
+      "additionalItems": {
+        "type": "string"
+      }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "array",
+      "items": [
+        {
+          "type": "integer"
+        }
+      ],
+      "additionalItems": {
+        "type": "string"
+      }
+    }
+  },
+  {
+    "description": "emit_tuple_with_additional_items_pre_2020 draft2019",
+    "draft": "draft2019-09",
+    "schema": {
+      "type": "array",
+      "items": [
+        {
+          "type": "integer"
+        }
+      ],
+      "additionalItems": {
+        "type": "string"
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "type": "array",
+      "items": [
+        {
+          "type": "integer"
+        }
+      ],
+      "additionalItems": {
+        "type": "string"
+      }
+    }
+  },
+  {
+    "description": "emit_draft4_dependencies array_form",
+    "draft": "draft4",
+    "schema": {
+      "type": "object",
+      "dependencies": {
+        "a": [
+          "b"
+        ]
+      }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "object",
+      "dependencies": {
+        "a": [
+          "b"
+        ]
+      }
+    }
+  },
+  {
+    "description": "emit_draft4_dependencies schema_form",
+    "draft": "draft4",
+    "schema": {
+      "type": "object",
+      "dependencies": {
+        "a": {
+          "required": [
+            "b"
+          ]
+        }
+      }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "object",
+      "dependencies": {
+        "a": {
+          "required": [
+            "b"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "description": "emit_draft4_exclusive_bounds",
+    "draft": "draft4",
+    "schema": {
+      "type": "number",
+      "minimum": 0,
+      "exclusiveMinimum": true,
+      "maximum": 10,
+      "exclusiveMaximum": true
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "number",
+      "minimum": 0,
+      "exclusiveMinimum": true,
+      "maximum": 10,
+      "exclusiveMaximum": true
+    }
+  },
+  {
+    "description": "emit_untyped_kind_keyword_drops_type string",
+    "schema": {
+      "minLength": 1
+    },
+    "expected": {
+      "minLength": 1,
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "emit_untyped_kind_keyword_drops_type number",
+    "schema": {
+      "minimum": 5
+    },
+    "expected": {
+      "minimum": 5,
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "emit_untyped_kind_keyword_drops_type array",
+    "schema": {
+      "minItems": 2
+    },
+    "expected": {
+      "minItems": 2,
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "emit_untyped_kind_keyword_drops_type object",
+    "schema": {
+      "minProperties": 1
+    },
+    "expected": {
+      "minProperties": 1,
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "emit_boolean_restricted_to_true_draft4_is_enum",
+    "draft": "draft4",
+    "schema": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "enum": [
+        true
+      ]
+    }
+  },
+  {
+    "description": "ir_leaf_identity_true",
+    "schema": true,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "ir_leaf_identity_false",
+    "schema": false,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "ir_leaf_identity_empty_object",
+    "schema": {},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "ir_leaf_identity_integer",
+    "schema": {
+      "type": "integer"
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_leaf_identity_string",
+    "schema": {
+      "type": "string"
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string"
+    }
+  },
+  {
+    "description": "ir_untyped_numeric_bounds_compact",
+    "schema": {
+      "minimum": 0,
+      "maximum": 10
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "maximum": 10,
+      "minimum": 0
+    }
+  },
+  {
+    "description": "ir_untyped_integer_lattice_compact",
+    "schema": {
+      "multipleOf": 1
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "multipleOf": 1
+    }
+  },
+  {
+    "description": "ir_untyped_integer_valued_numeric_compact",
+    "schema": {
+      "multipleOf": 2
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "multipleOf": 2
+    }
+  },
+  {
+    "description": "ir_untyped_bounded_integer_lattice_compact",
+    "schema": {
+      "minimum": 0,
+      "multipleOf": 1
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minimum": 0,
+      "multipleOf": 1
+    }
+  },
+  {
+    "description": "ir_untyped_negated_integer_lattice_compact",
+    "schema": {
+      "not": {
+        "multipleOf": 1
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {
+        "multipleOf": 1
+      }
+    }
+  },
+  {
+    "description": "ir_untyped_string_constraint_compact",
+    "schema": {
+      "minLength": 3
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minLength": 3
+    }
+  },
+  {
+    "description": "ir_untyped_array_constraint_compact",
+    "schema": {
+      "minItems": 1
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minItems": 1
+    }
+  },
+  {
+    "description": "ir_untyped_object_constraint_compact",
+    "schema": {
+      "minProperties": 1
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minProperties": 1
+    }
+  },
+  {
+    "description": "ir_const_is_const",
+    "schema": {
+      "const": "hello"
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": "hello"
+    }
+  },
+  {
+    "description": "ir_nested_const_in_property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "tag": {
+          "const": 7
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "tag": {
+          "const": 7
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "description": "emit_distinct_content_facets_split_inline_and_allof",
+    "draft": "draft2020-12",
+    "schema": {
+      "allOf": [
+        { "type": "string", "contentEncoding": "base64" },
+        { "type": "string", "contentMediaType": "application/json" }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "contentMediaType": "application/json",
+      "allOf": [
+        { "contentEncoding": "base64" }
+      ]
+    }
+  }
+]

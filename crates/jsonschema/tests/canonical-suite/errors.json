@@ -1,0 +1,597 @@
+[
+  {
+    "description": "non_object_non_bool_root_is_rejected",
+    "draft": "draft2020-12",
+    "schemas": [
+      "not a schema",
+      42,
+      [
+        1,
+        2
+      ],
+      null
+    ],
+    "error": "InvalidSchemaType"
+  },
+  {
+    "description": "infinite_recursion allOf with an infinite member",
+    "draft": "draft2020-12",
+    "schema": {
+      "$defs": {
+        "node": {
+          "allOf": [
+            {
+              "type": "object",
+              "required": [
+                "child"
+              ],
+              "properties": {
+                "child": {
+                  "$ref": "#/$defs/node"
+                }
+              }
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "$ref": "#/$defs/node"
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "infinite_recursion oneOf with every branch infinite",
+    "draft": "draft2020-12",
+    "schema": {
+      "$defs": {
+        "node": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "a"
+              ],
+              "properties": {
+                "a": {
+                  "$ref": "#/$defs/node"
+                }
+              }
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/node"
+              }
+            }
+          ]
+        }
+      },
+      "$ref": "#/$defs/node"
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "infinite_recursion if/then/else with both arms infinite",
+    "draft": "draft2020-12",
+    "schema": {
+      "$defs": {
+        "node": {
+          "if": {
+            "type": "object"
+          },
+          "then": {
+            "type": "object",
+            "required": [
+              "child"
+            ],
+            "properties": {
+              "child": {
+                "$ref": "#/$defs/node"
+              }
+            }
+          },
+          "else": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/node"
+            }
+          }
+        }
+      },
+      "$ref": "#/$defs/node"
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "infinite_recursion contains requires a recursive element",
+    "draft": "draft2020-12",
+    "schema": {
+      "$defs": {
+        "node": {
+          "type": "array",
+          "contains": {
+            "$ref": "#/$defs/node"
+          },
+          "minContains": 1
+        }
+      },
+      "$ref": "#/$defs/node"
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "infinite_recursion prefixItems forces a recursive position",
+    "draft": "draft2020-12",
+    "schema": {
+      "$defs": {
+        "node": {
+          "type": "array",
+          "minItems": 1,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/node"
+            }
+          ]
+        }
+      },
+      "$ref": "#/$defs/node"
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "infinite_recursion anyOf of false and an infinite branch",
+    "draft": "draft2020-12",
+    "schema": {
+      "$defs": {
+        "node": {
+          "anyOf": [
+            false,
+            {
+              "type": "object",
+              "required": [
+                "child"
+              ],
+              "properties": {
+                "child": {
+                  "$ref": "#/$defs/node"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "$ref": "#/$defs/node"
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "infinite_recursion non-required requirement alongside an infinite required one",
+    "draft": "draft2020-12",
+    "schema": {
+      "$defs": {
+        "node": {
+          "type": "object",
+          "minProperties": 1,
+          "required": [
+            "child"
+          ],
+          "properties": {
+            "child": {
+              "$ref": "#/$defs/node"
+            }
+          }
+        }
+      },
+      "$ref": "#/$defs/node"
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "infinite_recursion single-type list wraps the infinite body in a typed group",
+    "draft": "draft2020-12",
+    "schema": {
+      "$defs": {
+        "node": {
+          "type": [
+            "object"
+          ],
+          "required": [
+            "child"
+          ],
+          "properties": {
+            "child": {
+              "$ref": "#/$defs/node"
+            }
+          }
+        }
+      },
+      "$ref": "#/$defs/node"
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "infinite_recursion required name forced recursive by additionalProperties",
+    "draft": "draft2020-12",
+    "schema": {
+      "$defs": {
+        "node": {
+          "type": "object",
+          "required": [
+            "a"
+          ],
+          "additionalProperties": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      },
+      "$ref": "#/$defs/node"
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "infinite_recursion required name forced recursive by a matching patternProperties",
+    "draft": "draft2020-12",
+    "schema": {
+      "$defs": {
+        "node": {
+          "type": "object",
+          "required": [
+            "a"
+          ],
+          "patternProperties": {
+            "^a$": {
+              "$ref": "#/$defs/node"
+            }
+          }
+        }
+      },
+      "$ref": "#/$defs/node"
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "infinite_recursion required name unmatched by patterns falls to a recursive additionalProperties",
+    "draft": "draft2020-12",
+    "schema": {
+      "$defs": {
+        "node": {
+          "type": "object",
+          "required": [
+            "a"
+          ],
+          "patternProperties": {
+            "^b": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      },
+      "$ref": "#/$defs/node"
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "infinite_recursion min_properties forces a recursive additional property",
+    "draft": "draft2020-12",
+    "schema": {
+      "$defs": {
+        "node": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      },
+      "$ref": "#/$defs/node"
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "unguarded_recursion all_of self cycle has no base case",
+    "draft": "draft2020-12",
+    "schema": {
+      "$defs": {
+        "a": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/a"
+            }
+          ]
+        }
+      },
+      "$ref": "#/$defs/a"
+    },
+    "error": "UnguardedRecursion"
+  },
+  {
+    "description": "unguarded_recursion nested not self cycle has no base case",
+    "draft": "draft2020-12",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "not": {
+            "$ref": "#/properties/a"
+          }
+        }
+      }
+    },
+    "error": "UnguardedRecursion"
+  },
+  {
+    "description": "ir_non_schema_root_rejected",
+    "schema": "object",
+    "error": "InvalidSchemaType"
+  },
+  {
+    "description": "ir_metaschema_invalid_non_schema_in_property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "config": "object"
+      }
+    },
+    "error": true
+  },
+  {
+    "description": "ir_metaschema_invalid_string_additional_properties",
+    "schema": {
+      "type": "object",
+      "additionalProperties": "false"
+    },
+    "error": true
+  },
+  {
+    "description": "ir_metaschema_invalid_nonstandard_type_name",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "int"
+        }
+      }
+    },
+    "error": true
+  },
+  {
+    "description": "ir_non_string_pattern_rejected",
+    "schema": {
+      "type": "string",
+      "pattern": 0.0
+    },
+    "error": true
+  },
+  {
+    "description": "ir_invalid_regex_in_pattern",
+    "schema": {
+      "type": "string",
+      "pattern": "["
+    },
+    "error": "InvalidPattern"
+  },
+  {
+    "description": "ir_invalid_regex_in_pattern_properties",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "[": {}
+      }
+    },
+    "error": "InvalidPattern"
+  },
+  {
+    "description": "meta_schema_failure_unknown_type_is_validation_error",
+    "draft": "draft2020-12",
+    "schema": {
+      "type": "int"
+    },
+    "error": "ValidationError"
+  },
+  {
+    "description": "unguarded_recursion bare self ref cycle has no base case",
+    "draft": "draft2020-12",
+    "schema": {
+      "$defs": {
+        "a": {
+          "$ref": "#/$defs/a"
+        }
+      },
+      "$ref": "#/$defs/a"
+    },
+    "error": "UnguardedRecursion"
+  },
+  {
+    "description": "infinite_recursion bare required child self recursion",
+    "draft": "draft2020-12",
+    "schema": {
+      "$defs": {
+        "node": {
+          "type": "object",
+          "required": [
+            "child"
+          ],
+          "properties": {
+            "child": {
+              "$ref": "#/$defs/node"
+            }
+          }
+        }
+      },
+      "$ref": "#/$defs/node"
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "invalid_schemas_are_rejected integer_multiple_of_zero",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "multipleOf": 0
+    },
+    "error": true
+  },
+  {
+    "description": "invalid_schemas_are_rejected number_multiple_of_zero",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "multipleOf": 0.0
+    },
+    "error": true
+  },
+  {
+    "description": "invalid_schemas_are_rejected integer_negative_multiple_of",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "multipleOf": -3
+    },
+    "error": true
+  },
+  {
+    "description": "invalid_schemas_are_rejected one_of_empty",
+    "draft": "draft7",
+    "schema": {
+      "oneOf": []
+    },
+    "error": true
+  },
+  {
+    "description": "invalid_schemas_are_rejected empty_type",
+    "draft": "draft7",
+    "schema": {
+      "type": []
+    },
+    "error": true
+  },
+  {
+    "description": "invalid_schemas_are_rejected negative_multiple_of",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "multipleOf": -3.0
+    },
+    "error": true
+  },
+  {
+    "description": "ill-founded recursion is rejected - required self-reference forces unbounded nesting",
+    "inline_budget": 0,
+    "schema": {
+      "type": "object",
+      "required": [
+        "next"
+      ],
+      "properties": {
+        "next": {
+          "$ref": "#"
+        }
+      }
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "ill-founded recursion is rejected - minProperties met only by the recursive additionalProperties",
+    "inline_budget": 0,
+    "schema": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#"
+      }
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "ill-founded recursion is rejected - universal recursive patternProperty forces every property to recurse",
+    "inline_budget": 0,
+    "schema": {
+      "type": "object",
+      "minProperties": 1,
+      "patternProperties": {
+        ".*": {
+          "$ref": "#"
+        }
+      }
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "ill-founded recursion is rejected - required property matched only by a non-productive recursive pattern",
+    "inline_budget": 0,
+    "schema": {
+      "type": "object",
+      "required": [
+        "abc"
+      ],
+      "patternProperties": {
+        "^a": {
+          "$ref": "#"
+        }
+      }
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "ill-founded recursion is rejected - minProperties with a required recursive property leaves no finite witness",
+    "inline_budget": 0,
+    "schema": {
+      "type": "object",
+      "required": [
+        "a"
+      ],
+      "properties": {
+        "a": {
+          "$ref": "#"
+        }
+      },
+      "minProperties": 2,
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "error": "InfiniteRecursion"
+  },
+  {
+    "description": "ill-founded recursion is rejected - $id-qualified required mutual recursion has no base case",
+    "inline_budget": 0,
+    "schema": {
+      "$id": "https://e.test/root",
+      "$ref": "https://e.test/a",
+      "$defs": {
+        "a": {
+          "$id": "https://e.test/a",
+          "type": "object",
+          "required": [
+            "b"
+          ],
+          "properties": {
+            "b": {
+              "$ref": "https://e.test/b"
+            }
+          }
+        },
+        "b": {
+          "$id": "https://e.test/b",
+          "type": "object",
+          "required": [
+            "a"
+          ],
+          "properties": {
+            "a": {
+              "$ref": "https://e.test/a"
+            }
+          }
+        }
+      }
+    },
+    "error": "InfiniteRecursion"
+  }
+]

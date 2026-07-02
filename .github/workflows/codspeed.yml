@@ -17,8 +17,24 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        package: [jsonschema, referencing]
-    name: "Run benchmarks (${{ matrix.package }})"
+        include:
+          # `canonicalize` is excluded here by listing every other jsonschema bench explicitly; it runs in its own
+          # entry below. A NEW jsonschema bench must be added to this list or it won't run in CI.
+          - name: jsonschema
+            args: >-
+              -p jsonschema
+              --bench jsonschema
+              --bench keywords
+              --bench errors
+              --bench location
+              --bench unevaluated_properties
+              --bench unevaluated_items
+              --bench metaschema
+          - name: referencing
+            args: -p referencing
+          - name: canonicalize
+            args: -p jsonschema --bench canonicalize
+    name: "Run benchmarks (${{ matrix.name }})"
     steps:
       - uses: actions/checkout@v7
 
@@ -26,14 +42,14 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.package }}
+          key: ${{ matrix.name }}
 
       - run: cargo install cargo-codspeed --force
 
-      - run: cargo codspeed build -p ${{ matrix.package }}
+      - run: cargo codspeed build ${{ matrix.args }}
 
       - uses: CodSpeedHQ/action@v4
         with:
-          run: cargo codspeed run -p ${{ matrix.package }}
+          run: cargo codspeed run ${{ matrix.args }}
           mode: "instrumentation"
           token: ${{ secrets.CODSPEED_TOKEN }}

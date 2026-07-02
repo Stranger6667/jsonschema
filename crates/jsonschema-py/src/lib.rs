@@ -764,7 +764,7 @@ fn into_validation_error_args(
         absolute_keyword_location,
     })
 }
-fn into_py_err(
+pub(crate) fn into_py_err(
     py: Python<'_>,
     error: jsonschema::ValidationError<'_>,
     mask: Option<&str>,
@@ -782,7 +782,7 @@ fn into_py_err(
     Ok(py_err)
 }
 
-fn get_draft(draft: u8) -> PyResult<Draft> {
+pub(crate) fn get_draft(draft: u8) -> PyResult<Draft> {
     match draft {
         DRAFT4 => Ok(Draft::Draft4),
         DRAFT6 => Ok(Draft::Draft6),
@@ -2238,6 +2238,8 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_wrapped(wrap_pyfunction!(validate))?;
     module.add_wrapped(wrap_pyfunction!(iter_errors))?;
     module.add_wrapped(wrap_pyfunction!(evaluate))?;
+    module.add_class::<canonical::PyCanonicalSchema>()?;
+    module.add_wrapped(wrap_pyfunction!(canonical::canonicalize))?;
     module.add_wrapped(wrap_pyfunction!(validator_for))?;
     module.add_wrapped(wrap_pyfunction!(validator_map_for))?;
     module.add_class::<ValidatorMap>()?;

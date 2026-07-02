@@ -25,7 +25,7 @@ use crate::{
 
 // Base kwarg names
 define_rb_intern!(static KW_DRAFT: "draft");
-define_rb_intern!(static KW_VALIDATE_FORMATS: "validate_formats");
+define_rb_intern!(pub(crate) static KW_VALIDATE_FORMATS: "validate_formats");
 define_rb_intern!(static KW_IGNORE_UNKNOWN_FORMATS: "ignore_unknown_formats");
 define_rb_intern!(static KW_MASK: "mask");
 define_rb_intern!(static KW_BASE_URI: "base_uri");
