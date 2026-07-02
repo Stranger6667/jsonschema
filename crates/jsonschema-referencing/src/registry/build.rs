@@ -654,6 +654,33 @@ async fn fetch_external_resources_async<'a>(
     Ok(())
 }
 
+// Recursion depth at which the crawl stops descending and defers the remaining subtree to a heap
+// work-list. Real schemas nest far shallower, so the list stays empty and the crawl runs as plain
+// recursion; only pathologically deep documents pay for the iterative fallback that avoids a
+// stack overflow.
+// Recursion depth at which the crawl stops descending and defers the remaining subtree to a heap
+// work-list. Real schemas nest far shallower, so the list stays empty and the crawl runs as plain
+// recursion; only pathologically deep documents pay for the iterative fallback that avoids a
+// stack overflow.
+const RECURSION_DEPTH_CAP: usize = 128;
+
+struct DeferredBorrowed<'v> {
+    base: Arc<Uri<String>>,
+    subschema: &'v Value,
+    draft: Draft,
+}
+
+// Traversal state shared across the borrowed crawl, bundled so the hot recursive call stays small.
+struct BorrowedCrawl<'v, 'a> {
+    document_root: &'v Value,
+    document_root_uri: &'a Arc<Uri<String>>,
+    state: &'a mut BuildState<'v>,
+    known_resources: &'a mut KnownResources,
+    resolution_cache: &'a mut UriCache,
+    visited_local_refs: &'a mut VisitedLocalRefs<'v>,
+    deferred: Vec<DeferredBorrowed<'v>>,
+}
+
 fn crawl_borrowed_at<'r>(
     current_base_uri: Arc<Uri<String>>,
     document_root_uri: &Arc<Uri<String>>,
@@ -673,31 +700,41 @@ fn crawl_borrowed_at<'r>(
         return Ok(());
     };
 
-    crawl_schema(
-        current_base_uri,
+    let mut crawl = BorrowedCrawl {
         document_root,
-        subschema,
-        draft,
-        pointer_path.is_empty(),
         document_root_uri,
         state,
         known_resources,
         resolution_cache,
-        visited,
-    )
+        visited_local_refs: visited,
+        deferred: Vec::new(),
+    };
+    crawl_schema(
+        &mut crawl,
+        current_base_uri,
+        subschema,
+        draft,
+        pointer_path.is_empty(),
+        0,
+    )?;
+    while let Some(DeferredBorrowed {
+        base,
+        subschema,
+        draft,
+    }) = crawl.deferred.pop()
+    {
+        crawl_schema(&mut crawl, base, subschema, draft, false, 0)?;
+    }
+    Ok(())
 }
 
 fn crawl_schema<'v>(
+    crawl: &mut BorrowedCrawl<'v, '_>,
     mut base: Arc<Uri<String>>,
-    document_root: &'v Value,
     subschema: &'v Value,
     draft: Draft,
     is_document_root: bool,
-    document_root_uri: &Arc<Uri<String>>,
-    state: &mut BuildState<'v>,
-    known_resources: &mut KnownResources,
-    resolution_cache: &mut UriCache,
-    visited_local_refs: &mut VisitedLocalRefs<'v>,
+    depth: usize,
 ) -> Result<(), Error> {
     let Some(object) = subschema.as_object() else {
         return Ok(());
@@ -708,20 +745,23 @@ fn crawl_schema<'v>(
         let ResolvedId {
             base: new_base,
             uri_changed,
-        } = resolve_subresource_id(&base, id, known_resources, resolution_cache)?;
+        } = resolve_subresource_id(&base, id, crawl.known_resources, crawl.resolution_cache)?;
         base = new_base;
-        if !(is_document_root && base.as_ref() == document_root_uri.as_ref()) {
-            state
+        if !(is_document_root && base.as_ref() == crawl.document_root_uri.as_ref()) {
+            crawl
+                .state
                 .index
                 .register_borrowed_subresource(&base, draft, uri_changed, subschema);
         }
     } else if analysis.has_anchor && !is_document_root {
-        state
+        crawl
+            .state
             .index
             .register_borrowed_subresource(&base, draft, false, subschema);
     }
 
-    if state
+    if crawl
+        .state
         .crawl
         .visited_schemas
         .insert(visited_schema_context(&base, draft, subschema))
@@ -729,31 +769,43 @@ fn crawl_schema<'v>(
     {
         record_refs(
             &base,
-            document_root,
+            crawl.document_root,
             analysis.dollar_ref,
             analysis.meta_schema,
-            &mut state.crawl,
-            resolution_cache,
+            &mut crawl.state.crawl,
+            crawl.resolution_cache,
             draft,
-            document_root_uri,
-            visited_local_refs,
+            crawl.document_root_uri,
+            crawl.visited_local_refs,
         )?;
     }
 
     draft.walk_children(object, &mut |_key, _sub, child, child_draft| {
-        crawl_schema(
-            Arc::clone(&base),
-            document_root,
-            child,
-            child_draft,
-            false,
-            document_root_uri,
-            state,
-            known_resources,
-            resolution_cache,
-            visited_local_refs,
-        )
+        if depth + 1 >= RECURSION_DEPTH_CAP {
+            crawl.deferred.push(DeferredBorrowed {
+                base: Arc::clone(&base),
+                subschema: child,
+                draft: child_draft,
+            });
+            Ok(())
+        } else {
+            crawl_schema(
+                crawl,
+                Arc::clone(&base),
+                child,
+                child_draft,
+                false,
+                depth + 1,
+            )
+        }
     })
+}
+
+struct DeferredOwned<'doc> {
+    base: Arc<Uri<String>>,
+    subschema: &'doc Value,
+    draft: Draft,
+    pointer: ParsedPointer,
 }
 
 fn crawl_owned_at<'r>(
@@ -775,61 +827,83 @@ fn crawl_owned_at<'r>(
     let Some(subschema) = subschema else {
         return Ok(());
     };
-    let parsed_pointer = ParsedPointer::from_json_pointer(pointer_path);
+    let root_pointer = ParsedPointer::from_json_pointer(pointer_path).unwrap_or_default();
     let mut visited_local_refs = VisitedLocalRefs::new();
+    let mut deferred = Vec::new();
 
-    with_pointer_node_from_parsed(parsed_pointer.as_ref(), |path| {
+    crawl_owned_schema(
+        current_base_uri,
+        document_root,
+        subschema,
+        draft,
+        pointer_path.is_empty(),
+        &root_pointer.segments,
+        &JsonPointerNode::new(),
+        0,
+        &mut deferred,
+        document_root_uri,
+        document,
+        state,
+        known_resources,
+        resolution_cache,
+        &mut visited_local_refs,
+    )?;
+
+    while let Some(DeferredOwned {
+        base,
+        subschema,
+        draft,
+        pointer,
+    }) = deferred.pop()
+    {
         crawl_owned_schema(
-            current_base_uri,
+            base,
             document_root,
             subschema,
             draft,
-            pointer_path.is_empty(),
-            path,
+            false,
+            &pointer.segments,
+            &JsonPointerNode::new(),
+            0,
+            &mut deferred,
             document_root_uri,
             document,
             state,
             known_resources,
             resolution_cache,
             &mut visited_local_refs,
-        )
-    })
+        )?;
+    }
+    Ok(())
 }
 
-fn with_pointer_node_from_parsed<R>(
-    pointer: Option<&ParsedPointer>,
-    f: impl FnOnce(&JsonPointerNode<'_, '_>) -> R,
-) -> R {
-    fn descend<'a, 'node, R>(
-        segments: &'a [ParsedPointerSegment],
-        current: &'node JsonPointerNode<'a, 'node>,
-        f: impl FnOnce(&JsonPointerNode<'_, '_>) -> R,
-    ) -> R {
-        if let Some((head, tail)) = segments.split_first() {
-            let next = match head {
-                ParsedPointerSegment::Key(key) => current.push(key.as_ref()),
-                ParsedPointerSegment::Index(idx) => current.push(*idx),
-            };
-            descend(tail, &next, f)
-        } else {
-            f(current)
-        }
+// Absolute pointer of a node = the owned `prefix` (empty at a document root, the deferred
+// subtree's root pointer otherwise) followed by `relative`, the bounded pointer walked since.
+fn absolute_pointer(
+    prefix: &[ParsedPointerSegment],
+    relative: &JsonPointerNode<'_, '_>,
+) -> ParsedPointer {
+    let mut pointer = ParsedPointer::from_pointer_node(relative);
+    if prefix.is_empty() {
+        return pointer;
     }
-
-    let root = JsonPointerNode::new();
-    match pointer {
-        Some(pointer) => descend(&pointer.segments, &root, f),
-        None => f(&root),
-    }
+    let mut segments = Vec::with_capacity(prefix.len() + pointer.segments.len());
+    segments.extend(prefix.iter().cloned());
+    segments.append(&mut pointer.segments);
+    ParsedPointer { segments }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn crawl_owned_schema<'r, 'doc>(
     mut base: Arc<Uri<String>>,
     document_root: &'doc Value,
     subschema: &'doc Value,
     draft: Draft,
     is_document_root: bool,
+    base_pointer: &[ParsedPointerSegment],
     path: &JsonPointerNode<'_, '_>,
+    depth: usize,
+    deferred: &mut Vec<DeferredOwned<'doc>>,
     document_root_uri: &Arc<Uri<String>>,
     document: &Arc<StoredResource<'r>>,
     state: &mut BuildState<'r>,
@@ -851,7 +925,7 @@ fn crawl_owned_schema<'r, 'doc>(
         if !(is_document_root && base.as_ref() == document_root_uri.as_ref())
             && (uri_changed || analysis.has_anchor)
         {
-            let pointer = ParsedPointer::from_pointer_node(path);
+            let pointer = absolute_pointer(base_pointer, path);
             state.index.register_owned_subresource(
                 &base,
                 document,
@@ -862,7 +936,7 @@ fn crawl_owned_schema<'r, 'doc>(
             );
         }
     } else if analysis.has_anchor && !is_document_root {
-        let pointer = ParsedPointer::from_pointer_node(path);
+        let pointer = absolute_pointer(base_pointer, path);
         state
             .index
             .register_owned_subresource(&base, document, &pointer, draft, false, subschema);
@@ -889,20 +963,33 @@ fn crawl_owned_schema<'r, 'doc>(
 
     draft.walk_children(object, &mut |key, sub, child_value, child_draft| {
         with_owned_child_path(path, key, sub.as_ref(), |child_path| {
-            crawl_owned_schema(
-                Arc::clone(&base),
-                document_root,
-                child_value,
-                child_draft,
-                false,
-                child_path,
-                document_root_uri,
-                document,
-                state,
-                known_resources,
-                resolution_cache,
-                visited_local_refs,
-            )
+            if depth + 1 >= RECURSION_DEPTH_CAP {
+                deferred.push(DeferredOwned {
+                    base: Arc::clone(&base),
+                    subschema: child_value,
+                    draft: child_draft,
+                    pointer: absolute_pointer(base_pointer, child_path),
+                });
+                Ok(())
+            } else {
+                crawl_owned_schema(
+                    Arc::clone(&base),
+                    document_root,
+                    child_value,
+                    child_draft,
+                    false,
+                    base_pointer,
+                    child_path,
+                    depth + 1,
+                    deferred,
+                    document_root_uri,
+                    document,
+                    state,
+                    known_resources,
+                    resolution_cache,
+                    visited_local_refs,
+                )
+            }
         })
     })
 }
@@ -1385,6 +1472,47 @@ mod tests {
             .prepare()
             .expect("Invalid resources");
         assert!(registry.contains_resource("urn:root"));
+    }
+
+    // Move each level in; `json!` interpolation re-serializes recursively and would overflow
+    // during construction instead of in the code under test.
+    fn nested_all_of(depth: usize) -> Value {
+        let mut schema = json!({"type": "integer"});
+        for _ in 0..depth {
+            let mut map = serde_json::Map::new();
+            map.insert("allOf".to_string(), Value::Array(vec![schema]));
+            schema = Value::Object(map);
+        }
+        schema
+    }
+
+    // Preparing a deeply nested resource must not recurse per level. The value is leaked, not
+    // dropped: `serde_json` drops `Value` recursively and would overflow the test-thread stack.
+    // Ignored under Miri, which does not model real thread stacks and flags the deliberate leak.
+    #[cfg_attr(miri, ignore)]
+    #[test]
+    fn deeply_nested_owned_resource_does_not_overflow() {
+        let registry = Registry::new()
+            .add("https://example.com/deep", nested_all_of(5000))
+            .expect("valid resource")
+            .prepare()
+            .expect("prepare should not overflow");
+        assert!(registry.contains_resource("https://example.com/deep"));
+        std::mem::forget(registry);
+    }
+
+    #[cfg_attr(miri, ignore)]
+    #[test]
+    fn deeply_nested_borrowed_resource_does_not_overflow() {
+        let schema = nested_all_of(5000);
+        let registry = Registry::new()
+            .add("https://example.com/deep", &schema)
+            .expect("valid resource")
+            .prepare()
+            .expect("prepare should not overflow");
+        assert!(registry.contains_resource("https://example.com/deep"));
+        drop(registry);
+        std::mem::forget(schema);
     }
 
     #[test]
