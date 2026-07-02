@@ -1,0 +1,10 @@
+error: ["bar","bar"] has non-unique elements
+ --> tests/ui/invalid_dependent_required_duplicates.rs:1:1
+  |
+1 | / #[jsonschema::validator(
+2 | |     schema = r#"{"dependentRequired":{"foo":["bar","bar"]}}"#,
+3 | |     draft = referencing::Draft::Draft201909
+4 | | )]
+  | |__^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

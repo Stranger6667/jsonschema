@@ -58,6 +58,30 @@ See more usage examples in the [documentation](https://docs.rs/jsonschema).
 
 > ⚠️ **Upgrading from older versions?** Check our [Migration Guide](https://github.com/Stranger6667/jsonschema/blob/master/MIGRATION.md) for key changes.
 
+## Compile-time validators
+
+Enable the `macros` feature and use `#[jsonschema::validator(...)]` to compile schema validation code at build time:
+
+```toml
+jsonschema = { version = "0.46", features = ["macros"] }
+```
+
+```rust,ignore
+#[jsonschema::validator(
+    path = "schema.json",
+    draft = Draft202012,
+    validate_formats = true
+)]
+struct Validator;
+
+let instance = serde_json::json!("value");
+assert!(Validator::is_valid(&instance));
+Validator::validate(&instance)?;
+```
+
+Generated validators expose `is_valid` and `validate` (`iter_errors` and `evaluate` are not generated yet) and accept the same configuration as the runtime builder.
+See the [macro documentation](https://docs.rs/jsonschema/latest/jsonschema/macro.validator.html) for all options.
+
 ## Highlights
 
 - 📚 Full support for popular JSON Schema drafts

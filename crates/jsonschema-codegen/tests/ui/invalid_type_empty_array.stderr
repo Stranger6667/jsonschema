@@ -1,0 +1,7 @@
+error: [] has less than 1 item
+ --> tests/ui/invalid_type_empty_array.rs:1:1
+  |
+1 | #[jsonschema::validator(schema = r#"{"type":[]}"#)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

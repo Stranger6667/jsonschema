@@ -1,0 +1,38 @@
+[package]
+name = "jsonschema-codegen"
+version = "0.46.9"
+description = "Compile-time JSON Schema validator generation for the jsonschema crate"
+rust-version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+proc-macro = true
+
+[features]
+arbitrary-precision = ["serde_json/arbitrary_precision"]
+
+[dependencies]
+fancy-regex = "0.18"
+indexmap = "2"
+jsonschema-regex = { version = "0.46.9", path = "../jsonschema-regex" }
+percent-encoding = "2.3"
+proc-macro2 = "1"
+proc-macro-crate = "3"
+quote = "1"
+referencing = { version = "0.46.9", path = "../jsonschema-referencing" }
+regex = "1"
+serde_json = "1"
+syn = { version = "2", features = ["full"] }
+
+[dev-dependencies]
+insta = "1"
+prettyplease = "0.2"
+test-case = "3"
+trybuild = "1"
+jsonschema = { path = "../jsonschema", features = ["macros"] }
+
+[lints]
+workspace = true

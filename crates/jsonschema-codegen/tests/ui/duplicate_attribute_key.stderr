@@ -1,0 +1,5 @@
+error: Duplicate attribute: `draft`
+ --> tests/ui/duplicate_attribute_key.rs:1:75
+  |
+1 | #[jsonschema::validator(schema = r#"{"type":"integer"}"#, draft = Draft4, draft = Draft7)]
+  |                                                                           ^^^^^

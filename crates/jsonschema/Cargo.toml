@@ -26,7 +26,9 @@ tls-aws-lc-rs = ["rustls/aws-lc-rs"]
 # Use ring instead of aws-lc-rs for TLS.
 tls-ring = ["rustls/ring"]
 # Support for arbitrarily large integers and exact decimal values when parsing JSON from strings.
-arbitrary-precision = ["serde_json/arbitrary_precision", "dep:num-bigint"]
+arbitrary-precision = ["serde_json/arbitrary_precision", "dep:num-bigint", "jsonschema-codegen?/arbitrary-precision"]
+# The `#[jsonschema::validator]` compile-time validator macro.
+macros = ["dep:jsonschema-codegen"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Use rustls-no-provider to allow manual selection of crypto backend
@@ -48,6 +50,7 @@ reqwest = { version = "0.13", features = ["json"], default-features = false, opt
 
 [dependencies]
 ahash.workspace = true
+jsonschema-codegen = { version = "0.46.9", path = "../jsonschema-codegen", optional = true }
 jsonschema-regex = { version = "0.46.9", path = "../jsonschema-regex" }
 async-trait = { version = "0.1.86", optional = true }
 bytecount = { version = "0.6", features = ["runtime-dispatch-simd"] }
@@ -87,12 +90,24 @@ tempfile = "3.13.0"
 test-case = "3"
 tokio = { version = "1", features = ["macros", "rt"] }
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lints]
 workspace = true
+
+[[test]]
+name = "codegen"
+required-features = ["macros"]
+
+[[test]]
+name = "suite"
+required-features = ["macros"]
 
 [[bench]]
 harness = false
 name = "jsonschema"
+required-features = ["macros"]
 
 [[bench]]
 harness = false
@@ -117,3 +132,5 @@ name = "unevaluated_items"
 [[bench]]
 harness = false
 name = "metaschema"
+required-features = ["macros"]
+

@@ -67,7 +67,7 @@ impl Hash for HashedValue<'_> {
 const ITEMS_SIZE_THRESHOLD: usize = 15;
 
 #[inline]
-pub(crate) fn is_unique(items: &[Value]) -> bool {
+pub fn is_unique(items: &[Value]) -> bool {
     let size = items.len();
     if size <= 1 {
         // Empty arrays and one-element arrays always contain unique elements

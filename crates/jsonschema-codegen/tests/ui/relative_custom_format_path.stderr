@@ -1,0 +1,5 @@
+error: Custom format paths must be absolute (`::...`) or start with `crate::`
+ --> tests/ui/relative_custom_format_path.rs:9:21
+  |
+9 |         "custom" => custom_format
+  |                     ^^^^^^^^^^^^^
