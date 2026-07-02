@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.9] - 2026-07-02
+
 ### Fixed
 
 - Stack overflow while preparing a registry containing deeply nested schema documents.
@@ -140,7 +142,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.8...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.9...HEAD
+[0.46.9]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.8...ruby-v0.46.9
 [0.46.8]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.7...ruby-v0.46.8
 [0.46.7]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.6...ruby-v0.46.7
 [0.46.6]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.5...ruby-v0.46.6
