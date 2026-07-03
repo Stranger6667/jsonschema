@@ -59,7 +59,7 @@ fraction = { version = "0.15", default-features = false, features = [
 ] }
 idna = "1.0.2"
 itoa = "1"
-num-bigint = { version = "0.4", optional = true }
+num-bigint = { version = "0.5", optional = true }
 num-cmp = "0.1"
 num-traits = "0.2.19"
 percent-encoding = "2.3"
