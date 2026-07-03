@@ -545,6 +545,44 @@ impl<'a> Context<'a> {
             .cloned()
     }
 
+    pub(crate) fn cache_pending_items_validators(
+        &self,
+        key: LocationCacheKey,
+        pending: PendingItemsValidators,
+    ) {
+        self.shared
+            .pending_items_validators
+            .borrow_mut()
+            .insert(key, pending);
+    }
+
+    pub(crate) fn remove_pending_items_validators(&self, key: &LocationCacheKey) {
+        self.shared
+            .pending_items_validators
+            .borrow_mut()
+            .remove(key);
+    }
+
+    pub(crate) fn cache_pending_items_validators_for_schema(
+        &self,
+        schema: &Map<String, Value>,
+        pending: PendingItemsValidators,
+    ) {
+        let key = Self::items_schema_key(schema);
+        self.shared
+            .pending_items_validators_by_schema
+            .borrow_mut()
+            .insert(key, pending);
+    }
+
+    pub(crate) fn remove_pending_items_validators_for_schema(&self, schema: &Map<String, Value>) {
+        let key = Self::items_schema_key(schema);
+        self.shared
+            .pending_items_validators_by_schema
+            .borrow_mut()
+            .remove(&key);
+    }
+
     pub(crate) fn cached_alias_placeholder(
         &self,
         alias: &Arc<Uri<String>>,
