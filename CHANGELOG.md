@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Stack overflow with a self-referential `$dynamicRef` combined with `unevaluatedProperties` or `unevaluatedItems`.
+
 ## [0.46.9] - 2026-07-02
 
 ### Fixed

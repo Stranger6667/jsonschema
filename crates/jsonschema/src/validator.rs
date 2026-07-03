@@ -18,6 +18,10 @@ pub(crate) use crate::paths::LazyEvaluationPath;
 #[derive(Default)]
 pub struct ValidationContext {
     validating: Vec<(usize, usize)>,
+    /// Stack of (validators, instance) pairs currently collecting evaluated properties/items,
+    /// used to break cycles from self-referential `$dynamicRef`/`$recursiveRef` under
+    /// `unevaluatedProperties`/`unevaluatedItems`.
+    marking: Vec<(usize, usize)>,
     /// Lazy-initialized cache for recursive schema validation.
     is_valid_cache: Option<AHashMap<(usize, usize), bool>>,
     /// Lazy-initialized cache for ECMA regex transformation results during format "regex" validation.
@@ -49,6 +53,25 @@ impl ValidationContext {
             Some(key),
             "ValidationContext::exit called out of order"
         );
+    }
+
+    /// Returns `true` if this `(validators, instance)` pair is already being marked (cycle).
+    #[inline]
+    pub(crate) fn enter_marking(&mut self, validators_id: usize, instance: &Value) -> bool {
+        let key = (
+            validators_id,
+            std::ptr::from_ref::<Value>(instance) as usize,
+        );
+        if self.marking.contains(&key) {
+            return true;
+        }
+        self.marking.push(key);
+        false
+    }
+
+    #[inline]
+    pub(crate) fn exit_marking(&mut self) {
+        self.marking.pop();
     }
 
     /// Only caches arrays/objects to avoid false hits from stack address reuse.

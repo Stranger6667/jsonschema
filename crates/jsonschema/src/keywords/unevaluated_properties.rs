@@ -49,7 +49,8 @@ pub(crate) struct PropertyValidators {
     /// Reference validators from "$ref" keyword (may be circular)
     ref_: Option<RefValidator>,
     /// Reference validators from "$dynamicRef" keyword
-    dynamic_ref: Option<Box<PropertyValidators>>,
+    /// Uses pending pattern to handle circular references
+    dynamic_ref: Option<PendingPropertyValidators>,
     /// Validators from "$recursiveRef" keyword (Draft 2019-09 only)
     /// Uses pending pattern to handle circular references
     recursive_ref: Option<PendingPropertyValidators>,
@@ -85,6 +86,23 @@ impl PropertyValidators {
         ctx: &mut ValidationContext,
         include_unevaluated: bool,
     ) {
+        // Break cycles from self-referential `$dynamicRef`/`$recursiveRef` where the
+        // pending node resolves back to this same validators for the same instance.
+        let validators_id = std::ptr::from_ref::<PropertyValidators>(self) as usize;
+        if ctx.enter_marking(validators_id, instance) {
+            return;
+        }
+        self.mark_evaluated_properties_inner(instance, properties, ctx, include_unevaluated);
+        ctx.exit_marking();
+    }
+
+    fn mark_evaluated_properties_inner<'i>(
+        &self,
+        instance: &'i Value,
+        properties: &mut AHashSet<&'i String>,
+        ctx: &mut ValidationContext,
+        include_unevaluated: bool,
+    ) {
         // Handle $ref first
         if let Some(ref_) = &self.ref_ {
             ref_.0.mark_evaluated_properties(instance, properties, ctx);
@@ -99,8 +117,11 @@ impl PropertyValidators {
         }
 
         // Handle $dynamicRef (Draft 2020-12+)
+        // Skip if not yet initialized (circular reference) - properties will be tracked by parent
         if let Some(dynamic_ref) = &self.dynamic_ref {
-            dynamic_ref.mark_evaluated_properties(instance, properties, ctx);
+            if let Some(validators) = dynamic_ref.get() {
+                validators.mark_evaluated_properties(instance, properties, ctx);
+            }
         }
 
         // Process properties on the instance
@@ -499,7 +520,7 @@ fn compile_ref<'a>(
 fn compile_dynamic_ref<'a>(
     ctx: &compiler::Context<'_>,
     parent: &Map<String, Value>,
-) -> Result<Option<Box<PropertyValidators>>, ValidationError<'a>> {
+) -> Result<Option<PendingPropertyValidators>, ValidationError<'a>> {
     let Some(Value::String(reference)) = parent.get("$dynamicRef") else {
         return Ok(None);
     };
@@ -511,9 +532,17 @@ fn compile_dynamic_ref<'a>(
         let vocabularies = ctx.find_vocabularies(draft, contents);
         let ref_ctx =
             ctx.with_resolver_and_draft(resolver, draft, vocabularies, ctx.location().clone());
+
+        // Circular reference: the target is already being compiled - return its pending node.
+        if let Some(pending) = ref_ctx.get_pending_property_validators_for_schema(subschema) {
+            return Ok(Some(pending));
+        }
+
         let validators =
             compile_property_validators(&ref_ctx, subschema).map_err(ValidationError::to_owned)?;
-        Ok(Some(Box::new(validators)))
+        let pending = Arc::new(OnceLock::new());
+        let _ = pending.set(validators);
+        Ok(Some(pending))
     } else {
         Ok(None)
     }
@@ -760,6 +789,38 @@ pub(crate) fn compile<'a>(
 mod tests {
     use crate::error::ValidationErrorKind;
     use serde_json::json;
+
+    #[test]
+    fn dynamic_ref_cycle_does_not_overflow() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/root",
+            "$dynamicAnchor": "node",
+            "type": "object",
+            "$dynamicRef": "#node",
+            "unevaluatedProperties": false
+        });
+
+        let validator = crate::options().build(&schema).expect("schema compiles");
+
+        assert!(validator.is_valid(&json!({})));
+    }
+
+    #[test]
+    fn dynamic_ref_cycle_via_all_of_does_not_overflow() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/root",
+            "$dynamicAnchor": "node",
+            "type": "object",
+            "allOf": [{ "$dynamicRef": "#node" }],
+            "unevaluatedProperties": false
+        });
+
+        let validator = crate::options().build(&schema).expect("schema compiles");
+
+        assert!(validator.is_valid(&json!({})));
+    }
 
     #[test]
     fn recursive_ref_preserves_unevaluated_properties() {
