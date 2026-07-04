@@ -12,3 +12,5 @@ ignore:
   - "crates/**/benches/**"
   - "crates/benchmark/**"
   - "crates/benchmark-suite/**"
+  - "crates/*testsuite*/**"
+  - "crates/testsuite-common/**"
