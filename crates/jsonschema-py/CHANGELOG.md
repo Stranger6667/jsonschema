@@ -5,6 +5,7 @@
 ### Fixed
 
 - Stack overflow with a self-referential `$dynamicRef` combined with `unevaluatedProperties` or `unevaluatedItems`.
+- Incorrect `unevaluatedProperties` and `unevaluatedItems` results when a meta-schema disables the Applicator vocabulary.
 
 ## [0.46.9] - 2026-07-02
 

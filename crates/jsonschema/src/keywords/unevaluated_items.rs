@@ -6,7 +6,7 @@
 //!
 //! The implementation eagerly compiles a recursive `ItemsValidators` structure during
 //! schema compilation, using `Arc<OnceLock>` for circular reference handling.
-use referencing::Draft;
+use referencing::{Draft, Vocabulary};
 use serde_json::{Map, Value};
 use std::sync::{Arc, OnceLock};
 
@@ -277,20 +277,50 @@ fn compile_items_validators<'a>(
     ctx.cache_pending_items_validators(cache_key.clone(), pending.clone());
     ctx.cache_pending_items_validators_for_schema(parent, pending.clone());
 
+    let applicator = ctx.has_vocabulary(&Vocabulary::Applicator);
+
     let unevaluated = compile_unevaluated(ctx, parent)?;
-    let contains = compile_contains(ctx, parent)?;
+    let contains = if applicator {
+        compile_contains(ctx, parent)?
+    } else {
+        None
+    };
     let ref_ = compile_ref(ctx, parent)?;
     let dynamic_ref = compile_dynamic_ref(ctx, parent)?;
     let recursive_ref = compile_recursive_ref(ctx, parent)?;
 
     // Determine items behavior based on draft
-    let (items_limit, items_all) = compile_items(ctx, parent)?;
-    let prefix_items = compile_prefix_items(ctx, parent)?;
+    let (items_limit, items_all) = if applicator {
+        compile_items(ctx, parent)?
+    } else {
+        (None, false)
+    };
+    let prefix_items = if applicator {
+        compile_prefix_items(ctx, parent)?
+    } else {
+        None
+    };
 
-    let conditional = compile_conditional(ctx, parent)?;
-    let all_of = compile_all_of(ctx, parent)?;
-    let any_of = compile_any_of(ctx, parent)?;
-    let one_of = compile_one_of(ctx, parent)?;
+    let conditional = if applicator {
+        compile_conditional(ctx, parent)?
+    } else {
+        None
+    };
+    let all_of = if applicator {
+        compile_all_of(ctx, parent)?
+    } else {
+        None
+    };
+    let any_of = if applicator {
+        compile_any_of(ctx, parent)?
+    } else {
+        None
+    };
+    let one_of = if applicator {
+        compile_one_of(ctx, parent)?
+    } else {
+        None
+    };
 
     let validators = ItemsValidators {
         unevaluated,
@@ -763,6 +793,36 @@ mod tests {
         let validator = crate::options().build(&schema).expect("schema compiles");
 
         assert!(validator.is_valid(&json!([])));
+    }
+
+    #[test]
+    fn prefix_items_do_not_evaluate_without_applicator_vocabulary() {
+        let meta = json!({
+            "$id": "json-schema:///meta/no-applicator-items",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$vocabulary": {
+                "https://json-schema.org/draft/2020-12/vocab/core": true,
+                "https://json-schema.org/draft/2020-12/vocab/validation": true,
+                "https://json-schema.org/draft/2020-12/vocab/unevaluated": true,
+                "https://json-schema.org/draft/2020-12/vocab/format-annotation": true
+            }
+        });
+        let registry = crate::Registry::new()
+            .add("json-schema:///meta/no-applicator-items", &meta)
+            .expect("resource accepted")
+            .prepare()
+            .expect("registry build failed");
+        let schema = json!({
+            "$schema": "json-schema:///meta/no-applicator-items",
+            "prefixItems": [{"type": "integer"}],
+            "unevaluatedItems": false
+        });
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(&schema)
+            .expect("schema compiles");
+        assert!(validator.is_valid(&json!([])));
+        assert!(!validator.is_valid(&json!([1])));
     }
 
     #[test]

@@ -8,6 +8,7 @@
 //! schema compilation, using `Arc<OnceLock>` for circular reference handling.
 use ahash::AHashSet;
 use fancy_regex::Regex;
+use referencing::Vocabulary;
 use serde_json::{Map, Value};
 use std::sync::{Arc, OnceLock};
 
@@ -282,20 +283,53 @@ fn compile_property_validators<'a>(
     ctx.cache_pending_property_validators(cache_key.clone(), pending.clone());
     ctx.cache_pending_property_validators_for_schema(parent, pending.clone());
 
-    // Compile all parts
+    let applicator = ctx.has_vocabulary(&Vocabulary::Applicator);
+
     let validators = PropertyValidators {
-        properties: compile_properties(ctx, parent)?,
-        additional: compile_additional(ctx, parent)?,
-        pattern_properties: compile_pattern_properties(ctx, parent)?,
+        properties: if applicator {
+            compile_properties(ctx, parent)?
+        } else {
+            AHashSet::new()
+        },
+        additional: if applicator {
+            compile_additional(ctx, parent)?
+        } else {
+            None
+        },
+        pattern_properties: if applicator {
+            compile_pattern_properties(ctx, parent)?
+        } else {
+            Vec::new()
+        },
         unevaluated: compile_unevaluated(ctx, parent)?,
-        all_of: compile_all_of(ctx, parent)?,
-        any_of: compile_any_of(ctx, parent)?,
-        one_of: compile_one_of(ctx, parent)?,
-        conditional: compile_conditional(ctx, parent)?,
+        all_of: if applicator {
+            compile_all_of(ctx, parent)?
+        } else {
+            Vec::new()
+        },
+        any_of: if applicator {
+            compile_any_of(ctx, parent)?
+        } else {
+            Vec::new()
+        },
+        one_of: if applicator {
+            compile_one_of(ctx, parent)?
+        } else {
+            Vec::new()
+        },
+        conditional: if applicator {
+            compile_conditional(ctx, parent)?
+        } else {
+            None
+        },
         ref_: compile_ref(ctx, parent).map_err(ValidationError::to_owned)?,
         dynamic_ref: compile_dynamic_ref(ctx, parent).map_err(ValidationError::to_owned)?,
         recursive_ref: compile_recursive_ref(ctx, parent)?,
-        dependent: compile_dependent(ctx, parent)?,
+        dependent: if applicator {
+            compile_dependent(ctx, parent)?
+        } else {
+            Vec::new()
+        },
     };
 
     // Initialize the pending node. This should always succeed since we just created it.
@@ -804,6 +838,37 @@ mod tests {
         let validator = crate::options().build(&schema).expect("schema compiles");
 
         assert!(validator.is_valid(&json!({})));
+    }
+
+    #[test]
+    fn properties_do_not_evaluate_without_applicator_vocabulary() {
+        let meta = json!({
+            "$id": "json-schema:///meta/no-applicator",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$vocabulary": {
+                "https://json-schema.org/draft/2020-12/vocab/core": true,
+                "https://json-schema.org/draft/2020-12/vocab/validation": true,
+                "https://json-schema.org/draft/2020-12/vocab/unevaluated": true,
+                "https://json-schema.org/draft/2020-12/vocab/format-annotation": true
+            }
+        });
+        let registry = crate::Registry::new()
+            .add("json-schema:///meta/no-applicator", &meta)
+            .expect("resource accepted")
+            .prepare()
+            .expect("registry build failed");
+        let schema = json!({
+            "$schema": "json-schema:///meta/no-applicator",
+            "properties": {"a": {"type": "integer"}},
+            "unevaluatedProperties": false
+        });
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(&schema)
+            .expect("schema compiles");
+        assert!(validator.is_valid(&json!({})));
+        assert!(!validator.is_valid(&json!({"a": 1})));
+        assert!(!validator.is_valid(&json!({"b": 2})));
     }
 
     #[test]
