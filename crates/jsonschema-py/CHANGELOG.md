@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.10] - 2026-07-05
+
 ### Fixed
 
 - Stack overflow with a self-referential `$dynamicRef` combined with `unevaluatedProperties` or `unevaluatedItems`.
@@ -1055,7 +1057,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.9...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.10...HEAD
+[0.46.10]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.9...python-v0.46.10
 [0.46.9]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.8...python-v0.46.9
 [0.46.8]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.7...python-v0.46.8
 [0.46.7]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.6...python-v0.46.7
