@@ -1,6 +1,6 @@
 [package]
 name = "jsonschema-regex"
-version = "0.46.9"
+version = "0.46.10"
 description = "ECMA 262 regex translation for the jsonschema crate"
 rust-version.workspace = true
 edition.workspace = true

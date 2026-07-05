@@ -1,6 +1,6 @@
 [package]
 name = "jsonschema"
-version = "0.46.9"
+version = "0.46.10"
 description = "JSON schema validaton library"
 keywords = ["jsonschema", "validation"]
 categories = ["web-programming"]
@@ -48,7 +48,7 @@ reqwest = { version = "0.13", features = ["json"], default-features = false, opt
 
 [dependencies]
 ahash.workspace = true
-jsonschema-regex = { version = "0.46.9", path = "../jsonschema-regex" }
+jsonschema-regex = { version = "0.46.10", path = "../jsonschema-regex" }
 async-trait = { version = "0.1.86", optional = true }
 bytecount = { version = "0.6", features = ["runtime-dispatch-simd"] }
 data-encoding = "2.9"
@@ -63,7 +63,7 @@ num-bigint = { version = "0.4", optional = true }
 num-cmp = "0.1"
 num-traits = "0.2.19"
 percent-encoding = "2.3"
-referencing = { version = "0.46.9", path = "../jsonschema-referencing" }
+referencing = { version = "0.46.10", path = "../jsonschema-referencing" }
 regex = "1.11.1"
 serde.workspace = true
 serde_json.workspace = true

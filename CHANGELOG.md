@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.46.10] - 2026-07-05
+
 ### Fixed
 
 - Stack overflow with a self-referential `$dynamicRef` combined with `unevaluatedProperties` or `unevaluatedItems`.
@@ -1316,7 +1318,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.9...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.10...HEAD
+[0.46.10]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.9...rust-v0.46.10
 [0.46.9]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.8...rust-v0.46.9
 [0.46.8]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.7...rust-v0.46.8
 [0.46.7]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.6...rust-v0.46.7
