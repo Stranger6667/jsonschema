@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Free-threaded wheels for Python 3.15 (`3.15t`).
+
 ### Changed
 
 - Update `pyo3` to `0.29`.

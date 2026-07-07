@@ -331,7 +331,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-15, windows-2025]
-        python-version: ['3.14t']
+        python-version: ['3.14t', '3.15t']
 
     name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -357,14 +357,12 @@ jobs:
         if: runner.os == 'Windows'
         uses: messense/maturin-action@v1
         with:
-          maturin-version: "1.13.2"
           args: --release -m crates/jsonschema-py/Cargo.toml --out crates/jsonschema-py/dist --interpreter ${{ steps.python-path-windows.outputs.path }}
 
       - name: Build wheel (Unix)
         if: runner.os != 'Windows'
         uses: messense/maturin-action@v1
         with:
-          maturin-version: "1.13.2"
           args: --release -m crates/jsonschema-py/Cargo.toml --out crates/jsonschema-py/dist --interpreter ${{ matrix.python-version }}
 
       - name: Test wheel
@@ -646,6 +644,10 @@ jobs:
     name: Check Python release (free-threaded)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python_version: ["3.14t", "3.15t"]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -657,17 +659,16 @@ jobs:
 
       - uses: astral-sh/setup-uv@v7
 
-      - run: uv python install 3.14t
+      - run: uv python install ${{ matrix.python_version }}
 
       - name: Build wheel
         uses: messense/maturin-action@v1
         with:
-          maturin-version: "1.13.2"
-          args: --release -m crates/jsonschema-py/Cargo.toml --out crates/jsonschema-py/dist --interpreter 3.14t
+          args: --release -m crates/jsonschema-py/Cargo.toml --out crates/jsonschema-py/dist --interpreter ${{ matrix.python_version }}
 
       - name: Install and verify wheel
         run: |
-          uv venv --python 3.14t
+          uv venv --python ${{ matrix.python_version }}
           uv pip install crates/jsonschema-py/dist/*.whl
           uv run python -c "import jsonschema_rs; assert jsonschema_rs.is_valid({'type': 'string'}, 'foo')"
 
