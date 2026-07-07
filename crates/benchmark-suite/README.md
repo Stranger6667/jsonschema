@@ -43,14 +43,14 @@ Sources:
 
 | Benchmark | Dynamic `is_valid` | Codegen `is_valid` | Speedup |
 |-----------|---------------------|--------------------|---------|
-| OpenAPI   | 1.16 ms             | 502.94 µs          | **2.30x** |
-| Swagger   | 1.38 ms             | 508.83 µs          | **2.71x** |
-| GeoJSON   | 370.51 µs           | 59.959 µs          | **6.18x** |
-| CITM      | 346.39 µs           | 182.85 µs          | **1.89x** |
-| Fast (Valid) | 64.854 ns        | 19.237 ns          | **3.37x** |
-| Fast (Invalid) | 6.0212 ns      | 1.4149 ns          | **4.26x** |
-| FHIR      | 3.82 µs             | 2.3284 µs          | **1.64x** |
-| Recursive | 6.47 µs             | 702.35 ns          | **9.21x** |
+| OpenAPI   | 1.16 ms             | 459.35 µs          | **2.53x** |
+| Swagger   | 1.38 ms             | 513.96 µs          | **2.69x** |
+| GeoJSON   | 370.51 µs           | 61.784 µs          | **6.00x** |
+| CITM      | 346.39 µs           | 131.13 µs          | **2.64x** |
+| Fast (Valid) | 64.854 ns        | 20.942 ns          | **3.10x** |
+| Fast (Invalid) | 6.0212 ns      | 2.5233 ns          | **2.39x** |
+| FHIR      | 3.82 µs             | 315.64 ns          | **12.10x** |
+| Recursive | 6.47 µs             | 638.05 ns          | **10.14x** |
 
 ### Comparison with Other Libraries
 
