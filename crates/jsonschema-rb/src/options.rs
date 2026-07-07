@@ -12,7 +12,7 @@ use magnus::{
     prelude::*,
     scan_args::{get_kwargs, scan_args, KwArgs},
     value::Opaque,
-    Error, RHash, RModule, Ruby, TryConvert, Value,
+    Error, Exception, RArray, RHash, RModule, Ruby, TryConvert, Value,
 };
 
 use crate::{
@@ -388,7 +388,7 @@ impl jsonschema::Keyword for RubyKeyword {
             Err(e) => {
                 let msg = e.to_string();
                 CUSTOM_KEYWORD_CAUSE.with(|cell| {
-                    *cell.borrow_mut() = Some(e);
+                    cell.borrow_mut().push_back(e);
                 });
                 Err(jsonschema::ValidationError::custom(msg))
             }
@@ -404,6 +404,67 @@ impl jsonschema::Keyword for RubyKeyword {
         let result: Result<Value, _> = inst.funcall("validate", (rb_instance,));
         result.is_ok()
     }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i serde_json::Value,
+    ) -> Box<dyn Iterator<Item = jsonschema::ValidationError<'i>> + 'i> {
+        let ruby = Ruby::get().expect("Ruby VM should be initialized");
+        let keyword = ruby.get_inner(self.instance);
+        // Without an `iter_errors` method, fall back to the single-error `validate` path.
+        if !keyword.respond_to("iter_errors", false).unwrap_or(false) {
+            return Box::new(self.validate(instance).err().into_iter());
+        }
+        let rb_instance = match value_to_ruby(&ruby, instance) {
+            Ok(rb_instance) => rb_instance,
+            Err(error) => return Box::new(std::iter::once(custom_error_from_ruby(error))),
+        };
+        let array = keyword
+            .funcall::<_, _, Value>("iter_errors", (rb_instance,))
+            .and_then(|result| result.funcall::<_, _, RArray>("to_a", ()));
+        let array = match array {
+            Ok(array) => array,
+            Err(error) => return Box::new(std::iter::once(custom_error_from_ruby(error))),
+        };
+        let mut errors: Vec<jsonschema::ValidationError<'i>> = Vec::with_capacity(array.len());
+        for index in 0..array.len() {
+            // `entry` (not `as_slice`) because `ruby_value_to_error` calls back into Ruby.
+            let item = isize::try_from(index)
+                .map_err(|_| {
+                    Error::new(
+                        ruby.exception_arg_error(),
+                        "Array index exceeds supported range",
+                    )
+                })
+                .and_then(|index| array.entry::<Value>(index));
+            let error = match item {
+                Ok(item) => ruby_value_to_error(&ruby, item),
+                Err(error) => error,
+            };
+            errors.push(custom_error_from_ruby(error));
+        }
+        Box::new(errors.into_iter())
+    }
+}
+
+// Wrap a yielded Ruby value as an `Error`, preserving exception instances so they surface as
+// `#cause`; a non-exception is reported through a generic `RuntimeError`.
+fn ruby_value_to_error(ruby: &Ruby, value: Value) -> Error {
+    if let Ok(exception) = Exception::try_convert(value) {
+        return Error::from(exception);
+    }
+    let message = value
+        .funcall::<_, _, String>("to_s", ())
+        .unwrap_or_else(|_| "custom keyword error".to_string());
+    Error::new(ruby.exception_runtime_error(), message)
+}
+
+// Build a custom `ValidationError` from a Ruby error, queuing the exception as the error's cause so
+// it surfaces as `#cause`, exactly like the single `validate` path.
+fn custom_error_from_ruby<'i>(error: Error) -> jsonschema::ValidationError<'i> {
+    let message = error.to_string();
+    CUSTOM_KEYWORD_CAUSE.with(|cell| cell.borrow_mut().push_back(error));
+    jsonschema::ValidationError::custom(message)
 }
 
 #[allow(clippy::too_many_arguments)]

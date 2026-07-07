@@ -148,7 +148,26 @@ Each custom keyword class must implement:
 - `initialize(parent_schema, value, schema_path)` - called during schema compilation
 - `validate(instance)` - raise on failure, return normally on success
 
-When `validate` raises, the original exception is preserved as the `cause` of the `ValidationError`, so callers can inspect it:
+A class may also implement `iter_errors(instance)`, returning an array of exceptions, to report several problems from one keyword. `each_error` then surfaces each of them; when the method is absent it falls back to the single error from `validate`:
+
+```ruby
+class AllPositive
+  def initialize(parent_schema, value, schema_path); end
+
+  def validate(instance)
+    first_error = iter_errors(instance).first
+    raise first_error if first_error
+  end
+
+  def iter_errors(instance)
+    return [] unless instance.is_a?(Array)
+    instance.each_index.select { |i| instance[i].negative? }
+            .map { |i| ArgumentError.new("item #{i} is negative") }
+  end
+end
+```
+
+When `validate` raises, the original exception is preserved as the `cause` of the `ValidationError`, so callers can inspect it (errors from `iter_errors` keep their exception as `cause` in the same way):
 
 ```ruby
 begin

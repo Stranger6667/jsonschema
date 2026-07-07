@@ -29,6 +29,7 @@ use magnus::{
 use referencing::unescape_segment;
 use std::{
     cell::RefCell,
+    collections::VecDeque,
     panic::{self, AssertUnwindSafe},
     sync::Arc,
 };
@@ -198,11 +199,34 @@ fn build_parsed_options(
 
 thread_local! {
     static LAST_CALLBACK_ERROR: RefCell<Option<Error>> = const { RefCell::new(None) };
-    // Stores the original Ruby exception from a custom keyword's validate() call so it can be
-    // set as the `cause` on the resulting ValidationError.
-    pub(crate) static CUSTOM_KEYWORD_CAUSE: RefCell<Option<Error>> = const { RefCell::new(None) };
+    // Stores the original Ruby exceptions from a custom keyword's validate()/iter_errors() calls so
+    // each can be set as the `cause` on the resulting ValidationError, in FIFO order.
+    pub(crate) static CUSTOM_KEYWORD_CAUSE: RefCell<VecDeque<Error>> = const { RefCell::new(VecDeque::new()) };
     /// When `true`, the custom panic hook suppresses output (inside `catch_unwind` blocks).
     static SUPPRESS_PANIC_OUTPUT: RefCell<bool> = const { RefCell::new(false) };
+}
+
+// RAII scope giving each surfacing call its own keyword-cause queue and restoring the caller's on
+// exit. This discards causes a call leaves unconsumed (`evaluate`, an abandoned enumeration, a
+// panic — the drop still runs) and lets a keyword re-enter validation without clobbering the outer
+// call's pending causes.
+pub(crate) struct KeywordCauseScope {
+    saved: VecDeque<Error>,
+}
+
+impl KeywordCauseScope {
+    pub(crate) fn enter() -> Self {
+        Self {
+            saved: CUSTOM_KEYWORD_CAUSE.with(|cell| std::mem::take(&mut *cell.borrow_mut())),
+        }
+    }
+}
+
+impl Drop for KeywordCauseScope {
+    fn drop(&mut self) {
+        let saved = std::mem::take(&mut self.saved);
+        CUSTOM_KEYWORD_CAUSE.with(|cell| *cell.borrow_mut() = saved);
+    }
 }
 
 static VALIDATION_ERROR_CLASS: Lazy<ExceptionClass> = Lazy::new(|ruby| {
@@ -431,7 +455,7 @@ fn into_ruby_error(
     exc.ivar_set(*ID_AT_ABSOLUTE_KEYWORD_LOCATION, absolute_location)?;
 
     if is_custom {
-        if let Some(cause) = CUSTOM_KEYWORD_CAUSE.with(|cell| cell.borrow_mut().take()) {
+        if let Some(cause) = CUSTOM_KEYWORD_CAUSE.with(|cell| cell.borrow_mut().pop_front()) {
             if let ErrorType::Exception(cause_exc) = cause.error_type() {
                 exc.ivar_set(*ID_CAUSE, cause_exc.as_value())?;
             }
@@ -654,6 +678,7 @@ impl Validator {
 
     #[allow(unsafe_code)]
     fn validate(ruby: &Ruby, rb_self: &Self, instance: Value) -> Result<(), Error> {
+        let _scope = KeywordCauseScope::enter();
         let json_instance = to_value(ruby, instance)?;
 
         if rb_self.has_ruby_callbacks {
@@ -687,6 +712,7 @@ impl Validator {
 
     #[allow(unsafe_code)]
     fn iter_errors(ruby: &Ruby, rb_self: &Self, instance: Value) -> Result<Value, Error> {
+        let _scope = KeywordCauseScope::enter();
         let json_instance = to_value(ruby, instance)?;
 
         if ruby.block_given() {
@@ -773,6 +799,7 @@ impl Validator {
 
     #[allow(unsafe_code)]
     fn evaluate(ruby: &Ruby, rb_self: &Self, instance: Value) -> Result<Evaluation, Error> {
+        let _scope = KeywordCauseScope::enter();
         let json_instance = to_value(ruby, instance)?;
 
         if rb_self.has_ruby_callbacks {
@@ -1027,6 +1054,7 @@ fn is_valid(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
 
 #[allow(unsafe_code)]
 fn validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
+    let _scope = KeywordCauseScope::enter();
     let parsed_args = scan_args::<(Value, Value), (), (), (), _, ()>(args)?;
     let (schema, instance) = parsed_args.required;
     let kw = extract_kwargs(ruby, parsed_args.keywords)?;
@@ -1079,6 +1107,7 @@ fn validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
 
 #[allow(unsafe_code)]
 fn each_error(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
+    let _scope = KeywordCauseScope::enter();
     let parsed_args = scan_args::<(Value, Value), (), (), (), _, ()>(args)?;
     let (schema, instance) = parsed_args.required;
     let kw = extract_kwargs(ruby, parsed_args.keywords)?;
@@ -1175,6 +1204,7 @@ fn each_error(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
 
 #[allow(unsafe_code)]
 fn evaluate(ruby: &Ruby, args: &[Value]) -> Result<Evaluation, Error> {
+    let _scope = KeywordCauseScope::enter();
     let parsed_args = scan_args::<(Value, Value), (), (), (), _, ()>(args)?;
     let (schema, instance) = parsed_args.required;
     let kw = extract_evaluate_kwargs(ruby, parsed_args.keywords)?;

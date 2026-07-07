@@ -8,6 +8,7 @@
 use std::{
     any::Any,
     cell::RefCell,
+    collections::VecDeque,
     io::Write,
     panic::{self, AssertUnwindSafe},
 };
@@ -773,7 +774,7 @@ fn into_py_err(
     let is_custom = matches!(args.kind, ValidationErrorKind::Custom { .. });
     let py_err = validation_error_pyerr(py, args)?;
     if is_custom {
-        if let Some(cause) = CUSTOM_KEYWORD_CAUSE.with(|cell| cell.borrow_mut().take()) {
+        if let Some(cause) = CUSTOM_KEYWORD_CAUSE.with(|cell| cell.borrow_mut().pop_front()) {
             let err_obj = py_err.value(py);
             err_obj.setattr("__cause__", cause.value(py))?;
             err_obj.setattr("__suppress_context__", true)?;
@@ -797,9 +798,9 @@ fn get_draft(draft: u8) -> PyResult<Draft> {
 
 thread_local! {
     static LAST_FORMAT_ERROR: RefCell<Option<PyErr>> = const { RefCell::new(None) };
-    // Stores the original Python exception from a custom keyword's validate() call so it can be
-    // attached as __cause__ on the resulting ValidationError.
-    static CUSTOM_KEYWORD_CAUSE: RefCell<Option<PyErr>> = const { RefCell::new(None) };
+    // Stores the original Python exceptions from a custom keyword's validate()/iter_errors() calls
+    // so each can be attached as __cause__ on the resulting ValidationError, in FIFO order.
+    static CUSTOM_KEYWORD_CAUSE: RefCell<VecDeque<PyErr>> = const { RefCell::new(VecDeque::new()) };
 }
 
 // Custom keyword validator - instantiated with (parent_schema, value, schema_path), must have validate(instance) method
@@ -824,7 +825,7 @@ impl jsonschema::Keyword for CustomKeyword {
                 Err(e) => {
                     let msg = e.value(py).to_string();
                     CUSTOM_KEYWORD_CAUSE.with(|cell| {
-                        *cell.borrow_mut() = Some(e);
+                        cell.borrow_mut().push_back(e);
                     });
                     Err(jsonschema::ValidationError::custom(msg))
                 }
@@ -841,6 +842,84 @@ impl jsonschema::Keyword for CustomKeyword {
                 .call_method1(py, "validate", (py_instance,))
                 .is_ok()
         })
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i serde_json::Value,
+    ) -> Box<dyn Iterator<Item = jsonschema::ValidationError<'i>> + 'i> {
+        Python::attach(|py| {
+            // Without an `iter_errors` method, fall back to the single-error `validate` path.
+            if !self
+                .instance
+                .bind(py)
+                .hasattr("iter_errors")
+                .unwrap_or(false)
+            {
+                return boxed_error_iter(self.validate(instance).err());
+            }
+            let py_instance = match value_to_python(py, instance) {
+                Ok(instance) => instance,
+                Err(error) => return boxed_error_iter(Some(custom_error_with_cause(py, error))),
+            };
+            let iterable = match self
+                .instance
+                .call_method1(py, "iter_errors", (py_instance,))
+            {
+                Ok(iterable) => iterable,
+                Err(error) => return boxed_error_iter(Some(custom_error_with_cause(py, error))),
+            };
+            let iterator = match iterable.bind(py).try_iter() {
+                Ok(iterator) => iterator,
+                Err(error) => return boxed_error_iter(Some(custom_error_with_cause(py, error))),
+            };
+            let mut errors = Vec::new();
+            for item in iterator {
+                let error = match item {
+                    Ok(item) => custom_error_with_cause(py, PyErr::from_value(item)),
+                    Err(error) => custom_error_with_cause(py, error),
+                };
+                errors.push(error);
+            }
+            Box::new(errors.into_iter())
+        })
+    }
+}
+
+// Build a custom `ValidationError` from a Python exception, queuing the exception as the error's
+// cause so it surfaces as `__cause__`, exactly like the single `validate` path.
+fn custom_error_with_cause<'i>(py: Python<'_>, error: PyErr) -> jsonschema::ValidationError<'i> {
+    let message = error.value(py).to_string();
+    CUSTOM_KEYWORD_CAUSE.with(|cell| cell.borrow_mut().push_back(error));
+    jsonschema::ValidationError::custom(message)
+}
+
+fn boxed_error_iter<'i>(
+    error: Option<jsonschema::ValidationError<'i>>,
+) -> Box<dyn Iterator<Item = jsonschema::ValidationError<'i>> + 'i> {
+    Box::new(error.into_iter())
+}
+
+// RAII scope giving each surfacing call its own keyword-cause queue and restoring the caller's on
+// exit. This discards causes a call leaves unconsumed (`evaluate`, which renders messages rather
+// than exceptions, or a panic — the drop still runs) and lets a keyword re-enter validation without
+// clobbering the outer call's pending causes.
+struct KeywordCauseScope {
+    saved: VecDeque<PyErr>,
+}
+
+impl KeywordCauseScope {
+    fn enter() -> Self {
+        Self {
+            saved: CUSTOM_KEYWORD_CAUSE.with(|cell| std::mem::take(&mut *cell.borrow_mut())),
+        }
+    }
+}
+
+impl Drop for KeywordCauseScope {
+    fn drop(&mut self) {
+        let saved = std::mem::take(&mut self.saved);
+        CUSTOM_KEYWORD_CAUSE.with(|cell| *cell.borrow_mut() = saved);
     }
 }
 
@@ -1044,6 +1123,7 @@ fn iter_on_error(
     instance: &Bound<'_, PyAny>,
     mask: Option<&str>,
 ) -> PyResult<ValidationErrorIter> {
+    let _scope = KeywordCauseScope::enter();
     let instance = ser::to_value(instance)?;
     let mut pyerrors = vec![];
 
@@ -1065,6 +1145,7 @@ fn raise_on_error(
     instance: &Bound<'_, PyAny>,
     mask: Option<&str>,
 ) -> PyResult<()> {
+    let _scope = KeywordCauseScope::enter();
     let instance = ser::to_value(instance)?;
     let error = panic::catch_unwind(AssertUnwindSafe(|| validator.validate(&instance)))
         .map_err(handle_format_checked_panic)?
@@ -1383,6 +1464,7 @@ fn evaluate(
     http_options: Option<&Bound<'_, PyAny>>,
     keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyEvaluation> {
+    let _scope = KeywordCauseScope::enter();
     let options = make_options(
         draft,
         formats,
@@ -1845,6 +1927,7 @@ impl Validator {
     /// ```
     #[pyo3(text_signature = "(instance)")]
     fn evaluate(&self, instance: &Bound<'_, PyAny>) -> PyResult<PyEvaluation> {
+        let _scope = KeywordCauseScope::enter();
         let instance = ser::to_value(instance)?;
         let evaluation =
             panic::catch_unwind(AssertUnwindSafe(|| self.validator.evaluate(&instance)))
