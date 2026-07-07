@@ -1892,26 +1892,24 @@ impl Draft4Validator {
         email_options: Option<&Bound<'_, PyAny>>,
         http_options: Option<&Bound<'_, PyAny>>,
         keywords: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<(Self, Validator)> {
-        Ok((
-            Draft4Validator {},
-            validator_for_impl(
-                py,
-                schema,
-                Some(DRAFT4),
-                formats,
-                validate_formats,
-                ignore_unknown_formats,
-                retriever,
-                registry,
-                mask,
-                base_uri,
-                pattern_options,
-                email_options,
-                http_options,
-                keywords,
-            )?,
-        ))
+    ) -> PyResult<PyClassInitializer<Self>> {
+        Ok(PyClassInitializer::from(validator_for_impl(
+            py,
+            schema,
+            Some(DRAFT4),
+            formats,
+            validate_formats,
+            ignore_unknown_formats,
+            retriever,
+            registry,
+            mask,
+            base_uri,
+            pattern_options,
+            email_options,
+            http_options,
+            keywords,
+        )?)
+        .add_subclass(Draft4Validator {}))
     }
 }
 
@@ -1944,26 +1942,24 @@ impl Draft6Validator {
         email_options: Option<&Bound<'_, PyAny>>,
         http_options: Option<&Bound<'_, PyAny>>,
         keywords: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<(Self, Validator)> {
-        Ok((
-            Draft6Validator {},
-            validator_for_impl(
-                py,
-                schema,
-                Some(DRAFT6),
-                formats,
-                validate_formats,
-                ignore_unknown_formats,
-                retriever,
-                registry,
-                mask,
-                base_uri,
-                pattern_options,
-                email_options,
-                http_options,
-                keywords,
-            )?,
-        ))
+    ) -> PyResult<PyClassInitializer<Self>> {
+        Ok(PyClassInitializer::from(validator_for_impl(
+            py,
+            schema,
+            Some(DRAFT6),
+            formats,
+            validate_formats,
+            ignore_unknown_formats,
+            retriever,
+            registry,
+            mask,
+            base_uri,
+            pattern_options,
+            email_options,
+            http_options,
+            keywords,
+        )?)
+        .add_subclass(Draft6Validator {}))
     }
 }
 
@@ -1996,26 +1992,24 @@ impl Draft7Validator {
         email_options: Option<&Bound<'_, PyAny>>,
         http_options: Option<&Bound<'_, PyAny>>,
         keywords: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<(Self, Validator)> {
-        Ok((
-            Draft7Validator {},
-            validator_for_impl(
-                py,
-                schema,
-                Some(DRAFT7),
-                formats,
-                validate_formats,
-                ignore_unknown_formats,
-                retriever,
-                registry,
-                mask,
-                base_uri,
-                pattern_options,
-                email_options,
-                http_options,
-                keywords,
-            )?,
-        ))
+    ) -> PyResult<PyClassInitializer<Self>> {
+        Ok(PyClassInitializer::from(validator_for_impl(
+            py,
+            schema,
+            Some(DRAFT7),
+            formats,
+            validate_formats,
+            ignore_unknown_formats,
+            retriever,
+            registry,
+            mask,
+            base_uri,
+            pattern_options,
+            email_options,
+            http_options,
+            keywords,
+        )?)
+        .add_subclass(Draft7Validator {}))
     }
 }
 
@@ -2048,26 +2042,24 @@ impl Draft201909Validator {
         email_options: Option<&Bound<'_, PyAny>>,
         http_options: Option<&Bound<'_, PyAny>>,
         keywords: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<(Self, Validator)> {
-        Ok((
-            Draft201909Validator {},
-            validator_for_impl(
-                py,
-                schema,
-                Some(DRAFT201909),
-                formats,
-                validate_formats,
-                ignore_unknown_formats,
-                retriever,
-                registry,
-                mask,
-                base_uri,
-                pattern_options,
-                email_options,
-                http_options,
-                keywords,
-            )?,
-        ))
+    ) -> PyResult<PyClassInitializer<Self>> {
+        Ok(PyClassInitializer::from(validator_for_impl(
+            py,
+            schema,
+            Some(DRAFT201909),
+            formats,
+            validate_formats,
+            ignore_unknown_formats,
+            retriever,
+            registry,
+            mask,
+            base_uri,
+            pattern_options,
+            email_options,
+            http_options,
+            keywords,
+        )?)
+        .add_subclass(Draft201909Validator {}))
     }
 }
 
@@ -2100,26 +2092,24 @@ impl Draft202012Validator {
         email_options: Option<&Bound<'_, PyAny>>,
         http_options: Option<&Bound<'_, PyAny>>,
         keywords: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<(Self, Validator)> {
-        Ok((
-            Draft202012Validator {},
-            validator_for_impl(
-                py,
-                schema,
-                Some(DRAFT202012),
-                formats,
-                validate_formats,
-                ignore_unknown_formats,
-                retriever,
-                registry,
-                mask,
-                base_uri,
-                pattern_options,
-                email_options,
-                http_options,
-                keywords,
-            )?,
-        ))
+    ) -> PyResult<PyClassInitializer<Self>> {
+        Ok(PyClassInitializer::from(validator_for_impl(
+            py,
+            schema,
+            Some(DRAFT202012),
+            formats,
+            validate_formats,
+            ignore_unknown_formats,
+            retriever,
+            registry,
+            mask,
+            base_uri,
+            pattern_options,
+            email_options,
+            http_options,
+            keywords,
+        )?)
+        .add_subclass(Draft202012Validator {}))
     }
 }
 

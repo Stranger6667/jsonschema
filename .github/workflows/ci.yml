@@ -347,7 +347,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-15, windows-2025]
-        python-version: ['3.13t', '3.14t']
+        python-version: ['3.14t']
 
     name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -673,17 +673,17 @@ jobs:
 
       - uses: astral-sh/setup-uv@v7
 
-      - run: uv python install 3.13t
+      - run: uv python install 3.14t
 
       - name: Build wheel
         uses: messense/maturin-action@v1
         with:
           maturin-version: "1.13.2"
-          args: --release -m crates/jsonschema-py/Cargo.toml --out crates/jsonschema-py/dist --interpreter 3.13t
+          args: --release -m crates/jsonschema-py/Cargo.toml --out crates/jsonschema-py/dist --interpreter 3.14t
 
       - name: Install and verify wheel
         run: |
-          uv venv --python 3.13t
+          uv venv --python 3.14t
           uv pip install crates/jsonschema-py/dist/*.whl
           uv run python -c "import jsonschema_rs; assert jsonschema_rs.is_valid({'type': 'string'}, 'foo')"
 
