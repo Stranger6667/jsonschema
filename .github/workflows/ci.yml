@@ -31,27 +31,10 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.83.0"
+          toolchain: "1.85.0"
 
       - uses: Swatinem/rust-cache@v2
 
-      # (dd): These packages bumped their MSRV with a patch release.
-      #       As per my understanding cargo will be able to automatically
-      #       resolve the proper version with the resolver v3 which is MSRV-aware.
-      #       With the current MSRV it is not possible to force the resolver to find
-      #       proper versions, hence they are pinned manually here. The end users
-      #       will be able to do the same on their side (which is a bad UX though),
-      #       but apparently there is nothing can be done on the `jsonschema` side
-      #       beside bumping MSRV to 1.85 and upgrading to the new resolver.
-      - run: cargo update -p idna_adapter --precise 1.2.0
-      - run: cargo update -p litemap --precise 0.7.4
-      - run: cargo update -p zerofrom --precise 0.1.5
-      - run: cargo update -p indexmap --precise 2.13.0
-      - run: cargo update -p hyper-rustls --precise 0.27.7
-      - run: cargo update -p rustls-platform-verifier --precise 0.6.2
-      - run: cargo update -p reqwest --precise 0.13.3
-      - run: cargo update -p zeroize --precise 1.8.2
-      - run: cargo update -p jobserver --precise 0.1.34
       - run: cargo build -p jsonschema
       # Expand the validator macro at MSRV: generated code is not covered by a
       # lib-only build. A scratch crate keeps `jsonschema`'s dev-dependencies
@@ -60,6 +43,12 @@ jobs:
       - run: |
           cargo new "$RUNNER_TEMP/msrv-macro-check" --lib --edition 2021
           cd "$RUNNER_TEMP/msrv-macro-check"
+          # Make the manifest MSRV-aware before the first resolve: edition 2021 defaults
+          # to resolver v2 (MSRV-unaware). Editing after `cargo add` would leave the
+          # already-written lockfile pinned to toolchain-latest deps. Mirrors how a
+          # downstream user pins their own MSRV.
+          sed -i '/^edition = /a rust-version = "1.85.0"' Cargo.toml
+          printf '\n[workspace]\nresolver = "3"\n' >> Cargo.toml
           cargo add jsonschema --path "$GITHUB_WORKSPACE/crates/jsonschema" --no-default-features --features macros
           cargo add serde_json
           cat > src/lib.rs <<'EOF'
@@ -72,11 +61,6 @@ jobs:
               MsrvValidator::is_valid(instance) && MsrvValidator::validate(instance).is_ok()
           }
           EOF
-          cargo update -p idna_adapter --precise 1.2.0
-          cargo update -p litemap --precise 0.7.4
-          cargo update -p zerofrom --precise 0.1.5
-          cargo update -p indexmap --precise 2.13.0
-          cargo update -p proc-macro-crate --precise 3.2.0
           cargo check
 
   test-native:

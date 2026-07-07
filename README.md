@@ -106,7 +106,7 @@ For detailed benchmarks, see our [full performance comparison](https://github.co
 
 ## Minimum Supported Rust Version (MSRV)
 
-This crate requires Rust 1.83.0 or later.
+This crate requires Rust 1.85.0 or later.
 
 ## TLS Configuration
 
