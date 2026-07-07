@@ -219,7 +219,10 @@ jobs:
   linux-freethreaded:
     runs-on: ubuntu-24.04
     strategy:
+      fail-fast: false
       matrix:
+        python_version: ["3.14t", "3.15t"]
+        target: [x86_64, aarch64]
         include:
           - target: x86_64
             manylinux: auto
@@ -236,21 +239,20 @@ jobs:
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
-          maturin-version: "1.13.2"
-          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter 3.14t
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ matrix.python_version }}
       - name: Upload wheels
         uses: actions/upload-artifact@v7
         with:
-          name: wheel-linux-freethreaded-${{ matrix.target }}
+          name: wheel-linux-freethreaded-${{ matrix.python_version }}-${{ matrix.target }}
           path: dist
 
   linux-musllinux-freethreaded:
     runs-on: ubuntu-24.04
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - target: x86_64
-          - target: aarch64
+        python_version: ["3.14t", "3.15t"]
+        target: [x86_64, aarch64]
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
@@ -262,28 +264,25 @@ jobs:
         with:
           target: ${{ matrix.target }}
           manylinux: musllinux_1_2
-          maturin-version: "1.13.2"
-          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter 3.14t
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ matrix.python_version }}
       - name: Upload wheels
         uses: actions/upload-artifact@v7
         with:
-          name: wheel-linux-musllinux-freethreaded-${{ matrix.target }}
+          name: wheel-linux-musllinux-freethreaded-${{ matrix.python_version }}-${{ matrix.target }}
           path: dist
 
   macos-freethreaded:
     runs-on: macos-15
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - target: x86_64
-            artifact: wheel-macos-freethreaded-x86_64
-          - target: aarch64
-            artifact: wheel-macos-freethreaded-aarch64
+        python_version: ["3.14t", "3.15t"]
+        target: [x86_64, aarch64]
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - name: Install Python
-        run: uv python install 3.14t
+        run: uv python install ${{ matrix.python_version }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin,aarch64-apple-darwin
@@ -291,36 +290,38 @@ jobs:
         uses: messense/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          maturin-version: "1.13.2"
-          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter 3.14t
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ matrix.python_version }}
       - name: Upload wheels
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.artifact }}
+          name: wheel-macos-freethreaded-${{ matrix.python_version }}-${{ matrix.target }}
           path: dist
 
   windows-freethreaded:
     runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        python_version: ["3.14t", "3.15t"]
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - name: Install Python
-        run: uv python install 3.14t
-      - name: Find Python paths
+        run: uv python install ${{ matrix.python_version }}
+      - name: Find Python path
         id: python-paths
         shell: bash
-        run: echo "py314t=$(uv python find 3.14t)" >> "$GITHUB_OUTPUT"
+        run: echo "py=$(uv python find ${{ matrix.python_version }})" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@stable
       - name: Build wheels
         uses: messense/maturin-action@v1
         with:
           target: x64
-          maturin-version: "1.13.2"
-          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ steps.python-paths.outputs.py314t }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ steps.python-paths.outputs.py }}
       - name: Upload wheels
         uses: actions/upload-artifact@v7
         with:
-          name: wheel-windows-freethreaded
+          name: wheel-windows-freethreaded-${{ matrix.python_version }}
           path: dist
 
   pypy:
