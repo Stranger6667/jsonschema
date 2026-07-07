@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-07-08
+
 ### Added
 
 - Free-threaded wheels for Python 3.15 (`3.15t`).
@@ -1080,7 +1082,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.10...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.47.0...HEAD
+[0.47.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.10...python-v0.47.0
 [0.46.10]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.9...python-v0.46.10
 [0.46.9]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.8...python-v0.46.9
 [0.46.8]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.7...python-v0.46.8
