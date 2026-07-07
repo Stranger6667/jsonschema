@@ -624,6 +624,24 @@ RSpec.describe "Custom keywords" do
     end
   end
 
+  let(:all_positive_validator_class) do
+    Class.new do
+      def initialize(_parent_schema, _value, _schema_path); end
+
+      def validate(instance)
+        first_error = iter_errors(instance).first
+        raise first_error if first_error
+      end
+
+      def iter_errors(instance)
+        return [] unless instance.is_a?(Array)
+
+        instance.each_index.select { |index| instance[index].negative? }
+                .map { |index| ArgumentError.new("item #{index} is negative") }
+      end
+    end
+  end
+
   describe "with validator_for" do
     it "validates with custom even keyword" do
       validator = JSONSchema.validator_for(
@@ -706,6 +724,85 @@ RSpec.describe "Custom keywords" do
       errors = validator.each_error(3).to_a
       expect(errors.size).to eq(1)
       expect(errors.first).to be_a(JSONSchema::ValidationError)
+    end
+
+    it "collects every error from a keyword's iter_errors" do
+      validator = JSONSchema.validator_for(
+        { "all-positive" => true },
+        keywords: { "all-positive" => all_positive_validator_class }
+      )
+      errors = validator.each_error([-1, 2, -3, -4]).to_a
+      expect(errors.map { |error| error.cause.message })
+        .to eq(["item 0 is negative", "item 2 is negative", "item 3 is negative"])
+      expect(errors.map(&:cause)).to all(be_a(ArgumentError))
+    end
+
+    it "does not leak a keyword cause from evaluate into a later each_error" do
+      validator = JSONSchema.validator_for(
+        { "even" => true },
+        keywords: { "even" => even_validator_class }
+      )
+      validator.evaluate(3)
+      errors = validator.each_error(5).to_a
+      expect(errors.first.cause.message).to eq("5 is not even")
+    end
+
+    it "keeps each error's cause aligned across multiple multi-error keywords" do
+      pair_class = Class.new do
+        def initialize(_parent_schema, value, _schema_path)
+          @name = value
+        end
+
+        def validate(instance)
+          first = iter_errors(instance).first
+          raise first if first
+        end
+
+        def iter_errors(_instance)
+          [ArgumentError.new("#{@name} 0"), ArgumentError.new("#{@name} 1")]
+        end
+      end
+      validator = JSONSchema.validator_for(
+        { "x" => "x", "y" => "y" },
+        keywords: { "x" => pair_class, "y" => pair_class }
+      )
+      errors = validator.each_error(0).to_a
+      expect(errors.map { |error| error.cause.message }).to eq(["x 0", "x 1", "y 0", "y 1"])
+    end
+
+    it "preserves an earlier keyword's cause across a reentrant keyword" do
+      pusher = Class.new do
+        def initialize(_parent_schema, _value, _schema_path); end
+
+        def validate(instance)
+          first = iter_errors(instance).first
+          raise first if first
+        end
+
+        def iter_errors(_instance)
+          [ArgumentError.new("a error")]
+        end
+      end
+      reentrant = Class.new do
+        def initialize(_parent_schema, _value, _schema_path); end
+
+        def validate(instance)
+          first = iter_errors(instance).first
+          raise first if first
+        end
+
+        def iter_errors(_instance)
+          # A nested top-level call while "a"'s cause is queued must not wipe it.
+          JSONSchema.each_error({}, 1).to_a
+          [ArgumentError.new("b error")]
+        end
+      end
+      validator = JSONSchema.validator_for(
+        { "a" => true, "b" => true },
+        keywords: { "a" => pusher, "b" => reentrant }
+      )
+      errors = validator.each_error(0).to_a
+      expect(errors.map { |error| error.cause&.message }).to eq(["a error", "b error"])
     end
   end
 

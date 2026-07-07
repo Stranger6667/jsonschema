@@ -43,6 +43,21 @@ class PositiveValidator:
             raise ValueError(f"{instance} is not positive")
 
 
+class AllPositiveValidator:
+    def __init__(self, parent_schema, value, schema_path):
+        pass
+
+    def validate(self, instance):
+        for error in self.iter_errors(instance):
+            raise error
+
+    def iter_errors(self, instance):
+        if isinstance(instance, list):
+            for index, item in enumerate(instance):
+                if item < 0:
+                    yield ValueError(f"item {index} is negative")
+
+
 @pytest.mark.parametrize(
     "instance, expected",
     [
@@ -100,6 +115,64 @@ def test_iter_errors():
     errors = list(validator.iter_errors(3))
     assert len(errors) == 1
     assert isinstance(errors[0], jsonschema_rs.ValidationError)
+
+
+def test_iter_errors_multiple():
+    # A keyword that reports every offending item at once via `iter_errors`.
+    validator = jsonschema_rs.validator_for(
+        {"all-positive": True},
+        keywords={"all-positive": AllPositiveValidator},
+    )
+    errors = list(validator.iter_errors([-1, 2, -3, -4]))
+    assert [error.message for error in errors] == [
+        "item 0 is negative",
+        "item 2 is negative",
+        "item 3 is negative",
+    ]
+    # Each yielded exception is preserved as the error's cause, like `validate`.
+    causes = [error.__cause__ for error in errors]
+    assert all(isinstance(cause, ValueError) for cause in causes)
+    assert [cause.args[0] for cause in causes] == [
+        "item 0 is negative",
+        "item 2 is negative",
+        "item 3 is negative",
+    ]
+
+
+class PairValidator:
+    def __init__(self, parent_schema, value, schema_path):
+        self.name = value
+
+    def validate(self, instance):
+        first = next(iter(self.iter_errors(instance)), None)
+        if first is not None:
+            raise first
+
+    def iter_errors(self, instance):
+        yield ValueError(f"{self.name} 0")
+        yield ValueError(f"{self.name} 1")
+
+
+def test_iter_errors_cause_alignment_across_keywords():
+    # Each surfaced error keeps its own cause even when several multi-error keywords interleave.
+    validator = jsonschema_rs.validator_for(
+        {"x": "x", "y": "y"},
+        keywords={"x": PairValidator, "y": PairValidator},
+    )
+    errors = list(validator.iter_errors(0))
+    assert [error.__cause__.args[0] for error in errors] == ["x 0", "x 1", "y 0", "y 1"]
+
+
+def test_iter_errors_cause_not_leaked_by_evaluate():
+    # `evaluate` drives the keyword but does not surface exceptions; its queued cause must not leak
+    # onto a later `iter_errors` on the same thread.
+    validator = jsonschema_rs.validator_for(
+        {"even": True},
+        keywords={"even": EvenValidator},
+    )
+    validator.evaluate(3)
+    errors = list(validator.iter_errors(5))
+    assert errors[0].__cause__.args[0] == "5 is not even"
 
 
 def test_with_standard_keywords():

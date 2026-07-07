@@ -5,6 +5,7 @@
 ### Added
 
 - Free-threaded wheels for Python 3.15 (`3.15t`).
+- Optional `iter_errors(instance)` method on custom keyword validators for reporting multiple errors from a single keyword. [#1071](https://github.com/Stranger6667/jsonschema/discussions/1071)
 
 ### Changed
 

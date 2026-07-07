@@ -18,6 +18,10 @@ class KeywordValidator(Protocol):
     Custom keywords are classes instantiated with (parent_schema, value, schema_path)
     that implement a validate(instance) method which raises an exception on failure.
 
+    A keyword may also implement an optional iter_errors(instance) method that yields one
+    exception per problem, so a single keyword can report multiple errors at once. When it
+    is absent, iterating errors yields at most the single error from validate.
+
     Example:
         class DivisibleBy:
             def __init__(self, parent_schema, value, schema_path):
