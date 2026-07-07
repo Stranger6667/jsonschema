@@ -5,39 +5,55 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Any
 
-from .jsonschema_rs import (
-    Draft4,
-    Draft4Validator,
-    Draft6,
-    Draft6Validator,
-    Draft7,
-    Draft7Validator,
-    Draft201909,
-    Draft201909Validator,
-    Draft202012,
-    Draft202012Validator,
-    EmailOptions,
-    Evaluation,
-    FancyRegexOptions,
-    HttpOptions,
-    RegexOptions,
-    Registry,
-    Resolver,
-    Resolved,
-    ValidationErrorKind,
-    ValidatorMap,
-    canonical,
-    dereference,
-    evaluate,
-    is_valid,
-    iter_errors,
-    meta,
-    validate,
-    validator_cls_for,
-    validator_map_for,
-    bundle,
-    validator_for,
-)
+try:
+    from .jsonschema_rs import (
+        Draft4,
+        Draft4Validator,
+        Draft6,
+        Draft6Validator,
+        Draft7,
+        Draft7Validator,
+        Draft201909,
+        Draft201909Validator,
+        Draft202012,
+        Draft202012Validator,
+        EmailOptions,
+        Evaluation,
+        FancyRegexOptions,
+        HttpOptions,
+        RegexOptions,
+        Registry,
+        Resolver,
+        Resolved,
+        ValidationErrorKind,
+        ValidatorMap,
+        canonical,
+        dereference,
+        evaluate,
+        is_valid,
+        iter_errors,
+        meta,
+        validate,
+        validator_cls_for,
+        validator_map_for,
+        bundle,
+        validator_for,
+    )
+except ModuleNotFoundError as exc:
+    import sys
+    import sysconfig
+
+    # Extension absent (not a load/symbol error, which raises ImportError): older pip
+    # installs the GIL-only abi3 wheel on free-threaded Python, whose .so is not a
+    # valid extension there, so it is present on disk yet unimportable.
+    if exc.name == f"{__name__}.jsonschema_rs" and sysconfig.get_config_var("Py_GIL_DISABLED"):
+        version = f"{sys.version_info.major}.{sys.version_info.minor}t"
+        raise ModuleNotFoundError(
+            f"jsonschema-rs has no free-threaded wheel for Python {version}; the "
+            f"installed abi3 wheel cannot load. Use a Python build with a free-threaded "
+            f"wheel, or build from source."
+        ) from exc
+    raise
 
 Validator = Draft4Validator | Draft6Validator | Draft7Validator | Draft201909Validator | Draft202012Validator
 

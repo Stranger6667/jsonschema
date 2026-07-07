@@ -9,6 +9,7 @@
 ### Changed
 
 - Update `pyo3` to `0.29`.
+- Clearer import error on free-threaded Python when older pip installs the abi3 wheel. [#1131](https://github.com/Stranger6667/jsonschema/issues/1131)
 
 ### Performance
 
