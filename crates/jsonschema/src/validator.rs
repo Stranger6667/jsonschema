@@ -598,6 +598,109 @@ mod tests {
     }
 
     #[test]
+    fn custom_keyword_iter_errors() {
+        // A custom keyword that reports every non-ASCII key at once via `iter_errors`.
+        struct NonAsciiKeys;
+        impl Keyword for NonAsciiKeys {
+            fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+                self.iter_errors(instance).next().map_or(Ok(()), Err)
+            }
+
+            fn is_valid(&self, instance: &Value) -> bool {
+                instance
+                    .as_object()
+                    .is_none_or(|obj| obj.keys().all(|key| key.is_ascii()))
+            }
+
+            fn iter_errors<'i>(
+                &self,
+                instance: &'i Value,
+            ) -> Box<dyn Iterator<Item = ValidationError<'i>> + 'i> {
+                let errors: Vec<_> = instance
+                    .as_object()
+                    .into_iter()
+                    .flat_map(|obj| obj.keys())
+                    .filter(|key| !key.is_ascii())
+                    .map(|key| ValidationError::custom(format!("Key {key:?} is not ASCII")))
+                    .collect();
+                Box::new(errors.into_iter())
+            }
+        }
+
+        fn factory<'a>(
+            _: &'a Map<String, Value>,
+            _: &'a Value,
+            _: Location,
+        ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
+            Ok(Box::new(NonAsciiKeys))
+        }
+
+        let schema = json!({ "ascii-keys": true });
+        let validator = crate::options()
+            .with_keyword("ascii-keys", factory)
+            .build(&schema)
+            .unwrap();
+
+        let instance = json!({ "å": 1, "ø": 2, "ok": 3 });
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+        assert_eq!(errors.len(), 2);
+        assert_eq!(errors[0].to_string(), r#"Key "å" is not ASCII"#);
+        assert_eq!(errors[1].to_string(), r#"Key "ø" is not ASCII"#);
+
+        // `validate` yields the first error; `is_valid` short-circuits.
+        assert!(!validator.is_valid(&instance));
+        assert_eq!(
+            validator.validate(&instance).unwrap_err().to_string(),
+            r#"Key "å" is not ASCII"#
+        );
+
+        let valid = json!({ "ok": 1 });
+        assert!(validator.is_valid(&valid));
+        assert!(validator.validate(&valid).is_ok());
+    }
+
+    #[test]
+    fn custom_keyword_iter_errors_default() {
+        // A keyword that does NOT override `iter_errors`, exercising the default
+        // that yields at most one error from `validate`.
+        struct NonEmpty;
+        impl Keyword for NonEmpty {
+            fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+                if self.is_valid(instance) {
+                    Ok(())
+                } else {
+                    Err(ValidationError::custom("must not be empty"))
+                }
+            }
+
+            fn is_valid(&self, instance: &Value) -> bool {
+                instance.as_object().is_none_or(|obj| !obj.is_empty())
+            }
+        }
+
+        fn factory<'a>(
+            _: &'a Map<String, Value>,
+            _: &'a Value,
+            _: Location,
+        ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
+            Ok(Box::new(NonEmpty))
+        }
+
+        let validator = crate::options()
+            .with_keyword("non-empty", factory)
+            .build(&json!({ "non-empty": true }))
+            .unwrap();
+
+        let empty = json!({});
+        let errors: Vec<_> = validator.iter_errors(&empty).collect();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].to_string(), "must not be empty");
+
+        let non_empty = json!({ "a": 1 });
+        assert_eq!(validator.iter_errors(&non_empty).count(), 0);
+    }
+
+    #[test]
     fn custom_format_and_override_keyword() {
         // Check that a string has some number of digits followed by a dot followed by exactly 2 digits.
         fn currency_format_checker(s: &str) -> bool {
