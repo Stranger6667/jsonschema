@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Simple `{"type": ...}` subschemas under `items` incorrectly asserted `type` when a meta-schema disabled the Validation vocabulary.
+
 ## [0.46.10] - 2026-07-05
 
 ### Fixed
