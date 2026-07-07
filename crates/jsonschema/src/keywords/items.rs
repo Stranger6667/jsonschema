@@ -9,6 +9,7 @@ use crate::{
     validator::{EvaluationResult, Validate, ValidationContext},
     Draft, ValidationError,
 };
+use referencing::Vocabulary;
 use serde_json::{Map, Value};
 
 pub(crate) struct ItemsArrayValidator {
@@ -886,22 +887,25 @@ pub(crate) fn compile<'a>(
                     ctx,
                 ));
             }
-            // Try to use specialized validators for simple type schemas
-            if let Some(type_name) = get_simple_type_schema(schema) {
-                let location = ctx.location().join("items").join("type");
-                match type_name {
-                    "number" => return Some(ItemsNumberTypeValidator::compile(location)),
-                    "string" => return Some(ItemsStringTypeValidator::compile(location)),
-                    "integer" => {
-                        // Draft 4 has stricter integer semantics
-                        return if ctx.draft() == Draft::Draft4 {
-                            Some(ItemsIntegerTypeValidatorDraft4::compile(location))
-                        } else {
-                            Some(ItemsIntegerTypeValidator::compile(location))
-                        };
+            // Specialized `{"type": ...}` validators assert `type`, so they apply only when
+            // the validation vocabulary that defines `type` is in effect.
+            if ctx.has_vocabulary(&Vocabulary::Validation) {
+                if let Some(type_name) = get_simple_type_schema(schema) {
+                    let location = ctx.location().join("items").join("type");
+                    match type_name {
+                        "number" => return Some(ItemsNumberTypeValidator::compile(location)),
+                        "string" => return Some(ItemsStringTypeValidator::compile(location)),
+                        "integer" => {
+                            // Draft 4 has stricter integer semantics
+                            return if ctx.draft() == Draft::Draft4 {
+                                Some(ItemsIntegerTypeValidatorDraft4::compile(location))
+                            } else {
+                                Some(ItemsIntegerTypeValidator::compile(location))
+                            };
+                        }
+                        "boolean" => return Some(ItemsBooleanTypeValidator::compile(location)),
+                        _ => {}
                     }
-                    "boolean" => return Some(ItemsBooleanTypeValidator::compile(location)),
-                    _ => {}
                 }
             }
             Some(ItemsObjectValidator::compile(ctx, schema))
@@ -932,6 +936,34 @@ mod tests {
         let validator = crate::validator_for(schema).unwrap();
         let error = validator.iter_errors(instance).next().unwrap();
         assert_eq!(error.instance_path().as_str(), expected);
+    }
+
+    #[test]
+    fn simple_type_items_respects_disabled_validation_vocabulary() {
+        let meta = json!({
+            "$id": "json-schema:///meta/no-validation",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$vocabulary": {
+                "https://json-schema.org/draft/2020-12/vocab/core": true,
+                "https://json-schema.org/draft/2020-12/vocab/applicator": true,
+                "https://json-schema.org/draft/2020-12/vocab/validation": false
+            }
+        });
+        let registry = crate::Registry::new()
+            .add("json-schema:///meta/no-validation", &meta)
+            .unwrap()
+            .prepare()
+            .unwrap();
+        let schema = json!({
+            "$schema": "json-schema:///meta/no-validation",
+            "type": "array",
+            "items": {"type": "integer"}
+        });
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(&schema)
+            .unwrap();
+        assert!(validator.is_valid(&json!([1, "x"])));
     }
 
     fn parse_json(s: &str) -> Value {
