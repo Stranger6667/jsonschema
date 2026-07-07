@@ -1,0 +1,72 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"additionalProperties\":false,\"patternProperties\":{\"^x\":{\"type\":\"string\"}},\"properties\":{\"a\":{\"type\":\"integer\"}},\"type\":\"object\"}"
+expression: validate_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    let mut covered = false;
+                    match key_str {
+                        "a" => {
+                            let instance = value;
+                            let __path = &__path.push("a");
+                            if !(match instance {
+                                serde_json::Value::Number(n) => {
+                                    jsonschema::__private::types::is_integer(n)
+                                }
+                                _ => false,
+                            }) {
+                                return Some(
+                                    jsonschema::__private::error::single_type(
+                                        "/properties/a/type",
+                                        __path.into(),
+                                        instance,
+                                        jsonschema::JsonType::Integer,
+                                    ),
+                                );
+                            }
+                            covered = true;
+                        }
+                        _ => {}
+                    }
+                    if key.as_str().starts_with("x") {
+                        let instance = value;
+                        let __path = &__path.push(key_str);
+                        if !(instance.is_string()) {
+                            return Some(
+                                jsonschema::__private::error::single_type(
+                                    "/patternProperties/^x/type",
+                                    __path.into(),
+                                    instance,
+                                    jsonschema::JsonType::String,
+                                ),
+                            );
+                        }
+                        covered = true;
+                    }
+                    if !covered {
+                        return Some(
+                            jsonschema::__private::error::additional_properties(
+                                "/additionalProperties",
+                                __path.into(),
+                                instance,
+                                vec![key.clone()],
+                            ),
+                        );
+                    }
+                }
+            }
+            _ => {
+                return Some(
+                    jsonschema::__private::error::single_type(
+                        "/type",
+                        __path.into(),
+                        instance,
+                        jsonschema::JsonType::Object,
+                    ),
+                );
+            }
+        }
+        None

@@ -8,11 +8,7 @@ match instance {
                 arr.iter()
                     .enumerate()
                     .all(|(idx, item)| {
-                        if ((|instance: &serde_json::Value| true)(instance)
-                            && (idx < 1usize)
-                            || (|instance: &serde_json::Value| true)(instance)
-                                && (idx < 2usize))
-                        {
+                        if (true && (idx < 1usize) || true && (idx < 2usize)) {
                             true
                         } else {
                             false

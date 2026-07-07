@@ -1,0 +1,33 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"oneOf\":[{\"type\":\"string\"},{\"type\":\"number\"}]}"
+expression: validate_body(schema)
+---
+{
+            let mut __count = 0usize;
+            if instance.is_string() {
+                __count += 1;
+            }
+            if instance.is_number() {
+                __count += 1;
+            }
+            if __count == 0 {
+                return Some(
+                    jsonschema::__private::error::one_of_not_valid(
+                        "/oneOf",
+                        __path.into(),
+                        instance,
+                    ),
+                );
+            }
+            if __count > 1 {
+                return Some(
+                    jsonschema::__private::error::one_of_multiple_valid(
+                        "/oneOf",
+                        __path.into(),
+                        instance,
+                    ),
+                );
+            }
+        }
+        None

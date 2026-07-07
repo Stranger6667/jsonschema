@@ -805,6 +805,17 @@ struct StringMinMaxLengthValidator;
 #[jsonschema::validator(schema = r#"{"type":"string","minLength":0,"maxLength":0}"#)]
 struct StringEmptyOnlyValidator;
 
+#[jsonschema::validator(schema = r#"{"type":"number","minimum":5,"maximum":5}"#)]
+struct NumericEqualBoundsValidator;
+
+#[jsonschema::validator(schema = r#"{"type":"number","minimum":-3,"maximum":-3}"#)]
+struct NumericEqualNegativeBoundsValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"type":"object","additionalProperties":false,"patternProperties":{"^[a-z]{2,}$":{"type":"string"}},"propertyNames":{"pattern":"^[a-z]{2,}$"}}"#
+)]
+struct PropertyNamesCoveredByPatternValidator;
+
 #[jsonschema::validator(schema = r#"{"type":"object","additionalProperties":false}"#)]
 struct AdditionalPropertiesFalseValidator;
 
@@ -1332,6 +1343,64 @@ fn test_string_empty_only_match_runtime(instance: serde_json::Value, expected: b
     let runtime = jsonschema::validator_for(&schema).expect("valid schema");
     assert_eq!(runtime.is_valid(&instance), expected);
     assert_eq!(StringEmptyOnlyValidator::is_valid(&instance), expected);
+}
+
+#[test_case(serde_json::json!(4) ; "below_reports_minimum")]
+#[test_case(serde_json::json!(5) ; "equal_is_valid")]
+#[test_case(serde_json::json!(6) ; "above_reports_maximum")]
+#[test_case(serde_json::json!(5.5) ; "float_instance_skipped")]
+#[test_case(serde_json::json!("x") ; "non_number_skipped")]
+fn test_numeric_equal_bounds_match_runtime(instance: serde_json::Value) {
+    let schema = serde_json::json!({"type":"number","minimum":5,"maximum":5});
+    assert_validate_parity_for(
+        &schema,
+        NumericEqualBoundsValidator::is_valid(&instance),
+        NumericEqualBoundsValidator::validate(&instance),
+        &instance,
+    );
+}
+
+#[test_case(serde_json::json!(-3) ; "equal_is_valid")]
+#[test_case(serde_json::json!(-4) ; "below_reports_minimum")]
+#[test_case(serde_json::json!(-3.5) ; "fractional_below")]
+fn test_numeric_equal_negative_bounds_match_runtime(instance: serde_json::Value) {
+    let schema = serde_json::json!({"type":"number","minimum":-3,"maximum":-3});
+    assert_validate_parity_for(
+        &schema,
+        NumericEqualNegativeBoundsValidator::is_valid(&instance),
+        NumericEqualNegativeBoundsValidator::validate(&instance),
+        &instance,
+    );
+}
+
+#[cfg(feature = "arbitrary-precision")]
+#[test_case(false ; "huge_negative_reports_minimum")]
+#[test_case(true ; "huge_positive_reports_maximum")]
+fn test_numeric_equal_bounds_arbitrary_precision(positive: bool) {
+    let sign = if positive { "" } else { "-" };
+    let raw = format!("{sign}{}.5", "9".repeat(320));
+    let instance: serde_json::Value = serde_json::from_str(&raw).expect("valid number");
+    let schema = serde_json::json!({"type":"number","minimum":5,"maximum":5});
+    assert_validate_parity_for(
+        &schema,
+        NumericEqualBoundsValidator::is_valid(&instance),
+        NumericEqualBoundsValidator::validate(&instance),
+        &instance,
+    );
+}
+
+#[test_case(serde_json::json!({"abc": "x"}) ; "all_keys_covered_valid")]
+#[test_case(serde_json::json!({"AB": "x"}) ; "key_fails_pattern_reports_property_names")]
+#[test_case(serde_json::json!({"abc": 5}) ; "covered_key_wrong_type")]
+#[test_case(serde_json::json!({"abc": "x", "9": 1}) ; "mixed_name_failure_first")]
+fn test_property_names_covered_by_pattern_match_runtime(instance: serde_json::Value) {
+    let schema = serde_json::json!({"type":"object","additionalProperties":false,"patternProperties":{"^[a-z]{2,}$":{"type":"string"}},"propertyNames":{"pattern":"^[a-z]{2,}$"}});
+    assert_validate_parity_for(
+        &schema,
+        PropertyNamesCoveredByPatternValidator::is_valid(&instance),
+        PropertyNamesCoveredByPatternValidator::validate(&instance),
+        &instance,
+    );
 }
 
 #[test_case(serde_json::json!({}), true ; "empty_allowed")]
@@ -3860,4 +3929,315 @@ fn test_type_non_string_array_value(instance: serde_json::Value) {
     // reject-everything validator rather than a compile error.
     assert!(!TypeNonStringArrayValue::is_valid(&instance));
     assert!(TypeNonStringArrayValue::validate(&instance).is_err());
+}
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"http://json-schema.org/draft-06/schema#","definitions":{"a":{"properties":{"resourceType":{"const":"A"},"x":{"type":"integer"}},"required":["resourceType"],"additionalProperties":false},"b":{"properties":{"resourceType":{"const":"B"},"y":{"type":"string"}},"required":["resourceType"],"additionalProperties":false}},"oneOf":[{"$ref":"#/definitions/a"},{"$ref":"#/definitions/b"}]}"##
+)]
+struct OneOfVacuousRefBranches;
+
+#[test_case(serde_json::json!({"resourceType":"A","x":1}) ; "branch_a")]
+#[test_case(serde_json::json!({"resourceType":"B","y":"s"}) ; "branch_b")]
+#[test_case(serde_json::json!({"resourceType":"A","x":"bad"}) ; "branch_a_body_mismatch")]
+#[test_case(serde_json::json!({"resourceType":"C"}) ; "unknown_tag")]
+#[test_case(serde_json::json!({}) ; "missing_tag")]
+#[test_case(serde_json::json!("text") ; "string_matches_both_vacuously")]
+#[test_case(serde_json::json!(5) ; "number_matches_both_vacuously")]
+#[test_case(serde_json::json!([1]) ; "array_matches_both_vacuously")]
+fn test_one_of_vacuous_ref_branches(instance: serde_json::Value) {
+    let schema = serde_json::json!({"$schema":"http://json-schema.org/draft-06/schema#","definitions":{"a":{"properties":{"resourceType":{"const":"A"},"x":{"type":"integer"}},"required":["resourceType"],"additionalProperties":false},"b":{"properties":{"resourceType":{"const":"B"},"y":{"type":"string"}},"required":["resourceType"],"additionalProperties":false}},"oneOf":[{"$ref":"#/definitions/a"},{"$ref":"#/definitions/b"}]});
+    assert_is_valid_parity(
+        &schema,
+        OneOfVacuousRefBranches::is_valid(&instance),
+        &instance,
+    );
+    assert_validate_parity_for(
+        &schema,
+        OneOfVacuousRefBranches::is_valid(&instance),
+        OneOfVacuousRefBranches::validate(&instance),
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"oneOf":[{"properties":{"k":{"const":"a"},"x":{"type":"integer"}},"required":["k"],"additionalProperties":false},{"properties":{"k":{"const":"b"}},"required":["k"],"additionalProperties":false}]}"#
+)]
+struct OneOfVacuousInlineBranches;
+
+#[test_case(serde_json::json!({"k":"a","x":1}) ; "branch_a")]
+#[test_case(serde_json::json!({"k":"a","x":"bad"}) ; "branch_a_body_mismatch")]
+#[test_case(serde_json::json!({"k":"b"}) ; "branch_b")]
+#[test_case(serde_json::json!({"k":"b","extra":1}) ; "additional_property_rejected")]
+#[test_case(serde_json::json!("text") ; "string_matches_both_vacuously")]
+#[test_case(serde_json::json!(null) ; "null_matches_both_vacuously")]
+fn test_one_of_vacuous_inline_branches(instance: serde_json::Value) {
+    let schema = serde_json::json!({"oneOf":[{"properties":{"k":{"const":"a"},"x":{"type":"integer"}},"required":["k"],"additionalProperties":false},{"properties":{"k":{"const":"b"}},"required":["k"],"additionalProperties":false}]});
+    assert_is_valid_parity(
+        &schema,
+        OneOfVacuousInlineBranches::is_valid(&instance),
+        &instance,
+    );
+    assert_validate_parity_for(
+        &schema,
+        OneOfVacuousInlineBranches::is_valid(&instance),
+        OneOfVacuousInlineBranches::validate(&instance),
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"oneOf":[{"properties":{"k":{"const":"a"}},"required":["k"]},{"type":"object","properties":{"k":{"const":"b"}},"required":["k"]}]}"#
+)]
+struct OneOfSingleVacuousBranch;
+
+#[test_case(serde_json::json!("text") ; "string_valid_via_vacuous_branch")]
+#[test_case(serde_json::json!(7) ; "number_valid_via_vacuous_branch")]
+#[test_case(serde_json::json!({"k":"a"}) ; "branch_a")]
+#[test_case(serde_json::json!({"k":"b"}) ; "branch_b")]
+#[test_case(serde_json::json!({}) ; "missing_tag")]
+fn test_one_of_single_vacuous_branch(instance: serde_json::Value) {
+    let schema = serde_json::json!({"oneOf":[{"properties":{"k":{"const":"a"}},"required":["k"]},{"type":"object","properties":{"k":{"const":"b"}},"required":["k"]}]});
+    assert_is_valid_parity(
+        &schema,
+        OneOfSingleVacuousBranch::is_valid(&instance),
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"oneOf":[{"properties":{"k":{"const":"a"}},"required":["k"]},{"properties":{"k":{"const":"b"}},"required":["k"]},{"type":"string"}]}"#
+)]
+struct OneOfVacuousWithStringBranch;
+
+#[test_case(serde_json::json!("text") ; "string_matches_three_branches")]
+#[test_case(serde_json::json!(7) ; "number_matches_two_branches")]
+#[test_case(serde_json::json!({"k":"a"}) ; "branch_a")]
+fn test_one_of_vacuous_with_string_branch(instance: serde_json::Value) {
+    let schema = serde_json::json!({"oneOf":[{"properties":{"k":{"const":"a"}},"required":["k"]},{"properties":{"k":{"const":"b"}},"required":["k"]},{"type":"string"}]});
+    assert_is_valid_parity(
+        &schema,
+        OneOfVacuousWithStringBranch::is_valid(&instance),
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"oneOf":[{"properties":{"k":{"const":"a"}},"required":["k"]},{"properties":{"k":{"const":"b"}},"required":["k"]},{"properties":{"z":{"type":"integer"}}}]}"#
+)]
+struct OneOfVacuousUncoveredBranch;
+
+struct StringGateKeyword {
+    allow_strings: bool,
+}
+
+impl jsonschema::Keyword for StringGateKeyword {
+    fn validate<'i>(
+        &self,
+        instance: &'i serde_json::Value,
+    ) -> Result<(), jsonschema::ValidationError<'i>> {
+        if self.is_valid(instance) {
+            Ok(())
+        } else {
+            Err(jsonschema::ValidationError::custom("strings rejected"))
+        }
+    }
+
+    fn is_valid(&self, instance: &serde_json::Value) -> bool {
+        !instance.is_string() || self.allow_strings
+    }
+}
+
+// The Result wrapping is required by the keyword factory signature.
+#[allow(clippy::unnecessary_wraps)]
+fn string_gate_factory<'a>(
+    _parent: &'a serde_json::Map<String, serde_json::Value>,
+    value: &'a serde_json::Value,
+    _path: jsonschema::paths::Location,
+) -> Result<Box<dyn jsonschema::Keyword>, jsonschema::ValidationError<'a>> {
+    Ok(Box::new(StringGateKeyword {
+        allow_strings: value.as_str() == Some("strings-ok"),
+    }))
+}
+
+#[jsonschema::validator(
+    schema = r#"{"oneOf":[{"properties":{"k":{"const":"a"}},"required":["k"],"description":"strings-ok"},{"properties":{"k":{"const":"b"}},"required":["k"],"description":"strings-bad"}]}"#,
+    keywords = { "description" => crate::string_gate_factory }
+)]
+struct OneOfVacuousWithCustomKeyword;
+
+#[test_case(serde_json::json!("text") ; "string_valid_via_custom_keyword_gate")]
+#[test_case(serde_json::json!(7) ; "number_matches_both_vacuously")]
+#[test_case(serde_json::json!({"k":"a"}) ; "branch_a")]
+#[test_case(serde_json::json!({"k":"b"}) ; "branch_b")]
+fn test_one_of_vacuous_with_custom_keyword(instance: serde_json::Value) {
+    let schema = serde_json::json!({"oneOf":[{"properties":{"k":{"const":"a"}},"required":["k"],"description":"strings-ok"},{"properties":{"k":{"const":"b"}},"required":["k"],"description":"strings-bad"}]});
+    let runtime = jsonschema::options()
+        .with_keyword("description", string_gate_factory)
+        .build(&schema)
+        .expect("valid schema");
+    assert_eq!(
+        OneOfVacuousWithCustomKeyword::is_valid(&instance),
+        runtime.is_valid(&instance),
+        "codegen/runtime mismatch for {instance}"
+    );
+}
+
+#[test_case(serde_json::json!(7) ; "number_matches_three_branches")]
+#[test_case(serde_json::json!({"k":"a"}) ; "branch_a_also_matches_uncovered")]
+#[test_case(serde_json::json!({"z":1}) ; "uncovered_branch_only")]
+fn test_one_of_vacuous_uncovered_branch(instance: serde_json::Value) {
+    let schema = serde_json::json!({"oneOf":[{"properties":{"k":{"const":"a"}},"required":["k"]},{"properties":{"k":{"const":"b"}},"required":["k"]},{"properties":{"z":{"type":"integer"}}}]});
+    assert_is_valid_parity(
+        &schema,
+        OneOfVacuousUncoveredBranch::is_valid(&instance),
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"type":"object","required":["a","b"],"properties":{"a":{"type":"string"}}}"#
+)]
+struct RequiredFusedIntoProperties;
+
+#[test_case(serde_json::json!({"a":"x","b":1}) ; "all_required_present")]
+#[test_case(serde_json::json!({"a":"x"}) ; "missing_scan_only_required")]
+#[test_case(serde_json::json!({"b":1}) ; "missing_property_required")]
+#[test_case(serde_json::json!({"a":1,"b":1}) ; "property_check_fails")]
+#[test_case(serde_json::json!({"a":"x","b":1,"extra":true}) ; "extra_key")]
+#[test_case(serde_json::json!({}) ; "empty_object")]
+#[test_case(serde_json::json!("text") ; "non_object")]
+fn test_required_fused_into_properties(instance: serde_json::Value) {
+    let schema = serde_json::json!({"type":"object","required":["a","b"],"properties":{"a":{"type":"string"}}});
+    assert_is_valid_parity(
+        &schema,
+        RequiredFusedIntoProperties::is_valid(&instance),
+        &instance,
+    );
+    assert_validate_parity_for(
+        &schema,
+        RequiredFusedIntoProperties::is_valid(&instance),
+        RequiredFusedIntoProperties::validate(&instance),
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"type":"object","required":["a","b"],"properties":{"a":{"type":"string"},"b":{"type":"integer"}},"additionalProperties":false}"#
+)]
+struct RequiredFusedWithAdditionalFalse;
+
+#[test_case(serde_json::json!({"a":"x","b":1}) ; "valid")]
+#[test_case(serde_json::json!({"a":"x"}) ; "missing_required")]
+#[test_case(serde_json::json!({"a":"x","b":1,"extra":true}) ; "additional_rejected")]
+fn test_required_fused_with_additional_false(instance: serde_json::Value) {
+    let schema = serde_json::json!({"type":"object","required":["a","b"],"properties":{"a":{"type":"string"},"b":{"type":"integer"}},"additionalProperties":false});
+    assert_is_valid_parity(
+        &schema,
+        RequiredFusedWithAdditionalFalse::is_valid(&instance),
+        &instance,
+    );
+    assert_validate_parity_for(
+        &schema,
+        RequiredFusedWithAdditionalFalse::is_valid(&instance),
+        RequiredFusedWithAdditionalFalse::validate(&instance),
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"type":"object","required":["a"],"additionalProperties":{"type":"string"}}"#
+)]
+struct RequiredFusedWithAdditionalSchema;
+
+#[test_case(serde_json::json!({"a":"x"}) ; "valid")]
+#[test_case(serde_json::json!({"b":"x"}) ; "missing_required")]
+#[test_case(serde_json::json!({"a":1}) ; "additional_check_fails")]
+fn test_required_fused_with_additional_schema(instance: serde_json::Value) {
+    let schema = serde_json::json!({"type":"object","required":["a"],"additionalProperties":{"type":"string"}});
+    assert_is_valid_parity(
+        &schema,
+        RequiredFusedWithAdditionalSchema::is_valid(&instance),
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r##"{"$defs":{"a":{"properties":{"k":{"const":"a"}},"required":["k"]},"b":{"properties":{"k":{"const":"b"}},"required":["k"]}},"oneOf":[{"$ref":"#/$defs/a","type":"string"},{"$ref":"#/$defs/b"}]}"##,
+    draft = Draft202012
+)]
+struct OneOfRefBranchWithSibling;
+
+#[test_case(serde_json::json!(5) ; "number_matches_bare_ref_branch_only")]
+#[test_case(serde_json::json!("text") ; "string_matches_both_branches")]
+#[test_case(serde_json::json!({"k":"a"}) ; "branch_a")]
+#[test_case(serde_json::json!({"k":"b"}) ; "branch_b")]
+fn test_one_of_ref_branch_with_sibling(instance: serde_json::Value) {
+    let schema = serde_json::json!({"$defs":{"a":{"properties":{"k":{"const":"a"}},"required":["k"]},"b":{"properties":{"k":{"const":"b"}},"required":["k"]}},"oneOf":[{"$ref":"#/$defs/a","type":"string"},{"$ref":"#/$defs/b"}]});
+    assert_is_valid_parity(
+        &schema,
+        OneOfRefBranchWithSibling::is_valid(&instance),
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r##"{"$defs":{"s":{"type":"string","format":"uri"}},"type":"object","propertyNames":{"$ref":"#/$defs/s"}}"##,
+    draft = Draft202012
+)]
+struct PropertyNamesRefStringOnly;
+
+#[test_case(serde_json::json!({"any key at all":1}) ; "keys_always_pass")]
+#[test_case(serde_json::json!({}) ; "empty_object")]
+#[test_case(serde_json::json!("text") ; "non_object")]
+fn test_property_names_ref_string_only(instance: serde_json::Value) {
+    let schema = serde_json::json!({"$defs":{"s":{"type":"string","format":"uri"}},"type":"object","propertyNames":{"$ref":"#/$defs/s"}});
+    assert_is_valid_parity(
+        &schema,
+        PropertyNamesRefStringOnly::is_valid(&instance),
+        &instance,
+    );
+    assert_validate_parity_for(
+        &schema,
+        PropertyNamesRefStringOnly::is_valid(&instance),
+        PropertyNamesRefStringOnly::validate(&instance),
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r##"{"$defs":{"s":{"type":"string","pattern":"^a"}},"type":"object","propertyNames":{"$ref":"#/$defs/s"}}"##,
+    draft = Draft202012
+)]
+struct PropertyNamesRefPattern;
+
+#[test_case(serde_json::json!({"abc":1}) ; "matching_key")]
+#[test_case(serde_json::json!({"xbc":1}) ; "failing_key")]
+#[test_case(serde_json::json!({}) ; "empty_object")]
+fn test_property_names_ref_pattern(instance: serde_json::Value) {
+    let schema = serde_json::json!({"$defs":{"s":{"type":"string","pattern":"^a"}},"type":"object","propertyNames":{"$ref":"#/$defs/s"}});
+    assert_is_valid_parity(
+        &schema,
+        PropertyNamesRefPattern::is_valid(&instance),
+        &instance,
+    );
+    assert_validate_parity_for(
+        &schema,
+        PropertyNamesRefPattern::is_valid(&instance),
+        PropertyNamesRefPattern::validate(&instance),
+        &instance,
+    );
+}
+
+#[jsonschema::validator(schema = r#"{"type":"object","propertyNames":{"type":"string"}}"#)]
+struct PropertyNamesTypeStringOnly;
+
+#[test_case(serde_json::json!({"k":1}) ; "keys_always_pass")]
+#[test_case(serde_json::json!(5) ; "non_object")]
+fn test_property_names_type_string_only(instance: serde_json::Value) {
+    let schema = serde_json::json!({"type":"object","propertyNames":{"type":"string"}});
+    assert_is_valid_parity(
+        &schema,
+        PropertyNamesTypeStringOnly::is_valid(&instance),
+        &instance,
+    );
 }

@@ -17,13 +17,26 @@ use serde_json::Value;
 /// Break a self-referential `$dynamicRef`/`$recursiveRef` `is_valid` cycle: a re-entry on
 /// the same (helper fn pointer, instance pointer) is valid, so the outer call's checks decide.
 fn cycle_guarded_is_valid(call: &TokenStream) -> TokenStream {
+    let mark_expr = quote! { (target as usize, std::ptr::from_ref(instance) as usize) };
+    shared_cycle_guarded_is_valid(&mark_expr, call)
+}
+
+fn shared_cycle_guarded_is_valid(mark_expr: &TokenStream, call: &TokenStream) -> TokenStream {
     quote! {
         {
-            let __mark = (target as usize, std::ptr::from_ref(instance) as usize);
-            if __JSONSCHEMA_VALIDATE_MARK.with(|__marks| __marks.borrow().contains(&__mark)) {
+            let __mark = #mark_expr;
+            let __reentered = __JSONSCHEMA_VALIDATE_MARK.with(|__marks| {
+                let mut __marks = __marks.borrow_mut();
+                if __marks.contains(&__mark) {
+                    true
+                } else {
+                    __marks.push(__mark);
+                    false
+                }
+            });
+            if __reentered {
                 true
             } else {
-                __JSONSCHEMA_VALIDATE_MARK.with(|__marks| __marks.borrow_mut().push(__mark));
                 let __valid = #call;
                 __JSONSCHEMA_VALIDATE_MARK.with(|__marks| __marks.borrow_mut().pop());
                 __valid
@@ -34,11 +47,24 @@ fn cycle_guarded_is_valid(call: &TokenStream) -> TokenStream {
 
 /// Same cycle guard for the error-collecting (`validate`) dispatch; a re-entry reports no error.
 fn cycle_guarded_validate(call: &TokenStream) -> TokenStream {
+    let mark_expr = quote! { (target_validate as usize, std::ptr::from_ref(instance) as usize) };
+    shared_cycle_guarded_validate(&mark_expr, call)
+}
+
+fn shared_cycle_guarded_validate(mark_expr: &TokenStream, call: &TokenStream) -> TokenStream {
     quote! {
         {
-            let __mark = (target_validate as usize, std::ptr::from_ref(instance) as usize);
-            if !__JSONSCHEMA_VALIDATE_MARK.with(|__marks| __marks.borrow().contains(&__mark)) {
-                __JSONSCHEMA_VALIDATE_MARK.with(|__marks| __marks.borrow_mut().push(__mark));
+            let __mark = #mark_expr;
+            let __reentered = __JSONSCHEMA_VALIDATE_MARK.with(|__marks| {
+                let mut __marks = __marks.borrow_mut();
+                if __marks.contains(&__mark) {
+                    true
+                } else {
+                    __marks.push(__mark);
+                    false
+                }
+            });
+            if !__reentered {
                 let __r = #call;
                 __JSONSCHEMA_VALIDATE_MARK.with(|__marks| __marks.borrow_mut().pop());
                 if let Some(__err) = __r {
@@ -50,44 +76,26 @@ fn cycle_guarded_validate(call: &TokenStream) -> TokenStream {
 }
 
 fn cycle_guarded_ref_is_valid(func_ident: &proc_macro2::Ident) -> TokenStream {
-    quote! {
-        {
-            let __mark = (
-                (#func_ident as fn(&serde_json::Value) -> bool) as usize,
-                std::ptr::from_ref(instance) as usize,
-            );
-            if __JSONSCHEMA_VALIDATE_MARK.with(|__marks| __marks.borrow().contains(&__mark)) {
-                true
-            } else {
-                __JSONSCHEMA_VALIDATE_MARK.with(|__marks| __marks.borrow_mut().push(__mark));
-                let __valid = #func_ident(instance);
-                __JSONSCHEMA_VALIDATE_MARK.with(|__marks| __marks.borrow_mut().pop());
-                __valid
-            }
-        }
-    }
+    let mark_expr = quote! {
+        (
+            (#func_ident as fn(&serde_json::Value) -> bool) as usize,
+            std::ptr::from_ref(instance) as usize,
+        )
+    };
+    shared_cycle_guarded_is_valid(&mark_expr, &quote! { #func_ident(instance) })
 }
 
 fn cycle_guarded_ref_validate(
     func_ident: &proc_macro2::Ident,
     validate_ident: &proc_macro2::Ident,
 ) -> TokenStream {
-    quote! {
-        {
-            let __mark = (
-                (#func_ident as fn(&serde_json::Value) -> bool) as usize,
-                std::ptr::from_ref(instance) as usize,
-            );
-            if !__JSONSCHEMA_VALIDATE_MARK.with(|__marks| __marks.borrow().contains(&__mark)) {
-                __JSONSCHEMA_VALIDATE_MARK.with(|__marks| __marks.borrow_mut().push(__mark));
-                let __r = #validate_ident(instance, __path);
-                __JSONSCHEMA_VALIDATE_MARK.with(|__marks| __marks.borrow_mut().pop());
-                if let Some(__err) = __r {
-                    return Some(__err);
-                }
-            }
-        }
-    }
+    let mark_expr = quote! {
+        (
+            (#func_ident as fn(&serde_json::Value) -> bool) as usize,
+            std::ptr::from_ref(instance) as usize,
+        )
+    };
+    shared_cycle_guarded_validate(&mark_expr, &quote! { #validate_ident(instance, __path) })
 }
 
 pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledExpr {
@@ -219,14 +227,11 @@ pub(crate) fn compile_dynamic(ctx: &mut CompileContext<'_>, value: &Value) -> Co
 
     let dynamic_lookup = quote! {
         __JSONSCHEMA_DYNAMIC_STACK.with(|stack| {
-            let stack = stack.borrow();
-            let mut selected = None;
-            for (dynamic_anchor, is_valid) in stack.iter().rev() {
-                if *dynamic_anchor == #anchor_name {
-                    selected = Some(*is_valid);
-                }
-            }
-            selected
+            stack
+                .borrow()
+                .iter()
+                .find(|(dynamic_anchor, _)| *dynamic_anchor == #anchor_name)
+                .map(|(_, is_valid)| *is_valid)
         })
     };
 
@@ -250,14 +255,11 @@ pub(crate) fn compile_dynamic(ctx: &mut CompileContext<'_>, value: &Value) -> Co
         // Look up the validate stack for accurate error paths.
         let dynamic_lookup_validate = quote! {
             __JSONSCHEMA_DYNAMIC_VALIDATE_STACK.with(|stack| {
-                let stack = stack.borrow();
-                let mut selected = None;
-                for (dynamic_anchor, validate) in stack.iter().rev() {
-                    if *dynamic_anchor == #anchor_name {
-                        selected = Some(*validate);
-                    }
-                }
-                selected
+                stack
+                    .borrow()
+                    .iter()
+                    .find(|(dynamic_anchor, _)| *dynamic_anchor == #anchor_name)
+                    .map(|(_, validate)| *validate)
             })
         };
         let guarded_validate =

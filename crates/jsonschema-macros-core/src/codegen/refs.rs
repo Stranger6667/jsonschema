@@ -3,7 +3,7 @@ use std::{borrow::Cow, sync::Arc};
 use referencing::Uri;
 use serde_json::Value;
 
-use super::CompileContext;
+use super::{draft::DraftExt, CompileContext};
 
 pub(crate) struct ResolvedRef {
     pub(crate) schema: Value,
@@ -12,8 +12,8 @@ pub(crate) struct ResolvedRef {
     pub(crate) base_uri: Arc<Uri<String>>,
 }
 
-/// Resolve a short top-level `$ref` chain for branch-shape analysis.
-pub(super) fn resolve_top_level_ref_for_one_of_analysis<'b>(
+/// Resolve a short top-level `$ref` chain for schema-shape analysis.
+pub(super) fn resolve_lone_top_level_ref<'b>(
     ctx: &mut CompileContext<'_>,
     schema: &'b Value,
 ) -> Cow<'b, Value> {
@@ -28,6 +28,11 @@ pub(super) fn resolve_top_level_ref_for_one_of_analysis<'b>(
         let Some(reference) = obj.get("$ref").and_then(Value::as_str) else {
             break;
         };
+        // Hopping discards `$ref` siblings; on drafts where siblings validate
+        // alongside `$ref`, only a lone `$ref` can be followed.
+        if ctx.draft.supports_adjacent_validation() && obj.len() > 1 {
+            break;
+        }
         let Ok(resolved) = resolve_ref(ctx, reference) else {
             break;
         };

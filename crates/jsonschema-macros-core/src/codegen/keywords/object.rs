@@ -1,7 +1,9 @@
 use super::{
     super::{
-        draft::DraftExt, errors::invalid_schema_type_expression, expr::IsValidExpr, CompileContext,
-        CompiledExpr,
+        draft::DraftExt,
+        errors::{invalid_schema_expression, invalid_schema_type_expression},
+        expr::IsValidExpr,
+        CompileContext, CompiledExpr,
     },
     additional_properties, compile_count_range, dependencies, object_pass, pattern_properties,
     properties, property_names, required, unevaluated_properties,
@@ -9,6 +11,26 @@ use super::{
 use proc_macro2::TokenStream;
 use quote::quote;
 use serde_json::{Map, Value};
+
+fn property_names_implied_by_coverage(schema: &Map<String, Value>) -> bool {
+    let sole_pattern = schema
+        .get("patternProperties")
+        .and_then(Value::as_object)
+        .filter(|patterns| patterns.len() == 1)
+        .and_then(|patterns| patterns.keys().next());
+    let name_pattern = schema
+        .get("propertyNames")
+        .and_then(Value::as_object)
+        .filter(|names| names.len() == 1)
+        .and_then(|names| names.get("pattern"))
+        .and_then(Value::as_str);
+    schema.get("additionalProperties") == Some(&Value::Bool(false))
+        && schema
+            .get("properties")
+            .and_then(Value::as_object)
+            .is_none_or(serde_json::Map::is_empty)
+        && matches!((sole_pattern, name_pattern), (Some(pattern), Some(name)) if pattern == name)
+}
 
 /// Compile all object-specific keywords.
 pub(in super::super) fn compile(
@@ -48,10 +70,19 @@ pub(in super::super) fn compile(
     let required_fields: Vec<&str> = if validation_vocab_enabled {
         match schema.get("required") {
             None => Vec::new(),
-            Some(Value::Array(arr)) => {
+            Some(value @ Value::Array(arr)) => {
                 let mut required = Vec::with_capacity(arr.len());
                 for item in arr {
                     if let Some(name) = item.as_str() {
+                        if required.contains(&name) {
+                            checks.push((
+                                invalid_schema_expression(&format!(
+                                    "{value} has non-unique elements"
+                                )),
+                                false,
+                            ));
+                            break;
+                        }
                         required.push(name);
                     } else {
                         checks.push((invalid_schema_type_expression(item, &["string"]), false));
@@ -134,7 +165,9 @@ pub(in super::super) fn compile(
 
     if applicator_vocab_enabled && ctx.draft.supports_property_names_keyword() {
         if let Some(value) = schema.get("propertyNames") {
-            checks.push((property_names::compile(ctx, value), false));
+            if !property_names_implied_by_coverage(schema) {
+                checks.push((property_names::compile(ctx, value), false));
+            }
         }
     }
 
@@ -155,15 +188,21 @@ pub(in super::super) fn compile(
         Some(Value::Bool(false) | Value::Object(_))
     );
 
+    // Every cluster subschema is compiled exactly once and shared by the
+    // per-keyword and unified-pass emitters below.
+    let cluster = object_pass::compile_cluster_subschemas(
+        ctx,
+        properties_map.filter(|m| !m.is_empty()),
+        pattern_properties_value,
+        additional_properties_schema,
+    );
+
     if let Some(pattern_properties_value) =
         pattern_properties_value.filter(|_| additional_properties_fused)
     {
-        if let Some(validate) = object_pass::compile_validate(
-            ctx,
-            properties_map,
-            Some(pattern_properties_value),
-            additional_properties_schema,
-        ) {
+        if let Some(validate) =
+            object_pass::compile_validate(ctx, &cluster, additional_properties_schema)
+        {
             checks.push((
                 CompiledExpr::with_validate_blocks(quote! { true }, validate),
                 true,
@@ -172,11 +211,12 @@ pub(in super::super) fn compile(
             // Invalid pattern regex: fall back to per-keyword checks so the diagnostic surfaces.
             if let Some(props) = properties_map {
                 checks.push((
-                    properties::compile(ctx, props, additional_properties_schema),
+                    properties::compile(ctx, props, additional_properties_schema, &cluster),
                     true,
                 ));
             }
-            if let Some(compiled) = pattern_properties::compile(ctx, pattern_properties_value) {
+            if let Some(compiled) = pattern_properties::compile(pattern_properties_value, &cluster)
+            {
                 checks.push((compiled, true));
             }
             if properties_map.is_none() {
@@ -184,6 +224,7 @@ pub(in super::super) fn compile(
                     ctx,
                     additional_properties_schema,
                     pattern_properties_schema,
+                    cluster.additional.as_ref(),
                 ) {
                     checks.push((compiled, true));
                 }
@@ -192,17 +233,17 @@ pub(in super::super) fn compile(
     } else if let Some(props) = properties_map {
         // Sequential: property values, then pattern values (additionalProperties true/absent).
         checks.push((
-            properties::compile(ctx, props, additional_properties_schema),
+            properties::compile(ctx, props, additional_properties_schema, &cluster),
             true,
         ));
         if let Some(value) = pattern_properties_schema {
-            if let Some(compiled) = pattern_properties::compile(ctx, value) {
+            if let Some(compiled) = pattern_properties::compile(value, &cluster) {
                 checks.push((compiled, true));
             }
         }
     } else if applicator_vocab_enabled {
         if let Some(value) = pattern_properties_schema {
-            if let Some(compiled) = pattern_properties::compile(ctx, value) {
+            if let Some(compiled) = pattern_properties::compile(value, &cluster) {
                 checks.push((compiled, true));
             }
         }
@@ -210,6 +251,7 @@ pub(in super::super) fn compile(
             ctx,
             additional_properties_schema,
             pattern_properties_schema,
+            cluster.additional.as_ref(),
         ) {
             checks.push((compiled, true));
         }
@@ -225,13 +267,8 @@ pub(in super::super) fn compile(
         }
     }
 
-    let unified = object_pass::compile_is_valid(
-        ctx,
-        properties_map,
-        pattern_properties_schema,
-        additional_properties_schema,
-        &required_fields,
-    );
+    let unified =
+        object_pass::compile_is_valid(&cluster, additional_properties_schema, &required_fields);
 
     match unified {
         Some(pass) => {

@@ -1,6 +1,7 @@
 use super::{
-    super::{compile_schema, CompileContext, CompiledExpr},
+    super::{CompileContext, CompiledExpr},
     additional_properties::{compile_first_unexpected_check, compile_wildcard_arm},
+    object_pass::ClusterSubschemas,
 };
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -27,6 +28,7 @@ pub(crate) fn compile(
     ctx: &mut CompileContext<'_>,
     properties: &Map<String, Value>,
     additional_properties: Option<&Value>,
+    cluster: &ClusterSubschemas<'_>,
 ) -> CompiledExpr {
     let additional_properties_path = ctx.schema_path_for_keyword("additionalProperties");
     let use_known_keys_precheck = matches!(additional_properties, Some(Value::Bool(false)));
@@ -34,7 +36,7 @@ pub(crate) fn compile(
     let wildcard_arm_body = if use_known_keys_precheck {
         CompiledExpr::always_true()
     } else {
-        compile_wildcard_arm(ctx, additional_properties)
+        compile_wildcard_arm(ctx, additional_properties, cluster.additional.as_ref())
     };
     let known_keys_precheck = if use_known_keys_precheck {
         compile_known_keys_precheck(properties, &additional_properties_path)
@@ -42,19 +44,11 @@ pub(crate) fn compile(
         CompiledExpr::always_true()
     };
 
-    let mut compiled_props: Vec<(&str, CompiledExpr)> = Vec::new();
-    for (name, subschema) in properties {
-        let compiled = ctx.with_schema_path_segment("properties", |ctx| {
-            ctx.with_schema_path_segment(name, |ctx| {
-                ctx.with_instance_scope(|ctx| compile_schema(ctx, subschema))
-            })
-        });
-        compiled_props.push((name.as_str(), compiled));
-    }
+    let compiled_props = &cluster.properties;
 
     let mut is_valid_match_arms = Vec::new();
     let mut all_arms_trivially_true = true;
-    for (name, compiled) in &compiled_props {
+    for (name, compiled) in compiled_props {
         if !compiled.is_trivially_true() {
             all_arms_trivially_true = false;
         }
@@ -103,7 +97,7 @@ pub(crate) fn compile(
         } else {
             wildcard_arm_body.validate.as_token_stream()
         };
-        let validate = build_validate_block(&compiled_props, &wildcard_validate);
+        let validate = build_validate_block(compiled_props, &wildcard_validate);
         let base_is_valid = quote! {
             {
                 #main_is_valid
@@ -156,13 +150,11 @@ fn build_validate_block(
     };
 
     quote! {
-        if let Some(obj) = instance.as_object() {
-            for (key, value) in obj.iter() {
-                let key_str = #key_as_str;
-                match key_str {
-                    #(#validate_arms,)*
-                    #wildcard_validate_arm
-                }
+        for (key, value) in obj.iter() {
+            let key_str = #key_as_str;
+            match key_str {
+                #(#validate_arms,)*
+                #wildcard_validate_arm
             }
         }
     }

@@ -1,3 +1,4 @@
+use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use referencing::Draft;
 use serde_json::{Map, Value};
@@ -5,8 +6,8 @@ use serde_json::{Map, Value};
 use crate::context::CompileContext;
 
 use super::{
-    dispatch::compile_typed, draft::DraftExt, helpers::get_or_create_is_valid_fn, keywords,
-    CompiledExpr,
+    dispatch::compile_typed, draft::DraftExt, expr::IsValidExpr,
+    helpers::get_or_create_is_valid_fn, keywords, CompiledExpr,
 };
 
 fn type_check_is_redundant(schema: &Map<String, Value>, draft: Draft) -> bool {
@@ -187,16 +188,35 @@ pub(super) fn compile_object_schema(
             }
         }
 
-        let mut all: Vec<CompiledExpr> = untyped
+        let untyped: Vec<CompiledExpr> = untyped
             .into_iter()
             .filter(|t| !t.is_trivially_true())
             .collect();
-        if let Some(type_check) = typed {
-            if !type_check.is_trivially_true() {
-                all.push(type_check);
-            }
-        }
+        let typed = typed.filter(|t| !t.is_trivially_true());
 
-        CompiledExpr::combine_and(all)
+        match typed {
+            // `validate` reports errors in keyword order (untyped first, matching the
+            // runtime); `is_valid` runs the typed dispatch first so instances of other
+            // types bail before the applicators.
+            Some(type_check) if !untyped.is_empty() => {
+                let typed_is_valid = type_check.is_valid_token_stream();
+                let untyped_is_valid: Vec<TokenStream> = untyped
+                    .iter()
+                    .map(CompiledExpr::is_valid_token_stream)
+                    .collect();
+                let combined = CompiledExpr::combine_and(
+                    untyped.into_iter().chain(std::iter::once(type_check)),
+                );
+                CompiledExpr {
+                    is_valid: IsValidExpr::Expr(quote! {
+                        (#typed_is_valid) #(&& (#untyped_is_valid))*
+                    }),
+                    validate: combined.validate,
+                    compile_error: combined.compile_error,
+                }
+            }
+            Some(type_check) => type_check,
+            None => CompiledExpr::combine_and(untyped),
+        }
     })
 }

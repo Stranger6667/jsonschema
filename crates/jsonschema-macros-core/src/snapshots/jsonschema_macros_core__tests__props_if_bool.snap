@@ -8,7 +8,7 @@ match instance {
                 obj.iter()
                     .all(|(__key, __value)| {
                         let key_str = __key.as_str();
-                        if if (|instance: &serde_json::Value| true)(instance) {
+                        if if true {
                             (false) || (matches!(key_str, "a"))
                         } else {
                             false

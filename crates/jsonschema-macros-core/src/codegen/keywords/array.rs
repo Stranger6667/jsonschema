@@ -81,7 +81,9 @@ pub(in super::super) fn compile(
 
     if applicator_vocab_enabled {
         if let Some(value) = schema.get("additionalItems") {
-            if let Some(compiled) = additional_items::compile(ctx, value, schema.get("items")) {
+            if let Some(compiled) =
+                additional_items::compile(ctx, value, schema.get("items"), schema.get("maxItems"))
+            {
                 checks.push(compiled);
             }
         }

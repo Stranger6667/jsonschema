@@ -43,6 +43,18 @@ mod bench {
                 b.iter(|| black_box(runtime.is_valid(&schema)));
             });
         }
+
+        // Meta-validating a meta-schema exercises `$vocabulary` and the dynamic-scope machinery.
+        let meta: &Value = &referencing::meta::DRAFT202012;
+        let runtime = jsonschema::options()
+            .build(meta)
+            .expect("meta-schema builds");
+        c.bench_function("metaschema/is_valid/Draft2020-12", |b| {
+            b.iter(|| black_box(jsonschema::draft202012::meta::is_valid(meta)));
+        });
+        c.bench_function("metaschema/is_valid/Draft2020-12/runtime", |b| {
+            b.iter(|| black_box(runtime.is_valid(meta)));
+        });
     }
 
     criterion_group!(metaschema, run_benchmarks);

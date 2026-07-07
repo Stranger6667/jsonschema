@@ -25,31 +25,36 @@ pub(in super::super) fn compile(
             .and_then(Value::as_bool)
             .unwrap_or(false);
 
-        if let Some(value) = schema.get("minimum") {
-            if exclusive_min {
-                // Draft 4 uses exclusiveMinimum:true as a boolean modifier of minimum.
-                // The dynamic validator reports errors at /exclusiveMinimum, not /minimum.
-                items.push(compile_exclusive_min(ctx, value, "exclusiveMinimum"));
-            } else {
-                items.push(compile_min(ctx, value));
+        if exclusive_min || exclusive_max {
+            if let Some(value) = schema.get("minimum") {
+                if exclusive_min {
+                    items.push(compile_exclusive_min(ctx, value, "exclusiveMinimum"));
+                } else {
+                    items.push(compile_min(ctx, value));
+                }
             }
-        }
-        if let Some(value) = schema.get("maximum") {
-            if exclusive_max {
-                // Draft 4 uses exclusiveMaximum:true as a boolean modifier of maximum.
-                // The dynamic validator reports errors at /exclusiveMaximum, not /maximum.
-                items.push(compile_exclusive_max(ctx, value, "exclusiveMaximum"));
-            } else {
-                items.push(compile_max(ctx, value));
+            if let Some(value) = schema.get("maximum") {
+                if exclusive_max {
+                    items.push(compile_exclusive_max(ctx, value, "exclusiveMaximum"));
+                } else {
+                    items.push(compile_max(ctx, value));
+                }
             }
+        } else {
+            compile_inclusive_min_max(
+                ctx,
+                schema.get("minimum"),
+                schema.get("maximum"),
+                &mut items,
+            );
         }
     } else {
-        if let Some(value) = schema.get("minimum") {
-            items.push(compile_min(ctx, value));
-        }
-        if let Some(value) = schema.get("maximum") {
-            items.push(compile_max(ctx, value));
-        }
+        compile_inclusive_min_max(
+            ctx,
+            schema.get("minimum"),
+            schema.get("maximum"),
+            &mut items,
+        );
         if let Some(value) = schema.get("exclusiveMinimum") {
             items.push(compile_exclusive_min(ctx, value, "exclusiveMinimum"));
         }
@@ -71,6 +76,72 @@ fn compile_min(ctx: &CompileContext<'_>, value: &Value) -> CompiledExpr {
 
 fn compile_max(ctx: &CompileContext<'_>, value: &Value) -> CompiledExpr {
     compile_bound(ctx, value, ComparisonOp::Lte, "maximum")
+}
+
+fn compile_inclusive_min_max(
+    ctx: &CompileContext<'_>,
+    minimum: Option<&Value>,
+    maximum: Option<&Value>,
+    items: &mut Vec<CompiledExpr>,
+) {
+    if let (Some(min_value), Some(max_value)) = (minimum, maximum) {
+        if let Some(folded) = compile_equal_bounds(ctx, min_value, max_value) {
+            items.push(folded);
+            return;
+        }
+    }
+    if let Some(value) = minimum {
+        items.push(compile_min(ctx, value));
+    }
+    if let Some(value) = maximum {
+        items.push(compile_max(ctx, value));
+    }
+}
+
+fn compile_equal_bounds(
+    ctx: &CompileContext<'_>,
+    min_value: &Value,
+    max_value: &Value,
+) -> Option<CompiledExpr> {
+    if min_value != max_value {
+        return None;
+    }
+    if min_value.as_u64().is_none() && min_value.as_i64().is_none() {
+        return None;
+    }
+    let min_path = ctx.schema_path_for_keyword("minimum");
+    let max_path = ctx.schema_path_for_keyword("maximum");
+    let value_json = serde_json::to_string(min_value).unwrap();
+    let limit_expr = build_limit_value_expr(min_value, &value_json);
+    let eq_check = equal_bound_check(min_value);
+    let below_check = minmax::generate_numeric_check(ComparisonOp::Lt, min_value);
+    let above_check = minmax::generate_numeric_check(ComparisonOp::Gt, min_value);
+    Some(CompiledExpr::with_validate_blocks(
+        eq_check,
+        quote! {
+            if #below_check {
+                return Some(jsonschema::__private::error::minimum(
+                    #min_path, __path.into(), instance, #limit_expr,
+                ));
+            }
+            if #above_check {
+                return Some(jsonschema::__private::error::maximum(
+                    #max_path, __path.into(), instance, #limit_expr,
+                ));
+            }
+        },
+    ))
+}
+
+fn equal_bound_check(value: &Value) -> TokenStream {
+    if let Some(unsigned) = value.as_u64() {
+        quote! { jsonschema::__private::numeric::eq(n, #unsigned) }
+    } else {
+        let signed = value
+            .as_i64()
+            .expect("equal-bounds fold is restricted to integer limits");
+        quote! { jsonschema::__private::numeric::eq(n, #signed) }
+    }
 }
 
 /// `keyword` is the schema keyword whose path is emitted (either "minimum"/"maximum" for draft4

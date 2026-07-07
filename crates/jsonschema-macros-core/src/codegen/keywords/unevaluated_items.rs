@@ -10,7 +10,7 @@ use super::{
         stack_emit::{pop_recursive_item_eval, push_recursive_item_eval},
         CompiledExpr,
     },
-    unevaluated::compile_index_evaluated_expr,
+    unevaluated::{compile_index_evaluated_expr, GuardHoist},
 };
 
 /// Compile the "unevaluatedItems" keyword.
@@ -29,7 +29,9 @@ pub(crate) fn compile(
     let value_ty = crate::codegen::emit_serde::value_ty();
     let value_slice_ty = crate::codegen::emit_serde::value_slice_ty();
 
-    let evaluated_expr = compile_index_evaluated_expr(ctx, schema);
+    let mut hoist = GuardHoist::hoisting();
+    let evaluated_expr = compile_index_evaluated_expr(ctx, schema, &mut hoist);
+    let guard_bindings = hoist.bindings();
     let unevaluated_check = if unevaluated.as_bool() == Some(false) {
         quote! { false }
     } else {
@@ -53,7 +55,7 @@ pub(crate) fn compile(
                     &#value_slice_ty,
                     usize,
                     &#value_ty
-                ) -> bool = |instance, arr, idx, item| { #evaluated_expr };
+                ) -> bool = |instance, arr, idx, item| { #(#guard_bindings)* #evaluated_expr };
                 #recursive_push
                 let __result = arr.iter().enumerate().all(|(idx, item)| {
                     if __root_item_eval(instance, arr, idx, item) {
@@ -73,7 +75,7 @@ pub(crate) fn compile(
                     &#value_slice_ty,
                     usize,
                     &#value_ty
-                ) -> bool = |instance, arr, idx, item| { #evaluated_expr };
+                ) -> bool = |instance, arr, idx, item| { #(#guard_bindings)* #evaluated_expr };
                 #recursive_push
                 let mut __unexpected: Vec<String> = Vec::new();
                 for (idx, item) in arr.iter().enumerate() {
@@ -91,7 +93,7 @@ pub(crate) fn compile(
         };
         Some(CompiledExpr::with_validate_blocks(is_valid, validate))
     } else {
-        let is_valid = quote! {
+        let all_expr = quote! {
             arr.iter().enumerate().all(|(idx, item)| {
                 if #evaluated_expr {
                     true
@@ -100,8 +102,14 @@ pub(crate) fn compile(
                 }
             })
         };
+        let is_valid = if guard_bindings.is_empty() {
+            all_expr
+        } else {
+            quote! { { #(#guard_bindings)* #all_expr } }
+        };
         let validate = quote! {
             if let #value_ty::Array(arr) = instance {
+                #(#guard_bindings)*
                 let mut __unexpected: Vec<String> = Vec::new();
                 for (idx, item) in arr.iter().enumerate() {
                     if !(#evaluated_expr) && !(#unevaluated_check) {

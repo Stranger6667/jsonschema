@@ -3,14 +3,13 @@ source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"$defs\":{\"base\":{\"properties\":{\"a\":{}}}},\"$ref\":\"#/$defs/base\",\"type\":\"object\",\"unevaluatedProperties\":false}"
 expression: is_valid_body(schema)
 ---
-(validate_ref_0(instance))
-            && (match instance {
-                serde_json::Value::Object(obj) => {
-                    obj.iter()
-                        .all(|(__key, __value)| {
-                            let key_str = __key.as_str();
-                            if eval_ref_0(instance, obj, key_str) { true } else { false }
-                        })
-                }
-                _ => false,
-            })
+(match instance {
+            serde_json::Value::Object(obj) => {
+                obj.iter()
+                    .all(|(__key, __value)| {
+                        let key_str = __key.as_str();
+                        if eval_ref_0(instance, obj, key_str) { true } else { false }
+                    })
+            }
+            _ => false,
+        }) && (validate_ref_0(instance))

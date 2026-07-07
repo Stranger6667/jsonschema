@@ -4,7 +4,7 @@ use super::super::{
     compile_schema,
     draft::DraftExt,
     errors::{invalid_schema_non_empty_array_expression, invalid_schema_type_expression},
-    refs::resolve_top_level_ref_for_one_of_analysis,
+    refs::resolve_lone_top_level_ref,
     CompileContext, CompiledExpr,
 };
 use proc_macro2::TokenStream;
@@ -46,13 +46,13 @@ enum DiscriminatorKind {
     Int,
 }
 
-/// `(discriminator_key, kind, per_branch_values)`.
 /// `per_branch_values[i]` is `None` when branch `i` has no discriminator entry.
-type DiscriminatorPlan = (
-    String,
-    DiscriminatorKind,
-    Vec<Option<Vec<DiscriminatorLiteral>>>,
-);
+struct DiscriminatorPlan {
+    key: String,
+    kind: DiscriminatorKind,
+    per_branch_values: Vec<Option<Vec<DiscriminatorLiteral>>>,
+    vacuous_guarded: usize,
+}
 
 /// Per-key stats accumulated while searching for the best discriminator.
 /// `(coverage, distinct_values, total_cardinality, kind, invalid)`. `invalid`
@@ -77,60 +77,64 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
     let allow_const = ctx.draft.supports_const_keyword();
 
     let mut branch_validations: Vec<TokenStream> = Vec::new();
-    let mut branch_is_valid_checks: Vec<TokenStream> = Vec::new();
 
     for (idx, schema) in schemas.iter().enumerate() {
-        let validation = compile_schema(ctx, schema);
-        let plain_is_valid = validation.is_valid_token_stream();
-        branch_is_valid_checks.push(plain_is_valid.clone());
-
-        let branch_validation =
-            if let Some((discriminator_key, _, branch_discriminators)) = &discriminator_plan {
-                if let Some(discriminator_values) = &branch_discriminators[idx] {
-                    // Nested or-patterns `Some("a" | "b")` (not `Some("a") | Some("b")`) satisfy
-                    // the `unnested_or_patterns` lint in generated code.
-                    let inner: Vec<TokenStream> = discriminator_values
-                        .iter()
-                        .map(DiscriminatorLiteral::to_inner_token)
-                        .collect();
-                    let guarded_body = match reduce_discriminated_branch(
-                        schema,
-                        discriminator_key,
-                        discriminator_values,
-                        allow_const,
-                    ) {
-                        Some(reduced) => compile_schema(ctx, &reduced).is_valid_token_stream(),
-                        None => plain_is_valid,
-                    };
-                    quote! {
-                        (matches!(__one_of_discriminator, Some(#(#inner)|*))
-                            && { #guarded_body })
-                    }
-                } else {
-                    plain_is_valid
-                }
-            } else {
-                plain_is_valid
+        let discriminator_values = discriminator_plan
+            .as_ref()
+            .and_then(|plan| plan.per_branch_values[idx].as_ref());
+        let branch_validation = if let (Some(plan), Some(discriminator_values)) =
+            (&discriminator_plan, discriminator_values)
+        {
+            // Nested or-patterns `Some("a" | "b")` (not `Some("a") | Some("b")`) satisfy
+            // the `unnested_or_patterns` lint in generated code.
+            let inner: Vec<TokenStream> = discriminator_values
+                .iter()
+                .map(DiscriminatorLiteral::to_inner_token)
+                .collect();
+            let guarded_body = match reduce_discriminated_branch(
+                schema,
+                &plan.key,
+                discriminator_values,
+                allow_const,
+                &ctx.config.custom_keywords,
+            ) {
+                Some(reduced) => compile_schema(ctx, &reduced).is_valid_token_stream(),
+                None => compile_schema(ctx, schema).is_valid_token_stream(),
             };
+            quote! {
+                (matches!(__one_of_discriminator, Some(#(#inner)|*))
+                    && { #guarded_body })
+            }
+        } else {
+            compile_schema(ctx, schema).is_valid_token_stream()
+        };
 
         branch_validations.push(branch_validation);
     }
 
-    let discriminator_init = if let Some((discriminator_key, kind, _)) = &discriminator_plan {
-        let init_expr = match kind {
+    let discriminator_init = if let Some(plan) = &discriminator_plan {
+        let init_expr = match plan.kind {
             DiscriminatorKind::Str => {
-                crate::codegen::emit_serde::instance_object_property_as_str(discriminator_key)
+                crate::codegen::emit_serde::instance_object_property_as_str(&plan.key)
             }
             DiscriminatorKind::Bool => {
-                crate::codegen::emit_serde::instance_object_property_as_bool(discriminator_key)
+                crate::codegen::emit_serde::instance_object_property_as_bool(&plan.key)
             }
             DiscriminatorKind::Int => {
-                crate::codegen::emit_serde::instance_object_property_as_i64(discriminator_key)
+                crate::codegen::emit_serde::instance_object_property_as_i64(&plan.key)
             }
         };
         quote! { let __one_of_discriminator = #init_expr; }
     } else {
         quote! {}
+    };
+    let validate_correction = match &discriminator_plan {
+        Some(plan) if plan.vacuous_guarded > 0 => {
+            let vacuous_guarded = plan.vacuous_guarded;
+            let is_object = crate::codegen::emit_serde::instance_is_object();
+            quote! { if !(#is_object) { __count += #vacuous_guarded; } }
+        }
+        _ => quote! {},
     };
 
     let first_check = &branch_validations[0];
@@ -168,8 +172,10 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
         is_valid,
         quote! {
             {
+                #discriminator_init
                 let mut __count = 0usize;
-                #(if #branch_is_valid_checks { __count += 1; })*
+                #(if #branch_validations { __count += 1; })*
+                #validate_correction
                 if __count == 0 {
                     return Some(jsonschema::__private::error::one_of_not_valid(
                         #schema_path, __path.into(), instance,
@@ -190,8 +196,9 @@ fn reduce_discriminated_branch(
     key: &str,
     values: &[DiscriminatorLiteral],
     allow_const: bool,
+    custom_keywords: &HashMap<String, TokenStream>,
 ) -> Option<Value> {
-    if extract_object(schema, allow_const)
+    if extract_object(schema, allow_const, custom_keywords)
         .get(key)
         .map(Vec::as_slice)
         != Some(values)
@@ -224,20 +231,135 @@ fn reduce_discriminated_branch(
     Some(reduced)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BranchObjectApplicability {
+    Typed,
+    Vacuous,
+    Other,
+}
+
+const OBJECT_ONLY_OR_ANNOTATION_KEYWORDS: &[&str] = &[
+    "properties",
+    "patternProperties",
+    "additionalProperties",
+    "required",
+    "minProperties",
+    "maxProperties",
+    "propertyNames",
+    "dependencies",
+    "dependentRequired",
+    "dependentSchemas",
+    "title",
+    "description",
+    "default",
+    "examples",
+    "$comment",
+    "deprecated",
+    "readOnly",
+    "writeOnly",
+    "definitions",
+    "$defs",
+];
+
+fn classify_branch(
+    schema: &Value,
+    custom_keywords: &HashMap<String, TokenStream>,
+) -> BranchObjectApplicability {
+    let Value::Object(obj) = schema else {
+        return BranchObjectApplicability::Other;
+    };
+    if obj
+        .keys()
+        .any(|key| custom_keywords.contains_key(key.as_str()))
+    {
+        return BranchObjectApplicability::Other;
+    }
+    if is_explicit_object_only_type(obj.get("type")) {
+        return BranchObjectApplicability::Typed;
+    }
+    if obj
+        .keys()
+        .all(|key| OBJECT_ONLY_OR_ANNOTATION_KEYWORDS.contains(&key.as_str()))
+    {
+        BranchObjectApplicability::Vacuous
+    } else {
+        BranchObjectApplicability::Other
+    }
+}
+
+fn vacuous_branches_safely_guarded(
+    classes: &[BranchObjectApplicability],
+    plan: &DiscriminatorPlan,
+) -> bool {
+    let vacuous_count = classes
+        .iter()
+        .filter(|class| **class == BranchObjectApplicability::Vacuous)
+        .count();
+    if vacuous_count == 0 {
+        return true;
+    }
+    if vacuous_count < 2 || classes.contains(&BranchObjectApplicability::Other) {
+        return false;
+    }
+    classes
+        .iter()
+        .zip(&plan.per_branch_values)
+        .all(|(class, values)| *class != BranchObjectApplicability::Vacuous || values.is_some())
+}
+
 fn build_discriminator_plan(
     ctx: &mut CompileContext<'_>,
     schemas: &[Value],
 ) -> Option<DiscriminatorPlan> {
-    let branch_discriminators: Vec<HashMap<String, Vec<DiscriminatorLiteral>>> = schemas
-        .iter()
-        .map(|schema| extract_discriminators(ctx, schema))
-        .collect();
+    if !ctx.supports_validation_vocabulary() || !ctx.supports_applicator_vocabulary() {
+        return None;
+    }
+    let allow_const = ctx.draft.supports_const_keyword();
+    let mut classes = Vec::with_capacity(schemas.len());
+    let mut branch_discriminators = Vec::with_capacity(schemas.len());
+    for schema in schemas {
+        let resolved = resolve_lone_top_level_ref(ctx, schema);
+        classes.push(classify_branch(
+            resolved.as_ref(),
+            &ctx.config.custom_keywords,
+        ));
+        branch_discriminators.push(extract_object(
+            resolved.as_ref(),
+            allow_const,
+            &ctx.config.custom_keywords,
+        ));
+    }
 
+    if let Some(mut plan) = select_discriminator(&branch_discriminators) {
+        if vacuous_branches_safely_guarded(&classes, &plan) {
+            plan.vacuous_guarded = classes
+                .iter()
+                .filter(|class| **class == BranchObjectApplicability::Vacuous)
+                .count();
+            return Some(plan);
+        }
+    }
+    let mut any_cleared = false;
+    for (discriminators, class) in branch_discriminators.iter_mut().zip(&classes) {
+        if *class == BranchObjectApplicability::Vacuous && !discriminators.is_empty() {
+            discriminators.clear();
+            any_cleared = true;
+        }
+    }
+    if !any_cleared {
+        return None;
+    }
+    select_discriminator(&branch_discriminators)
+}
+
+fn select_discriminator(
+    branch_discriminators: &[HashMap<String, Vec<DiscriminatorLiteral>>],
+) -> Option<DiscriminatorPlan> {
     // For each candidate key: track (coverage, distinct_value_set, total_cardinality, kind).
     // Keys whose values have inconsistent kinds across branches are rejected.
     // BTreeMap: iteration order below decides ties, so it must not depend on hashing.
     let mut stats: BTreeMap<String, KeyStats> = BTreeMap::new();
-    for branch in &branch_discriminators {
+    for branch in branch_discriminators {
         for (key, values) in branch {
             let entry = stats.entry(key.clone()).or_default();
             let branch_kind = values.first().map(DiscriminatorLiteral::kind);
@@ -287,30 +409,23 @@ fn build_discriminator_plan(
         .iter()
         .map(|branch| branch.get(&key).cloned())
         .collect();
-    Some((key, kind, per_branch_values))
+    Some(DiscriminatorPlan {
+        key,
+        kind,
+        per_branch_values,
+        vacuous_guarded: 0,
+    })
 }
 
-/// Extracts typed discriminator candidates from a branch schema, following a
-/// short top-level `$ref` chain first.
-fn extract_discriminators(
-    ctx: &mut CompileContext<'_>,
+fn extract_object(
     schema: &Value,
+    allow_const: bool,
+    custom_keywords: &HashMap<String, TokenStream>,
 ) -> HashMap<String, Vec<DiscriminatorLiteral>> {
-    if !ctx.supports_validation_vocabulary() || !ctx.supports_applicator_vocabulary() {
-        return HashMap::new();
-    }
-    let allow_const = ctx.draft.supports_const_keyword();
-    extract_object(
-        resolve_top_level_ref_for_one_of_analysis(ctx, schema).as_ref(),
-        allow_const,
-    )
-}
-
-fn extract_object(schema: &Value, allow_const: bool) -> HashMap<String, Vec<DiscriminatorLiteral>> {
     let Value::Object(obj) = schema else {
         return HashMap::new();
     };
-    if !is_explicit_object_only_type(obj.get("type")) {
+    if classify_branch(schema, custom_keywords) == BranchObjectApplicability::Other {
         return HashMap::new();
     }
     let required: Vec<&str> = obj

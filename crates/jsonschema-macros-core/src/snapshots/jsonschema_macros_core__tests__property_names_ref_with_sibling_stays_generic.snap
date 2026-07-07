@@ -1,0 +1,21 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"$defs\":{\"s\":{\"type\":\"string\"}},\"propertyNames\":{\"$ref\":\"#/$defs/s\",\"minLength\":2},\"type\":\"object\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                obj.keys()
+                    .all(|key| {
+                        (|instance: &serde_json::Value| {
+                            (match instance {
+                                serde_json::Value::String(s) => {
+                                    (s.chars().count() as u64) >= 2
+                                }
+                                _ => true,
+                            }) && (validate_ref_0(instance))
+                        })(&serde_json::Value::String(key.clone()))
+                    })
+            }
+            _ => false,
+        }
