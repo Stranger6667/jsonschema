@@ -3,38 +3,31 @@ source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"oneOf\":[true,{\"prefixItems\":[{}]}],\"type\":\"array\",\"unevaluatedItems\":false}"
 expression: is_valid_body(schema)
 ---
-({
-            let mut matched = true;
-            (if true {
-                if matched {
-                    false
-                } else {
-                    matched = true;
-                    true
-                }
-            } else {
-                true
-            }) && matched
+(match instance {
+            serde_json::Value::Array(arr) => {
+                let __one_of_matches_0 = (true as usize);
+                arr.iter()
+                    .enumerate()
+                    .all(|(idx, item)| {
+                        if __one_of_matches_0 == 1 && ((true && (idx < 1usize))) {
+                            true
+                        } else {
+                            false
+                        }
+                    })
+            }
+            _ => false,
         })
-            && (match instance {
-                serde_json::Value::Array(arr) => {
-                    arr.iter()
-                        .enumerate()
-                        .all(|(idx, item)| {
-                            if {
-                                let mut __one_of_matches = 0usize;
-                                let mut __one_of_evaluates = false;
-                                if (|instance: &serde_json::Value| true)(instance) {
-                                    __one_of_matches += 1;
-                                    __one_of_evaluates = __one_of_evaluates || (idx < 1usize);
-                                }
-                                __one_of_matches == 1 && __one_of_evaluates
-                            } {
-                                true
-                            } else {
-                                false
-                            }
-                        })
-                }
-                _ => false,
+            && ({
+                let mut matched = true;
+                (if true {
+                    if matched {
+                        false
+                    } else {
+                        matched = true;
+                        true
+                    }
+                } else {
+                    true
+                }) && matched
             })

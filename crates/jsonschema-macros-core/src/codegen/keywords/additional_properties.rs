@@ -12,13 +12,20 @@ use serde_json::Value;
 pub(super) fn compile_wildcard_arm(
     ctx: &mut CompileContext<'_>,
     additional_properties: Option<&Value>,
+    compiled: Option<&CompiledExpr>,
 ) -> CompiledExpr {
     match additional_properties {
         None | Some(Value::Bool(true)) => CompiledExpr::always_true(),
         Some(schema) => {
-            let schema_check = ctx.with_schema_path_segment("additionalProperties", |ctx| {
-                ctx.with_instance_scope(|ctx| compile_schema(ctx, schema))
-            });
+            let fallback;
+            let schema_check = if let Some(check) = compiled {
+                check
+            } else {
+                fallback = ctx.with_schema_path_segment("additionalProperties", |ctx| {
+                    ctx.with_instance_scope(|ctx| compile_schema(ctx, schema))
+                });
+                &fallback
+            };
             if schema_check.is_trivially_true() {
                 CompiledExpr::always_true()
             } else {
@@ -45,6 +52,7 @@ pub(crate) fn compile(
     ctx: &mut CompileContext<'_>,
     additional_properties: Option<&Value>,
     pattern_properties: Option<&Value>,
+    compiled: Option<&CompiledExpr>,
 ) -> Option<CompiledExpr> {
     let additional_properties = additional_properties?;
 
@@ -63,9 +71,15 @@ pub(crate) fn compile(
         )),
         Value::Bool(true) => None,
         schema => {
-            let schema_check = ctx.with_schema_path_segment("additionalProperties", |ctx| {
-                ctx.with_instance_scope(|ctx| compile_schema(ctx, schema))
-            });
+            let fallback;
+            let schema_check = if let Some(check) = compiled {
+                check
+            } else {
+                fallback = ctx.with_schema_path_segment("additionalProperties", |ctx| {
+                    ctx.with_instance_scope(|ctx| compile_schema(ctx, schema))
+                });
+                &fallback
+            };
             if schema_check.is_trivially_true() {
                 return None;
             }
@@ -100,14 +114,12 @@ pub(super) fn compile_first_unexpected_check(
         quote! { matches!(key_str, #(#known_properties)|*) }
     };
     quote! {
-        if let Some(obj) = instance.as_object() {
-            for key in obj.keys() {
-                let key_str = key.as_str();
-                if !(#covered) {
-                    return Some(jsonschema::__private::error::additional_properties(
-                        #schema_path, __path.into(), instance, vec![key.clone()],
-                    ));
-                }
+        for key in obj.keys() {
+            let key_str = key.as_str();
+            if !(#covered) {
+                return Some(jsonschema::__private::error::additional_properties(
+                    #schema_path, __path.into(), instance, vec![key.clone()],
+                ));
             }
         }
     }

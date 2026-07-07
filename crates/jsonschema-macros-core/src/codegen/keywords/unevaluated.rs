@@ -146,22 +146,93 @@ fn compile_guard_validity(ctx: &mut CompileContext<'_>, schema: &Value) -> Compi
     result
 }
 
+pub(crate) struct GuardHoist {
+    bindings: Vec<TokenStream>,
+    enabled: bool,
+    guard_count: usize,
+    match_count: usize,
+}
+
+impl GuardHoist {
+    pub(crate) fn hoisting() -> Self {
+        Self {
+            bindings: Vec::new(),
+            enabled: true,
+            guard_count: 0,
+            match_count: 0,
+        }
+    }
+
+    pub(crate) fn inline() -> Self {
+        Self {
+            bindings: Vec::new(),
+            enabled: false,
+            guard_count: 0,
+            match_count: 0,
+        }
+    }
+
+    pub(crate) fn bindings(&self) -> &[TokenStream] {
+        &self.bindings
+    }
+
+    fn guard(&mut self, value_ty: &TokenStream, valid: &CompiledExpr) -> TokenStream {
+        if valid.is_trivially_true() {
+            return quote! { true };
+        }
+        let call = quote! { (|instance: &#value_ty| #valid)(instance) };
+        if !self.enabled {
+            return call;
+        }
+        let ident = format_ident!("__guard_{}", self.guard_count);
+        self.guard_count += 1;
+        self.bindings.push(quote! { let #ident = #call; });
+        quote! { #ident }
+    }
+
+    fn hoist_match_count(&mut self, expr: &TokenStream) -> proc_macro2::Ident {
+        let ident = format_ident!("__one_of_matches_{}", self.match_count);
+        self.match_count += 1;
+        self.bindings.push(quote! { let #ident = #expr; });
+        ident
+    }
+}
+
 fn compile_guarded_eval(
     value_ty: &TokenStream,
     valid_expr: &CompiledExpr,
     eval_expr: &TokenStream,
+    hoist: &mut GuardHoist,
 ) -> TokenStream {
+    let guard = hoist.guard(value_ty, valid_expr);
     quote! {
-        (|instance: &#value_ty| #valid_expr)(instance) && (#eval_expr)
+        #guard && (#eval_expr)
     }
 }
 
 fn compile_one_of_evaluated(
     value_ty: &TokenStream,
     cases: &[(CompiledExpr, TokenStream)],
+    hoist: &mut GuardHoist,
 ) -> Option<TokenStream> {
     if cases.is_empty() {
         return None;
+    }
+
+    if hoist.enabled {
+        let guards: Vec<_> = cases
+            .iter()
+            .map(|(valid, _)| hoist.guard(value_ty, valid))
+            .collect();
+        let count_terms = guards.iter().map(|guard| quote! { (#guard as usize) });
+        let matches_ident = hoist.hoist_match_count(&quote! { #(#count_terms)+* });
+        let selectors = guards
+            .iter()
+            .zip(cases)
+            .map(|(guard, (_, eval))| quote! { (#guard && (#eval)) });
+        return Some(quote! {
+            #matches_ident == 1 && (#(#selectors)||*)
+        });
     }
 
     let valid_exprs: Vec<_> = cases.iter().map(|(valid, _)| valid).collect();
@@ -188,9 +259,11 @@ fn compile_if_then_else_evaluated(
     if_eval_expr: &TokenStream,
     then_eval_expr: &TokenStream,
     else_eval_expr: &TokenStream,
+    hoist: &mut GuardHoist,
 ) -> TokenStream {
+    let guard = hoist.guard(value_ty, if_valid_expr);
     quote! {
-        if (|instance: &#value_ty| #if_valid_expr)(instance) {
+        if #guard {
             (#if_eval_expr) || (#then_eval_expr)
         } else {
             #else_eval_expr
@@ -282,10 +355,11 @@ fn recurse_eval(
     ctx: &mut CompileContext<'_>,
     schema: &Map<String, Value>,
     kind: EvalKind,
+    hoist: &mut GuardHoist,
 ) -> TokenStream {
     match kind {
         EvalKind::Key => compile_key_evaluated_expr(ctx, schema, true),
-        EvalKind::Item => compile_index_evaluated_expr(ctx, schema),
+        EvalKind::Item => compile_index_evaluated_expr(ctx, schema, hoist),
     }
 }
 
@@ -298,20 +372,21 @@ fn push_applicator_eval(
     parts: &mut Vec<TokenStream>,
     value_ty: &TokenStream,
     kind: EvalKind,
+    hoist: &mut GuardHoist,
 ) {
     if let Some(all_of) = schema.get("allOf").and_then(Value::as_array) {
         for subschema in all_of {
             if let Value::Object(subschema_obj) = subschema {
-                parts.push(recurse_eval(ctx, subschema_obj, kind));
+                parts.push(recurse_eval(ctx, subschema_obj, kind, hoist));
             }
         }
     }
     if let Some(any_of) = schema.get("anyOf").and_then(Value::as_array) {
         for subschema in any_of {
             if let Value::Object(subschema_obj) = subschema {
-                let sub_eval = recurse_eval(ctx, subschema_obj, kind);
+                let sub_eval = recurse_eval(ctx, subschema_obj, kind, hoist);
                 let sub_valid = compile_branch_guard(ctx, subschema);
-                parts.push(compile_guarded_eval(value_ty, &sub_valid, &sub_eval));
+                parts.push(compile_guarded_eval(value_ty, &sub_valid, &sub_eval, hoist));
             }
         }
     }
@@ -322,32 +397,32 @@ fn push_applicator_eval(
                 let Value::Object(subschema_obj) = subschema else {
                     return None;
                 };
-                let sub_eval = recurse_eval(ctx, subschema_obj, kind);
+                let sub_eval = recurse_eval(ctx, subschema_obj, kind, hoist);
                 let sub_valid = compile_branch_guard(ctx, subschema);
                 Some((sub_valid, sub_eval))
             })
             .collect();
-        if let Some(one_of_eval) = compile_one_of_evaluated(value_ty, &cases) {
+        if let Some(one_of_eval) = compile_one_of_evaluated(value_ty, &cases, hoist) {
             parts.push(one_of_eval);
         }
     }
     if let Some(if_schema) = schema.get("if") {
         let if_valid = compile_branch_guard(ctx, if_schema);
         let if_eval = if let Value::Object(if_obj) = if_schema {
-            recurse_eval(ctx, if_obj, kind)
+            recurse_eval(ctx, if_obj, kind, hoist)
         } else {
             quote! { false }
         };
         let then_eval = schema.get("then").and_then(Value::as_object).map_or_else(
             || quote! { false },
-            |then_obj| recurse_eval(ctx, then_obj, kind),
+            |then_obj| recurse_eval(ctx, then_obj, kind, hoist),
         );
         let else_eval = schema.get("else").and_then(Value::as_object).map_or_else(
             || quote! { false },
-            |else_obj| recurse_eval(ctx, else_obj, kind),
+            |else_obj| recurse_eval(ctx, else_obj, kind, hoist),
         );
         parts.push(compile_if_then_else_evaluated(
-            value_ty, &if_valid, &if_eval, &then_eval, &else_eval,
+            value_ty, &if_valid, &if_eval, &then_eval, &else_eval, hoist,
         ));
     }
 }
@@ -508,7 +583,15 @@ pub(crate) fn compile_key_evaluated_expr(
     }
 
     if applicator_vocab_enabled {
-        push_applicator_eval(ctx, schema, &mut parts, &value_ty, EvalKind::Key);
+        let mut hoist = GuardHoist::inline();
+        push_applicator_eval(
+            ctx,
+            schema,
+            &mut parts,
+            &value_ty,
+            EvalKind::Key,
+            &mut hoist,
+        );
     }
 
     push_ref_dispatch(ctx, schema, &mut parts, EvalKind::Key);
@@ -539,6 +622,7 @@ pub(crate) fn compile_key_evaluated_expr(
 pub(crate) fn compile_index_evaluated_expr(
     ctx: &mut CompileContext<'_>,
     schema: &Map<String, Value>,
+    hoist: &mut GuardHoist,
 ) -> TokenStream {
     let mut parts = Vec::new();
     let applicator_vocab_enabled = ctx.supports_applicator_vocabulary();
@@ -578,7 +662,7 @@ pub(crate) fn compile_index_evaluated_expr(
             });
         }
 
-        push_applicator_eval(ctx, schema, &mut parts, &value_ty, EvalKind::Item);
+        push_applicator_eval(ctx, schema, &mut parts, &value_ty, EvalKind::Item, hoist);
     }
 
     push_ref_dispatch(ctx, schema, &mut parts, EvalKind::Item);

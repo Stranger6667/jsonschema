@@ -1,0 +1,16 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"$defs\":{\"s\":{\"minProperties\":1}},\"propertyNames\":{\"$ref\":\"#/$defs/s\"},\"type\":\"object\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                obj.keys()
+                    .all(|key| {
+                        (|instance: &serde_json::Value| validate_ref_0(
+                            instance,
+                        ))(&serde_json::Value::String(key.clone()))
+                    })
+            }
+            _ => false,
+        }

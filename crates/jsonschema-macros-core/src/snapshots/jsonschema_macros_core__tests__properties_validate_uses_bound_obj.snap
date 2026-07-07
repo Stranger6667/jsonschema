@@ -1,0 +1,59 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"additionalProperties\":false,\"properties\":{\"a\":{\"type\":\"string\"}},\"required\":[\"a\"],\"type\":\"object\"}"
+expression: validate_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    match key_str {
+                        "a" => {
+                            let instance = value;
+                            let __path = &__path.push("a");
+                            if !(instance.is_string()) {
+                                return Some(
+                                    jsonschema::__private::error::single_type(
+                                        "/properties/a/type",
+                                        __path.into(),
+                                        instance,
+                                        jsonschema::JsonType::String,
+                                    ),
+                                );
+                            }
+                        }
+                        _ => {
+                            return Some(
+                                jsonschema::__private::error::additional_properties(
+                                    "/additionalProperties",
+                                    __path.into(),
+                                    instance,
+                                    vec![key.clone()],
+                                ),
+                            );
+                        }
+                    }
+                }
+                if !(obj.contains_key("a")) {
+                    return Some(
+                        jsonschema::__private::error::required(
+                            "/required",
+                            __path.into(),
+                            instance,
+                            "a",
+                        ),
+                    );
+                }
+            }
+            _ => {
+                return Some(
+                    jsonschema::__private::error::single_type(
+                        "/type",
+                        __path.into(),
+                        instance,
+                        jsonschema::JsonType::Object,
+                    ),
+                );
+            }
+        }
+        None

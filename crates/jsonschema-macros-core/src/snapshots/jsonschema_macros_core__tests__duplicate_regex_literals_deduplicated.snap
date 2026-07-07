@@ -23,24 +23,22 @@ mod __validator_impl {
     pub(super) fn is_valid(instance: &serde_json::Value) -> bool {
         match instance {
             serde_json::Value::Object(obj) => {
-                ({
-                    let __object_pass = obj
-                        .iter()
-                        .all(|(key, instance)| {
-                            let mut covered = false;
-                            if { __jsonschema_regex_0(key.as_str()) } {
-                                if !(instance.is_string()) {
-                                    return false;
-                                }
-                                covered = true;
-                            }
-                            if !covered {
+                let __object_pass = obj
+                    .iter()
+                    .all(|(key, instance)| {
+                        let mut covered = false;
+                        if { __jsonschema_regex_0(key.as_str()) } {
+                            if !(instance.is_string()) {
                                 return false;
                             }
-                            true
-                        });
-                    __object_pass
-                }) && (obj.keys().all(|s| { __jsonschema_regex_0(s) }))
+                            covered = true;
+                        }
+                        if !covered {
+                            return false;
+                        }
+                        true
+                    });
+                __object_pass
             }
             _ => false,
         }
@@ -51,63 +49,33 @@ mod __validator_impl {
     ) -> Option<jsonschema::ValidationError<'__i>> {
         match instance {
             serde_json::Value::Object(obj) => {
-                for key in obj.keys() {
-                    let s = key;
-                    if !(__jsonschema_regex_0(s)) {
-                        let __key_val: serde_json::Value = serde_json::Value::String(
-                            key.clone(),
-                        );
-                        let instance = &__key_val;
-                        if let Some(__e) = (|| -> Option<
-                            jsonschema::ValidationError<'_>,
-                        > {
-                            if !(__jsonschema_regex_0(s)) {
-                                return Some(
-                                    jsonschema::__private::error::pattern(
-                                        "/propertyNames/pattern",
-                                        __path.into(),
-                                        instance,
-                                        "^[a-z]{2,}$",
-                                    ),
-                                );
-                            }
-                            None
-                        })()
-                            .map(|e| e.to_owned())
-                        {
-                            return Some(__e);
-                        }
-                    }
-                }
-                if let Some(obj) = instance.as_object() {
-                    for (key, value) in obj.iter() {
-                        let key_str = key.as_str();
-                        let mut covered = false;
-                        if { __jsonschema_regex_0(key.as_str()) } {
-                            let instance = value;
-                            let __path = &__path.push(key_str);
-                            if !(instance.is_string()) {
-                                return Some(
-                                    jsonschema::__private::error::single_type(
-                                        "/patternProperties/^[a-z]{2,}$/type",
-                                        __path.into(),
-                                        instance,
-                                        jsonschema::JsonType::String,
-                                    ),
-                                );
-                            }
-                            covered = true;
-                        }
-                        if !covered {
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    let mut covered = false;
+                    if { __jsonschema_regex_0(key.as_str()) } {
+                        let instance = value;
+                        let __path = &__path.push(key_str);
+                        if !(instance.is_string()) {
                             return Some(
-                                jsonschema::__private::error::additional_properties(
-                                    "/additionalProperties",
+                                jsonschema::__private::error::single_type(
+                                    "/patternProperties/^[a-z]{2,}$/type",
                                     __path.into(),
                                     instance,
-                                    vec![key.clone()],
+                                    jsonschema::JsonType::String,
                                 ),
                             );
                         }
+                        covered = true;
+                    }
+                    if !covered {
+                        return Some(
+                            jsonschema::__private::error::additional_properties(
+                                "/additionalProperties",
+                                __path.into(),
+                                instance,
+                                vec![key.clone()],
+                            ),
+                        );
                     }
                 }
             }

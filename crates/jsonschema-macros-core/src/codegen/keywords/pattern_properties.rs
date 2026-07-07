@@ -1,11 +1,14 @@
-use super::super::{
-    compile_regex_match, compile_schema, errors::invalid_schema_type_expression,
-    expr::ValidateBlock, translate_and_validate_regex, CompileContext, CompiledExpr,
+use super::{
+    super::{
+        compile_regex_match, errors::invalid_schema_type_expression, expr::ValidateBlock,
+        translate_and_validate_regex, CompileContext, CompiledExpr,
+    },
+    object_pass::ClusterSubschemas,
 };
 use quote::quote;
 use serde_json::Value;
 
-pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<CompiledExpr> {
+pub(crate) fn compile(value: &Value, cluster: &ClusterSubschemas<'_>) -> Option<CompiledExpr> {
     let Value::Object(patterns) = value else {
         return Some(invalid_schema_type_expression(value, &["object"]));
     };
@@ -16,22 +19,16 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<Com
 
     let mut pattern_checks = Vec::new();
 
-    for (pattern, schema) in patterns {
-        // Validate the pattern regex first so an invalid regex is reported even when the
-        // sub-schema is trivial.
-        let key_matches = match key_match_expr(ctx, pattern) {
-            Ok(condition) => condition,
+    for (_, key_match, check) in &cluster.patterns {
+        let key_matches = match key_match {
+            Ok(condition) => condition.clone(),
             Err(error_expr) => {
-                pattern_checks.push(error_expr);
+                pattern_checks.push(error_expr.clone());
                 continue;
             }
         };
 
-        let schema_check = ctx.with_schema_path_segment("patternProperties", |ctx| {
-            ctx.with_schema_path_segment(pattern, |ctx| {
-                ctx.with_instance_scope(|ctx| compile_schema(ctx, schema))
-            })
-        });
+        let schema_check = check.as_ref().expect("pattern subschema precompiled");
 
         if schema_check.is_trivially_true() {
             continue;

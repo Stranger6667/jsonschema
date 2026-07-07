@@ -1,0 +1,9 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"propertyNames\":{\"type\":\"string\"},\"type\":\"object\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => true,
+            _ => false,
+        }

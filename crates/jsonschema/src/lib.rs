@@ -2943,6 +2943,16 @@ pub mod __private {
             crate::ext::numeric::le(value, limit)
         }
 
+        pub fn eq<T>(value: &serde_json::Number, limit: T) -> bool
+        where
+            T: Copy + num_traits::ToPrimitive,
+            u64: num_cmp::NumCmp<T>,
+            i64: num_cmp::NumCmp<T>,
+            f64: num_cmp::NumCmp<T>,
+        {
+            crate::ext::numeric::eq(value, limit)
+        }
+
         /// Compare `value` > `limit` using runtime numeric semantics.
         pub fn gt<T>(value: &serde_json::Number, limit: T) -> bool
         where

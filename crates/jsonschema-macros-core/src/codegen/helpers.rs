@@ -8,7 +8,7 @@ use crate::context::CompileContext;
 use super::{
     compile_schema,
     draft::DraftExt,
-    keywords::unevaluated::{compile_index_evaluated_expr, compile_key_evaluated_expr},
+    keywords::unevaluated::{compile_index_evaluated_expr, compile_key_evaluated_expr, GuardHoist},
     refs::resolve_ref,
     stack_emit::{
         pop_dynamic_validate_n, pop_recursive_validate, push_dynamic_validate,
@@ -189,7 +189,8 @@ pub(crate) fn get_or_create_item_eval_fn(
         let body = ctx.with_item_eval_scope(location, |ctx| {
             let schema_value = Value::Object(schema_obj.clone());
             ctx.with_schema_env(&schema_value, schema_base_uri, |ctx| {
-                let compiled = compile_index_evaluated_expr(ctx, schema_obj);
+                let mut hoist = GuardHoist::inline();
+                let compiled = compile_index_evaluated_expr(ctx, schema_obj, &mut hoist);
                 let is_recursive_anchor = ctx.draft.supports_recursive_ref_keyword()
                     && schema_obj.get("$recursiveAnchor").and_then(Value::as_bool) == Some(true);
                 let dynamic_bindings = if ctx.uses_dynamic_ref {
@@ -353,34 +354,46 @@ pub(crate) fn get_or_create_is_valid_fn_with(
                     } else {
                         quote! {}
                     };
-                    // Use an IIFE to capture early returns so the stack is always popped.
-                    let validate_body = quote! {
-                        #recursive_push
-                        #recursive_validate_push
-                        #dynamic_push
-                        #dynamic_validate_push
-                        let __r = (|| -> Option<jsonschema::ValidationError<'__i>> {
-                            #validate_stmts
+                    let validate_body = if recursive_validate_push.is_empty()
+                        && dynamic_validate_push.is_empty()
+                        && recursive_push.is_empty()
+                        && dynamic_push.is_empty()
+                    {
+                        quote! { #validate_stmts None }
+                    } else {
+                        // Use an IIFE to capture early returns so the stack is always popped.
+                        quote! {
+                            #recursive_push
+                            #recursive_validate_push
+                            #dynamic_push
+                            #dynamic_validate_push
+                            let __r = (|| -> Option<jsonschema::ValidationError<'__i>> {
+                                #validate_stmts
+                                None
+                            })();
+                            #dynamic_validate_pop
+                            #dynamic_pop
+                            #recursive_validate_pop
+                            #recursive_pop
+                            if let Some(__e) = __r { return Some(__e); }
                             None
-                        })();
-                        #dynamic_validate_pop
-                        #dynamic_pop
-                        #recursive_validate_pop
-                        #recursive_pop
-                        if let Some(__e) = __r { return Some(__e); }
-                        None
+                        }
                     };
                     ctx.is_valid_fns
                         .set_validate_body(&func_name, validate_body);
                 }
-                quote! {
-                    {
-                        #recursive_push
-                        #dynamic_push
-                        let __result = { #compiled };
-                        #dynamic_pop
-                        #recursive_pop
-                        __result
+                if recursive_push.is_empty() && dynamic_push.is_empty() {
+                    compiled.into_token_stream()
+                } else {
+                    quote! {
+                        {
+                            #recursive_push
+                            #dynamic_push
+                            let __result = { #compiled };
+                            #dynamic_pop
+                            #recursive_pop
+                            __result
+                        }
                     }
                 }
             } else {

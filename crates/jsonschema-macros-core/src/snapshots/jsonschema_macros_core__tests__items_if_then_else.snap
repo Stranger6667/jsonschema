@@ -5,31 +5,32 @@ expression: is_valid_body(schema)
 ---
 match instance {
             serde_json::Value::Array(arr) => {
+                let __guard_0 = (|instance: &serde_json::Value| match instance {
+                    serde_json::Value::Array(arr) => {
+                        arr.get(0usize)
+                            .map_or(
+                                true,
+                                |instance| {
+                                    static EXPECTED: std::sync::LazyLock<serde_json::Number> = std::sync::LazyLock::new(||
+                                    {
+                                        serde_json::from_str("0")
+                                            .expect("Failed to parse const number")
+                                    });
+                                    match instance {
+                                        serde_json::Value::Number(n) => {
+                                            jsonschema::__private::cmp::equal_numbers(n, &*EXPECTED)
+                                        }
+                                        _ => false,
+                                    }
+                                },
+                            )
+                    }
+                    _ => true,
+                })(instance);
                 arr.iter()
                     .enumerate()
                     .all(|(idx, item)| {
-                        if if (|instance: &serde_json::Value| match instance {
-                            serde_json::Value::Array(arr) => {
-                                arr.get(0usize)
-                                    .map_or(
-                                        true,
-                                        |instance| {
-                                            static EXPECTED: std::sync::LazyLock<serde_json::Number> = std::sync::LazyLock::new(||
-                                            {
-                                                serde_json::from_str("0")
-                                                    .expect("Failed to parse const number")
-                                            });
-                                            match instance {
-                                                serde_json::Value::Number(n) => {
-                                                    jsonschema::__private::cmp::equal_numbers(n, &*EXPECTED)
-                                                }
-                                                _ => false,
-                                            }
-                                        },
-                                    )
-                            }
-                            _ => true,
-                        })(instance) {
+                        if if __guard_0 {
                             (idx < 1usize) || (idx < 2usize)
                         } else {
                             idx < 1usize

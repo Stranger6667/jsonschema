@@ -1,0 +1,45 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"oneOf\":[{\"required\":[\"a\"]},{\"required\":[\"b\"]}],\"properties\":{\"k\":{\"type\":\"string\"}},\"required\":[\"k\"],\"type\":\"object\"}"
+expression: is_valid_body(schema)
+---
+(match instance {
+            serde_json::Value::Object(obj) => {
+                let mut __req_0 = false;
+                let __object_pass = obj
+                    .iter()
+                    .all(|(key, instance)| {
+                        match key.as_str() {
+                            "k" => {
+                                if !(instance.is_string()) {
+                                    return false;
+                                }
+                                __req_0 = true;
+                            }
+                            _ => {}
+                        }
+                        true
+                    });
+                __object_pass && __req_0
+            }
+            _ => false,
+        })
+            && ({
+                let mut matched = match instance {
+                    serde_json::Value::Object(obj) => obj.contains_key("a"),
+                    _ => true,
+                };
+                (if match instance {
+                    serde_json::Value::Object(obj) => obj.contains_key("b"),
+                    _ => true,
+                } {
+                    if matched {
+                        false
+                    } else {
+                        matched = true;
+                        true
+                    }
+                } else {
+                    true
+                }) && matched
+            })

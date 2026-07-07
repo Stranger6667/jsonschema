@@ -12,14 +12,20 @@ pub(crate) fn is_valid_body(schema: Value) -> String {
     extract_is_valid_body(&schema_to_code(schema))
 }
 
+fn validate_body(schema: Value) -> String {
+    extract_fn_body(&schema_to_code(schema), "pub(super) fn validate")
+}
+
 fn extract_is_valid_body(code: &str) -> String {
+    extract_fn_body(code, "pub(super) fn is_valid")
+}
+
+fn extract_fn_body(code: &str, signature: &str) -> String {
     let fn_start = code
-        .find("pub(super) fn is_valid")
-        .expect("is_valid not found in generated code");
+        .find(signature)
+        .expect("function not found in generated code");
     let after_sig = &code[fn_start..];
-    let brace_pos = after_sig
-        .find('{')
-        .expect("opening brace not found in is_valid");
+    let brace_pos = after_sig.find('{').expect("opening brace not found");
     let rest = &after_sig[brace_pos + 1..];
     let mut depth = 1usize;
     let mut end = 0;
@@ -143,6 +149,10 @@ fn render_config(config: &CodegenConfig) -> String {
 #[test_case(json!({"type": "number", "exclusiveMaximum": 100}), "exclusive_maximum" ; "exclusive_maximum")]
 #[test_case(json!({"type": "number", "multipleOf": 3}), "multiple_of" ; "multiple_of")]
 #[test_case(json!({"type": "number", "minimum": 5, "maximum": 5}), "min_max_equal" ; "min_max_equal")]
+#[test_case(json!({"type": "number", "minimum": -3, "maximum": -3}), "min_max_equal_negative" ; "min_max_equal_negative")]
+#[test_case(json!({"type": "number", "minimum": 1, "maximum": 10}), "min_max_unequal" ; "min_max_unequal")]
+#[cfg_attr(not(feature = "arbitrary-precision"), test_case(json!({"type": "number", "minimum": 1.5, "maximum": 1.5}), "min_max_equal_float" ; "min_max_equal_float"))]
+#[cfg_attr(feature = "arbitrary-precision", test_case(json!({"type": "number", "minimum": 1.5, "maximum": 1.5}), "min_max_equal_float_arbitrary" ; "min_max_equal_float"))]
 #[test_case(json!({"type": "array", "minItems": 1}), "min_items" ; "min_items")]
 #[test_case(json!({"type": "array", "maxItems": 10}), "max_items" ; "max_items")]
 #[test_case(json!({"type": "array", "minItems": 3, "maxItems": 3}), "min_max_items_equal" ; "min_max_items_equal")]
@@ -154,6 +164,7 @@ fn render_config(config: &CodegenConfig) -> String {
 #[test_case(json!({"properties": {"a": {}}, "additionalProperties": {"type": "string"}}), "additional_schema" ; "additional_schema")]
 #[test_case(json!({"patternProperties": {"^str_": {"type": "string"}}}), "pattern_properties" ; "pattern_properties")]
 #[test_case(json!({"patternProperties": {"^\\S*$": {"type": "string"}}, "additionalProperties": false}), "pattern_properties_no_whitespace" ; "pattern_properties_no_whitespace")]
+#[test_case(json!({"type": "object", "additionalProperties": false, "patternProperties": {"^a": {"type": "string"}, "^b": {"type": "string"}}, "propertyNames": {"pattern": "^[ab]"}}), "property_names_multi_pattern_not_subsumed" ; "property_names_multi_pattern_not_subsumed")]
 #[test_case(json!({"minProperties": 2, "maxProperties": 2}), "min_max_properties_equal" ; "min_max_properties_equal")]
 #[test_case(json!({"allOf": [{"type": "string"}, {"minLength": 1}]}), "all_of" ; "all_of")]
 #[test_case(json!({"anyOf": [{"type": "string"}, {"type": "number"}]}), "any_of" ; "any_of")]
@@ -195,6 +206,15 @@ fn test_codegen_snapshot(schema: Value, snap_name: &str) {
     let description = serde_json::to_string(&schema).expect("schema serialization");
     insta::with_settings!({ description => &description }, {
         insta::assert_snapshot!(snap_name, is_valid_body(schema));
+    });
+}
+
+#[test]
+fn dynamic_schema_full_module_emission() {
+    let schema = json!({"$defs":{"node":{"$dynamicAnchor":"node","type":["object","boolean"]},"plain":{"type":"integer"}},"type":"object","properties":{"child":{"$dynamicRef":"#node"},"other":{"$ref":"#/$defs/plain"}}});
+    let description = serde_json::to_string(&schema).expect("schema serialization");
+    insta::with_settings!({ description => &description }, {
+        insta::assert_snapshot!("dynamic_schema_full_module", schema_to_code(schema));
     });
 }
 
@@ -590,10 +610,42 @@ fn empty_prefix_items_generates_no_op() {
 #[test_case(r#"{"type":"object","patternProperties":{"^a":{},"^b.c":{}},"unevaluatedProperties":false}"#, "pattern_props_prefix_and_regex_uneval" ; "pattern_props_prefix_and_regex_uneval")]
 #[test_case(r#"{"type":"object","patternProperties":{"^\\S*$":{}},"unevaluatedProperties":false}"#, "pattern_props_no_whitespace_uneval" ; "pattern_props_no_whitespace_uneval")]
 #[test_case(r#"{"type":"array","prefixItems":[{"type":"integer"}],"items":{}}"#, "prefix_items_then_trivial_items" ; "prefix_items_then_trivial_items")]
+#[test_case(r#"{"oneOf":[{"properties":{"k":{"const":"a"},"x":{"type":"integer"}},"required":["k"],"additionalProperties":false},{"properties":{"k":{"const":"b"}},"required":["k"],"additionalProperties":false}]}"#, "one_of_vacuous_object_discriminator" ; "one_of_vacuous_object_discriminator")]
+#[test_case(r##"{"$defs":{"a":{"properties":{"k":{"const":"a"}},"required":["k"],"additionalProperties":false},"b":{"properties":{"k":{"const":"b"}},"required":["k"],"additionalProperties":false}},"oneOf":[{"$ref":"#/$defs/a"},{"$ref":"#/$defs/b"}]}"##, "one_of_ref_vacuous_discriminator" ; "one_of_ref_vacuous_discriminator")]
+#[test_case(r#"{"oneOf":[{"properties":{"k":{"const":"a"}},"required":["k"]},{"type":"object","properties":{"k":{"const":"b"}},"required":["k"]}]}"#, "one_of_single_vacuous_not_guarded" ; "one_of_single_vacuous_not_guarded")]
+#[test_case(r#"{"oneOf":[{"properties":{"k":{"const":"a"}},"required":["k"]},{"properties":{"k":{"const":"b"}},"required":["k"]},{"type":"string"}]}"#, "one_of_vacuous_with_non_object_branch_not_guarded" ; "one_of_vacuous_with_non_object_branch_not_guarded")]
+#[test_case(r#"{"oneOf":[{"properties":{"k":{"const":"a"}},"required":["k"]},{"properties":{"k":{"const":"b"}},"required":["k"]},{"properties":{"z":{"type":"integer"}}}]}"#, "one_of_vacuous_uncovered_branch_not_guarded" ; "one_of_vacuous_uncovered_branch_not_guarded")]
+#[test_case(r#"{"type":"object","required":["a","b"],"properties":{"a":{"type":"string"}}}"#, "required_fused_into_properties" ; "required_fused_into_properties")]
+#[test_case(r#"{"type":"object","required":["a","b"],"properties":{"a":{"type":"string"},"b":{"type":"integer"}},"additionalProperties":false}"#, "required_fused_with_additional_false" ; "required_fused_with_additional_false")]
+#[test_case(r#"{"type":"object","required":["a"],"additionalProperties":{"type":"string"}}"#, "required_fused_with_additional_schema" ; "required_fused_with_additional_schema")]
+#[test_case(r#"{"type":"object","required":["a","b"]}"#, "required_only_not_fused" ; "required_only_not_fused")]
+#[test_case(r#"{"type":"object","required":["k"],"properties":{"k":{"type":"string"}},"oneOf":[{"required":["a"]},{"required":["b"]}]}"#, "typed_check_before_untyped_applicators" ; "typed_check_before_untyped_applicators")]
+#[test_case(r##"{"$defs":{"s":{"type":"string","format":"uri"}},"type":"object","propertyNames":{"$ref":"#/$defs/s"}}"##, "property_names_ref_string_only" ; "property_names_ref_string_only")]
+#[test_case(r#"{"type":"object","propertyNames":{"type":"string"}}"#, "property_names_type_string_only" ; "property_names_type_string_only")]
+#[test_case(r##"{"$defs":{"s":{"type":"string","pattern":"^a"}},"type":"object","propertyNames":{"$ref":"#/$defs/s"}}"##, "property_names_ref_pattern_stays_generic" ; "property_names_ref_pattern_stays_generic")]
+#[test_case(r##"{"$defs":{"s":{"minProperties":1}},"type":"object","propertyNames":{"$ref":"#/$defs/s"}}"##, "property_names_ref_non_string_stays_generic" ; "property_names_ref_non_string_stays_generic")]
+#[test_case(r##"{"$defs":{"s":{"type":"string"}},"type":"object","propertyNames":{"$ref":"#/$defs/s","minLength":2}}"##, "property_names_ref_with_sibling_stays_generic" ; "property_names_ref_with_sibling_stays_generic")]
+#[test_case(r##"{"$defs":{"node":{"$dynamicAnchor":"node","type":["object","boolean"]}},"type":"object","properties":{"child":{"$dynamicRef":"#node"}}}"##, "dynamic_ref_lookup" ; "dynamic_ref_lookup")]
+#[test_case(r#"{"$schema":"http://json-schema.org/draft-07/schema#","type":"array","items":[{"type":"string"}],"additionalItems":false,"maxItems":1}"#, "additional_items_false_subsumed_by_max_items" ; "additional_items_false_subsumed_by_max_items")]
+#[test_case(r#"{"type":"string","allOf":[{"minLength":1},{"maxLength":5}]}"#, "typed_string_before_all_of" ; "typed_string_before_all_of")]
 fn codegen_is_valid_body_snapshot(schema_json: &str, snap_name: &str) {
     let schema: Value = serde_json::from_str(schema_json).expect("valid schema json");
     let description = serde_json::to_string(&schema).expect("schema serialization");
     insta::with_settings!({ description => &description }, {
         insta::assert_snapshot!(snap_name, is_valid_body(schema));
+    });
+}
+
+#[test_case(r##"{"$defs":{"a":{"properties":{"k":{"const":"a"}},"required":["k"],"additionalProperties":false},"b":{"properties":{"k":{"const":"b"}},"required":["k"],"additionalProperties":false}},"oneOf":[{"$ref":"#/$defs/a"},{"$ref":"#/$defs/b"}]}"##, "one_of_ref_vacuous_discriminator_validate" ; "one_of_ref_vacuous_discriminator_validate")]
+#[test_case(r#"{"oneOf":[{"type":"object","required":["kind"],"properties":{"kind":{"const":"circle"},"radius":{"type":"number"}}},{"type":"object","required":["kind"],"properties":{"kind":{"const":"square"},"side":{"type":"number"}}}]}"#, "one_of_typed_discriminator_validate" ; "one_of_typed_discriminator_validate")]
+#[test_case(r#"{"oneOf":[{"type":"null"},{"type":"object","required":["kind"],"properties":{"kind":{"const":"circle"}}},{"type":"object","required":["kind"],"properties":{"kind":{"const":"square"}}}]}"#, "one_of_typed_with_null_branch_validate" ; "one_of_typed_with_null_branch_validate")]
+#[test_case(r#"{"oneOf":[{"type":"string"},{"type":"number"}]}"#, "one_of_no_discriminator_validate" ; "one_of_no_discriminator_validate")]
+#[test_case(r#"{"type":"object","required":["a"],"properties":{"a":{"type":"string"}},"additionalProperties":false}"#, "properties_validate_uses_bound_obj" ; "properties_validate_uses_bound_obj")]
+#[test_case(r#"{"type":"object","properties":{"a":{"type":"integer"}},"patternProperties":{"^x":{"type":"string"}},"additionalProperties":false}"#, "object_pass_validate_uses_bound_obj" ; "object_pass_validate_uses_bound_obj")]
+fn codegen_validate_body_snapshot(schema_json: &str, snap_name: &str) {
+    let schema: Value = serde_json::from_str(schema_json).expect("valid schema json");
+    let description = serde_json::to_string(&schema).expect("schema serialization");
+    insta::with_settings!({ description => &description }, {
+        insta::assert_snapshot!(snap_name, validate_body(schema));
     });
 }

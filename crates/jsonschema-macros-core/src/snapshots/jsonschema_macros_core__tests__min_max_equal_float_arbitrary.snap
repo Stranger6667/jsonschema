@@ -1,0 +1,16 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"maximum\":1.5,\"minimum\":1.5,\"type\":\"number\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Number(n) => {
+                (jsonschema::__private::numeric::check_compiled_bound(n, 3u8, "1.5"))
+                    && (jsonschema::__private::numeric::check_compiled_bound(
+                        n,
+                        1u8,
+                        "1.5",
+                    ))
+            }
+            _ => false,
+        }

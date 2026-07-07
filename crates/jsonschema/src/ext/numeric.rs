@@ -59,6 +59,37 @@ define_num_cmp!(
     num_lt => lt, <, false,
 );
 
+#[cfg(feature = "macros")]
+pub(crate) fn eq<T>(value: &Number, limit: T) -> bool
+where
+    T: Copy + num_traits::ToPrimitive,
+    u64: num_cmp::NumCmp<T>,
+    i64: num_cmp::NumCmp<T>,
+    f64: num_cmp::NumCmp<T>,
+{
+    if let Some(v) = value.as_u64() {
+        num_cmp::NumCmp::num_eq(v, limit)
+    } else if let Some(v) = value.as_i64() {
+        num_cmp::NumCmp::num_eq(v, limit)
+    } else if let Some(v) = value.as_f64() {
+        num_cmp::NumCmp::num_eq(v, limit)
+    } else {
+        #[cfg(feature = "arbitrary-precision")]
+        {
+            if let Some(big_value) = bignum::try_parse_bigfraction(value) {
+                if let Some(limit_f64) = num_traits::ToPrimitive::to_f64(&limit) {
+                    return big_value == BigFraction::from(limit_f64);
+                }
+            }
+            false
+        }
+        #[cfg(not(feature = "arbitrary-precision"))]
+        {
+            unreachable!("Always Some without `arbitrary-precision`")
+        }
+    }
+}
+
 pub(crate) fn is_multiple_of_float(value: &Number, multiple: f64) -> bool {
     if let Some(value_f64) = value.as_f64() {
         // Zero is a multiple of any non-zero number

@@ -6,6 +6,7 @@ pub(crate) fn compile(
     ctx: &mut CompileContext<'_>,
     items: &Value,
     schema: Option<&Value>,
+    max_items: Option<&Value>,
 ) -> Option<CompiledExpr> {
     let tuple_len = if let Some(Value::Array(items)) = schema {
         items.len()
@@ -15,6 +16,12 @@ pub(crate) fn compile(
     let schema_path = ctx.schema_path_for_keyword("additionalItems");
     match items {
         Value::Bool(false) => {
+            if max_items
+                .and_then(Value::as_u64)
+                .is_some_and(|max| max <= tuple_len as u64)
+            {
+                return None;
+            }
             let check = quote! { arr.len() <= #tuple_len };
             let validate = quote! {
                 if !(#check) {
