@@ -1,0 +1,9 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"maxLength\":5,\"type\":\"string\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::String(s) => (s.chars().count() as u64) <= 5,
+            _ => false,
+        }

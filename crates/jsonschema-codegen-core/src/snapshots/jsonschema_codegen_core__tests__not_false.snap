@@ -1,6 +1,0 @@
----
-source: crates/jsonschema-codegen-core/src/tests.rs
-description: "{\"not\":false}"
-expression: is_valid_body(schema)
----
-!(false)

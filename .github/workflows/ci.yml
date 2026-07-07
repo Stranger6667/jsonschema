@@ -605,7 +605,7 @@ jobs:
           cache-all-crates: "true"
 
       # One invocation: separate dry-runs would need every dependency version already on crates.io.
-      - run: cargo publish --dry-run -p referencing -p jsonschema-regex -p jsonschema-codegen-core -p jsonschema-codegen -p jsonschema -p jsonschema-cli
+      - run: cargo publish --dry-run -p referencing -p jsonschema-regex -p jsonschema-macros-core -p jsonschema-macros -p jsonschema -p jsonschema-cli
 
   check-release-python:
     name: Check Python release

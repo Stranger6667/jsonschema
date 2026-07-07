@@ -942,7 +942,7 @@ pub use evaluation::{
 pub use http::HttpOptions;
 #[doc(inline)]
 #[cfg(feature = "macros")]
-pub use jsonschema_codegen::validator;
+pub use jsonschema_macros::validator;
 pub use keywords::custom::Keyword;
 pub use options::{EmailOptions, FancyRegex, PatternOptions, Regex, ValidationOptions};
 pub use referencing::{

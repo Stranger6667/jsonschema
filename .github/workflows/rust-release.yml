@@ -19,13 +19,14 @@ jobs:
         env:
           CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
 
-      - run: cargo publish --manifest-path crates/jsonschema-referencing/Cargo.toml
+      # referencing and jsonschema-regex 0.47.0 are already on crates.io.
+      # - run: cargo publish --manifest-path crates/jsonschema-referencing/Cargo.toml
 
-      - run: cargo publish --manifest-path crates/jsonschema-regex/Cargo.toml
+      # - run: cargo publish --manifest-path crates/jsonschema-regex/Cargo.toml
 
-      - run: cargo publish --manifest-path crates/jsonschema-codegen-core/Cargo.toml
+      - run: cargo publish --manifest-path crates/jsonschema-macros-core/Cargo.toml
 
-      - run: cargo publish --manifest-path crates/jsonschema-codegen/Cargo.toml
+      - run: cargo publish --manifest-path crates/jsonschema-macros/Cargo.toml
 
       - run: cargo publish --manifest-path crates/jsonschema/Cargo.toml
 

@@ -1,0 +1,5 @@
+error: Schema file not found: `$WORKSPACE/target/tests/trybuild/jsonschema-macros/does/not/exist.json`
+ --> tests/ui/schema_path_not_found.rs:1:32
+  |
+1 | #[jsonschema::validator(path = "does/not/exist.json")]
+  |                                ^^^^^^^^^^^^^^^^^^^^^

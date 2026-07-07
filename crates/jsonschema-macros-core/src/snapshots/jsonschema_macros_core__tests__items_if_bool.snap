@@ -1,0 +1,23 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"if\":true,\"then\":{\"prefixItems\":[{}]},\"type\":\"array\",\"unevaluatedItems\":false}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Array(arr) => {
+                arr.iter()
+                    .enumerate()
+                    .all(|(idx, item)| {
+                        if if (|instance: &serde_json::Value| true)(instance) {
+                            (false) || (idx < 1usize)
+                        } else {
+                            false
+                        } {
+                            true
+                        } else {
+                            false
+                        }
+                    })
+            }
+            _ => false,
+        }

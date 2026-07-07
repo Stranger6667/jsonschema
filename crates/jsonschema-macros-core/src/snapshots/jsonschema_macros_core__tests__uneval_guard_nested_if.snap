@@ -1,0 +1,30 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"anyOf\":[{\"else\":{\"properties\":{\"b\":{}}},\"if\":{\"required\":[\"a\"]},\"then\":{\"properties\":{\"a\":{}}}}],\"type\":\"object\",\"unevaluatedProperties\":false}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                obj.iter()
+                    .all(|(__key, __value)| {
+                        let key_str = __key.as_str();
+                        if (|instance: &serde_json::Value| validate_ref_0(
+                            instance,
+                        ))(instance)
+                            && (if (|instance: &serde_json::Value| match instance {
+                                serde_json::Value::Object(obj) => obj.contains_key("a"),
+                                _ => true,
+                            })(instance) {
+                                (false) || (matches!(key_str, "a"))
+                            } else {
+                                matches!(key_str, "b")
+                            })
+                        {
+                            true
+                        } else {
+                            false
+                        }
+                    })
+            }
+            _ => false,
+        }

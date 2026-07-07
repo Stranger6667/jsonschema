@@ -1,9 +1,0 @@
----
-source: crates/jsonschema-codegen-core/src/tests.rs
-description: "{\"maxProperties\":2,\"minProperties\":2}"
-expression: is_valid_body(schema)
----
-match instance {
-            serde_json::Value::Object(obj) => (obj.len() as u64) == 2,
-            _ => true,
-        }

@@ -1,0 +1,21 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"patternProperties\":{\"^\\\\$ref\":{\"type\":\"string\"}}}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                let __object_pass = obj
+                    .iter()
+                    .all(|(key, instance)| {
+                        if key.as_str().starts_with("$ref") {
+                            if !(instance.is_string()) {
+                                return false;
+                            }
+                        }
+                        true
+                    });
+                __object_pass
+            }
+            _ => true,
+        }

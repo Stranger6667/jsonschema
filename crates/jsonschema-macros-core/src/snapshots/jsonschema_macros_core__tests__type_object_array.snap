@@ -1,0 +1,6 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"type\":[\"object\",\"array\"]}"
+expression: is_valid_body(schema)
+---
+matches!(instance, serde_json::Value::Object(_) | serde_json::Value::Array(_))

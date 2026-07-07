@@ -26,9 +26,9 @@ tls-aws-lc-rs = ["rustls/aws-lc-rs"]
 # Use ring instead of aws-lc-rs for TLS.
 tls-ring = ["rustls/ring"]
 # Support for arbitrarily large integers and exact decimal values when parsing JSON from strings.
-arbitrary-precision = ["serde_json/arbitrary_precision", "dep:num-bigint", "jsonschema-codegen?/arbitrary-precision"]
+arbitrary-precision = ["serde_json/arbitrary_precision", "dep:num-bigint", "jsonschema-macros?/arbitrary-precision"]
 # The `#[jsonschema::validator]` compile-time validator macro.
-macros = ["dep:jsonschema-codegen"]
+macros = ["dep:jsonschema-macros"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Use rustls-no-provider to allow manual selection of crypto backend
@@ -50,7 +50,7 @@ reqwest = { version = "0.13", features = ["json"], default-features = false, opt
 
 [dependencies]
 ahash.workspace = true
-jsonschema-codegen = { version = "0.46.10", path = "../jsonschema-codegen", optional = true }
+jsonschema-macros = { version = "0.46.10", path = "../jsonschema-macros", optional = true }
 jsonschema-regex = { version = "0.46.10", path = "../jsonschema-regex" }
 async-trait = { version = "0.1.86", optional = true }
 bytecount = { version = "0.6", features = ["runtime-dispatch-simd"] }

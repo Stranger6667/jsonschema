@@ -1,9 +1,0 @@
----
-source: crates/jsonschema-codegen-core/src/tests.rs
-description: "{\"$schema\":\"https://json-schema.org/draft/2019-09/schema\",\"dependentSchemas\":{},\"type\":\"object\"}"
-expression: is_valid_body(schema)
----
-match instance {
-            serde_json::Value::Object(obj) => true,
-            _ => false,
-        }

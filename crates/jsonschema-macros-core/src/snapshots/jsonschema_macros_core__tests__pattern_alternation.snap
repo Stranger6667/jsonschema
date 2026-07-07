@@ -1,0 +1,21 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"patternProperties\":{\"^(get|put|post)$\":{\"type\":\"object\"}}}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                let __object_pass = obj
+                    .iter()
+                    .all(|(key, instance)| {
+                        if matches!(key.as_str(), "get" | "post" | "put") {
+                            if !(instance.is_object()) {
+                                return false;
+                            }
+                        }
+                        true
+                    });
+                __object_pass
+            }
+            _ => true,
+        }

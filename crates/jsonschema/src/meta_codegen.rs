@@ -6,16 +6,16 @@ use serde_json::Value;
 
 pub(crate) type ValidateFn = for<'i> fn(&'i Value) -> Result<(), ValidationError<'i>>;
 
-#[jsonschema_codegen::validator(path = "metaschemas/draft4.json", draft = Draft4)]
+#[jsonschema_macros::validator(path = "metaschemas/draft4.json", draft = Draft4)]
 struct MetaDraft4;
 
-#[jsonschema_codegen::validator(path = "metaschemas/draft6.json", draft = Draft6)]
+#[jsonschema_macros::validator(path = "metaschemas/draft6.json", draft = Draft6)]
 struct MetaDraft6;
 
-#[jsonschema_codegen::validator(path = "metaschemas/draft7.json", draft = Draft7)]
+#[jsonschema_macros::validator(path = "metaschemas/draft7.json", draft = Draft7)]
 struct MetaDraft7;
 
-#[jsonschema_codegen::validator(
+#[jsonschema_macros::validator(
     path = "metaschemas/draft2019-09/schema.json",
     draft = Draft201909,
     resources = {
@@ -29,7 +29,7 @@ struct MetaDraft7;
 )]
 struct MetaDraft201909;
 
-#[jsonschema_codegen::validator(
+#[jsonschema_macros::validator(
     path = "metaschemas/draft2020-12/schema.json",
     draft = Draft202012,
     resources = {

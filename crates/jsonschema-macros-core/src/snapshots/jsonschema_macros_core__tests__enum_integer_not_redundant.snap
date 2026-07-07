@@ -1,0 +1,26 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"enum\":[1.5],\"type\":\"integer\"}"
+expression: is_valid_body(schema)
+---
+(match instance {
+            serde_json::Value::Number(n) => jsonschema::__private::types::is_integer(n),
+            _ => false,
+        })
+            && (match instance {
+                serde_json::Value::Number(_) => {
+                    static NUMBER_VARIANTS: std::sync::LazyLock<
+                        Vec<serde_json::Value>,
+                    > = std::sync::LazyLock::new(|| {
+                        serde_json::from_str::<Vec<serde_json::Value>>("[1.5]")
+                            .expect("Failed to parse number variants")
+                    });
+                    NUMBER_VARIANTS
+                        .iter()
+                        .any(|variant| jsonschema::__private::cmp::equal(
+                            variant,
+                            instance,
+                        ))
+                }
+                _ => false,
+            })

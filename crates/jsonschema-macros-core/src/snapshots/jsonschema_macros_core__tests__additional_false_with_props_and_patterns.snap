@@ -1,0 +1,37 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"additionalProperties\":false,\"patternProperties\":{\"^x\":{\"type\":\"integer\"}},\"properties\":{\"a\":{}},\"type\":\"object\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                let __object_pass = obj
+                    .iter()
+                    .all(|(key, instance)| {
+                        let mut covered = false;
+                        match key.as_str() {
+                            "a" => {
+                                covered = true;
+                            }
+                            _ => {}
+                        }
+                        if key.as_str().starts_with("x") {
+                            if !(match instance {
+                                serde_json::Value::Number(n) => {
+                                    jsonschema::__private::types::is_integer(n)
+                                }
+                                _ => false,
+                            }) {
+                                return false;
+                            }
+                            covered = true;
+                        }
+                        if !covered {
+                            return false;
+                        }
+                        true
+                    });
+                __object_pass
+            }
+            _ => false,
+        }

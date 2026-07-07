@@ -1,0 +1,31 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"patternProperties\":{\"^a\":{},\"^b\":{},\"^c$\":{},\"^d$\":{}},\"type\":\"object\",\"unevaluatedProperties\":false}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                ({
+                    let __object_pass = obj.iter().all(|(key, instance)| { true });
+                    __object_pass
+                })
+                    && (obj
+                        .iter()
+                        .all(|(__key, __value)| {
+                            let key_str = __key.as_str();
+                            if {
+                                static PATTERN_PREFIXES: &[&str] = &["a", "b"];
+                                static PATTERN_LITERALS: &[&str] = &["c", "d"];
+                                (PATTERN_PREFIXES
+                                    .iter()
+                                    .any(|prefix| key_str.starts_with(prefix))
+                                    || PATTERN_LITERALS.contains(&key_str))
+                            } {
+                                true
+                            } else {
+                                false
+                            }
+                        }))
+            }
+            _ => false,
+        }

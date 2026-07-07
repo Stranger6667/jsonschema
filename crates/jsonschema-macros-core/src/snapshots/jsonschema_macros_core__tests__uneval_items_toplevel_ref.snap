@@ -1,0 +1,20 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"$defs\":{\"base\":{\"prefixItems\":[{}]}},\"$ref\":\"#/$defs/base\",\"type\":\"array\",\"unevaluatedItems\":false}"
+expression: is_valid_body(schema)
+---
+(validate_ref_0(instance))
+            && (match instance {
+                serde_json::Value::Array(arr) => {
+                    arr.iter()
+                        .enumerate()
+                        .all(|(idx, item)| {
+                            if eval_items_ref_0(instance, arr, idx, item) {
+                                true
+                            } else {
+                                false
+                            }
+                        })
+                }
+                _ => false,
+            })

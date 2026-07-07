@@ -1,0 +1,11 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"dependencies\":{\"a\":[\"b\"]},\"properties\":{\"a\":{}},\"type\":\"object\"}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                if obj.contains_key("a") { obj.contains_key("b") } else { true }
+            }
+            _ => false,
+        }

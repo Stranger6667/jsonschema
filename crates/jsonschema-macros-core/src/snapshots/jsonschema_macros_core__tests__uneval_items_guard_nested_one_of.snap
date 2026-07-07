@@ -1,0 +1,48 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"anyOf\":[{\"oneOf\":[{\"prefixItems\":[{}]},{\"prefixItems\":[{},{}]}]}],\"type\":\"array\",\"unevaluatedItems\":false}"
+expression: is_valid_body(schema)
+---
+(({
+            let mut matched = true;
+            (if true {
+                if matched {
+                    false
+                } else {
+                    matched = true;
+                    true
+                }
+            } else {
+                true
+            }) && matched
+        }))
+            && (match instance {
+                serde_json::Value::Array(arr) => {
+                    arr.iter()
+                        .enumerate()
+                        .all(|(idx, item)| {
+                            if (|instance: &serde_json::Value| validate_ref_0(
+                                instance,
+                            ))(instance)
+                                && ({
+                                    let mut __one_of_matches = 0usize;
+                                    let mut __one_of_evaluates = false;
+                                    if (|instance: &serde_json::Value| true)(instance) {
+                                        __one_of_matches += 1;
+                                        __one_of_evaluates = __one_of_evaluates || (idx < 1usize);
+                                    }
+                                    if (|instance: &serde_json::Value| true)(instance) {
+                                        __one_of_matches += 1;
+                                        __one_of_evaluates = __one_of_evaluates || (idx < 2usize);
+                                    }
+                                    __one_of_matches == 1 && __one_of_evaluates
+                                })
+                            {
+                                true
+                            } else {
+                                false
+                            }
+                        })
+                }
+                _ => false,
+            })

@@ -27,7 +27,7 @@ jobs:
             features: "--features macros"
             benches: "--bench codegen"
           - name: codegen-generate
-            package: jsonschema-codegen-core
+            package: jsonschema-macros-core
             features: "--features bench"
             benches: "--bench generate"
           - name: referencing

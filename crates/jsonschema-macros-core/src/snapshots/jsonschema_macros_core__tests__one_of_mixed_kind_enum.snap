@@ -1,0 +1,86 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"oneOf\":[{\"properties\":{\"k\":{\"enum\":[1,\"x\"]}},\"required\":[\"k\"],\"type\":\"object\"},{\"properties\":{\"k\":{\"enum\":[2,\"y\"]}},\"required\":[\"k\"],\"type\":\"object\"}]}"
+expression: is_valid_body(schema)
+---
+{
+            let mut matched = match instance {
+                serde_json::Value::Object(obj) => {
+                    (obj.contains_key("k"))
+                        && ({
+                            obj.iter()
+                                .all(|(key, instance)| {
+                                    let key_str = key.as_str();
+                                    match key_str {
+                                        "k" => {
+                                            match instance {
+                                                serde_json::Value::String(s) => s.as_str() == "x",
+                                                serde_json::Value::Number(_) => {
+                                                    static NUMBER_VARIANTS: std::sync::LazyLock<
+                                                        Vec<serde_json::Value>,
+                                                    > = std::sync::LazyLock::new(|| {
+                                                        serde_json::from_str::<Vec<serde_json::Value>>("[1]")
+                                                            .expect("Failed to parse number variants")
+                                                    });
+                                                    NUMBER_VARIANTS
+                                                        .iter()
+                                                        .any(|variant| jsonschema::__private::cmp::equal(
+                                                            variant,
+                                                            instance,
+                                                        ))
+                                                }
+                                                _ => false,
+                                            }
+                                        }
+                                        _ => true,
+                                    }
+                                })
+                        })
+                }
+                _ => false,
+            };
+            (if match instance {
+                serde_json::Value::Object(obj) => {
+                    (obj.contains_key("k"))
+                        && ({
+                            obj.iter()
+                                .all(|(key, instance)| {
+                                    let key_str = key.as_str();
+                                    match key_str {
+                                        "k" => {
+                                            match instance {
+                                                serde_json::Value::String(s) => s.as_str() == "y",
+                                                serde_json::Value::Number(_) => {
+                                                    static NUMBER_VARIANTS: std::sync::LazyLock<
+                                                        Vec<serde_json::Value>,
+                                                    > = std::sync::LazyLock::new(|| {
+                                                        serde_json::from_str::<Vec<serde_json::Value>>("[2]")
+                                                            .expect("Failed to parse number variants")
+                                                    });
+                                                    NUMBER_VARIANTS
+                                                        .iter()
+                                                        .any(|variant| jsonschema::__private::cmp::equal(
+                                                            variant,
+                                                            instance,
+                                                        ))
+                                                }
+                                                _ => false,
+                                            }
+                                        }
+                                        _ => true,
+                                    }
+                                })
+                        })
+                }
+                _ => false,
+            } {
+                if matched {
+                    false
+                } else {
+                    matched = true;
+                    true
+                }
+            } else {
+                true
+            }) && matched
+        }

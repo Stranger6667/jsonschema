@@ -1,0 +1,24 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"oneOf\":[{\"properties\":{\"k\":{\"const\":\"a\"}},\"required\":[\"k\"],\"type\":\"object\"},{\"properties\":{\"k\":{\"const\":\"b\"}},\"required\":[\"k\"],\"type\":\"object\"}]}"
+expression: code
+---
+{
+            let mut matched = match instance {
+                serde_json::Value::Object(obj) => obj.contains_key("k"),
+                _ => false,
+            };
+            (if match instance {
+                serde_json::Value::Object(obj) => obj.contains_key("k"),
+                _ => false,
+            } {
+                if matched {
+                    false
+                } else {
+                    matched = true;
+                    true
+                }
+            } else {
+                true
+            }) && matched
+        }

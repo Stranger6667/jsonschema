@@ -1,0 +1,25 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"$schema\":\"https://json-schema.org/draft/2019-09/schema\",\"items\":[{\"type\":\"integer\"}],\"type\":\"array\",\"unevaluatedItems\":false}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Array(arr) => {
+                (arr
+                    .get(0usize)
+                    .map_or(
+                        true,
+                        |instance| match instance {
+                            serde_json::Value::Number(n) => {
+                                jsonschema::__private::types::is_integer(n)
+                            }
+                            _ => false,
+                        },
+                    ))
+                    && (arr
+                        .iter()
+                        .enumerate()
+                        .all(|(idx, item)| { if idx < 1usize { true } else { false } }))
+            }
+            _ => false,
+        }

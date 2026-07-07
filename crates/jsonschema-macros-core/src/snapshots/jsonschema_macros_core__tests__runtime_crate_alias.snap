@@ -1,0 +1,62 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 276
+description: "{\"minLength\":1,\"type\":\"string\"}"
+expression: code
+---
+struct Validator;
+#[doc(hidden)]
+#[allow(non_snake_case, dead_code, unused_variables, unreachable_code, clippy::all)]
+mod __validator_impl {
+    use super::*;
+    use ::js as jsonschema;
+    pub(super) fn is_valid(instance: &serde_json::Value) -> bool {
+        match instance {
+            serde_json::Value::String(s) => !s.is_empty(),
+            _ => false,
+        }
+    }
+    pub(super) fn validate<'__i>(
+        instance: &'__i serde_json::Value,
+        __path: &jsonschema::paths::LazyLocation,
+    ) -> Option<jsonschema::ValidationError<'__i>> {
+        match instance {
+            serde_json::Value::String(s) => {
+                if s.is_empty() {
+                    return Some(
+                        jsonschema::__private::error::min_length(
+                            "/minLength",
+                            __path.into(),
+                            instance,
+                            1,
+                        ),
+                    );
+                }
+            }
+            _ => {
+                return Some(
+                    jsonschema::__private::error::single_type(
+                        "/type",
+                        __path.into(),
+                        instance,
+                        jsonschema::JsonType::String,
+                    ),
+                );
+            }
+        }
+        None
+    }
+}
+impl Validator {
+    pub fn is_valid(instance: &serde_json::Value) -> bool {
+        __validator_impl::is_valid(instance)
+    }
+    pub fn validate<'__i>(
+        instance: &'__i serde_json::Value,
+    ) -> ::std::result::Result<(), ::js::ValidationError<'__i>> {
+        match __validator_impl::validate(instance, &::js::paths::LazyLocation::new()) {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+}

@@ -1,0 +1,9 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"enum\":[true,false]}"
+expression: is_valid_body(schema)
+---
+match instance {
+            serde_json::Value::Bool(_) => true,
+            _ => false,
+        }
