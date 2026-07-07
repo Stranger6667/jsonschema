@@ -51,6 +51,7 @@ jobs:
       - run: cargo update -p rustls-platform-verifier --precise 0.6.2
       - run: cargo update -p reqwest --precise 0.13.3
       - run: cargo update -p zeroize --precise 1.8.2
+      - run: cargo update -p jobserver --precise 0.1.34
       - run: cargo build -p jsonschema
 
   test-native:

@@ -318,9 +318,6 @@ impl<'a> Context<'a> {
     pub(crate) fn supports_integer_valued_numbers(&self) -> bool {
         !matches!(self.draft, Draft::Draft4)
     }
-    pub(crate) fn find_vocabularies(&self, draft: Draft, contents: &Value) -> VocabularySet {
-        self.resolver.find_vocabularies(draft, contents)
-    }
     pub(crate) fn validates_formats_by_default(&self) -> bool {
         self.config.validate_formats().unwrap_or(matches!(
             self.draft,

@@ -540,7 +540,7 @@ fn compile_ref<'a>(
 
     let (contents, resolver, draft) = resolved.into_inner();
     if let Value::Object(subschema) = &contents {
-        let vocabularies = ctx.find_vocabularies(draft, contents);
+        let vocabularies = resolver.find_vocabularies(draft, contents);
         let ref_ctx =
             ctx.with_resolver_and_draft(resolver, draft, vocabularies, ctx.location().clone());
         let validators =
@@ -563,7 +563,7 @@ fn compile_dynamic_ref<'a>(
 
     let (contents, resolver, draft) = resolved.into_inner();
     if let Value::Object(subschema) = &contents {
-        let vocabularies = ctx.find_vocabularies(draft, contents);
+        let vocabularies = resolver.find_vocabularies(draft, contents);
         let ref_ctx =
             ctx.with_resolver_and_draft(resolver, draft, vocabularies, ctx.location().clone());
 
@@ -598,7 +598,7 @@ fn compile_recursive_ref<'a>(
     // Create context for the resolved reference and check its cache key
     let (contents, resolver, draft) = resolved.into_inner();
     if let Value::Object(subschema) = &contents {
-        let vocabularies = ctx.find_vocabularies(draft, contents);
+        let vocabularies = resolver.find_vocabularies(draft, contents);
         let ref_ctx =
             ctx.with_resolver_and_draft(resolver, draft, vocabularies, ctx.location().clone());
 
@@ -823,6 +823,42 @@ pub(crate) fn compile<'a>(
 mod tests {
     use crate::error::ValidationErrorKind;
     use serde_json::json;
+
+    #[test]
+    fn evaluated_keys_across_ref_use_target_applicator_vocabulary() {
+        let meta = json!({
+            "$id": "json-schema:///meta/no-applicator",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$vocabulary": {
+                "https://json-schema.org/draft/2020-12/vocab/core": true,
+                "https://json-schema.org/draft/2020-12/vocab/applicator": false,
+                "https://json-schema.org/draft/2020-12/vocab/validation": true,
+                "https://json-schema.org/draft/2020-12/vocab/unevaluated": true
+            }
+        });
+        let target = json!({
+            "$id": "https://example.com/t",
+            "$schema": "json-schema:///meta/no-applicator",
+            "$defs": {"x": {"properties": {"a": {}}}}
+        });
+        let root = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "allOf": [{"$ref": "https://example.com/t#/$defs/x"}],
+            "unevaluatedProperties": false
+        });
+        let registry = crate::Registry::new()
+            .add("json-schema:///meta/no-applicator", &meta)
+            .unwrap()
+            .add("https://example.com/t", &target)
+            .unwrap()
+            .prepare()
+            .unwrap();
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(&root)
+            .unwrap();
+        assert!(!validator.is_valid(&json!({"a": 1})));
+    }
 
     #[test]
     fn dynamic_ref_cycle_does_not_overflow() {
