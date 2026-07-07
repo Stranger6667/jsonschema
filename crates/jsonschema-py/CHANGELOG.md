@@ -2,10 +2,18 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Update `pyo3` to `0.29`.
+
 ### Fixed
 
 - `type` under `items` asserted with the Validation vocabulary disabled.
 - Disabled vocabularies ignored for `$ref` targets without their own `$schema` (e.g. `$defs` entries).
+
+### Removed
+
+- Support for Python 3.13t following the `pyo3` update.
 
 ## [0.46.10] - 2026-07-05
 
