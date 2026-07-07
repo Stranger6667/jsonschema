@@ -192,7 +192,7 @@ fn compile_reference_validator<'a>(
         Ok(resolved) => resolved.into_inner(),
         Err(error) => return Some(Err(ValidationError::from(error))),
     };
-    let vocabularies = ctx.find_vocabularies(draft, contents);
+    let vocabularies = resolver.find_vocabularies(draft, contents);
     let resource_ref = draft.create_resource_ref(contents);
     let inner_ctx = ctx.with_resolver_and_draft(
         resolver,
@@ -243,7 +243,7 @@ fn compile_recursive_validator<'a>(
         .lookup_recursive_reference()
         .map_err(ValidationError::from)?;
     let (contents, resolver, draft) = resolved.into_inner();
-    let vocabularies = ctx.find_vocabularies(draft, contents);
+    let vocabularies = resolver.find_vocabularies(draft, contents);
     let resource_ref = draft.create_resource_ref(contents);
     let inner_ctx = ctx.with_resolver_and_draft(
         resolver,
@@ -358,6 +358,73 @@ mod tests {
                 _ => panic!("Not found"),
             }
         }
+    }
+
+    fn no_validation_meta() -> Value {
+        json!({
+            "$id": "json-schema:///meta/no-validation",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$vocabulary": {
+                "https://json-schema.org/draft/2020-12/vocab/core": true,
+                "https://json-schema.org/draft/2020-12/vocab/applicator": true,
+                "https://json-schema.org/draft/2020-12/vocab/validation": false
+            }
+        })
+    }
+
+    fn build_no_validation(schema: &Value, extra: &[(&str, Value)]) -> crate::Validator {
+        let meta = no_validation_meta();
+        let mut registry = crate::Registry::new()
+            .add("json-schema:///meta/no-validation", &meta)
+            .unwrap();
+        for (uri, resource) in extra {
+            registry = registry.add(*uri, resource).unwrap();
+        }
+        let registry = registry.prepare().unwrap();
+        crate::options()
+            .with_registry(&registry)
+            .build(schema)
+            .unwrap()
+    }
+
+    #[test]
+    fn ref_same_document_inherits_disabled_validation_vocabulary() {
+        let schema = json!({
+            "$schema": "json-schema:///meta/no-validation",
+            "$defs": {"t": {"type": "integer"}},
+            "$ref": "#/$defs/t"
+        });
+        assert!(build_no_validation(&schema, &[]).is_valid(&json!("x")));
+    }
+
+    #[test]
+    fn ref_cross_resource_uses_target_validation_enabled() {
+        let target = json!({
+            "$id": "https://example.com/on",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {"t": {"type": "integer"}}
+        });
+        let schema = json!({
+            "$schema": "json-schema:///meta/no-validation",
+            "$ref": "https://example.com/on#/$defs/t"
+        });
+        let validator = build_no_validation(&schema, &[("https://example.com/on", target)]);
+        assert!(!validator.is_valid(&json!("x")));
+    }
+
+    #[test]
+    fn ref_cross_resource_uses_target_validation_disabled() {
+        let target = json!({
+            "$id": "https://example.com/off",
+            "$schema": "json-schema:///meta/no-validation",
+            "$defs": {"t": {"type": "integer"}}
+        });
+        let schema = json!({
+            "$schema": "json-schema:///meta/no-validation",
+            "$ref": "https://example.com/off#/$defs/t"
+        });
+        let validator = build_no_validation(&schema, &[("https://example.com/off", target)]);
+        assert!(validator.is_valid(&json!("x")));
     }
 
     #[test]

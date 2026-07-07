@@ -4,7 +4,8 @@
 
 ### Fixed
 
-- Simple `{"type": ...}` subschemas under `items` incorrectly asserted `type` when a meta-schema disabled the Validation vocabulary.
+- `type` under `items` asserted with the Validation vocabulary disabled.
+- Disabled vocabularies ignored for `$ref` targets without their own `$schema` (e.g. `$defs` entries).
 
 ## [0.46.10] - 2026-07-05
 
