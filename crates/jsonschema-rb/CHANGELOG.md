@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-07-08
+
 ### Added
 
 - Optional `iter_errors(instance)` method on custom keyword validators for reporting multiple errors from a single keyword. [#1071](https://github.com/Stranger6667/jsonschema/discussions/1071)
@@ -162,7 +164,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.10...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.47.0...HEAD
+[0.47.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.10...ruby-v0.47.0
 [0.46.10]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.9...ruby-v0.46.10
 [0.46.9]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.8...ruby-v0.46.9
 [0.46.8]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.7...ruby-v0.46.8
