@@ -5,6 +5,7 @@
 ### Added
 
 - `#[jsonschema::validator]` attribute macro (behind the `macros` feature) that compiles a JSON Schema into `is_valid` and `validate` implementations at build time.
+- `Keyword::iter_errors` for reporting multiple validation errors from a single custom keyword. [#1071](https://github.com/Stranger6667/jsonschema/discussions/1071)
 
 ### Changed
 

@@ -1,4 +1,5 @@
 use crate::{
+    error::ErrorIterator,
     paths::{LazyLocation, Location, RefTracker},
     validator::{Validate, ValidationContext},
     ValidationError,
@@ -36,6 +37,21 @@ impl Validate for CustomKeyword {
 
     fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
         self.inner.is_valid(instance)
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+        instance_path: &LazyLocation,
+        _tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+    ) -> ErrorIterator<'i> {
+        let errors: Vec<_> = self
+            .inner
+            .iter_errors(instance)
+            .map(|err| err.with_context(instance, instance_path, &self.location, &self.keyword))
+            .collect();
+        ErrorIterator::from_iterator(errors.into_iter())
     }
 }
 
@@ -79,6 +95,17 @@ pub trait Keyword: Send + Sync {
 
     /// Check validity without collecting error details.
     fn is_valid(&self, instance: &Value) -> bool;
+
+    /// Validate an instance, yielding every error at once.
+    ///
+    /// Override this to report multiple problems from a single keyword. The
+    /// default yields at most one error, from [`validate`](Keyword::validate).
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i Value,
+    ) -> Box<dyn Iterator<Item = ValidationError<'i>> + 'i> {
+        Box::new(self.validate(instance).err().into_iter())
+    }
 }
 
 pub(crate) trait KeywordFactory: Send + Sync {
