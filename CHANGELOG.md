@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-07-08
+
 ### Added
 
 - `#[jsonschema::validator]` attribute macro (behind the `macros` feature) that compiles a JSON Schema into `is_valid` and `validate` implementations at build time.
@@ -1336,7 +1338,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.10...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.47.0...HEAD
+[0.47.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.10...rust-v0.47.0
 [0.46.10]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.9...rust-v0.46.10
 [0.46.9]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.8...rust-v0.46.9
 [0.46.8]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.7...rust-v0.46.8
