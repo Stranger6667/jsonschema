@@ -1,9 +1,9 @@
 [workspace]
 members = ["crates/*"]
-resolver = "2"
+resolver = "3"
 
 [workspace.package]
-rust-version = "1.83.0"
+rust-version = "1.85.0"
 edition = "2021"
 authors = ["Dmitry Dygalo <dmitry@dygalo.dev>"]
 repository = "https://github.com/Stranger6667/jsonschema"
