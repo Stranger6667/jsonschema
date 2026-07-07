@@ -75,3 +75,36 @@ pub(crate) fn fail_on_non_positive_integer(
         )
     }
 }
+
+/// Whether `s` contains at least `limit` Unicode scalar values.
+///
+/// A UTF-8 string of `b` bytes holds `ceil(b / 4)..=b` characters, so byte length alone decides the
+/// extremes; only the middle band needs a SIMD count. The upper guard is the tight `ceil(b / 4) >=
+/// limit`, so `limit == 1` reduces to a non-empty check.
+#[inline]
+pub(crate) fn has_min_chars(s: &str, limit: u64) -> bool {
+    let bytes = s.len() as u64;
+    if bytes < limit {
+        return false;
+    }
+    if bytes + 4 > limit.saturating_mul(4) {
+        // ceil(bytes / 4) >= limit
+        return true;
+    }
+    (bytecount::num_chars(s.as_bytes()) as u64) >= limit
+}
+
+/// Whether `s` contains at most `limit` Unicode scalar values.
+///
+/// Mirrors [`has_min_chars`]; the fail guard `b > 4 * limit` is already tight.
+#[inline]
+pub(crate) fn has_max_chars(s: &str, limit: u64) -> bool {
+    let bytes = s.len() as u64;
+    if bytes <= limit {
+        return true;
+    }
+    if bytes > limit.saturating_mul(4) {
+        return false;
+    }
+    (bytecount::num_chars(s.as_bytes()) as u64) <= limit
+}
