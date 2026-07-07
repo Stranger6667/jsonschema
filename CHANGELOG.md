@@ -10,6 +10,10 @@
 
 - Bump MSRV to `1.85.0`.
 
+### Performance
+
+- Faster meta-schema validation and schema compilation with the `macros` feature, via compile-time meta-schema validators.
+
 ### Fixed
 
 - `type` under `items` asserted with the Validation vocabulary disabled.

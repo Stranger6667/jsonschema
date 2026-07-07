@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Faster validator construction, via compile-time meta-schema validators.
+
 ### Fixed
 
 - `type` under `items` asserted with the Validation vocabulary disabled.

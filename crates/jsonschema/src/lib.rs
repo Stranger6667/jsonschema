@@ -921,6 +921,8 @@ mod evaluation;
 pub mod ext;
 mod http;
 mod keywords;
+#[cfg(all(feature = "macros", not(target_family = "wasm")))]
+mod meta_codegen;
 mod node;
 mod options;
 pub mod output;
@@ -1488,7 +1490,7 @@ pub mod meta {
         #[must_use]
         pub fn is_valid(&self, schema: &Value) -> bool {
             match try_meta_validator_for(schema, self.registry) {
-                Ok(validator) => validator.as_ref().is_valid(schema),
+                Ok(validator) => validator.is_valid(schema),
                 Err(e) => panic!("Failed to resolve meta-schema: {e}"),
             }
         }
@@ -1503,12 +1505,13 @@ pub mod meta {
             schema: &'schema Value,
         ) -> Result<(), ValidationError<'schema>> {
             let validator = try_meta_validator_for(schema, self.registry)?;
-            validator.as_ref().validate(schema)
+            validator.validate(schema)
         }
     }
 
     mod validator_handle {
-        use crate::Validator;
+        use crate::{ValidationError, Validator};
+        use serde_json::Value;
         use std::{marker::PhantomData, ops::Deref};
 
         /// Handle to a draft-specific meta-schema [`Validator`]. Borrows cached validators on native
@@ -1517,15 +1520,27 @@ pub mod meta {
 
         // Native builds can hand out references to cached validators or own dynamic ones,
         // while wasm targets need owned instances because the validator type does not implement `Sync` there.
+        // Under `macros`, native builds dispatch to compile-time generated validators; the cached
+        // runtime validator is resolved lazily by draft only for the `evaluate` path (`AsRef`).
         enum MetaValidatorInner<'a> {
-            #[cfg(not(target_family = "wasm"))]
+            #[cfg(all(not(feature = "macros"), not(target_family = "wasm")))]
             Borrowed(&'a Validator),
             Owned(Box<Validator>, PhantomData<&'a Validator>),
+            #[cfg(all(feature = "macros", not(target_family = "wasm")))]
+            Generated {
+                draft: crate::Draft,
+                is_valid: fn(&Value) -> bool,
+                validate: crate::meta_codegen::ValidateFn,
+            },
         }
 
-        #[cfg_attr(target_family = "wasm", allow(clippy::elidable_lifetime_names))]
+        // `borrowed` is the only method using `'a`; it is absent on wasm and under `macros`.
+        #[cfg_attr(
+            any(target_family = "wasm", feature = "macros"),
+            allow(clippy::elidable_lifetime_names)
+        )]
         impl<'a> MetaValidator<'a> {
-            #[cfg(not(target_family = "wasm"))]
+            #[cfg(all(not(feature = "macros"), not(target_family = "wasm")))]
             pub(crate) fn borrowed(validator: &'a Validator) -> Self {
                 Self(MetaValidatorInner::Borrowed(validator))
             }
@@ -1533,14 +1548,52 @@ pub mod meta {
             pub(crate) fn owned(validator: Validator) -> Self {
                 Self(MetaValidatorInner::Owned(Box::new(validator), PhantomData))
             }
+
+            #[cfg(all(feature = "macros", not(target_family = "wasm")))]
+            pub(crate) fn generated(draft: crate::Draft) -> Self {
+                Self(MetaValidatorInner::Generated {
+                    draft,
+                    is_valid: crate::meta_codegen::is_valid_fn(draft),
+                    validate: crate::meta_codegen::validate_fn(draft),
+                })
+            }
+
+            /// Validate `schema` against the meta-schema, returning `true` if valid.
+            #[must_use]
+            pub fn is_valid(&self, schema: &Value) -> bool {
+                match &self.0 {
+                    #[cfg(all(feature = "macros", not(target_family = "wasm")))]
+                    MetaValidatorInner::Generated { is_valid, .. } => is_valid(schema),
+                    _ => self.as_ref().is_valid(schema),
+                }
+            }
+
+            /// Validate `schema` against the meta-schema, returning the first error if any.
+            ///
+            /// # Errors
+            ///
+            /// Returns the first [`ValidationError`] describing why the schema violates the meta-schema.
+            pub fn validate<'i>(&self, schema: &'i Value) -> Result<(), ValidationError<'i>> {
+                match &self.0 {
+                    #[cfg(all(feature = "macros", not(target_family = "wasm")))]
+                    MetaValidatorInner::Generated { validate, .. } => validate(schema),
+                    _ => self.as_ref().validate(schema),
+                }
+            }
         }
 
         impl AsRef<Validator> for MetaValidator<'_> {
             fn as_ref(&self) -> &Validator {
                 match &self.0 {
-                    #[cfg(not(target_family = "wasm"))]
+                    #[cfg(all(not(feature = "macros"), not(target_family = "wasm")))]
                     MetaValidatorInner::Borrowed(validator) => validator,
                     MetaValidatorInner::Owned(validator, _) => validator,
+                    // The `evaluate`/`iter_errors` output APIs have no generated counterpart, so
+                    // fall back to the lazily-built cached runtime validator for the draft.
+                    #[cfg(all(feature = "macros", not(target_family = "wasm")))]
+                    MetaValidatorInner::Generated { draft, .. } => {
+                        crate::meta::validators::runtime_validator_for_draft(*draft)
+                    }
                 }
             }
         }
@@ -1605,10 +1658,27 @@ pub mod meta {
         pub(crate) fn draft202012_meta_validator() -> Validator {
             build_validator(&referencing::meta::DRAFT202012)
         }
+
+        // Backs the `evaluate`/`iter_errors` fallback for generated meta validators.
+        #[cfg(all(feature = "macros", not(target_family = "wasm")))]
+        pub(crate) fn runtime_validator_for_draft(draft: crate::Draft) -> &'static Validator {
+            use crate::Draft;
+            match draft {
+                Draft::Draft4 => &DRAFT4_META_VALIDATOR,
+                Draft::Draft6 => &DRAFT6_META_VALIDATOR,
+                Draft::Draft7 => &DRAFT7_META_VALIDATOR,
+                Draft::Draft201909 => &DRAFT201909_META_VALIDATOR,
+                _ => &DRAFT202012_META_VALIDATOR,
+            }
+        }
     }
 
     pub(crate) fn validator_for_draft(draft: Draft) -> MetaValidator<'static> {
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(all(feature = "macros", not(target_family = "wasm")))]
+        {
+            MetaValidator::generated(draft)
+        }
+        #[cfg(all(not(feature = "macros"), not(target_family = "wasm")))]
         {
             match draft {
                 Draft::Draft4 => MetaValidator::borrowed(&validators::DRAFT4_META_VALIDATOR),
@@ -1662,7 +1732,7 @@ pub mod meta {
     #[must_use]
     pub fn is_valid(schema: &Value) -> bool {
         match try_meta_validator_for(schema, None) {
-            Ok(validator) => validator.as_ref().is_valid(schema),
+            Ok(validator) => validator.is_valid(schema),
             Err(error) => panic!("Failed to resolve meta-schema: {error}"),
         }
     }
@@ -1702,7 +1772,7 @@ pub mod meta {
     /// so the registry can supply the meta-schema.
     pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
         let validator = try_meta_validator_for(schema, None)?;
-        validator.as_ref().validate(schema)
+        validator.validate(schema)
     }
 
     /// Build a validator for a JSON Schema's meta-schema.
@@ -1997,7 +2067,7 @@ pub mod draft4 {
         #[must_use]
         #[inline]
         pub fn is_valid(schema: &Value) -> bool {
-            validator().as_ref().is_valid(schema)
+            validator().is_valid(schema)
         }
 
         /// Validate a JSON Schema document against Draft 4 meta-schema and return the first error if any.
@@ -2025,7 +2095,7 @@ pub mod draft4 {
         /// Returns the first [`ValidationError`] describing why the schema violates the Draft 4 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
-            validator().as_ref().validate(schema)
+            validator().validate(schema)
         }
     }
 }
@@ -2178,7 +2248,7 @@ pub mod draft6 {
         #[must_use]
         #[inline]
         pub fn is_valid(schema: &Value) -> bool {
-            validator().as_ref().is_valid(schema)
+            validator().is_valid(schema)
         }
 
         /// Validate a JSON Schema document against Draft 6 meta-schema and return the first error if any.
@@ -2206,7 +2276,7 @@ pub mod draft6 {
         /// Returns the first [`ValidationError`] describing why the schema violates the Draft 6 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
-            validator().as_ref().validate(schema)
+            validator().validate(schema)
         }
     }
 }
@@ -2359,7 +2429,7 @@ pub mod draft7 {
         #[must_use]
         #[inline]
         pub fn is_valid(schema: &Value) -> bool {
-            validator().as_ref().is_valid(schema)
+            validator().is_valid(schema)
         }
 
         /// Validate a JSON Schema document against Draft 7 meta-schema and return the first error if any.
@@ -2387,7 +2457,7 @@ pub mod draft7 {
         /// Returns the first [`ValidationError`] describing why the schema violates the Draft 7 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
-            validator().as_ref().validate(schema)
+            validator().validate(schema)
         }
     }
 }
@@ -2539,7 +2609,7 @@ pub mod draft201909 {
         #[must_use]
         #[inline]
         pub fn is_valid(schema: &Value) -> bool {
-            validator().as_ref().is_valid(schema)
+            validator().is_valid(schema)
         }
 
         /// Validate a JSON Schema document against Draft 2019-09 meta-schema and return the first error if any.
@@ -2567,7 +2637,7 @@ pub mod draft201909 {
         /// Returns the first [`ValidationError`] describing why the schema violates the Draft 2019-09 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
-            validator().as_ref().validate(schema)
+            validator().validate(schema)
         }
     }
 }
@@ -2723,7 +2793,7 @@ pub mod draft202012 {
         #[must_use]
         #[inline]
         pub fn is_valid(schema: &Value) -> bool {
-            validator().as_ref().is_valid(schema)
+            validator().is_valid(schema)
         }
 
         /// Validate a JSON Schema document against Draft 2020-12 meta-schema and return the first error if any.
@@ -2751,7 +2821,7 @@ pub mod draft202012 {
         /// Returns the first [`ValidationError`] describing why the schema violates the Draft 2020-12 meta-schema.
         #[inline]
         pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
-            validator().as_ref().validate(schema)
+            validator().validate(schema)
         }
     }
 }
