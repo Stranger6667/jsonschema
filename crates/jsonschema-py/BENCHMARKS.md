@@ -48,14 +48,14 @@ Sources:
 
 | Benchmark     | fastjsonschema | jsonschema    | jsonschema-rs (validate) |
 |---------------|----------------|---------------|--------------------------|
-| OpenAPI       | - (1)          | 536.05 ms (**x83.35**) | 6.43 ms |
-| Swagger       | - (1)          | 950.95 ms (**x240.16**) | 3.96 ms |
-| Canada (GeoJSON) | 9.05 ms (**x1.82**) | 732.78 ms (**x147.36**) | 4.97 ms |
-| CITM Catalog  | 4.32 ms (**x2.51**) | 75.00 ms (**x43.58**) | 1.72 ms |
-| Fast (Valid)  | 2.00 µs (**x5.83**) | 32.60 µs (**x94.87**) | 343.65 ns |
-| Fast (Invalid)| 2.13 µs (**x3.83**) | 31.97 µs (**x57.44**) | 556.55 ns |
-| FHIR          | 1.97 ms (**x440.25**) | 11.78 ms (**x2630**) | 4.48 µs |
-| Recursive     | - (2)          | 1.16 s (**x116,115**) | 9.95 µs |
+| OpenAPI       | - (1)          | 676.22 ms (**x108.93**) | 6.21 ms |
+| Swagger       | - (1)          | 1.17 s (**x239.21**) | 4.88 ms |
+| Canada (GeoJSON) | 13.86 ms (**x2.60**) | 857.94 ms (**x160.84**) | 5.33 ms |
+| CITM Catalog  | 5.61 ms (**x3.20**) | 92.27 ms (**x52.62**) | 1.75 ms |
+| Fast (Valid)  | 2.12 µs (**x5.67**) | 34.62 µs (**x92.37**) | 374.86 ns |
+| Fast (Invalid)| 2.25 µs (**x4.50**) | 34.42 µs (**x68.85**) | 499.89 ns |
+| FHIR          | 2.77 ms (**x544.57**) | 14.66 ms (**x2,884**) | 5.08 µs |
+| Recursive     | - (2)          | 1.45 s (**x126,848**) | 11.46 µs |
 
 Notes:
 
@@ -63,7 +63,7 @@ Notes:
 
 2. `fastjsonschema` does not support `$dynamicRef`.
 
-You can find benchmark code in [benches/](benches/), Python version `3.14.2`, Rust version `1.92`.
+You can find benchmark code in [benches/](benches/), Python version `3.14.3`, Rust version `1.96.1`.
 
 ## Contributing
 
