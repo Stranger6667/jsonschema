@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Faster `multipleOf` validation for integer instances with integer divisors, via integer arithmetic instead of floating-point modulo.
+
 ## [0.47.0] - 2026-07-08
 
 ### Added
