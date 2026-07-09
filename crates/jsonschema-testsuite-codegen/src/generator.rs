@@ -142,6 +142,20 @@ fn generate_nested_structure(
                                                 as Box<dyn std::any::Any + Send + Sync>
                                         })
                                     }
+                                    fn iter_errors(
+                                        &self,
+                                        instance: &serde_json::Value,
+                                    ) -> Vec<(String, String, String)> {
+                                        Self::iter_errors(instance)
+                                            .map(|e| {
+                                                (
+                                                    e.to_string(),
+                                                    e.schema_path().to_string(),
+                                                    e.instance_path().to_string(),
+                                                )
+                                            })
+                                            .collect()
+                                    }
                                 }
 
                                 let validator = Box::new(Validator);

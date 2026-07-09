@@ -92,6 +92,62 @@ mod __validator_impl {
         }
         None
     }
+    pub(super) fn collect_errors<'__i>(
+        instance: &'__i serde_json::Value,
+        __path: &jsonschema::paths::LazyLocation,
+        __errors: &mut Vec<jsonschema::ValidationError<'__i>>,
+    ) {
+        match instance {
+            serde_json::Value::Object(obj) => {
+                let mut __unexpected: Vec<String> = Vec::new();
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    let mut covered = false;
+                    if { __jsonschema_regex_0(key.as_str()) } {
+                        let instance = value;
+                        let __path = &__path.push(key_str);
+                        if !(instance.is_string()) {
+                            __errors
+                                .push(
+                                    jsonschema::__private::error::single_type(
+                                        "/patternProperties/^[a-z]{2,}$/type",
+                                        __path.into(),
+                                        instance,
+                                        jsonschema::JsonType::String,
+                                    ),
+                                );
+                        }
+                        covered = true;
+                    }
+                    if !covered {
+                        __unexpected.push(key.clone());
+                    }
+                }
+                if !__unexpected.is_empty() {
+                    __errors
+                        .push(
+                            jsonschema::__private::error::additional_properties(
+                                "/additionalProperties",
+                                __path.into(),
+                                instance,
+                                __unexpected,
+                            ),
+                        );
+                }
+            }
+            _ => {
+                __errors
+                    .push(
+                        jsonschema::__private::error::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            jsonschema::JsonType::Object,
+                        ),
+                    );
+            }
+        }
+    }
 }
 impl Validator {
     pub fn is_valid(instance: &serde_json::Value) -> bool {
@@ -107,5 +163,16 @@ impl Validator {
             Some(e) => Err(e),
             None => Ok(()),
         }
+    }
+    pub fn iter_errors<'__i>(
+        instance: &'__i serde_json::Value,
+    ) -> jsonschema::ErrorIterator<'__i> {
+        let mut errors = Vec::new();
+        __validator_impl::collect_errors(
+            instance,
+            &jsonschema::paths::LazyLocation::new(),
+            &mut errors,
+        );
+        jsonschema::__private::error::iterator_from(errors)
     }
 }

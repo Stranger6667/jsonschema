@@ -140,7 +140,7 @@ mod tests {
                     pretty_json(&test.schema),
                     pretty_json(&test.data),
                     first_error.instance().as_ref(),
-                    &pointer,
+                    pointer,
                 );
 
                 let first_error_parts = first_error.into_parts();
@@ -161,7 +161,7 @@ mod tests {
                     pretty_json(&test.schema),
                     pretty_json(&test.data),
                     error.instance().as_ref(),
-                    &pointer,
+                    pointer,
                 );
                 }
                 assert!(
@@ -198,7 +198,7 @@ mod tests {
                 pretty_json(&test.schema),
                 pretty_json(&test.data),
                 error.instance().as_ref(),
-                &pointer,
+                pointer,
             );
                 let runtime_message = error.to_string();
                 let error_parts = error.into_parts();
@@ -240,6 +240,28 @@ mod tests {
                     "codegen validate() message mismatch:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
                     test.case, test.description,
                     pretty_json(&test.schema), pretty_json(&test.data),
+                );
+
+                // Compare codegen iter_errors() against runtime iter_errors()
+                let runtime_iter: Vec<(String, String, String)> = validator
+                    .iter_errors(&test.data)
+                    .map(|e| {
+                        (
+                            e.to_string(),
+                            e.schema_path().to_string(),
+                            e.instance_path().to_string(),
+                        )
+                    })
+                    .collect();
+                let codegen_iter = codegen_validator.iter_errors(&test.data);
+                assert_eq!(
+                    codegen_iter,
+                    runtime_iter,
+                    "codegen iter_errors() mismatch:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
                 );
 
                 let evaluation = validator.evaluate(&test.data);
@@ -300,8 +322,8 @@ mod tests {
                         !errors.is_empty(),
                         "\nFile: {}\nSuite: {}\nTest: {}",
                         filename,
-                        &data[suite_id]["description"],
-                        &data[suite_id]["tests"][test_id]["description"],
+                        data[suite_id]["description"],
+                        data[suite_id]["tests"][test_id]["description"],
                     );
 
                     let mut found_paths = Vec::with_capacity(errors.len());
@@ -317,8 +339,8 @@ mod tests {
                         matched,
                         "\nFile: {}\nSuite: {}\nTest: {}\nExpected path: {}\nFound paths: {:?}",
                         filename,
-                        &data[suite_id]["description"],
-                        &data[suite_id]["tests"][test_id]["description"],
+                        data[suite_id]["description"],
+                        data[suite_id]["tests"][test_id]["description"],
                         expected_instance_path,
                         found_paths
                     );

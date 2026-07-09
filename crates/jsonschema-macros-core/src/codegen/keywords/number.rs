@@ -177,13 +177,9 @@ fn compile_bound(
 
     let limit_expr = build_limit_value_expr(value, &value_json);
 
-    CompiledExpr::with_validate_blocks(
-        check.clone(),
-        quote! {
-            if !(#check) {
-                return Some(#error_fn(#schema_path, __path.into(), instance, #limit_expr));
-            }
-        },
+    CompiledExpr::from_check_and_error(
+        check,
+        quote! { #error_fn(#schema_path, __path.into(), instance, #limit_expr) },
     )
 }
 

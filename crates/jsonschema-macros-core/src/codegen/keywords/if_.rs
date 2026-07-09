@@ -44,9 +44,16 @@ pub(crate) fn compile(
     let else_validate = else_check
         .as_ref()
         .map_or_else(|| quote! {}, |check| check.validate.as_token_stream());
+    let then_collect = then_check
+        .as_ref()
+        .map_or_else(|| quote! {}, |check| check.collect.as_token_stream());
+    let else_collect = else_check
+        .as_ref()
+        .map_or_else(|| quote! {}, |check| check.collect.as_token_stream());
 
-    Some(CompiledExpr::with_validate_blocks(
+    Some(CompiledExpr::with_validate_and_collect_blocks(
         quote! { if #if_is_valid { #then_is_valid } else { #else_is_valid } },
         quote! { if #if_is_valid { #then_validate } else { #else_validate } },
+        quote! { if #if_is_valid { #then_collect } else { #else_collect } },
     ))
 }

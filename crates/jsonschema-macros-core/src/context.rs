@@ -34,6 +34,8 @@ pub(crate) struct FnTable {
     bodies: IndexMap<String, TokenStream>,
     /// Optional `validate` bodies for functions that have one.
     validate_bodies: IndexMap<String, TokenStream>,
+    /// Optional `collect` bodies for functions that have one.
+    collect_bodies: IndexMap<String, TokenStream>,
     /// Locations currently being compiled (cycle guard).
     in_progress: HashSet<String>,
     counter: usize,
@@ -46,6 +48,7 @@ impl FnTable {
             location_to_name: HashMap::new(),
             bodies: IndexMap::new(),
             validate_bodies: IndexMap::new(),
+            collect_bodies: IndexMap::new(),
             in_progress: HashSet::new(),
             counter: 0,
             prefix,
@@ -79,6 +82,16 @@ impl FnTable {
     /// Returns the `validate` body for a function, if available.
     pub(crate) fn get_validate_body(&self, name: &str) -> Option<&TokenStream> {
         self.validate_bodies.get(name)
+    }
+
+    /// Stores the `collect` body alongside the `is_valid` body.
+    pub(crate) fn set_collect_body(&mut self, name: &str, collect: TokenStream) {
+        self.collect_bodies.insert(name.to_string(), collect);
+    }
+
+    /// Returns the `collect` body for a function, if available.
+    pub(crate) fn get_collect_body(&self, name: &str) -> Option<&TokenStream> {
+        self.collect_bodies.get(name)
     }
 
     /// Iterates over all (name, body) pairs in insertion order.

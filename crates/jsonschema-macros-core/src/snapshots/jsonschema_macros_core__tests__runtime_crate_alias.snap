@@ -1,6 +1,5 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
-assertion_line: 276
 description: "{\"minLength\":1,\"type\":\"string\"}"
 expression: code
 ---
@@ -22,7 +21,7 @@ mod __validator_impl {
     ) -> Option<jsonschema::ValidationError<'__i>> {
         match instance {
             serde_json::Value::String(s) => {
-                if s.is_empty() {
+                if !(!s.is_empty()) {
                     return Some(
                         jsonschema::__private::error::min_length(
                             "/minLength",
@@ -46,6 +45,38 @@ mod __validator_impl {
         }
         None
     }
+    pub(super) fn collect_errors<'__i>(
+        instance: &'__i serde_json::Value,
+        __path: &jsonschema::paths::LazyLocation,
+        __errors: &mut Vec<jsonschema::ValidationError<'__i>>,
+    ) {
+        match instance {
+            serde_json::Value::String(s) => {
+                if !(!s.is_empty()) {
+                    __errors
+                        .push(
+                            jsonschema::__private::error::min_length(
+                                "/minLength",
+                                __path.into(),
+                                instance,
+                                1,
+                            ),
+                        );
+                }
+            }
+            _ => {
+                __errors
+                    .push(
+                        jsonschema::__private::error::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            jsonschema::JsonType::String,
+                        ),
+                    );
+            }
+        }
+    }
 }
 impl Validator {
     pub fn is_valid(instance: &serde_json::Value) -> bool {
@@ -58,5 +89,16 @@ impl Validator {
             Some(e) => Err(e),
             None => Ok(()),
         }
+    }
+    pub fn iter_errors<'__i>(
+        instance: &'__i serde_json::Value,
+    ) -> ::js::ErrorIterator<'__i> {
+        let mut errors = Vec::new();
+        __validator_impl::collect_errors(
+            instance,
+            &::js::paths::LazyLocation::new(),
+            &mut errors,
+        );
+        ::js::__private::error::iterator_from(errors)
     }
 }

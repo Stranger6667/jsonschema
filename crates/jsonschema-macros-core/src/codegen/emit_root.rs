@@ -6,12 +6,13 @@ use crate::context::{CompileContext, PatternEngineConfig};
 use super::{
     helpers::DynamicAnchorBinding,
     stack_emit::{
-        pop_dynamic_is_valid_n, pop_dynamic_item_eval_n, pop_dynamic_key_eval_n,
-        pop_dynamic_validate_n, pop_recursive_is_valid, pop_recursive_item_eval,
-        pop_recursive_key_eval, pop_recursive_validate, push_dynamic_is_valid,
+        pop_dynamic_collect_n, pop_dynamic_is_valid_n, pop_dynamic_item_eval_n,
+        pop_dynamic_key_eval_n, pop_dynamic_validate_n, pop_recursive_collect,
+        pop_recursive_is_valid, pop_recursive_item_eval, pop_recursive_key_eval,
+        pop_recursive_validate, push_dynamic_collect, push_dynamic_is_valid,
         push_dynamic_item_eval, push_dynamic_key_eval, push_dynamic_validate,
-        push_recursive_is_valid, push_recursive_item_eval, push_recursive_key_eval,
-        push_recursive_validate,
+        push_recursive_collect, push_recursive_is_valid, push_recursive_item_eval,
+        push_recursive_key_eval, push_recursive_validate,
     },
     CompiledExpr,
 };
@@ -147,10 +148,15 @@ pub(super) fn emit_root_module(
         .map(|(fname, body)| {
             let func_ident = format_ident!("{}", fname);
             let validate_ident = format_ident!("{}_validate", fname);
+            let collect_ident = format_ident!("{}_collect_errors", fname);
             let validate_body = ctx
                 .is_valid_fns
                 .get_validate_body(fname)
                 .expect("every is_valid fn stores a validate body");
+            let collect_body = ctx
+                .is_valid_fns
+                .get_collect_body(fname)
+                .expect("every is_valid fn stores a collect body");
             quote! {
                 #[inline]
                 fn #func_ident(instance: &#value_ty) -> bool { #body }
@@ -160,6 +166,14 @@ pub(super) fn emit_root_module(
                     __path: &jsonschema::paths::LazyLocation,
                 ) -> Option<jsonschema::ValidationError<'__i>> {
                     #validate_body
+                }
+                #[inline]
+                fn #collect_ident<'__i>(
+                    instance: &'__i #value_ty,
+                    __path: &jsonschema::paths::LazyLocation,
+                    __errors: &mut Vec<jsonschema::ValidationError<'__i>>,
+                ) {
+                    #collect_body
                 }
             }
         })
@@ -211,6 +225,9 @@ pub(super) fn emit_root_module(
             static __JSONSCHEMA_RECURSIVE_VALIDATE_STACK: std::cell::RefCell<
                 Vec<(for<'__r, '__a, '__b, '__c> fn(&'__r #value_ty, &'__c jsonschema::paths::LazyLocation<'__a, '__b>) -> Option<jsonschema::ValidationError<'__r>>, bool)>
             > = std::cell::RefCell::new(Vec::new());
+            static __JSONSCHEMA_RECURSIVE_COLLECT_STACK: std::cell::RefCell<
+                Vec<(for<'__r, '__a, '__b, '__c> fn(&'__r #value_ty, &'__c jsonschema::paths::LazyLocation<'__a, '__b>, &mut Vec<jsonschema::ValidationError<'__r>>), bool)>
+            > = std::cell::RefCell::new(Vec::new());
         }
     } else {
         quote! {}
@@ -234,6 +251,9 @@ pub(super) fn emit_root_module(
             > = std::cell::RefCell::new(Vec::new());
             static __JSONSCHEMA_DYNAMIC_VALIDATE_STACK: std::cell::RefCell<
                 Vec<(&'static str, for<'__r, '__a, '__b, '__c> fn(&'__r #value_ty, &'__c jsonschema::paths::LazyLocation<'__a, '__b>) -> Option<jsonschema::ValidationError<'__r>>)>
+            > = std::cell::RefCell::new(Vec::new());
+            static __JSONSCHEMA_DYNAMIC_COLLECT_STACK: std::cell::RefCell<
+                Vec<(&'static str, for<'__r, '__a, '__b, '__c> fn(&'__r #value_ty, &'__c jsonschema::paths::LazyLocation<'__a, '__b>, &mut Vec<jsonschema::ValidationError<'__r>>))>
             > = std::cell::RefCell::new(Vec::new());
         }
     } else {
@@ -320,6 +340,13 @@ pub(super) fn emit_root_module(
         .map(|b| {
             let validate_ident = format_ident!("{}_validate", b.is_valid_name);
             push_dynamic_validate(&b.anchor, &validate_ident)
+        })
+        .collect();
+    let root_dynamic_collect_pushes: Vec<_> = root_dynamic_bindings
+        .iter()
+        .map(|b| {
+            let collect_ident = format_ident!("{}_collect_errors", b.is_valid_name);
+            push_dynamic_collect(&b.anchor, &collect_ident)
         })
         .collect();
     let root_dynamic_binding_count = root_dynamic_bindings.len();
@@ -416,6 +443,58 @@ pub(super) fn emit_root_module(
         }
     };
 
+    let collect_stmts = validation_expr.collect.as_token_stream();
+
+    let collect_fns = {
+        let collect_ident = format_ident!("collect_errors");
+        let collect_body = if recursive_stack_needed || dynamic_stack_needed {
+            let recursive_collect_push = if recursive_stack_needed {
+                push_recursive_collect(&collect_ident, root_recursive_anchor)
+            } else {
+                quote! {}
+            };
+            let recursive_collect_pop = if recursive_stack_needed {
+                pop_recursive_collect()
+            } else {
+                quote! {}
+            };
+            let dynamic_collect_push = if dynamic_stack_needed {
+                quote! { #(#root_dynamic_collect_pushes)* }
+            } else {
+                quote! {}
+            };
+            let dynamic_collect_pop = if dynamic_stack_needed {
+                pop_dynamic_collect_n(root_dynamic_binding_count)
+            } else {
+                quote! {}
+            };
+            // collect_stmts never returns early, so no IIFE capture is needed.
+            quote! {
+                #recursive_push
+                #recursive_collect_push
+                #dynamic_push
+                #dynamic_collect_push
+                #collect_stmts
+                #dynamic_collect_pop
+                #dynamic_pop
+                #recursive_collect_pop
+                #recursive_pop
+            }
+        } else {
+            quote! { #collect_stmts }
+        };
+        quote! {
+            pub(super) fn collect_errors<'__i>(
+                instance: &'__i #value_ty,
+                __path: &jsonschema::paths::LazyLocation,
+                __errors: &mut Vec<jsonschema::ValidationError<'__i>>,
+            ) {
+                #uri_cache_clears
+                #collect_body
+            }
+        }
+    };
+
     let validate_impls = quote! {
         pub fn validate<'__i>(
             instance: &'__i #value_ty,
@@ -424,6 +503,14 @@ pub(super) fn emit_root_module(
                 Some(e) => Err(e),
                 None => Ok(()),
             }
+        }
+
+        pub fn iter_errors<'__i>(
+            instance: &'__i #value_ty,
+        ) -> #runtime_crate::ErrorIterator<'__i> {
+            let mut errors = Vec::new();
+            #impl_mod_name::collect_errors(instance, &#runtime_crate::paths::LazyLocation::new(), &mut errors);
+            #runtime_crate::__private::error::iterator_from(errors)
         }
     };
 
@@ -448,6 +535,7 @@ pub(super) fn emit_root_module(
             }
 
             #validate_fns
+            #collect_fns
         }
 
         impl #name {

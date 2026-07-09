@@ -25,14 +25,7 @@ fn simple_type_pattern(ty: &str) -> Option<TokenStream> {
 }
 
 fn wrap_type_check(is_valid: &TokenStream, error_expr: &TokenStream) -> CompiledExpr {
-    CompiledExpr::with_validate_blocks(
-        is_valid.clone(),
-        quote! {
-            if !(#is_valid) {
-                return Some(#error_expr);
-            }
-        },
-    )
+    CompiledExpr::from_check_and_error(is_valid.clone(), error_expr.clone())
 }
 
 pub(crate) fn compile(ctx: &CompileContext<'_>, value: &Value) -> CompiledExpr {

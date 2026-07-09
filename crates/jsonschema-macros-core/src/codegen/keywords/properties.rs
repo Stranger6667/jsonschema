@@ -98,12 +98,18 @@ pub(crate) fn compile(
             wildcard_arm_body.validate.as_token_stream()
         };
         let validate = build_validate_block(compiled_props, &wildcard_validate);
+        let collect = build_collect_block(
+            compiled_props,
+            use_known_keys_precheck,
+            &wildcard_arm_body,
+            &additional_properties_path,
+        );
         let base_is_valid = quote! {
             {
                 #main_is_valid
             }
         };
-        CompiledExpr::with_validate_blocks(base_is_valid, validate)
+        CompiledExpr::with_validate_and_collect_blocks(base_is_valid, validate, collect)
     } else {
         CompiledExpr::always_true()
     };
@@ -116,13 +122,97 @@ pub(crate) fn compile(
             // known-keys precheck alone reports the first unexpected key.
             let known_keys_is_valid = known_keys_precheck.is_valid_token_stream();
             let precheck_validate = known_keys_precheck.validate.as_token_stream();
-            CompiledExpr::with_validate_blocks(
+            let precheck_collect = build_collect_block(
+                compiled_props,
+                use_known_keys_precheck,
+                &wildcard_arm_body,
+                &additional_properties_path,
+            );
+            CompiledExpr::with_validate_and_collect_blocks(
                 quote! { { #known_keys_is_valid } },
                 precheck_validate,
+                precheck_collect,
             )
         }
     } else {
         base_iter_check
+    }
+}
+
+/// Build the `collect` block. Pure `properties` iterates schema order (`obj.get`); fused
+/// `additionalProperties` cases iterate instance order, with `false` aggregating unexpected keys
+/// into one trailing error — matching the respective runtime validators.
+fn build_collect_block(
+    compiled_props: &[(&str, CompiledExpr)],
+    use_known_keys_precheck: bool,
+    wildcard_arm_body: &CompiledExpr,
+    additional_properties_path: &str,
+) -> TokenStream {
+    let fused = use_known_keys_precheck || !wildcard_arm_body.is_trivially_true();
+    if !fused {
+        let arms = compiled_props.iter().filter_map(|(name, compiled)| {
+            if compiled.is_trivially_true() {
+                return None;
+            }
+            let is_valid = compiled.is_valid_token_stream();
+            let child = compiled.collect.as_token_stream();
+            Some(quote! {
+                if let Some(value) = obj.get(#name) {
+                    let instance = value;
+                    if !(#is_valid) {
+                        let __path = &__path.push(#name);
+                        #child
+                    }
+                }
+            })
+        });
+        return quote! { #(#arms)* };
+    }
+
+    let key_as_str = crate::codegen::emit_serde::key_as_str(quote! { key });
+    let match_arms = compiled_props.iter().map(|(name, compiled)| {
+        if compiled.is_trivially_true() {
+            return quote! { #name => {} };
+        }
+        let is_valid = compiled.is_valid_token_stream();
+        let child = compiled.collect.as_token_stream();
+        quote! {
+            #name => {
+                let instance = value;
+                if !(#is_valid) {
+                    let __path = &__path.push(#name);
+                    #child
+                }
+            }
+        }
+    });
+    if use_known_keys_precheck {
+        quote! {
+            let mut __unexpected: Vec<String> = Vec::new();
+            for (key, value) in obj.iter() {
+                let key_str = #key_as_str;
+                match key_str {
+                    #(#match_arms,)*
+                    _ => { __unexpected.push(key.clone()); }
+                }
+            }
+            if !__unexpected.is_empty() {
+                __errors.push(jsonschema::__private::error::additional_properties(
+                    #additional_properties_path, __path.into(), instance, __unexpected,
+                ));
+            }
+        }
+    } else {
+        let wildcard_collect = wildcard_arm_body.collect.as_token_stream();
+        quote! {
+            for (key, value) in obj.iter() {
+                let key_str = #key_as_str;
+                match key_str {
+                    #(#match_arms,)*
+                    _ => { #wildcard_collect }
+                }
+            }
+        }
     }
 }
 

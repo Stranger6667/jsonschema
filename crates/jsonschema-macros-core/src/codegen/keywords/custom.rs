@@ -42,7 +42,7 @@ pub(crate) fn compile(
             });
     };
 
-    CompiledExpr::with_validate_blocks(
+    CompiledExpr::with_validate_and_collect_blocks(
         quote! {
             {
                 #lazy
@@ -60,6 +60,18 @@ pub(crate) fn compile(
             ) {
                 return Some(__err);
             }
+        },
+        quote! {
+            #lazy
+            let __custom_path: jsonschema::paths::Location = __path.into();
+            jsonschema::__private::custom::collect_errors(
+                &**#static_ident,
+                instance,
+                &__custom_path,
+                #schema_path,
+                #name,
+                __errors,
+            );
         },
     )
 }

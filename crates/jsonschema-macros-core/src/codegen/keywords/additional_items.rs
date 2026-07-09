@@ -42,16 +42,26 @@ pub(crate) fn compile(
             }
             let is_valid = compiled.is_valid_token_stream();
             match &compiled.validate {
-                ValidateBlock::Expr(expr) => Some(CompiledExpr::with_validate_blocks(
-                    quote! { arr.iter().skip(#tuple_len).all(|instance| #is_valid) },
-                    quote! {
-                        for (idx, item) in arr.iter().enumerate().skip(#tuple_len) {
-                            let instance = item;
-                            let __path = &__path.push(idx);
-                            #expr
-                        }
-                    },
-                )),
+                ValidateBlock::Expr(expr) => {
+                    let child_collect = compiled.collect.as_token_stream();
+                    Some(CompiledExpr::with_validate_and_collect_blocks(
+                        quote! { arr.iter().skip(#tuple_len).all(|instance| #is_valid) },
+                        quote! {
+                            for (idx, item) in arr.iter().enumerate().skip(#tuple_len) {
+                                let instance = item;
+                                let __path = &__path.push(idx);
+                                #expr
+                            }
+                        },
+                        quote! {
+                            for (idx, item) in arr.iter().enumerate().skip(#tuple_len) {
+                                let instance = item;
+                                let __path = &__path.push(idx);
+                                #child_collect
+                            }
+                        },
+                    ))
+                }
                 ValidateBlock::AlwaysValid => None,
             }
         }

@@ -16,6 +16,10 @@ fn validate_body(schema: Value) -> String {
     extract_fn_body(&schema_to_code(schema), "pub(super) fn validate")
 }
 
+fn collect_body(schema: Value) -> String {
+    extract_fn_body(&schema_to_code(schema), "pub(super) fn collect_errors")
+}
+
 fn extract_is_valid_body(code: &str) -> String {
     extract_fn_body(code, "pub(super) fn is_valid")
 }
@@ -647,5 +651,20 @@ fn codegen_validate_body_snapshot(schema_json: &str, snap_name: &str) {
     let description = serde_json::to_string(&schema).expect("schema serialization");
     insta::with_settings!({ description => &description }, {
         insta::assert_snapshot!(snap_name, validate_body(schema));
+    });
+}
+
+#[test_case(r#"{"properties":{"a":{"type":"integer"},"b":{"type":"integer"}}}"#, "collect_properties_schema_order" ; "collect_properties_schema_order")]
+#[test_case(r#"{"type":"object","required":["a","b"],"properties":{"a":{"type":"string"},"b":{"type":"integer"}},"additionalProperties":false}"#, "collect_required_fused_with_additional_false" ; "collect_required_fused_with_additional_false")]
+#[test_case(r#"{"type":"object","properties":{"a":{}},"patternProperties":{"^x":{"type":"integer"}},"additionalProperties":{"type":"integer"},"propertyNames":{"minLength":1}}"#, "collect_object_all_applicators" ; "collect_object_all_applicators")]
+#[test_case(r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"array","prefixItems":[{"type":"integer"}],"items":{"type":"string"}}"#, "collect_prefix_items_then_items_schema_2020" ; "collect_prefix_items_then_items_schema_2020")]
+#[test_case(r##"{"$defs":{"node":{"$dynamicAnchor":"node","type":["object","boolean"]}},"type":"object","properties":{"child":{"$dynamicRef":"#node"}}}"##, "collect_dynamic_ref_lookup" ; "collect_dynamic_ref_lookup")]
+#[cfg_attr(not(feature = "arbitrary-precision"), test_case(r#"{"if":{"type":"integer"},"then":{"minimum":10,"multipleOf":3}}"#, "collect_if_then" ; "collect_if_then"))]
+#[cfg_attr(feature = "arbitrary-precision", test_case(r#"{"if":{"type":"integer"},"then":{"minimum":10,"multipleOf":3}}"#, "collect_if_then_arbitrary" ; "collect_if_then"))]
+fn codegen_collect_body_snapshot(schema_json: &str, snap_name: &str) {
+    let schema: Value = serde_json::from_str(schema_json).expect("valid schema json");
+    let description = serde_json::to_string(&schema).expect("schema serialization");
+    insta::with_settings!({ description => &description }, {
+        insta::assert_snapshot!(snap_name, collect_body(schema));
     });
 }

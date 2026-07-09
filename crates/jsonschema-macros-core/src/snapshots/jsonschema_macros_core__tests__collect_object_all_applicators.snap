@@ -1,0 +1,96 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"additionalProperties\":{\"type\":\"integer\"},\"patternProperties\":{\"^x\":{\"type\":\"integer\"}},\"properties\":{\"a\":{}},\"propertyNames\":{\"minLength\":1},\"type\":\"object\"}"
+expression: collect_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                for key in obj.keys() {
+                    let __key_val: serde_json::Value = serde_json::Value::String(
+                        key.clone(),
+                    );
+                    let mut __key_errors: Vec<jsonschema::ValidationError<'_>> = Vec::new();
+                    {
+                        let s = key;
+                        let instance = &__key_val;
+                        let __errors = &mut __key_errors;
+                        if !(!s.is_empty()) {
+                            __errors
+                                .push(
+                                    jsonschema::__private::error::min_length(
+                                        "/propertyNames/minLength",
+                                        __path.into(),
+                                        instance,
+                                        1,
+                                    ),
+                                );
+                        }
+                    }
+                    for __e in __key_errors {
+                        __errors.push(__e.to_owned());
+                    }
+                }
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    let mut covered = false;
+                    match key_str {
+                        "a" => {
+                            covered = true;
+                        }
+                        _ => {}
+                    }
+                    if key.as_str().starts_with("x") {
+                        let instance = value;
+                        let __path = &__path.push(key_str);
+                        if !(match instance {
+                            serde_json::Value::Number(n) => {
+                                jsonschema::__private::types::is_integer(n)
+                            }
+                            _ => false,
+                        }) {
+                            __errors
+                                .push(
+                                    jsonschema::__private::error::single_type(
+                                        "/patternProperties/^x/type",
+                                        __path.into(),
+                                        instance,
+                                        jsonschema::JsonType::Integer,
+                                    ),
+                                );
+                        }
+                        covered = true;
+                    }
+                    if !covered {
+                        let instance = value;
+                        let __path = &__path.push(key_str);
+                        if !(match instance {
+                            serde_json::Value::Number(n) => {
+                                jsonschema::__private::types::is_integer(n)
+                            }
+                            _ => false,
+                        }) {
+                            __errors
+                                .push(
+                                    jsonschema::__private::error::single_type(
+                                        "/additionalProperties/type",
+                                        __path.into(),
+                                        instance,
+                                        jsonschema::JsonType::Integer,
+                                    ),
+                                );
+                        }
+                    }
+                }
+            }
+            _ => {
+                __errors
+                    .push(
+                        jsonschema::__private::error::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            jsonschema::JsonType::Object,
+                        ),
+                    );
+            }
+        }

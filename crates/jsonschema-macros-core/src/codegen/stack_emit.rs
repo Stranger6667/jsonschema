@@ -89,6 +89,18 @@ define_dynamic_ops!(
     pop_dynamic_validate_n
 );
 
+// Parallel stacks holding collect_errors() function pointers.
+define_recursive_ops!(
+    __JSONSCHEMA_RECURSIVE_COLLECT_STACK,
+    push_recursive_collect,
+    pop_recursive_collect
+);
+define_dynamic_ops!(
+    __JSONSCHEMA_DYNAMIC_COLLECT_STACK,
+    push_dynamic_collect,
+    pop_dynamic_collect_n
+);
+
 /// Push/pop emitters for one thread-local stack family, plus the accessor
 /// selecting which helper-fn name a dynamic-anchor binding contributes.
 pub(crate) struct StackFamily {

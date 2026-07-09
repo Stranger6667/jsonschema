@@ -949,14 +949,12 @@ impl<'a> Iterator for ErrorIter<'a> {
                 self.current = None;
             }
 
-            match self.nodes.next() {
-                Some(node) => {
-                    if node.errors.is_empty() {
-                        continue;
-                    }
-                    self.current = Some((node, 0));
+            {
+                let node = self.nodes.next()?;
+                if node.errors.is_empty() {
+                    continue;
                 }
-                None => return None,
+                self.current = Some((node, 0));
             }
         }
     }

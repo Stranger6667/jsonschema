@@ -45,10 +45,7 @@ pub(crate) fn compile(ctx: &CompileContext<'_>, value: &Value) -> CompiledExpr {
         quote! { jsonschema::__private::error::multiple_of(#schema_path, __path.into(), instance, #limit_value) }
     };
 
-    CompiledExpr::with_validate_blocks(
-        check.clone(),
-        quote! { if !(#check) { return Some(#error_expr); } },
-    )
+    CompiledExpr::from_check_and_error(check, error_expr)
 }
 
 fn generate_multiple_of_check(value: &Value) -> TokenStream {

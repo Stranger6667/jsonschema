@@ -40,6 +40,16 @@ mod __validator_impl {
         }
         None
     }
+    pub(super) fn collect_errors<'__i>(
+        instance: &'__i serde_json::Value,
+        __path: &jsonschema::paths::LazyLocation,
+        __errors: &mut Vec<jsonschema::ValidationError<'__i>>,
+    ) {
+        match instance {
+            serde_json::Value::Number(n) => {}
+            _ => {}
+        }
+    }
 }
 impl Validator {
     pub fn is_valid(instance: &serde_json::Value) -> bool {
@@ -55,5 +65,16 @@ impl Validator {
             Some(e) => Err(e),
             None => Ok(()),
         }
+    }
+    pub fn iter_errors<'__i>(
+        instance: &'__i serde_json::Value,
+    ) -> jsonschema::ErrorIterator<'__i> {
+        let mut errors = Vec::new();
+        __validator_impl::collect_errors(
+            instance,
+            &jsonschema::paths::LazyLocation::new(),
+            &mut errors,
+        );
+        jsonschema::__private::error::iterator_from(errors)
     }
 }

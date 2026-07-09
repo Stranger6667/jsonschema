@@ -1,0 +1,116 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"additionalProperties\":false,\"properties\":{\"a\":{\"type\":\"string\"},\"b\":{\"type\":\"integer\"}},\"required\":[\"a\",\"b\"],\"type\":\"object\"}"
+expression: collect_body(schema)
+---
+match instance {
+            serde_json::Value::Object(obj) => {
+                __errors
+                    .extend(
+                        (|| -> Option<jsonschema::ValidationError<'_>> {
+                            if !(obj.contains_key("a")) {
+                                return Some(
+                                    jsonschema::__private::error::required(
+                                        "/required",
+                                        __path.into(),
+                                        instance,
+                                        "a",
+                                    ),
+                                );
+                            }
+                            None
+                        })(),
+                    );
+                __errors
+                    .extend(
+                        (|| -> Option<jsonschema::ValidationError<'_>> {
+                            if !(obj.contains_key("b")) {
+                                return Some(
+                                    jsonschema::__private::error::required(
+                                        "/required",
+                                        __path.into(),
+                                        instance,
+                                        "b",
+                                    ),
+                                );
+                            }
+                            None
+                        })(),
+                    );
+                let mut __unexpected: Vec<String> = Vec::new();
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    match key_str {
+                        "a" => {
+                            let instance = value;
+                            if !(instance.is_string()) {
+                                let __path = &__path.push("a");
+                                if !(instance.is_string()) {
+                                    __errors
+                                        .push(
+                                            jsonschema::__private::error::single_type(
+                                                "/properties/a/type",
+                                                __path.into(),
+                                                instance,
+                                                jsonschema::JsonType::String,
+                                            ),
+                                        );
+                                }
+                            }
+                        }
+                        "b" => {
+                            let instance = value;
+                            if !(match instance {
+                                serde_json::Value::Number(n) => {
+                                    jsonschema::__private::types::is_integer(n)
+                                }
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("b");
+                                if !(match instance {
+                                    serde_json::Value::Number(n) => {
+                                        jsonschema::__private::types::is_integer(n)
+                                    }
+                                    _ => false,
+                                }) {
+                                    __errors
+                                        .push(
+                                            jsonschema::__private::error::single_type(
+                                                "/properties/b/type",
+                                                __path.into(),
+                                                instance,
+                                                jsonschema::JsonType::Integer,
+                                            ),
+                                        );
+                                }
+                            }
+                        }
+                        _ => {
+                            __unexpected.push(key.clone());
+                        }
+                    }
+                }
+                if !__unexpected.is_empty() {
+                    __errors
+                        .push(
+                            jsonschema::__private::error::additional_properties(
+                                "/additionalProperties",
+                                __path.into(),
+                                instance,
+                                __unexpected,
+                            ),
+                        );
+                }
+            }
+            _ => {
+                __errors
+                    .push(
+                        jsonschema::__private::error::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            jsonschema::JsonType::Object,
+                        ),
+                    );
+            }
+        }

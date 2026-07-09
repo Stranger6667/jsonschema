@@ -137,19 +137,17 @@ pub(super) fn compile_count_limit(
         Ok(limit) => {
             let schema_path = ctx.schema_path_for_keyword(keyword);
             let error = format_ident!("{error_name}");
-            let (valid_cmp, invalid_cmp) = match limit_kind {
-                Limit::Min => (quote! { >= }, quote! { < }),
-                Limit::Max => (quote! { <= }, quote! { > }),
+            let valid_cmp = match limit_kind {
+                Limit::Min => quote! { >= },
+                Limit::Max => quote! { <= },
             };
             let limit = proc_macro2::Literal::u64_unsuffixed(limit);
-            CompiledExpr::with_validate_blocks(
+            CompiledExpr::from_check_and_error(
                 quote! { (#count as u64) #valid_cmp #limit },
                 quote! {
-                    if (#count as u64) #invalid_cmp #limit {
-                        return Some(jsonschema::__private::error::#error(
-                            #schema_path, __path.into(), instance, #limit,
-                        ));
-                    }
+                    jsonschema::__private::error::#error(
+                        #schema_path, __path.into(), instance, #limit,
+                    )
                 },
             )
         }
