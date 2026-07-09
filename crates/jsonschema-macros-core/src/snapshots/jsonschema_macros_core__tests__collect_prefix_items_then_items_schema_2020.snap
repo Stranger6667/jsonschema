@@ -1,0 +1,63 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"items\":{\"type\":\"string\"},\"prefixItems\":[{\"type\":\"integer\"}],\"type\":\"array\"}"
+expression: collect_body(schema)
+---
+match instance {
+            serde_json::Value::Array(arr) => {
+                for (idx, item) in arr.iter().enumerate().skip(1usize) {
+                    let instance = item;
+                    if !(instance.is_string()) {
+                        let __path = &__path.push(idx);
+                        if !(instance.is_string()) {
+                            __errors
+                                .push(
+                                    jsonschema::__private::error::single_type(
+                                        "/items/type",
+                                        __path.into(),
+                                        instance,
+                                        jsonschema::JsonType::String,
+                                    ),
+                                );
+                        }
+                    }
+                }
+                if let Some(instance) = arr.get(0usize) {
+                    if !(match instance {
+                        serde_json::Value::Number(n) => {
+                            jsonschema::__private::types::is_integer(n)
+                        }
+                        _ => false,
+                    }) {
+                        let __path = &__path.push(0usize);
+                        if !(match instance {
+                            serde_json::Value::Number(n) => {
+                                jsonschema::__private::types::is_integer(n)
+                            }
+                            _ => false,
+                        }) {
+                            __errors
+                                .push(
+                                    jsonschema::__private::error::single_type(
+                                        "/prefixItems/0/type",
+                                        __path.into(),
+                                        instance,
+                                        jsonschema::JsonType::Integer,
+                                    ),
+                                );
+                        }
+                    }
+                }
+            }
+            _ => {
+                __errors
+                    .push(
+                        jsonschema::__private::error::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            jsonschema::JsonType::Array,
+                        ),
+                    );
+            }
+        }

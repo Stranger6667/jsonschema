@@ -212,6 +212,7 @@ pub(super) fn compile_object_schema(
                         (#typed_is_valid) #(&& (#untyped_is_valid))*
                     }),
                     validate: combined.validate,
+                    collect: combined.collect,
                     compile_error: combined.compile_error,
                 }
             }

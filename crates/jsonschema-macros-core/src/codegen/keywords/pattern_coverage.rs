@@ -53,10 +53,10 @@ pub(super) fn build_pattern_coverage(
             Some(jsonschema_regex::PatternAnalysis::NoWhitespace) => predicates.push(quote! {
                 !key_str.chars().any(jsonschema::__private::regex::is_ecma_whitespace)
             }),
-            None => match translate_and_validate_regex(ctx, "patternProperties", pattern) {
-                Ok(regex) => regex_patterns.push(regex),
-                Err(error_expr) => return Err(error_expr),
-            },
+            None => {
+                let regex = translate_and_validate_regex(ctx, "patternProperties", pattern)?;
+                regex_patterns.push(regex);
+            }
         }
     }
 

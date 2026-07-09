@@ -33,14 +33,22 @@ pub(super) fn compile_wildcard_arm(
                 // Bind `instance = value` and extend `__path` so the sub-schema validation sees the
                 // property value/path (the match arm in `build_validate_block` does not rebind them).
                 match &schema_check.validate {
-                    ValidateBlock::Expr(expr) => CompiledExpr::with_validate_blocks(
-                        quote! { { #schema_is_valid } },
-                        quote! {
-                            let instance = value;
-                            let __path = &__path.push(key_str);
-                            #expr
-                        },
-                    ),
+                    ValidateBlock::Expr(expr) => {
+                        let collect = schema_check.collect.as_token_stream();
+                        CompiledExpr::with_validate_and_collect_blocks(
+                            quote! { { #schema_is_valid } },
+                            quote! {
+                                let instance = value;
+                                let __path = &__path.push(key_str);
+                                #expr
+                            },
+                            quote! {
+                                let instance = value;
+                                let __path = &__path.push(key_str);
+                                #collect
+                            },
+                        )
+                    }
                     ValidateBlock::AlwaysValid => CompiledExpr::always_true(),
                 }
             }
@@ -85,16 +93,26 @@ pub(crate) fn compile(
             }
             let schema_is_valid = schema_check.is_valid_token_stream();
             match &schema_check.validate {
-                ValidateBlock::Expr(expr) => Some(CompiledExpr::with_validate_blocks(
-                    quote! { obj.values().all(|instance| #schema_is_valid) },
-                    quote! {
-                        for (key, value) in obj.iter() {
-                            let instance = value;
-                            let __path = &__path.push(key.as_str());
-                            #expr
-                        }
-                    },
-                )),
+                ValidateBlock::Expr(expr) => {
+                    let child_collect = schema_check.collect.as_token_stream();
+                    Some(CompiledExpr::with_validate_and_collect_blocks(
+                        quote! { obj.values().all(|instance| #schema_is_valid) },
+                        quote! {
+                            for (key, value) in obj.iter() {
+                                let instance = value;
+                                let __path = &__path.push(key.as_str());
+                                #expr
+                            }
+                        },
+                        quote! {
+                            for (key, value) in obj.iter() {
+                                let instance = value;
+                                let __path = &__path.push(key.as_str());
+                                #child_collect
+                            }
+                        },
+                    ))
+                }
                 ValidateBlock::AlwaysValid => None,
             }
         }

@@ -101,4 +101,6 @@ pub trait CodegenValidator {
     ///
     /// Returns an error if the instance is invalid according to the schema.
     fn validate(&self, instance: &Value) -> Result<(), Box<dyn std::any::Any + Send + Sync>>;
+    /// Every error, as `(message, schema_path, instance_path)` triples in iteration order.
+    fn iter_errors(&self, instance: &Value) -> Vec<(String, String, String)>;
 }

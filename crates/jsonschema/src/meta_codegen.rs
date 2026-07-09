@@ -1,10 +1,11 @@
 //! Compile-time meta-schema validators for the bundled drafts, dispatched from
 //! `meta::validator_for_draft` under the `macros` feature.
 
-use crate::{Draft, ValidationError};
+use crate::{Draft, ErrorIterator, ValidationError};
 use serde_json::Value;
 
 pub(crate) type ValidateFn = for<'i> fn(&'i Value) -> Result<(), ValidationError<'i>>;
+pub(crate) type IterErrorsFn = for<'i> fn(&'i Value) -> ErrorIterator<'i>;
 
 #[jsonschema_macros::validator(path = "metaschemas/draft4.json", draft = Draft4)]
 struct MetaDraft4;
@@ -62,5 +63,15 @@ pub(crate) fn validate_fn(draft: Draft) -> ValidateFn {
         Draft::Draft7 => MetaDraft7::validate,
         Draft::Draft201909 => MetaDraft201909::validate,
         _ => MetaDraft202012::validate,
+    }
+}
+
+pub(crate) fn iter_errors_fn(draft: Draft) -> IterErrorsFn {
+    match draft {
+        Draft::Draft4 => MetaDraft4::iter_errors,
+        Draft::Draft6 => MetaDraft6::iter_errors,
+        Draft::Draft7 => MetaDraft7::iter_errors,
+        Draft::Draft201909 => MetaDraft201909::iter_errors,
+        _ => MetaDraft202012::iter_errors,
     }
 }

@@ -32,14 +32,10 @@ pub(in super::super) fn compile(
     match (&min_length, &max_length) {
         (Some(Ok(0)), Some(Ok(0))) => {
             let max_path = ctx.schema_path_for_keyword("maxLength");
-            items.push(CompiledExpr::with_validate_blocks(
+            items.push(CompiledExpr::from_check_and_error(
                 quote! { s.is_empty() },
                 quote! {
-                    if !s.is_empty() {
-                        return Some(jsonschema::__private::error::max_length(
-                            #max_path, __path.into(), instance, 0,
-                        ));
-                    }
+                    jsonschema::__private::error::max_length(#max_path, __path.into(), instance, 0)
                 },
             ));
         }
@@ -68,14 +64,10 @@ pub(in super::super) fn compile(
             let length = quote! { s.chars().count() };
             if matches!(&min_length, Some(Ok(1))) {
                 let min_path = ctx.schema_path_for_keyword("minLength");
-                items.push(CompiledExpr::with_validate_blocks(
+                items.push(CompiledExpr::from_check_and_error(
                     quote! { !s.is_empty() },
                     quote! {
-                        if s.is_empty() {
-                            return Some(jsonschema::__private::error::min_length(
-                                #min_path, __path.into(), instance, 1,
-                            ));
-                        }
+                        jsonschema::__private::error::min_length(#min_path, __path.into(), instance, 1)
                     },
                 ));
             } else if let Some(value) = schema.get("minLength").filter(|_| validation_vocab_enabled)
@@ -91,14 +83,10 @@ pub(in super::super) fn compile(
             }
             if matches!(&max_length, Some(Ok(0))) {
                 let max_path = ctx.schema_path_for_keyword("maxLength");
-                items.push(CompiledExpr::with_validate_blocks(
+                items.push(CompiledExpr::from_check_and_error(
                     quote! { s.is_empty() },
                     quote! {
-                        if !s.is_empty() {
-                            return Some(jsonschema::__private::error::max_length(
-                                #max_path, __path.into(), instance, 0,
-                            ));
-                        }
+                        jsonschema::__private::error::max_length(#max_path, __path.into(), instance, 0)
                     },
                 ));
             } else if let Some(value) = schema.get("maxLength").filter(|_| validation_vocab_enabled)

@@ -30,15 +30,26 @@ pub(crate) fn compile(
             }
             let is_valid = validation.is_valid_token_stream();
             match &validation.validate {
-                ValidateBlock::Expr(expr) => CompiledExpr::with_validate_blocks(
-                    quote! { arr.get(#idx).map_or(true, |instance| #is_valid) },
-                    quote! {
-                        if let Some(instance) = arr.get(#idx) {
-                            let __path = &__path.push(#idx);
-                            #expr
-                        }
-                    },
-                ),
+                ValidateBlock::Expr(expr) => {
+                    let child_collect = validation.collect.as_token_stream();
+                    CompiledExpr::with_validate_and_collect_blocks(
+                        quote! { arr.get(#idx).map_or(true, |instance| #is_valid) },
+                        quote! {
+                            if let Some(instance) = arr.get(#idx) {
+                                let __path = &__path.push(#idx);
+                                #expr
+                            }
+                        },
+                        quote! {
+                            if let Some(instance) = arr.get(#idx) {
+                                if !(#is_valid) {
+                                    let __path = &__path.push(#idx);
+                                    #child_collect
+                                }
+                            }
+                        },
+                    )
+                }
                 ValidateBlock::AlwaysValid => CompiledExpr::always_true(),
             }
         })

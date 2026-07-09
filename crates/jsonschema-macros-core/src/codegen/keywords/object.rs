@@ -203,8 +203,10 @@ pub(in super::super) fn compile(
         if let Some(validate) =
             object_pass::compile_validate(ctx, &cluster, additional_properties_schema)
         {
+            let collect = object_pass::compile_collect(ctx, &cluster, additional_properties_schema)
+                .expect("compile_collect mirrors compile_validate's applicability");
             checks.push((
-                CompiledExpr::with_validate_blocks(quote! { true }, validate),
+                CompiledExpr::with_validate_and_collect_blocks(quote! { true }, validate, collect),
                 true,
             ));
         } else {
@@ -287,6 +289,7 @@ pub(in super::super) fn compile(
             CompiledExpr {
                 is_valid: IsValidExpr::Expr(is_valid),
                 validate: combined.validate,
+                collect: combined.collect,
                 compile_error: combined.compile_error,
             }
         }

@@ -1,0 +1,40 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"if\":{\"type\":\"integer\"},\"then\":{\"minimum\":10,\"multipleOf\":3}}"
+expression: collect_body(schema)
+---
+if match instance {
+            serde_json::Value::Number(n) => jsonschema::__private::types::is_integer(n),
+            _ => false,
+        } {
+            match instance {
+                serde_json::Value::Number(n) => {
+                    if !(jsonschema::__private::numeric::ge(n, 10u64)) {
+                        __errors
+                            .push(
+                                jsonschema::__private::error::minimum(
+                                    "/then/minimum",
+                                    __path.into(),
+                                    instance,
+                                    serde_json::Value::Number(serde_json::Number::from(10u64)),
+                                ),
+                            );
+                    }
+                    if !(jsonschema::__private::numeric::is_multiple_of_integer(
+                        n,
+                        3f64,
+                    )) {
+                        __errors
+                            .push(
+                                jsonschema::__private::error::multiple_of(
+                                    "/then/multipleOf",
+                                    __path.into(),
+                                    instance,
+                                    serde_json::Value::Number(serde_json::Number::from(3u64)),
+                                ),
+                            );
+                    }
+                }
+                _ => {}
+            }
+        } else {}

@@ -42,6 +42,52 @@ fn even_factory<'a>(
     }
 }
 
+struct MultiErrorKeyword;
+
+impl jsonschema::Keyword for MultiErrorKeyword {
+    fn validate<'i>(
+        &self,
+        instance: &'i serde_json::Value,
+    ) -> Result<(), jsonschema::ValidationError<'i>> {
+        if self.is_valid(instance) {
+            Ok(())
+        } else {
+            Err(jsonschema::ValidationError::custom("first"))
+        }
+    }
+
+    fn is_valid(&self, instance: &serde_json::Value) -> bool {
+        instance.as_i64().is_none_or(|n| n > 100)
+    }
+
+    fn iter_errors<'i>(
+        &self,
+        instance: &'i serde_json::Value,
+    ) -> Box<dyn Iterator<Item = jsonschema::ValidationError<'i>> + 'i> {
+        if self.is_valid(instance) {
+            Box::new(std::iter::empty())
+        } else {
+            Box::new(
+                vec![
+                    jsonschema::ValidationError::custom("first"),
+                    jsonschema::ValidationError::custom("second"),
+                ]
+                .into_iter(),
+            )
+        }
+    }
+}
+
+// The Result wrapping is required by the keyword factory signature.
+#[allow(clippy::unnecessary_wraps)]
+fn multi_error_factory<'a>(
+    _parent: &'a serde_json::Map<String, serde_json::Value>,
+    _value: &'a serde_json::Value,
+    _path: jsonschema::paths::Location,
+) -> Result<Box<dyn jsonschema::Keyword>, jsonschema::ValidationError<'a>> {
+    Ok(Box::new(MultiErrorKeyword))
+}
+
 fn is_hex_content(value: &str) -> bool {
     !value.is_empty() && value.chars().all(|ch| ch.is_ascii_hexdigit())
 }
@@ -87,6 +133,31 @@ fn assert_validate_parity_for(
     assert_validate_parity(generated_is_valid, generated, &runtime, instance);
 }
 
+// Asserts generated `iter_errors()` matches `runtime.iter_errors()` on message + paths, in order.
+fn assert_iter_errors_parity<'i>(
+    generated: impl Iterator<Item = jsonschema::ValidationError<'i>>,
+    runtime: &jsonschema::Validator,
+    instance: &serde_json::Value,
+) {
+    let generated: Vec<_> = generated.collect();
+    let expected: Vec<_> = runtime.iter_errors(instance).collect();
+    assert_eq!(
+        generated.len(),
+        expected.len(),
+        "iter_errors count mismatch: generated={:?}, runtime={:?}",
+        generated
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        expected.iter().map(ToString::to_string).collect::<Vec<_>>()
+    );
+    for (generated, expected) in generated.iter().zip(&expected) {
+        assert_eq!(generated.to_string(), expected.to_string());
+        assert_eq!(generated.schema_path(), expected.schema_path());
+        assert_eq!(generated.instance_path(), expected.instance_path());
+    }
+}
+
 // Asserts that the generated `is_valid` result agrees with the default runtime
 // validator built from `schema`.
 fn assert_is_valid_parity(
@@ -123,6 +194,27 @@ fn build_runtime_with_resources(
         .with_registry(&registry)
         .build(&schema)
         .expect("schema should build with custom vocabulary resources")
+}
+
+#[jsonschema::validator(
+    schema = r#"{"multi":true}"#,
+    keywords = { "multi" => crate::multi_error_factory }
+)]
+struct MultiErrorCustomValidator;
+
+#[test]
+fn test_custom_keyword_iter_errors_multi() {
+    let schema = serde_json::json!({"multi": true});
+    let instance = serde_json::json!(1);
+    let runtime = jsonschema::options()
+        .with_keyword("multi", multi_error_factory)
+        .build(&schema)
+        .expect("valid schema");
+    assert_iter_errors_parity(
+        MultiErrorCustomValidator::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
 }
 
 #[jsonschema::validator(

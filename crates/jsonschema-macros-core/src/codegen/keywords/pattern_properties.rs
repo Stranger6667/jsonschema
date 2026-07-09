@@ -36,22 +36,34 @@ pub(crate) fn compile(value: &Value, cluster: &ClusterSubschemas<'_>) -> Option<
         let schema_is_valid = schema_check.is_valid_token_stream();
 
         let check = match &schema_check.validate {
-            ValidateBlock::Expr(expr) => CompiledExpr::with_validate_blocks(
-                quote! {
-                    obj.iter()
-                        .filter(|(key, _)| #key_matches)
-                        .all(|(_, instance)| { #schema_is_valid })
-                },
-                quote! {
-                    for (key, value) in obj.iter() {
-                        if #key_matches {
-                            let instance = value;
-                            let __path = &__path.push(key.as_str());
-                            #expr
+            ValidateBlock::Expr(expr) => {
+                let child_collect = schema_check.collect.as_token_stream();
+                CompiledExpr::with_validate_and_collect_blocks(
+                    quote! {
+                        obj.iter()
+                            .filter(|(key, _)| #key_matches)
+                            .all(|(_, instance)| { #schema_is_valid })
+                    },
+                    quote! {
+                        for (key, value) in obj.iter() {
+                            if #key_matches {
+                                let instance = value;
+                                let __path = &__path.push(key.as_str());
+                                #expr
+                            }
                         }
-                    }
-                },
-            ),
+                    },
+                    quote! {
+                        for (key, value) in obj.iter() {
+                            if #key_matches {
+                                let instance = value;
+                                let __path = &__path.push(key.as_str());
+                                #child_collect
+                            }
+                        }
+                    },
+                )
+            }
             ValidateBlock::AlwaysValid => CompiledExpr::always_true(),
         };
         pattern_checks.push(check);

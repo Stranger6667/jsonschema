@@ -32,7 +32,7 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<Com
                 if props.is_empty() {
                     CompiledExpr::always_true()
                 } else {
-                    CompiledExpr::with_validate_blocks(
+                    CompiledExpr::with_validate_and_collect_blocks(
                         quote! {
                             if obj.contains_key(#prop) {
                                 #(obj.contains_key(#props))&&*
@@ -51,6 +51,17 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<Com
                                 )*
                             }
                         },
+                        quote! {
+                            if obj.contains_key(#prop) {
+                                #(
+                                    if !obj.contains_key(#props) {
+                                        __errors.push(jsonschema::__private::error::required(
+                                            #schema_path, __path.into(), instance, #props,
+                                        ));
+                                    }
+                                )*
+                            }
+                        },
                     )
                 }
             }
@@ -60,10 +71,14 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<Com
                 });
                 let is_valid = compiled.is_valid_token_stream();
                 match &compiled.validate {
-                    ValidateBlock::Expr(expr) => CompiledExpr::with_validate_blocks(
-                        quote! { if obj.contains_key(#prop) { #is_valid } else { true } },
-                        quote! { if obj.contains_key(#prop) { #expr } },
-                    ),
+                    ValidateBlock::Expr(expr) => {
+                        let child_collect = compiled.collect.as_token_stream();
+                        CompiledExpr::with_validate_and_collect_blocks(
+                            quote! { if obj.contains_key(#prop) { #is_valid } else { true } },
+                            quote! { if obj.contains_key(#prop) { #expr } },
+                            quote! { if obj.contains_key(#prop) { #child_collect } },
+                        )
+                    }
                     ValidateBlock::AlwaysValid => CompiledExpr::always_true(),
                 }
             }
@@ -107,7 +122,7 @@ pub(crate) fn compile_dependent_required(
             if required_props.is_empty() {
                 return CompiledExpr::always_true();
             }
-            CompiledExpr::with_validate_blocks(
+            CompiledExpr::with_validate_and_collect_blocks(
                 quote! {
                     if obj.contains_key(#prop) {
                         #(obj.contains_key(#required_props))&&*
@@ -120,6 +135,17 @@ pub(crate) fn compile_dependent_required(
                         #(
                             if !obj.contains_key(#required_props) {
                                 return Some(jsonschema::__private::error::required(
+                                    #schema_path, __path.into(), instance, #required_props,
+                                ));
+                            }
+                        )*
+                    }
+                },
+                quote! {
+                    if obj.contains_key(#prop) {
+                        #(
+                            if !obj.contains_key(#required_props) {
+                                __errors.push(jsonschema::__private::error::required(
                                     #schema_path, __path.into(), instance, #required_props,
                                 ));
                             }
@@ -152,10 +178,14 @@ pub(crate) fn compile_dependent_schemas(
             });
             let is_valid = compiled.is_valid_token_stream();
             match &compiled.validate {
-                ValidateBlock::Expr(expr) => CompiledExpr::with_validate_blocks(
-                    quote! { if obj.contains_key(#prop) { #is_valid } else { true } },
-                    quote! { if obj.contains_key(#prop) { #expr } },
-                ),
+                ValidateBlock::Expr(expr) => {
+                    let child_collect = compiled.collect.as_token_stream();
+                    CompiledExpr::with_validate_and_collect_blocks(
+                        quote! { if obj.contains_key(#prop) { #is_valid } else { true } },
+                        quote! { if obj.contains_key(#prop) { #expr } },
+                        quote! { if obj.contains_key(#prop) { #child_collect } },
+                    )
+                }
                 ValidateBlock::AlwaysValid => CompiledExpr::always_true(),
             }
         })

@@ -32,12 +32,21 @@ fn compile_plain(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledExpr {
                 }
                 let is_valid = compiled.is_valid_token_stream();
                 let expr = compiled.validate.as_token_stream();
-                CompiledExpr::with_validate_blocks(
+                let child_collect = compiled.collect.as_token_stream();
+                CompiledExpr::with_validate_and_collect_blocks(
                     quote! { arr.get(#idx).map_or(true, |instance| #is_valid) },
                     quote! {
                         if let Some(instance) = arr.get(#idx) {
                             let __path = &__path.push(#idx);
                             #expr
+                        }
+                    },
+                    quote! {
+                        if let Some(instance) = arr.get(#idx) {
+                            if !(#is_valid) {
+                                let __path = &__path.push(#idx);
+                                #child_collect
+                            }
                         }
                     },
                 )
@@ -53,13 +62,23 @@ fn compile_plain(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledExpr {
         }
         let is_valid = compiled.is_valid_token_stream();
         let expr = compiled.validate.as_token_stream();
-        CompiledExpr::with_validate_blocks(
+        let child_collect = compiled.collect.as_token_stream();
+        CompiledExpr::with_validate_and_collect_blocks(
             quote! { arr.iter().all(|instance| #is_valid) },
             quote! {
                 for (idx, item) in arr.iter().enumerate() {
                     let instance = item;
                     let __path = &__path.push(idx);
                     #expr
+                }
+            },
+            quote! {
+                for (idx, item) in arr.iter().enumerate() {
+                    let instance = item;
+                    if !(#is_valid) {
+                        let __path = &__path.push(idx);
+                        #child_collect
+                    }
                 }
             },
         )
@@ -74,13 +93,22 @@ fn compile_with_prefix(
     let schema_path = ctx.schema_path_for_keyword("items");
     match value {
         Value::Bool(true) => CompiledExpr::always_true(),
-        Value::Bool(false) => CompiledExpr::with_validate_blocks(
+        Value::Bool(false) => CompiledExpr::with_validate_and_collect_blocks(
             quote! { arr.len() <= #prefix_len },
             quote! {
                 if let Some(item) = arr.get(#prefix_len) {
                     let instance = item;
                     let __path = &__path.push(#prefix_len);
                     return Some(jsonschema::__private::error::false_schema(
+                        #schema_path, __path.into(), instance,
+                    ));
+                }
+            },
+            quote! {
+                for (idx, item) in arr.iter().enumerate().skip(#prefix_len) {
+                    let instance = item;
+                    let __path = &__path.push(idx);
+                    __errors.push(jsonschema::__private::error::false_schema(
                         #schema_path, __path.into(), instance,
                     ));
                 }
@@ -95,13 +123,23 @@ fn compile_with_prefix(
             }
             let is_valid = compiled.is_valid_token_stream();
             let expr = compiled.validate.as_token_stream();
-            CompiledExpr::with_validate_blocks(
+            let child_collect = compiled.collect.as_token_stream();
+            CompiledExpr::with_validate_and_collect_blocks(
                 quote! { arr.iter().skip(#prefix_len).all(|instance| #is_valid) },
                 quote! {
                     for (idx, item) in arr.iter().enumerate().skip(#prefix_len) {
                         let instance = item;
                         let __path = &__path.push(idx);
                         #expr
+                    }
+                },
+                quote! {
+                    for (idx, item) in arr.iter().enumerate().skip(#prefix_len) {
+                        let instance = item;
+                        if !(#is_valid) {
+                            let __path = &__path.push(idx);
+                            #child_collect
+                        }
                     }
                 },
             )

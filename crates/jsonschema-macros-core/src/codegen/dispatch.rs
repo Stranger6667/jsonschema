@@ -6,7 +6,7 @@ use crate::context::CompileContext;
 
 use super::{
     draft::DraftExt,
-    expr::{IsValidExpr, ValidateBlock},
+    expr::{CollectBlock, IsValidExpr, ValidateBlock},
     keywords,
     keywords::format::format_emits_assertion,
     CompiledExpr,
@@ -82,6 +82,7 @@ pub(super) fn compile_typed(
 
     let mut is_valid_arms = Vec::new();
     let mut validate_arms = Vec::new();
+    let mut collect_arms = Vec::new();
     let integer_guard = crate::codegen::emit_serde::integer_number_guard(ctx.draft);
 
     if has_string {
@@ -90,9 +91,13 @@ pub(super) fn compile_typed(
             is_valid_arms.push(crate::codegen::emit_serde::match_string_arm(
                 for_string.is_valid_token_stream(),
             ));
-            let v = for_string.validate.as_token_stream();
             if has_type_constraint || matches!(&for_string.validate, ValidateBlock::Expr(_)) {
-                validate_arms.push(crate::codegen::emit_serde::match_string_arm(v));
+                validate_arms.push(crate::codegen::emit_serde::match_string_arm(
+                    for_string.validate.as_token_stream(),
+                ));
+                collect_arms.push(crate::codegen::emit_serde::match_string_arm(
+                    for_string.collect.as_token_stream(),
+                ));
             }
         }
     }
@@ -109,18 +114,34 @@ pub(super) fn compile_typed(
                 is_valid_arms.push(crate::codegen::emit_serde::match_number_arm(
                     for_number.is_valid_token_stream(),
                 ));
-                let v = for_number.validate.as_token_stream();
-                validate_arms.push(crate::codegen::emit_serde::match_number_arm(v));
+                validate_arms.push(crate::codegen::emit_serde::match_number_arm(
+                    for_number.validate.as_token_stream(),
+                ));
+                collect_arms.push(crate::codegen::emit_serde::match_number_arm(
+                    for_number.collect.as_token_stream(),
+                ));
             } else if allows_integer {
                 is_valid_arms.push(crate::codegen::emit_serde::match_integer_arm(
                     integer_guard.clone(),
                     for_number.is_valid_token_stream(),
                 ));
-                let v = for_number.validate.as_token_stream();
                 validate_arms.push(crate::codegen::emit_serde::match_integer_arm(
                     integer_guard.clone(),
-                    v,
+                    for_number.validate.as_token_stream(),
                 ));
+                // Runtime reports both the type error and the numeric errors for a non-integer number
+                // under `type: integer`, so collect runs the numeric checks for every number and pushes
+                // the type error inline when it is not an integer.
+                let type_schema_path = ctx.schema_path_for_keyword("type");
+                let type_error_expr = build_type_error_expr(type_val, &type_schema_path);
+                let guard = integer_guard.clone();
+                let numeric_collect = for_number.collect.as_token_stream();
+                collect_arms.push(crate::codegen::emit_serde::match_number_arm(quote! {
+                    if !(#guard) {
+                        __errors.push(#type_error_expr);
+                    }
+                    #numeric_collect
+                }));
             } else if for_number.is_compile_error() {
                 is_valid_arms.push(crate::codegen::emit_serde::match_number_arm(
                     for_number.is_valid_token_stream(),
@@ -128,14 +149,21 @@ pub(super) fn compile_typed(
                 validate_arms.push(crate::codegen::emit_serde::match_number_arm(
                     for_number.validate.as_token_stream(),
                 ));
+                collect_arms.push(crate::codegen::emit_serde::match_number_arm(
+                    for_number.collect.as_token_stream(),
+                ));
             }
         } else if !for_number.is_trivially_true() {
             is_valid_arms.push(crate::codegen::emit_serde::match_number_arm(
                 for_number.is_valid_token_stream(),
             ));
-            let v = for_number.validate.as_token_stream();
             if matches!(&for_number.validate, ValidateBlock::Expr(_)) {
-                validate_arms.push(crate::codegen::emit_serde::match_number_arm(v));
+                validate_arms.push(crate::codegen::emit_serde::match_number_arm(
+                    for_number.validate.as_token_stream(),
+                ));
+                collect_arms.push(crate::codegen::emit_serde::match_number_arm(
+                    for_number.collect.as_token_stream(),
+                ));
             }
         }
     }
@@ -146,9 +174,13 @@ pub(super) fn compile_typed(
             is_valid_arms.push(crate::codegen::emit_serde::match_array_arm(
                 for_array.is_valid_token_stream(),
             ));
-            let v = for_array.validate.as_token_stream();
             if has_type_constraint || matches!(&for_array.validate, ValidateBlock::Expr(_)) {
-                validate_arms.push(crate::codegen::emit_serde::match_array_arm(v));
+                validate_arms.push(crate::codegen::emit_serde::match_array_arm(
+                    for_array.validate.as_token_stream(),
+                ));
+                collect_arms.push(crate::codegen::emit_serde::match_array_arm(
+                    for_array.collect.as_token_stream(),
+                ));
             }
         }
     }
@@ -159,9 +191,13 @@ pub(super) fn compile_typed(
             is_valid_arms.push(crate::codegen::emit_serde::match_object_arm(
                 for_object.is_valid_token_stream(),
             ));
-            let v = for_object.validate.as_token_stream();
             if has_type_constraint || matches!(&for_object.validate, ValidateBlock::Expr(_)) {
-                validate_arms.push(crate::codegen::emit_serde::match_object_arm(v));
+                validate_arms.push(crate::codegen::emit_serde::match_object_arm(
+                    for_object.validate.as_token_stream(),
+                ));
+                collect_arms.push(crate::codegen::emit_serde::match_object_arm(
+                    for_object.collect.as_token_stream(),
+                ));
             }
         }
     }
@@ -209,6 +245,7 @@ pub(super) fn compile_typed(
             is_valid_arms.push(quote! { #(#additional_types)|* => true });
             for pattern in &additional_types {
                 validate_arms.push(quote! { #pattern => {} });
+                collect_arms.push(quote! { #pattern => {} });
             }
         }
         is_valid_arms.push(quote! { _ => false });
@@ -219,12 +256,14 @@ pub(super) fn compile_typed(
             .expect("has_type_constraint implies a `type` keyword");
         let type_error_expr = build_type_error_expr(type_value, &type_schema_path);
         validate_arms.push(quote! { _ => { return Some(#type_error_expr); } });
+        collect_arms.push(quote! { _ => { __errors.push(#type_error_expr); } });
     } else {
         if is_valid_arms.is_empty() {
             return None;
         }
         is_valid_arms.push(quote! { _ => true });
         validate_arms.push(quote! { _ => {} });
+        collect_arms.push(quote! { _ => {} });
     }
 
     let is_valid_ts = quote! {
@@ -233,9 +272,11 @@ pub(super) fn compile_typed(
         }
     };
     let validate_ts = quote! { match instance { #(#validate_arms),* } };
+    let collect_ts = quote! { match instance { #(#collect_arms),* } };
     Some(CompiledExpr {
         is_valid: IsValidExpr::Expr(is_valid_ts),
         validate: ValidateBlock::Expr(validate_ts),
+        collect: CollectBlock::Expr(collect_ts),
         compile_error: false,
     })
 }

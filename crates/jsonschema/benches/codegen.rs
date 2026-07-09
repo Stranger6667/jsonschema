@@ -23,18 +23,48 @@ mod bench {
 
     type IsValid = fn(&Value) -> bool;
     type Validate = for<'a> fn(&'a Value) -> Result<(), jsonschema::ValidationError<'a>>;
+    type IterErrors = for<'a> fn(&'a Value) -> jsonschema::ErrorIterator<'a>;
 
     fn bench(c: &mut Criterion) {
         for benchmark in Benchmark::iter() {
             benchmark.run(&mut |name, _schema, instances| {
-                let (is_valid, validate): (IsValid, Validate) = match name {
-                    "Fast" => (FastSchemaValidator::is_valid, FastSchemaValidator::validate),
-                    "Open API" => (OpenAPIValidator::is_valid, OpenAPIValidator::validate),
-                    "Swagger" => (SwaggerValidator::is_valid, SwaggerValidator::validate),
-                    "GeoJSON" => (GeoJSONValidator::is_valid, GeoJSONValidator::validate),
-                    "CITM" => (CITMValidator::is_valid, CITMValidator::validate),
-                    "FHIR" => (FHIRValidator::is_valid, FHIRValidator::validate),
-                    "Recursive" => (RecursiveValidator::is_valid, RecursiveValidator::validate),
+                let (is_valid, validate, iter_errors): (IsValid, Validate, IterErrors) = match name
+                {
+                    "Fast" => (
+                        FastSchemaValidator::is_valid,
+                        FastSchemaValidator::validate,
+                        FastSchemaValidator::iter_errors,
+                    ),
+                    "Open API" => (
+                        OpenAPIValidator::is_valid,
+                        OpenAPIValidator::validate,
+                        OpenAPIValidator::iter_errors,
+                    ),
+                    "Swagger" => (
+                        SwaggerValidator::is_valid,
+                        SwaggerValidator::validate,
+                        SwaggerValidator::iter_errors,
+                    ),
+                    "GeoJSON" => (
+                        GeoJSONValidator::is_valid,
+                        GeoJSONValidator::validate,
+                        GeoJSONValidator::iter_errors,
+                    ),
+                    "CITM" => (
+                        CITMValidator::is_valid,
+                        CITMValidator::validate,
+                        CITMValidator::iter_errors,
+                    ),
+                    "FHIR" => (
+                        FHIRValidator::is_valid,
+                        FHIRValidator::validate,
+                        FHIRValidator::iter_errors,
+                    ),
+                    "Recursive" => (
+                        RecursiveValidator::is_valid,
+                        RecursiveValidator::validate,
+                        RecursiveValidator::iter_errors,
+                    ),
                     _ => return,
                 };
                 for instance in instances {
@@ -47,6 +77,11 @@ mod bench {
                         BenchmarkId::new(format!("codegen/{name}/validate"), &instance.name),
                         &instance.data,
                         |b, data| b.iter(|| black_box(validate(data).is_ok())),
+                    );
+                    c.bench_with_input(
+                        BenchmarkId::new(format!("codegen/{name}/iter_errors"), &instance.name),
+                        &instance.data,
+                        |b, data| b.iter(|| black_box(iter_errors(data).count())),
                     );
                 }
             });

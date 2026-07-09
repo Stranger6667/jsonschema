@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `iter_errors` for `#[jsonschema::validator]`-generated validators.
+
 ### Performance
 
 - Faster `multipleOf` validation for integer instances with integer divisors, via integer arithmetic instead of floating-point modulo.

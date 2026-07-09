@@ -11,9 +11,10 @@ use super::{
     keywords::unevaluated::{compile_index_evaluated_expr, compile_key_evaluated_expr, GuardHoist},
     refs::resolve_ref,
     stack_emit::{
-        pop_dynamic_validate_n, pop_recursive_validate, push_dynamic_validate,
-        push_recursive_validate, stack_scoped_body, IS_VALID_FAMILY, ITEM_EVAL_FAMILY,
-        KEY_EVAL_FAMILY,
+        pop_dynamic_collect_n, pop_dynamic_validate_n, pop_recursive_collect,
+        pop_recursive_validate, push_dynamic_collect, push_dynamic_validate,
+        push_recursive_collect, push_recursive_validate, stack_scoped_body, IS_VALID_FAMILY,
+        ITEM_EVAL_FAMILY, KEY_EVAL_FAMILY,
     },
 };
 
@@ -382,6 +383,55 @@ pub(crate) fn get_or_create_is_valid_fn_with(
                     ctx.is_valid_fns
                         .set_validate_body(&func_name, validate_body);
                 }
+                {
+                    let collect_stmts = compiled.collect.as_token_stream();
+                    let collect_body = if recursive_push.is_empty() && dynamic_push.is_empty() {
+                        quote! { #collect_stmts }
+                    } else {
+                        // Collect never returns early, so push/pop wrap the statements directly.
+                        let recursive_collect_push = if ctx.uses_recursive_ref {
+                            let collect_ident = format_ident!("{}_collect_errors", func_name);
+                            push_recursive_collect(&collect_ident, is_recursive_anchor)
+                        } else {
+                            quote! {}
+                        };
+                        let recursive_collect_pop = if ctx.uses_recursive_ref {
+                            pop_recursive_collect()
+                        } else {
+                            quote! {}
+                        };
+                        let dynamic_collect_pushes: Vec<_> = dynamic_bindings
+                            .iter()
+                            .map(|b| {
+                                let binding_collect_ident =
+                                    format_ident!("{}_collect_errors", b.is_valid_name);
+                                push_dynamic_collect(&b.anchor, &binding_collect_ident)
+                            })
+                            .collect();
+                        let dynamic_collect_push = if ctx.uses_dynamic_ref {
+                            quote! { #(#dynamic_collect_pushes)* }
+                        } else {
+                            quote! {}
+                        };
+                        let dynamic_collect_pop = if ctx.uses_dynamic_ref {
+                            pop_dynamic_collect_n(dynamic_bindings.len())
+                        } else {
+                            quote! {}
+                        };
+                        quote! {
+                            #recursive_push
+                            #recursive_collect_push
+                            #dynamic_push
+                            #dynamic_collect_push
+                            #collect_stmts
+                            #dynamic_collect_pop
+                            #dynamic_pop
+                            #recursive_collect_pop
+                            #recursive_pop
+                        }
+                    };
+                    ctx.is_valid_fns.set_collect_body(&func_name, collect_body);
+                }
                 if recursive_push.is_empty() && dynamic_push.is_empty() {
                     compiled.into_token_stream()
                 } else {
@@ -405,6 +455,8 @@ pub(crate) fn get_or_create_is_valid_fn_with(
                 let validate_body = quote! { #validate_stmts None };
                 ctx.is_valid_fns
                     .set_validate_body(&func_name, validate_body);
+                ctx.is_valid_fns
+                    .set_collect_body(&func_name, compiled.collect.as_token_stream());
                 compiled.into_token_stream()
             }
         })
