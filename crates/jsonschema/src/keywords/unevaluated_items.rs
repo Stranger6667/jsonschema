@@ -276,7 +276,9 @@ impl ItemsValidators {
 
         // Handle $dynamicRef (Draft 2020-12+)
         if let Some(dynamic_ref) = &self.dynamic_ref {
-            dynamic_ref.mark_evaluated_indexes(instance, indexes, ctx);
+            if let Some(validators) = dynamic_ref.get() {
+                validators.mark_evaluated_indexes(instance, indexes, ctx);
+            }
         }
 
         // Mark items based on items/prefixItems keywords

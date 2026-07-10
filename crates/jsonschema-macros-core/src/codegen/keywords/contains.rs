@@ -16,16 +16,16 @@ pub(crate) fn compile(
     let min = proc_macro2::Literal::u64_unsuffixed(min_contains.unwrap_or(1));
 
     let contains_path = ctx.schema_path_for_keyword("contains");
-    // maxContains present without minContains: the runtime reports both the "too many" and
-    // "too few" errors at the maxContains path.
-    let min_path = if min_contains.is_some() {
-        ctx.schema_path_for_keyword("minContains")
-    } else if max_contains.is_some() {
-        ctx.schema_path_for_keyword("maxContains")
+    // Standalone minContains/maxContains report violations at the contains path; only the
+    // combined min+max validator attributes errors to the specific keyword under contains.
+    let (min_path, max_path) = if min_contains.is_some() && max_contains.is_some() {
+        (
+            format!("{contains_path}/minContains"),
+            format!("{contains_path}/maxContains"),
+        )
     } else {
-        contains_path.clone()
+        (contains_path.clone(), contains_path.clone())
     };
-    let max_path = ctx.schema_path_for_keyword("maxContains");
 
     let max_check_is_valid = if let Some(max) = max_contains {
         let max = proc_macro2::Literal::u64_unsuffixed(max);

@@ -273,7 +273,9 @@ impl PropertyValidators {
 
         // Handle $dynamicRef (Draft 2020-12+)
         if let Some(dynamic_ref) = &self.dynamic_ref {
-            dynamic_ref.mark_evaluated_properties(instance, properties, ctx);
+            if let Some(validators) = dynamic_ref.get() {
+                validators.mark_evaluated_properties(instance, properties, ctx);
+            }
         }
 
         // Process properties on the instance
