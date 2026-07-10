@@ -10,6 +10,7 @@ license.workspace = true
 
 [features]
 arbitrary-precision = ["serde_json/arbitrary_precision"]
+float-roundtrip = ["serde_json/float_roundtrip"]
 bench = []
 
 [dependencies]

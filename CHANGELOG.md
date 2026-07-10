@@ -6,6 +6,10 @@
 
 - `iter_errors` for `#[jsonschema::validator]`-generated validators.
 
+### Changed
+
+- One canonical number spelling from `canonical::json::to_string` under `arbitrary-precision` (`"1e-2"` becomes `"0.01"`, `"1.50"` becomes `"1.5"`) and correctly-rounded float parsing (`serde_json`'s `float_roundtrip`).
+
 ### Performance
 
 - Faster `multipleOf` validation for integer instances with integer divisors, via integer arithmetic instead of floating-point modulo.

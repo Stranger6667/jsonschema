@@ -13,6 +13,7 @@ proc-macro = true
 
 [features]
 arbitrary-precision = ["jsonschema-macros-core/arbitrary-precision"]
+float-roundtrip = ["jsonschema-macros-core/float-roundtrip"]
 
 [dependencies]
 jsonschema-macros-core = { version = "0.47.0", path = "../jsonschema-macros-core" }

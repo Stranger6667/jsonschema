@@ -60,9 +60,9 @@ fn large_integer_valued_float_uses_integer_form() {
 #[test_case("-0E-1000", "0"; "negative_zero")]
 #[test_case("1e+3", "1000"; "positive_exponent")]
 #[test_case("0e+10", "0"; "zero_with_exponent")]
-#[test_case("1e-2", "1e-2"; "fractional_exponent")]
+#[test_case("1e-2", "0.01"; "fractional_exponent")]
 #[test_case("1.25", "1.25"; "fractional_decimal")]
-#[test_case("3.1400e-3", "3.1400e-3"; "fractional_significand")]
+#[test_case("3.1400e-3", "0.00314"; "fractional_significand")]
 fn arbitrary_precision_number_forms(raw: &str, expected: &str) {
     assert_canonical(raw, expected);
 }
