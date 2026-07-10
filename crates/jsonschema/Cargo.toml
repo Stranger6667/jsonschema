@@ -28,7 +28,8 @@ tls-ring = ["rustls/ring"]
 # Support for arbitrarily large integers and exact decimal values when parsing JSON from strings.
 arbitrary-precision = ["serde_json/arbitrary_precision", "dep:num-bigint", "jsonschema-macros?/arbitrary-precision"]
 # The `#[jsonschema::validator]` compile-time validator macro.
-macros = ["dep:jsonschema-macros"]
+# `float-roundtrip` keeps the macro's schema parsing bit-identical to the runtime's.
+macros = ["dep:jsonschema-macros", "jsonschema-macros/float-roundtrip"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Use rustls-no-provider to allow manual selection of crypto backend
@@ -69,7 +70,9 @@ percent-encoding = "2.3"
 referencing = { version = "0.47.0", path = "../jsonschema-referencing" }
 regex = "1.11.1"
 serde.workspace = true
-serde_json.workspace = true
+# `float_roundtrip`: canonical JSON serialization round-trips floats through re-parses downstream.
+# `unbounded_depth`: consumers of canonical text re-parse payloads deeper than serde_json's default limit.
+serde_json = { workspace = true, features = ["float_roundtrip", "unbounded_depth"] }
 tokio = { version = "1", default-features = false, features = ["rt"], optional = true }
 unicode-general-category = "1.1"
 uuid-simd = { version = "0.8", default-features = false, features = ["std", "detect"] }
