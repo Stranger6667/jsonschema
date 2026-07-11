@@ -92,6 +92,8 @@
 //! # Compile-Time Validator Macro
 //!
 //! The `validator` attribute macro (enabled by the `macros` feature) compiles schemas at build time:
+//! Generated validators are significantly faster than runtime validators, so prefer them when the schema is known at
+//! build time.
 //!
 //! ```ignore
 //! // Inline schema
@@ -127,7 +129,6 @@
 //! - `is_valid`, `validate`, and `iter_errors` are generated; `evaluate` is not implemented yet.
 //! - Custom keywords cannot override built-in ones: a `keywords` entry named like a built-in keyword runs in
 //!   addition to the built-in check, not instead of it.
-//! - `anyOf`/`oneOf` errors carry no per-branch sub-error context, unlike the runtime validator.
 //! - When an instance violates several keywords, the first error reported by `validate()` may differ from the runtime
 //!   validator's, since generated checks are not ordered by keyword priority; `is_valid` and validity are unaffected.
 //!
@@ -3572,13 +3573,14 @@ pub mod __private {
             schema_path: &str,
             instance_path: Location,
             instance: &'i Value,
+            context: Vec<Vec<ValidationError<'i>>>,
         ) -> ValidationError<'i> {
             ValidationError::any_of(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance,
-                vec![],
+                context,
             )
         }
 
@@ -3588,13 +3590,14 @@ pub mod __private {
             schema_path: &str,
             instance_path: Location,
             instance: &'i Value,
+            context: Vec<Vec<ValidationError<'i>>>,
         ) -> ValidationError<'i> {
             ValidationError::one_of_not_valid(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance,
-                vec![],
+                context,
             )
         }
 
@@ -3604,13 +3607,14 @@ pub mod __private {
             schema_path: &str,
             instance_path: Location,
             instance: &'i Value,
+            context: Vec<Vec<ValidationError<'i>>>,
         ) -> ValidationError<'i> {
             ValidationError::one_of_multiple_valid(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance,
-                vec![],
+                context,
             )
         }
 

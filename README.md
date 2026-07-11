@@ -44,7 +44,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    // Build-time validator (requires the `macros` feature)
+    // Generated validators are significantly faster than runtime validators,
+    // so prefer them when the schema is known at build time.
+    // Requires the `macros` feature.
     // Inline schema, or `path = "schema.json"` to load from a file
     #[jsonschema::validator(schema = r#"{"maxLength": 5}"#)]
     struct Short;

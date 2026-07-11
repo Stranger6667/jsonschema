@@ -3,4 +3,4 @@ source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"anyOf\":[false,{\"type\":\"string\"}]}"
 expression: is_valid_body(schema)
 ---
-(false || instance.is_string())
+(is_branch_valid_0(instance) || is_branch_valid_1(instance))

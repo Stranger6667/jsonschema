@@ -152,10 +152,206 @@ fn assert_iter_errors_parity<'i>(
         expected.iter().map(ToString::to_string).collect::<Vec<_>>()
     );
     for (generated, expected) in generated.iter().zip(&expected) {
-        assert_eq!(generated.to_string(), expected.to_string());
-        assert_eq!(generated.schema_path(), expected.schema_path());
-        assert_eq!(generated.instance_path(), expected.instance_path());
+        assert_error_parity(generated, expected);
     }
+}
+
+fn error_context(
+    kind: &jsonschema::error::ValidationErrorKind,
+) -> Option<&[Vec<jsonschema::ValidationError<'static>>]> {
+    match kind {
+        jsonschema::error::ValidationErrorKind::AnyOf { context }
+        | jsonschema::error::ValidationErrorKind::OneOfNotValid { context }
+        | jsonschema::error::ValidationErrorKind::OneOfMultipleValid { context } => Some(context),
+        _ => None,
+    }
+}
+
+fn assert_error_parity(
+    generated: &jsonschema::ValidationError<'_>,
+    expected: &jsonschema::ValidationError<'_>,
+) {
+    assert_eq!(generated.to_string(), expected.to_string());
+    assert_eq!(generated.schema_path(), expected.schema_path());
+    assert_eq!(generated.instance_path(), expected.instance_path());
+    assert_eq!(
+        std::mem::discriminant(generated.kind()),
+        std::mem::discriminant(expected.kind())
+    );
+
+    let generated_context = error_context(generated.kind());
+    let expected_context = error_context(expected.kind());
+    assert_eq!(
+        generated_context.map(<[_]>::len),
+        expected_context.map(<[_]>::len)
+    );
+    if let (Some(generated_context), Some(expected_context)) = (generated_context, expected_context)
+    {
+        for (generated_branch, expected_branch) in generated_context.iter().zip(expected_context) {
+            assert_eq!(generated_branch.len(), expected_branch.len());
+            for (generated, expected) in generated_branch.iter().zip(expected_branch) {
+                assert_error_parity(generated, expected);
+            }
+        }
+    }
+}
+
+#[jsonschema::validator(
+    schema = r#"{"anyOf":[{"type":"integer","minimum":10},{"oneOf":[{"type":"string","minLength":3},{"type":"array","minItems":2}]}]}"#
+)]
+struct NestedAnyOfContextValidator;
+
+#[test]
+fn test_nested_any_of_error_context_matches_runtime() {
+    let schema = serde_json::json!({
+        "anyOf": [
+            {"type": "integer", "minimum": 10},
+            {"oneOf": [
+                {"type": "string", "minLength": 3},
+                {"type": "array", "minItems": 2}
+            ]}
+        ]
+    });
+    let instance = serde_json::json!(false);
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+
+    assert_error_parity(
+        &NestedAnyOfContextValidator::validate(&instance).expect_err("invalid instance"),
+        &runtime.validate(&instance).expect_err("invalid instance"),
+    );
+    assert_iter_errors_parity(
+        NestedAnyOfContextValidator::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"oneOf":[{}, {"anyOf":[{"type":"integer"},{"type":"string"}]},{"type":"boolean"}]}"#
+)]
+struct OneOfMultipleValidContextValidator;
+
+#[test]
+fn test_one_of_multiple_valid_error_context_matches_runtime() {
+    let schema = serde_json::json!({
+        "oneOf": [
+            {},
+            {"anyOf": [{"type": "integer"}, {"type": "string"}]},
+            {"type": "boolean"}
+        ]
+    });
+    let instance = serde_json::json!("value");
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+
+    assert_error_parity(
+        &OneOfMultipleValidContextValidator::validate(&instance).expect_err("invalid instance"),
+        &runtime.validate(&instance).expect_err("invalid instance"),
+    );
+    assert_iter_errors_parity(
+        OneOfMultipleValidContextValidator::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r##"{"$defs":{"circle":{"type":"object","required":["kind","radius"],"properties":{"kind":{"const":"circle"},"radius":{"type":"number"}}},"square":{"type":"object","required":["kind","side"],"properties":{"kind":{"const":"square"},"side":{"type":"number"}}}},"oneOf":[{"$ref":"#/$defs/circle"},{"$ref":"#/$defs/square"}]}"##
+)]
+struct OneOfDiscriminatorContextValidator;
+
+#[test]
+fn test_one_of_discriminator_error_context_matches_runtime() {
+    let schema = serde_json::json!({
+        "$defs": {
+            "circle": {
+                "type": "object",
+                "required": ["kind", "radius"],
+                "properties": {"kind": {"const": "circle"}, "radius": {"type": "number"}}
+            },
+            "square": {
+                "type": "object",
+                "required": ["kind", "side"],
+                "properties": {"kind": {"const": "square"}, "side": {"type": "number"}}
+            }
+        },
+        "oneOf": [{"$ref": "#/$defs/circle"}, {"$ref": "#/$defs/square"}]
+    });
+    let instance = serde_json::json!({"kind": "circle", "radius": "large"});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+
+    assert_error_parity(
+        &OneOfDiscriminatorContextValidator::validate(&instance).expect_err("invalid instance"),
+        &runtime.validate(&instance).expect_err("invalid instance"),
+    );
+    assert_iter_errors_parity(
+        OneOfDiscriminatorContextValidator::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"oneOf":[{"type":"object","required":["kind","radius"],"properties":{"kind":{"type":"string","const":"circle","minLength":8},"radius":{"type":"number"}}},{"type":"object","required":["kind"],"properties":{"kind":{"const":"square"}}}]}"#
+)]
+struct OneOfDirectDiscriminatorContextValidator;
+
+#[test]
+fn test_one_of_direct_discriminator_keeps_non_implied_checks_and_context() {
+    let schema = serde_json::json!({
+        "oneOf": [
+            {
+                "type": "object",
+                "required": ["kind", "radius"],
+                "properties": {
+                    "kind": {"type": "string", "const": "circle", "minLength": 8},
+                    "radius": {"type": "number"}
+                }
+            },
+            {
+                "type": "object",
+                "required": ["kind"],
+                "properties": {"kind": {"const": "square"}}
+            }
+        ]
+    });
+    let instance = serde_json::json!({"kind": "circle", "radius": 1});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+
+    assert_error_parity(
+        &OneOfDirectDiscriminatorContextValidator::validate(&instance)
+            .expect_err("invalid instance"),
+        &runtime.validate(&instance).expect_err("invalid instance"),
+    );
+    assert_iter_errors_parity(
+        OneOfDirectDiscriminatorContextValidator::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r##"{"$defs":{"node":{"$dynamicAnchor":"node","type":"integer"}},"anyOf":[{"$dynamicRef":"#node"},{"type":"string"}]}"##
+)]
+struct AnyOfDynamicRefContextValidator;
+
+#[test]
+fn test_any_of_dynamic_ref_error_context_matches_runtime() {
+    let schema = serde_json::json!({
+        "$defs": {"node": {"$dynamicAnchor": "node", "type": "integer"}},
+        "anyOf": [{"$dynamicRef": "#node"}, {"type": "string"}]
+    });
+    let instance = serde_json::json!(false);
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+
+    assert_error_parity(
+        &AnyOfDynamicRefContextValidator::validate(&instance).expect_err("invalid instance"),
+        &runtime.validate(&instance).expect_err("invalid instance"),
+    );
+    assert_iter_errors_parity(
+        AnyOfDynamicRefContextValidator::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
 }
 
 // Asserts that the generated `is_valid` result agrees with the default runtime

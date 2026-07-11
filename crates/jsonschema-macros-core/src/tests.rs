@@ -668,3 +668,46 @@ fn codegen_collect_body_snapshot(schema_json: &str, snap_name: &str) {
         insta::assert_snapshot!(snap_name, collect_body(schema));
     });
 }
+
+#[test]
+fn nested_any_of_context_generation_is_linear() {
+    let nested = |depth| {
+        let mut schema = json!({"type": "integer"});
+        for _ in 0..depth {
+            schema = json!({"anyOf": [schema, {"const": "sentinel"}]});
+        }
+        schema
+    };
+
+    let shallow = schema_to_code(nested(6));
+    let deep = schema_to_code(nested(12));
+    assert_eq!(deep.matches("fn collect_branch_errors_").count(), 24);
+    assert!(deep.len() < shallow.len() * 2);
+}
+
+#[test]
+fn discriminator_branch_helper_reduces_only_validity() {
+    let code = schema_to_code(json!({
+        "oneOf": [
+            {
+                "type": "object",
+                "required": ["kind", "radius"],
+                "properties": {
+                    "kind": {"type": "string", "const": "circle", "minLength": 8},
+                    "radius": {"type": "number"}
+                }
+            },
+            {
+                "type": "object",
+                "required": ["kind"],
+                "properties": {"kind": {"const": "square"}}
+            }
+        ]
+    }));
+    let is_valid = extract_fn_body(&code, "fn is_branch_valid_0");
+    let collect = extract_fn_body(&code, "fn collect_branch_errors_0");
+
+    assert!(!is_valid.contains("circle"));
+    assert!(is_valid.contains(">= 8"));
+    assert!(collect.contains("circle"));
+}

@@ -1,5 +1,6 @@
 use super::{
     super::{
+        compile_schema,
         draft::DraftExt,
         errors::{invalid_schema_expression, invalid_schema_type_expression},
         expr::IsValidExpr,
@@ -44,6 +45,11 @@ pub(in super::super) fn compile(
     let validation_vocab_enabled = ctx.supports_validation_vocabulary();
     let applicator_vocab_enabled = ctx.supports_applicator_vocabulary();
     let unevaluated_properties_enabled = ctx.supports_unevaluated_properties();
+    let discriminator_assumption =
+        ctx.discriminator_assumption()
+            .map(|(property_name, reduced_property)| {
+                (property_name.to_owned(), reduced_property.clone())
+            });
 
     let object_len = crate::codegen::emit_serde::object_len(quote! { obj });
     let mut count_checks: Vec<CompiledExpr> = Vec::new();
@@ -196,6 +202,16 @@ pub(in super::super) fn compile(
         pattern_properties_value,
         additional_properties_schema,
     );
+    let reduced_discriminator_property =
+        discriminator_assumption
+            .as_ref()
+            .map(|(property_name, reduced_property)| {
+                ctx.with_schema_path_segment("properties", |ctx| {
+                    ctx.with_schema_path_segment(property_name, |ctx| {
+                        ctx.with_instance_scope(|ctx| compile_schema(ctx, reduced_property))
+                    })
+                })
+            });
 
     if let Some(pattern_properties_value) =
         pattern_properties_value.filter(|_| additional_properties_fused)
@@ -269,8 +285,25 @@ pub(in super::super) fn compile(
         }
     }
 
-    let unified =
-        object_pass::compile_is_valid(&cluster, additional_properties_schema, &required_fields);
+    let is_valid_required_fields: Vec<_> = required_fields
+        .iter()
+        .copied()
+        .filter(|name| {
+            discriminator_assumption
+                .as_ref()
+                .is_none_or(|(property_name, _)| *name != property_name)
+        })
+        .collect();
+    let reduced_discriminator_property = discriminator_assumption
+        .as_ref()
+        .zip(reduced_discriminator_property.as_ref())
+        .map(|((property_name, _), compiled)| (property_name.as_str(), compiled));
+    let unified = object_pass::compile_is_valid(
+        &cluster,
+        additional_properties_schema,
+        &is_valid_required_fields,
+        reduced_discriminator_property,
+    );
 
     match unified {
         Some(pass) => {

@@ -19,8 +19,4 @@ expression: is_valid_body(schema)
                     })
             }
             _ => false,
-        })
-            && ((!(match instance {
-                serde_json::Value::Object(obj) => obj.contains_key("z"),
-                _ => true,
-            })))
+        }) && ((is_branch_valid_0(instance)))

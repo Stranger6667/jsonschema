@@ -56,7 +56,8 @@ mod __validator_impl {
         }
         None
     }
-    #[inline]
+    #[cold]
+    #[inline(never)]
     fn validate_ref_0_collect_errors<'__i>(
         instance: &'__i serde_json::Value,
         __path: &jsonschema::paths::LazyLocation,
@@ -197,7 +198,8 @@ mod __validator_impl {
         }
         None
     }
-    #[inline]
+    #[cold]
+    #[inline(never)]
     fn validate_ref_1_collect_errors<'__i>(
         instance: &'__i serde_json::Value,
         __path: &jsonschema::paths::LazyLocation,

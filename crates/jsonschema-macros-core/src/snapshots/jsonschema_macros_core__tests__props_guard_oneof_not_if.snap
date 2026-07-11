@@ -57,30 +57,8 @@ expression: is_valid_body(schema)
             _ => false,
         })
             && ({
-                let mut matched = {
-                    static EXPECTED: std::sync::LazyLock<serde_json::Number> = std::sync::LazyLock::new(||
-                    {
-                        serde_json::from_str("1").expect("Failed to parse const number")
-                    });
-                    match instance {
-                        serde_json::Value::Number(n) => {
-                            jsonschema::__private::cmp::equal_numbers(n, &*EXPECTED)
-                        }
-                        _ => false,
-                    }
-                };
-                (if !({
-                    static EXPECTED: std::sync::LazyLock<serde_json::Number> = std::sync::LazyLock::new(||
-                    {
-                        serde_json::from_str("2").expect("Failed to parse const number")
-                    });
-                    match instance {
-                        serde_json::Value::Number(n) => {
-                            jsonschema::__private::cmp::equal_numbers(n, &*EXPECTED)
-                        }
-                        _ => false,
-                    }
-                }) {
+                let mut matched = is_branch_valid_0(instance);
+                (if is_branch_valid_1(instance) {
                     if matched {
                         false
                     } else {
@@ -90,7 +68,7 @@ expression: is_valid_body(schema)
                 } else {
                     true
                 }
-                    && if true {
+                    && if is_branch_valid_2(instance) {
                         if matched {
                             false
                         } else {

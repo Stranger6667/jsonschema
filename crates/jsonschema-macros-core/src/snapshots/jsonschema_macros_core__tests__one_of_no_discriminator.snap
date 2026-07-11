@@ -4,8 +4,8 @@ description: "{\"oneOf\":[{\"type\":\"string\"},{\"type\":\"number\"}]}"
 expression: is_valid_body(schema)
 ---
 {
-            let mut matched = instance.is_string();
-            (if instance.is_number() {
+            let mut matched = is_branch_valid_0(instance);
+            (if is_branch_valid_1(instance) {
                 if matched {
                     false
                 } else {

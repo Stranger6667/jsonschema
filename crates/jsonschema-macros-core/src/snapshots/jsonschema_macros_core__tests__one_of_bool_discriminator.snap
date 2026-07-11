@@ -11,19 +11,9 @@ expression: is_valid_body(schema)
                 _ => None,
             };
             let mut matched = (matches!(__one_of_discriminator, Some(true))
-                && {
-                    match instance {
-                        serde_json::Value::Object(obj) => true,
-                        _ => false,
-                    }
-                });
+                && { is_branch_valid_0(instance) });
             (if (matches!(__one_of_discriminator, Some(false))
-                && {
-                    match instance {
-                        serde_json::Value::Object(obj) => true,
-                        _ => false,
-                    }
-                })
+                && { is_branch_valid_1(instance) })
             {
                 if matched {
                     false

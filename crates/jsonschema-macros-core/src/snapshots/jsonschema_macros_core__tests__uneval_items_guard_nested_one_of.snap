@@ -23,17 +23,4 @@ expression: is_valid_body(schema)
                     })
             }
             _ => false,
-        })
-            && (({
-                let mut matched = true;
-                (if true {
-                    if matched {
-                        false
-                    } else {
-                        matched = true;
-                        true
-                    }
-                } else {
-                    true
-                }) && matched
-            }))
+        }) && ((is_branch_valid_2(instance)))

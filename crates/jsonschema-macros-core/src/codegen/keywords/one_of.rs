@@ -8,7 +8,7 @@ use super::super::{
     CompileContext, CompiledExpr,
 };
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use serde_json::Value;
 
 /// A typed constant value that can serve as a oneOf discriminator.
@@ -77,12 +77,42 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
     let allow_const = ctx.draft.supports_const_keyword();
 
     let mut branch_validations: Vec<TokenStream> = Vec::new();
+    let mut branch_collectors = Vec::with_capacity(schemas.len());
 
     for (idx, schema) in schemas.iter().enumerate() {
         let discriminator_values = discriminator_plan
             .as_ref()
             .and_then(|plan| plan.per_branch_values[idx].as_ref());
-        let branch_validation = if let (Some(plan), Some(discriminator_values)) =
+        let reduced_property = match (&discriminator_plan, discriminator_values) {
+            (Some(plan), Some(values)) => reduce_discriminator_property(
+                schema,
+                &plan.key,
+                values,
+                allow_const,
+                &ctx.config.custom_keywords,
+            ),
+            _ => None,
+        };
+        let compiled = ctx.with_schema_path_segment("oneOf", |ctx| {
+            ctx.with_schema_path_segment(&idx.to_string(), |ctx| {
+                if let (Some(plan), Some(reduced_property)) =
+                    (&discriminator_plan, reduced_property)
+                {
+                    ctx.with_discriminator_assumption(&plan.key, reduced_property, |ctx| {
+                        compile_schema(ctx, schema)
+                    })
+                } else {
+                    compile_schema(ctx, schema)
+                }
+            })
+        });
+        let branch_helper = ctx.register_branch_helper(
+            compiled.is_valid_token_stream(),
+            compiled.collect.as_token_stream(),
+        );
+        branch_collectors.push(format_ident!("collect_branch_errors_{}", branch_helper));
+        let branch_is_valid = format_ident!("is_branch_valid_{}", branch_helper);
+        let branch_validation = if let (Some(_), Some(discriminator_values)) =
             (&discriminator_plan, discriminator_values)
         {
             // Nested or-patterns `Some("a" | "b")` (not `Some("a") | Some("b")`) satisfy
@@ -91,22 +121,12 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
                 .iter()
                 .map(DiscriminatorLiteral::to_inner_token)
                 .collect();
-            let guarded_body = match reduce_discriminated_branch(
-                schema,
-                &plan.key,
-                discriminator_values,
-                allow_const,
-                &ctx.config.custom_keywords,
-            ) {
-                Some(reduced) => compile_schema(ctx, &reduced).is_valid_token_stream(),
-                None => compile_schema(ctx, schema).is_valid_token_stream(),
-            };
             quote! {
                 (matches!(__one_of_discriminator, Some(#(#inner)|*))
-                    && { #guarded_body })
+                    && { #branch_is_valid(instance) })
             }
         } else {
-            compile_schema(ctx, schema).is_valid_token_stream()
+            quote! { #branch_is_valid(instance) }
         };
 
         branch_validations.push(branch_validation);
@@ -167,6 +187,7 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
         }
     };
     let schema_path = ctx.schema_path_for_keyword("oneOf");
+    let branch_count = branch_collectors.len();
 
     CompiledExpr::with_validate_blocks(
         is_valid,
@@ -176,22 +197,29 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
                 let mut __count = 0usize;
                 #(if #branch_validations { __count += 1; })*
                 #validate_correction
-                if __count == 0 {
-                    return Some(jsonschema::__private::error::one_of_not_valid(
-                        #schema_path, __path.into(), instance,
-                    ));
-                }
-                if __count > 1 {
-                    return Some(jsonschema::__private::error::one_of_multiple_valid(
-                        #schema_path, __path.into(), instance,
-                    ));
+                if __count != 1 {
+                    let mut __context = Vec::with_capacity(#branch_count);
+                    #({
+                        let mut __branch_errors = Vec::new();
+                        #branch_collectors(instance, __path, &mut __branch_errors);
+                        __context.push(__branch_errors);
+                    })*
+                    return Some(if __count == 0 {
+                        jsonschema::__private::error::one_of_not_valid(
+                            #schema_path, __path.into(), instance, __context,
+                        )
+                    } else {
+                        jsonschema::__private::error::one_of_multiple_valid(
+                            #schema_path, __path.into(), instance, __context,
+                        )
+                    });
                 }
             }
         },
     )
 }
 
-fn reduce_discriminated_branch(
+fn reduce_discriminator_property(
     schema: &Value,
     key: &str,
     values: &[DiscriminatorLiteral],
@@ -205,16 +233,13 @@ fn reduce_discriminated_branch(
     {
         return None;
     }
-    let mut reduced = schema.clone();
-    let obj = reduced.as_object_mut()?;
-    if let Some(Value::Array(required)) = obj.get_mut("required") {
-        required.retain(|name| name.as_str() != Some(key));
-    }
-    let property = obj
-        .get_mut("properties")?
-        .as_object_mut()?
-        .get_mut(key)?
-        .as_object_mut()?;
+    let mut reduced = schema
+        .as_object()?
+        .get("properties")?
+        .as_object()?
+        .get(key)?
+        .clone();
+    let property = reduced.as_object_mut()?;
     if !(allow_const && property.remove("const").is_some()) {
         property.remove("enum");
     }
