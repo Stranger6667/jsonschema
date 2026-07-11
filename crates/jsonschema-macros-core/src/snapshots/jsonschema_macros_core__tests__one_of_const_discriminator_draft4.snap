@@ -4,42 +4,8 @@ description: "{\"oneOf\":[{\"properties\":{\"k\":{\"const\":\"a\"}},\"required\"
 expression: code
 ---
 {
-            let mut matched = match instance {
-                serde_json::Value::Object(obj) => {
-                    let mut __req_0 = false;
-                    let __object_pass = obj
-                        .iter()
-                        .all(|(key, instance)| {
-                            match key.as_str() {
-                                "k" => {
-                                    __req_0 = true;
-                                }
-                                _ => {}
-                            }
-                            true
-                        });
-                    __object_pass && __req_0
-                }
-                _ => false,
-            };
-            (if match instance {
-                serde_json::Value::Object(obj) => {
-                    let mut __req_0 = false;
-                    let __object_pass = obj
-                        .iter()
-                        .all(|(key, instance)| {
-                            match key.as_str() {
-                                "k" => {
-                                    __req_0 = true;
-                                }
-                                _ => {}
-                            }
-                            true
-                        });
-                    __object_pass && __req_0
-                }
-                _ => false,
-            } {
+            let mut matched = is_branch_valid_0(instance);
+            (if is_branch_valid_1(instance) {
                 if matched {
                     false
                 } else {

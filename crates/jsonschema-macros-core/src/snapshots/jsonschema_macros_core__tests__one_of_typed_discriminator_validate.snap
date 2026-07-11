@@ -12,61 +12,43 @@ expression: validate_body(schema)
             };
             let mut __count = 0usize;
             if (matches!(__one_of_discriminator, Some("circle"))
-                && {
-                    match instance {
-                        serde_json::Value::Object(obj) => {
-                            obj.iter()
-                                .all(|(key, instance)| {
-                                    let key_str = key.as_str();
-                                    match key_str {
-                                        "kind" => true,
-                                        "radius" => instance.is_number(),
-                                        _ => true,
-                                    }
-                                })
-                        }
-                        _ => false,
-                    }
-                })
+                && { is_branch_valid_0(instance) })
             {
                 __count += 1;
             }
             if (matches!(__one_of_discriminator, Some("square"))
-                && {
-                    match instance {
-                        serde_json::Value::Object(obj) => {
-                            obj.iter()
-                                .all(|(key, instance)| {
-                                    let key_str = key.as_str();
-                                    match key_str {
-                                        "kind" => true,
-                                        "side" => instance.is_number(),
-                                        _ => true,
-                                    }
-                                })
-                        }
-                        _ => false,
-                    }
-                })
+                && { is_branch_valid_1(instance) })
             {
                 __count += 1;
             }
-            if __count == 0 {
+            if __count != 1 {
+                let mut __context = Vec::with_capacity(2usize);
+                {
+                    let mut __branch_errors = Vec::new();
+                    collect_branch_errors_0(instance, __path, &mut __branch_errors);
+                    __context.push(__branch_errors);
+                }
+                {
+                    let mut __branch_errors = Vec::new();
+                    collect_branch_errors_1(instance, __path, &mut __branch_errors);
+                    __context.push(__branch_errors);
+                }
                 return Some(
-                    jsonschema::__private::error::one_of_not_valid(
-                        "/oneOf",
-                        __path.into(),
-                        instance,
-                    ),
-                );
-            }
-            if __count > 1 {
-                return Some(
-                    jsonschema::__private::error::one_of_multiple_valid(
-                        "/oneOf",
-                        __path.into(),
-                        instance,
-                    ),
+                    if __count == 0 {
+                        jsonschema::__private::error::one_of_not_valid(
+                            "/oneOf",
+                            __path.into(),
+                            instance,
+                            __context,
+                        )
+                    } else {
+                        jsonschema::__private::error::one_of_multiple_valid(
+                            "/oneOf",
+                            __path.into(),
+                            instance,
+                            __context,
+                        )
+                    },
                 );
             }
         }

@@ -323,12 +323,13 @@ pub(crate) fn compile_is_valid(
     cluster: &ClusterSubschemas<'_>,
     additional_properties: Option<&Value>,
     required_names: &[&str],
+    reduced_discriminator_property: Option<(&str, &CompiledExpr)>,
 ) -> Option<TokenStream> {
     let has_properties = !cluster.properties.is_empty();
     let has_patterns = !cluster.patterns.is_empty();
     // Merging is worthwhile when patternProperties is present, or when `required`
     // can piggyback on a pass that already scans every key.
-    if !has_patterns && required_names.is_empty() {
+    if !has_patterns && required_names.is_empty() && reduced_discriminator_property.is_none() {
         return None;
     }
 
@@ -374,6 +375,9 @@ pub(crate) fn compile_is_valid(
 
     let mut match_arms: Vec<TokenStream> = Vec::new();
     for (name_str, check) in &cluster.properties {
+        let check = reduced_discriminator_property
+            .filter(|(property_name, _)| property_name == name_str)
+            .map_or(check, |(_, reduced)| reduced);
         let set_req = req_ident(name_str).map(|id| quote! { #id = true; });
         if check.is_trivially_true() {
             match_arms.push(quote! { #name_str => { #set_req #set_covered } });

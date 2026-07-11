@@ -25,14 +25,8 @@ expression: is_valid_body(schema)
             _ => false,
         })
             && ({
-                let mut matched = match instance {
-                    serde_json::Value::Object(obj) => obj.contains_key("a"),
-                    _ => true,
-                };
-                (if match instance {
-                    serde_json::Value::Object(obj) => obj.contains_key("b"),
-                    _ => true,
-                } {
+                let mut matched = is_branch_valid_0(instance);
+                (if is_branch_valid_1(instance) {
                     if matched {
                         false
                     } else {

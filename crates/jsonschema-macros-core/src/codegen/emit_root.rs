@@ -167,13 +167,40 @@ pub(super) fn emit_root_module(
                 ) -> Option<jsonschema::ValidationError<'__i>> {
                     #validate_body
                 }
-                #[inline]
+                #[cold]
+                #[inline(never)]
                 fn #collect_ident<'__i>(
                     instance: &'__i #value_ty,
                     __path: &jsonschema::paths::LazyLocation,
                     __errors: &mut Vec<jsonschema::ValidationError<'__i>>,
                 ) {
                     #collect_body
+                }
+            }
+        })
+        .collect();
+
+    let branch_context_needed = !ctx.branch_helpers.is_empty();
+    let branch_helpers: Vec<TokenStream> = ctx
+        .branch_helpers
+        .iter()
+        .enumerate()
+        .map(|(idx, (is_valid, collect))| {
+            let is_valid_ident = format_ident!("is_branch_valid_{}", idx);
+            let collect_ident = format_ident!("collect_branch_errors_{}", idx);
+            quote! {
+                #[inline]
+                fn #is_valid_ident(instance: &#value_ty) -> bool {
+                    #is_valid
+                }
+                #[cold]
+                #[inline(never)]
+                fn #collect_ident<'__i>(
+                    instance: &'__i #value_ty,
+                    __path: &jsonschema::paths::LazyLocation,
+                    __errors: &mut Vec<jsonschema::ValidationError<'__i>>,
+                ) {
+                    #collect
                 }
             }
         })
@@ -388,6 +415,7 @@ pub(super) fn emit_root_module(
 
     let validate_fns = {
         let validate_ident = format_ident!("validate");
+        let collect_ident = format_ident!("collect_errors");
         let validate_body = if recursive_stack_needed || dynamic_stack_needed {
             // Push to bool recursive stack (for sub-calls that use bool form).
             // Also push validate to the validate recursive stack so $recursiveRef
@@ -402,6 +430,16 @@ pub(super) fn emit_root_module(
             } else {
                 quote! {}
             };
+            let recursive_collect_push = if recursive_stack_needed && branch_context_needed {
+                push_recursive_collect(&collect_ident, root_recursive_anchor)
+            } else {
+                quote! {}
+            };
+            let recursive_collect_pop = if recursive_stack_needed && branch_context_needed {
+                pop_recursive_collect()
+            } else {
+                quote! {}
+            };
             let dynamic_validate_push = if dynamic_stack_needed {
                 quote! { #(#root_dynamic_validate_pushes)* }
             } else {
@@ -412,19 +450,33 @@ pub(super) fn emit_root_module(
             } else {
                 quote! {}
             };
+            let dynamic_collect_push = if dynamic_stack_needed && branch_context_needed {
+                quote! { #(#root_dynamic_collect_pushes)* }
+            } else {
+                quote! {}
+            };
+            let dynamic_collect_pop = if dynamic_stack_needed && branch_context_needed {
+                pop_dynamic_collect_n(root_dynamic_binding_count)
+            } else {
+                quote! {}
+            };
             // validate_stmts may contain early `return Some(...)`, so wrap in an IIFE
             // to ensure the stack is always popped even on early return.
             quote! {
                 #recursive_push
                 #recursive_validate_push
+                #recursive_collect_push
                 #dynamic_push
                 #dynamic_validate_push
+                #dynamic_collect_push
                 let __result = (|| -> Option<jsonschema::ValidationError<'__i>> {
                     #validate_stmts
                     None
                 })();
+                #dynamic_collect_pop
                 #dynamic_validate_pop
                 #dynamic_pop
+                #recursive_collect_pop
                 #recursive_validate_pop
                 #recursive_pop
                 __result
@@ -524,6 +576,7 @@ pub(super) fn emit_root_module(
             #recursive_stack
             #uri_cache_defs
             #(#regex_helpers)*
+            #(#branch_helpers)*
             #(#is_valid_fns)*
             #(#key_eval_fns)*
             #(#item_eval_fns)*

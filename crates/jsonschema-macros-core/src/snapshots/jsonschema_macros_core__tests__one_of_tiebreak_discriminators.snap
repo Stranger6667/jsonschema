@@ -25,79 +25,9 @@ expression: is_valid_body(schema)
                 _ => None,
             };
             let mut matched = (matches!(__one_of_discriminator, Some(1i64))
-                && {
-                    match instance {
-                        serde_json::Value::Object(obj) => {
-                            let mut __req_0 = false;
-                            let __object_pass = obj
-                                .iter()
-                                .all(|(key, instance)| {
-                                    match key.as_str() {
-                                        "a" => {}
-                                        "b" => {
-                                            if !({
-                                                static EXPECTED: std::sync::LazyLock<serde_json::Number> = std::sync::LazyLock::new(||
-                                                {
-                                                    serde_json::from_str("3")
-                                                        .expect("Failed to parse const number")
-                                                });
-                                                match instance {
-                                                    serde_json::Value::Number(n) => {
-                                                        jsonschema::__private::cmp::equal_numbers(n, &*EXPECTED)
-                                                    }
-                                                    _ => false,
-                                                }
-                                            }) {
-                                                return false;
-                                            }
-                                            __req_0 = true;
-                                        }
-                                        _ => {}
-                                    }
-                                    true
-                                });
-                            __object_pass && __req_0
-                        }
-                        _ => false,
-                    }
-                });
+                && { is_branch_valid_0(instance) });
             (if (matches!(__one_of_discriminator, Some(2i64))
-                && {
-                    match instance {
-                        serde_json::Value::Object(obj) => {
-                            let mut __req_0 = false;
-                            let __object_pass = obj
-                                .iter()
-                                .all(|(key, instance)| {
-                                    match key.as_str() {
-                                        "a" => {}
-                                        "b" => {
-                                            if !({
-                                                static EXPECTED: std::sync::LazyLock<serde_json::Number> = std::sync::LazyLock::new(||
-                                                {
-                                                    serde_json::from_str("4")
-                                                        .expect("Failed to parse const number")
-                                                });
-                                                match instance {
-                                                    serde_json::Value::Number(n) => {
-                                                        jsonschema::__private::cmp::equal_numbers(n, &*EXPECTED)
-                                                    }
-                                                    _ => false,
-                                                }
-                                            }) {
-                                                return false;
-                                            }
-                                            __req_0 = true;
-                                        }
-                                        _ => {}
-                                    }
-                                    true
-                                });
-                            __object_pass && __req_0
-                        }
-                        _ => false,
-                    }
-                })
+                && { is_branch_valid_1(instance) })
             {
                 if matched {
                     false

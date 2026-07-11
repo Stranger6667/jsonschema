@@ -19,8 +19,8 @@ expression: is_valid_body(schema)
             _ => false,
         })
             && ({
-                let mut matched = true;
-                (if true {
+                let mut matched = is_branch_valid_0(instance);
+                (if is_branch_valid_1(instance) {
                     if matched {
                         false
                     } else {

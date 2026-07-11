@@ -216,6 +216,9 @@ pub(crate) struct CompileContext<'cfg> {
     pub(crate) key_eval_fns: FnTable,
     /// Per-subschema `unevaluatedItems` checks: is a given array index evaluated?
     pub(crate) item_eval_fns: FnTable,
+    /// Applicator branches emitted once as paired validity and error-collection helpers.
+    pub(crate) branch_helpers: Vec<(TokenStream, TokenStream)>,
+    discriminator_assumption: Option<DiscriminatorAssumption>,
     pub(crate) dynamic_anchor_bindings_cache:
         HashMap<String, Vec<crate::codegen::DynamicAnchorBinding>>,
     pub(crate) dynamic_anchor_bindings_being_compiled: HashSet<String>,
@@ -250,6 +253,8 @@ impl<'cfg> CompileContext<'cfg> {
             is_valid_fns: FnTable::new("validate_ref"),
             key_eval_fns: FnTable::new("eval_ref"),
             item_eval_fns: FnTable::new("eval_items_ref"),
+            branch_helpers: Vec::new(),
+            discriminator_assumption: None,
             dynamic_anchor_bindings_cache: HashMap::new(),
             dynamic_anchor_bindings_being_compiled: HashSet::new(),
             regex_to_helper: HashMap::new(),
@@ -268,6 +273,47 @@ impl<'cfg> CompileContext<'cfg> {
             uri_format_caches: BTreeSet::new(),
             schema_path: String::new(),
         }
+    }
+
+    pub(crate) fn register_branch_helper(
+        &mut self,
+        is_valid: TokenStream,
+        collect: TokenStream,
+    ) -> usize {
+        let idx = self.branch_helpers.len();
+        self.branch_helpers.push((is_valid, collect));
+        idx
+    }
+
+    pub(crate) fn with_discriminator_assumption<T>(
+        &mut self,
+        property_name: &str,
+        reduced_property: serde_json::Value,
+        f: impl FnOnce(&mut CompileContext<'cfg>) -> T,
+    ) -> T {
+        let assumption = DiscriminatorAssumption {
+            schema_path: self.schema_path.clone(),
+            property_name: property_name.to_owned(),
+            reduced_property,
+        };
+        let previous = self.discriminator_assumption.replace(assumption);
+        let mut scope = DiscriminatorAssumptionGuard {
+            ctx: self,
+            previous,
+        };
+        f(&mut scope)
+    }
+
+    pub(crate) fn discriminator_assumption(&self) -> Option<(&str, &serde_json::Value)> {
+        self.discriminator_assumption
+            .as_ref()
+            .filter(|assumption| assumption.schema_path == self.schema_path)
+            .map(|assumption| {
+                (
+                    assumption.property_name.as_str(),
+                    &assumption.reduced_property,
+                )
+            })
     }
 
     pub(crate) fn with_schema_scope<T>(
@@ -446,6 +492,12 @@ impl<'cfg> CompileContext<'cfg> {
     }
 }
 
+struct DiscriminatorAssumption {
+    schema_path: String,
+    property_name: String,
+    reduced_property: serde_json::Value,
+}
+
 pub(crate) struct SchemaDepthGuard<'a, 'cfg> {
     ctx: &'a mut CompileContext<'cfg>,
 }
@@ -461,6 +513,19 @@ impl Drop for SchemaDepthGuard<'_, '_> {
 pub(crate) struct BaseUriGuard<'a, 'cfg> {
     ctx: &'a mut CompileContext<'cfg>,
     prev_base_uri: Arc<Uri<String>>,
+}
+
+pub(crate) struct DiscriminatorAssumptionGuard<'a, 'cfg> {
+    ctx: &'a mut CompileContext<'cfg>,
+    previous: Option<DiscriminatorAssumption>,
+}
+
+impl_scope_guard!(DiscriminatorAssumptionGuard);
+
+impl Drop for DiscriminatorAssumptionGuard<'_, '_> {
+    fn drop(&mut self) {
+        self.ctx.discriminator_assumption = self.previous.take();
+    }
 }
 
 impl_scope_guard!(BaseUriGuard);

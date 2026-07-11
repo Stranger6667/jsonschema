@@ -11,9 +11,9 @@ expression: is_valid_body(schema)
                 _ => None,
             };
             let mut matched = (matches!(__one_of_discriminator, Some("a"))
-                && { validate_ref_0(instance) });
+                && { is_branch_valid_0(instance) });
             (if (matches!(__one_of_discriminator, Some("b"))
-                && { validate_ref_1(instance) })
+                && { is_branch_valid_1(instance) })
             {
                 if matched {
                     false
