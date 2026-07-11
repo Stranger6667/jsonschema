@@ -8,8 +8,7 @@ use proc_macro::TokenStream;
 /// - `pub fn is_valid(instance: &serde_json::Value) -> bool`
 /// - `pub fn validate(instance: &Value) -> Result<(), jsonschema::ValidationError<'_>>`
 /// - `pub fn iter_errors(instance: &Value) -> jsonschema::ErrorIterator<'_>`
-///
-/// The `evaluate` method is not implemented yet.
+/// - `pub fn evaluate(instance: &Value) -> jsonschema::Evaluation`
 ///
 /// Schema errors are emitted as regular Rust compile errors.
 ///

@@ -60,6 +60,17 @@ fn generate_nested_structure(
 
                     let schema =
                         serde_json::to_string(&case.schema).expect("Can't serialize JSON");
+                    let mut generated_schema = case.schema.clone();
+                    if let Some(schema) = generated_schema.as_object_mut() {
+                        schema.insert(
+                            "$schema".to_owned(),
+                            serde_json::Value::String(
+                                "https://json-schema.org/draft/2020-12/schema".to_owned(),
+                            ),
+                        );
+                    }
+                    let generated_schema = serde_json::to_string(&generated_schema)
+                        .expect("Can't serialize generated schema");
                     let case_description = &case.description;
 
                     let test_functions = case.tests.iter().map(|test| {
@@ -98,6 +109,9 @@ fn generate_nested_structure(
                             #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
                             #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen_test::wasm_bindgen_test)]
                             fn #test_ident() {
+                                let data: serde_json::Value = serde_json::from_str(#data)
+                                    .expect("Failed to load JSON");
+                                let generated = GeneratedValidator::evaluate(&data);
                                 let test = testsuite::OutputTest {
                                     version: #version,
                                     file: #file_display,
@@ -105,10 +119,13 @@ fn generate_nested_structure(
                                         .expect("Failed to load JSON"),
                                     case: #case_description,
                                     description: #test_description,
-                                    data: serde_json::from_str(#data)
-                                        .expect("Failed to load JSON"),
+                                    data,
                                     outputs: vec![#(#outputs),*],
                                     remotes: #remotes_ident,
+                                    generated_list: serde_json::to_value(generated.list())
+                                        .expect("generated list output should serialize"),
+                                    generated_hierarchical: serde_json::to_value(generated.hierarchical())
+                                        .expect("generated hierarchical output should serialize"),
                                 };
                                 inner_test(test);
                             }
@@ -118,6 +135,12 @@ fn generate_nested_structure(
                     quote! {
                         mod #module_ident {
                             use super::*;
+
+                            #[jsonschema::validator(
+                                schema = #generated_schema,
+                                draft = referencing::Draft::Draft202012
+                            )]
+                            struct GeneratedValidator;
 
                             #(#test_functions)*
                         }

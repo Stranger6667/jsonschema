@@ -9,7 +9,7 @@ use serde_json::Value;
 fn pattern_check(schema_path: &str, pattern: &str, check: TokenStream) -> CompiledExpr {
     let validate = quote! {
         if !(#check) {
-            return Some(jsonschema::__private::error::pattern(
+            return Some(__err::pattern(
                 #schema_path, __path.into(), instance, #pattern,
             ));
         }

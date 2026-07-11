@@ -77,13 +77,13 @@ pub(crate) fn compile(
                     match #convert(s) {
                         Ok(Some(__decoded)) => {
                             if !#media_check(&__decoded) {
-                                return Some(jsonschema::__private::error::content_media_type(
+                                return Some(__err::content_media_type(
                                     #media_path, __path.into(), instance, #media_name,
                                 ));
                             }
                         }
                         Ok(None) => {
-                            return Some(jsonschema::__private::error::content_encoding(
+                            return Some(__err::content_encoding(
                                 #encoding_path, __path.into(), instance, #encoding_name,
                             ));
                         }
@@ -96,7 +96,7 @@ pub(crate) fn compile(
                 quote! { #media_check(s) },
                 quote! {
                     if !#media_check(s) {
-                        return Some(jsonschema::__private::error::content_media_type(
+                        return Some(__err::content_media_type(
                             #media_path, __path.into(), instance, #media_name,
                         ));
                     }
@@ -113,7 +113,7 @@ pub(crate) fn compile(
             quote! { #check(s) },
             quote! {
                 if !#check(s) {
-                    return Some(jsonschema::__private::error::content_encoding(
+                    return Some(__err::content_encoding(
                         #encoding_path, __path.into(), instance, #encoding_name,
                     ));
                 }

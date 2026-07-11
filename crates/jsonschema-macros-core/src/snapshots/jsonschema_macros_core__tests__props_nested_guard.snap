@@ -4,13 +4,12 @@ description: "{\"anyOf\":[{\"allOf\":[{\"properties\":{\"a\":{}}}],\"not\":{\"re
 expression: is_valid_body(schema)
 ---
 (match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 obj.iter()
                     .all(|(__key, __value)| {
                         let key_str = __key.as_str();
-                        if (|instance: &serde_json::Value| validate_ref_0(
-                            instance,
-                        ))(instance) && (matches!(key_str, "a"))
+                        if (|instance: &__Value| validate_ref_0(instance))(instance)
+                            && (matches!(key_str, "a"))
                         {
                             true
                         } else {

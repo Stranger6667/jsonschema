@@ -4,6 +4,6 @@ description: "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"depende
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Object(obj) => true,
+            __Value::Object(obj) => true,
             _ => false,
         }

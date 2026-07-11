@@ -10,7 +10,7 @@ pub(crate) fn compile(ctx: &CompileContext<'_>, value: &Value) -> Option<Compile
                 quote! { jsonschema::__private::unique_items::is_unique(arr) },
                 quote! {
                     if !jsonschema::__private::unique_items::is_unique(arr) {
-                        return Some(jsonschema::__private::error::unique_items(
+                        return Some(__err::unique_items(
                             #schema_path, __path.into(), instance,
                         ));
                     }

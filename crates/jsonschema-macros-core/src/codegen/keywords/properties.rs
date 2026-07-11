@@ -90,7 +90,7 @@ pub(crate) fn compile(
         // first unexpected key inline, so its error interleaves with covered-value errors in one pass.
         let wildcard_validate = if use_known_keys_precheck {
             quote! {
-                return Some(jsonschema::__private::error::additional_properties(
+                return Some(__err::additional_properties(
                     #additional_properties_path, __path.into(), instance, vec![key.clone()],
                 ));
             }
@@ -197,7 +197,7 @@ fn build_collect_block(
                 }
             }
             if !__unexpected.is_empty() {
-                __errors.push(jsonschema::__private::error::additional_properties(
+                __errors.push(__err::additional_properties(
                     #additional_properties_path, __path.into(), instance, __unexpected,
                 ));
             }

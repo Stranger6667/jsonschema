@@ -3,12 +3,24 @@ use quote::{format_ident, quote};
 use std::collections::HashSet;
 use syn::{parse_macro_input, ItemFn};
 
+mod annotation_generator;
 mod generator;
 mod idents;
 mod loader;
 mod output_generator;
 mod output_loader;
 mod remotes;
+
+/// A procedural macro that generates validators for the annotation test suite.
+#[proc_macro_attribute]
+pub fn annotation_suite(args: TokenStream, input: TokenStream) -> TokenStream {
+    let config = parse_macro_input!(args as testsuite::SuiteConfig);
+    let test_func = parse_macro_input!(input as ItemFn);
+    match annotation_generator::generate(&config.path, &test_func) {
+        Ok(output) => output.into(),
+        Err(error) => compile_error_ts(error),
+    }
+}
 
 /// A procedural macro that generates tests from
 /// [JSON-Schema-Test-Suite](https://github.com/json-schema-org/JSON-Schema-Test-Suite).

@@ -4,9 +4,7 @@ description: "{\"minLength\":2,\"type\":[\"string\",\"integer\"]}"
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::String(s) => (s.chars().count() as u64) >= 2,
-            serde_json::Value::Number(
-                n,
-            ) if jsonschema::__private::types::is_integer(n) => true,
+            __Value::String(s) => (s.chars().count() as u64) >= 2,
+            __Value::Number(n) if __types::is_integer(n) => true,
             _ => false,
         }

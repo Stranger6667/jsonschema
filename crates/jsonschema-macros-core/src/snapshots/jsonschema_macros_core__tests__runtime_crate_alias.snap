@@ -1,81 +1,181 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 329
 description: "{\"minLength\":1,\"type\":\"string\"}"
 expression: code
 ---
 struct Validator;
 #[doc(hidden)]
-#[allow(non_snake_case, dead_code, unused_variables, unreachable_code, clippy::all)]
+#[allow(
+    non_snake_case,
+    dead_code,
+    unused_imports,
+    unused_variables,
+    unreachable_code,
+    clippy::all
+)]
 mod __validator_impl {
     use super::*;
     use ::js as jsonschema;
-    pub(super) fn is_valid(instance: &serde_json::Value) -> bool {
+    use jsonschema::__private::error as __err;
+    use jsonschema::__private::evaluation as __eval;
+    use jsonschema::__private::types as __types;
+    use jsonschema::paths as __paths;
+    use jsonschema::JsonType as __JT;
+    use jsonschema::JsonTypeSet as __JTS;
+    use jsonschema::ValidationError as __VE;
+    use serde_json::Value as __Value;
+    use std::sync::LazyLock as __Lazy;
+    type __Map = serde_json::Map<String, __Value>;
+    static __JSONSCHEMA_SP_0: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle("", "", false)
+    });
+    static __JSONSCHEMA_SP_1: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle("/type", "/type", false)
+    });
+    static __JSONSCHEMA_SP_2: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle("/minLength", "/minLength", false)
+    });
+    fn evaluate_ref_0(
+        instance: &__Value,
+        __path: &__paths::LazyLocation,
+        __il: &__paths::Location,
+        __eval_path: &str,
+    ) -> __eval::Node {
+        let __schema_path = "";
+        let __result = __eval::root_schema_location(
+            {
+                let mut __children = Vec::with_capacity(2usize);
+                {
+                    let __keyword_schema_path = "/type";
+                    let mut __collected_errors = Vec::new();
+                    let __errors = &mut __collected_errors;
+                    if !(instance.is_string()) {
+                        __errors
+                            .push(
+                                __err::single_type(
+                                    "/type",
+                                    __path.into(),
+                                    instance,
+                                    __JT::String,
+                                ),
+                            );
+                    }
+                    __children
+                        .push(
+                            __eval::node_at(
+                                __eval_path,
+                                &__JSONSCHEMA_SP_1,
+                                __il.clone(),
+                                __collected_errors,
+                                None,
+                                Vec::new(),
+                            ),
+                        );
+                }
+                {
+                    let __keyword_schema_path = "/minLength";
+                    let mut __collected_errors = Vec::new();
+                    let __errors = &mut __collected_errors;
+                    match instance {
+                        __Value::String(s) => {
+                            if !(!s.is_empty()) {
+                                __errors
+                                    .push(
+                                        __err::min_length("/minLength", __path.into(), instance, 1),
+                                    );
+                            }
+                        }
+                        _ => {}
+                    }
+                    __children
+                        .push(
+                            __eval::node_at(
+                                __eval_path,
+                                &__JSONSCHEMA_SP_2,
+                                __il.clone(),
+                                __collected_errors,
+                                None,
+                                Vec::new(),
+                            ),
+                        );
+                }
+                __eval::node_at(
+                    __eval_path,
+                    &__JSONSCHEMA_SP_0,
+                    __il.clone(),
+                    Vec::new(),
+                    None,
+                    __children,
+                )
+            },
+            "",
+        );
+        __result
+    }
+    pub(super) fn is_valid(instance: &__Value) -> bool {
         match instance {
-            serde_json::Value::String(s) => !s.is_empty(),
+            __Value::String(s) => !s.is_empty(),
             _ => false,
         }
     }
     pub(super) fn validate<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-    ) -> Option<jsonschema::ValidationError<'__i>> {
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+    ) -> Option<__VE<'__i>> {
         match instance {
-            serde_json::Value::String(s) => {
+            __Value::String(s) => {
                 if !(!s.is_empty()) {
                     return Some(
-                        jsonschema::__private::error::min_length(
-                            "/minLength",
-                            __path.into(),
-                            instance,
-                            1,
-                        ),
+                        __err::min_length("/minLength", __path.into(), instance, 1),
                     );
                 }
             }
             _ => {
                 return Some(
-                    jsonschema::__private::error::single_type(
-                        "/type",
-                        __path.into(),
-                        instance,
-                        jsonschema::JsonType::String,
-                    ),
+                    __err::single_type("/type", __path.into(), instance, __JT::String),
                 );
             }
         }
         None
     }
     pub(super) fn collect_errors<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-        __errors: &mut Vec<jsonschema::ValidationError<'__i>>,
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
     ) {
         match instance {
-            serde_json::Value::String(s) => {
+            __Value::String(s) => {
                 if !(!s.is_empty()) {
                     __errors
                         .push(
-                            jsonschema::__private::error::min_length(
-                                "/minLength",
-                                __path.into(),
-                                instance,
-                                1,
-                            ),
+                            __err::min_length("/minLength", __path.into(), instance, 1),
                         );
                 }
             }
             _ => {
                 __errors
                     .push(
-                        jsonschema::__private::error::single_type(
+                        __err::single_type(
                             "/type",
                             __path.into(),
                             instance,
-                            jsonschema::JsonType::String,
+                            __JT::String,
                         ),
                     );
             }
         }
+    }
+    pub(super) fn evaluate(instance: &__Value) -> jsonschema::Evaluation {
+        let __result = {
+            let __root_path = __paths::LazyLocation::new();
+            let __path = &__root_path;
+            let __root_il = __paths::Location::new();
+            let __il = &__root_il;
+            let __schema_path = "";
+            __eval::finish(evaluate_ref_0(instance, __path, __il, ""))
+        };
+        __result
     }
 }
 impl Validator {
@@ -100,5 +200,8 @@ impl Validator {
             &mut errors,
         );
         ::js::__private::error::iterator_from(errors)
+    }
+    pub fn evaluate(instance: &serde_json::Value) -> ::js::Evaluation {
+        __validator_impl::evaluate(instance)
     }
 }

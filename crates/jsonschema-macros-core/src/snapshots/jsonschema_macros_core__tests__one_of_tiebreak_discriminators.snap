@@ -5,7 +5,7 @@ expression: is_valid_body(schema)
 ---
 {
             let __one_of_discriminator = match instance {
-                serde_json::Value::Object(obj) => {
+                __Value::Object(obj) => {
                     obj.get("a")
                         .and_then(|value| {
                             value

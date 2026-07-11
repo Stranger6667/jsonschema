@@ -36,11 +36,24 @@ fn run_output_case(test: OutputTest) {
         data,
         outputs,
         remotes,
+        generated_list,
+        generated_hierarchical,
     } = test;
 
     let prepared_schema = prepare_schema_for_version(&schema, version);
     let validator = build_validator(&prepared_schema, version, file);
     let evaluation = validator.evaluate(&data);
+    assert_eq!(
+        generated_list,
+        serde_json::to_value(evaluation.list()).expect("runtime list output should serialize"),
+        "generated list output differs for {file} (case: `{case}`, test: `{description}`)",
+    );
+    assert_eq!(
+        generated_hierarchical,
+        serde_json::to_value(evaluation.hierarchical())
+            .expect("runtime hierarchical output should serialize"),
+        "generated hierarchical output differs for {file} (case: `{case}`, test: `{description}`)",
+    );
     let retriever = output_schema_retriever(remotes);
 
     for expected in outputs {

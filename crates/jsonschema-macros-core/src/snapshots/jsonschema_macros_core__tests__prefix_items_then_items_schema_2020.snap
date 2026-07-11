@@ -4,16 +4,14 @@ description: "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"it
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Array(arr) => {
+            __Value::Array(arr) => {
                 (arr.iter().skip(1usize).all(|instance| instance.is_string()))
                     && (arr
                         .get(0usize)
                         .map_or(
                             true,
                             |instance| match instance {
-                                serde_json::Value::Number(n) => {
-                                    jsonschema::__private::types::is_integer(n)
-                                }
+                                __Value::Number(n) => __types::is_integer(n),
                                 _ => false,
                             },
                         ))

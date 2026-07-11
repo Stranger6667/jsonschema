@@ -15,7 +15,7 @@ pub(crate) fn validates_formats_by_default(draft: Draft) -> bool {
 fn format_check(schema_path: &str, format_name: &str, check: TokenStream) -> CompiledExpr {
     let validate = quote! {
         if !(#check) {
-            return Some(jsonschema::__private::error::format(
+            return Some(__err::format(
                 #schema_path, __path.into(), instance, #format_name,
             ));
         }
@@ -114,6 +114,11 @@ fn compile_builtin_format_check(
         }
         _ => None,
     }
+}
+
+pub(crate) fn is_known(ctx: &CompileContext<'_>, format_name: &str) -> bool {
+    ctx.config.custom_formats.contains_key(format_name)
+        || compile_builtin_format_check(ctx, format_name).is_some()
 }
 
 pub(crate) fn format_emits_assertion(ctx: &CompileContext<'_>, value: &Value) -> bool {

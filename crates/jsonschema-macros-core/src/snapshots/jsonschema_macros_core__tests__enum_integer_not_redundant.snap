@@ -4,14 +4,13 @@ description: "{\"enum\":[1.5],\"type\":\"integer\"}"
 expression: is_valid_body(schema)
 ---
 (match instance {
-            serde_json::Value::Number(n) => jsonschema::__private::types::is_integer(n),
+            __Value::Number(n) => __types::is_integer(n),
             _ => false,
         })
             && (match instance {
-                serde_json::Value::Number(_) => {
-                    static NUMBER_VARIANTS: std::sync::LazyLock<
-                        Vec<serde_json::Value>,
-                    > = std::sync::LazyLock::new(|| {
+                __Value::Number(_) => {
+                    static NUMBER_VARIANTS: __Lazy<Vec<serde_json::Value>> = __Lazy::new(||
+                    {
                         serde_json::from_str::<Vec<serde_json::Value>>("[1.5]")
                             .expect("Failed to parse number variants")
                     });

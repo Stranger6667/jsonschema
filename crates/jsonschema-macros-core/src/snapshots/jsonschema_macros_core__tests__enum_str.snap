@@ -4,6 +4,6 @@ description: "{\"enum\":[\"a\",\"b\",\"c\"]}"
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::String(s) => matches!(s.as_str(), "a" | "b" | "c"),
+            __Value::String(s) => matches!(s.as_str(), "a" | "b" | "c"),
             _ => false,
         }

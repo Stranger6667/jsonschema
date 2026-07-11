@@ -4,12 +4,12 @@ description: "{\"$defs\":{\"s\":{\"minProperties\":1}},\"propertyNames\":{\"$ref
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 obj.keys()
                     .all(|key| {
-                        (|instance: &serde_json::Value| validate_ref_0(
+                        (|instance: &__Value| validate_ref_0(
                             instance,
-                        ))(&serde_json::Value::String(key.clone()))
+                        ))(&__Value::String(key.clone()))
                     })
             }
             _ => false,

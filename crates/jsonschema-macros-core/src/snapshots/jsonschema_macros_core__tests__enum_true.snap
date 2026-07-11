@@ -4,6 +4,6 @@ description: "{\"enum\":[true]}"
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Bool(b) => *b,
+            __Value::Bool(b) => *b,
             _ => false,
         }

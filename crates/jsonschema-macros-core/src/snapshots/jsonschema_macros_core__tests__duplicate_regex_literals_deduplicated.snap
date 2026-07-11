@@ -1,18 +1,35 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 344
 description: "{\"additionalProperties\":false,\"patternProperties\":{\"^[a-z]{2,}$\":{\"type\":\"string\"}},\"propertyNames\":{\"pattern\":\"^[a-z]{2,}$\"},\"type\":\"object\"}"
 expression: code
 ---
 struct Validator;
 #[doc(hidden)]
-#[allow(non_snake_case, dead_code, unused_variables, unreachable_code, clippy::all)]
+#[allow(
+    non_snake_case,
+    dead_code,
+    unused_imports,
+    unused_variables,
+    unreachable_code,
+    clippy::all
+)]
 mod __validator_impl {
     use super::*;
+    use jsonschema::__private::error as __err;
+    use jsonschema::__private::evaluation as __eval;
+    use jsonschema::__private::types as __types;
+    use jsonschema::paths as __paths;
+    use jsonschema::JsonType as __JT;
+    use jsonschema::JsonTypeSet as __JTS;
+    use jsonschema::ValidationError as __VE;
+    use serde_json::Value as __Value;
+    use std::sync::LazyLock as __Lazy;
+    type __Map = serde_json::Map<String, __Value>;
     #[inline]
     fn __jsonschema_regex_0(subject: &str) -> bool {
-        static REGEX: std::sync::LazyLock<
-            Option<jsonschema::__private::fancy_regex::Regex>,
-        > = std::sync::LazyLock::new(|| {
+        static REGEX: __Lazy<Option<jsonschema::__private::fancy_regex::Regex>> = __Lazy::new(||
+        {
             let mut builder = jsonschema::__private::fancy_regex::RegexBuilder::new(
                 "^[a-z]{2,}$",
             );
@@ -20,9 +37,281 @@ mod __validator_impl {
         });
         REGEX.as_ref().is_some_and(|re| re.is_match(subject).unwrap_or(false))
     }
-    pub(super) fn is_valid(instance: &serde_json::Value) -> bool {
+    static __JSONSCHEMA_SP_0: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle("", "", false)
+    });
+    static __JSONSCHEMA_SP_1: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle("/type", "/type", false)
+    });
+    static __JSONSCHEMA_SP_2: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle(
+            "/patternProperties/^[a-z]{2,}$",
+            "/patternProperties/^[a-z]{2,}$",
+            false,
+        )
+    });
+    static __JSONSCHEMA_SP_3: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle(
+            "/patternProperties/^[a-z]{2,}$/type",
+            "/patternProperties/^[a-z]{2,}$/type",
+            false,
+        )
+    });
+    static __JSONSCHEMA_SP_4: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle("/patternProperties", "/patternProperties", false)
+    });
+    static __JSONSCHEMA_SP_5: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle("/additionalProperties", "/additionalProperties", false)
+    });
+    static __JSONSCHEMA_SP_6: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle("/propertyNames", "/propertyNames", false)
+    });
+    static __JSONSCHEMA_SP_7: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle(
+            "/propertyNames/pattern",
+            "/propertyNames/pattern",
+            false,
+        )
+    });
+    fn evaluate_ref_0(
+        instance: &__Value,
+        __path: &__paths::LazyLocation,
+        __il: &__paths::Location,
+        __eval_path: &str,
+    ) -> __eval::Node {
+        let __schema_path = "";
+        let __result = __eval::root_schema_location(
+            {
+                let mut __children = Vec::with_capacity(3usize);
+                {
+                    let __keyword_schema_path = "/type";
+                    let mut __collected_errors = Vec::new();
+                    let __errors = &mut __collected_errors;
+                    if !(instance.is_object()) {
+                        __errors
+                            .push(
+                                __err::single_type(
+                                    "/type",
+                                    __path.into(),
+                                    instance,
+                                    __JT::Object,
+                                ),
+                            );
+                    }
+                    __children
+                        .push(
+                            __eval::node_at(
+                                __eval_path,
+                                &__JSONSCHEMA_SP_1,
+                                __il.clone(),
+                                __collected_errors,
+                                None,
+                                Vec::new(),
+                            ),
+                        );
+                }
+                {
+                    let __keyword_schema_path = "/additionalProperties";
+                    let mut __keyword_children = Vec::new();
+                    let mut __errors = Vec::new();
+                    let mut __annotations = None;
+                    if let __eval::Value::Object(__object) = instance {
+                        let mut __unexpected: Vec<String> = Vec::new();
+                        let mut __additional_matches: Vec<String> = Vec::new();
+                        let mut __pattern_matches: Vec<String> = Vec::new();
+                        for (__property, __property_instance) in __object {
+                            let key = __property;
+                            let mut __covered = false;
+                            let __child_path = __path.push(__property.as_str());
+                            let __path = &__child_path;
+                            let __child_il = __il.join(__property.as_str());
+                            let __il = &__child_il;
+                            match __property.as_str() {
+                                _ => {}
+                            }
+                            if { __jsonschema_regex_0(key.as_str()) } {
+                                __covered = true;
+                                __pattern_matches.push(__property.clone());
+                                let __schema_path = "/patternProperties/^[a-z]{2,}$";
+                                let instance = __property_instance;
+                                __keyword_children
+                                    .push({
+                                        let mut __children = Vec::with_capacity(1usize);
+                                        {
+                                            let __keyword_schema_path = "/patternProperties/^[a-z]{2,}$/type";
+                                            let mut __collected_errors = Vec::new();
+                                            let __errors = &mut __collected_errors;
+                                            if !(instance.is_string()) {
+                                                __errors
+                                                    .push(
+                                                        __err::single_type(
+                                                            "/type",
+                                                            __path.into(),
+                                                            instance,
+                                                            __JT::String,
+                                                        ),
+                                                    );
+                                            }
+                                            __children
+                                                .push(
+                                                    __eval::node_at(
+                                                        __eval_path,
+                                                        &__JSONSCHEMA_SP_3,
+                                                        __il.clone(),
+                                                        __collected_errors,
+                                                        None,
+                                                        Vec::new(),
+                                                    ),
+                                                );
+                                        }
+                                        __eval::node_at(
+                                            __eval_path,
+                                            &__JSONSCHEMA_SP_2,
+                                            __il.clone(),
+                                            Vec::new(),
+                                            None,
+                                            __children,
+                                        )
+                                    });
+                            }
+                            if !__covered {
+                                __unexpected.push(__property.clone());
+                            }
+                        }
+                        if !__pattern_matches.is_empty() {
+                            __keyword_children
+                                .push(
+                                    __eval::node_at(
+                                        __eval_path,
+                                        &__JSONSCHEMA_SP_4,
+                                        __il.clone(),
+                                        Vec::new(),
+                                        Some(
+                                            __eval::dynamic_annotation(
+                                                __eval::Value::from(__pattern_matches),
+                                            ),
+                                        ),
+                                        Vec::new(),
+                                    ),
+                                );
+                        }
+                        if !__unexpected.is_empty() {
+                            __errors
+                                .push(
+                                    __err::additional_properties(
+                                        &__keyword_schema_path,
+                                        __il.clone(),
+                                        instance,
+                                        __unexpected,
+                                    ),
+                                );
+                        }
+                    }
+                    __children
+                        .push(
+                            __eval::node_at(
+                                __eval_path,
+                                &__JSONSCHEMA_SP_5,
+                                __il.clone(),
+                                __errors,
+                                __annotations,
+                                __keyword_children,
+                            ),
+                        );
+                }
+                {
+                    let __keyword_schema_path = __eval::join_schema_path(
+                        __schema_path,
+                        "propertyNames",
+                    );
+                    let mut __keyword_children = Vec::new();
+                    if let __eval::Value::Object(__object) = instance {
+                        __keyword_children.reserve_exact(__object.len());
+                        for __property in __object.keys() {
+                            let __property_instance = __eval::Value::String(
+                                __property.clone(),
+                            );
+                            let instance = &__property_instance;
+                            let __schema_path = &__keyword_schema_path;
+                            __keyword_children
+                                .push({
+                                    let mut __children = Vec::with_capacity(1usize);
+                                    {
+                                        let __keyword_schema_path = "/propertyNames/pattern";
+                                        let mut __collected_errors = Vec::new();
+                                        let __errors = &mut __collected_errors;
+                                        match instance {
+                                            __Value::String(s) => {
+                                                __errors
+                                                    .extend(
+                                                        (|| -> Option<__VE<'_>> {
+                                                            if !(__jsonschema_regex_0(s)) {
+                                                                return Some(
+                                                                    __err::pattern(
+                                                                        "/pattern",
+                                                                        __path.into(),
+                                                                        instance,
+                                                                        "^[a-z]{2,}$",
+                                                                    ),
+                                                                );
+                                                            }
+                                                            None
+                                                        })(),
+                                                    );
+                                            }
+                                            _ => {}
+                                        }
+                                        __children
+                                            .push(
+                                                __eval::node_at(
+                                                    __eval_path,
+                                                    &__JSONSCHEMA_SP_7,
+                                                    __il.clone(),
+                                                    __collected_errors,
+                                                    None,
+                                                    Vec::new(),
+                                                ),
+                                            );
+                                    }
+                                    __eval::node_at(
+                                        __eval_path,
+                                        &__JSONSCHEMA_SP_6,
+                                        __il.clone(),
+                                        Vec::new(),
+                                        None,
+                                        __children,
+                                    )
+                                });
+                        }
+                    }
+                    __children
+                        .push(
+                            __eval::node_at(
+                                __eval_path,
+                                &__JSONSCHEMA_SP_6,
+                                __il.clone(),
+                                Vec::new(),
+                                None,
+                                __keyword_children,
+                            ),
+                        );
+                }
+                __eval::node_at(
+                    __eval_path,
+                    &__JSONSCHEMA_SP_0,
+                    __il.clone(),
+                    Vec::new(),
+                    None,
+                    __children,
+                )
+            },
+            "",
+        );
+        __result
+    }
+    pub(super) fn is_valid(instance: &__Value) -> bool {
         match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 let __object_pass = obj
                     .iter()
                     .all(|(key, instance)| {
@@ -44,11 +333,11 @@ mod __validator_impl {
         }
     }
     pub(super) fn validate<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-    ) -> Option<jsonschema::ValidationError<'__i>> {
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+    ) -> Option<__VE<'__i>> {
         match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 for (key, value) in obj.iter() {
                     let key_str = key.as_str();
                     let mut covered = false;
@@ -57,11 +346,11 @@ mod __validator_impl {
                         let __path = &__path.push(key_str);
                         if !(instance.is_string()) {
                             return Some(
-                                jsonschema::__private::error::single_type(
+                                __err::single_type(
                                     "/patternProperties/^[a-z]{2,}$/type",
                                     __path.into(),
                                     instance,
-                                    jsonschema::JsonType::String,
+                                    __JT::String,
                                 ),
                             );
                         }
@@ -69,7 +358,7 @@ mod __validator_impl {
                     }
                     if !covered {
                         return Some(
-                            jsonschema::__private::error::additional_properties(
+                            __err::additional_properties(
                                 "/additionalProperties",
                                 __path.into(),
                                 instance,
@@ -81,24 +370,19 @@ mod __validator_impl {
             }
             _ => {
                 return Some(
-                    jsonschema::__private::error::single_type(
-                        "/type",
-                        __path.into(),
-                        instance,
-                        jsonschema::JsonType::Object,
-                    ),
+                    __err::single_type("/type", __path.into(), instance, __JT::Object),
                 );
             }
         }
         None
     }
     pub(super) fn collect_errors<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-        __errors: &mut Vec<jsonschema::ValidationError<'__i>>,
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
     ) {
         match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 let mut __unexpected: Vec<String> = Vec::new();
                 for (key, value) in obj.iter() {
                     let key_str = key.as_str();
@@ -109,11 +393,11 @@ mod __validator_impl {
                         if !(instance.is_string()) {
                             __errors
                                 .push(
-                                    jsonschema::__private::error::single_type(
+                                    __err::single_type(
                                         "/patternProperties/^[a-z]{2,}$/type",
                                         __path.into(),
                                         instance,
-                                        jsonschema::JsonType::String,
+                                        __JT::String,
                                     ),
                                 );
                         }
@@ -126,7 +410,7 @@ mod __validator_impl {
                 if !__unexpected.is_empty() {
                     __errors
                         .push(
-                            jsonschema::__private::error::additional_properties(
+                            __err::additional_properties(
                                 "/additionalProperties",
                                 __path.into(),
                                 instance,
@@ -138,15 +422,26 @@ mod __validator_impl {
             _ => {
                 __errors
                     .push(
-                        jsonschema::__private::error::single_type(
+                        __err::single_type(
                             "/type",
                             __path.into(),
                             instance,
-                            jsonschema::JsonType::Object,
+                            __JT::Object,
                         ),
                     );
             }
         }
+    }
+    pub(super) fn evaluate(instance: &__Value) -> jsonschema::Evaluation {
+        let __result = {
+            let __root_path = __paths::LazyLocation::new();
+            let __path = &__root_path;
+            let __root_il = __paths::Location::new();
+            let __il = &__root_il;
+            let __schema_path = "";
+            __eval::finish(evaluate_ref_0(instance, __path, __il, ""))
+        };
+        __result
     }
 }
 impl Validator {
@@ -174,5 +469,8 @@ impl Validator {
             &mut errors,
         );
         jsonschema::__private::error::iterator_from(errors)
+    }
+    pub fn evaluate(instance: &serde_json::Value) -> jsonschema::Evaluation {
+        __validator_impl::evaluate(instance)
     }
 }

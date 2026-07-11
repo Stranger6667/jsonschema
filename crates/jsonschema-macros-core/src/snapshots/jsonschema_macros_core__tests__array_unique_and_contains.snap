@@ -4,14 +4,12 @@ description: "{\"contains\":{\"type\":\"integer\"},\"type\":\"array\",\"uniqueIt
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Array(arr) => {
+            __Value::Array(arr) => {
                 (jsonschema::__private::unique_items::is_unique(arr))
                     && (arr
                         .iter()
                         .any(|instance| match instance {
-                            serde_json::Value::Number(n) => {
-                                jsonschema::__private::types::is_integer(n)
-                            }
+                            __Value::Number(n) => __types::is_integer(n),
                             _ => false,
                         }))
             }

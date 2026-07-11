@@ -4,12 +4,12 @@ description: "{\"additionalProperties\":{\"type\":\"integer\"},\"patternProperti
 expression: collect_body(schema)
 ---
 match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 for key in obj.keys() {
                     let __key_val: serde_json::Value = serde_json::Value::String(
                         key.clone(),
                     );
-                    let mut __key_errors: Vec<jsonschema::ValidationError<'_>> = Vec::new();
+                    let mut __key_errors: Vec<__VE<'_>> = Vec::new();
                     {
                         let s = key;
                         let instance = &__key_val;
@@ -17,7 +17,7 @@ match instance {
                         if !(!s.is_empty()) {
                             __errors
                                 .push(
-                                    jsonschema::__private::error::min_length(
+                                    __err::min_length(
                                         "/propertyNames/minLength",
                                         __path.into(),
                                         instance,
@@ -43,18 +43,16 @@ match instance {
                         let instance = value;
                         let __path = &__path.push(key_str);
                         if !(match instance {
-                            serde_json::Value::Number(n) => {
-                                jsonschema::__private::types::is_integer(n)
-                            }
+                            __Value::Number(n) => __types::is_integer(n),
                             _ => false,
                         }) {
                             __errors
                                 .push(
-                                    jsonschema::__private::error::single_type(
+                                    __err::single_type(
                                         "/patternProperties/^x/type",
                                         __path.into(),
                                         instance,
-                                        jsonschema::JsonType::Integer,
+                                        __JT::Integer,
                                     ),
                                 );
                         }
@@ -64,18 +62,16 @@ match instance {
                         let instance = value;
                         let __path = &__path.push(key_str);
                         if !(match instance {
-                            serde_json::Value::Number(n) => {
-                                jsonschema::__private::types::is_integer(n)
-                            }
+                            __Value::Number(n) => __types::is_integer(n),
                             _ => false,
                         }) {
                             __errors
                                 .push(
-                                    jsonschema::__private::error::single_type(
+                                    __err::single_type(
                                         "/additionalProperties/type",
                                         __path.into(),
                                         instance,
-                                        jsonschema::JsonType::Integer,
+                                        __JT::Integer,
                                     ),
                                 );
                         }
@@ -85,11 +81,11 @@ match instance {
             _ => {
                 __errors
                     .push(
-                        jsonschema::__private::error::single_type(
+                        __err::single_type(
                             "/type",
                             __path.into(),
                             instance,
-                            jsonschema::JsonType::Object,
+                            __JT::Object,
                         ),
                     );
             }

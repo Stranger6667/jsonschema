@@ -4,16 +4,14 @@ description: "{\"additionalProperties\":false,\"properties\":{\"a\":{\"type\":\"
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 obj.iter()
                     .all(|(key, instance)| {
                         let key_str = key.as_str();
                         match key_str {
                             "a" => {
                                 match instance {
-                                    serde_json::Value::Number(n) => {
-                                        jsonschema::__private::types::is_integer(n)
-                                    }
+                                    __Value::Number(n) => __types::is_integer(n),
                                     _ => false,
                                 }
                             }

@@ -1,30 +1,49 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 225
 description: "{\"$defs\":{\"node\":{\"$dynamicAnchor\":\"node\",\"type\":[\"object\",\"boolean\"]},\"plain\":{\"type\":\"integer\"}},\"properties\":{\"child\":{\"$dynamicRef\":\"#node\"},\"other\":{\"$ref\":\"#/$defs/plain\"}},\"type\":\"object\"}"
 expression: schema_to_code(schema)
 ---
 struct Validator;
 #[doc(hidden)]
-#[allow(non_snake_case, dead_code, unused_variables, unreachable_code, clippy::all)]
+#[allow(
+    non_snake_case,
+    dead_code,
+    unused_imports,
+    unused_variables,
+    unreachable_code,
+    clippy::all
+)]
 mod __validator_impl {
     use super::*;
+    use jsonschema::__private::error as __err;
+    use jsonschema::__private::evaluation as __eval;
+    use jsonschema::__private::types as __types;
+    use jsonschema::paths as __paths;
+    use jsonschema::JsonType as __JT;
+    use jsonschema::JsonTypeSet as __JTS;
+    use jsonschema::ValidationError as __VE;
+    use serde_json::Value as __Value;
+    use std::sync::LazyLock as __Lazy;
+    type __Map = serde_json::Map<String, __Value>;
     std::thread_local! {
         static __JSONSCHEMA_DYNAMIC_STACK : std::cell::RefCell < Vec < (& 'static str, fn
-        (& serde_json::Value) -> bool) > > = std::cell::RefCell::new(Vec::new()); static
+        (& __Value) -> bool) > > = std::cell::RefCell::new(Vec::new()); static
         __JSONSCHEMA_DYNAMIC_KEY_EVAL_STACK : std::cell::RefCell < Vec < (& 'static str,
-        fn (& serde_json::Value, & serde_json::Map < String, serde_json::Value >, & str)
-        -> bool,) > > = std::cell::RefCell::new(Vec::new()); static
-        __JSONSCHEMA_DYNAMIC_ITEM_EVAL_STACK : std::cell::RefCell < Vec < (& 'static str,
-        fn (& serde_json::Value, & [serde_json::Value], usize, & serde_json::Value) ->
-        bool,) > > = std::cell::RefCell::new(Vec::new()); static
+        fn (& __Value, & __Map, & str) -> bool,) > > =
+        std::cell::RefCell::new(Vec::new()); static __JSONSCHEMA_DYNAMIC_ITEM_EVAL_STACK
+        : std::cell::RefCell < Vec < (& 'static str, fn (& __Value, & [__Value], usize, &
+        __Value) -> bool,) > > = std::cell::RefCell::new(Vec::new()); static
         __JSONSCHEMA_DYNAMIC_VALIDATE_STACK : std::cell::RefCell < Vec < (& 'static str,
-        for < '__r, '__a, '__b, '__c > fn (& '__r serde_json::Value, & '__c
-        jsonschema::paths::LazyLocation < '__a, '__b >) -> Option <
-        jsonschema::ValidationError < '__r >>) > > = std::cell::RefCell::new(Vec::new());
-        static __JSONSCHEMA_DYNAMIC_COLLECT_STACK : std::cell::RefCell < Vec < (& 'static
-        str, for < '__r, '__a, '__b, '__c > fn (& '__r serde_json::Value, & '__c
-        jsonschema::paths::LazyLocation < '__a, '__b >, & mut Vec <
-        jsonschema::ValidationError < '__r >>)) > > =
+        for < '__r, '__a, '__b, '__c > fn (& '__r __Value, & '__c __paths::LazyLocation <
+        '__a, '__b >) -> Option < __VE < '__r >>) > > =
+        std::cell::RefCell::new(Vec::new()); static __JSONSCHEMA_DYNAMIC_COLLECT_STACK :
+        std::cell::RefCell < Vec < (& 'static str, for < '__r, '__a, '__b, '__c > fn (&
+        '__r __Value, & '__c __paths::LazyLocation < '__a, '__b >, & mut Vec < __VE <
+        '__r >>)) > > = std::cell::RefCell::new(Vec::new()); static
+        __JSONSCHEMA_DYNAMIC_EVALUATION_STACK : std::cell::RefCell < Vec < (& 'static
+        str, for < '__a, '__b, '__c > fn (& __Value, & '__c __paths::LazyLocation < '__a,
+        '__b >, & __paths::Location, & str) -> __eval::Node) > > =
         std::cell::RefCell::new(Vec::new()); static __JSONSCHEMA_VALIDATE_MARK :
         std::cell::RefCell < Vec < (usize, usize) >> =
         std::cell::RefCell::new(Vec::new()); static __JSONSCHEMA_EVAL_MARK :
@@ -32,25 +51,21 @@ mod __validator_impl {
         std::cell::RefCell::new(Vec::new());
     }
     #[inline]
-    fn validate_ref_0(instance: &serde_json::Value) -> bool {
-        matches!(instance, serde_json::Value::Object(_) | serde_json::Value::Bool(_))
+    fn validate_ref_0(instance: &__Value) -> bool {
+        matches!(instance, __Value::Object(_) | __Value::Bool(_))
     }
     #[inline]
     fn validate_ref_0_validate<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-    ) -> Option<jsonschema::ValidationError<'__i>> {
-        if !(matches!(
-            instance, serde_json::Value::Object(_) | serde_json::Value::Bool(_)
-        )) {
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+    ) -> Option<__VE<'__i>> {
+        if !(matches!(instance, __Value::Object(_) | __Value::Bool(_))) {
             return Some(
-                jsonschema::__private::error::multiple_types(
+                __err::multiple_types(
                     "/type",
                     __path.into(),
                     instance,
-                    jsonschema::JsonTypeSet::empty()
-                        .insert(jsonschema::JsonType::Object)
-                        .insert(jsonschema::JsonType::Boolean),
+                    __JTS::empty().insert(__JT::Object).insert(__JT::Boolean),
                 ),
             );
         }
@@ -59,28 +74,24 @@ mod __validator_impl {
     #[cold]
     #[inline(never)]
     fn validate_ref_0_collect_errors<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-        __errors: &mut Vec<jsonschema::ValidationError<'__i>>,
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
     ) {
-        if !(matches!(
-            instance, serde_json::Value::Object(_) | serde_json::Value::Bool(_)
-        )) {
+        if !(matches!(instance, __Value::Object(_) | __Value::Bool(_))) {
             __errors
                 .push(
-                    jsonschema::__private::error::multiple_types(
+                    __err::multiple_types(
                         "/type",
                         __path.into(),
                         instance,
-                        jsonschema::JsonTypeSet::empty()
-                            .insert(jsonschema::JsonType::Object)
-                            .insert(jsonschema::JsonType::Boolean),
+                        __JTS::empty().insert(__JT::Object).insert(__JT::Boolean),
                     ),
                 );
         }
     }
     #[inline]
-    fn validate_ref_1(instance: &serde_json::Value) -> bool {
+    fn validate_ref_1(instance: &__Value) -> bool {
         {
             __JSONSCHEMA_DYNAMIC_STACK
                 .with(|stack| {
@@ -96,9 +107,7 @@ mod __validator_impl {
                 });
             let __result = {
                 match instance {
-                    serde_json::Value::Number(n) => {
-                        jsonschema::__private::types::is_integer(n)
-                    }
+                    __Value::Number(n) => __types::is_integer(n),
                     _ => false,
                 }
             };
@@ -128,9 +137,9 @@ mod __validator_impl {
     }
     #[inline]
     fn validate_ref_1_validate<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-    ) -> Option<jsonschema::ValidationError<'__i>> {
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+    ) -> Option<__VE<'__i>> {
         __JSONSCHEMA_DYNAMIC_STACK
             .with(|stack| {
                 stack.borrow_mut().push(("node", validate_ref_0));
@@ -147,19 +156,17 @@ mod __validator_impl {
             .with(|stack| {
                 stack.borrow_mut().push(("node", validate_ref_0_validate));
             });
-        let __r = (|| -> Option<jsonschema::ValidationError<'__i>> {
+        let __r = (|| -> Option<__VE<'__i>> {
             if !(match instance {
-                serde_json::Value::Number(n) => {
-                    jsonschema::__private::types::is_integer(n)
-                }
+                __Value::Number(n) => __types::is_integer(n),
                 _ => false,
             }) {
                 return Some(
-                    jsonschema::__private::error::single_type(
+                    __err::single_type(
                         "/$defs/plain/type",
                         __path.into(),
                         instance,
-                        jsonschema::JsonType::Integer,
+                        __JT::Integer,
                     ),
                 );
             }
@@ -201,9 +208,9 @@ mod __validator_impl {
     #[cold]
     #[inline(never)]
     fn validate_ref_1_collect_errors<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-        __errors: &mut Vec<jsonschema::ValidationError<'__i>>,
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
     ) {
         __JSONSCHEMA_DYNAMIC_STACK
             .with(|stack| {
@@ -222,16 +229,16 @@ mod __validator_impl {
                 stack.borrow_mut().push(("node", validate_ref_0_collect_errors));
             });
         if !(match instance {
-            serde_json::Value::Number(n) => jsonschema::__private::types::is_integer(n),
+            __Value::Number(n) => __types::is_integer(n),
             _ => false,
         }) {
             __errors
                 .push(
-                    jsonschema::__private::error::single_type(
+                    __err::single_type(
                         "/$defs/plain/type",
                         __path.into(),
                         instance,
-                        jsonschema::JsonType::Integer,
+                        __JT::Integer,
                     ),
                 );
         }
@@ -265,22 +272,14 @@ mod __validator_impl {
             });
     }
     #[inline]
-    fn eval_ref_0(
-        instance: &serde_json::Value,
-        obj: &serde_json::Map<String, serde_json::Value>,
-        key_str: &str,
-    ) -> bool {
+    fn eval_ref_0(instance: &__Value, obj: &__Map, key_str: &str) -> bool {
         {
             let __result = { false };
             __result
         }
     }
     #[inline]
-    fn eval_ref_1(
-        instance: &serde_json::Value,
-        obj: &serde_json::Map<String, serde_json::Value>,
-        key_str: &str,
-    ) -> bool {
+    fn eval_ref_1(instance: &__Value, obj: &__Map, key_str: &str) -> bool {
         {
             __JSONSCHEMA_DYNAMIC_KEY_EVAL_STACK
                 .with(|stack| {
@@ -299,10 +298,10 @@ mod __validator_impl {
     }
     #[inline]
     fn eval_items_ref_0(
-        instance: &serde_json::Value,
-        arr: &[serde_json::Value],
+        instance: &__Value,
+        arr: &[__Value],
         idx: usize,
-        item: &serde_json::Value,
+        item: &__Value,
     ) -> bool {
         {
             let __result = { false };
@@ -311,10 +310,10 @@ mod __validator_impl {
     }
     #[inline]
     fn eval_items_ref_1(
-        instance: &serde_json::Value,
-        arr: &[serde_json::Value],
+        instance: &__Value,
+        arr: &[__Value],
         idx: usize,
-        item: &serde_json::Value,
+        item: &__Value,
     ) -> bool {
         {
             __JSONSCHEMA_DYNAMIC_ITEM_EVAL_STACK
@@ -332,7 +331,391 @@ mod __validator_impl {
             __result
         }
     }
-    pub(super) fn is_valid(instance: &serde_json::Value) -> bool {
+    static __JSONSCHEMA_SP_0: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle("", "", false)
+    });
+    static __JSONSCHEMA_SP_1: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle("/type", "/type", false)
+    });
+    static __JSONSCHEMA_SP_2: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle("/properties/child", "/properties/child", false)
+    });
+    static __JSONSCHEMA_SP_3: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle("/properties/other", "/properties/other", false)
+    });
+    static __JSONSCHEMA_SP_4: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle("", "/$defs/plain", false)
+    });
+    static __JSONSCHEMA_SP_5: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle("/type", "/$defs/plain/type", false)
+    });
+    static __JSONSCHEMA_SP_6: __Lazy<__eval::NodeLocation> = __Lazy::new(|| {
+        __eval::location_bundle("/properties", "/properties", false)
+    });
+    fn evaluate_ref_0(
+        instance: &__Value,
+        __path: &__paths::LazyLocation,
+        __il: &__paths::Location,
+        __eval_path: &str,
+    ) -> __eval::Node {
+        let __schema_path = "";
+        let __result = {
+            let __result = {
+                __eval::root_schema_location(
+                    {
+                        let mut __children = Vec::with_capacity(1usize);
+                        {
+                            let __errors = if matches!(
+                                instance, __Value::Object(_) | __Value::Bool(_)
+                            ) {
+                                Vec::new()
+                            } else {
+                                vec![
+                                    ("type", format!("{} is not of types ({})", instance,
+                                    "boolean, object"))
+                                ]
+                            };
+                            __children
+                                .push(
+                                    __eval::node_with_descriptions_at(
+                                        __eval_path,
+                                        &__JSONSCHEMA_SP_1,
+                                        __il.clone(),
+                                        __errors,
+                                        None,
+                                        Vec::new(),
+                                    ),
+                                );
+                        }
+                        __eval::node_at(
+                            __eval_path,
+                            &__JSONSCHEMA_SP_0,
+                            __il.clone(),
+                            Vec::new(),
+                            None,
+                            __children,
+                        )
+                    },
+                    "",
+                )
+            };
+            __result
+        };
+        __result
+    }
+    fn evaluate_ref_2(
+        instance: &__Value,
+        __path: &__paths::LazyLocation,
+        __il: &__paths::Location,
+        __eval_path: &str,
+    ) -> __eval::Node {
+        let __schema_path = "";
+        let __result = {
+            __JSONSCHEMA_DYNAMIC_EVALUATION_STACK
+                .with(|stack| {
+                    stack.borrow_mut().push(("node", evaluate_ref_0));
+                });
+            let __result = {
+                __eval::root_schema_location(
+                    {
+                        let mut __children = Vec::with_capacity(1usize);
+                        {
+                            let __errors = if matches!(
+                                instance, __Value::Object(_) | __Value::Bool(_)
+                            ) {
+                                Vec::new()
+                            } else {
+                                vec![
+                                    ("type", format!("{} is not of types ({})", instance,
+                                    "boolean, object"))
+                                ]
+                            };
+                            __children
+                                .push(
+                                    __eval::node_with_descriptions_at(
+                                        __eval_path,
+                                        &__JSONSCHEMA_SP_1,
+                                        __il.clone(),
+                                        __errors,
+                                        None,
+                                        Vec::new(),
+                                    ),
+                                );
+                        }
+                        __eval::node_at(
+                            __eval_path,
+                            &__JSONSCHEMA_SP_0,
+                            __il.clone(),
+                            Vec::new(),
+                            None,
+                            __children,
+                        )
+                    },
+                    "",
+                )
+            };
+            __JSONSCHEMA_DYNAMIC_EVALUATION_STACK
+                .with(|stack| {
+                    let mut stack = stack.borrow_mut();
+                    for _ in 0..1usize {
+                        stack.pop();
+                    }
+                });
+            __result
+        };
+        __result
+    }
+    fn evaluate_ref_3(
+        instance: &__Value,
+        __path: &__paths::LazyLocation,
+        __il: &__paths::Location,
+        __eval_path: &str,
+    ) -> __eval::Node {
+        let __schema_path = "/$defs/plain";
+        let __result = {
+            __JSONSCHEMA_DYNAMIC_EVALUATION_STACK
+                .with(|stack| {
+                    stack.borrow_mut().push(("node", evaluate_ref_0));
+                });
+            let __result = {
+                __eval::root_schema_location(
+                    {
+                        let mut __children = Vec::with_capacity(1usize);
+                        {
+                            let __keyword_schema_path = "/$defs/plain/type";
+                            let mut __collected_errors = Vec::new();
+                            let __errors = &mut __collected_errors;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                __errors
+                                    .push(
+                                        __err::single_type(
+                                            "/type",
+                                            __path.into(),
+                                            instance,
+                                            __JT::Integer,
+                                        ),
+                                    );
+                            }
+                            __children
+                                .push(
+                                    __eval::node_at(
+                                        __eval_path,
+                                        &__JSONSCHEMA_SP_5,
+                                        __il.clone(),
+                                        __collected_errors,
+                                        None,
+                                        Vec::new(),
+                                    ),
+                                );
+                        }
+                        __eval::node_at(
+                            __eval_path,
+                            &__JSONSCHEMA_SP_4,
+                            __il.clone(),
+                            Vec::new(),
+                            None,
+                            __children,
+                        )
+                    },
+                    "/$defs/plain",
+                )
+            };
+            __JSONSCHEMA_DYNAMIC_EVALUATION_STACK
+                .with(|stack| {
+                    let mut stack = stack.borrow_mut();
+                    for _ in 0..1usize {
+                        stack.pop();
+                    }
+                });
+            __result
+        };
+        __result
+    }
+    fn evaluate_ref_1(
+        instance: &__Value,
+        __path: &__paths::LazyLocation,
+        __il: &__paths::Location,
+        __eval_path: &str,
+    ) -> __eval::Node {
+        let __schema_path = "";
+        let __result = {
+            __JSONSCHEMA_DYNAMIC_EVALUATION_STACK
+                .with(|stack| {
+                    stack.borrow_mut().push(("node", evaluate_ref_0));
+                });
+            let __result = {
+                __eval::root_schema_location(
+                    {
+                        let mut __children = Vec::with_capacity(2usize);
+                        {
+                            let __keyword_schema_path = "/type";
+                            let mut __collected_errors = Vec::new();
+                            let __errors = &mut __collected_errors;
+                            if !(instance.is_object()) {
+                                __errors
+                                    .push(
+                                        __err::single_type(
+                                            "/type",
+                                            __path.into(),
+                                            instance,
+                                            __JT::Object,
+                                        ),
+                                    );
+                            }
+                            __children
+                                .push(
+                                    __eval::node_at(
+                                        __eval_path,
+                                        &__JSONSCHEMA_SP_1,
+                                        __il.clone(),
+                                        __collected_errors,
+                                        None,
+                                        Vec::new(),
+                                    ),
+                                );
+                        }
+                        {
+                            let mut __keyword_children = Vec::with_capacity(2usize);
+                            let mut __errors = Vec::new();
+                            let mut __annotations = None;
+                            let mut __fused_required_valid = true;
+                            if let __eval::Value::Object(__object) = instance {
+                                if __fused_required_valid {
+                                    let mut __matched_properties: Vec<&str> = Vec::new();
+                                    if let Some(__property_instance) = __object.get("child") {
+                                        __matched_properties.push("child");
+                                        let __child_path = __path.push("child");
+                                        let __path = &__child_path;
+                                        let __child_il = __eval::location_join_raw(__il, "/child");
+                                        let __il = &__child_il;
+                                        let __schema_path = "/properties/child";
+                                        let instance = __property_instance;
+                                        __keyword_children
+                                            .push({
+                                                let mut __children = Vec::with_capacity(1usize);
+                                                {
+                                                    let mut __reference_path = String::with_capacity(
+                                                        __eval_path.len() + "/properties/child/$dynamicRef".len(),
+                                                    );
+                                                    __reference_path.push_str(__eval_path);
+                                                    __reference_path.push_str("/properties/child/$dynamicRef");
+                                                    let __target = if let Some(evaluate) = __JSONSCHEMA_DYNAMIC_EVALUATION_STACK
+                                                        .with(|stack| {
+                                                            stack
+                                                                .borrow()
+                                                                .iter()
+                                                                .find(|(dynamic_anchor, _)| *dynamic_anchor == "node")
+                                                                .map(|(_, evaluate)| *evaluate)
+                                                        })
+                                                    {
+                                                        evaluate(instance, __path, __il, &__reference_path)
+                                                    } else {
+                                                        evaluate_ref_2(instance, __path, __il, &__reference_path)
+                                                    };
+                                                    __children.push(__target);
+                                                }
+                                                __eval::node_at(
+                                                    __eval_path,
+                                                    &__JSONSCHEMA_SP_2,
+                                                    __il.clone(),
+                                                    Vec::new(),
+                                                    None,
+                                                    __children,
+                                                )
+                                            });
+                                    }
+                                    if let Some(__property_instance) = __object.get("other") {
+                                        __matched_properties.push("other");
+                                        let __child_path = __path.push("other");
+                                        let __path = &__child_path;
+                                        let __child_il = __eval::location_join_raw(__il, "/other");
+                                        let __il = &__child_il;
+                                        let __schema_path = "/properties/other";
+                                        let instance = __property_instance;
+                                        __keyword_children
+                                            .push({
+                                                let mut __children = Vec::with_capacity(1usize);
+                                                {
+                                                    let mut __reference_path = String::with_capacity(
+                                                        __eval_path.len() + "/properties/other/$ref".len(),
+                                                    );
+                                                    __reference_path.push_str(__eval_path);
+                                                    __reference_path.push_str("/properties/other/$ref");
+                                                    let __target = evaluate_ref_3(
+                                                        instance,
+                                                        __path,
+                                                        __il,
+                                                        &__reference_path,
+                                                    );
+                                                    __children.push(__target);
+                                                }
+                                                __eval::node_at(
+                                                    __eval_path,
+                                                    &__JSONSCHEMA_SP_3,
+                                                    __il.clone(),
+                                                    Vec::new(),
+                                                    None,
+                                                    __children,
+                                                )
+                                            });
+                                    }
+                                    __annotations = Some(
+                                        __eval::dynamic_annotation(
+                                            __eval::Value::from(__matched_properties),
+                                        ),
+                                    );
+                                }
+                            }
+                            if __fused_required_valid {
+                                __children
+                                    .push(
+                                        __eval::node_at(
+                                            __eval_path,
+                                            &__JSONSCHEMA_SP_6,
+                                            __il.clone(),
+                                            __errors,
+                                            __annotations,
+                                            __keyword_children,
+                                        ),
+                                    );
+                            } else {
+                                __children
+                                    .push(
+                                        __eval::invalid_node_at(
+                                            __eval_path,
+                                            &__JSONSCHEMA_SP_6,
+                                            __il.clone(),
+                                        ),
+                                    );
+                            }
+                        }
+                        __eval::node_at(
+                            __eval_path,
+                            &__JSONSCHEMA_SP_0,
+                            __il.clone(),
+                            Vec::new(),
+                            None,
+                            __children,
+                        )
+                    },
+                    "",
+                )
+            };
+            __JSONSCHEMA_DYNAMIC_EVALUATION_STACK
+                .with(|stack| {
+                    let mut stack = stack.borrow_mut();
+                    for _ in 0..1usize {
+                        stack.pop();
+                    }
+                });
+            __result
+        };
+        __result
+    }
+    pub(super) fn is_valid(instance: &__Value) -> bool {
         __JSONSCHEMA_DYNAMIC_STACK
             .with(|stack| {
                 stack.borrow_mut().push(("node", validate_ref_0));
@@ -347,7 +730,7 @@ mod __validator_impl {
             });
         let __result = {
             match instance {
-                serde_json::Value::Object(obj) => {
+                __Value::Object(obj) => {
                     obj.iter()
                         .all(|(key, instance)| {
                             let key_str = key.as_str();
@@ -436,9 +819,9 @@ mod __validator_impl {
         __result
     }
     pub(super) fn validate<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-    ) -> Option<jsonschema::ValidationError<'__i>> {
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+    ) -> Option<__VE<'__i>> {
         __JSONSCHEMA_DYNAMIC_STACK
             .with(|stack| {
                 stack.borrow_mut().push(("node", validate_ref_0));
@@ -455,9 +838,9 @@ mod __validator_impl {
             .with(|stack| {
                 stack.borrow_mut().push(("node", validate_ref_0_validate));
             });
-        let __result = (|| -> Option<jsonschema::ValidationError<'__i>> {
+        let __result = (|| -> Option<__VE<'__i>> {
             match instance {
-                serde_json::Value::Object(obj) => {
+                __Value::Object(obj) => {
                     for (key, value) in obj.iter() {
                         let key_str = key.as_str();
                         match key_str {
@@ -546,11 +929,11 @@ mod __validator_impl {
                 }
                 _ => {
                     return Some(
-                        jsonschema::__private::error::single_type(
+                        __err::single_type(
                             "/type",
                             __path.into(),
                             instance,
-                            jsonschema::JsonType::Object,
+                            __JT::Object,
                         ),
                     );
                 }
@@ -588,9 +971,9 @@ mod __validator_impl {
         __result
     }
     pub(super) fn collect_errors<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-        __errors: &mut Vec<jsonschema::ValidationError<'__i>>,
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
     ) {
         __JSONSCHEMA_DYNAMIC_STACK
             .with(|stack| {
@@ -609,7 +992,7 @@ mod __validator_impl {
                 stack.borrow_mut().push(("node", validate_ref_0_collect_errors));
             });
         match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 if let Some(value) = obj.get("child") {
                     let instance = value;
                     if !({
@@ -739,11 +1122,11 @@ mod __validator_impl {
             _ => {
                 __errors
                     .push(
-                        jsonschema::__private::error::single_type(
+                        __err::single_type(
                             "/type",
                             __path.into(),
                             instance,
-                            jsonschema::JsonType::Object,
+                            __JT::Object,
                         ),
                     );
             }
@@ -777,6 +1160,28 @@ mod __validator_impl {
                 }
             });
     }
+    pub(super) fn evaluate(instance: &__Value) -> jsonschema::Evaluation {
+        __JSONSCHEMA_DYNAMIC_EVALUATION_STACK
+            .with(|stack| {
+                stack.borrow_mut().push(("node", evaluate_ref_0));
+            });
+        let __result = {
+            let __root_path = __paths::LazyLocation::new();
+            let __path = &__root_path;
+            let __root_il = __paths::Location::new();
+            let __il = &__root_il;
+            let __schema_path = "";
+            __eval::finish(evaluate_ref_1(instance, __path, __il, ""))
+        };
+        __JSONSCHEMA_DYNAMIC_EVALUATION_STACK
+            .with(|stack| {
+                let mut stack = stack.borrow_mut();
+                for _ in 0..1usize {
+                    stack.pop();
+                }
+            });
+        __result
+    }
 }
 impl Validator {
     pub fn is_valid(instance: &serde_json::Value) -> bool {
@@ -803,5 +1208,8 @@ impl Validator {
             &mut errors,
         );
         jsonschema::__private::error::iterator_from(errors)
+    }
+    pub fn evaluate(instance: &serde_json::Value) -> jsonschema::Evaluation {
+        __validator_impl::evaluate(instance)
     }
 }

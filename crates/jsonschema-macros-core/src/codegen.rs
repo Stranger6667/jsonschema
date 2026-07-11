@@ -11,6 +11,7 @@ use self::{
         collect_dynamic_anchor_bindings, get_or_create_item_eval_fn, get_or_create_key_eval_fn,
     },
     numeric::value_as_u64,
+    refs::resolve_ref,
     regex::{compile_regex_match, translate_and_validate_regex},
 };
 use crate::context::{CodegenConfig, CompileContext};
@@ -21,17 +22,20 @@ mod draft;
 mod emit_root;
 mod emit_serde;
 mod errors;
+mod evaluation;
 mod expr;
 mod helpers;
 mod keywords;
 mod numeric;
 mod object_schema;
-mod refs;
+pub(crate) mod refs;
 mod regex;
 mod stack_emit;
+mod unevaluated_scan;
 
 pub(crate) use expr::CompiledExpr;
 pub(crate) use helpers::DynamicAnchorBinding;
+pub(crate) use unevaluated_scan::scan_uses_unevaluated_over;
 
 /// Entry point: generate validator impl methods from a `CodegenConfig`.
 pub(crate) fn generate_from_config(
@@ -42,6 +46,13 @@ pub(crate) fn generate_from_config(
 ) -> TokenStream {
     let mut ctx = CompileContext::new(config);
     let validation_expr = compile_schema(&mut ctx, &config.schema);
+    // `evaluate = false` skips the entire evaluation walk: no evaluation helpers, no node-location
+    // statics, no evaluate function. This is the dominant generate-time cost, so it is gated first.
+    let evaluation_expr = if config.method_gates.evaluate {
+        evaluation::compile(&mut ctx, &config.schema)
+    } else {
+        None
+    };
     let recursive_stack_needed = ctx.uses_recursive_ref;
     let dynamic_stack_needed = ctx.uses_dynamic_ref;
     let root_recursive_anchor = recursive_stack_needed
@@ -79,6 +90,19 @@ pub(crate) fn generate_from_config(
     } else {
         Vec::new()
     };
+    let root_evaluation_ident = if config.method_gates.evaluate && recursive_stack_needed {
+        resolve_ref(&mut ctx, "#").ok().map(|resolved| {
+            let name = evaluation::get_or_create_evaluation_fn(
+                &mut ctx,
+                &resolved.location,
+                resolved.schema,
+                resolved.base_uri,
+            );
+            format_ident!("{name}")
+        })
+    } else {
+        None
+    };
     emit_root_module(
         &ctx,
         config.runtime_crate_alias.as_ref(),
@@ -86,11 +110,13 @@ pub(crate) fn generate_from_config(
         name,
         impl_mod_name,
         &validation_expr,
+        evaluation_expr.as_ref(),
         recursive_stack_needed,
         dynamic_stack_needed,
         root_recursive_anchor,
         root_key_eval_ident.as_ref(),
         root_item_eval_ident.as_ref(),
+        root_evaluation_ident.as_ref(),
         &root_dynamic_bindings,
     )
 }
@@ -131,7 +157,7 @@ pub(crate) fn compile_schema(ctx: &mut CompileContext<'_>, schema: &Value) -> Co
             CompiledExpr::with_validate_blocks(
                 quote! { false },
                 quote! {
-                    return Some(jsonschema::__private::error::false_schema(
+                    return Some(__err::false_schema(
                         #schema_path, __path.into(), instance,
                     ));
                 },

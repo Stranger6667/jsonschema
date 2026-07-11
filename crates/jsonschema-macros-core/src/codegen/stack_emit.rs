@@ -100,6 +100,16 @@ define_dynamic_ops!(
     push_dynamic_collect,
     pop_dynamic_collect_n
 );
+define_recursive_ops!(
+    __JSONSCHEMA_RECURSIVE_EVALUATION_STACK,
+    push_recursive_evaluation,
+    pop_recursive_evaluation
+);
+define_dynamic_ops!(
+    __JSONSCHEMA_DYNAMIC_EVALUATION_STACK,
+    push_dynamic_evaluation,
+    pop_dynamic_evaluation_n
+);
 
 /// Push/pop emitters for one thread-local stack family, plus the accessor
 /// selecting which helper-fn name a dynamic-anchor binding contributes.
@@ -133,6 +143,14 @@ pub(crate) const ITEM_EVAL_FAMILY: StackFamily = StackFamily {
     push_dynamic: push_dynamic_item_eval,
     pop_dynamic_n: pop_dynamic_item_eval_n,
     binding_fn_name: |binding| &binding.item_eval_name,
+};
+
+pub(crate) const EVALUATION_FAMILY: StackFamily = StackFamily {
+    push_recursive: push_recursive_evaluation,
+    pop_recursive: pop_recursive_evaluation,
+    push_dynamic: push_dynamic_evaluation,
+    pop_dynamic_n: pop_dynamic_evaluation_n,
+    binding_fn_name: |binding| &binding.evaluation_name,
 };
 
 impl StackFamily {
