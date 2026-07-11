@@ -44,7 +44,7 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<Com
                             if obj.contains_key(#prop) {
                                 #(
                                     if !obj.contains_key(#props) {
-                                        return Some(jsonschema::__private::error::required(
+                                        return Some(__err::required(
                                             #schema_path, __path.into(), instance, #props,
                                         ));
                                     }
@@ -55,7 +55,7 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<Com
                             if obj.contains_key(#prop) {
                                 #(
                                     if !obj.contains_key(#props) {
-                                        __errors.push(jsonschema::__private::error::required(
+                                        __errors.push(__err::required(
                                             #schema_path, __path.into(), instance, #props,
                                         ));
                                     }
@@ -134,7 +134,7 @@ pub(crate) fn compile_dependent_required(
                     if obj.contains_key(#prop) {
                         #(
                             if !obj.contains_key(#required_props) {
-                                return Some(jsonschema::__private::error::required(
+                                return Some(__err::required(
                                     #schema_path, __path.into(), instance, #required_props,
                                 ));
                             }
@@ -145,7 +145,7 @@ pub(crate) fn compile_dependent_required(
                     if obj.contains_key(#prop) {
                         #(
                             if !obj.contains_key(#required_props) {
-                                __errors.push(jsonschema::__private::error::required(
+                                __errors.push(__err::required(
                                     #schema_path, __path.into(), instance, #required_props,
                                 ));
                             }

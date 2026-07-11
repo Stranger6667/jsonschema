@@ -82,6 +82,8 @@ pub struct OutputTest {
     pub data: Value,
     pub outputs: Vec<OutputFormat>,
     pub remotes: &'static [OutputRemote],
+    pub generated_list: Value,
+    pub generated_hierarchical: Value,
 }
 
 /// Remote schema contents used by the output test-suite.
@@ -103,4 +105,6 @@ pub trait CodegenValidator {
     fn validate(&self, instance: &Value) -> Result<(), Box<dyn std::any::Any + Send + Sync>>;
     /// Every error, as `(message, schema_path, instance_path)` triples in iteration order.
     fn iter_errors(&self, instance: &Value) -> Vec<(String, String, String)>;
+    /// Serialized list and hierarchical evaluation output.
+    fn evaluate(&self, instance: &Value) -> (Value, Value);
 }

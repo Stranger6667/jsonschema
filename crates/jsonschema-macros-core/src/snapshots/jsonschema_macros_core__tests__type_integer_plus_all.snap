@@ -4,11 +4,11 @@ description: "{\"type\":[\"integer\",\"string\",\"boolean\",\"null\",\"array\",\
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Number(n) => jsonschema::__private::types::is_integer(n),
-            serde_json::Value::String(_) => true,
-            serde_json::Value::Bool(_) => true,
-            serde_json::Value::Null => true,
-            serde_json::Value::Array(_) => true,
-            serde_json::Value::Object(_) => true,
+            __Value::Number(n) => __types::is_integer(n),
+            __Value::String(_) => true,
+            __Value::Bool(_) => true,
+            __Value::Null => true,
+            __Value::Array(_) => true,
+            __Value::Object(_) => true,
             _ => false,
         }

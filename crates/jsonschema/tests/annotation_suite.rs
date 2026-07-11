@@ -75,6 +75,47 @@ fn is_schema_valued_keyword(keyword: &str) -> bool {
     keyword == "contentSchema"
 }
 
+#[testsuite::annotation_suite(
+    path = "crates/jsonschema/tests/suite/annotations/tests",
+    drafts = ["draft2020-12"]
+)]
+fn test_generated_annotation_case(
+    evaluation: &jsonschema::Evaluation,
+    test_case: &TestCase,
+    test_id: &str,
+) {
+    let collected = collect_annotations(evaluation);
+    let mut errors = Vec::new();
+    for assertion in &test_case.assertions {
+        let actual_values = collected
+            .get(&(assertion.location.clone(), assertion.keyword.clone()))
+            .cloned()
+            .unwrap_or_default();
+        if assertion.expected.is_empty() {
+            if !actual_values.is_empty() {
+                errors.push(format!(
+                    "Expected no annotation for keyword {:?} at {:?}, got {actual_values:?}",
+                    assertion.keyword, assertion.location,
+                ));
+            }
+        } else {
+            for (schema_location, expected_value) in &assertion.expected {
+                if !actual_values.contains(expected_value) {
+                    errors.push(format!(
+                        "Keyword: {:?}\nInstance: {:?}\nSchema: {:?}\nExpected: {}\nGot: {actual_values:?}",
+                        assertion.keyword, assertion.location, schema_location, expected_value,
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        errors.is_empty(),
+        "Generated annotation test failed: {test_id}\n{}",
+        errors.join("\n"),
+    );
+}
+
 #[test]
 fn test_annotation_suite() {
     let suite_path = Path::new(env!("CARGO_MANIFEST_DIR"))

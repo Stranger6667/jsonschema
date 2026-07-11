@@ -4,7 +4,7 @@ description: "{\"patternProperties\":{\"^z$\":{}},\"type\":\"object\",\"unevalua
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 ({
                     let __object_pass = obj.iter().all(|(key, instance)| { true });
                     __object_pass

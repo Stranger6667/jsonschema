@@ -4,6 +4,7 @@ use crate::context::CompileContext;
 
 /// Draft-dependent keyword and format availability.
 pub(crate) trait DraftExt {
+    fn id_keyword(self) -> &'static str;
     fn supports_adjacent_validation(self) -> bool;
     fn supports_const_keyword(self) -> bool;
     fn supports_dependent_schemas_keyword(self) -> bool;
@@ -22,6 +23,15 @@ pub(crate) trait DraftExt {
 }
 
 impl DraftExt for Draft {
+    #[inline]
+    fn id_keyword(self) -> &'static str {
+        if matches!(self, Draft::Draft4) {
+            "id"
+        } else {
+            "$id"
+        }
+    }
+
     #[inline]
     fn supports_adjacent_validation(self) -> bool {
         !matches!(self, Draft::Draft4 | Draft::Draft6 | Draft::Draft7)

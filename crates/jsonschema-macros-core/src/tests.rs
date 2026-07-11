@@ -84,6 +84,8 @@ pub(crate) fn test_config_with_draft(schema: Value, draft: Draft) -> CodegenConf
     let base_uri = referencing::uri::from_str(base_uri_str)
         .map(Arc::new)
         .expect("valid uri");
+    let (uses_unevaluated_properties, uses_unevaluated_items) =
+        crate::codegen::scan_uses_unevaluated_over(std::iter::once(&schema));
 
     CodegenConfig {
         schema,
@@ -99,6 +101,9 @@ pub(crate) fn test_config_with_draft(schema: Value, draft: Draft) -> CodegenConf
         ignore_unknown_formats: true,
         email_options: None,
         pattern_options: crate::context::PatternEngineConfig::default(),
+        uses_unevaluated_properties,
+        uses_unevaluated_items,
+        method_gates: crate::context::MethodGates::default(),
     }
 }
 
@@ -118,6 +123,12 @@ fn schema_to_code_with_runtime_alias(
     config.validate_formats = validate_formats;
     config.custom_formats = custom_formats;
     config.ignore_unknown_formats = ignore_unknown_formats;
+    render_config(&config)
+}
+
+fn schema_to_code_with_gates(schema: Value, gates: crate::context::MethodGates) -> String {
+    let mut config = test_config(schema);
+    config.method_gates = gates;
     render_config(&config)
 }
 
@@ -222,6 +233,31 @@ fn dynamic_schema_full_module_emission() {
     });
 }
 
+#[test]
+fn evaluation_cycle_guard_is_emitted_only_for_recursive_helpers() {
+    let non_recursive = schema_to_code(json!({"type": "string"}));
+    assert!(!non_recursive.contains("__JSONSCHEMA_EVALUATION_MARK"));
+
+    let recursive = schema_to_code(json!({
+        "type": "object",
+        "properties": {"child": {"$ref": "#"}}
+    }));
+    assert!(recursive.contains("__JSONSCHEMA_EVALUATION_MARK"));
+}
+
+#[test_case(json!({"properties": {"a": true, "b": true}}) ; "properties")]
+#[test_case(json!({"prefixItems": [true, false]}) ; "tuple_items")]
+#[test_case(json!({"dependencies": {"a": {}, "b": {}}}) ; "dependencies")]
+#[test_case(json!({"if": {}, "then": {}, "else": {}}) ; "conditional")]
+#[test_case(json!({"if": {}, "else": {}}) ; "conditional_else_only")]
+fn fixed_evaluation_children_preallocate_capacity(schema: Value) {
+    let code: String = schema_to_code(schema)
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect();
+    assert!(code.contains("letmut__keyword_children=Vec::with_capacity(2usize);"));
+}
+
 #[test_case(json!({"$schema":"http://json-schema.org/draft-07/schema#","type":"string","format":"uri"}), "uri_format_per_call_cache" ; "uri")]
 #[test_case(json!({"$schema":"http://json-schema.org/draft-07/schema#","type":"string","format":"iri-reference"}), "iri_reference_format_per_call_cache" ; "iri_reference")]
 fn uri_format_emits_per_call_cache(schema: Value, snap_name: &str) {
@@ -234,10 +270,169 @@ fn uri_format_emits_per_call_cache(schema: Value, snap_name: &str) {
 
 #[test]
 fn config_parses_with_trailing_commas() {
-    let input = r#"schema = "{}", resources = { "json-schema:///a" => { schema = "{}", }, }, pattern_options = { size_limit = 1, }, email_options = { required_tld = true, }"#;
+    let input = r#"schema = "{}", resources = { "json-schema:///a" => { schema = "{}", }, }, pattern_options = { size_limit = 1, }, email_options = { required_tld = true, }, methods(evaluate = false,)"#;
     assert!(
         syn::parse_str::<crate::Config>(input).is_ok(),
         "trailing commas after the final entry should parse"
+    );
+}
+
+#[test]
+fn parse_methods_group() {
+    let cfg: crate::Config =
+        syn::parse_str(r#"schema = "{}", methods(evaluate = false, iter_errors = false)"#)
+            .expect("parses");
+    assert!(cfg.methods.is_valid);
+    assert!(cfg.methods.validate);
+    assert!(!cfg.methods.iter_errors);
+    assert!(!cfg.methods.evaluate);
+}
+
+#[test]
+fn methods_group_flips_is_valid_and_validate() {
+    // Locks the is_valid/validate arm mapping so a swapped match arm is caught.
+    let cfg: crate::Config =
+        syn::parse_str(r#"schema = "{}", methods(is_valid = false, validate = false)"#)
+            .expect("parses");
+    assert!(!cfg.methods.is_valid);
+    assert!(!cfg.methods.validate);
+    assert!(cfg.methods.iter_errors);
+    assert!(cfg.methods.evaluate);
+}
+
+#[test]
+fn methods_group_rejects_duplicate_key() {
+    assert!(
+        syn::parse_str::<crate::Config>(
+            r#"schema = "{}", methods(evaluate = false, evaluate = true)"#
+        )
+        .is_err(),
+        "a repeated method key must be rejected"
+    );
+}
+
+#[test]
+fn methods_default_all_true() {
+    let cfg: crate::Config = syn::parse_str(r#"schema = "{}""#).expect("parses");
+    assert!(
+        cfg.methods.is_valid
+            && cfg.methods.validate
+            && cfg.methods.iter_errors
+            && cfg.methods.evaluate
+    );
+}
+
+// These assert only the ABSENCE of a gated method's generated code — the property a text scan can
+// establish that a compile check cannot. Presence and correctness of the surviving methods are
+// covered by the `test_gate_*` compile+parity cases in `crates/jsonschema/tests/codegen.rs`.
+#[test]
+fn evaluate_gate_off_emits_no_evaluate() {
+    let gates = crate::context::MethodGates {
+        evaluate: false,
+        ..Default::default()
+    };
+    // A recursive object schema exercises the evaluation helpers, node-location statics, and the
+    // recursive-root evaluation function that `evaluate = false` must all suppress.
+    let code = schema_to_code_with_gates(
+        json!({"type": "object", "properties": {"child": {"$ref": "#"}}}),
+        gates,
+    );
+    assert!(!code.contains("fn evaluate"), "evaluate emitted:\n{code}");
+    assert!(
+        !code.contains("evaluate_ref_"),
+        "evaluation helper emitted:\n{code}"
+    );
+    assert!(
+        !code.contains("__JSONSCHEMA_SP_"),
+        "node-location statics emitted:\n{code}"
+    );
+}
+
+#[test]
+fn is_valid_gate_off_drops_public_wrapper() {
+    let gates = crate::context::MethodGates {
+        is_valid: false,
+        ..Default::default()
+    };
+    let code = schema_to_code_with_gates(
+        json!({"anyOf": [{"type": "string"}, {"type": "number"}]}),
+        gates,
+    );
+    // Only the public wrapper is dropped; the internal `pub(super) fn is_valid` is a distinct
+    // spelling and stays (branch gates and `validate` still call it).
+    assert!(
+        !code.contains("pub fn is_valid"),
+        "public is_valid must be gone:\n{code}"
+    );
+}
+
+#[test]
+fn validate_gate_off_drops_validate_functions() {
+    let gates = crate::context::MethodGates {
+        validate: false,
+        ..Default::default()
+    };
+    // Deliberately non-recursive so no `$recursiveRef`/`$ref`-cycle validate-stack machinery is
+    // emitted (e.g. `__JSONSCHEMA_RECURSIVE_VALIDATE_STACK`); the `_validate` absence check then
+    // targets only the plain validation walk. Swapping in a cyclic schema would muddy this scope.
+    let code = schema_to_code_with_gates(
+        json!({"anyOf": [{"type": "string"}, {"type": "number"}]}),
+        gates,
+    );
+    assert!(
+        !code.contains("pub fn validate"),
+        "public validate must be gone:\n{code}"
+    );
+    assert!(
+        !code.contains("pub(super) fn validate"),
+        "internal validate must be gone:\n{code}"
+    );
+    // The per-target `_validate` helper bodies are owned by `validate`.
+    assert!(
+        !code.contains("_validate"),
+        "per-target validate helpers must be gone:\n{code}"
+    );
+}
+
+#[test]
+fn iter_errors_gate_off_drops_public_wrapper() {
+    let gates = crate::context::MethodGates {
+        iter_errors: false,
+        ..Default::default()
+    };
+    let code = schema_to_code_with_gates(
+        json!({"anyOf": [{"type": "string"}, {"type": "number"}]}),
+        gates,
+    );
+    assert!(
+        !code.contains("pub fn iter_errors"),
+        "public iter_errors must be gone:\n{code}"
+    );
+}
+
+#[test]
+fn validate_and_iter_errors_off_drops_collect() {
+    let gates = crate::context::MethodGates {
+        validate: false,
+        iter_errors: false,
+        ..Default::default()
+    };
+    let code = schema_to_code_with_gates(
+        json!({"anyOf": [{"type": "string"}, {"type": "number"}]}),
+        gates,
+    );
+    // With both collect consumers off, the error-collection machinery is fully removed.
+    assert!(
+        !code.contains("_collect_errors"),
+        "per-target collect helpers must be gone:\n{code}"
+    );
+    assert!(
+        !code.contains("pub(super) fn collect_errors"),
+        "root collect must be gone:\n{code}"
+    );
+    assert!(
+        !code.contains("collect_branch_errors_"),
+        "branch collect must be gone:\n{code}"
     );
 }
 
@@ -439,12 +634,13 @@ fn nested_any_of(depth: usize) -> Value {
 
 #[test]
 fn unevaluated_guards_do_not_reinline_subschemas() {
-    let shallow = schema_to_code(nested_any_of(4)).len();
-    let deep = schema_to_code(nested_any_of(8)).len();
+    let compact_len = |source: &str| source.split_whitespace().map(str::len).sum::<usize>();
+    let shallow = compact_len(&schema_to_code(nested_any_of(4)));
+    let deep = compact_len(&schema_to_code(nested_any_of(8)));
     // Doubling nesting depth must not blow up emitted size superlinearly.
     assert!(
         deep < shallow * 2,
-        "emitted size grows superlinearly: depth4={shallow} bytes, depth8={deep} bytes"
+        "emitted token size grows superlinearly: depth4={shallow}, depth8={deep}"
     );
 }
 
@@ -460,6 +656,34 @@ fn bench_helpers_emit_validator() {
     insta::with_settings!({ description => &description }, {
         insta::assert_snapshot!("bench_helpers_validator", extract_is_valid_body(&code));
     });
+}
+
+#[cfg(feature = "bench")]
+#[test]
+fn resolve_ref_returns_borrow_not_clone() {
+    // A cloned owned Value would also compile, so assert pointer identity against the
+    // registry-owned Value to prove no copy.
+    use crate::codegen::refs::resolve_ref;
+    let input = crate::bench::prepare(serde_json::json!({
+        "$defs": {"x": {"type": "string"}},
+        "$ref": "#/$defs/x"
+    }));
+    let mut ctx = crate::context::CompileContext::new(crate::bench::input_config(&input));
+    let resolved = resolve_ref(&mut ctx, "#/$defs/x").expect("resolves");
+    let ptr = std::ptr::from_ref(resolved.schema);
+    // Look up the same node directly in the registry-owned document and compare addresses.
+    let registry_node = std::ptr::from_ref(
+        ctx.config
+            .registry
+            .resolver((*ctx.config.base_uri).clone())
+            .lookup("#/$defs/x")
+            .unwrap()
+            .contents(),
+    );
+    assert_eq!(
+        ptr, registry_node,
+        "resolve_ref must borrow the registry Value, not clone it"
+    );
 }
 
 #[test]
@@ -681,8 +905,16 @@ fn nested_any_of_context_generation_is_linear() {
 
     let shallow = schema_to_code(nested(6));
     let deep = schema_to_code(nested(12));
+    let shallow_evaluate = extract_fn_body(&shallow, "pub(super) fn evaluate");
+    let deep_evaluate = extract_fn_body(&deep, "pub(super) fn evaluate");
+    let compact_len = |source: &str| source.split_whitespace().map(str::len).sum::<usize>();
     assert_eq!(deep.matches("fn collect_branch_errors_").count(), 24);
-    assert!(deep.len() < shallow.len() * 2);
+    assert!(
+        compact_len(&deep_evaluate) < compact_len(&shallow_evaluate) * 2,
+        "deep={} shallow={}",
+        compact_len(&deep_evaluate),
+        compact_len(&shallow_evaluate),
+    );
 }
 
 #[test]
@@ -710,4 +942,22 @@ fn discriminator_branch_helper_reduces_only_validity() {
     assert!(!is_valid.contains("circle"));
     assert!(is_valid.contains(">= 8"));
     assert!(collect.contains("circle"));
+}
+
+#[test]
+fn no_unevaluated_means_no_key_item_helpers() {
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {"a": {"$ref": "#/$defs/x"}},
+        "$defs": {"x": {"type": "string"}}
+    });
+    let code = schema_to_code(schema);
+    assert!(
+        !code.contains("fn eval_ref_"),
+        "unexpected key_eval helper:\n{code}"
+    );
+    assert!(
+        !code.contains("fn eval_items_ref_"),
+        "unexpected item_eval helper:\n{code}"
+    );
 }

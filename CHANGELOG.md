@@ -4,7 +4,7 @@
 
 ### Added
 
-- `iter_errors` for `#[jsonschema::validator]`-generated validators.
+- `iter_errors` and `evaluate` for `#[jsonschema::validator]`-generated validators.
 
 ### Fixed
 

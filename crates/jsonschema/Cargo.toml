@@ -107,6 +107,14 @@ required-features = ["macros"]
 name = "suite"
 required-features = ["macros"]
 
+[[test]]
+name = "output_suite"
+required-features = ["macros"]
+
+[[test]]
+name = "annotation_suite"
+required-features = ["macros"]
+
 [[bench]]
 harness = false
 name = "jsonschema"
@@ -141,4 +149,3 @@ name = "unevaluated_items"
 harness = false
 name = "metaschema"
 required-features = ["macros"]
-

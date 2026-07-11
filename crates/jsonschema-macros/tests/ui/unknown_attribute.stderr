@@ -1,4 +1,4 @@
-error: Expected `path`, `schema`, `draft`, `base_uri`, `resources`, `validate_formats`, `formats`, `keywords`, `content_media_types`, `content_encodings`, `ignore_unknown_formats`, `email_options`, or `pattern_options` attribute
+error: Expected `path`, `schema`, `draft`, `base_uri`, `resources`, `validate_formats`, `formats`, `keywords`, `content_media_types`, `content_encodings`, `ignore_unknown_formats`, `email_options`, `pattern_options`, or `methods` attribute
  --> tests/ui/unknown_attribute.rs:1:25
   |
 1 | #[jsonschema::validator(bogus = 1)]

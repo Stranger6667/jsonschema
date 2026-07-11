@@ -4,18 +4,13 @@ description: "{\"additionalProperties\":false,\"properties\":{\"a\":{\"type\":\"
 expression: collect_body(schema)
 ---
 match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 __errors
                     .extend(
-                        (|| -> Option<jsonschema::ValidationError<'_>> {
+                        (|| -> Option<__VE<'_>> {
                             if !(obj.contains_key("a")) {
                                 return Some(
-                                    jsonschema::__private::error::required(
-                                        "/required",
-                                        __path.into(),
-                                        instance,
-                                        "a",
-                                    ),
+                                    __err::required("/required", __path.into(), instance, "a"),
                                 );
                             }
                             None
@@ -23,15 +18,10 @@ match instance {
                     );
                 __errors
                     .extend(
-                        (|| -> Option<jsonschema::ValidationError<'_>> {
+                        (|| -> Option<__VE<'_>> {
                             if !(obj.contains_key("b")) {
                                 return Some(
-                                    jsonschema::__private::error::required(
-                                        "/required",
-                                        __path.into(),
-                                        instance,
-                                        "b",
-                                    ),
+                                    __err::required("/required", __path.into(), instance, "b"),
                                 );
                             }
                             None
@@ -48,11 +38,11 @@ match instance {
                                 if !(instance.is_string()) {
                                     __errors
                                         .push(
-                                            jsonschema::__private::error::single_type(
+                                            __err::single_type(
                                                 "/properties/a/type",
                                                 __path.into(),
                                                 instance,
-                                                jsonschema::JsonType::String,
+                                                __JT::String,
                                             ),
                                         );
                                 }
@@ -61,25 +51,21 @@ match instance {
                         "b" => {
                             let instance = value;
                             if !(match instance {
-                                serde_json::Value::Number(n) => {
-                                    jsonschema::__private::types::is_integer(n)
-                                }
+                                __Value::Number(n) => __types::is_integer(n),
                                 _ => false,
                             }) {
                                 let __path = &__path.push("b");
                                 if !(match instance {
-                                    serde_json::Value::Number(n) => {
-                                        jsonschema::__private::types::is_integer(n)
-                                    }
+                                    __Value::Number(n) => __types::is_integer(n),
                                     _ => false,
                                 }) {
                                     __errors
                                         .push(
-                                            jsonschema::__private::error::single_type(
+                                            __err::single_type(
                                                 "/properties/b/type",
                                                 __path.into(),
                                                 instance,
-                                                jsonschema::JsonType::Integer,
+                                                __JT::Integer,
                                             ),
                                         );
                                 }
@@ -93,7 +79,7 @@ match instance {
                 if !__unexpected.is_empty() {
                     __errors
                         .push(
-                            jsonschema::__private::error::additional_properties(
+                            __err::additional_properties(
                                 "/additionalProperties",
                                 __path.into(),
                                 instance,
@@ -105,11 +91,11 @@ match instance {
             _ => {
                 __errors
                     .push(
-                        jsonschema::__private::error::single_type(
+                        __err::single_type(
                             "/type",
                             __path.into(),
                             instance,
-                            jsonschema::JsonType::Object,
+                            __JT::Object,
                         ),
                     );
             }

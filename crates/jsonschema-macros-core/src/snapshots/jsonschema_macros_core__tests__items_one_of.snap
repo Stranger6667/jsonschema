@@ -4,20 +4,20 @@ description: "{\"oneOf\":[{\"prefixItems\":[{\"const\":1}]},{\"prefixItems\":[{\
 expression: is_valid_body(schema)
 ---
 (match instance {
-            serde_json::Value::Array(arr) => {
-                let __guard_0 = (|instance: &serde_json::Value| match instance {
-                    serde_json::Value::Array(arr) => {
+            __Value::Array(arr) => {
+                let __guard_0 = (|instance: &__Value| match instance {
+                    __Value::Array(arr) => {
                         arr.get(0usize)
                             .map_or(
                                 true,
                                 |instance| {
-                                    static EXPECTED: std::sync::LazyLock<serde_json::Number> = std::sync::LazyLock::new(||
+                                    static EXPECTED: __Lazy<serde_json::Number> = __Lazy::new(||
                                     {
                                         serde_json::from_str("1")
                                             .expect("Failed to parse const number")
                                     });
                                     match instance {
-                                        serde_json::Value::Number(n) => {
+                                        __Value::Number(n) => {
                                             jsonschema::__private::cmp::equal_numbers(n, &*EXPECTED)
                                         }
                                         _ => false,
@@ -27,19 +27,19 @@ expression: is_valid_body(schema)
                     }
                     _ => true,
                 })(instance);
-                let __guard_1 = (|instance: &serde_json::Value| match instance {
-                    serde_json::Value::Array(arr) => {
+                let __guard_1 = (|instance: &__Value| match instance {
+                    __Value::Array(arr) => {
                         arr.get(0usize)
                             .map_or(
                                 true,
                                 |instance| {
-                                    static EXPECTED: std::sync::LazyLock<serde_json::Number> = std::sync::LazyLock::new(||
+                                    static EXPECTED: __Lazy<serde_json::Number> = __Lazy::new(||
                                     {
                                         serde_json::from_str("2")
                                             .expect("Failed to parse const number")
                                     });
                                     match instance {
-                                        serde_json::Value::Number(n) => {
+                                        __Value::Number(n) => {
                                             jsonschema::__private::cmp::equal_numbers(n, &*EXPECTED)
                                         }
                                         _ => false,

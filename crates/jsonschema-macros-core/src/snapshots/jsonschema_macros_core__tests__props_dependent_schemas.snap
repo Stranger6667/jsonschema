@@ -4,7 +4,7 @@ description: "{\"dependentSchemas\":{\"a\":{\"properties\":{\"b\":{}}}},\"type\"
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 obj.iter()
                     .all(|(__key, __value)| {
                         let key_str = __key.as_str();

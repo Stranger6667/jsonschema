@@ -413,6 +413,21 @@ fn test_custom_keyword_iter_errors_multi() {
     );
 }
 
+#[test]
+fn test_custom_keyword_evaluation_matches_runtime() {
+    let schema = serde_json::json!({"multi": true});
+    let instance = serde_json::json!(1);
+    let runtime = jsonschema::options()
+        .with_keyword("multi", multi_error_factory)
+        .build(&schema)
+        .expect("valid schema");
+    assert_evaluation_output_parity(
+        MultiErrorCustomValidator::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
 #[jsonschema::validator(
     schema = r#"{"type":"integer","even":true}"#,
     keywords = { "even" => crate::even_factory }
@@ -552,6 +567,687 @@ fn test_unknown_uppercase_content_encoding_is_ignored() {
     assert!(runtime.is_valid(&instance));
     assert!(UppercaseContentEncodingValidator::is_valid(&instance));
 }
+
+fn assert_evaluation_output_parity(
+    generated: jsonschema::Evaluation,
+    runtime: &jsonschema::Validator,
+    instance: &serde_json::Value,
+) {
+    let expected = runtime.evaluate(instance);
+    assert_eq!(
+        serde_json::to_value(generated.list()).expect("serialize generated list output"),
+        serde_json::to_value(expected.list()).expect("serialize runtime list output"),
+    );
+    assert_eq!(
+        serde_json::to_value(generated.hierarchical())
+            .expect("serialize generated hierarchical output"),
+        serde_json::to_value(expected.hierarchical())
+            .expect("serialize runtime hierarchical output"),
+    );
+}
+
+#[jsonschema::validator(schema = "true")]
+struct TrueSchemaEvaluationValidator;
+
+#[test]
+fn test_true_schema_evaluation_matches_runtime() {
+    let schema = serde_json::json!(true);
+    let instance = serde_json::json!({"value": 1});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_evaluation_output_parity(
+        TrueSchemaEvaluationValidator::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(schema = "false")]
+struct FalseSchemaEvaluationValidator;
+
+#[test]
+fn test_false_schema_evaluation_matches_runtime() {
+    let schema = serde_json::json!(false);
+    let instance = serde_json::json!({"value": 1});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_evaluation_output_parity(
+        FalseSchemaEvaluationValidator::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(schema = "{}")]
+struct EmptySchemaEvaluationValidator;
+
+#[test]
+fn test_empty_schema_evaluation_matches_runtime() {
+    let schema = serde_json::json!({});
+    let instance = serde_json::json!({"value": 1});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_evaluation_output_parity(
+        EmptySchemaEvaluationValidator::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+macro_rules! evaluation_parity_test {
+    ($name:ident, $validator:ident, $schema:tt, $instance:tt) => {
+        #[test]
+        fn $name() {
+            let schema = serde_json::json!($schema);
+            let instance = serde_json::json!($instance);
+            let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+            assert_evaluation_output_parity($validator::evaluate(&instance), &runtime, &instance);
+        }
+    };
+    ($name:ident, $validator:ident, $schema:tt, $instance:tt, $draft:expr) => {
+        #[test]
+        fn $name() {
+            let schema = serde_json::json!($schema);
+            let instance = serde_json::json!($instance);
+            let runtime = jsonschema::options()
+                .with_draft($draft)
+                .build(&schema)
+                .expect("valid schema");
+            assert_evaluation_output_parity($validator::evaluate(&instance), &runtime, &instance);
+        }
+    };
+}
+
+#[jsonschema::validator(schema = r#"{"const":"expected","enum":["allowed"]}"#)]
+struct ValueAssertionEvaluationValidator;
+
+evaluation_parity_test!(
+    test_value_assertion_evaluation_matches_runtime,
+    ValueAssertionEvaluationValidator,
+    {"const": "expected", "enum": ["allowed"]},
+    "actual"
+);
+
+#[jsonschema::validator(schema = r#"{"minimum":10,"maximum":1,"multipleOf":2}"#)]
+struct NumericAssertionEvaluationValidator;
+
+evaluation_parity_test!(
+    test_numeric_assertion_evaluation_matches_runtime,
+    NumericAssertionEvaluationValidator,
+    {"minimum": 10, "maximum": 1, "multipleOf": 2},
+    5
+);
+
+#[jsonschema::validator(schema = r#"{"minLength":3,"maxLength":1,"pattern":"^z"}"#)]
+struct StringAssertionEvaluationValidator;
+
+evaluation_parity_test!(
+    test_string_assertion_evaluation_matches_runtime,
+    StringAssertionEvaluationValidator,
+    {"minLength": 3, "maxLength": 1, "pattern": "^z"},
+    "ab"
+);
+
+#[jsonschema::validator(schema = r#"{"minItems":3,"maxItems":1,"uniqueItems":true}"#)]
+struct ArrayAssertionEvaluationValidator;
+
+evaluation_parity_test!(
+    test_array_assertion_evaluation_matches_runtime,
+    ArrayAssertionEvaluationValidator,
+    {"minItems": 3, "maxItems": 1, "uniqueItems": true},
+    [1, 1]
+);
+
+#[jsonschema::validator(schema = r#"{"minProperties":2,"maxProperties":0,"required":["b"]}"#)]
+struct ObjectAssertionEvaluationValidator;
+
+evaluation_parity_test!(
+    test_object_assertion_evaluation_matches_runtime,
+    ObjectAssertionEvaluationValidator,
+    {"minProperties": 2, "maxProperties": 0, "required": ["b"]},
+    {"a": 1}
+);
+
+#[jsonschema::validator(schema = r#"{"type":"string","minLength":2}"#)]
+struct TypeAssertionEvaluationValidator;
+
+evaluation_parity_test!(
+    test_type_assertion_evaluation_matches_runtime,
+    TypeAssertionEvaluationValidator,
+    {"type": "string", "minLength": 2},
+    1
+);
+
+#[jsonschema::validator(schema = r#"{"properties":{"a":{"type":"string"},"b":{"minimum":2}}}"#)]
+struct PropertiesEvaluationValidator;
+
+evaluation_parity_test!(
+    test_properties_evaluation_matches_runtime,
+    PropertiesEvaluationValidator,
+    {"properties": {"a": {"type": "string"}, "b": {"minimum": 2}}},
+    {"a": 1, "b": 1}
+);
+
+#[jsonschema::validator(
+    schema = r#"{"prefixItems":[{"type":"integer"}],"items":{"type":"string"}}"#
+)]
+struct ItemsEvaluationValidator;
+
+evaluation_parity_test!(
+    test_items_evaluation_matches_runtime,
+    ItemsEvaluationValidator,
+    {"prefixItems": [{"type": "integer"}], "items": {"type": "string"}},
+    ["wrong", 1, "ok"]
+);
+
+#[jsonschema::validator(
+    schema = r#"{"properties":{"known":{"type":"string"}},"additionalProperties":false}"#
+)]
+struct AdditionalPropertiesFalseEvaluationValidator;
+
+evaluation_parity_test!(
+    test_fused_additional_properties_false_evaluation_matches_runtime,
+    AdditionalPropertiesFalseEvaluationValidator,
+    {"properties": {"known": {"type": "string"}}, "additionalProperties": false},
+    {"known": 1, "extra": 2}
+);
+
+#[jsonschema::validator(
+    schema = r#"{"properties":{"known":{"type":"string"}},"additionalProperties":{"type":"integer"}}"#
+)]
+struct AdditionalPropertiesSchemaEvaluationValidator;
+
+evaluation_parity_test!(
+    test_fused_additional_properties_schema_evaluation_matches_runtime,
+    AdditionalPropertiesSchemaEvaluationValidator,
+    {"properties": {"known": {"type": "string"}}, "additionalProperties": {"type": "integer"}},
+    {"known": 1, "extra": "wrong"}
+);
+
+#[jsonschema::validator(
+    schema = r#"{"patternProperties":{"^x":{"type":"string"}},"additionalProperties":{"type":"integer"}}"#
+)]
+struct PatternAdditionalPropertiesEvaluationValidator;
+
+evaluation_parity_test!(
+    test_pattern_additional_properties_evaluation_matches_runtime,
+    PatternAdditionalPropertiesEvaluationValidator,
+    {"patternProperties": {"^x": {"type": "string"}}, "additionalProperties": {"type": "integer"}},
+    {"x-key": 1, "extra": "wrong"}
+);
+
+#[jsonschema::validator(schema = r#"{"patternProperties":{"^x":{"type":"string"}}}"#)]
+struct PatternPropertiesEvaluationValidator;
+
+evaluation_parity_test!(
+    test_pattern_properties_evaluation_matches_runtime,
+    PatternPropertiesEvaluationValidator,
+    {"patternProperties": {"^x": {"type": "string"}}},
+    {"x-key": 1, "other": 2}
+);
+
+#[jsonschema::validator(schema = r#"{"propertyNames":{"minLength":2}}"#)]
+struct PropertyNamesEvaluationValidator;
+
+evaluation_parity_test!(
+    test_property_names_evaluation_matches_runtime,
+    PropertyNamesEvaluationValidator,
+    {"propertyNames": {"minLength": 2}},
+    {"x": 1}
+);
+
+#[jsonschema::validator(schema = r#"{"dependentSchemas":{"a":{"required":["b"]}}}"#)]
+struct DependentSchemasEvaluationValidator;
+
+evaluation_parity_test!(
+    test_dependent_schemas_evaluation_matches_runtime,
+    DependentSchemasEvaluationValidator,
+    {"dependentSchemas": {"a": {"required": ["b"]}}},
+    {"a": 1}
+);
+
+#[jsonschema::validator(
+    schema = r#"{"dependencies":{"a":{"required":["b"]}}}"#,
+    draft = Draft7
+)]
+struct DependenciesEvaluationValidator;
+
+evaluation_parity_test!(
+    test_dependencies_evaluation_matches_runtime,
+    DependenciesEvaluationValidator,
+    {"dependencies": {"a": {"required": ["b"]}}},
+    {"a": 1},
+    jsonschema::Draft::Draft7
+);
+
+#[jsonschema::validator(
+    schema = r#"{"items":[{"type":"integer"}],"additionalItems":{"type":"string"}}"#,
+    draft = Draft7
+)]
+struct AdditionalItemsEvaluationValidator;
+
+evaluation_parity_test!(
+    test_additional_items_evaluation_matches_runtime,
+    AdditionalItemsEvaluationValidator,
+    {"items": [{"type": "integer"}], "additionalItems": {"type": "string"}},
+    [1, 2],
+    jsonschema::Draft::Draft7
+);
+
+#[jsonschema::validator(schema = r#"{"title":"Example","x-note":1,"type":"string"}"#)]
+struct SchemaAnnotationEvaluationValidator;
+
+evaluation_parity_test!(
+    test_schema_annotations_evaluation_matches_runtime,
+    SchemaAnnotationEvaluationValidator,
+    {"title": "Example", "x-note": 1, "type": "string"},
+    "valid"
+);
+
+evaluation_parity_test!(
+    test_dropped_schema_annotations_evaluation_matches_runtime,
+    SchemaAnnotationEvaluationValidator,
+    {"title": "Example", "x-note": 1, "type": "string"},
+    1
+);
+
+#[jsonschema::validator(schema = r#"{"contains":{"type":"integer"}}"#)]
+struct ContainsEvaluationValidator;
+
+evaluation_parity_test!(
+    test_contains_success_evaluation_matches_runtime,
+    ContainsEvaluationValidator,
+    {"contains": {"type": "integer"}},
+    [1, "x", 2]
+);
+
+evaluation_parity_test!(
+    test_contains_failure_evaluation_matches_runtime,
+    ContainsEvaluationValidator,
+    {"contains": {"type": "integer"}},
+    ["x"]
+);
+
+#[jsonschema::validator(
+    schema = r#"{"format":"email","contentEncoding":"base64","contentMediaType":"application/json"}"#
+)]
+struct AnnotationKeywordEvaluationValidator;
+
+evaluation_parity_test!(
+    test_annotation_keywords_evaluation_matches_runtime,
+    AnnotationKeywordEvaluationValidator,
+    {"format": "email", "contentEncoding": "base64", "contentMediaType": "application/json"},
+    "value"
+);
+
+#[jsonschema::validator(schema = r#"{"properties":{"a":true},"unevaluatedProperties":false}"#)]
+struct UnevaluatedPropertiesEvaluationValidator;
+
+evaluation_parity_test!(
+    test_unevaluated_properties_evaluation_matches_runtime,
+    UnevaluatedPropertiesEvaluationValidator,
+    {"properties": {"a": true}, "unevaluatedProperties": false},
+    {"a": 1, "b": 2}
+);
+
+#[jsonschema::validator(schema = r#"{"prefixItems":[true],"unevaluatedItems":false}"#)]
+struct UnevaluatedItemsEvaluationValidator;
+
+evaluation_parity_test!(
+    test_unevaluated_items_evaluation_matches_runtime,
+    UnevaluatedItemsEvaluationValidator,
+    {"prefixItems": [true], "unevaluatedItems": false},
+    [1, 2]
+);
+
+#[jsonschema::validator(
+    schema = r##"{"$defs":{"item":{"type":"string"}},"properties":{"value":{"$ref":"#/$defs/item"}}}"##
+)]
+struct StaticReferenceEvaluationValidator;
+
+evaluation_parity_test!(
+    test_static_reference_evaluation_matches_runtime,
+    StaticReferenceEvaluationValidator,
+    {"$defs": {"item": {"type": "string"}}, "properties": {"value": {"$ref": "#/$defs/item"}}},
+    {"value": 1}
+);
+
+#[jsonschema::validator(schema = r#"{"$id":"https://example.com/root","type":"string"}"#)]
+struct AbsoluteLocationEvaluationValidator;
+
+evaluation_parity_test!(
+    test_absolute_location_evaluation_matches_runtime,
+    AbsoluteLocationEvaluationValidator,
+    {"$id": "https://example.com/root", "type": "string"},
+    1
+);
+
+#[jsonschema::validator(
+    schema = r#"{"$id":"child","type":"string"}"#,
+    base_uri = "https://example.com/root"
+)]
+struct RelativeRootIdEvaluationValidator;
+
+#[test]
+fn test_relative_root_id_evaluation_matches_runtime() {
+    let schema = serde_json::json!({"$id": "child", "type": "string"});
+    let instance = serde_json::json!(1);
+    let runtime = jsonschema::options()
+        .with_base_uri("https://example.com/root")
+        .build(&schema)
+        .expect("valid schema");
+    assert_evaluation_output_parity(
+        RelativeRootIdEvaluationValidator::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"$id":"https://example.com/projection","description":"text","type":"string"}"#
+)]
+struct EvaluationProjectionValidator;
+
+#[test]
+fn test_generated_evaluation_projections_match_runtime() {
+    let schema = serde_json::json!({
+        "$id": "https://example.com/projection",
+        "description": "text",
+        "type": "string",
+    });
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+
+    let invalid = serde_json::json!(1);
+    let generated = EvaluationProjectionValidator::evaluate(&invalid);
+    let expected = runtime.evaluate(&invalid);
+    let generated_errors = generated
+        .iter_errors()
+        .map(|entry| {
+            (
+                entry.schema_location,
+                entry.absolute_keyword_location.map(ToString::to_string),
+                entry.instance_location.as_str(),
+                entry.error.to_string(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let expected_errors = expected
+        .iter_errors()
+        .map(|entry| {
+            (
+                entry.schema_location,
+                entry.absolute_keyword_location.map(ToString::to_string),
+                entry.instance_location.as_str(),
+                entry.error.to_string(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(generated_errors, expected_errors);
+
+    let valid = serde_json::json!("value");
+    let generated = EvaluationProjectionValidator::evaluate(&valid);
+    let expected = runtime.evaluate(&valid);
+    let generated_annotations = generated
+        .iter_annotations()
+        .map(|entry| {
+            (
+                entry.schema_location,
+                entry.absolute_keyword_location.map(ToString::to_string),
+                entry.instance_location.as_str(),
+                entry.annotations.value().clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let expected_annotations = expected
+        .iter_annotations()
+        .map(|entry| {
+            (
+                entry.schema_location,
+                entry.absolute_keyword_location.map(ToString::to_string),
+                entry.instance_location.as_str(),
+                entry.annotations.value().clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(generated_annotations, expected_annotations);
+}
+
+#[jsonschema::validator(
+    schema = r##"{"$ref":"https://example.com/external"}"##,
+    resources = {
+        "https://example.com/external" => {
+            schema = r#"{"$id":"https://example.com/external","type":"string"}"#
+        },
+    }
+)]
+struct ExternalResourceEvaluationValidator;
+
+#[test]
+fn test_external_resource_evaluation_matches_runtime() {
+    let schema = serde_json::json!({"$ref": "https://example.com/external"});
+    let instance = serde_json::json!(1);
+    let runtime = build_runtime_with_resources(
+        schema,
+        [(
+            "https://example.com/external",
+            serde_json::json!({"$id": "https://example.com/external", "type": "string"}),
+        )],
+    );
+    assert_evaluation_output_parity(
+        ExternalResourceEvaluationValidator::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r##"{"$ref":"https://example.com/external#/$defs/target"}"##,
+    resources = {
+        "https://example.com/external" => {
+            schema = r#"{"$defs":{"target":{"$id":"child/","$ref":"nested"}}}"#
+        },
+        "https://example.com/child/nested" => { schema = r#"{"type":"string"}"# },
+        "https://example.com/child/child/" => { schema = "{}" },
+        "https://example.com/child/child/nested" => { schema = r#"{"type":"integer"}"# },
+    }
+)]
+struct ExternalPointerRelativeIdEvaluationValidator;
+
+#[test]
+fn test_external_pointer_relative_id_evaluation_matches_runtime() {
+    let schema = serde_json::json!({"$ref": "https://example.com/external#/$defs/target"});
+    let instance = serde_json::json!("value");
+    let runtime = build_runtime_with_resources(
+        schema,
+        [
+            (
+                "https://example.com/external",
+                serde_json::json!({"$defs": {"target": {"$id": "child/", "$ref": "nested"}}}),
+            ),
+            (
+                "https://example.com/child/nested",
+                serde_json::json!({"type": "string"}),
+            ),
+            ("https://example.com/child/child/", serde_json::json!({})),
+            (
+                "https://example.com/child/child/nested",
+                serde_json::json!({"type": "integer"}),
+            ),
+        ],
+    );
+    assert_evaluation_output_parity(
+        ExternalPointerRelativeIdEvaluationValidator::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r##"{"$defs":{"node":{"type":"object","properties":{"next":{"$ref":"#/$defs/node"}}}},"$ref":"#/$defs/node"}"##
+)]
+struct RecursiveReferenceEvaluationValidator;
+
+evaluation_parity_test!(
+    test_recursive_reference_evaluation_matches_runtime,
+    RecursiveReferenceEvaluationValidator,
+    {"$defs": {"node": {"type": "object", "properties": {"next": {"$ref": "#/$defs/node"}}}}, "$ref": "#/$defs/node"},
+    {"next": {"next": {}}}
+);
+
+#[jsonschema::validator(schema = r##"{"$ref":"#"}"##)]
+struct SelfReferenceEvaluationValidator;
+
+evaluation_parity_test!(
+    test_self_reference_evaluation_matches_runtime,
+    SelfReferenceEvaluationValidator,
+    {"$ref": "#"},
+    1
+);
+
+#[jsonschema::validator(
+    schema = r##"{"$defs":{"node":{"$dynamicAnchor":"node","type":"object","properties":{"child":{"$dynamicRef":"#node"}}}},"$ref":"#/$defs/node"}"##
+)]
+struct DynamicReferenceEvaluationValidator;
+
+evaluation_parity_test!(
+    test_dynamic_reference_evaluation_matches_runtime,
+    DynamicReferenceEvaluationValidator,
+    {"$defs": {"node": {"$dynamicAnchor": "node", "type": "object", "properties": {"child": {"$dynamicRef": "#node"}}}}, "$ref": "#/$defs/node"},
+    {"child": 1}
+);
+
+#[jsonschema::validator(schema = r##"{
+        "$id":"https://example.com/strict-tree",
+        "$dynamicAnchor":"node",
+        "$ref":"tree",
+        "$defs":{
+            "tree":{
+                "$id":"tree",
+                "$dynamicAnchor":"node",
+                "type":"object",
+                "properties":{"child":{"$dynamicRef":"#node"}}
+            }
+        },
+        "unevaluatedProperties":false
+    }"##)]
+struct DynamicReferenceOverrideEvaluationValidator;
+
+evaluation_parity_test!(
+    test_dynamic_reference_override_evaluation_matches_runtime,
+    DynamicReferenceOverrideEvaluationValidator,
+    {
+        "$id": "https://example.com/strict-tree",
+        "$dynamicAnchor": "node",
+        "$ref": "tree",
+        "$defs": {
+            "tree": {
+                "$id": "tree",
+                "$dynamicAnchor": "node",
+                "type": "object",
+                "properties": {"child": {"$dynamicRef": "#node"}}
+            }
+        },
+        "unevaluatedProperties": false
+    },
+    {"child": {"extra": 1}}
+);
+
+#[jsonschema::validator(
+    schema = r##"{"$recursiveAnchor":true,"type":"object","properties":{"child":{"$recursiveRef":"#"}}}"##,
+    draft = Draft201909
+)]
+struct RecursiveKeywordEvaluationValidator;
+
+evaluation_parity_test!(
+    test_recursive_keyword_evaluation_matches_runtime,
+    RecursiveKeywordEvaluationValidator,
+    {"$recursiveAnchor": true, "type": "object", "properties": {"child": {"$recursiveRef": "#"}}},
+    {"child": 1},
+    jsonschema::Draft::Draft201909
+);
+
+#[jsonschema::validator(schema = r#"{"allOf":[{"type":"integer"},{"minimum":2}]}"#)]
+struct AllOfEvaluationValidator;
+
+evaluation_parity_test!(
+    test_all_of_evaluation_matches_runtime,
+    AllOfEvaluationValidator,
+    {"allOf": [{"type": "integer"}, {"minimum": 2}]},
+    1
+);
+
+#[jsonschema::validator(schema = r#"{"anyOf":[{"type":"number"},{"minimum":0}]}"#)]
+struct AnyOfEvaluationValidator;
+
+evaluation_parity_test!(
+    test_any_of_evaluation_matches_runtime,
+    AnyOfEvaluationValidator,
+    {"anyOf": [{"type": "number"}, {"minimum": 0}]},
+    1
+);
+
+#[jsonschema::validator(schema = r#"{"anyOf":[{"type":"string"},{"type":"boolean"}]}"#)]
+struct AnyOfFailureEvaluationValidator;
+
+evaluation_parity_test!(
+    test_any_of_failure_evaluation_matches_runtime,
+    AnyOfFailureEvaluationValidator,
+    {"anyOf": [{"type": "string"}, {"type": "boolean"}]},
+    1
+);
+
+#[jsonschema::validator(schema = r#"{"oneOf":[{"type":"number"},{"minimum":0}]}"#)]
+struct OneOfEvaluationValidator;
+
+evaluation_parity_test!(
+    test_one_of_evaluation_matches_runtime,
+    OneOfEvaluationValidator,
+    {"oneOf": [{"type": "number"}, {"minimum": 0}]},
+    1
+);
+
+#[jsonschema::validator(schema = r#"{"oneOf":[{"type":"string"},{"type":"boolean"}]}"#)]
+struct OneOfSelectionEvaluationValidator;
+
+evaluation_parity_test!(
+    test_one_of_no_match_evaluation_matches_runtime,
+    OneOfSelectionEvaluationValidator,
+    {"oneOf": [{"type": "string"}, {"type": "boolean"}]},
+    1
+);
+
+evaluation_parity_test!(
+    test_one_of_unique_match_evaluation_matches_runtime,
+    OneOfSelectionEvaluationValidator,
+    {"oneOf": [{"type": "string"}, {"type": "boolean"}]},
+    "value"
+);
+
+#[jsonschema::validator(schema = r#"{"not":{"type":"string"}}"#)]
+struct NotEvaluationValidator;
+
+evaluation_parity_test!(
+    test_not_evaluation_matches_runtime,
+    NotEvaluationValidator,
+    {"not": {"type": "string"}},
+    "value"
+);
+
+#[jsonschema::validator(
+    schema = r#"{"if":{"minimum":0},"then":{"multipleOf":2},"else":{"type":"string"}}"#
+)]
+struct ConditionalEvaluationValidator;
+
+evaluation_parity_test!(
+    test_conditional_evaluation_matches_runtime,
+    ConditionalEvaluationValidator,
+    {"if": {"minimum": 0}, "then": {"multipleOf": 2}, "else": {"type": "string"}},
+    3
+);
+
+evaluation_parity_test!(
+    test_conditional_else_evaluation_matches_runtime,
+    ConditionalEvaluationValidator,
+    {"if": {"minimum": 0}, "then": {"multipleOf": 2}, "else": {"type": "string"}},
+    (-1)
+);
 
 // Regex-engine arm (no prefix/exact/alternation optimization).
 #[jsonschema::validator(schema = r#"{"type":"string","pattern":"^ab+$"}"#)]
@@ -4556,5 +5252,615 @@ fn test_property_names_type_string_only(instance: serde_json::Value) {
         &schema,
         PropertyNamesTypeStringOnly::is_valid(&instance),
         &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"properties":{"a":{}},"additionalProperties":false,"required":["a","b"]}"#
+)]
+struct RequiredFusionFalseLen2;
+
+#[test]
+fn test_required_fusion_false_len2_evaluation_matches_runtime() {
+    let schema = serde_json::json!({"properties":{"a":{}},"additionalProperties":false,"required":["a","b"]});
+    let instance = serde_json::json!({});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_evaluation_output_parity(
+        RequiredFusionFalseLen2::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"properties":{"a":{}},"additionalProperties":{"type":"string"},"required":["a"]}"#
+)]
+struct RequiredFusionObjectForm;
+
+#[test]
+fn test_required_fusion_object_form_evaluation_matches_runtime() {
+    let schema = serde_json::json!({"properties":{"a":{}},"additionalProperties":{"type":"string"},"required":["a"]});
+    let instance = serde_json::json!({});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_evaluation_output_parity(
+        RequiredFusionObjectForm::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"properties":{"m":{"type":"integer"}},"additionalProperties":false,"required":["m"]}"#
+)]
+struct RequiredFusionFalseLen1;
+
+#[test]
+fn test_required_fusion_false_len1_evaluation_matches_runtime() {
+    let schema = serde_json::json!({"properties":{"m":{"type":"integer"}},"additionalProperties":false,"required":["m"]});
+    let instance = serde_json::json!({});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_evaluation_output_parity(
+        RequiredFusionFalseLen1::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(schema = r#"{"pattern":"^a","uniqueItems":true,"format":"date"}"#)]
+struct OrderingUniqueItemsFormat;
+
+#[test]
+fn test_ordering_unique_items_format_evaluation_matches_runtime() {
+    let schema = serde_json::json!({"pattern":"^a","uniqueItems":true,"format":"date"});
+    let instance = serde_json::json!("abc");
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_evaluation_output_parity(
+        OrderingUniqueItemsFormat::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"required":["a"],"dependentRequired":{"a":["b"]},"properties":{"a":{"type":"integer"}}}"#
+)]
+struct OrderingDependentRequired;
+
+#[test]
+fn test_ordering_dependent_required_evaluation_matches_runtime() {
+    let schema = serde_json::json!({"required":["a"],"dependentRequired":{"a":["b"]},"properties":{"a":{"type":"integer"}}});
+    let instance = serde_json::json!({"a":1,"b":2});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_evaluation_output_parity(
+        OrderingDependentRequired::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"not":{"type":"string"},"if":{"type":"integer"},"then":{"minimum":5}}"#
+)]
+struct OrderingNotIf;
+
+#[test]
+fn test_ordering_not_if_evaluation_matches_runtime() {
+    let schema =
+        serde_json::json!({"not":{"type":"string"},"if":{"type":"integer"},"then":{"minimum":5}});
+    let instance = serde_json::json!(10);
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_evaluation_output_parity(OrderingNotIf::evaluate(&instance), &runtime, &instance);
+}
+
+#[jsonschema::validator(
+    schema = r#"{"$id":"https://example.com/root","properties":{"a#b":{"type":"string"}}}"#
+)]
+struct HashInPropertyName;
+
+#[test]
+fn test_hash_in_property_name_evaluation_matches_runtime() {
+    let schema = serde_json::json!({"$id":"https://example.com/root","properties":{"a#b":{"type":"string"}}});
+    let instance = serde_json::json!({"a#b":1});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_evaluation_output_parity(HashInPropertyName::evaluate(&instance), &runtime, &instance);
+}
+
+#[jsonschema::validator(
+    schema = r##"{"$defs":{"any":{"$dynamicAnchor":"any"}},"$dynamicRef":"#any","prefixItems":[{"type":"integer"}],"unevaluatedItems":false}"##
+)]
+struct CollapsePrefixItemsChild;
+
+#[test]
+fn test_collapse_prefix_items_child_evaluation_matches_runtime() {
+    let schema = serde_json::json!({"$defs":{"any":{"$dynamicAnchor":"any"}},"$dynamicRef":"#any","prefixItems":[{"type":"integer"}],"unevaluatedItems":false});
+    let instance = serde_json::json!(["x"]);
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_evaluation_output_parity(
+        CollapsePrefixItemsChild::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"patternProperties":{"^x":{"type":"integer"}},"additionalProperties":{"type":"integer"}}"#
+)]
+struct EmptyAdditionalAnnotate;
+
+#[test]
+fn test_empty_additional_annotate_evaluation_matches_runtime() {
+    let schema = serde_json::json!({"patternProperties":{"^x":{"type":"integer"}},"additionalProperties":{"type":"integer"}});
+    let instance = serde_json::json!({"x1":1});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_evaluation_output_parity(
+        EmptyAdditionalAnnotate::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(schema = r#"{"format":"date"}"#, draft = Draft7, validate_formats = false)]
+struct FormatAnnotationDisabled;
+
+#[test]
+fn test_format_annotation_disabled_evaluation_matches_runtime() {
+    let schema = serde_json::json!({"format":"date"});
+    let instance = serde_json::json!("not-a-date");
+    let runtime = jsonschema::options()
+        .with_draft(jsonschema::Draft::Draft7)
+        .should_validate_formats(false)
+        .build(&schema)
+        .expect("valid schema");
+    assert_evaluation_output_parity(
+        FormatAnnotationDisabled::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(path = "../benchmark/data/recursive_schema.json")]
+struct RecursiveEvalValidator;
+
+#[test]
+fn test_recursive_evaluation_matches_runtime() {
+    let schema: serde_json::Value =
+        serde_json::from_slice(include_bytes!("../../benchmark/data/recursive_schema.json"))
+            .expect("valid schema json");
+    let instance = serde_json::json!([[
+        "term", "reading", null, "rules", 0,
+        [{"type": "structured-content", "content": {"tag": "div", "content": [{"tag": "span", "content": "hi"}]}}],
+        0, "seq"
+    ]]);
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert!(runtime.is_valid(&instance), "instance must be valid");
+    assert_evaluation_output_parity(
+        RecursiveEvalValidator::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r##"{
+        "properties": {
+            "first": {"$ref": "#/definitions/item"},
+            "second": {"$ref": "#/definitions/item"}
+        },
+        "definitions": {"item": {"type": "array", "items": {"type": "string"}}}
+    }"##,
+    draft = Draft7
+)]
+struct SharedRefEvalValidator;
+
+#[test_case::test_case(serde_json::json!({"first": ["a", "b"], "second": ["c"]}) ; "valid")]
+#[test_case::test_case(serde_json::json!({"first": ["a"], "second": [1]}) ; "invalid")]
+fn test_shared_ref_evaluation_matches_runtime(instance: serde_json::Value) {
+    let schema = serde_json::json!({
+        "properties": {
+            "first": {"$ref": "#/definitions/item"},
+            "second": {"$ref": "#/definitions/item"}
+        },
+        "definitions": {"item": {"type": "array", "items": {"type": "string"}}}
+    });
+    let runtime = jsonschema::options()
+        .with_draft(jsonschema::Draft::Draft7)
+        .build(&schema)
+        .expect("valid schema");
+    assert_evaluation_output_parity(
+        SharedRefEvalValidator::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"properties": {"a": {"type": "integer"}}, "required": ["a", "b"]}"#,
+    draft = Draft7
+)]
+struct FusedRequiredEvalValidator;
+
+#[test_case::test_case(serde_json::json!({"a": 1, "b": 2}) ; "valid")]
+#[test_case::test_case(serde_json::json!({"a": 1}) ; "missing_required")]
+#[test_case::test_case(serde_json::json!({"a": "x", "b": 2}) ; "invalid_property")]
+fn test_fused_required_evaluation_matches_runtime(instance: serde_json::Value) {
+    let schema =
+        serde_json::json!({"properties": {"a": {"type": "integer"}}, "required": ["a", "b"]});
+    let runtime = jsonschema::options()
+        .with_draft(jsonschema::Draft::Draft7)
+        .build(&schema)
+        .expect("valid schema");
+    assert_evaluation_output_parity(
+        FusedRequiredEvalValidator::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(schema = r#"{"items": {"type": "number"}}"#, draft = Draft7)]
+struct ItemsNumberTypeEvalValidator;
+
+#[test_case::test_case(serde_json::json!([1, 2.5, 3]) ; "valid")]
+#[test_case::test_case(serde_json::json!([1, "x", 3]) ; "invalid")]
+#[test_case::test_case(serde_json::json!([]) ; "empty")]
+#[test_case::test_case(serde_json::json!({"a": 1}) ; "not_array")]
+fn test_items_number_type_evaluation_matches_runtime(instance: serde_json::Value) {
+    let schema = serde_json::json!({"items": {"type": "number"}});
+    let runtime = jsonschema::options()
+        .with_draft(jsonschema::Draft::Draft7)
+        .build(&schema)
+        .expect("valid schema");
+    assert_evaluation_output_parity(
+        ItemsNumberTypeEvalValidator::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[jsonschema::validator(schema = r##"{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://example.com/root.json",
+    "type": "object",
+    "properties": {
+        "feature": {"$ref": "feature.json"},
+        "kind": {"$ref": "#/definitions/kind"}
+    },
+    "definitions": {
+        "feature": {
+            "$id": "https://example.com/feature.json",
+            "type": "object",
+            "properties": {"name": {"type": "string"}}
+        },
+        "kind": {"type": "string"}
+    }
+}"##)]
+struct NestedResourceEvalValidator;
+
+#[test_case::test_case(serde_json::json!({"feature": {"name": "a"}, "kind": "b"}) ; "valid")]
+#[test_case::test_case(serde_json::json!({"feature": {"name": 1}, "kind": 2}) ; "invalid")]
+fn test_nested_resource_evaluation_matches_runtime(instance: serde_json::Value) {
+    let schema = serde_json::json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "$id": "https://example.com/root.json",
+        "type": "object",
+        "properties": {
+            "feature": {"$ref": "feature.json"},
+            "kind": {"$ref": "#/definitions/kind"}
+        },
+        "definitions": {
+            "feature": {
+                "$id": "https://example.com/feature.json",
+                "type": "object",
+                "properties": {"name": {"type": "string"}}
+            },
+            "kind": {"type": "string"}
+        }
+    });
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_evaluation_output_parity(
+        NestedResourceEvalValidator::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[test]
+fn test_recursive_evaluation_invalid_matches_runtime() {
+    let schema: serde_json::Value =
+        serde_json::from_slice(include_bytes!("../../benchmark/data/recursive_schema.json"))
+            .expect("valid schema json");
+    let instance = serde_json::json!([[
+        "term", "reading", null, "rules", 0,
+        [{"type": "structured-content", "content": {"tag": "div", "content": [{"tag": "span", "content": 42}]}}],
+        0, "seq"
+    ]]);
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert!(!runtime.is_valid(&instance), "instance must be invalid");
+    assert_evaluation_output_parity(
+        RecursiveEvalValidator::evaluate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+// Per-method gates: each `methods(... = false)` struct must COMPILE (shared validation
+// helpers stay wired even when a sibling method is dropped) and every method that remains must
+// match the runtime validator. The schema mixes object properties, `anyOf` (branch helpers), and a
+// `$ref` back into a property so the shared `is_valid`/branch/ref helpers are all exercised.
+#[jsonschema::validator(
+    schema = r##"{"type":"object","properties":{"a":{"anyOf":[{"type":"string"},{"type":"number"}]},"b":{"$ref":"#/properties/a"}}}"##,
+    methods(evaluate = false)
+)]
+struct GateEvaluateOff;
+
+#[jsonschema::validator(
+    schema = r##"{"type":"object","properties":{"a":{"anyOf":[{"type":"string"},{"type":"number"}]},"b":{"$ref":"#/properties/a"}}}"##,
+    methods(validate = false)
+)]
+struct GateValidateOff;
+
+#[jsonschema::validator(
+    schema = r##"{"type":"object","properties":{"a":{"anyOf":[{"type":"string"},{"type":"number"}]},"b":{"$ref":"#/properties/a"}}}"##,
+    methods(iter_errors = false)
+)]
+struct GateIterErrorsOff;
+
+#[jsonschema::validator(
+    schema = r##"{"type":"object","properties":{"a":{"anyOf":[{"type":"string"},{"type":"number"}]},"b":{"$ref":"#/properties/a"}}}"##,
+    methods(is_valid = false)
+)]
+struct GateIsValidOff;
+
+fn gate_schema() -> serde_json::Value {
+    serde_json::json!({"type":"object","properties":{"a":{"anyOf":[{"type":"string"},{"type":"number"}]},"b":{"$ref":"#/properties/a"}}})
+}
+
+#[test_case(serde_json::json!({"a":"x","b":5}) ; "valid")]
+#[test_case(serde_json::json!({"a":true,"b":[]}) ; "invalid")]
+fn test_gate_evaluate_off_keeps_validation(instance: serde_json::Value) {
+    let runtime = jsonschema::validator_for(&gate_schema()).expect("valid schema");
+    assert_eq!(
+        GateEvaluateOff::is_valid(&instance),
+        runtime.is_valid(&instance)
+    );
+    assert_eq!(
+        GateEvaluateOff::validate(&instance).is_ok(),
+        runtime.validate(&instance).is_ok()
+    );
+    assert_iter_errors_parity(GateEvaluateOff::iter_errors(&instance), &runtime, &instance);
+}
+
+#[test_case(serde_json::json!({"a":"x","b":5}) ; "valid")]
+#[test_case(serde_json::json!({"a":true,"b":[]}) ; "invalid")]
+fn test_gate_validate_off_keeps_rest(instance: serde_json::Value) {
+    let runtime = jsonschema::validator_for(&gate_schema()).expect("valid schema");
+    assert_eq!(
+        GateValidateOff::is_valid(&instance),
+        runtime.is_valid(&instance)
+    );
+    assert_iter_errors_parity(GateValidateOff::iter_errors(&instance), &runtime, &instance);
+    assert_eq!(
+        GateValidateOff::evaluate(&instance).flag().valid,
+        runtime.evaluate(&instance).flag().valid
+    );
+}
+
+#[test_case(serde_json::json!({"a":"x","b":5}) ; "valid")]
+#[test_case(serde_json::json!({"a":true,"b":[]}) ; "invalid")]
+fn test_gate_iter_errors_off_keeps_rest(instance: serde_json::Value) {
+    let runtime = jsonschema::validator_for(&gate_schema()).expect("valid schema");
+    assert_eq!(
+        GateIterErrorsOff::is_valid(&instance),
+        runtime.is_valid(&instance)
+    );
+    assert_eq!(
+        GateIterErrorsOff::validate(&instance).is_ok(),
+        runtime.validate(&instance).is_ok()
+    );
+    assert_eq!(
+        GateIterErrorsOff::evaluate(&instance).flag().valid,
+        runtime.evaluate(&instance).flag().valid
+    );
+}
+
+#[test_case(serde_json::json!({"a":"x","b":5}) ; "valid")]
+#[test_case(serde_json::json!({"a":true,"b":[]}) ; "invalid")]
+fn test_gate_is_valid_off_keeps_rest(instance: serde_json::Value) {
+    let runtime = jsonschema::validator_for(&gate_schema()).expect("valid schema");
+    assert_eq!(
+        GateIsValidOff::validate(&instance).is_ok(),
+        runtime.validate(&instance).is_ok()
+    );
+    assert_iter_errors_parity(GateIsValidOff::iter_errors(&instance), &runtime, &instance);
+    assert_eq!(
+        GateIsValidOff::evaluate(&instance).flag().valid,
+        runtime.evaluate(&instance).flag().valid
+    );
+}
+
+// Gates on a self-recursive schema (`$ref":"#"`) drive the recursive-stack machinery,
+// the riskiest place for a dropped method to leave a dangling call. These must compile and match
+// runtime for every method that survives.
+#[jsonschema::validator(
+    schema = r##"{"type":"object","properties":{"child":{"$ref":"#"},"kind":{"anyOf":[{"type":"string"},{"type":"integer"}]}}}"##,
+    methods(evaluate = false)
+)]
+struct GateRecursiveEvaluateOff;
+
+#[jsonschema::validator(
+    schema = r##"{"type":"object","properties":{"child":{"$ref":"#"},"kind":{"anyOf":[{"type":"string"},{"type":"integer"}]}}}"##,
+    methods(validate = false)
+)]
+struct GateRecursiveValidateOff;
+
+#[jsonschema::validator(
+    schema = r##"{"type":"object","properties":{"child":{"$ref":"#"},"kind":{"anyOf":[{"type":"string"},{"type":"integer"}]}}}"##,
+    methods(is_valid = false, validate = false, iter_errors = false)
+)]
+struct GateRecursiveOnlyEvaluate;
+
+fn gate_recursive_schema() -> serde_json::Value {
+    serde_json::json!({"type":"object","properties":{"child":{"$ref":"#"},"kind":{"anyOf":[{"type":"string"},{"type":"integer"}]}}})
+}
+
+#[test_case(serde_json::json!({"kind":"x","child":{"kind":3}}) ; "valid")]
+#[test_case(serde_json::json!({"kind":"x","child":{"kind":[]}}) ; "invalid_nested")]
+fn test_gate_recursive_evaluate_off(instance: serde_json::Value) {
+    let runtime = jsonschema::validator_for(&gate_recursive_schema()).expect("valid schema");
+    assert_eq!(
+        GateRecursiveEvaluateOff::is_valid(&instance),
+        runtime.is_valid(&instance)
+    );
+    assert_iter_errors_parity(
+        GateRecursiveEvaluateOff::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[test_case(serde_json::json!({"kind":"x","child":{"kind":3}}) ; "valid")]
+#[test_case(serde_json::json!({"kind":"x","child":{"kind":[]}}) ; "invalid_nested")]
+fn test_gate_recursive_validate_off(instance: serde_json::Value) {
+    let runtime = jsonschema::validator_for(&gate_recursive_schema()).expect("valid schema");
+    assert_eq!(
+        GateRecursiveValidateOff::is_valid(&instance),
+        runtime.is_valid(&instance)
+    );
+    assert_iter_errors_parity(
+        GateRecursiveValidateOff::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_eq!(
+        GateRecursiveValidateOff::evaluate(&instance).flag().valid,
+        runtime.evaluate(&instance).flag().valid
+    );
+}
+
+#[test_case(serde_json::json!({"kind":"x","child":{"kind":3}}) ; "valid")]
+#[test_case(serde_json::json!({"kind":"x","child":{"kind":[]}}) ; "invalid_nested")]
+fn test_gate_recursive_only_evaluate(instance: serde_json::Value) {
+    let runtime = jsonschema::validator_for(&gate_recursive_schema()).expect("valid schema");
+    assert_eq!(
+        GateRecursiveOnlyEvaluate::evaluate(&instance).flag().valid,
+        runtime.evaluate(&instance).flag().valid
+    );
+}
+
+// A genuine `$recursiveRef` schema (Draft 2019-09) drives the recursive push/pop stacks
+// distinct from a plain `$ref` cycle. Gating a method must not desynchronize those stacks.
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://ex/m","$recursiveAnchor":true,"type":["object","boolean"],"properties":{"allOf":{"type":"array","items":{"$recursiveRef":"#"}}}}"##,
+    draft = referencing::Draft::Draft201909,
+    methods(evaluate = false)
+)]
+struct GateRecursiveRefEvaluateOff;
+
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://ex/m","$recursiveAnchor":true,"type":["object","boolean"],"properties":{"allOf":{"type":"array","items":{"$recursiveRef":"#"}}}}"##,
+    draft = referencing::Draft::Draft201909,
+    methods(validate = false, iter_errors = false)
+)]
+struct GateRecursiveRefOnlyIsValidEvaluate;
+
+fn gate_recursive_ref_schema() -> serde_json::Value {
+    serde_json::json!({"$id":"https://ex/m","$recursiveAnchor":true,"type":["object","boolean"],"properties":{"allOf":{"type":"array","items":{"$recursiveRef":"#"}}}})
+}
+
+#[test_case(serde_json::json!({"allOf":[true, {"allOf":[false]}]}) ; "valid")]
+#[test_case(serde_json::json!({"allOf":[{"allOf":"BAD"}]}) ; "invalid_nested")]
+fn test_gate_recursive_ref_evaluate_off(instance: serde_json::Value) {
+    let runtime = jsonschema::options()
+        .with_draft(referencing::Draft::Draft201909)
+        .build(&gate_recursive_ref_schema())
+        .expect("valid schema");
+    assert_eq!(
+        GateRecursiveRefEvaluateOff::is_valid(&instance),
+        runtime.is_valid(&instance)
+    );
+    assert_iter_errors_parity(
+        GateRecursiveRefEvaluateOff::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+#[test_case(serde_json::json!({"allOf":[true, {"allOf":[false]}]}) ; "valid")]
+#[test_case(serde_json::json!({"allOf":[{"allOf":"BAD"}]}) ; "invalid_nested")]
+fn test_gate_recursive_ref_only_is_valid_evaluate(instance: serde_json::Value) {
+    let runtime = jsonschema::options()
+        .with_draft(referencing::Draft::Draft201909)
+        .build(&gate_recursive_ref_schema())
+        .expect("valid schema");
+    assert_eq!(
+        GateRecursiveRefOnlyIsValidEvaluate::is_valid(&instance),
+        runtime.is_valid(&instance)
+    );
+    assert_eq!(
+        GateRecursiveRefOnlyIsValidEvaluate::evaluate(&instance)
+            .flag()
+            .valid,
+        runtime.evaluate(&instance).flag().valid
+    );
+}
+
+// `unevaluatedProperties` drives the key_eval/unevaluated helper machinery (the FHIR-heavy path).
+// With `evaluate = false` that machinery must still compile and the validation methods must match
+// runtime.
+#[jsonschema::validator(
+    schema = r#"{"type":"object","properties":{"a":{}},"unevaluatedProperties":false}"#,
+    methods(evaluate = false)
+)]
+struct GateUnevaluatedEvaluateOff;
+
+fn gate_unevaluated_schema() -> serde_json::Value {
+    serde_json::json!({"type":"object","properties":{"a":{}},"unevaluatedProperties":false})
+}
+
+#[test_case(serde_json::json!({"a":1}) ; "valid")]
+#[test_case(serde_json::json!({"a":1,"extra":2}) ; "invalid_unevaluated")]
+fn test_gate_unevaluated_evaluate_off(instance: serde_json::Value) {
+    let runtime = jsonschema::validator_for(&gate_unevaluated_schema()).expect("valid schema");
+    assert_eq!(
+        GateUnevaluatedEvaluateOff::is_valid(&instance),
+        runtime.is_valid(&instance)
+    );
+    assert_eq!(
+        GateUnevaluatedEvaluateOff::validate(&instance).is_ok(),
+        runtime.validate(&instance).is_ok()
+    );
+    assert_iter_errors_parity(
+        GateUnevaluatedEvaluateOff::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
+// `oneOf` branch gates with `emit_collect = false` (validate + iter_errors both off): only the
+// `is_branch_valid_*` gates survive, `collect_branch_errors_*` is dropped. `is_valid` and
+// `evaluate` (which reuses the gates, not the collectors) must still compile and match runtime.
+#[jsonschema::validator(
+    schema = r#"{"oneOf":[{"properties":{"a":{}},"required":["a"]},{"properties":{"b":{}},"required":["b"]}]}"#,
+    methods(validate = false, iter_errors = false)
+)]
+struct GateOneOfOnlyIsValidEvaluate;
+
+fn gate_one_of_schema() -> serde_json::Value {
+    serde_json::json!({"oneOf":[{"properties":{"a":{}},"required":["a"]},{"properties":{"b":{}},"required":["b"]}]})
+}
+
+#[test_case(serde_json::json!({"a":1}) ; "valid_one_branch")]
+#[test_case(serde_json::json!({"a":1,"b":2}) ; "invalid_both_branches")]
+#[test_case(serde_json::json!({"c":3}) ; "invalid_no_branch")]
+fn test_gate_one_of_only_is_valid_evaluate(instance: serde_json::Value) {
+    let runtime = jsonschema::validator_for(&gate_one_of_schema()).expect("valid schema");
+    assert_eq!(
+        GateOneOfOnlyIsValidEvaluate::is_valid(&instance),
+        runtime.is_valid(&instance)
+    );
+    assert_eq!(
+        GateOneOfOnlyIsValidEvaluate::evaluate(&instance)
+            .flag()
+            .valid,
+        runtime.evaluate(&instance).flag().valid
     );
 }

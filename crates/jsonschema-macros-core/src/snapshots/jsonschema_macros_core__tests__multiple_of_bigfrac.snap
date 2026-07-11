@@ -4,7 +4,7 @@ description: "{\"multipleOf\":0.1,\"type\":\"number\"}"
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Number(n) => {
+            __Value::Number(n) => {
                 jsonschema::__private::numeric::check_compiled_multiple_of(n, "0.1")
             }
             _ => false,

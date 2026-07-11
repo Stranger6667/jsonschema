@@ -4,6 +4,6 @@ description: "{\"$schema\":\"http://json-schema.org/draft-06/schema#\",\"minItem
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Array(arr) => (arr.len() as u64) >= 2,
+            __Value::Array(arr) => (arr.len() as u64) >= 2,
             _ => false,
         }

@@ -1,11 +1,7 @@
 //! Compile-time meta-schema validators for the bundled drafts, dispatched from
 //! `meta::validator_for_draft` under the `macros` feature.
 
-use crate::{Draft, ErrorIterator, ValidationError};
-use serde_json::Value;
-
-pub(crate) type ValidateFn = for<'i> fn(&'i Value) -> Result<(), ValidationError<'i>>;
-pub(crate) type IterErrorsFn = for<'i> fn(&'i Value) -> ErrorIterator<'i>;
+use crate::{Draft, Validator};
 
 #[jsonschema_macros::validator(path = "metaschemas/draft4.json", draft = Draft4)]
 struct MetaDraft4;
@@ -45,33 +41,48 @@ struct MetaDraft201909;
 )]
 struct MetaDraft202012;
 
-// `Draft::Unknown` and future drafts fall through to Draft 2020-12, matching `validator_for_draft`.
-pub(crate) fn is_valid_fn(draft: Draft) -> fn(&Value) -> bool {
-    match draft {
-        Draft::Draft4 => MetaDraft4::is_valid,
-        Draft::Draft6 => MetaDraft6::is_valid,
-        Draft::Draft7 => MetaDraft7::is_valid,
-        Draft::Draft201909 => MetaDraft201909::is_valid,
-        _ => MetaDraft202012::is_valid,
-    }
-}
+static DRAFT4_META_VALIDATOR: Validator = Validator::generated(
+    Draft::Draft4,
+    MetaDraft4::is_valid,
+    MetaDraft4::validate,
+    MetaDraft4::iter_errors,
+    MetaDraft4::evaluate,
+);
+static DRAFT6_META_VALIDATOR: Validator = Validator::generated(
+    Draft::Draft6,
+    MetaDraft6::is_valid,
+    MetaDraft6::validate,
+    MetaDraft6::iter_errors,
+    MetaDraft6::evaluate,
+);
+static DRAFT7_META_VALIDATOR: Validator = Validator::generated(
+    Draft::Draft7,
+    MetaDraft7::is_valid,
+    MetaDraft7::validate,
+    MetaDraft7::iter_errors,
+    MetaDraft7::evaluate,
+);
+static DRAFT201909_META_VALIDATOR: Validator = Validator::generated(
+    Draft::Draft201909,
+    MetaDraft201909::is_valid,
+    MetaDraft201909::validate,
+    MetaDraft201909::iter_errors,
+    MetaDraft201909::evaluate,
+);
+static DRAFT202012_META_VALIDATOR: Validator = Validator::generated(
+    Draft::Draft202012,
+    MetaDraft202012::is_valid,
+    MetaDraft202012::validate,
+    MetaDraft202012::iter_errors,
+    MetaDraft202012::evaluate,
+);
 
-pub(crate) fn validate_fn(draft: Draft) -> ValidateFn {
+pub(crate) fn validator_for_draft(draft: Draft) -> &'static Validator {
     match draft {
-        Draft::Draft4 => MetaDraft4::validate,
-        Draft::Draft6 => MetaDraft6::validate,
-        Draft::Draft7 => MetaDraft7::validate,
-        Draft::Draft201909 => MetaDraft201909::validate,
-        _ => MetaDraft202012::validate,
-    }
-}
-
-pub(crate) fn iter_errors_fn(draft: Draft) -> IterErrorsFn {
-    match draft {
-        Draft::Draft4 => MetaDraft4::iter_errors,
-        Draft::Draft6 => MetaDraft6::iter_errors,
-        Draft::Draft7 => MetaDraft7::iter_errors,
-        Draft::Draft201909 => MetaDraft201909::iter_errors,
-        _ => MetaDraft202012::iter_errors,
+        Draft::Draft4 => &DRAFT4_META_VALIDATOR,
+        Draft::Draft6 => &DRAFT6_META_VALIDATOR,
+        Draft::Draft7 => &DRAFT7_META_VALIDATOR,
+        Draft::Draft201909 => &DRAFT201909_META_VALIDATOR,
+        _ => &DRAFT202012_META_VALIDATOR,
     }
 }

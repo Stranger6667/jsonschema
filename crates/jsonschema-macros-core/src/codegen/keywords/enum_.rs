@@ -88,8 +88,8 @@ pub(in super::super) fn compile(ctx: &CompileContext<'_>, value: &Value) -> Comp
         let number_pattern = crate::codegen::emit_serde::pattern_number();
         match_arms.push(quote! {
             #number_pattern => {
-            static NUMBER_VARIANTS: std::sync::LazyLock<Vec<serde_json::Value>> =
-                std::sync::LazyLock::new(|| {
+            static NUMBER_VARIANTS: __Lazy<Vec<serde_json::Value>> =
+                __Lazy::new(|| {
                     serde_json::from_str::<Vec<serde_json::Value>>(#numbers_json)
                         .expect("Failed to parse number variants")
                 });
@@ -121,8 +121,8 @@ pub(in super::super) fn compile(ctx: &CompileContext<'_>, value: &Value) -> Comp
         };
         match_arms.push(quote! {
             #arm_pattern => {
-                static COMPLEX_VARIANTS: std::sync::LazyLock<Vec<serde_json::Value>> =
-                    std::sync::LazyLock::new(|| {
+                static COMPLEX_VARIANTS: __Lazy<Vec<serde_json::Value>> =
+                    __Lazy::new(|| {
                         serde_json::from_str::<Vec<serde_json::Value>>(#complex_json)
                             .expect("Failed to parse complex variants")
                     });
@@ -143,11 +143,11 @@ pub(in super::super) fn compile(ctx: &CompileContext<'_>, value: &Value) -> Comp
         is_valid.clone(),
         quote! {
             if !(#is_valid) {
-                static ENUM_OPTIONS: std::sync::LazyLock<serde_json::Value> =
-                    std::sync::LazyLock::new(|| {
+                static ENUM_OPTIONS: __Lazy<serde_json::Value> =
+                    __Lazy::new(|| {
                         serde_json::from_str(#enum_json).expect("Failed to parse enum options")
                     });
-                return Some(jsonschema::__private::error::enumeration(
+                return Some(__err::enumeration(
                     #schema_path, __path.into(), instance, &*ENUM_OPTIONS,
                 ));
             }

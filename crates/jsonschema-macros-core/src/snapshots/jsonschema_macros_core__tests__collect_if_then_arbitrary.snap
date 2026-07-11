@@ -4,15 +4,15 @@ description: "{\"if\":{\"type\":\"integer\"},\"then\":{\"minimum\":10,\"multiple
 expression: collect_body(schema)
 ---
 if match instance {
-            serde_json::Value::Number(n) => jsonschema::__private::types::is_integer(n),
+            __Value::Number(n) => __types::is_integer(n),
             _ => false,
         } {
             match instance {
-                serde_json::Value::Number(n) => {
+                __Value::Number(n) => {
                     if !(jsonschema::__private::numeric::ge(n, 10u64)) {
                         __errors
                             .push(
-                                jsonschema::__private::error::minimum(
+                                __err::minimum(
                                     "/then/minimum",
                                     __path.into(),
                                     instance,
@@ -26,7 +26,7 @@ if match instance {
                     )) {
                         __errors
                             .push(
-                                jsonschema::__private::error::multiple_of(
+                                __err::multiple_of(
                                     "/then/multipleOf",
                                     __path.into(),
                                     instance,

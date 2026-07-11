@@ -4,7 +4,7 @@ description: "{\"additionalProperties\":false,\"patternProperties\":{\"^x\":{\"t
 expression: validate_body(schema)
 ---
 match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 for (key, value) in obj.iter() {
                     let key_str = key.as_str();
                     let mut covered = false;
@@ -13,17 +13,15 @@ match instance {
                             let instance = value;
                             let __path = &__path.push("a");
                             if !(match instance {
-                                serde_json::Value::Number(n) => {
-                                    jsonschema::__private::types::is_integer(n)
-                                }
+                                __Value::Number(n) => __types::is_integer(n),
                                 _ => false,
                             }) {
                                 return Some(
-                                    jsonschema::__private::error::single_type(
+                                    __err::single_type(
                                         "/properties/a/type",
                                         __path.into(),
                                         instance,
-                                        jsonschema::JsonType::Integer,
+                                        __JT::Integer,
                                     ),
                                 );
                             }
@@ -36,11 +34,11 @@ match instance {
                         let __path = &__path.push(key_str);
                         if !(instance.is_string()) {
                             return Some(
-                                jsonschema::__private::error::single_type(
+                                __err::single_type(
                                     "/patternProperties/^x/type",
                                     __path.into(),
                                     instance,
-                                    jsonschema::JsonType::String,
+                                    __JT::String,
                                 ),
                             );
                         }
@@ -48,7 +46,7 @@ match instance {
                     }
                     if !covered {
                         return Some(
-                            jsonschema::__private::error::additional_properties(
+                            __err::additional_properties(
                                 "/additionalProperties",
                                 __path.into(),
                                 instance,
@@ -60,12 +58,7 @@ match instance {
             }
             _ => {
                 return Some(
-                    jsonschema::__private::error::single_type(
-                        "/type",
-                        __path.into(),
-                        instance,
-                        jsonschema::JsonType::Object,
-                    ),
+                    __err::single_type("/type", __path.into(), instance, __JT::Object),
                 );
             }
         }

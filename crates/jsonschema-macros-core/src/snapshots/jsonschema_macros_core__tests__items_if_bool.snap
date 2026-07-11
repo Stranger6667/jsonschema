@@ -4,7 +4,7 @@ description: "{\"if\":true,\"then\":{\"prefixItems\":[{}]},\"type\":\"array\",\"
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Array(arr) => {
+            __Value::Array(arr) => {
                 arr.iter()
                     .enumerate()
                     .all(|(idx, item)| {

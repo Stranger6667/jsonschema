@@ -4,7 +4,7 @@ description: "{\"additionalProperties\":false,\"patternProperties\":{\"^a\":{\"t
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 ({
                     let __object_pass = obj
                         .iter()
