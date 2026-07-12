@@ -1468,6 +1468,12 @@ struct Draft201909RefTo202012PrefixItemsValidator;
 )]
 struct RecursiveRefDraft201909Validator;
 
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://ex/root","$schema":"https://json-schema.org/draft/2019-09/schema","$recursiveAnchor":true,"properties":{"value":{"type":"integer"}},"allOf":[{"$ref":"https://ex/sub"}],"$defs":{"sub":{"$id":"https://ex/sub","$recursiveAnchor":true,"properties":{"child":{"$ref":"#/$defs/wrapper"}},"$defs":{"wrapper":{"$recursiveRef":"#"}}}}}"##,
+    draft = referencing::Draft::Draft201909
+)]
+struct RecursiveRefCrossResourceValidator;
+
 #[jsonschema::validator(schema = r#"{"type":"integer","minimum":0}"#)]
 struct IntegerMinimumValidator;
 
@@ -1727,6 +1733,29 @@ fn test_recursive_unevaluated_properties_validate_parity() {
         RecursiveUnevaluatedPropertiesValidator::validate(&instance),
         &instance,
     );
+}
+
+#[test_case(serde_json::json!({"child": {"value": "bad"}}), false ; "cross_resource_recurses_to_root_reject")]
+#[test_case(serde_json::json!({"child": {"value": 5}}), true ; "cross_resource_recurses_to_root_accept")]
+fn test_recursive_ref_cross_resource_match_runtime(instance: serde_json::Value, expected: bool) {
+    let schema = serde_json::json!({"$id":"https://ex/root","$schema":"https://json-schema.org/draft/2019-09/schema","$recursiveAnchor":true,"properties":{"value":{"type":"integer"}},"allOf":[{"$ref":"https://ex/sub"}],"$defs":{"sub":{"$id":"https://ex/sub","$recursiveAnchor":true,"properties":{"child":{"$ref":"#/$defs/wrapper"}},"$defs":{"wrapper":{"$recursiveRef":"#"}}}}});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_eq!(
+        runtime.is_valid(&instance),
+        expected,
+        "runtime oracle for {instance}"
+    );
+    assert_eq!(
+        RecursiveRefCrossResourceValidator::is_valid(&instance),
+        expected,
+        "codegen/runtime mismatch for {instance}"
+    );
+}
+
+#[test_case(serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "anyOf": [{"type": "string"}, {"type": 1}]}), false ; "nested_illegal_type_rejected")]
+#[test_case(serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "anyOf": [{"type": "string"}, {"type": "integer"}]}), true ; "nested_legal_type_accepted")]
+fn test_generated_2019_09_metaschema(schema: serde_json::Value, expected: bool) {
+    assert_eq!(jsonschema::meta::is_valid(&schema), expected);
 }
 
 #[test_case(serde_json::json!([]) ; "empty_array")]
