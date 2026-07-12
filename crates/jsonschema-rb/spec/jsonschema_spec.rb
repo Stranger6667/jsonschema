@@ -578,6 +578,18 @@ RSpec.describe JSONSchema::Meta do
       schema = { "$ref" => "https://example.com/ref.json" }
       expect(JSONSchema::Meta.valid?(schema, registry: registry)).to be true
     end
+
+    it "rejects a Draft 2019-09 schema with a nested illegal type" do
+      schema = { "$schema" => "https://json-schema.org/draft/2019-09/schema",
+                 "anyOf" => [{ "type" => "string" }, { "type" => 1 }] }
+      expect(JSONSchema::Meta.valid?(schema)).to be false
+    end
+
+    it "accepts a Draft 2019-09 schema with valid nested types" do
+      schema = { "$schema" => "https://json-schema.org/draft/2019-09/schema",
+                 "anyOf" => [{ "type" => "string" }, { "type" => "integer" }] }
+      expect(JSONSchema::Meta.valid?(schema)).to be true
+    end
   end
 
   describe ".validate!" do

@@ -470,10 +470,9 @@ fn push_ref_dispatch(
                             let __recursive_target = #stack.with(|stack| {
                                 let stack = stack.borrow();
                                 let mut selected = None;
-                                for (validate, is_anchor) in stack.iter().rev() {
+                                for (validate, is_anchor) in stack.iter() {
                                     if *is_anchor {
                                         selected = Some(*validate);
-                                    } else {
                                         break;
                                     }
                                 }

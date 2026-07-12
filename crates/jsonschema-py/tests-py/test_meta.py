@@ -36,6 +36,18 @@ def test_invalid_schemas(schema, expected):
         meta.validate(schema)
 
 
+@pytest.mark.parametrize(
+    ["schema", "expected"],
+    [
+        ({"anyOf": [{"type": "string"}, {"type": 1}]}, False),
+        ({"anyOf": [{"type": "string"}, {"type": "integer"}]}, True),
+    ],
+)
+def test_draft201909_nested_type(schema, expected):
+    schema = {"$schema": "https://json-schema.org/draft/2019-09/schema", **schema}
+    assert meta.is_valid(schema) is expected
+
+
 def test_unknown_schema_requires_known_meta():
     schema = {"$schema": "invalid-uri", "type": "string"}
     with pytest.raises(ReferencingError, match="invalid-uri"):

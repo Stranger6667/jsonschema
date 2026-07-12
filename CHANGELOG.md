@@ -9,6 +9,7 @@
 ### Fixed
 
 - Per-branch context on generated `anyOf` and `oneOf` validation errors, matching runtime validators.
+- `$recursiveRef` in generated validators incorrectly resolved to the innermost `$recursiveAnchor` (it should resolve to the outermost one).
 
 ### Changed
 

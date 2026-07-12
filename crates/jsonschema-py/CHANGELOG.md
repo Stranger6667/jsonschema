@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `meta.is_valid` and `meta.validate` incorrectly accepted some Draft 2019-09 schemas that the meta-schema rejects.
+
 ### Performance
 
 - Faster `multipleOf` validation for integer instances with integer divisors, via integer arithmetic instead of floating-point modulo.

@@ -397,10 +397,9 @@ pub(crate) fn compile_recursive(ctx: &mut CompileContext<'_>, value: &Value) -> 
         __JSONSCHEMA_RECURSIVE_STACK.with(|stack| {
             let stack = stack.borrow();
             let mut selected = None;
-            for (is_valid, is_anchor) in stack.iter().rev() {
+            for (is_valid, is_anchor) in stack.iter() {
                 if *is_anchor {
                     selected = Some(*is_valid);
-                } else {
                     break;
                 }
             }
@@ -434,10 +433,9 @@ pub(crate) fn compile_recursive(ctx: &mut CompileContext<'_>, value: &Value) -> 
             __JSONSCHEMA_RECURSIVE_VALIDATE_STACK.with(|stack| {
                 let stack = stack.borrow();
                 let mut selected = None;
-                for (validate, is_anchor) in stack.iter().rev() {
+                for (validate, is_anchor) in stack.iter() {
                     if *is_anchor {
                         selected = Some(*validate);
-                    } else {
                         break;
                     }
                 }
@@ -448,10 +446,9 @@ pub(crate) fn compile_recursive(ctx: &mut CompileContext<'_>, value: &Value) -> 
             __JSONSCHEMA_RECURSIVE_COLLECT_STACK.with(|stack| {
                 let stack = stack.borrow();
                 let mut selected = None;
-                for (collect, is_anchor) in stack.iter().rev() {
+                for (collect, is_anchor) in stack.iter() {
                     if *is_anchor {
                         selected = Some(*collect);
-                    } else {
                         break;
                     }
                 }
