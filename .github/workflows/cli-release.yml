@@ -12,7 +12,7 @@ jobs:
   create-release:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Extract version from tag
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/cli-v}" >> $GITHUB_OUTPUT
@@ -52,7 +52,7 @@ jobs:
             os: windows-2025
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: true
       - name: Install Rust
@@ -60,11 +60,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - name: Install cross compilation tools
-        uses: taiki-e/setup-cross-toolchain-action@v1
+        uses: taiki-e/setup-cross-toolchain-action@3d9770ce98eb7dbcf378563182a5e8031165f75b # v1.41.0
         with:
           target: ${{ matrix.target }}
         if: startsWith(matrix.os, 'ubuntu')
-      - uses: taiki-e/upload-rust-binary-action@v1
+      - uses: taiki-e/upload-rust-binary-action@f0d45ae91ee7b8ee928de7a9d04d893a08bcbec6 # v1.30.2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           bin: jsonschema-cli

@@ -24,13 +24,13 @@ jobs:
   sdist:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
 
       - run: uv python install "3.12"
 
@@ -46,7 +46,7 @@ jobs:
         working-directory: crates/jsonschema-py
 
       - name: Upload sdist
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sdist
           path: crates/jsonschema-py/dist
@@ -54,15 +54,15 @@ jobs:
   macos-x86_64:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
       - name: Install Python
         run: uv python install ${{ env.PYTHON_ABI_VERSION }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin
       - name: Build wheels - x86_64
-        uses: messense/maturin-action@v1
+        uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: x86_64
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
@@ -71,7 +71,7 @@ jobs:
           uv venv --python ${{ env.PYTHON_ABI_VERSION }}
           uv pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wheel-macos-x86_64
           path: dist
@@ -79,15 +79,15 @@ jobs:
   macos-universal:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
       - name: Install Python
         run: uv python install ${{ env.PYTHON_ABI_VERSION }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
       - name: Build wheels - universal2
-        uses: messense/maturin-action@v1
+        uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           args: --release -m crates/jsonschema-py/Cargo.toml --target universal2-apple-darwin --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
       - name: Install built wheel - universal2
@@ -95,7 +95,7 @@ jobs:
           uv venv --python ${{ env.PYTHON_ABI_VERSION }}
           uv pip install dist/${{ env.PACKAGE_NAME }}-*universal2.whl --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wheel-macos-universal
           path: dist
@@ -106,15 +106,15 @@ jobs:
       matrix:
         target: [ x64, x86 ]
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: ${{ env.PYTHON_ABI_VERSION }}
           architecture: ${{ matrix.target }}
       - uses: dtolnay/rust-toolchain@stable
       - name: Build wheels
-        uses: messense/maturin-action@v1
+        uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.target }}
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
@@ -124,7 +124,7 @@ jobs:
           uv venv --python ${{ env.PYTHON_ABI_VERSION }}
           uv pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wheel-windows-${{ matrix.target }}
           path: dist
@@ -141,13 +141,13 @@ jobs:
           - target: aarch64
             manylinux: 2_28
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: ${{ env.PYTHON_ABI_VERSION }}
       - name: Build wheels
-        uses: messense/maturin-action@v1
+        uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
@@ -157,7 +157,7 @@ jobs:
         run: |
           uv venv --python ${{ env.PYTHON_ABI_VERSION }}
           uv pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
-      - uses: uraimo/run-on-arch-action@v3
+      - uses: uraimo/run-on-arch-action@f9b26e3a1a408d5fd530d20c17b9f3f4428ff8d9 # v3.1.0
         if: matrix.target == 'aarch64'
         name: Install built wheel on ARM architecture
         with:
@@ -176,7 +176,7 @@ jobs:
             venv/bin/pip install -U pip wheel
             venv/bin/pip install ${{ env.PACKAGE_NAME }} --no-index --find-links dist/ --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wheel-linux-${{ matrix.target }}
           path: dist
@@ -191,18 +191,18 @@ jobs:
           - target: aarch64
             arch: aarch64
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: ${{ env.PYTHON_ABI_VERSION }}
       - name: Build wheels
-        uses: messense/maturin-action@v1
+        uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.target }}
           manylinux: musllinux_1_2
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
-      - uses: uraimo/run-on-arch-action@v3
+      - uses: uraimo/run-on-arch-action@f9b26e3a1a408d5fd530d20c17b9f3f4428ff8d9 # v3.1.0
         name: Install built wheel on Alpine
         with:
           base_image: '--platform=linux/${{ matrix.arch }} python:${{ env.PYTHON_ABI_VERSION }}-alpine'
@@ -211,7 +211,7 @@ jobs:
           install: apk add --no-cache py3-pip
           run: pip install ${{ env.PACKAGE_NAME }} --no-index --find-links dist/ --force-reinstall --break-system-packages
       - name: Upload wheels
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wheel-linux-musllinux-${{ matrix.target }}
           path: dist
@@ -229,19 +229,19 @@ jobs:
           - target: aarch64
             manylinux: 2_28
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.13'
       - name: Build wheels
-        uses: messense/maturin-action@v1
+        uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ matrix.python_version }}
       - name: Upload wheels
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wheel-linux-freethreaded-${{ matrix.python_version }}-${{ matrix.target }}
           path: dist
@@ -254,19 +254,19 @@ jobs:
         python_version: ["3.14t", "3.15t"]
         target: [x86_64, aarch64]
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.13'
       - name: Build wheels
-        uses: messense/maturin-action@v1
+        uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.target }}
           manylinux: musllinux_1_2
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ matrix.python_version }}
       - name: Upload wheels
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wheel-linux-musllinux-freethreaded-${{ matrix.python_version }}-${{ matrix.target }}
           path: dist
@@ -279,20 +279,20 @@ jobs:
         python_version: ["3.14t", "3.15t"]
         target: [x86_64, aarch64]
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
       - name: Install Python
         run: uv python install ${{ matrix.python_version }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin,aarch64-apple-darwin
       - name: Build wheels
-        uses: messense/maturin-action@v1
+        uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.target }}
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ matrix.python_version }}
       - name: Upload wheels
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wheel-macos-freethreaded-${{ matrix.python_version }}-${{ matrix.target }}
           path: dist
@@ -304,8 +304,8 @@ jobs:
       matrix:
         python_version: ["3.14t", "3.15t"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
       - name: Install Python
         run: uv python install ${{ matrix.python_version }}
       - name: Find Python path
@@ -314,12 +314,12 @@ jobs:
         run: echo "py=$(uv python find ${{ matrix.python_version }})" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@stable
       - name: Build wheels
-        uses: messense/maturin-action@v1
+        uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: x64
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ steps.python-paths.outputs.py }}
       - name: Upload wheels
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wheel-windows-freethreaded-${{ matrix.python_version }}
           path: dist
@@ -347,9 +347,9 @@ jobs:
             manylinux: 2_28
 
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: ${{ env.PYPY_VERSION }}
       - name: Get Python path
@@ -368,14 +368,14 @@ jobs:
         run: rustup target add x86_64-apple-darwin
       - name: Build wheels - PyPy (manylinux)
         if: ${{ matrix.manylinux != '' }}
-        uses: messense/maturin-action@v1
+        uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYPY_VERSION }}
       - name: Build wheels - PyPy
         if: ${{ matrix.manylinux == '' }}
-        uses: messense/maturin-action@v1
+        uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.target }}
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_PATH }}
@@ -385,7 +385,7 @@ jobs:
           uv venv --python ${{ env.PYPY_VERSION }}
           uv pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
       - name: Upload wheels
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ matrix.artifact }}
           path: dist
@@ -393,19 +393,19 @@ jobs:
   pyodide:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: dtolnay/rust-toolchain@nightly
         with:
           # nightly-2025-06-27 = rustc 1.90-nightly; pinned to a nightly with a prebuilt pyodide emscripten sysroot
           toolchain: ${{ env.PYODIDE_RUST_TOOLCHAIN }}
           components: rust-src
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.13"
       - run: |
           pip install "pyodide-build>=0.28.0"
           echo EMSCRIPTEN_VERSION=$(pyodide config get emscripten_version) >> $GITHUB_ENV
-      - uses: mymindstorm/setup-emsdk@v16
+      - uses: mymindstorm/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984 # v16
         with:
           version: ${{ env.EMSCRIPTEN_VERSION }}
       - name: Install Pyodide Rust sysroot
@@ -423,7 +423,7 @@ jobs:
           RUSTUP_TOOLCHAIN: ${{ env.PYODIDE_RUST_TOOLCHAIN }}
           RUSTFLAGS: "-C link-arg=-sSIDE_MODULE=2 -Z link-native-libraries=no -Z emscripten-wasm-eh"
       - name: Upload wheels
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wheel-pyodide
           if-no-files-found: error
@@ -449,7 +449,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: all
       - name: Separate pyodide wheel from the rest
@@ -463,7 +463,7 @@ jobs:
             fi
           done
       - name: Publish distribution package to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
 
@@ -471,7 +471,7 @@ jobs:
         run: echo "version=${GITHUB_REF#refs/tags/python-v}" >> $GITHUB_ENV
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           make_latest: false
           draft: true

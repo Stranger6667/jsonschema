@@ -22,7 +22,7 @@ jobs:
       stable-ruby-versions: ${{ steps.parse.outputs.stable-ruby-versions }}
     steps:
       - id: fetch
-        uses: oxidize-rb/actions/fetch-ci-data@v1
+        uses: oxidize-rb/actions/fetch-ci-data@e5f9a49a7812a078584072f6e3f657ad247c8771 # v1.4.4
         with:
           supported-ruby-platforms: |
             exclude:
@@ -46,18 +46,18 @@ jobs:
       matrix:
         platform: ${{ fromJSON(needs.ci-data.outputs.supported-ruby-platforms) }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: true
 
-      - uses: ruby/setup-ruby@v1
+      - uses: ruby/setup-ruby@d45b1a4e94b71acab930e56e79c6aa188764e7f9 # v1.316.0
         with:
           ruby-version: "3.4"
 
       - name: Expose Gemfile.lock for rb-sys-dock version detection
         run: cp crates/jsonschema-rb/Gemfile.lock Gemfile.lock
 
-      - uses: oxidize-rb/actions/cross-gem@v1
+      - uses: oxidize-rb/actions/cross-gem@e5f9a49a7812a078584072f6e3f657ad247c8771 # v1.4.4
         id: cross-gem
         with:
           platform: ${{ matrix.platform }}
@@ -71,7 +71,7 @@ jobs:
           ruby -e "require 'jsonschema_rs'; raise 'validation failed' unless JSONSchema.valid?({'type'=>'string'}, 'hello'); puts 'smoke test OK'"
         working-directory: crates/jsonschema-rb
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: gem-${{ matrix.platform }}
           path: crates/jsonschema-rb/pkg/*.gem
@@ -85,15 +85,15 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: true
 
-      - uses: ruby/setup-ruby@v1
+      - uses: ruby/setup-ruby@d45b1a4e94b71acab930e56e79c6aa188764e7f9 # v1.316.0
         with:
           ruby-version: "3.4"
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: artifacts
           pattern: gem-*
@@ -125,7 +125,7 @@ jobs:
         run: echo "version=${GITHUB_REF#refs/tags/ruby-v}" >> $GITHUB_ENV
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           files: pkg/*.gem
           make_latest: false
