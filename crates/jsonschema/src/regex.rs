@@ -126,6 +126,42 @@ pub(crate) enum PatternOptimization {
 
 pub(crate) use jsonschema_regex::is_ecma_whitespace;
 
+/// Build a fancy-regex matcher, applying engine limits; `Err(())` on a rejected pattern.
+pub(crate) fn build_fancy_regex(
+    translated: &str,
+    backtrack_limit: Option<usize>,
+    size_limit: Option<usize>,
+    dfa_size_limit: Option<usize>,
+) -> Result<fancy_regex::Regex, ()> {
+    let mut builder = fancy_regex::RegexBuilder::new(translated);
+    if let Some(limit) = backtrack_limit {
+        builder.backtrack_limit(limit);
+    }
+    if let Some(limit) = size_limit {
+        builder.delegate_size_limit(limit);
+    }
+    if let Some(limit) = dfa_size_limit {
+        builder.delegate_dfa_size_limit(limit);
+    }
+    builder.build().map_err(|_| ())
+}
+
+/// Build a standard-regex matcher, applying engine limits; `Err(())` on a rejected pattern.
+pub(crate) fn build_standard_regex(
+    translated: &str,
+    size_limit: Option<usize>,
+    dfa_size_limit: Option<usize>,
+) -> Result<regex::Regex, ()> {
+    let mut builder = regex::RegexBuilder::new(translated);
+    if let Some(limit) = size_limit {
+        builder.size_limit(limit);
+    }
+    if let Some(limit) = dfa_size_limit {
+        builder.dfa_size_limit(limit);
+    }
+    builder.build().map_err(|_| ())
+}
+
 /// Analyze a pattern and return a [`PatternOptimization`] if one applies, or `None` if a full
 /// regex engine is required. Shares [`jsonschema_regex::analyze_pattern`] with the codegen backend.
 pub(crate) fn analyze_pattern(pattern: &str) -> Option<PatternOptimization> {
