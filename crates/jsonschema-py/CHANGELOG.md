@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `canonicalize` for reducing a JSON Schema to a canonical form with support for negation, intersection, union, subtraction, and draft-independent structural inspection.
+
+### Changed
+
+- `canonical.json.to_string` drops insignificant trailing zeros from fractional `Decimal` values (`Decimal("1.50")` serializes as `"1.5"`) and spells integral values past 2^20 digits scientifically.
+
 ### Fixed
 
 - `meta.is_valid` and `meta.validate` incorrectly accepted some Draft 2019-09 schemas that the meta-schema rejects.
@@ -64,7 +72,7 @@
 
 ### Fixed
 
-- `prefixItems` incorrectly recognised as a known keyword in Draft 2019-09 and earlier (it is 2020-12 only).
+- `prefixItems` incorrectly recognized as a known keyword in Draft 2019-09 and earlier (it is 2020-12 only).
 - `pattern` validation errors displayed the internally translated regex instead of the original schema pattern. [#1149](https://github.com/Stranger6667/jsonschema/issues/1149)
 - Reuse registry retrievers when only `registry` is passed.
 - Reference leak when serializing large integers on Python 3.12+.

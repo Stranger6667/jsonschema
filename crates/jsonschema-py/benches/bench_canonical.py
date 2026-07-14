@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from jsonschema_rs import canonical
+from jsonschema_rs import canonical, canonicalize
 
 to_string = canonical.json.to_string
 
@@ -152,6 +152,7 @@ LARGE_SCHEMA = {
         for i in range(50)
     },
 }
+CANONICAL_LARGE_SCHEMA = canonicalize(LARGE_SCHEMA)
 
 
 @pytest.mark.benchmark(group="canonical-json-dict-sort", **BENCHMARK_CONFIG)
@@ -182,6 +183,11 @@ def test_canonical_json_decimal_special_list_2048(benchmark):
 @pytest.mark.benchmark(group="canonical-json-mixed-nested", **BENCHMARK_CONFIG)
 def test_canonical_json_mixed_nested(benchmark):
     benchmark(to_string, MIXED_NESTED)
+
+
+@pytest.mark.benchmark(group="canonical-schema-to-value", **BENCHMARK_CONFIG)
+def test_canonical_schema_to_json_schema_large(benchmark):
+    benchmark(CANONICAL_LARGE_SCHEMA.to_json_schema)
 
 
 _CLONE_IMPLS = [

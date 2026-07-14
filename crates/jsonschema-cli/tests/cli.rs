@@ -3,6 +3,7 @@ use insta::assert_snapshot;
 use serde_json::Value;
 use std::{collections::HashMap, fs};
 use tempfile::tempdir;
+use test_case::test_case;
 
 fn cli() -> Command {
     cargo_bin_cmd!("jsonschema-cli")
@@ -457,6 +458,21 @@ fn test_format_enforcement_via_cli_flag() {
         &[&invalid],
     );
     assert_snapshot!("format_enforcement_enabled", out);
+
+    // Draft 7 validates known formats by default, but the explicit opt-out wins.
+    let mut cmd = cli();
+    cmd.arg(&schema)
+        .arg("--draft")
+        .arg("7")
+        .arg("--no-assert-format")
+        .arg("--instance")
+        .arg(&invalid);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Expected success with format validation explicitly disabled:\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
 }
 
 #[test]
@@ -1732,4 +1748,320 @@ fn test_dereference_resource_with_transitive_unresolvable_ref_prints_error_on_st
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(!stderr.is_empty(), "expected error on stderr");
+}
+
+#[test]
+fn test_canonicalize_basic() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type":"string"}"#);
+
+    let output = cli().arg("canonicalize").arg(&schema).output().unwrap();
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let canonical: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        canonical,
+        serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string"
+        })
+    );
+}
+
+#[test]
+fn test_canonicalize_unsatisfiable_warns_and_succeeds() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"allOf":[{"type":"string"},{"type":"number"}]}"#,
+    );
+
+    let output = cli().arg("canonicalize").arg(&schema).output().unwrap();
+    // unsatisfiable is still a success (exit 0)
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let canonical: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    // canonical "accepts nothing" is `{"not": {}}`, not boolean false
+    assert_eq!(
+        canonical,
+        serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "not": {}
+        })
+    );
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("unsatisfiable"));
+
+    let output = cli()
+        .arg("canonicalize")
+        .arg(&schema)
+        .arg("--draft")
+        .arg("7")
+        .arg("--no-assert-format")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let canonical: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        canonical,
+        serde_json::json!({
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "not": {}
+        })
+    );
+}
+
+#[test]
+fn test_canonicalize_honors_draft() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type":"string"}"#);
+
+    let output = cli()
+        .arg("canonicalize")
+        .arg(&schema)
+        .arg("--draft")
+        .arg("7")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let canonical: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        canonical,
+        serde_json::json!({
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "string"
+        })
+    );
+}
+
+#[test]
+fn test_canonicalize_format_assertion_flag() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","allOf":[{"type":"string","format":"date"},{"type":"string","format":"uuid"}]}"#,
+    );
+
+    let output = cli().arg("canonicalize").arg(&schema).output().unwrap();
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let canonical: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    // Without format assertion the two format constraints coexist (no contradiction).
+    assert_eq!(
+        canonical,
+        serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "allOf": [
+                {"format": "date", "type": "string"},
+                {"format": "uuid", "type": "string"}
+            ]
+        })
+    );
+
+    let output = cli()
+        .arg("canonicalize")
+        .arg(&schema)
+        .arg("--assert-format")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let canonical: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    // With format assertion `date` and `uuid` contradict, so the schema is unsatisfiable.
+    assert_eq!(
+        canonical,
+        serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "not": {}
+        })
+    );
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("unsatisfiable"));
+}
+
+#[test]
+fn test_canonicalize_unknown_schema_without_resources_preserves_raw_schema() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"$schema":"https://example.com/meta","x":1}"#,
+    );
+
+    let output = cli().arg("canonicalize").arg(&schema).output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let canonical: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        canonical,
+        serde_json::json!({
+            "$schema": "https://example.com/meta",
+            "x": 1
+        })
+    );
+}
+
+#[test]
+fn test_canonicalize_with_resource_flag() {
+    let dir = tempdir().unwrap();
+    let person = create_temp_file(
+        &dir,
+        "person.json",
+        r#"{"$id":"https://example.com/person.json","type":"object","properties":{"name":{"type":"string"}},"required":["name"]}"#,
+    );
+    let root = create_temp_file(
+        &dir,
+        "root.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":"https://example.com/person.json"}"#,
+    );
+
+    let resource_arg = format!("https://example.com/person.json={person}");
+    let output = cli()
+        .arg("canonicalize")
+        .arg(&root)
+        .arg("--resource")
+        .arg(&resource_arg)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let canonical: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    // the ref is inlined: the target's keywords appear in place, no $ref remains
+    assert_eq!(
+        canonical,
+        serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        })
+    );
+}
+
+#[test]
+fn test_canonicalize_resolves_relative_ref_against_schema_file() {
+    let dir = tempdir().unwrap();
+    create_temp_file(&dir, "sibling.json", r#"{"type":"integer"}"#);
+    // No `$id`: the relative `$ref` must resolve against the schema file's own location, exactly like
+    // `bundle`/`dereference`, instead of a synthetic `file:///schema` base.
+    let root = create_temp_file(
+        &dir,
+        "root.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":"sibling.json"}"#,
+    );
+
+    let output = cli().arg("canonicalize").arg(&root).output().unwrap();
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let canonical: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    // the relative ref is resolved and inlined, no $ref remains
+    assert_eq!(
+        canonical,
+        serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+        })
+    );
+}
+
+#[test]
+fn test_canonicalize_output_to_file() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type":"integer"}"#);
+    let out_path = dir
+        .path()
+        .join("canonical.json")
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let output = cli()
+        .arg("canonicalize")
+        .arg(&schema)
+        .arg("--output")
+        .arg(&out_path)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+
+    let written = fs::read_to_string(&out_path).unwrap();
+    let canonical: serde_json::Value = serde_json::from_str(&written).unwrap();
+    assert_eq!(
+        canonical,
+        serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+        })
+    );
+}
+
+// content `None` means the schema file is never written, so the positional path is missing.
+#[test_case(None, &[]; "missing schema file")]
+#[test_case(Some(r#"{"type":123}"#), &[]; "invalid schema")]
+#[test_case(Some(r#"{"type":"string"}"#), &["--resource", ":::invalid=/tmp/unused.json"]; "invalid resource uri")]
+#[test_case(Some(r#"{"type":"string"}"#), &["--output", "/nonexistent_dir_xyz/out.json"]; "output to unwritable path")]
+fn test_canonicalize_error_paths(content: Option<&str>, extra_args: &[&str]) {
+    let dir = tempdir().unwrap();
+    let schema = match content {
+        Some(content) => create_temp_file(&dir, "schema.json", content),
+        None => dir
+            .path()
+            .join("missing.json")
+            .to_str()
+            .unwrap()
+            .to_string(),
+    };
+    let output = cli()
+        .arg("canonicalize")
+        .arg(&schema)
+        .args(extra_args)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(!stderr.is_empty(), "expected error on stderr");
+}
+
+#[test]
+fn test_canonicalize_with_insecure_flag() {
+    // `--insecure` makes `into_http_options` return Some, exercising the HTTP retriever
+    // wiring even though the schema itself needs no remote retrieval.
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type":"string"}"#);
+    let output = cli()
+        .arg("canonicalize")
+        .arg(&schema)
+        .arg("--insecure")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let canonical: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        canonical,
+        serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string"
+        })
+    );
 }

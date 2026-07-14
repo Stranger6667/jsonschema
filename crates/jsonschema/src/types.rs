@@ -56,6 +56,43 @@ impl JsonType {
             _ => panic!("Invalid JsonType representation: {repr}"),
         }
     }
+
+    /// `Number` covers `Integer`; otherwise types only cover themselves.
+    #[must_use]
+    pub(crate) fn covers(self, other: Self) -> bool {
+        self == other || matches!((self, other), (Self::Number, Self::Integer))
+    }
+
+    #[must_use]
+    pub(crate) fn guard_slot(self) -> Self {
+        if matches!(self, Self::Integer) {
+            Self::Number
+        } else {
+            self
+        }
+    }
+
+    /// `Integer` and `Number` overlap; all other distinct types are disjoint.
+    #[must_use]
+    pub(crate) fn overlaps(self, other: Self) -> bool {
+        self == other
+            || matches!(
+                (self, other),
+                (Self::Integer, Self::Number) | (Self::Number, Self::Integer)
+            )
+    }
+
+    /// Narrowest type that satisfies both; `None` if the types are disjoint.
+    #[must_use]
+    pub(crate) fn intersect(self, other: Self) -> Option<Self> {
+        if self == other {
+            return Some(self);
+        }
+        match (self, other) {
+            (Self::Integer, Self::Number) | (Self::Number, Self::Integer) => Some(Self::Integer),
+            _ => None,
+        }
+    }
 }
 
 impl From<&Value> for JsonType {
@@ -156,6 +193,24 @@ impl JsonTypeSet {
     #[must_use]
     pub fn contains(self, ty: JsonType) -> bool {
         self.0 & ty as u8 != 0
+    }
+    /// Types in either set.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+    /// Types in both sets.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn intersect(self, other: Self) -> Self {
+        Self(self.0 & other.0)
+    }
+    /// Types not in this set (within all JSON types).
+    #[inline]
+    #[must_use]
+    pub(crate) const fn complement(self) -> Self {
+        Self(Self::all().0 & !self.0)
     }
     /// Check if a JSON value's type is allowed by this set.
     #[must_use]
@@ -321,6 +376,21 @@ mod tests {
     #[test_case(&json!({"key": "value"}) => JsonType::Object ; "value object")]
     fn test_from_value(value: &Value) -> JsonType {
         JsonType::from(value)
+    }
+
+    #[test_case(JsonType::Number, JsonType::Integer => (true, true, Some(JsonType::Integer)) ; "number covers integer")]
+    #[test_case(JsonType::Integer, JsonType::Number => (false, true, Some(JsonType::Integer)) ; "integer overlaps number")]
+    #[test_case(JsonType::String, JsonType::Number => (false, false, None) ; "string is disjoint from number")]
+    #[test_case(JsonType::String, JsonType::String => (true, true, Some(JsonType::String)) ; "same type covers overlaps and intersects")]
+    fn type_lattice_models_integer_as_number_subtype(
+        left: JsonType,
+        right: JsonType,
+    ) -> (bool, bool, Option<JsonType>) {
+        (
+            left.covers(right),
+            left.overlaps(right),
+            left.intersect(right),
+        )
     }
 
     #[test]

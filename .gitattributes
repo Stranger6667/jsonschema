@@ -1,0 +1,1 @@
+crates/jsonschema/tests/fixtures/schemastore/corpus-schemastore-catalog.json filter=lfs diff=lfs merge=lfs -text

@@ -883,7 +883,10 @@ pub(crate) fn resolve_base_uri(
     }
 }
 
-fn validate_schema(draft: Draft, schema: &Value) -> Result<(), ValidationError<'static>> {
+pub(crate) fn validate_schema(
+    draft: Draft,
+    schema: &Value,
+) -> Result<(), ValidationError<'static>> {
     // Boolean schemas are always valid per the spec, skip validation
     if schema.is_boolean() {
         return Ok(());

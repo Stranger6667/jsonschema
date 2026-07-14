@@ -1,0 +1,1862 @@
+[
+  {
+    "description": "negate_complement neg_int_interval_rejects_in",
+    "schema": {
+      "not": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10
+      }
+    },
+    "witnesses": [
+      {
+        "data": 5,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_int_interval_accepts_out",
+    "schema": {
+      "not": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10
+      }
+    },
+    "witnesses": [
+      {
+        "data": -1,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_int_interval_accepts_wrong_kind",
+    "schema": {
+      "not": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10
+      }
+    },
+    "witnesses": [
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_const_i64_max_rejects_const",
+    "schema": {
+      "not": {
+        "const": 9223372036854775807
+      }
+    },
+    "witnesses": [
+      {
+        "data": 9223372036854775807,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_const_i64_max_accepts_below",
+    "schema": {
+      "not": {
+        "const": 9223372036854775807
+      }
+    },
+    "witnesses": [
+      {
+        "data": 9223372036854775806,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_const_i64_max_accepts_other_kind",
+    "schema": {
+      "not": {
+        "const": 9223372036854775807
+      }
+    },
+    "witnesses": [
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_const_i64_min_rejects_const",
+    "schema": {
+      "not": {
+        "const": -9223372036854775808
+      }
+    },
+    "witnesses": [
+      {
+        "data": -9223372036854775808,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_const_i64_min_accepts_above",
+    "schema": {
+      "not": {
+        "const": -9223372036854775808
+      }
+    },
+    "witnesses": [
+      {
+        "data": -9223372036854775807,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_string_max_len_u32_max_rejects_short",
+    "schema": {
+      "not": {
+        "type": "string",
+        "maxLength": 4294967295
+      }
+    },
+    "witnesses": [
+      {
+        "data": "abc",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_string_max_len_u32_max_accepts_other_kind",
+    "schema": {
+      "not": {
+        "type": "string",
+        "maxLength": 4294967295
+      }
+    },
+    "witnesses": [
+      {
+        "data": 42,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_object_max_props_u64_max_rejects_object",
+    "schema": {
+      "not": {
+        "type": "object",
+        "maxProperties": 18446744073709551615
+      }
+    },
+    "witnesses": [
+      {
+        "data": {},
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_object_max_props_u64_max_accepts_other_kind",
+    "schema": {
+      "not": {
+        "type": "object",
+        "maxProperties": 18446744073709551615
+      }
+    },
+    "witnesses": [
+      {
+        "data": 42,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_const_null_rejects_null",
+    "schema": {
+      "not": {
+        "const": null
+      }
+    },
+    "witnesses": [
+      {
+        "data": null,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_const_null_accepts_other",
+    "schema": {
+      "not": {
+        "const": null
+      }
+    },
+    "witnesses": [
+      {
+        "data": "anything",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_enum_rejects_member",
+    "schema": {
+      "not": {
+        "enum": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "witnesses": [
+      {
+        "data": 2,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_enum_accepts_non_member",
+    "schema": {
+      "not": {
+        "enum": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "witnesses": [
+      {
+        "data": 4,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_integer_rejects_integer",
+    "schema": {
+      "not": {
+        "type": "integer"
+      }
+    },
+    "witnesses": [
+      {
+        "data": 5,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_integer_accepts_fractional_number",
+    "schema": {
+      "not": {
+        "type": "integer"
+      }
+    },
+    "witnesses": [
+      {
+        "data": 5.5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_number_rejects_number",
+    "schema": {
+      "not": {
+        "type": "number"
+      }
+    },
+    "witnesses": [
+      {
+        "data": 5.5,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_number_rejects_integer_value",
+    "schema": {
+      "not": {
+        "type": "number"
+      }
+    },
+    "witnesses": [
+      {
+        "data": 5,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_number_accepts_string",
+    "schema": {
+      "not": {
+        "type": "number"
+      }
+    },
+    "witnesses": [
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_not_string_accepts_string",
+    "schema": {
+      "not": {
+        "not": {
+          "type": "string"
+        }
+      }
+    },
+    "witnesses": [
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "negate_complement neg_not_string_rejects_integer",
+    "schema": {
+      "not": {
+        "not": {
+          "type": "string"
+        }
+      }
+    },
+    "witnesses": [
+      {
+        "data": 0,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics mixed_numeric_union_fractional_multiple_of",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "maximum": 0,
+            "minimum": -1,
+            "type": "integer"
+          },
+          {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          {
+            "multipleOf": 1.5
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "maximum": 0,
+                "minimum": -1,
+                "type": "integer"
+              },
+              {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "multipleOf": 1.5
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics noninteger_union_number_window_two_points",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "not": {
+              "multipleOf": 1
+            }
+          },
+          {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "not": {
+                  "multipleOf": 1
+                }
+              },
+              {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics noninteger_union_number_window_integer_range",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "not": {
+              "multipleOf": 1
+            }
+          },
+          {
+            "maximum": 5,
+            "minimum": 0,
+            "type": "number"
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "not": {
+                  "multipleOf": 1
+                }
+              },
+              {
+                "maximum": 5,
+                "minimum": 0,
+                "type": "number"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics dense_interval_with_covered_fractional_point",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "not": {
+              "multipleOf": 2
+            }
+          },
+          {
+            "type": "null"
+          },
+          {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2
+          },
+          {
+            "type": "number",
+            "minimum": 1.5,
+            "maximum": 1.5
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "not": {
+                  "multipleOf": 2
+                }
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 2
+              },
+              {
+                "type": "number",
+                "minimum": 1.5,
+                "maximum": 1.5
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics fractional_window_beside_ray_sheds_integers",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "multipleOf": 0.25
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "multipleOf": 0.25
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics fractional_window_clipped_ray_converges",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 2
+          },
+          {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "multipleOf": 0.25
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 2
+              },
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "multipleOf": 0.25
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics fractional_window_ray_null_nested",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              {
+                "enum": [
+                  null
+                ]
+              },
+              {
+                "allOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  {
+                    "multipleOf": 0.25
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  {
+                    "enum": [
+                      null
+                    ]
+                  },
+                  {
+                    "allOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      {
+                        "multipleOf": 0.25
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics modular_number_drops_not_multiple_covered_by_sibling",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "allOf": [
+              {
+                "multipleOf": 1.5
+              },
+              {
+                "not": {
+                  "multipleOf": 2
+                }
+              }
+            ]
+          },
+          {
+            "multipleOf": 2
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "allOf": [
+                  {
+                    "multipleOf": 1.5
+                  },
+                  {
+                    "not": {
+                      "multipleOf": 2
+                    }
+                  }
+                ]
+              },
+              {
+                "multipleOf": 2
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics exclusion_leaves_merge_by_lcm",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "not": {
+              "multipleOf": 1
+            }
+          },
+          {
+            "not": {
+              "multipleOf": 1.5
+            }
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "not": {
+                  "multipleOf": 1
+                }
+              },
+              {
+                "not": {
+                  "multipleOf": 1.5
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics negated_fractional_modulus_union_with_const_window",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "not": {
+              "multipleOf": 1.5
+            }
+          },
+          {
+            "maximum": 0,
+            "minimum": 0,
+            "type": "integer"
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "not": {
+                  "multipleOf": 1.5
+                }
+              },
+              {
+                "maximum": 0,
+                "minimum": 0,
+                "type": "integer"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics negated_modulus_union_with_const",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "not": {
+              "multipleOf": 2
+            }
+          },
+          {
+            "const": 0
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "not": {
+                  "multipleOf": 2
+                }
+              },
+              {
+                "const": 0
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics negated_modulus_union_with_integer_ray",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "allOf": [
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "integer"
+              }
+            ]
+          },
+          {
+            "not": {
+              "multipleOf": 2
+            }
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "allOf": [
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              {
+                "allOf": [
+                  {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  }
+                ]
+              },
+              {
+                "not": {
+                  "multipleOf": 2
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics ray_union_with_negated_modulus_guard",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "not": {
+              "multipleOf": 2
+            }
+          },
+          {
+            "exclusiveMinimum": 1,
+            "type": "integer"
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "not": {
+                  "multipleOf": 2
+                }
+              },
+              {
+                "exclusiveMinimum": 1,
+                "type": "integer"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics window_union_with_negated_modulus_guard",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "multipleOf": 2
+                }
+              ]
+            }
+          },
+          {
+            "maximum": 4,
+            "minimum": 0,
+            "type": "integer"
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "not": {
+                  "anyOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "multipleOf": 2
+                    }
+                  ]
+                }
+              },
+              {
+                "maximum": 4,
+                "minimum": 0,
+                "type": "integer"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics integer_window_multiple_of_drops_when_non_multiples_covered",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 4,
+            "multipleOf": 2
+          },
+          {
+            "not": {
+              "multipleOf": 2
+            }
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 4,
+                "multipleOf": 2
+              },
+              {
+                "not": {
+                  "multipleOf": 2
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics integer_pieces_beside_not_multiple_complement",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "multipleOf": 2
+          },
+          {
+            "not": {
+              "multipleOf": 3
+            }
+          },
+          {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "multipleOf": 2
+              },
+              {
+                "not": {
+                  "multipleOf": 3
+                }
+              },
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics modular_ray_clipped_by_number_modular_sibling",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          {
+            "multipleOf": 4
+          },
+          {
+            "multipleOf": 1.5
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "integer"
+              },
+              {
+                "multipleOf": 4
+              },
+              {
+                "multipleOf": 1.5
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics fractional_modulus_with_integer_exclusion_refuses",
+    "schemas": [
+      {
+        "allOf": [
+          {
+            "not": {
+              "multipleOf": 2
+            }
+          },
+          {
+            "anyOf": [
+              {
+                "const": 1
+              },
+              {
+                "multipleOf": 1.5
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "allOf": [
+              {
+                "not": {
+                  "multipleOf": 2
+                }
+              },
+              {
+                "anyOf": [
+                  {
+                    "const": 1
+                  },
+                  {
+                    "multipleOf": 1.5
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics quarter_modulus_union_with_number_window",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          {
+            "multipleOf": 0.25
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "multipleOf": 0.25
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics quarter_modulus_union_with_wide_number_window",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          {
+            "multipleOf": 0.25
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "multipleOf": 0.25
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "dense_numeric_double_negation_preserves_semantics exclusion_leaf_union_number_window",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "not": {
+              "multipleOf": 1.5
+            }
+          },
+          {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "not": {
+                  "multipleOf": 1.5
+                }
+              },
+              {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "witnesses": [
+      null,
+      true,
+      "x",
+      -2,
+      -1,
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      1.5,
+      2,
+      3,
+      4,
+      6
+    ]
+  },
+  {
+    "description": "object_negation_preserves_non_objects",
+    "schema": {
+      "not": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "witnesses": [
+      {
+        "data": null,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "string_pattern_double_negation string_not_pattern_dropped_when_sibling_covers",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "allOf": [
+              {
+                "type": "string",
+                "pattern": "b$"
+              },
+              {
+                "not": {
+                  "pattern": "^a"
+                }
+              }
+            ]
+          },
+          {
+            "pattern": "^a"
+          }
+        ]
+      },
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "allOf": [
+                  {
+                    "type": "string",
+                    "pattern": "b$"
+                  },
+                  {
+                    "not": {
+                      "pattern": "^a"
+                    }
+                  }
+                ]
+              },
+              {
+                "pattern": "^a"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "description": "ir_double_negation_collapses",
+    "schema": {
+      "not": {
+        "not": {
+          "type": "integer"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_triple_negation_reduces_to_single_not",
+    "schema": {
+      "not": {
+        "not": {
+          "not": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {
+        "type": "integer"
+      }
+    }
+  },
+  {
+    "description": "ir_single_not_is_preserved",
+    "schema": {
+      "not": {
+        "type": "integer"
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {
+        "type": "integer"
+      }
+    }
+  },
+  {
+    "description": "ir_anyof_wider_and_negated_narrower_is_true",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "not": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 10
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "ir_anyof_schema_with_its_negation_is_true",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "not": {
+            "type": "integer"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "ir_anyof_two_negations_disjoint_inners_is_true",
+    "schema": {
+      "anyOf": [
+        {
+          "not": {
+            "type": "integer"
+          }
+        },
+        {
+          "not": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "ir_allof_two_negations_de_morgan",
+    "schema": {
+      "allOf": [
+        {
+          "not": {
+            "const": 1
+          }
+        },
+        {
+          "not": {
+            "const": 2
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {
+        "enum": [
+          1,
+          2
+        ]
+      }
+    }
+  },
+  {
+    "description": "ir_not_true_is_false",
+    "schema": {
+      "not": true
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "ir_not_false_is_true",
+    "schema": {
+      "not": false
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "ir_type_list_with_not_anyof_two_types_drops_both",
+    "schema": {
+      "type": [
+        "string",
+        "integer",
+        "null"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "null"
+    }
+  },
+  {
+    "description": "ir_type_list_with_not_of_one_type_drops_that_type",
+    "schema": {
+      "type": [
+        "string",
+        "integer"
+      ],
+      "not": {
+        "type": "string"
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "negate_minimum_collapses_to_exclusive_maximum",
+    "schema": {
+      "not": {
+        "minimum": 0
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "exclusiveMaximum": 0
+    }
+  },
+  {
+    "description": "negate_exclusive_maximum_collapses_to_minimum",
+    "schema": {
+      "not": {
+        "exclusiveMaximum": 5
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "minimum": 5
+    }
+  }
+]

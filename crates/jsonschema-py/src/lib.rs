@@ -62,6 +62,22 @@ fn referencing_error_type(py: Python<'_>) -> PyResult<Bound<'_, PyType>> {
 
 /// Convert a serde_json::Value to a Python object, properly handling arbitrary precision numbers
 pub(crate) fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
+    value_to_python_impl(py, value, false)
+}
+
+/// Numbers whose text is not the shortest-round-trip f64 spelling surface as `decimal.Decimal`.
+pub(crate) fn canonical_value_to_python(
+    py: Python<'_>,
+    value: &serde_json::Value,
+) -> PyResult<Py<PyAny>> {
+    value_to_python_impl(py, value, true)
+}
+
+fn value_to_python_impl(
+    py: Python<'_>,
+    value: &serde_json::Value,
+    exact_numbers: bool,
+) -> PyResult<Py<PyAny>> {
     match value {
         serde_json::Value::Null => Ok(py.None()),
         serde_json::Value::Bool(b) => Ok(pyo3::types::PyBool::new(py, *b)
@@ -79,7 +95,12 @@ pub(crate) fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyRe
                 let s = n.as_str();
                 let is_float = s.bytes().any(|b| b == b'.' || b == b'e' || b == b'E');
                 if is_float {
-                    if let Some(f) = n.as_f64() {
+                    let float = n.as_f64().filter(|f| {
+                        !exact_numbers
+                            || serde_json::Number::from_f64(*f)
+                                .is_some_and(|roundtrip| roundtrip.as_str() == s)
+                    });
+                    if let Some(f) = float {
                         Ok(pyo3::types::PyFloat::new(py, f).into_any().unbind())
                     } else {
                         // Fall back to decimal.Decimal for values outside f64 range so Python callers
@@ -105,7 +126,7 @@ pub(crate) fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyRe
                     return Err(PyErr::fetch(py));
                 }
                 for (i, item) in arr.iter().enumerate() {
-                    match value_to_python(py, item) {
+                    match value_to_python_impl(py, item, exact_numbers) {
                         Ok(py_item) => {
                             // PyList_SetItem steals the reference
                             PyList_SetItem(list, i as pyo3::ffi::Py_ssize_t, py_item.into_ptr());
@@ -120,7 +141,7 @@ pub(crate) fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyRe
                 Ok(Bound::from_owned_ptr(py, list).unbind())
             }
         }
-        serde_json::Value::Object(obj) => map_to_python(py, obj),
+        serde_json::Value::Object(obj) => map_to_python_impl(py, obj, exact_numbers),
     }
 }
 
@@ -129,9 +150,17 @@ fn map_to_python(
     py: Python<'_>,
     obj: &serde_json::Map<String, serde_json::Value>,
 ) -> PyResult<Py<PyAny>> {
+    map_to_python_impl(py, obj, false)
+}
+
+fn map_to_python_impl(
+    py: Python<'_>,
+    obj: &serde_json::Map<String, serde_json::Value>,
+    exact_numbers: bool,
+) -> PyResult<Py<PyAny>> {
     let py_dict = PyDict::new(py);
     for (k, v) in obj {
-        py_dict.set_item(k, value_to_python(py, v)?)?;
+        py_dict.set_item(k, value_to_python_impl(py, v, exact_numbers)?)?;
     }
     Ok(py_dict.into_any().unbind())
 }
@@ -765,7 +794,7 @@ fn into_validation_error_args(
         absolute_keyword_location,
     })
 }
-fn into_py_err(
+pub(crate) fn into_py_err(
     py: Python<'_>,
     error: jsonschema::ValidationError<'_>,
     mask: Option<&str>,
@@ -783,7 +812,7 @@ fn into_py_err(
     Ok(py_err)
 }
 
-fn get_draft(draft: u8) -> PyResult<Draft> {
+pub(crate) fn get_draft(draft: u8) -> PyResult<Draft> {
     match draft {
         DRAFT4 => Ok(Draft::Draft4),
         DRAFT6 => Ok(Draft::Draft6),
@@ -2311,6 +2340,8 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_wrapped(wrap_pyfunction!(validate))?;
     module.add_wrapped(wrap_pyfunction!(iter_errors))?;
     module.add_wrapped(wrap_pyfunction!(evaluate))?;
+    module.add_class::<canonical::PyCanonicalSchema>()?;
+    module.add_wrapped(wrap_pyfunction!(canonical::canonicalize))?;
     module.add_wrapped(wrap_pyfunction!(validator_for))?;
     module.add_wrapped(wrap_pyfunction!(validator_map_for))?;
     module.add_class::<ValidatorMap>()?;

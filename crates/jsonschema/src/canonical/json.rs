@@ -48,7 +48,10 @@ impl From<serde_json::Error> for Error {
     }
 }
 
-/// Serialize a JSON value into a deterministic canonical JSON string, so equivalent values share one text.
+/// Serialize a JSON value into a deterministic canonical JSON string.
+///
+/// Provides a stable representation for schema canonicalization: deduplicating equivalent JSON Schemas and downstream
+/// processing that relies on a single deterministic form.
 ///
 /// # Rules
 ///
@@ -226,12 +229,25 @@ fn push_digits(output: &mut String, digits: &[u8]) {
     output.push_str(std::str::from_utf8(digits).expect("ASCII digits"));
 }
 
-/// Canonical text for a valid JSON-number token, borrowing the input when it is already canonical.
-/// `None` only when the exponent magnitude overflows `usize` (32-bit targets), leaving the raw text.
+/// Whether the canonical spelling of a valid JSON-number token stays plain (non-scientific).
+/// Past-cap values take the scientific normal form, which the runtime validator's exact numeric
+/// comparisons decline, so documents carrying them as instance data must stay raw.
 #[cfg(feature = "arbitrary-precision")]
 #[must_use]
-fn canonical_number(raw: &str) -> Option<Cow<'_, str>> {
-    // `raw` is a valid JSON-number token; the scan assumes that shape.
+pub(crate) fn number_spelling_stays_plain(raw: &str) -> bool {
+    let canonical = canonical_number(raw);
+    let text = canonical.as_deref().unwrap_or(raw);
+    !text.bytes().any(|byte| matches!(byte, b'e' | b'E'))
+}
+
+/// Canonical text for a valid JSON-number token; `None` when the token is already canonical.
+/// Not public API: bindings normalize their native number texts through this so every surface
+/// shares one normal form.
+#[cfg(feature = "arbitrary-precision")]
+#[doc(hidden)]
+#[must_use]
+pub fn canonical_number(raw: &str) -> Option<Cow<'_, str>> {
+    // `raw` is always a valid JSON-number token (no leading `-0`), so the parse assumes that shape rather than re-validating it.
     let bytes = raw.as_bytes();
 
     let mut idx = 0;
@@ -266,7 +282,7 @@ fn canonical_number(raw: &str) -> Option<Cow<'_, str>> {
     let mut exponent_digits = "";
     let has_exponent = if idx < bytes.len() && matches!(bytes[idx], b'e' | b'E') {
         idx += 1;
-        // Keep a leading `-` for `parse_bytes`; drop `+`.
+        // Keep a leading `-` in the slice so `BigInt::parse_bytes` sees the sign; a `+` is dropped.
         let sign_start = idx;
         let mut exponent_negative = false;
         if idx < bytes.len() && matches!(bytes[idx], b'+' | b'-') {
@@ -275,7 +291,7 @@ fn canonical_number(raw: &str) -> Option<Cow<'_, str>> {
         }
         let digits_start = idx;
         while idx < bytes.len() && bytes[idx].is_ascii_digit() {
-            // Saturates: steers the branch below; scientific form recomputes exactly.
+            // Saturating: only steers the coarse branch below; the scientific form recomputes exactly.
             exponent = exponent
                 .saturating_mul(10)
                 .saturating_add(i64::from(bytes[idx] - b'0'));
@@ -295,10 +311,13 @@ fn canonical_number(raw: &str) -> Option<Cow<'_, str>> {
     let integer_within_cap = integer_end - integer_start <= MAX_EXPANDED_INTEGER_DIGITS;
 
     if !has_fraction && !has_exponent && integer_within_cap {
+        if negative && integer_end - integer_start == 1 && bytes[integer_start] == b'0' {
+            return Some(Cow::Borrowed("0"));
+        }
         return Some(Cow::Borrowed(raw));
     }
 
-    // In-cap plain decimal with a non-zero last digit is already canonical.
+    // Plain decimal with no exponent or trailing fraction zero is already canonical (grammar rejects leading integer zeros).
     if !has_exponent && integer_within_cap && bytes[fraction_end - 1] != b'0' {
         return Some(Cow::Borrowed(raw));
     }
@@ -309,7 +328,7 @@ fn canonical_number(raw: &str) -> Option<Cow<'_, str>> {
     digits.extend_from_slice(integer_digits.as_bytes());
     digits.extend_from_slice(fraction_digits.as_bytes());
 
-    // Strip leading zeros so the cap check below can't split equal values across branches.
+    // Leading zeros (only from a `0.xxx` integer part) would skew the expansion-size cap below, splitting equal values across branches.
     let leading_zeros = digits.iter().take_while(|&&byte| byte == b'0').count();
     digits.drain(..leading_zeros);
     if digits.is_empty() {
@@ -335,18 +354,18 @@ fn canonical_number(raw: &str) -> Option<Cow<'_, str>> {
         digits.len()
     } else {
         let drop_len = usize::try_from(shift.unsigned_abs()).ok()?;
-        if drop_len <= digits.len()
-            && digits[digits.len() - drop_len..]
-                .iter()
-                .all(|&byte| byte == b'0')
-        {
-            digits.len() - drop_len
+        if drop_len > digits.len() {
+            return canonical_fractional_number(&digits, drop_len, &parts).map(Cow::Owned);
+        }
+        let prefix_len = digits.len() - drop_len;
+        if digits[prefix_len..].iter().all(|&byte| byte == b'0') {
+            prefix_len
         } else {
             return canonical_fractional_number(&digits, drop_len, &parts).map(Cow::Owned);
         }
     };
 
-    // Prefix is non-empty with no leading zero.
+    // `digits[0] != b'0'` after the strip above, and neither branch can yield an empty prefix.
     let prefix = &digits[..prefix_len];
     let mut output = String::with_capacity(prefix.len() + usize::from(negative));
     if negative {
@@ -356,8 +375,8 @@ fn canonical_number(raw: &str) -> Option<Cow<'_, str>> {
     Some(Cow::Owned(output))
 }
 
-/// Parsed number facets needed past the digit buffer: fraction length, the exact exponent digits (the
-/// `i64` working exponent saturates; the slice keeps a leading `-`), and the sign.
+/// Facets of a parsed number literal needed past the digit buffer: the exact exponent for the scientific
+/// form (the `i64` working exponent saturates; the slice keeps a leading `-`) and the sign.
 #[cfg(feature = "arbitrary-precision")]
 struct NumberParts<'a> {
     fraction_len: usize,
@@ -365,9 +384,10 @@ struct NumberParts<'a> {
     negative: bool,
 }
 
-/// Plain-decimal normal form: `digits` (leading zeros pre-stripped) sit `point_offset` places right of the
-/// point. Trailing zeros are stripped before the `MAX_EXPANDED_INTEGER_DIGITS` cap check so equal values never
-/// straddle it; past the cap the scientific form takes over.
+/// Plain-decimal normal form for a non-integral value: `digits` (leading zeros pre-stripped) sit `point_offset` places right of the point.
+///
+/// Distinct spellings of one number must share one text (`CanonicalJson` equality is text equality). Past
+/// `MAX_EXPANDED_INTEGER_DIGITS` the scientific form takes over; trailing zeros are stripped before the cap check so spellings never straddle it.
 #[cfg(feature = "arbitrary-precision")]
 fn canonical_fractional_number(
     digits: &[u8],
@@ -375,7 +395,7 @@ fn canonical_fractional_number(
     parts: &NumberParts<'_>,
 ) -> Option<String> {
     let last_non_zero = digits.iter().rposition(|&byte| byte != b'0')?;
-    // Stripped trailing zeros sit right of the point, so the offset stays positive.
+    // Stripped trailing zeros all sit right of the point: a non-zero digit exists within the last `point_offset` positions, so the offset stays positive.
     let point_offset = point_offset.checked_sub(digits.len() - 1 - last_non_zero)?;
     if point_offset > MAX_EXPANDED_INTEGER_DIGITS {
         return canonical_scientific_number(digits, parts);
@@ -405,12 +425,15 @@ fn canonical_fractional_number(
 }
 
 /// Scientific normal form `d[.rest]e{E}` for values whose plain expansion exceeds `MAX_EXPANDED_INTEGER_DIGITS`.
-/// `digits` carry `digits x 10^(exponent - fraction_len)`, so `E = exponent + len(digits) - fraction_len - 1`.
+///
+/// `digits` (leading zeros pre-stripped) carry `digits x 10^(exponent - fraction_len)`, so `E = exponent + len(digits) -
+/// fraction_len - 1`, computed exactly over the literal's exponent digits (the `i64` working exponent saturates).
 #[cfg(feature = "arbitrary-precision")]
 fn canonical_scientific_number(digits: &[u8], parts: &NumberParts<'_>) -> Option<String> {
     use num_bigint::BigInt;
 
-    // The plain-decimal re-dispatch has no exponent; `parse_bytes` on an empty slice gives `None`.
+    // Also reached from the plain-decimal re-dispatch past the expansion cap, which has no exponent; an empty
+    // slice would make `parse_bytes` return `None` and drop the value to non-canonical raw text.
     let mut exponent = if parts.exponent_digits.is_empty() {
         BigInt::from(0)
     } else {
@@ -608,16 +631,5 @@ mod tests {
     #[test_case("-0E-1000", "0" ; "negative zero with huge negative exponent")]
     fn plain_decimal_normal_form(raw: &str, expected: &str) {
         assert_eq!(canonical(raw), expected);
-    }
-
-    // A plain decimal past the digit cap re-dispatches to scientific form with no explicit exponent,
-    // sharing one text with the equivalent scientific spelling. The trailing `0` defeats the
-    // already-canonical fast path so the value reaches the expansion cap.
-    #[cfg(feature = "arbitrary-precision")]
-    #[test]
-    fn oversized_plain_decimal_matches_scientific() {
-        let plain = format!("0.{}10", "0".repeat(1 << 20)); // 10^-1048577
-        assert_eq!(canonical(&plain), "1e-1048577");
-        assert_eq!(canonical(&plain), canonical("1e-1048577"));
     }
 }

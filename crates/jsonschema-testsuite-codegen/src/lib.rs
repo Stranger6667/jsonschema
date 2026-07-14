@@ -3,6 +3,7 @@ use quote::{format_ident, quote};
 use std::collections::HashSet;
 use syn::{parse_macro_input, ItemFn};
 
+mod canonical;
 mod generator;
 mod idents;
 mod loader;
@@ -154,6 +155,29 @@ pub fn output_suite(args: TokenStream, input: TokenStream) -> TokenStream {
         };
     }
 
+    output.into()
+}
+
+/// Generates one test per case from a directory of canonical-suite JSON files.
+#[proc_macro_attribute]
+pub fn canonical_suite(args: TokenStream, input: TokenStream) -> TokenStream {
+    let config = parse_macro_input!(args as testsuite::CanonicalSuiteConfig);
+    let test_func = parse_macro_input!(input as ItemFn);
+    let runner = test_func.sig.ident.clone();
+
+    let modules = match canonical::generate(&config.path, &runner) {
+        Ok(modules) => modules,
+        Err(e) => return compile_error_ts(e),
+    };
+
+    let output = quote! {
+        #test_func
+
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        use wasm_bindgen_test::wasm_bindgen_test;
+
+        #modules
+    };
     output.into()
 }
 

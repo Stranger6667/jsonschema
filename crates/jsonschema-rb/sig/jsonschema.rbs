@@ -8,13 +8,308 @@ module JSONSchema
   type draft = :draft4 | :draft6 | :draft7 | :draft201909 | :draft202012
 
   module Canonical
+    type kind = :null | :boolean | :integer | :number | :string | :array | :object |
+                :const | :enum | :multi_type | :all_of | :any_of | :one_of | :not |
+                :if_then_else | :typed_group | :type_guard | :reference | :recursive |
+                :dynamic_ref | :raw | :true | :false
+
+    type view = NullView | TrueView | FalseView | BooleanView |
+                ConstView | EnumView | IntegerView | NumberView |
+                StringView | ArrayView | ObjectView | MultiTypeView |
+                AllOfView | AnyOfView | OneOfView | NotView |
+                TypedGroupView | TypeGuardView |
+                ReferenceView | RecursiveView | DynamicRefView | RawView
+
+    type requirement = RequiredProperty | PatternPropertyRequirement |
+                       AdditionalPropertiesRequirement |
+                       DependentPropertiesRequirement | DependentSchemaRequirement
+
+    type constraint = NamedPropertyConstraint | PatternPropertyConstraint |
+                      AdditionalPropertiesConstraint
+
+    class CanonicalizationError < StandardError
+    end
+
+    class InvalidSchemaType < CanonicalizationError
+    end
+
+    class InvalidJsonValue < CanonicalizationError
+    end
+
+    class UnguardedRecursion < CanonicalizationError
+    end
+
+    class InfiniteRecursion < CanonicalizationError
+    end
+
+    class InvalidPattern < CanonicalizationError
+      def location: () -> String
+    end
+
+    class CanonicalSchema
+      def to_json_schema: () -> (Hash[String, untyped] | bool)
+      def satisfiable?: () -> bool
+      def draft: () -> draft
+      def kind: () -> kind
+      def inspect: () -> String
+      def ==: (untyped other) -> bool
+      def eql?: (untyped other) -> bool
+      def hash: () -> Integer
+      def view: () -> view
+      def definitions: () -> Hash[String, CanonicalSchema]
+      def intersect: (CanonicalSchema other) -> CanonicalSchema
+      def union: (CanonicalSchema other) -> CanonicalSchema
+      def negate: () -> CanonicalSchema
+      def subtract: (CanonicalSchema other) -> CanonicalSchema
+      def subschema_of?: (CanonicalSchema other) -> bool?
+    end
+
     module JSON
-      # Serialize a Ruby value to canonical JSON.
-      #
-      # Main use case: deduplicate equivalent JSON Schemas by using a stable string form.
       def self.to_string: (untyped object) -> String
     end
+
+    class NullView
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> {}
+    end
+
+    class TrueView
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> {}
+    end
+
+    class FalseView
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> {}
+    end
+
+    class BooleanView
+      def variant: () -> (:any | :just_true | :just_false)
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> { variant: (:any | :just_true | :just_false) }
+    end
+
+    class ConstView
+      def value: () -> untyped
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> { value: untyped }
+    end
+
+    class EnumView
+      def values: () -> Array[untyped]
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> { values: Array[untyped] }
+    end
+
+    # `minimum`/`exclusive_minimum` are mutually exclusive (likewise the maxima): the set one carries the bound, the other is `nil`.
+    class IntegerView
+      def minimum: () -> Numeric?
+      def maximum: () -> Numeric?
+      def exclusive_minimum: () -> Numeric?
+      def exclusive_maximum: () -> Numeric?
+      def multiple_of: () -> Numeric?
+      def not_multiple_of: () -> Array[Numeric]
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, untyped]
+    end
+
+    # `minimum`/`exclusive_minimum` are mutually exclusive (likewise the maxima): the set one carries the bound, the other is `nil`.
+    class NumberView
+      def minimum: () -> Numeric?
+      def maximum: () -> Numeric?
+      def exclusive_minimum: () -> Numeric?
+      def exclusive_maximum: () -> Numeric?
+      def multiple_of: () -> Numeric?
+      def not_multiple_of: () -> Array[Numeric]
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, untyped]
+    end
+
+    class ContentFacetView
+      def content_encoding: () -> String?
+      def content_media_type: () -> String?
+      def content_schema: () -> untyped
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, untyped]
+    end
+
+    class StringView
+      def min_length: () -> Integer?
+      def max_length: () -> Integer?
+      def patterns: () -> Array[String]
+      def not_patterns: () -> Array[String]
+      def format: () -> String?
+      def content: () -> Array[ContentFacetView]
+      def extended_regex?: () -> bool
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, untyped]
+    end
+
+    class ContainsView
+      def schema: () -> CanonicalSchema
+      def min_contains: () -> Integer
+      def max_contains: () -> Integer?
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, untyped]
+    end
+
+    class ArrayView
+      def prefix: () -> Array[CanonicalSchema]
+      def tail: () -> CanonicalSchema?
+      def min_items: () -> Integer
+      def max_items: () -> Integer?
+      def unique_items?: () -> bool
+      def repeated_items?: () -> bool
+      def contains: () -> Array[ContainsView]
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, untyped]
+    end
+
+    class RequiredProperty
+      def name: () -> String
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> { name: String }
+    end
+
+    class PatternPropertyRequirement
+      def pattern: () -> String
+      def schema: () -> CanonicalSchema
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, untyped]
+    end
+
+    class AdditionalPropertiesRequirement
+      def schema: () -> CanonicalSchema
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, untyped]
+    end
+
+    class DependentPropertiesRequirement
+      def property: () -> String
+      def required_properties: () -> Array[String]
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, untyped]
+    end
+
+    class DependentSchemaRequirement
+      def property: () -> String
+      def schema: () -> CanonicalSchema
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, untyped]
+    end
+
+    class NamedPropertyConstraint
+      def name: () -> String
+      def schema: () -> CanonicalSchema
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, untyped]
+    end
+
+    class PatternPropertyConstraint
+      def pattern: () -> String
+      def schema: () -> CanonicalSchema
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, untyped]
+    end
+
+    class AdditionalPropertiesConstraint
+      def schema: () -> CanonicalSchema
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, untyped]
+    end
+
+    class ObjectView
+      def requirements: () -> Array[requirement]
+      def constraints: () -> Array[constraint]
+      def property_names: () -> CanonicalSchema?
+      def min_properties: () -> Integer?
+      def max_properties: () -> Integer?
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> Hash[Symbol, untyped]
+    end
+
+    class MultiTypeView
+      def types: () -> Array[Symbol]
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> { types: Array[Symbol] }
+    end
+
+    class AllOfView
+      def schemas: () -> Array[CanonicalSchema]
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> { schemas: Array[CanonicalSchema] }
+    end
+
+    class AnyOfView
+      def schemas: () -> Array[CanonicalSchema]
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> { schemas: Array[CanonicalSchema] }
+    end
+
+    class OneOfView
+      def schemas: () -> Array[CanonicalSchema]
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> { schemas: Array[CanonicalSchema] }
+    end
+
+    class NotView
+      def schema: () -> CanonicalSchema
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> { schema: CanonicalSchema }
+    end
+
+    # A value matches iff its JSON type is `type_name` *and* it satisfies `body`; other types do not match.
+    class TypedGroupView
+      def type_name: () -> Symbol
+      def body: () -> CanonicalSchema
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> { type_name: Symbol, body: CanonicalSchema }
+    end
+
+    # Constrains only values of JSON type `type_name` (they must satisfy `body`); any other type matches unconditionally.
+    class TypeGuardView
+      def type_name: () -> Symbol
+      def body: () -> CanonicalSchema
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> { type_name: Symbol, body: CanonicalSchema }
+    end
+
+    class ReferenceView
+      def uri: () -> String
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> { uri: String }
+    end
+
+    class RecursiveView
+      def uri: () -> String
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> { uri: String }
+    end
+
+    class DynamicRefView
+      def name: () -> String
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> { name: String }
+    end
+
+    class RawView
+      def schema: () -> Hash[String, untyped]
+      def inspect: () -> String
+      def deconstruct_keys: (Array[Symbol]? keys) -> { schema: Hash[String, untyped] }
+    end
   end
+
+  # Reduce a JSON Schema to a stable canonical form.
+  def self.canonicalize: (
+    untyped schema,
+    ?draft: draft?,
+    ?validate_formats: bool?,
+    ?retriever: (^(String) -> untyped)?,
+    ?registry: Registry?,
+    ?base_uri: String?,
+    ?pattern_options: (RegexOptions | FancyRegexOptions)?,
+    ?inline_budget: Integer?
+  ) -> Canonical::CanonicalSchema
 
   # Create a validator with auto-detected draft version.
   #
