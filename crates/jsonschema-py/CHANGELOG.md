@@ -5,6 +5,7 @@
 ### Fixed
 
 - `meta.is_valid` and `meta.validate` incorrectly accepted some Draft 2019-09 schemas that the meta-schema rejects.
+- Integers just outside the `i64`/`u64` range incorrectly compared against numeric bounds through lossy `f64` rounding (e.g. `{"minimum": -9223372036854775808}` accepted `-9223372036854775809`).
 
 ### Performance
 

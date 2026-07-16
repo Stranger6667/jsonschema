@@ -10,6 +10,7 @@
 
 - Per-branch context on generated `anyOf` and `oneOf` validation errors, matching runtime validators.
 - `$recursiveRef` in generated validators incorrectly resolved to the innermost `$recursiveAnchor` (it should resolve to the outermost one).
+- Integer instances just outside the `i64`/`u64` range incorrectly compared against numeric bounds through lossy `f64` rounding under `arbitrary-precision` (e.g. `{"minimum": -9223372036854775808}` accepted `-9223372036854775809`).
 
 ### Changed
 

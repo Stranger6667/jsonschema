@@ -904,6 +904,14 @@ def test_custom_meta_schema_registered():
         # multipleOf with large integers
         ({"multipleOf": 18446744073709551616}, 36893488147419103232, True),
         ({"multipleOf": 18446744073709551616}, 18446744073709551617, False),
+        # limits at the i64/u64 boundary with instances just outside (f64 rounding window)
+        ({"minimum": -9223372036854775808}, -9223372036854775809, False),
+        ({"minimum": -9223372036854775808}, -9223372036854776807, False),
+        ({"exclusiveMinimum": -9223372036854775808}, -9223372036854775809, False),
+        ({"maximum": -9223372036854775808}, -9223372036854775809, True),
+        ({"exclusiveMaximum": -9223372036854775808}, -9223372036854775809, True),
+        ({"minimum": 18446744073709551615}, 18446744073709551616, True),
+        ({"maximum": 18446744073709551615}, 18446744073709551616, False),
     ],
 )
 def test_large_integer_validation(schema, instance, expected):
