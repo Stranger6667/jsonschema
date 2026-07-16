@@ -550,6 +550,11 @@ mod tests {
     #[test_case(r#"{"maximum": 100}"#, "-1e10000"; "infinity negative below positive maximum")]
     #[test_case(r#"{"minimum": 18446744073709551616}"#, "1e10000"; "infinity above bigint minimum")]
     #[test_case(r#"{"maximum": 18446744073709551616}"#, "-1e10000"; "infinity below bigint maximum")]
+    #[test_case(r#"{"exclusiveMaximum": -9223372036854775808}"#, r"-9223372036854775809"; "exclusive_maximum valid just below i64_min limit")]
+    #[test_case(r#"{"maximum": -9223372036854775808}"#, r"-9223372036854775809"; "maximum valid below i64_min limit")]
+    #[test_case(r#"{"minimum": 18446744073709551615}"#, r"18446744073709551616"; "minimum valid just above u64_max limit")]
+    #[test_case(r#"{"maximum": 1e2000000}"#, r"18446744073709551616"; "bigint instance below infinity maximum")]
+    #[test_case(r#"{"minimum": -1e2000000}"#, r"-9223372036854775809"; "bigint instance above negative infinity minimum")]
     fn is_valid_arbitrary_precision(schema_json: &str, instance_json: &str) {
         let schema = parse_json(schema_json);
         let instance = parse_json(instance_json);
@@ -576,6 +581,12 @@ mod tests {
     #[test_case(r#"{"exclusiveMinimum": -100}"#, "-1e10000"; "infinity negative below exclusive minimum")]
     #[test_case(r#"{"maximum": 18446744073709551616}"#, "1e10000"; "infinity above bigint maximum")]
     #[test_case(r#"{"minimum": 18446744073709551616}"#, "-1e10000"; "infinity below bigint minimum")]
+    #[test_case(r#"{"minimum": -9223372036854775808}"#, r"-9223372036854775809"; "minimum invalid just below i64_min limit")]
+    #[test_case(r#"{"minimum": -9223372036854775808}"#, r"-9223372036854776807"; "minimum invalid within f64 rounding window below i64_min")]
+    #[test_case(r#"{"exclusiveMinimum": -9223372036854775808}"#, r"-9223372036854775809"; "exclusive_minimum invalid below i64_min limit")]
+    #[test_case(r#"{"maximum": 18446744073709551615}"#, r"18446744073709551616"; "maximum invalid just above u64_max limit")]
+    #[test_case(r#"{"minimum": 1e2000000}"#, r"18446744073709551616"; "bigint instance below infinity minimum")]
+    #[test_case(r#"{"maximum": -1e2000000}"#, r"-9223372036854775809"; "bigint instance above negative infinity maximum")]
     fn is_not_valid_arbitrary_precision(schema_json: &str, instance_json: &str) {
         let schema = parse_json(schema_json);
         let instance = parse_json(instance_json);

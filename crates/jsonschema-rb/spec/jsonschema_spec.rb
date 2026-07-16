@@ -1702,6 +1702,16 @@ RSpec.describe "BigDecimal and large numbers" do
     expect(JSONSchema.valid?(schema, -(10**100))).to be false
   end
 
+  it "compares integers just outside the i64/u64 range exactly against limits" do
+    min_i64 = -(2**63)
+    expect(JSONSchema.valid?({ "minimum" => min_i64 }, min_i64 - 1)).to be false
+    expect(JSONSchema.valid?({ "minimum" => min_i64 }, min_i64 - 999)).to be false
+    expect(JSONSchema.valid?({ "exclusiveMaximum" => min_i64 }, min_i64 - 1)).to be true
+    max_u64 = (2**64) - 1
+    expect(JSONSchema.valid?({ "minimum" => max_u64 }, max_u64 + 1)).to be true
+    expect(JSONSchema.valid?({ "maximum" => max_u64 }, max_u64 + 1)).to be false
+  end
+
   it "validates large floats" do
     schema = { "type" => "number", "minimum" => 0 }
     expect(JSONSchema.valid?(schema, 1.0e+308)).to be true
