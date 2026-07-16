@@ -4,6 +4,6 @@ description: "{\"items\":{},\"type\":\"array\"}"
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Array(arr) => true,
+            __Value::Array(arr) => true,
             _ => false,
         }

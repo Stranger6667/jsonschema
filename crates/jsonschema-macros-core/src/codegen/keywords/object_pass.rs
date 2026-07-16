@@ -80,7 +80,7 @@ pub(crate) fn compile_validate(
             Some(Value::Bool(false)) => (
                 quote! {
                     if !covered {
-                        return Some(jsonschema::__private::error::additional_properties(
+                        return Some(__err::additional_properties(
                             #additional_properties_path, __path.into(), instance, vec![key.clone()],
                         ));
                     }
@@ -294,7 +294,7 @@ pub(crate) fn compile_collect(
     let aggregate = if is_false {
         quote! {
             if !__unexpected.is_empty() {
-                __errors.push(jsonschema::__private::error::additional_properties(
+                __errors.push(__err::additional_properties(
                     #additional_properties_path, __path.into(), instance, __unexpected,
                 ));
             }

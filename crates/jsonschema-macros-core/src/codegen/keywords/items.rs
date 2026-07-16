@@ -99,7 +99,7 @@ fn compile_with_prefix(
                 if let Some(item) = arr.get(#prefix_len) {
                     let instance = item;
                     let __path = &__path.push(#prefix_len);
-                    return Some(jsonschema::__private::error::false_schema(
+                    return Some(__err::false_schema(
                         #schema_path, __path.into(), instance,
                     ));
                 }
@@ -108,7 +108,7 @@ fn compile_with_prefix(
                 for (idx, item) in arr.iter().enumerate().skip(#prefix_len) {
                     let instance = item;
                     let __path = &__path.push(idx);
-                    __errors.push(jsonschema::__private::error::false_schema(
+                    __errors.push(__err::false_schema(
                         #schema_path, __path.into(), instance,
                     ));
                 }

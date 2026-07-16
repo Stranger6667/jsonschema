@@ -4,7 +4,7 @@ description: "{\"additionalProperties\":false,\"properties\":{\"a\":{\"type\":\"
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 let mut __req_0 = false;
                 let mut __req_1 = false;
                 let __object_pass = obj
@@ -21,9 +21,7 @@ match instance {
                             }
                             "b" => {
                                 if !(match instance {
-                                    serde_json::Value::Number(n) => {
-                                        jsonschema::__private::types::is_integer(n)
-                                    }
+                                    __Value::Number(n) => __types::is_integer(n),
                                     _ => false,
                                 }) {
                                     return false;

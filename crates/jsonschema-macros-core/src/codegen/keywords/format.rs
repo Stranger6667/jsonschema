@@ -15,7 +15,7 @@ pub(crate) fn validates_formats_by_default(draft: Draft) -> bool {
 fn format_check(schema_path: &str, format_name: &str, check: TokenStream) -> CompiledExpr {
     let validate = quote! {
         if !(#check) {
-            return Some(jsonschema::__private::error::format(
+            return Some(__err::format(
                 #schema_path, __path.into(), instance, #format_name,
             ));
         }

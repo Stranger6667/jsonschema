@@ -368,7 +368,7 @@ pub(crate) fn get_or_create_is_valid_fn_with(
                             #recursive_validate_push
                             #dynamic_push
                             #dynamic_validate_push
-                            let __r = (|| -> Option<jsonschema::ValidationError<'__i>> {
+                            let __r = (|| -> Option<__VE<'__i>> {
                                 #validate_stmts
                                 None
                             })();

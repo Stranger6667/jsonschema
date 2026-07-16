@@ -5,52 +5,61 @@ expression: schema_to_code(schema)
 ---
 struct Validator;
 #[doc(hidden)]
-#[allow(non_snake_case, dead_code, unused_variables, unreachable_code, clippy::all)]
+#[allow(
+    non_snake_case,
+    dead_code,
+    unused_imports,
+    unused_variables,
+    unreachable_code,
+    clippy::all
+)]
 mod __validator_impl {
     use super::*;
+    use jsonschema::__private::error as __err;
+    use jsonschema::__private::types as __types;
+    use jsonschema::paths as __paths;
+    use jsonschema::JsonType as __JT;
+    use jsonschema::JsonTypeSet as __JTS;
+    use jsonschema::ValidationError as __VE;
+    use serde_json::Value as __Value;
+    use std::sync::LazyLock as __Lazy;
+    type __Map = serde_json::Map<String, __Value>;
     std::thread_local! {
         static __JSONSCHEMA_DYNAMIC_STACK : std::cell::RefCell < Vec < (& 'static str, fn
-        (& serde_json::Value) -> bool) > > = std::cell::RefCell::new(Vec::new()); static
+        (& __Value) -> bool) > > = std::cell::RefCell::new(Vec::new()); static
         __JSONSCHEMA_DYNAMIC_KEY_EVAL_STACK : std::cell::RefCell < Vec < (& 'static str,
-        fn (& serde_json::Value, & serde_json::Map < String, serde_json::Value >, & str)
-        -> bool,) > > = std::cell::RefCell::new(Vec::new()); static
-        __JSONSCHEMA_DYNAMIC_ITEM_EVAL_STACK : std::cell::RefCell < Vec < (& 'static str,
-        fn (& serde_json::Value, & [serde_json::Value], usize, & serde_json::Value) ->
-        bool,) > > = std::cell::RefCell::new(Vec::new()); static
+        fn (& __Value, & __Map, & str) -> bool,) > > =
+        std::cell::RefCell::new(Vec::new()); static __JSONSCHEMA_DYNAMIC_ITEM_EVAL_STACK
+        : std::cell::RefCell < Vec < (& 'static str, fn (& __Value, & [__Value], usize, &
+        __Value) -> bool,) > > = std::cell::RefCell::new(Vec::new()); static
         __JSONSCHEMA_DYNAMIC_VALIDATE_STACK : std::cell::RefCell < Vec < (& 'static str,
-        for < '__r, '__a, '__b, '__c > fn (& '__r serde_json::Value, & '__c
-        jsonschema::paths::LazyLocation < '__a, '__b >) -> Option <
-        jsonschema::ValidationError < '__r >>) > > = std::cell::RefCell::new(Vec::new());
-        static __JSONSCHEMA_DYNAMIC_COLLECT_STACK : std::cell::RefCell < Vec < (& 'static
-        str, for < '__r, '__a, '__b, '__c > fn (& '__r serde_json::Value, & '__c
-        jsonschema::paths::LazyLocation < '__a, '__b >, & mut Vec <
-        jsonschema::ValidationError < '__r >>)) > > =
-        std::cell::RefCell::new(Vec::new()); static __JSONSCHEMA_VALIDATE_MARK :
-        std::cell::RefCell < Vec < (usize, usize) >> =
+        for < '__r, '__a, '__b, '__c > fn (& '__r __Value, & '__c __paths::LazyLocation <
+        '__a, '__b >) -> Option < __VE < '__r >>) > > =
+        std::cell::RefCell::new(Vec::new()); static __JSONSCHEMA_DYNAMIC_COLLECT_STACK :
+        std::cell::RefCell < Vec < (& 'static str, for < '__r, '__a, '__b, '__c > fn (&
+        '__r __Value, & '__c __paths::LazyLocation < '__a, '__b >, & mut Vec < __VE <
+        '__r >>)) > > = std::cell::RefCell::new(Vec::new()); static
+        __JSONSCHEMA_VALIDATE_MARK : std::cell::RefCell < Vec < (usize, usize) >> =
         std::cell::RefCell::new(Vec::new()); static __JSONSCHEMA_EVAL_MARK :
         std::cell::RefCell < Vec < (usize, usize) >> =
         std::cell::RefCell::new(Vec::new());
     }
     #[inline]
-    fn validate_ref_0(instance: &serde_json::Value) -> bool {
-        matches!(instance, serde_json::Value::Object(_) | serde_json::Value::Bool(_))
+    fn validate_ref_0(instance: &__Value) -> bool {
+        matches!(instance, __Value::Object(_) | __Value::Bool(_))
     }
     #[inline]
     fn validate_ref_0_validate<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-    ) -> Option<jsonschema::ValidationError<'__i>> {
-        if !(matches!(
-            instance, serde_json::Value::Object(_) | serde_json::Value::Bool(_)
-        )) {
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+    ) -> Option<__VE<'__i>> {
+        if !(matches!(instance, __Value::Object(_) | __Value::Bool(_))) {
             return Some(
-                jsonschema::__private::error::multiple_types(
+                __err::multiple_types(
                     "/type",
                     __path.into(),
                     instance,
-                    jsonschema::JsonTypeSet::empty()
-                        .insert(jsonschema::JsonType::Object)
-                        .insert(jsonschema::JsonType::Boolean),
+                    __JTS::empty().insert(__JT::Object).insert(__JT::Boolean),
                 ),
             );
         }
@@ -59,28 +68,24 @@ mod __validator_impl {
     #[cold]
     #[inline(never)]
     fn validate_ref_0_collect_errors<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-        __errors: &mut Vec<jsonschema::ValidationError<'__i>>,
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
     ) {
-        if !(matches!(
-            instance, serde_json::Value::Object(_) | serde_json::Value::Bool(_)
-        )) {
+        if !(matches!(instance, __Value::Object(_) | __Value::Bool(_))) {
             __errors
                 .push(
-                    jsonschema::__private::error::multiple_types(
+                    __err::multiple_types(
                         "/type",
                         __path.into(),
                         instance,
-                        jsonschema::JsonTypeSet::empty()
-                            .insert(jsonschema::JsonType::Object)
-                            .insert(jsonschema::JsonType::Boolean),
+                        __JTS::empty().insert(__JT::Object).insert(__JT::Boolean),
                     ),
                 );
         }
     }
     #[inline]
-    fn validate_ref_1(instance: &serde_json::Value) -> bool {
+    fn validate_ref_1(instance: &__Value) -> bool {
         {
             __JSONSCHEMA_DYNAMIC_STACK
                 .with(|stack| {
@@ -96,9 +101,7 @@ mod __validator_impl {
                 });
             let __result = {
                 match instance {
-                    serde_json::Value::Number(n) => {
-                        jsonschema::__private::types::is_integer(n)
-                    }
+                    __Value::Number(n) => __types::is_integer(n),
                     _ => false,
                 }
             };
@@ -128,9 +131,9 @@ mod __validator_impl {
     }
     #[inline]
     fn validate_ref_1_validate<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-    ) -> Option<jsonschema::ValidationError<'__i>> {
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+    ) -> Option<__VE<'__i>> {
         __JSONSCHEMA_DYNAMIC_STACK
             .with(|stack| {
                 stack.borrow_mut().push(("node", validate_ref_0));
@@ -147,19 +150,17 @@ mod __validator_impl {
             .with(|stack| {
                 stack.borrow_mut().push(("node", validate_ref_0_validate));
             });
-        let __r = (|| -> Option<jsonschema::ValidationError<'__i>> {
+        let __r = (|| -> Option<__VE<'__i>> {
             if !(match instance {
-                serde_json::Value::Number(n) => {
-                    jsonschema::__private::types::is_integer(n)
-                }
+                __Value::Number(n) => __types::is_integer(n),
                 _ => false,
             }) {
                 return Some(
-                    jsonschema::__private::error::single_type(
+                    __err::single_type(
                         "/$defs/plain/type",
                         __path.into(),
                         instance,
-                        jsonschema::JsonType::Integer,
+                        __JT::Integer,
                     ),
                 );
             }
@@ -201,9 +202,9 @@ mod __validator_impl {
     #[cold]
     #[inline(never)]
     fn validate_ref_1_collect_errors<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-        __errors: &mut Vec<jsonschema::ValidationError<'__i>>,
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
     ) {
         __JSONSCHEMA_DYNAMIC_STACK
             .with(|stack| {
@@ -222,16 +223,16 @@ mod __validator_impl {
                 stack.borrow_mut().push(("node", validate_ref_0_collect_errors));
             });
         if !(match instance {
-            serde_json::Value::Number(n) => jsonschema::__private::types::is_integer(n),
+            __Value::Number(n) => __types::is_integer(n),
             _ => false,
         }) {
             __errors
                 .push(
-                    jsonschema::__private::error::single_type(
+                    __err::single_type(
                         "/$defs/plain/type",
                         __path.into(),
                         instance,
-                        jsonschema::JsonType::Integer,
+                        __JT::Integer,
                     ),
                 );
         }
@@ -265,22 +266,14 @@ mod __validator_impl {
             });
     }
     #[inline]
-    fn eval_ref_0(
-        instance: &serde_json::Value,
-        obj: &serde_json::Map<String, serde_json::Value>,
-        key_str: &str,
-    ) -> bool {
+    fn eval_ref_0(instance: &__Value, obj: &__Map, key_str: &str) -> bool {
         {
             let __result = { false };
             __result
         }
     }
     #[inline]
-    fn eval_ref_1(
-        instance: &serde_json::Value,
-        obj: &serde_json::Map<String, serde_json::Value>,
-        key_str: &str,
-    ) -> bool {
+    fn eval_ref_1(instance: &__Value, obj: &__Map, key_str: &str) -> bool {
         {
             __JSONSCHEMA_DYNAMIC_KEY_EVAL_STACK
                 .with(|stack| {
@@ -299,10 +292,10 @@ mod __validator_impl {
     }
     #[inline]
     fn eval_items_ref_0(
-        instance: &serde_json::Value,
-        arr: &[serde_json::Value],
+        instance: &__Value,
+        arr: &[__Value],
         idx: usize,
-        item: &serde_json::Value,
+        item: &__Value,
     ) -> bool {
         {
             let __result = { false };
@@ -311,10 +304,10 @@ mod __validator_impl {
     }
     #[inline]
     fn eval_items_ref_1(
-        instance: &serde_json::Value,
-        arr: &[serde_json::Value],
+        instance: &__Value,
+        arr: &[__Value],
         idx: usize,
-        item: &serde_json::Value,
+        item: &__Value,
     ) -> bool {
         {
             __JSONSCHEMA_DYNAMIC_ITEM_EVAL_STACK
@@ -332,7 +325,7 @@ mod __validator_impl {
             __result
         }
     }
-    pub(super) fn is_valid(instance: &serde_json::Value) -> bool {
+    pub(super) fn is_valid(instance: &__Value) -> bool {
         __JSONSCHEMA_DYNAMIC_STACK
             .with(|stack| {
                 stack.borrow_mut().push(("node", validate_ref_0));
@@ -347,7 +340,7 @@ mod __validator_impl {
             });
         let __result = {
             match instance {
-                serde_json::Value::Object(obj) => {
+                __Value::Object(obj) => {
                     obj.iter()
                         .all(|(key, instance)| {
                             let key_str = key.as_str();
@@ -436,9 +429,9 @@ mod __validator_impl {
         __result
     }
     pub(super) fn validate<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-    ) -> Option<jsonschema::ValidationError<'__i>> {
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+    ) -> Option<__VE<'__i>> {
         __JSONSCHEMA_DYNAMIC_STACK
             .with(|stack| {
                 stack.borrow_mut().push(("node", validate_ref_0));
@@ -455,9 +448,9 @@ mod __validator_impl {
             .with(|stack| {
                 stack.borrow_mut().push(("node", validate_ref_0_validate));
             });
-        let __result = (|| -> Option<jsonschema::ValidationError<'__i>> {
+        let __result = (|| -> Option<__VE<'__i>> {
             match instance {
-                serde_json::Value::Object(obj) => {
+                __Value::Object(obj) => {
                     for (key, value) in obj.iter() {
                         let key_str = key.as_str();
                         match key_str {
@@ -546,11 +539,11 @@ mod __validator_impl {
                 }
                 _ => {
                     return Some(
-                        jsonschema::__private::error::single_type(
+                        __err::single_type(
                             "/type",
                             __path.into(),
                             instance,
-                            jsonschema::JsonType::Object,
+                            __JT::Object,
                         ),
                     );
                 }
@@ -588,9 +581,9 @@ mod __validator_impl {
         __result
     }
     pub(super) fn collect_errors<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-        __errors: &mut Vec<jsonschema::ValidationError<'__i>>,
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
     ) {
         __JSONSCHEMA_DYNAMIC_STACK
             .with(|stack| {
@@ -609,7 +602,7 @@ mod __validator_impl {
                 stack.borrow_mut().push(("node", validate_ref_0_collect_errors));
             });
         match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 if let Some(value) = obj.get("child") {
                     let instance = value;
                     if !({
@@ -739,11 +732,11 @@ mod __validator_impl {
             _ => {
                 __errors
                     .push(
-                        jsonschema::__private::error::single_type(
+                        __err::single_type(
                             "/type",
                             __path.into(),
                             instance,
-                            jsonschema::JsonType::Object,
+                            __JT::Object,
                         ),
                     );
             }

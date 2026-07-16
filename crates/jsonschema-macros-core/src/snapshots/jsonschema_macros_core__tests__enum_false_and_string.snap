@@ -4,7 +4,7 @@ description: "{\"enum\":[false,\"marker\"]}"
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Bool(b) => !*b,
-            serde_json::Value::String(s) => s.as_str() == "marker",
+            __Value::Bool(b) => !*b,
+            __Value::String(s) => s.as_str() == "marker",
             _ => false,
         }

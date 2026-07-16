@@ -4,11 +4,11 @@ description: "{\"minimum\":0,\"type\":[\"string\",\"number\",\"integer\",\"boole
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Number(n) => jsonschema::__private::numeric::ge(n, 0u64),
-            serde_json::Value::String(_)
-            | serde_json::Value::Array(_)
-            | serde_json::Value::Object(_)
-            | serde_json::Value::Bool(_)
-            | serde_json::Value::Null => true,
+            __Value::Number(n) => jsonschema::__private::numeric::ge(n, 0u64),
+            __Value::String(_)
+            | __Value::Array(_)
+            | __Value::Object(_)
+            | __Value::Bool(_)
+            | __Value::Null => true,
             _ => false,
         }

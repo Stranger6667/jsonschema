@@ -135,7 +135,7 @@ pub(super) fn compile_first_unexpected_check(
         for key in obj.keys() {
             let key_str = key.as_str();
             if !(#covered) {
-                return Some(jsonschema::__private::error::additional_properties(
+                return Some(__err::additional_properties(
                     #schema_path, __path.into(), instance, vec![key.clone()],
                 ));
             }

@@ -4,7 +4,7 @@ description: "{\"type\":[\"integer\",\"string\"]}"
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Number(n) => jsonschema::__private::types::is_integer(n),
-            serde_json::Value::String(_) => true,
+            __Value::Number(n) => __types::is_integer(n),
+            __Value::String(_) => true,
             _ => false,
         }

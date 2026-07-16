@@ -20,7 +20,7 @@ __JSONSCHEMA_DYNAMIC_STACK
                 stack.borrow_mut().push(("node", validate_ref_0_collect_errors));
             });
         match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 if let Some(value) = obj.get("child") {
                     let instance = value;
                     if !({
@@ -103,11 +103,11 @@ __JSONSCHEMA_DYNAMIC_STACK
             _ => {
                 __errors
                     .push(
-                        jsonschema::__private::error::single_type(
+                        __err::single_type(
                             "/type",
                             __path.into(),
                             instance,
-                            jsonschema::JsonType::Object,
+                            __JT::Object,
                         ),
                     );
             }

@@ -4,17 +4,15 @@ description: "{\"properties\":{\"a\":{}},\"type\":\"object\",\"unevaluatedProper
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 obj.iter()
                     .all(|(__key, __value)| {
                         let key_str = __key.as_str();
                         if matches!(key_str, "a") {
                             true
                         } else {
-                            (|instance: &serde_json::Value| match instance {
-                                serde_json::Value::Number(n) => {
-                                    jsonschema::__private::types::is_integer(n)
-                                }
+                            (|instance: &__Value| match instance {
+                                __Value::Number(n) => __types::is_integer(n),
                                 _ => false,
                             })(__value)
                         }

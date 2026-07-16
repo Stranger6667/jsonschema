@@ -205,11 +205,11 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
                         __context.push(__branch_errors);
                     })*
                     return Some(if __count == 0 {
-                        jsonschema::__private::error::one_of_not_valid(
+                        __err::one_of_not_valid(
                             #schema_path, __path.into(), instance, __context,
                         )
                     } else {
-                        jsonschema::__private::error::one_of_multiple_valid(
+                        __err::one_of_multiple_valid(
                             #schema_path, __path.into(), instance, __context,
                         )
                     });

@@ -4,7 +4,7 @@ description: "{\"additionalProperties\":false,\"patternProperties\":{\"^x\":{\"t
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 let __object_pass = obj
                     .iter()
                     .all(|(key, instance)| {
@@ -17,9 +17,7 @@ match instance {
                         }
                         if key.as_str().starts_with("x") {
                             if !(match instance {
-                                serde_json::Value::Number(n) => {
-                                    jsonschema::__private::types::is_integer(n)
-                                }
+                                __Value::Number(n) => __types::is_integer(n),
                                 _ => false,
                             }) {
                                 return false;
