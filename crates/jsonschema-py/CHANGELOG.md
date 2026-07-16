@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-07-16
+
 ### Fixed
 
 - `meta.is_valid` and `meta.validate` incorrectly accepted some Draft 2019-09 schemas that the meta-schema rejects.
@@ -1091,7 +1093,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.47.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.48.0...HEAD
+[0.48.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.47.0...python-v0.48.0
 [0.47.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.10...python-v0.47.0
 [0.46.10]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.9...python-v0.46.10
 [0.46.9]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.8...python-v0.46.9
