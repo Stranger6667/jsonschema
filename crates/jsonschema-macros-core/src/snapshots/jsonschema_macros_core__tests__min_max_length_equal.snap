@@ -4,7 +4,7 @@ description: "{\"maxLength\":5,\"minLength\":5,\"type\":\"string\"}"
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::String(s) => {
+            __Value::String(s) => {
                 let len = s.chars().count();
                 (len as u64) >= 5 && (len as u64) <= 5
             }

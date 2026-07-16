@@ -85,7 +85,7 @@ pub(crate) fn compile(
                 }
                 #recursive_pop
                 if !__unexpected.is_empty() {
-                    return Some(jsonschema::__private::error::unevaluated_properties(
+                    return Some(__err::unevaluated_properties(
                         #schema_path, __path.into(), instance, __unexpected,
                     ));
                 }
@@ -113,7 +113,7 @@ pub(crate) fn compile(
                     }
                 }
                 if !__unexpected.is_empty() {
-                    return Some(jsonschema::__private::error::unevaluated_properties(
+                    return Some(__err::unevaluated_properties(
                         #schema_path, __path.into(), instance, __unexpected,
                     ));
                 }

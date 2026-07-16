@@ -60,7 +60,7 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
                     #branch_collectors(instance, __path, &mut __branch_errors);
                     __context.push(__branch_errors);
                 })*
-                return Some(jsonschema::__private::error::any_of(
+                return Some(__err::any_of(
                     #schema_path, __path.into(), instance, __context,
                 ));
             }

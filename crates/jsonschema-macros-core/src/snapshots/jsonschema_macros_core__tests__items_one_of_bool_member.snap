@@ -4,7 +4,7 @@ description: "{\"oneOf\":[true,{\"prefixItems\":[{}]}],\"type\":\"array\",\"unev
 expression: is_valid_body(schema)
 ---
 (match instance {
-            serde_json::Value::Array(arr) => {
+            __Value::Array(arr) => {
                 let __one_of_matches_0 = (true as usize);
                 arr.iter()
                     .enumerate()

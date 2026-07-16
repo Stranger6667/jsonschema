@@ -5,7 +5,7 @@ expression: is_valid_body(schema)
 ---
 if instance.is_string() {
             match instance {
-                serde_json::Value::String(s) => !s.is_empty(),
+                __Value::String(s) => !s.is_empty(),
                 _ => true,
             }
         } else {

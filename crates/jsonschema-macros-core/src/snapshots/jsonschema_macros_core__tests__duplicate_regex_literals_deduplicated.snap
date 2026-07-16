@@ -5,14 +5,29 @@ expression: code
 ---
 struct Validator;
 #[doc(hidden)]
-#[allow(non_snake_case, dead_code, unused_variables, unreachable_code, clippy::all)]
+#[allow(
+    non_snake_case,
+    dead_code,
+    unused_imports,
+    unused_variables,
+    unreachable_code,
+    clippy::all
+)]
 mod __validator_impl {
     use super::*;
+    use jsonschema::__private::error as __err;
+    use jsonschema::__private::types as __types;
+    use jsonschema::paths as __paths;
+    use jsonschema::JsonType as __JT;
+    use jsonschema::JsonTypeSet as __JTS;
+    use jsonschema::ValidationError as __VE;
+    use serde_json::Value as __Value;
+    use std::sync::LazyLock as __Lazy;
+    type __Map = serde_json::Map<String, __Value>;
     #[inline]
     fn __jsonschema_regex_0(subject: &str) -> bool {
-        static REGEX: std::sync::LazyLock<
-            Option<jsonschema::__private::fancy_regex::Regex>,
-        > = std::sync::LazyLock::new(|| {
+        static REGEX: __Lazy<Option<jsonschema::__private::fancy_regex::Regex>> = __Lazy::new(||
+        {
             let mut builder = jsonschema::__private::fancy_regex::RegexBuilder::new(
                 "^[a-z]{2,}$",
             );
@@ -20,9 +35,9 @@ mod __validator_impl {
         });
         REGEX.as_ref().is_some_and(|re| re.is_match(subject).unwrap_or(false))
     }
-    pub(super) fn is_valid(instance: &serde_json::Value) -> bool {
+    pub(super) fn is_valid(instance: &__Value) -> bool {
         match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 let __object_pass = obj
                     .iter()
                     .all(|(key, instance)| {
@@ -44,11 +59,11 @@ mod __validator_impl {
         }
     }
     pub(super) fn validate<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-    ) -> Option<jsonschema::ValidationError<'__i>> {
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+    ) -> Option<__VE<'__i>> {
         match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 for (key, value) in obj.iter() {
                     let key_str = key.as_str();
                     let mut covered = false;
@@ -57,11 +72,11 @@ mod __validator_impl {
                         let __path = &__path.push(key_str);
                         if !(instance.is_string()) {
                             return Some(
-                                jsonschema::__private::error::single_type(
+                                __err::single_type(
                                     "/patternProperties/^[a-z]{2,}$/type",
                                     __path.into(),
                                     instance,
-                                    jsonschema::JsonType::String,
+                                    __JT::String,
                                 ),
                             );
                         }
@@ -69,7 +84,7 @@ mod __validator_impl {
                     }
                     if !covered {
                         return Some(
-                            jsonschema::__private::error::additional_properties(
+                            __err::additional_properties(
                                 "/additionalProperties",
                                 __path.into(),
                                 instance,
@@ -81,24 +96,19 @@ mod __validator_impl {
             }
             _ => {
                 return Some(
-                    jsonschema::__private::error::single_type(
-                        "/type",
-                        __path.into(),
-                        instance,
-                        jsonschema::JsonType::Object,
-                    ),
+                    __err::single_type("/type", __path.into(), instance, __JT::Object),
                 );
             }
         }
         None
     }
     pub(super) fn collect_errors<'__i>(
-        instance: &'__i serde_json::Value,
-        __path: &jsonschema::paths::LazyLocation,
-        __errors: &mut Vec<jsonschema::ValidationError<'__i>>,
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
     ) {
         match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 let mut __unexpected: Vec<String> = Vec::new();
                 for (key, value) in obj.iter() {
                     let key_str = key.as_str();
@@ -109,11 +119,11 @@ mod __validator_impl {
                         if !(instance.is_string()) {
                             __errors
                                 .push(
-                                    jsonschema::__private::error::single_type(
+                                    __err::single_type(
                                         "/patternProperties/^[a-z]{2,}$/type",
                                         __path.into(),
                                         instance,
-                                        jsonschema::JsonType::String,
+                                        __JT::String,
                                     ),
                                 );
                         }
@@ -126,7 +136,7 @@ mod __validator_impl {
                 if !__unexpected.is_empty() {
                     __errors
                         .push(
-                            jsonschema::__private::error::additional_properties(
+                            __err::additional_properties(
                                 "/additionalProperties",
                                 __path.into(),
                                 instance,
@@ -138,11 +148,11 @@ mod __validator_impl {
             _ => {
                 __errors
                     .push(
-                        jsonschema::__private::error::single_type(
+                        __err::single_type(
                             "/type",
                             __path.into(),
                             instance,
-                            jsonschema::JsonType::Object,
+                            __JT::Object,
                         ),
                     );
             }

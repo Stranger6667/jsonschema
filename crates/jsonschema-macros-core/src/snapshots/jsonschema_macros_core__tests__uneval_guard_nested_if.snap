@@ -4,15 +4,13 @@ description: "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"an
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 obj.iter()
                     .all(|(__key, __value)| {
                         let key_str = __key.as_str();
-                        if (|instance: &serde_json::Value| validate_ref_0(
-                            instance,
-                        ))(instance)
-                            && (if (|instance: &serde_json::Value| match instance {
-                                serde_json::Value::Object(obj) => obj.contains_key("a"),
+                        if (|instance: &__Value| validate_ref_0(instance))(instance)
+                            && (if (|instance: &__Value| match instance {
+                                __Value::Object(obj) => obj.contains_key("a"),
                                 _ => true,
                             })(instance) {
                                 (false) || (matches!(key_str, "a"))

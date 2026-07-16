@@ -4,12 +4,10 @@ description: "{\"additionalProperties\":{\"type\":\"integer\"},\"type\":\"object
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 obj.values()
                     .all(|instance| match instance {
-                        serde_json::Value::Number(n) => {
-                            jsonschema::__private::types::is_integer(n)
-                        }
+                        __Value::Number(n) => __types::is_integer(n),
                         _ => false,
                     })
             }

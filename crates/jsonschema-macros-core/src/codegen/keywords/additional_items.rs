@@ -25,7 +25,7 @@ pub(crate) fn compile(
             let check = quote! { arr.len() <= #tuple_len };
             let validate = quote! {
                 if !(#check) {
-                    return Some(jsonschema::__private::error::additional_items(
+                    return Some(__err::additional_items(
                         #schema_path, __path.into(), instance, #tuple_len,
                     ));
                 }

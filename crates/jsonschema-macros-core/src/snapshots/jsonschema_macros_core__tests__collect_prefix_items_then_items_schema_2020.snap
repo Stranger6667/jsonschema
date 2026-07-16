@@ -4,7 +4,7 @@ description: "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"it
 expression: collect_body(schema)
 ---
 match instance {
-            serde_json::Value::Array(arr) => {
+            __Value::Array(arr) => {
                 for (idx, item) in arr.iter().enumerate().skip(1usize) {
                     let instance = item;
                     if !(instance.is_string()) {
@@ -12,11 +12,11 @@ match instance {
                         if !(instance.is_string()) {
                             __errors
                                 .push(
-                                    jsonschema::__private::error::single_type(
+                                    __err::single_type(
                                         "/items/type",
                                         __path.into(),
                                         instance,
-                                        jsonschema::JsonType::String,
+                                        __JT::String,
                                     ),
                                 );
                         }
@@ -24,25 +24,21 @@ match instance {
                 }
                 if let Some(instance) = arr.get(0usize) {
                     if !(match instance {
-                        serde_json::Value::Number(n) => {
-                            jsonschema::__private::types::is_integer(n)
-                        }
+                        __Value::Number(n) => __types::is_integer(n),
                         _ => false,
                     }) {
                         let __path = &__path.push(0usize);
                         if !(match instance {
-                            serde_json::Value::Number(n) => {
-                                jsonschema::__private::types::is_integer(n)
-                            }
+                            __Value::Number(n) => __types::is_integer(n),
                             _ => false,
                         }) {
                             __errors
                                 .push(
-                                    jsonschema::__private::error::single_type(
+                                    __err::single_type(
                                         "/prefixItems/0/type",
                                         __path.into(),
                                         instance,
-                                        jsonschema::JsonType::Integer,
+                                        __JT::Integer,
                                     ),
                                 );
                         }
@@ -52,12 +48,7 @@ match instance {
             _ => {
                 __errors
                     .push(
-                        jsonschema::__private::error::single_type(
-                            "/type",
-                            __path.into(),
-                            instance,
-                            jsonschema::JsonType::Array,
-                        ),
+                        __err::single_type("/type", __path.into(), instance, __JT::Array),
                     );
             }
         }

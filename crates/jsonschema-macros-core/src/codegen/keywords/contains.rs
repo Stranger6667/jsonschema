@@ -79,11 +79,11 @@ pub(crate) fn compile(
                     }
                 }
                 if (__contains_count as u64) > #max {
-                    return Some(jsonschema::__private::error::contains(
+                    return Some(__err::contains(
                         #max_path, __path.into(), instance,
                     ));
                 } else if (__contains_count as u64) < #min {
-                    return Some(jsonschema::__private::error::contains(
+                    return Some(__err::contains(
                         #min_path_str, __path.into(), instance,
                     ));
                 }
@@ -92,7 +92,7 @@ pub(crate) fn compile(
     } else if min_contains.unwrap_or(1) == 1 {
         quote! {
             if !(arr.iter().any(|instance| #schema_is_valid)) {
-                return Some(jsonschema::__private::error::contains(
+                return Some(__err::contains(
                     #min_path_str, __path.into(), instance,
                 ));
             }
@@ -111,7 +111,7 @@ pub(crate) fn compile(
                     }
                 }
                 if (__contains_count as u64) < #min {
-                    return Some(jsonschema::__private::error::contains(
+                    return Some(__err::contains(
                         #min_path_str, __path.into(), instance,
                     ));
                 }

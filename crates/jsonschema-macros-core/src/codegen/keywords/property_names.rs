@@ -51,7 +51,7 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
                                     if !(#is_valid) {
                                         let __key_val: serde_json::Value = serde_json::Value::String(key.clone());
                                         let instance = &__key_val;
-                                        if let Some(__e) = (|| -> Option<jsonschema::ValidationError<'_>> {
+                                        if let Some(__e) = (|| -> Option<__VE<'_>> {
                                             #expr
                                             None
                                         })().map(|e| e.to_owned()) {
@@ -87,7 +87,7 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
                 quote! {
                     for key in obj.keys() {
                         let __key_val: serde_json::Value = serde_json::Value::String(key.clone());
-                        if let Some(__e) = (|| -> Option<jsonschema::ValidationError<'_>> {
+                        if let Some(__e) = (|| -> Option<__VE<'_>> {
                             let instance = &__key_val;
                             #expr
                             None
@@ -118,7 +118,7 @@ fn collect_property_name_errors(
     quote! {
         for key in obj.keys() {
             let __key_val: serde_json::Value = serde_json::Value::String(key.clone());
-            let mut __key_errors: Vec<jsonschema::ValidationError<'_>> = Vec::new();
+            let mut __key_errors: Vec<__VE<'_>> = Vec::new();
             {
                 #s_binding
                 let instance = &__key_val;

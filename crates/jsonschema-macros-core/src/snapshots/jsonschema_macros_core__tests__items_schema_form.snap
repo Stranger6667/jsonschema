@@ -4,24 +4,20 @@ description: "{\"prefixItems\":[{}],\"type\":\"array\",\"unevaluatedItems\":{\"t
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Array(arr) => {
+            __Value::Array(arr) => {
                 arr.iter()
                     .enumerate()
                     .all(|(idx, item)| {
                         if (idx < 1usize)
-                            || (|instance: &serde_json::Value| match instance {
-                                serde_json::Value::Number(n) => {
-                                    jsonschema::__private::types::is_integer(n)
-                                }
+                            || (|instance: &__Value| match instance {
+                                __Value::Number(n) => __types::is_integer(n),
                                 _ => false,
                             })(item)
                         {
                             true
                         } else {
-                            (|instance: &serde_json::Value| match instance {
-                                serde_json::Value::Number(n) => {
-                                    jsonschema::__private::types::is_integer(n)
-                                }
+                            (|instance: &__Value| match instance {
+                                __Value::Number(n) => __types::is_integer(n),
                                 _ => false,
                             })(item)
                         }

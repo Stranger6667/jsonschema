@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Faster code generation for `#[jsonschema::validator]` (~5% across benchmarked schemas), via aliasing repeated paths in the emitted code.
+
 ## [0.48.0] - 2026-07-16
 
 ### Added

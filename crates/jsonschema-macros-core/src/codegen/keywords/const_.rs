@@ -27,8 +27,8 @@ pub(in super::super) fn compile(ctx: &CompileContext<'_>, value: &Value) -> Comp
             );
             quote! {
                 {
-                    static EXPECTED: std::sync::LazyLock<serde_json::Number> =
-                        std::sync::LazyLock::new(|| {
+                    static EXPECTED: __Lazy<serde_json::Number> =
+                        __Lazy::new(|| {
                             serde_json::from_str(#num_json)
                                 .expect("Failed to parse const number")
                         });
@@ -42,8 +42,8 @@ pub(in super::super) fn compile(ctx: &CompileContext<'_>, value: &Value) -> Comp
         Value::Array(_) | Value::Object(_) => {
             quote! {
                 {
-                    static EXPECTED: std::sync::LazyLock<serde_json::Value> =
-                        std::sync::LazyLock::new(|| {
+                    static EXPECTED: __Lazy<serde_json::Value> =
+                        __Lazy::new(|| {
                             serde_json::from_str(#const_json)
                                 .expect("Failed to parse const value")
                         });
@@ -57,11 +57,11 @@ pub(in super::super) fn compile(ctx: &CompileContext<'_>, value: &Value) -> Comp
     // `serde_json::Value` on the error path.
     let validate_block = quote! {
         if !(#is_valid) {
-            static CONST_EXPECTED: std::sync::LazyLock<serde_json::Value> =
-                std::sync::LazyLock::new(|| {
+            static CONST_EXPECTED: __Lazy<serde_json::Value> =
+                __Lazy::new(|| {
                     serde_json::from_str(#const_json).expect("Failed to parse const value")
                 });
-            return Some(jsonschema::__private::error::constant(
+            return Some(__err::constant(
                 #schema_path, __path.into(), instance, CONST_EXPECTED.clone(),
             ));
         }

@@ -35,7 +35,7 @@ pub(in super::super) fn compile(
             items.push(CompiledExpr::from_check_and_error(
                 quote! { s.is_empty() },
                 quote! {
-                    jsonschema::__private::error::max_length(#max_path, __path.into(), instance, 0)
+                    __err::max_length(#max_path, __path.into(), instance, 0)
                 },
             ));
         }
@@ -49,12 +49,12 @@ pub(in super::super) fn compile(
                 quote! {
                     let len = s.chars().count();
                     if (len as u64) < #min {
-                        return Some(jsonschema::__private::error::min_length(
+                        return Some(__err::min_length(
                             #min_path, __path.into(), instance, #min,
                         ));
                     }
                     if (len as u64) > #max {
-                        return Some(jsonschema::__private::error::max_length(
+                        return Some(__err::max_length(
                             #max_path, __path.into(), instance, #max,
                         ));
                     }
@@ -67,7 +67,7 @@ pub(in super::super) fn compile(
                 items.push(CompiledExpr::from_check_and_error(
                     quote! { !s.is_empty() },
                     quote! {
-                        jsonschema::__private::error::min_length(#min_path, __path.into(), instance, 1)
+                        __err::min_length(#min_path, __path.into(), instance, 1)
                     },
                 ));
             } else if let Some(value) = schema.get("minLength").filter(|_| validation_vocab_enabled)
@@ -86,7 +86,7 @@ pub(in super::super) fn compile(
                 items.push(CompiledExpr::from_check_and_error(
                     quote! { s.is_empty() },
                     quote! {
-                        jsonschema::__private::error::max_length(#max_path, __path.into(), instance, 0)
+                        __err::max_length(#max_path, __path.into(), instance, 0)
                     },
                 ));
             } else if let Some(value) = schema.get("maxLength").filter(|_| validation_vocab_enabled)

@@ -4,8 +4,6 @@ description: "{\"type\":\"array\",\"uniqueItems\":true}"
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Array(arr) => {
-                jsonschema::__private::unique_items::is_unique(arr)
-            }
+            __Value::Array(arr) => jsonschema::__private::unique_items::is_unique(arr),
             _ => false,
         }

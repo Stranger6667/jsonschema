@@ -25,14 +25,14 @@ expression: validate_body(schema)
                 }
                 return Some(
                     if __count == 0 {
-                        jsonschema::__private::error::one_of_not_valid(
+                        __err::one_of_not_valid(
                             "/oneOf",
                             __path.into(),
                             instance,
                             __context,
                         )
                     } else {
-                        jsonschema::__private::error::one_of_multiple_valid(
+                        __err::one_of_multiple_valid(
                             "/oneOf",
                             __path.into(),
                             instance,

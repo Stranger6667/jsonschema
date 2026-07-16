@@ -3,4 +3,4 @@ source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"type\":[\"string\",\"null\"]}"
 expression: is_valid_body(schema)
 ---
-matches!(instance, serde_json::Value::String(_) | serde_json::Value::Null)
+matches!(instance, __Value::String(_) | __Value::Null)

@@ -4,6 +4,6 @@ description: "{\"maxLength\":10,\"type\":\"string\"}"
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::String(s) => (s.chars().count() as u64) <= 10,
+            __Value::String(s) => (s.chars().count() as u64) <= 10,
             _ => false,
         }

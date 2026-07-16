@@ -4,21 +4,21 @@ description: "{\"oneOf\":[{\"const\":1},{\"not\":{\"const\":2}},{\"if\":{\"type\
 expression: is_valid_body(schema)
 ---
 (match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 obj.iter()
                     .all(|(__key, __value)| {
                         let key_str = __key.as_str();
                         if {
                             let mut __one_of_matches = 0usize;
                             let mut __one_of_evaluates = false;
-                            if (|instance: &serde_json::Value| {
-                                static EXPECTED: std::sync::LazyLock<serde_json::Number> = std::sync::LazyLock::new(||
+                            if (|instance: &__Value| {
+                                static EXPECTED: __Lazy<serde_json::Number> = __Lazy::new(||
                                 {
                                     serde_json::from_str("1")
                                         .expect("Failed to parse const number")
                                 });
                                 match instance {
-                                    serde_json::Value::Number(n) => {
+                                    __Value::Number(n) => {
                                         jsonschema::__private::cmp::equal_numbers(n, &*EXPECTED)
                                     }
                                     _ => false,
@@ -27,18 +27,18 @@ expression: is_valid_body(schema)
                                 __one_of_matches += 1;
                                 __one_of_evaluates = __one_of_evaluates || (false);
                             }
-                            if (|instance: &serde_json::Value| validate_ref_0(
+                            if (|instance: &__Value| validate_ref_0(
                                 instance,
                             ))(instance) {
                                 __one_of_matches += 1;
                                 __one_of_evaluates = __one_of_evaluates || (false);
                             }
-                            if (|instance: &serde_json::Value| validate_ref_1(
+                            if (|instance: &__Value| validate_ref_1(
                                 instance,
                             ))(instance) {
                                 __one_of_matches += 1;
                                 __one_of_evaluates = __one_of_evaluates
-                                    || (if (|instance: &serde_json::Value| {
+                                    || (if (|instance: &__Value| {
                                         instance.is_string()
                                     })(instance) {
                                         (false) || (false)

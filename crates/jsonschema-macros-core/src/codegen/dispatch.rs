@@ -286,7 +286,7 @@ pub(super) fn build_type_error_expr(type_val: &Value, type_schema_path: &str) ->
         Value::String(ty) => {
             let json_type = type_name_to_json_type_token(ty.as_str());
             quote! {
-                jsonschema::__private::error::single_type(
+                __err::single_type(
                     #type_schema_path, __path.into(), instance, #json_type,
                 )
             }
@@ -294,21 +294,21 @@ pub(super) fn build_type_error_expr(type_val: &Value, type_schema_path: &str) ->
         Value::Array(types) => {
             // Build the set as a const chain: JsonTypeSet::empty().insert(A).insert(B)...
             let chain = types.iter().filter_map(|v| v.as_str()).fold(
-                quote! { jsonschema::JsonTypeSet::empty() },
+                quote! { __JTS::empty() },
                 |acc, ty| {
                     let json_type = type_name_to_json_type_token(ty);
                     quote! { #acc.insert(#json_type) }
                 },
             );
             quote! {
-                jsonschema::__private::error::multiple_types(
+                __err::multiple_types(
                     #type_schema_path, __path.into(), instance, #chain,
                 )
             }
         }
         _ => {
             quote! {
-                jsonschema::__private::error::false_schema(
+                __err::false_schema(
                     #type_schema_path, __path.into(), instance,
                 )
             }
@@ -318,12 +318,12 @@ pub(super) fn build_type_error_expr(type_val: &Value, type_schema_path: &str) ->
 
 fn type_name_to_json_type_token(name: &str) -> TokenStream {
     match name {
-        "number" => quote! { jsonschema::JsonType::Number },
-        "integer" => quote! { jsonschema::JsonType::Integer },
-        "boolean" => quote! { jsonschema::JsonType::Boolean },
-        "null" => quote! { jsonschema::JsonType::Null },
-        "array" => quote! { jsonschema::JsonType::Array },
-        "object" => quote! { jsonschema::JsonType::Object },
-        _ => quote! { jsonschema::JsonType::String },
+        "number" => quote! { __JT::Number },
+        "integer" => quote! { __JT::Integer },
+        "boolean" => quote! { __JT::Boolean },
+        "null" => quote! { __JT::Null },
+        "array" => quote! { __JT::Array },
+        "object" => quote! { __JT::Object },
+        _ => quote! { __JT::String },
     }
 }

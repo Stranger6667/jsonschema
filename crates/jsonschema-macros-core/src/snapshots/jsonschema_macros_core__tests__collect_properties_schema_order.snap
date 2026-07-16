@@ -4,29 +4,25 @@ description: "{\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"in
 expression: collect_body(schema)
 ---
 match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 if let Some(value) = obj.get("a") {
                     let instance = value;
                     if !(match instance {
-                        serde_json::Value::Number(n) => {
-                            jsonschema::__private::types::is_integer(n)
-                        }
+                        __Value::Number(n) => __types::is_integer(n),
                         _ => false,
                     }) {
                         let __path = &__path.push("a");
                         if !(match instance {
-                            serde_json::Value::Number(n) => {
-                                jsonschema::__private::types::is_integer(n)
-                            }
+                            __Value::Number(n) => __types::is_integer(n),
                             _ => false,
                         }) {
                             __errors
                                 .push(
-                                    jsonschema::__private::error::single_type(
+                                    __err::single_type(
                                         "/properties/a/type",
                                         __path.into(),
                                         instance,
-                                        jsonschema::JsonType::Integer,
+                                        __JT::Integer,
                                     ),
                                 );
                         }
@@ -35,25 +31,21 @@ match instance {
                 if let Some(value) = obj.get("b") {
                     let instance = value;
                     if !(match instance {
-                        serde_json::Value::Number(n) => {
-                            jsonschema::__private::types::is_integer(n)
-                        }
+                        __Value::Number(n) => __types::is_integer(n),
                         _ => false,
                     }) {
                         let __path = &__path.push("b");
                         if !(match instance {
-                            serde_json::Value::Number(n) => {
-                                jsonschema::__private::types::is_integer(n)
-                            }
+                            __Value::Number(n) => __types::is_integer(n),
                             _ => false,
                         }) {
                             __errors
                                 .push(
-                                    jsonschema::__private::error::single_type(
+                                    __err::single_type(
                                         "/properties/b/type",
                                         __path.into(),
                                         instance,
-                                        jsonschema::JsonType::Integer,
+                                        __JT::Integer,
                                     ),
                                 );
                         }

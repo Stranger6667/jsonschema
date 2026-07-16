@@ -9,7 +9,7 @@ pub(crate) fn compile_single(ctx: &CompileContext<'_>, name: &str) -> CompiledEx
         quote! { #check },
         quote! {
             if !(#check) {
-                return Some(jsonschema::__private::error::required(
+                return Some(__err::required(
                     #schema_path, __path.into(), instance, #name,
                 ));
             }
