@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Faster code generation for `#[jsonschema::validator]` (~5% across benchmarked schemas), via aliasing repeated paths in the emitted code.
+
+## [0.48.0] - 2026-07-16
+
 ### Added
 
 - `iter_errors` and `evaluate` for `#[jsonschema::validator]`-generated validators.
@@ -10,6 +16,7 @@
 
 - Per-branch context on generated `anyOf` and `oneOf` validation errors, matching runtime validators.
 - `$recursiveRef` in generated validators incorrectly resolved to the innermost `$recursiveAnchor` (it should resolve to the outermost one).
+- Integer instances just outside the `i64`/`u64` range incorrectly compared against numeric bounds through lossy `f64` rounding under `arbitrary-precision` (e.g. `{"minimum": -9223372036854775808}` accepted `-9223372036854775809`).
 
 ### Changed
 
@@ -1355,7 +1362,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.47.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.0...HEAD
+[0.48.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.47.0...rust-v0.48.0
 [0.47.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.10...rust-v0.47.0
 [0.46.10]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.9...rust-v0.46.10
 [0.46.9]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.8...rust-v0.46.9

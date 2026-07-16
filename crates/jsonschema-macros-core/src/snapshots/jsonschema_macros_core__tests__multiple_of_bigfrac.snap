@@ -1,5 +1,6 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 639
 description: "{\"multipleOf\":0.1,\"type\":\"number\"}"
 expression: is_valid_body(schema)
 ---

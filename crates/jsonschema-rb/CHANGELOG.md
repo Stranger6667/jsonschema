@@ -2,9 +2,12 @@
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-07-16
+
 ### Fixed
 
 - `JSONSchema::Meta.valid?` and `JSONSchema::Meta.validate!` incorrectly accepted some Draft 2019-09 schemas that the meta-schema rejects.
+- Integers just outside the `i64`/`u64` range incorrectly compared against numeric bounds through lossy `f64` rounding (e.g. `{"minimum" => -9223372036854775808}` accepted `-9223372036854775809`).
 
 ### Performance
 
@@ -172,7 +175,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.47.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.0...HEAD
+[0.48.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.47.0...ruby-v0.48.0
 [0.47.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.10...ruby-v0.47.0
 [0.46.10]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.9...ruby-v0.46.10
 [0.46.9]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.8...ruby-v0.46.9

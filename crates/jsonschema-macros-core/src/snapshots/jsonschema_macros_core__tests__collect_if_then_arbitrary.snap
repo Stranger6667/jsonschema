@@ -1,5 +1,6 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 668
 description: "{\"if\":{\"type\":\"integer\"},\"then\":{\"minimum\":10,\"multipleOf\":3}}"
 expression: collect_body(schema)
 ---

@@ -27,6 +27,10 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 const DEFAULT_SCHEME: &str = "json-schema";
 pub(crate) const DEFAULT_BASE_URI: &str = "json-schema:///";
 
+pub(crate) const fn formats_are_assertions_by_default(draft: Draft) -> bool {
+    matches!(draft, Draft::Draft4 | Draft::Draft6 | Draft::Draft7)
+}
+
 /// Type alias for shared cache maps in compiler state.
 type SharedCache<K, V> = Rc<RefCell<AHashMap<K, V>>>;
 /// Type alias for shared sets in compiler state.
@@ -319,10 +323,9 @@ impl<'a> Context<'a> {
         !matches!(self.draft, Draft::Draft4)
     }
     pub(crate) fn validates_formats_by_default(&self) -> bool {
-        self.config.validate_formats().unwrap_or(matches!(
-            self.draft,
-            Draft::Draft4 | Draft::Draft6 | Draft::Draft7
-        ))
+        self.config
+            .validate_formats()
+            .unwrap_or_else(|| formats_are_assertions_by_default(self.draft))
     }
     pub(crate) fn are_unknown_formats_ignored(&self) -> bool {
         self.config.are_unknown_formats_ignored()
@@ -622,17 +625,12 @@ impl<'a> Context<'a> {
             PatternEngineOptions::Regex { .. } => (None, None, None),
         };
 
-        let mut builder = fancy_regex::RegexBuilder::new(translated.as_ref());
-        if let Some(limit) = backtrack_limit {
-            builder.backtrack_limit(limit);
-        }
-        if let Some(limit) = size_limit {
-            builder.delegate_size_limit(limit);
-        }
-        if let Some(limit) = dfa_size_limit {
-            builder.delegate_dfa_size_limit(limit);
-        }
-        let regex = Arc::new(builder.build().map_err(|_| ())?);
+        let regex = Arc::new(crate::regex::build_fancy_regex(
+            translated.as_ref(),
+            backtrack_limit,
+            size_limit,
+            dfa_size_limit,
+        )?);
 
         if let Some(entry) = self.shared.pattern_cache.borrow_mut().get_mut(pattern) {
             entry.fancy = Some(Arc::clone(&regex));
@@ -664,14 +662,11 @@ impl<'a> Context<'a> {
             PatternEngineOptions::FancyRegex { .. } => (None, None),
         };
 
-        let mut builder = regex::RegexBuilder::new(translated.as_ref());
-        if let Some(limit) = size_limit {
-            builder.size_limit(limit);
-        }
-        if let Some(limit) = dfa_size_limit {
-            builder.dfa_size_limit(limit);
-        }
-        let regex = Arc::new(builder.build().map_err(|_| ())?);
+        let regex = Arc::new(crate::regex::build_standard_regex(
+            translated.as_ref(),
+            size_limit,
+            dfa_size_limit,
+        )?);
 
         if let Some(entry) = self.shared.pattern_cache.borrow_mut().get_mut(pattern) {
             entry.standard = Some(Arc::clone(&regex));
@@ -1065,9 +1060,7 @@ fn compile_without_cache<'a>(
                 location,
                 Location::new(),
                 resource.contents(),
-                JsonTypeSet::empty()
-                    .insert(JsonType::Boolean)
-                    .insert(JsonType::Object),
+                JsonTypeSet::from(JsonType::Boolean).insert(JsonType::Object),
             ))
         }
     }
