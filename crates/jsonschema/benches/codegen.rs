@@ -24,46 +24,58 @@ mod bench {
     type IsValid = fn(&Value) -> bool;
     type Validate = for<'a> fn(&'a Value) -> Result<(), jsonschema::ValidationError<'a>>;
     type IterErrors = for<'a> fn(&'a Value) -> jsonschema::ErrorIterator<'a>;
+    type Evaluate = fn(&Value) -> jsonschema::Evaluation;
 
     fn bench(c: &mut Criterion) {
         for benchmark in Benchmark::iter() {
             benchmark.run(&mut |name, _schema, instances| {
-                let (is_valid, validate, iter_errors): (IsValid, Validate, IterErrors) = match name
-                {
+                let (is_valid, validate, iter_errors, evaluate): (
+                    IsValid,
+                    Validate,
+                    IterErrors,
+                    Evaluate,
+                ) = match name {
                     "Fast" => (
                         FastSchemaValidator::is_valid,
                         FastSchemaValidator::validate,
                         FastSchemaValidator::iter_errors,
+                        FastSchemaValidator::evaluate,
                     ),
                     "Open API" => (
                         OpenAPIValidator::is_valid,
                         OpenAPIValidator::validate,
                         OpenAPIValidator::iter_errors,
+                        OpenAPIValidator::evaluate,
                     ),
                     "Swagger" => (
                         SwaggerValidator::is_valid,
                         SwaggerValidator::validate,
                         SwaggerValidator::iter_errors,
+                        SwaggerValidator::evaluate,
                     ),
                     "GeoJSON" => (
                         GeoJSONValidator::is_valid,
                         GeoJSONValidator::validate,
                         GeoJSONValidator::iter_errors,
+                        GeoJSONValidator::evaluate,
                     ),
                     "CITM" => (
                         CITMValidator::is_valid,
                         CITMValidator::validate,
                         CITMValidator::iter_errors,
+                        CITMValidator::evaluate,
                     ),
                     "FHIR" => (
                         FHIRValidator::is_valid,
                         FHIRValidator::validate,
                         FHIRValidator::iter_errors,
+                        FHIRValidator::evaluate,
                     ),
                     "Recursive" => (
                         RecursiveValidator::is_valid,
                         RecursiveValidator::validate,
                         RecursiveValidator::iter_errors,
+                        RecursiveValidator::evaluate,
                     ),
                     _ => return,
                 };
@@ -82,6 +94,11 @@ mod bench {
                         BenchmarkId::new(format!("codegen/{name}/iter_errors"), &instance.name),
                         &instance.data,
                         |b, data| b.iter(|| black_box(iter_errors(data).count())),
+                    );
+                    c.bench_with_input(
+                        BenchmarkId::new(format!("codegen/{name}/evaluate"), &instance.name),
+                        &instance.data,
+                        |b, data| b.iter_with_large_drop(|| black_box(evaluate(data))),
                     );
                 }
             });

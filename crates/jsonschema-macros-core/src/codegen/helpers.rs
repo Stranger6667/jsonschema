@@ -8,6 +8,7 @@ use crate::context::CompileContext;
 use super::{
     compile_schema,
     draft::DraftExt,
+    evaluation::get_or_create_dynamic_evaluation_fn,
     keywords::unevaluated::{compile_index_evaluated_expr, compile_key_evaluated_expr, GuardHoist},
     refs::resolve_ref,
     stack_emit::{
@@ -24,6 +25,7 @@ pub(crate) struct DynamicAnchorBinding {
     pub(crate) is_valid_name: String,
     pub(crate) key_eval_name: String,
     pub(crate) item_eval_name: String,
+    pub(crate) evaluation_name: String,
 }
 
 pub(crate) fn dynamic_ref_anchor_name(reference: &str, resolved_schema: &Value) -> Option<String> {
@@ -84,32 +86,45 @@ pub(crate) fn collect_dynamic_anchor_bindings(
                 let Ok(resolved) = resolve_ref(ctx, &reference) else {
                     continue;
                 };
-                if dynamic_ref_anchor_name(&reference, &resolved.schema).is_none() {
+                if dynamic_ref_anchor_name(&reference, resolved.schema).is_none() {
                     continue;
                 }
                 let is_valid_name = get_or_create_is_valid_fn(
                     ctx,
                     &resolved.location,
-                    &resolved.schema,
+                    resolved.schema,
                     resolved.base_uri.clone(),
                 );
                 let key_eval_name = get_or_create_key_eval_fn(
                     ctx,
                     &resolved.location,
-                    &resolved.schema,
+                    resolved.schema,
                     resolved.base_uri.clone(),
                 );
                 let item_eval_name = get_or_create_item_eval_fn(
                     ctx,
                     &resolved.location,
-                    &resolved.schema,
-                    resolved.base_uri,
+                    resolved.schema,
+                    resolved.base_uri.clone(),
                 );
+                // The evaluation helper is only referenced by the `evaluate` emission; skip creating
+                // it when `evaluate` is off so no evaluation helper leaks into a validation-only build.
+                let evaluation_name = if ctx.config.method_gates.evaluate {
+                    get_or_create_dynamic_evaluation_fn(
+                        ctx,
+                        &resolved.location,
+                        resolved.schema,
+                        resolved.base_uri.clone(),
+                    )
+                } else {
+                    String::new()
+                };
                 bindings.push(DynamicAnchorBinding {
                     anchor,
                     is_valid_name,
                     key_eval_name,
                     item_eval_name,
+                    evaluation_name,
                 });
             }
             bindings

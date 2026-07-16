@@ -44,6 +44,13 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
         })
         .collect();
     let is_valid = quote! { (#(#is_valid_checks)||*) };
+    ctx.branch_gate_cache.insert(
+        schemas.as_ptr() as usize,
+        crate::context::BranchGates {
+            init: quote! {},
+            gates: is_valid_checks.clone(),
+        },
+    );
     let branch_collectors: Vec<_> = branch_helpers
         .iter()
         .map(|idx| format_ident!("collect_branch_errors_{}", idx))

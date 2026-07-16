@@ -63,6 +63,26 @@ mod tests {
                 .build(&test.schema)
                 .expect("Failed to build a schema");
 
+            let runtime_evaluation = validator.evaluate(&test.data);
+            let runtime_output = (
+                serde_json::to_value(runtime_evaluation.list())
+                    .expect("runtime list output should serialize"),
+                serde_json::to_value(runtime_evaluation.hierarchical())
+                    .expect("runtime hierarchical output should serialize"),
+            );
+            let generated_output = codegen_validator.evaluate(&test.data);
+            assert!(
+                generated_output == runtime_output,
+                "codegen evaluate() mismatch at {}:\nGenerated paths: {:?}\nRuntime paths: {:?}\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                first_difference(&generated_output, &runtime_output, "$"),
+                evaluation_paths(&generated_output.0),
+                evaluation_paths(&runtime_output.0),
+                test.case,
+                test.description,
+                pretty_json(&test.schema),
+                pretty_json(&test.data),
+            );
+
             if test.valid {
                 if let Some(first) = validator.iter_errors(&test.data).next() {
                     panic!(
@@ -278,6 +298,67 @@ mod tests {
                 let _ = serde_json::to_value(evaluation.hierarchical())
                     .expect("Hierarchical output should serialize");
             }
+        }
+    }
+
+    fn evaluation_paths(output: &serde_json::Value) -> Vec<&str> {
+        output["details"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|unit| unit["evaluationPath"].as_str())
+            .collect()
+    }
+
+    fn first_difference(
+        left: &(serde_json::Value, serde_json::Value),
+        right: &(serde_json::Value, serde_json::Value),
+        path: &str,
+    ) -> String {
+        first_value_difference(&left.0, &right.0, &format!("{path}.list"))
+            .or_else(|| first_value_difference(&left.1, &right.1, &format!("{path}.hierarchical")))
+            .unwrap_or_else(|| path.to_owned())
+    }
+
+    fn first_value_difference(
+        left: &serde_json::Value,
+        right: &serde_json::Value,
+        path: &str,
+    ) -> Option<String> {
+        match (left, right) {
+            (serde_json::Value::Array(left), serde_json::Value::Array(right)) => {
+                if let Some(difference) =
+                    left.iter()
+                        .zip(right)
+                        .enumerate()
+                        .find_map(|(index, (left, right))| {
+                            first_value_difference(left, right, &format!("{path}[{index}]"))
+                        })
+                {
+                    return Some(difference);
+                }
+                (left.len() != right.len()).then(|| {
+                    format!(
+                        "{path}.length (generated {}, runtime {})",
+                        left.len(),
+                        right.len()
+                    )
+                })
+            }
+            (serde_json::Value::Object(left), serde_json::Value::Object(right)) => {
+                if left.keys().ne(right.keys()) {
+                    return Some(format!(
+                        "{path}.keys (generated {:?}, runtime {:?})",
+                        left.keys(),
+                        right.keys()
+                    ));
+                }
+                left.iter().find_map(|(key, left)| {
+                    first_value_difference(left, &right[key], &format!("{path}.{key}"))
+                })
+            }
+            _ if left != right => Some(format!("{path} (generated {left}, runtime {right})")),
+            _ => None,
         }
     }
 

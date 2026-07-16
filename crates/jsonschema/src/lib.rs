@@ -126,7 +126,6 @@
 //!
 //! ## Limitations
 //!
-//! - `is_valid`, `validate`, and `iter_errors` are generated; `evaluate` is not implemented yet.
 //! - Custom keywords cannot override built-in ones: a `keywords` entry named like a built-in keyword runs in
 //!   addition to the built-in check, not instead of it.
 //! - When an instance violates several keywords, the first error reported by `validate()` may differ from the runtime
@@ -1515,34 +1514,20 @@ pub mod meta {
         use serde_json::Value;
         use std::{marker::PhantomData, ops::Deref};
 
-        /// Handle to a draft-specific meta-schema [`Validator`]. Borrows cached validators on native
-        /// targets and owns validators on `wasm32`.
+        /// Handle to a draft-specific meta-schema [`Validator`]. Borrows cached or generated
+        /// validators where possible; owns those built on demand (dynamic custom meta-schemas or `wasm32`).
         pub struct MetaValidator<'a>(MetaValidatorInner<'a>);
 
-        // Native builds can hand out references to cached validators or own dynamic ones,
-        // while wasm targets need owned instances because the validator type does not implement `Sync` there.
-        // Under `macros`, native builds dispatch to compile-time generated validators; the cached
-        // runtime validator is resolved lazily by draft only for the `evaluate` path (`AsRef`).
+        // Native runtime validators and generated validators can be borrowed; dynamic custom metaschemas are owned.
         enum MetaValidatorInner<'a> {
-            #[cfg(all(not(feature = "macros"), not(target_family = "wasm")))]
+            #[cfg(not(target_family = "wasm"))]
             Borrowed(&'a Validator),
             Owned(Box<Validator>, PhantomData<&'a Validator>),
-            #[cfg(all(feature = "macros", not(target_family = "wasm")))]
-            Generated {
-                draft: crate::Draft,
-                is_valid: fn(&Value) -> bool,
-                validate: crate::meta_codegen::ValidateFn,
-                iter_errors: crate::meta_codegen::IterErrorsFn,
-            },
         }
 
-        // `borrowed` is the only method using `'a`; it is absent on wasm and under `macros`.
-        #[cfg_attr(
-            any(target_family = "wasm", feature = "macros"),
-            allow(clippy::elidable_lifetime_names)
-        )]
+        #[cfg_attr(target_family = "wasm", allow(clippy::elidable_lifetime_names))]
         impl<'a> MetaValidator<'a> {
-            #[cfg(all(not(feature = "macros"), not(target_family = "wasm")))]
+            #[cfg(not(target_family = "wasm"))]
             pub(crate) fn borrowed(validator: &'a Validator) -> Self {
                 Self(MetaValidatorInner::Borrowed(validator))
             }
@@ -1551,24 +1536,10 @@ pub mod meta {
                 Self(MetaValidatorInner::Owned(Box::new(validator), PhantomData))
             }
 
-            #[cfg(all(feature = "macros", not(target_family = "wasm")))]
-            pub(crate) fn generated(draft: crate::Draft) -> Self {
-                Self(MetaValidatorInner::Generated {
-                    draft,
-                    is_valid: crate::meta_codegen::is_valid_fn(draft),
-                    validate: crate::meta_codegen::validate_fn(draft),
-                    iter_errors: crate::meta_codegen::iter_errors_fn(draft),
-                })
-            }
-
             /// Validate `schema` against the meta-schema, returning `true` if valid.
             #[must_use]
             pub fn is_valid(&self, schema: &Value) -> bool {
-                match &self.0 {
-                    #[cfg(all(feature = "macros", not(target_family = "wasm")))]
-                    MetaValidatorInner::Generated { is_valid, .. } => is_valid(schema),
-                    _ => self.as_ref().is_valid(schema),
-                }
+                self.as_ref().is_valid(schema)
             }
 
             /// Validate `schema` against the meta-schema, returning the first error if any.
@@ -1577,35 +1548,22 @@ pub mod meta {
             ///
             /// Returns the first [`ValidationError`] describing why the schema violates the meta-schema.
             pub fn validate<'i>(&self, schema: &'i Value) -> Result<(), ValidationError<'i>> {
-                match &self.0 {
-                    #[cfg(all(feature = "macros", not(target_family = "wasm")))]
-                    MetaValidatorInner::Generated { validate, .. } => validate(schema),
-                    _ => self.as_ref().validate(schema),
-                }
+                self.as_ref().validate(schema)
             }
 
             /// Validate `schema` against the meta-schema, yielding every error.
             #[must_use]
             pub fn iter_errors<'i>(&'i self, schema: &'i Value) -> crate::ErrorIterator<'i> {
-                match &self.0 {
-                    #[cfg(all(feature = "macros", not(target_family = "wasm")))]
-                    MetaValidatorInner::Generated { iter_errors, .. } => iter_errors(schema),
-                    _ => self.as_ref().iter_errors(schema),
-                }
+                self.as_ref().iter_errors(schema)
             }
         }
 
         impl AsRef<Validator> for MetaValidator<'_> {
             fn as_ref(&self) -> &Validator {
                 match &self.0 {
-                    #[cfg(all(not(feature = "macros"), not(target_family = "wasm")))]
+                    #[cfg(not(target_family = "wasm"))]
                     MetaValidatorInner::Borrowed(validator) => validator,
                     MetaValidatorInner::Owned(validator, _) => validator,
-                    // `evaluate` has no generated counterpart; fall back to the runtime validator.
-                    #[cfg(all(feature = "macros", not(target_family = "wasm")))]
-                    MetaValidatorInner::Generated { draft, .. } => {
-                        crate::meta::validators::runtime_validator_for_draft(*draft)
-                    }
                 }
             }
         }
@@ -1620,10 +1578,12 @@ pub mod meta {
     }
 
     pub(crate) mod validators {
+        #[cfg(any(not(feature = "macros"), target_family = "wasm"))]
         use crate::Validator;
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(all(not(feature = "macros"), not(target_family = "wasm")))]
         use std::sync::LazyLock;
 
+        #[cfg(any(not(feature = "macros"), target_family = "wasm"))]
         fn build_validator(schema: &serde_json::Value) -> Validator {
             crate::options()
                 .without_schema_validation()
@@ -1631,7 +1591,7 @@ pub mod meta {
                 .expect("Meta-schema should be valid")
         }
 
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(all(not(feature = "macros"), not(target_family = "wasm")))]
         pub(crate) static DRAFT4_META_VALIDATOR: LazyLock<Validator> =
             LazyLock::new(|| build_validator(&referencing::meta::DRAFT4));
         #[cfg(target_family = "wasm")]
@@ -1639,7 +1599,7 @@ pub mod meta {
             build_validator(&referencing::meta::DRAFT4)
         }
 
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(all(not(feature = "macros"), not(target_family = "wasm")))]
         pub(crate) static DRAFT6_META_VALIDATOR: LazyLock<Validator> =
             LazyLock::new(|| build_validator(&referencing::meta::DRAFT6));
         #[cfg(target_family = "wasm")]
@@ -1647,7 +1607,7 @@ pub mod meta {
             build_validator(&referencing::meta::DRAFT6)
         }
 
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(all(not(feature = "macros"), not(target_family = "wasm")))]
         pub(crate) static DRAFT7_META_VALIDATOR: LazyLock<Validator> =
             LazyLock::new(|| build_validator(&referencing::meta::DRAFT7));
         #[cfg(target_family = "wasm")]
@@ -1655,7 +1615,7 @@ pub mod meta {
             build_validator(&referencing::meta::DRAFT7)
         }
 
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(all(not(feature = "macros"), not(target_family = "wasm")))]
         pub(crate) static DRAFT201909_META_VALIDATOR: LazyLock<Validator> =
             LazyLock::new(|| build_validator(&referencing::meta::DRAFT201909));
         #[cfg(target_family = "wasm")]
@@ -1663,32 +1623,19 @@ pub mod meta {
             build_validator(&referencing::meta::DRAFT201909)
         }
 
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(all(not(feature = "macros"), not(target_family = "wasm")))]
         pub(crate) static DRAFT202012_META_VALIDATOR: LazyLock<Validator> =
             LazyLock::new(|| build_validator(&referencing::meta::DRAFT202012));
         #[cfg(target_family = "wasm")]
         pub(crate) fn draft202012_meta_validator() -> Validator {
             build_validator(&referencing::meta::DRAFT202012)
         }
-
-        // Backs the `evaluate`/`iter_errors` fallback for generated meta validators.
-        #[cfg(all(feature = "macros", not(target_family = "wasm")))]
-        pub(crate) fn runtime_validator_for_draft(draft: crate::Draft) -> &'static Validator {
-            use crate::Draft;
-            match draft {
-                Draft::Draft4 => &DRAFT4_META_VALIDATOR,
-                Draft::Draft6 => &DRAFT6_META_VALIDATOR,
-                Draft::Draft7 => &DRAFT7_META_VALIDATOR,
-                Draft::Draft201909 => &DRAFT201909_META_VALIDATOR,
-                _ => &DRAFT202012_META_VALIDATOR,
-            }
-        }
     }
 
     pub(crate) fn validator_for_draft(draft: Draft) -> MetaValidator<'static> {
         #[cfg(all(feature = "macros", not(target_family = "wasm")))]
         {
-            MetaValidator::generated(draft)
+            MetaValidator::borrowed(crate::meta_codegen::validator_for_draft(draft))
         }
         #[cfg(all(not(feature = "macros"), not(target_family = "wasm")))]
         {
@@ -2841,6 +2788,297 @@ pub mod draft202012 {
 #[cfg(feature = "macros")]
 #[doc(hidden)]
 pub mod __private {
+    pub mod evaluation {
+        pub use serde_json::Value;
+
+        #[must_use]
+        pub fn join_schema_path(parent: &str, escaped_segment: &str) -> String {
+            let mut path = String::with_capacity(parent.len() + escaped_segment.len() + 1);
+            path.push_str(parent);
+            path.push('/');
+            path.push_str(escaped_segment);
+            path
+        }
+
+        pub use crate::evaluation::Annotations;
+
+        /// Parse a compile-time-constant annotation once. Callers cache the result in a `static`
+        /// `LazyLock` and clone the `Arc`-backed `Annotations` per node, so no per-call parsing happens.
+        #[must_use]
+        pub fn annotation(json: &str) -> Annotations {
+            Annotations::new(
+                serde_json::from_str(json).expect("generated annotation is valid JSON"),
+            )
+        }
+
+        /// Wrap an instance-derived annotation value (e.g. matched property names) built fresh per call.
+        #[must_use]
+        pub fn dynamic_annotation(value: Value) -> Annotations {
+            Annotations::new(value)
+        }
+
+        #[doc(hidden)]
+        #[derive(Clone)]
+        pub struct Node(crate::evaluation::EvaluationNode);
+
+        impl Node {
+            #[must_use]
+            pub fn is_valid(&self) -> bool {
+                self.0.valid
+            }
+        }
+
+        /// Build an output unit for a generated keyword validator.
+        pub use crate::evaluation::NodeLocation;
+
+        #[must_use]
+        pub fn location_bundle(
+            relative: &str,
+            schema_location: &str,
+            absolute: bool,
+        ) -> NodeLocation {
+            NodeLocation::new(relative, schema_location, absolute)
+        }
+
+        #[must_use]
+        pub fn node_at(
+            eval_path: &str,
+            location: &NodeLocation,
+            instance_location: crate::paths::Location,
+            errors: Vec<crate::ValidationError<'_>>,
+            annotations: Option<Annotations>,
+            children: Vec<Node>,
+        ) -> Node {
+            Node(crate::Evaluation::generated_node_at(
+                eval_path,
+                location,
+                instance_location,
+                errors,
+                annotations,
+                children.into_iter().map(|node| node.0).collect(),
+            ))
+        }
+
+        #[must_use]
+        pub fn node_with_descriptions_at(
+            eval_path: &str,
+            location: &NodeLocation,
+            instance_location: crate::paths::Location,
+            errors: Vec<(&'static str, String)>,
+            annotations: Option<Annotations>,
+            children: Vec<Node>,
+        ) -> Node {
+            Node(crate::Evaluation::generated_node_from_descriptions_at(
+                eval_path,
+                location,
+                instance_location,
+                errors
+                    .into_iter()
+                    .map(|(keyword, message)| {
+                        crate::evaluation::ErrorDescription::new(keyword, message)
+                    })
+                    .collect(),
+                annotations,
+                children.into_iter().map(|node| node.0).collect(),
+            ))
+        }
+
+        #[must_use]
+        pub fn invalid_node_at(
+            eval_path: &str,
+            location: &NodeLocation,
+            instance_location: crate::paths::Location,
+        ) -> Node {
+            Node(crate::Evaluation::generated_invalid_node_at(
+                eval_path,
+                location,
+                instance_location,
+            ))
+        }
+
+        /// Finish a generated evaluation tree.
+        #[must_use]
+        pub fn finish(root: Node) -> crate::Evaluation {
+            crate::Evaluation::new(root.0)
+        }
+
+        #[must_use]
+        pub fn reference(evaluation_path: &str, mut target: Node) -> Node {
+            let target_path = target.0.keyword_location.as_str().to_owned();
+            rebase_evaluation_path(&mut target.0, &target_path, evaluation_path);
+            target
+        }
+
+        fn rebase_evaluation_path(
+            node: &mut crate::evaluation::EvaluationNode,
+            from: &str,
+            to: &str,
+        ) {
+            let suffix = node
+                .keyword_location
+                .as_str()
+                .strip_prefix(from)
+                .unwrap_or(node.keyword_location.as_str());
+            node.keyword_location = crate::paths::Location::from_escaped(&format!("{to}{suffix}"));
+            for child in &mut node.children {
+                rebase_evaluation_path(child, from, to);
+            }
+        }
+
+        #[must_use]
+        pub fn absolute(mut root: Node, base: &str) -> Node {
+            apply_absolute_location(&mut root.0, base);
+            root
+        }
+
+        #[must_use]
+        pub fn absolute_children(mut root: Node, base: &str) -> Node {
+            for child in &mut root.0.children {
+                apply_absolute_location(child, base);
+            }
+            root
+        }
+
+        #[must_use]
+        pub fn root_schema_location(mut root: Node, schema_location: &str) -> Node {
+            root.0.schema_location = schema_location.into();
+            root.0.absolute_keyword_location = None;
+            root
+        }
+
+        /// Overwrites the root node's schema location from a precomputed static. Cross-resource
+        /// `$ref` target roots report the referrer's base, which only the call site knows.
+        #[must_use]
+        pub fn root_location_at(mut root: Node, location: &NodeLocation) -> Node {
+            crate::Evaluation::set_generated_root_location(&mut root.0, location);
+            root
+        }
+
+        /// Appends a pre-escaped JSON Pointer suffix to an instance location.
+        #[must_use]
+        pub fn location_join_raw(
+            parent: &crate::paths::Location,
+            suffix: &str,
+        ) -> crate::paths::Location {
+            parent.join_raw_suffix(suffix)
+        }
+
+        #[must_use]
+        pub fn rebase_children_from(mut root: Node, from: &str, to: &str) -> Node {
+            for child in &mut root.0.children {
+                rebase_absolute_location_from(child, from, to);
+            }
+            root
+        }
+
+        fn rebase_absolute_location_from(
+            node: &mut crate::evaluation::EvaluationNode,
+            from: &str,
+            to: &str,
+        ) {
+            let (base, fragment) = node
+                .schema_location
+                .split_once('#')
+                .unwrap_or((node.schema_location.as_ref(), ""));
+            if base.trim_end_matches('#') == from.trim_end_matches('#') {
+                let location = format!("{}#{fragment}", to.trim_end_matches('#'));
+                let absolute_location = if fragment.is_empty() {
+                    to.trim_end_matches('#').to_owned()
+                } else {
+                    location.clone()
+                };
+                node.absolute_keyword_location = referencing::Uri::parse(absolute_location)
+                    .ok()
+                    .map(std::sync::Arc::new);
+                node.schema_location = location.into();
+            }
+            for child in &mut node.children {
+                rebase_absolute_location_from(child, from, to);
+            }
+        }
+
+        fn apply_absolute_location(node: &mut crate::evaluation::EvaluationNode, base: &str) {
+            if node.schema_location.is_empty() || node.schema_location.starts_with('/') {
+                let location = format!("{}#{}", base.trim_end_matches('#'), node.schema_location);
+                let absolute_location = if node.schema_location.is_empty() {
+                    base.trim_end_matches('#').to_owned()
+                } else {
+                    location.clone()
+                };
+                node.absolute_keyword_location = referencing::Uri::parse(absolute_location)
+                    .ok()
+                    .map(std::sync::Arc::new);
+                node.schema_location = location.into();
+            }
+            for child in &mut node.children {
+                apply_absolute_location(child, base);
+            }
+        }
+
+        fn branch(
+            eval_path: &str,
+            location: &NodeLocation,
+            instance_location: crate::paths::Location,
+            errors: Vec<crate::evaluation::ErrorDescription>,
+            children: Vec<Node>,
+        ) -> Node {
+            Node(crate::Evaluation::generated_node_from_descriptions_at(
+                eval_path,
+                location,
+                instance_location,
+                errors,
+                None,
+                children.into_iter().map(|node| node.0).collect(),
+            ))
+        }
+
+        #[must_use]
+        pub fn all_of(
+            eval_path: &str,
+            location: &NodeLocation,
+            instance_location: crate::paths::Location,
+            children: Vec<Node>,
+        ) -> Node {
+            branch(eval_path, location, instance_location, Vec::new(), children)
+        }
+
+        #[must_use]
+        pub fn any_of(
+            eval_path: &str,
+            location: &NodeLocation,
+            instance_location: crate::paths::Location,
+            mut children: Vec<Node>,
+        ) -> Node {
+            if children.iter().any(Node::is_valid) {
+                children.retain(Node::is_valid);
+            }
+            branch(eval_path, location, instance_location, Vec::new(), children)
+        }
+
+        #[must_use]
+        pub fn one_of(
+            eval_path: &str,
+            location: &NodeLocation,
+            instance_location: crate::paths::Location,
+            mut children: Vec<Node>,
+        ) -> Node {
+            let valid = children.iter().filter(|node| node.is_valid()).count();
+            let errors = if valid > 1 {
+                children.retain(Node::is_valid);
+                vec![crate::evaluation::ErrorDescription::new(
+                    "oneOf",
+                    "more than one subschema succeeded".to_owned(),
+                )]
+            } else {
+                if valid == 1 {
+                    children.retain(Node::is_valid);
+                }
+                Vec::new()
+            };
+            branch(eval_path, location, instance_location, errors, children)
+        }
+    }
+
     pub mod fancy_regex {
         pub use fancy_regex::{Regex, RegexBuilder};
     }
@@ -5187,6 +5425,58 @@ mod tests {
         let validator = crate::meta::validator_for(&schema).expect("Valid meta-schema");
         let errors: Vec<_> = validator.iter_errors(&schema).collect();
         assert!(!errors.is_empty());
+    }
+
+    #[cfg(all(feature = "macros", target_arch = "wasm32", target_os = "unknown"))]
+    #[wasm_bindgen_test::wasm_bindgen_test]
+    fn wasm_bundled_meta_validators_use_runtime_backend() {
+        let validator = crate::meta::validator_for_draft(Draft::Draft7);
+        assert!(matches!(
+            validator.as_ref().backend,
+            crate::validator::ValidatorBackend::Runtime(_)
+        ));
+    }
+
+    #[cfg(all(feature = "macros", not(target_family = "wasm")))]
+    #[test]
+    fn generated_meta_evaluation_matches_runtime_for_all_drafts() {
+        let cases = [
+            (Draft::Draft4, &referencing::meta::DRAFT4),
+            (Draft::Draft6, &referencing::meta::DRAFT6),
+            (Draft::Draft7, &referencing::meta::DRAFT7),
+            (Draft::Draft201909, &referencing::meta::DRAFT201909),
+            (Draft::Draft202012, &referencing::meta::DRAFT202012),
+        ];
+        let schemas = [
+            json!({"type": 1}),
+            json!({"anyOf": [{"type": "string"}, {"type": 1}]}),
+            json!({"properties": {"a": {"type": 1}}}),
+            json!({"items": [{"type": "string"}, {"type": 1}]}),
+        ];
+
+        for (draft, meta_schema) in cases {
+            let runtime_validator = crate::options()
+                .with_draft(draft)
+                .without_schema_validation()
+                .build(meta_schema)
+                .expect("bundled meta-schema compiles");
+            for schema in &schemas {
+                let generated = crate::meta::validator_for_draft(draft).evaluate(schema);
+                let runtime = runtime_validator.evaluate(schema);
+                assert_eq!(
+                    serde_json::to_value(generated.list()).expect("generated list serializes"),
+                    serde_json::to_value(runtime.list()).expect("runtime list serializes"),
+                    "list output differs for {draft:?} on {schema}",
+                );
+                assert_eq!(
+                    serde_json::to_value(generated.hierarchical())
+                        .expect("generated hierarchical output serializes"),
+                    serde_json::to_value(runtime.hierarchical())
+                        .expect("runtime hierarchical output serializes"),
+                    "hierarchical output differs for {draft:?} on {schema}",
+                );
+            }
+        }
     }
 }
 

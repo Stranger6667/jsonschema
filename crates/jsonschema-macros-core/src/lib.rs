@@ -43,7 +43,7 @@ pub mod bench {
     use referencing::{Draft, Registry, RegistryBuilder};
     use serde_json::Value;
 
-    use crate::context::{CodegenConfig, PatternEngineConfig};
+    use crate::context::{CodegenConfig, MethodGates, PatternEngineConfig};
 
     pub struct Input(CodegenConfig);
 
@@ -61,6 +61,8 @@ pub mod bench {
         let base_uri = referencing::uri::from_str(base)
             .map(Arc::new)
             .expect("valid uri");
+        let (uses_unevaluated_properties, uses_unevaluated_items) =
+            crate::codegen::scan_uses_unevaluated_over(std::iter::once(&schema));
         Input(CodegenConfig {
             schema,
             registry,
@@ -75,6 +77,9 @@ pub mod bench {
             ignore_unknown_formats: true,
             email_options: None,
             pattern_options: PatternEngineConfig::default(),
+            uses_unevaluated_properties,
+            uses_unevaluated_items,
+            method_gates: MethodGates::default(),
         })
     }
 
@@ -86,6 +91,13 @@ pub mod bench {
             &format_ident!("Validator"),
             &format_ident!("__validator_impl"),
         )
+    }
+
+    /// Test-only accessor: the `CodegenConfig` field is private to keep `Input` opaque
+    /// outside benchmarks, but borrow-checking tests need it directly.
+    #[cfg(test)]
+    pub(crate) fn input_config(input: &Input) -> &CodegenConfig {
+        &input.0
     }
 }
 
@@ -102,6 +114,7 @@ struct Config {
     ignore_unknown_formats: Option<bool>,
     email_options: Option<context::EmailOptionsConfig>,
     pattern_options: PatternOptionsConfig,
+    methods: context::MethodGates,
 }
 
 enum SchemaSource {
@@ -463,6 +476,41 @@ fn parse_email_options(input: ParseStream) -> syn::Result<context::EmailOptionsC
     Ok(options)
 }
 
+fn parse_methods(input: ParseStream<'_>) -> syn::Result<context::MethodGates> {
+    let content;
+    syn::parenthesized!(content in input);
+    let mut gates = context::MethodGates::default();
+    let mut seen = HashSet::new();
+    while !content.is_empty() {
+        let key: Ident = content.parse()?;
+        if !seen.insert(key.to_string()) {
+            return Err(syn::Error::new(
+                key.span(),
+                format!("duplicate method `{key}`"),
+            ));
+        }
+        content.parse::<Token![=]>()?;
+        let value: LitBool = content.parse()?;
+        match key.to_string().as_str() {
+            "is_valid" => gates.is_valid = value.value(),
+            "validate" => gates.validate = value.value(),
+            "iter_errors" => gates.iter_errors = value.value(),
+            "evaluate" => gates.evaluate = value.value(),
+            other => {
+                return Err(syn::Error::new(
+                    key.span(),
+                    format!("unknown method `{other}`"),
+                ));
+            }
+        }
+        // Require a comma between entries, not just before more input: a missing separator is an error.
+        if !content.is_empty() {
+            content.parse::<Token![,]>()?;
+        }
+    }
+    Ok(gates)
+}
+
 impl Parse for Config {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut schema_source = None;
@@ -477,6 +525,7 @@ impl Parse for Config {
         let mut ignore_unknown_formats = None;
         let mut email_options = None;
         let mut pattern_options = PatternOptionsConfig::default();
+        let mut methods = context::MethodGates::default();
 
         let mut seen_keys = HashSet::new();
         while !input.is_empty() {
@@ -618,10 +667,13 @@ impl Parse for Config {
                     input.parse::<Token![=]>()?;
                     pattern_options = parse_pattern_options(input)?;
                 }
+                "methods" => {
+                    methods = parse_methods(input)?;
+                }
                 _ => {
                     return Err(syn::Error::new_spanned(
                         ident,
-                        "Expected `path`, `schema`, `draft`, `base_uri`, `resources`, `validate_formats`, `formats`, `keywords`, `content_media_types`, `content_encodings`, `ignore_unknown_formats`, `email_options`, or `pattern_options` attribute",
+                        "Expected `path`, `schema`, `draft`, `base_uri`, `resources`, `validate_formats`, `formats`, `keywords`, `content_media_types`, `content_encodings`, `ignore_unknown_formats`, `email_options`, `pattern_options`, or `methods` attribute",
                     ));
                 }
             }
@@ -651,6 +703,7 @@ impl Parse for Config {
             ignore_unknown_formats,
             email_options,
             pattern_options,
+            methods,
         })
     }
 }
@@ -738,6 +791,13 @@ so the generated methods cannot depend on type parameters",
         resource_pairs.push((entry.uri.clone(), draft.create_resource(schema_value)));
     }
 
+    // Cover the root schema AND every registered resource: the keyword in any one of them means the
+    // generated validator needs `unevaluated*` helpers.
+    let (uses_unevaluated_properties, uses_unevaluated_items) =
+        crate::codegen::scan_uses_unevaluated_over(
+            resource_pairs.iter().map(|(_, r)| r.contents()),
+        );
+
     // Validate the base URI first so a malformed one gives a clear error, not an opaque registry one.
     let base_uri_uri = uri::from_str(&base_uri).map_err(|err| {
         syn::Error::new(
@@ -814,6 +874,9 @@ so the generated methods cannot depend on type parameters",
                 dfa_size_limit: attr.pattern_options.dfa_size_limit,
             },
         },
+        uses_unevaluated_properties,
+        uses_unevaluated_items,
+        method_gates: attr.methods,
     };
     let impl_mod_name = format_ident!("__{}_impl", name.to_string().to_lowercase());
     let recompile_trigger = quote! {

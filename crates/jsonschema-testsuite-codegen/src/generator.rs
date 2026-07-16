@@ -72,6 +72,22 @@ fn generate_nested_structure(
                         quote! {}
                     };
 
+                    let is_optional = case_path.iter().any(|segment| segment == "optional");
+                    let validate_formats_attr = if is_optional {
+                        quote! { , validate_formats = true }
+                    } else {
+                        quote! {}
+                    };
+
+                    // Convert draft string to Draft enum variant
+                    let draft_variant = match draft {
+                        "draft4" => quote! { referencing::Draft::Draft4 },
+                        "draft6" => quote! { referencing::Draft::Draft6 },
+                        "draft7" => quote! { referencing::Draft::Draft7 },
+                        "draft2019-09" => quote! { referencing::Draft::Draft201909 },
+                        _ => quote! { referencing::Draft::Draft202012 },
+                    };
+
                     let test_functions = case.tests.iter().map(|test| {
                         let base_test_name = testsuite::sanitize_name(test.description.to_snake_case());
                         let test_name = idents::get_unique(&base_test_name, functions);
@@ -79,7 +95,6 @@ fn generate_nested_structure(
                         case_path.push(test_name.clone());
 
                         let full_test_path = case_path.join("::");
-                        let is_optional = case_path.iter().any(|segment| segment == "optional");
                         let should_ignore = xfail.iter().any(|x| full_test_path.starts_with(x));
                         let ignore_attr = if should_ignore {
                             quote! { #[ignore = "known failure listed in xfail"] }
@@ -91,20 +106,6 @@ fn generate_nested_structure(
                         let test_description = &test.description;
                         let data = serde_json::to_string(&test.data).expect("Can't serialize JSON");
                         let valid = test.valid;
-                        let validate_formats_attr = if is_optional {
-                            quote! { , validate_formats = true }
-                        } else {
-                            quote! {}
-                        };
-
-                        // Convert draft string to Draft enum variant
-                        let draft_variant = match draft {
-                            "draft4" => quote! { referencing::Draft::Draft4 },
-                            "draft6" => quote! { referencing::Draft::Draft6 },
-                            "draft7" => quote! { referencing::Draft::Draft7 },
-                            "draft2019-09" => quote! { referencing::Draft::Draft201909 },
-                            _ => quote! { referencing::Draft::Draft202012 },
-                        };
 
                         quote! {
                             #ignore_attr
@@ -121,43 +122,6 @@ fn generate_nested_structure(
                                     valid: #valid,
                                 };
 
-                                #[jsonschema::validator(
-                                    schema = #schema,
-                                    draft = #draft_variant
-                                    #resources_attr
-                                    #validate_formats_attr
-                                )]
-                                struct Validator;
-
-                                impl testsuite::CodegenValidator for Validator {
-                                    fn is_valid(&self, instance: &serde_json::Value) -> bool {
-                                        Self::is_valid(instance)
-                                    }
-                                    fn validate(
-                                        &self,
-                                        instance: &serde_json::Value,
-                                    ) -> Result<(), Box<dyn std::any::Any + Send + Sync>> {
-                                        Self::validate(instance).map_err(|e| {
-                                            Box::new(e.to_owned())
-                                                as Box<dyn std::any::Any + Send + Sync>
-                                        })
-                                    }
-                                    fn iter_errors(
-                                        &self,
-                                        instance: &serde_json::Value,
-                                    ) -> Vec<(String, String, String)> {
-                                        Self::iter_errors(instance)
-                                            .map(|e| {
-                                                (
-                                                    e.to_string(),
-                                                    e.schema_path().to_string(),
-                                                    e.instance_path().to_string(),
-                                                )
-                                            })
-                                            .collect()
-                                    }
-                                }
-
                                 let validator = Box::new(Validator);
                                 inner_test(&test, validator as Box<dyn testsuite::CodegenValidator>);
                             }
@@ -167,6 +131,55 @@ fn generate_nested_structure(
                     quote! {
                         mod #module_ident {
                             use super::*;
+
+                            #[jsonschema::validator(
+                                schema = #schema,
+                                draft = #draft_variant
+                                #resources_attr
+                                #validate_formats_attr
+                            )]
+                            struct Validator;
+
+                            impl testsuite::CodegenValidator for Validator {
+                                fn is_valid(&self, instance: &serde_json::Value) -> bool {
+                                    Self::is_valid(instance)
+                                }
+                                fn validate(
+                                    &self,
+                                    instance: &serde_json::Value,
+                                ) -> Result<(), Box<dyn std::any::Any + Send + Sync>> {
+                                    Self::validate(instance).map_err(|e| {
+                                        Box::new(e.to_owned())
+                                            as Box<dyn std::any::Any + Send + Sync>
+                                    })
+                                }
+                                fn iter_errors(
+                                    &self,
+                                    instance: &serde_json::Value,
+                                ) -> Vec<(String, String, String)> {
+                                    Self::iter_errors(instance)
+                                        .map(|e| {
+                                            (
+                                                e.to_string(),
+                                                e.schema_path().to_string(),
+                                                e.instance_path().to_string(),
+                                            )
+                                        })
+                                        .collect()
+                                }
+                                fn evaluate(
+                                    &self,
+                                    instance: &serde_json::Value,
+                                ) -> (serde_json::Value, serde_json::Value) {
+                                    let evaluation = Self::evaluate(instance);
+                                    (
+                                        serde_json::to_value(evaluation.list())
+                                            .expect("generated list output should serialize"),
+                                        serde_json::to_value(evaluation.hierarchical())
+                                            .expect("generated hierarchical output should serialize"),
+                                    )
+                                }
+                            }
 
                             #(#test_functions)*
                         }

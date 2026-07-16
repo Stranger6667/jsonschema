@@ -293,11 +293,49 @@ impl From<EvaluationNode> for EvaluationResult {
 /// of the schema tree and the configuration options used during compilation.
 #[derive(Clone, Debug)]
 pub struct Validator {
-    pub(crate) root: SchemaNode,
+    pub(crate) backend: ValidatorBackend,
     pub(crate) draft: Draft,
 }
 
+#[cfg(feature = "macros")]
+pub(crate) type GeneratedValidateFn = for<'i> fn(&'i Value) -> Result<(), ValidationError<'i>>;
+#[cfg(feature = "macros")]
+pub(crate) type GeneratedIterErrorsFn = for<'i> fn(&'i Value) -> ErrorIterator<'i>;
+
+#[derive(Clone, Debug)]
+pub(crate) enum ValidatorBackend {
+    Runtime(SchemaNode),
+    #[cfg(feature = "macros")]
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    Generated {
+        is_valid: fn(&Value) -> bool,
+        validate: GeneratedValidateFn,
+        iter_errors: GeneratedIterErrorsFn,
+        evaluate: fn(&Value) -> Evaluation,
+    },
+}
+
 impl Validator {
+    #[cfg(feature = "macros")]
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    pub(crate) const fn generated(
+        draft: Draft,
+        is_valid: fn(&Value) -> bool,
+        validate: GeneratedValidateFn,
+        iter_errors: GeneratedIterErrorsFn,
+        evaluate: fn(&Value) -> Evaluation,
+    ) -> Self {
+        Self {
+            backend: ValidatorBackend::Generated {
+                is_valid,
+                validate,
+                iter_errors,
+                evaluate,
+            },
+            draft,
+        }
+    }
+
     /// Create a default [`ValidationOptions`] for configuring JSON Schema validation.
     ///
     /// Use this to set the draft version and other validation parameters.
@@ -369,17 +407,27 @@ impl Validator {
     /// Returns the first [`ValidationError`] describing why `instance` does not satisfy the schema.
     #[inline]
     pub fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
-        let mut ctx = ValidationContext::new();
-        self.root
-            .validate(instance, &LazyLocation::new(), None, &mut ctx)
+        match &self.backend {
+            ValidatorBackend::Runtime(root) => {
+                let mut ctx = ValidationContext::new();
+                root.validate(instance, &LazyLocation::new(), None, &mut ctx)
+            }
+            #[cfg(feature = "macros")]
+            ValidatorBackend::Generated { validate, .. } => validate(instance),
+        }
     }
     /// Run validation against `instance` and return an iterator over [`ValidationError`] in the error case.
     #[inline]
     #[must_use]
     pub fn iter_errors<'i>(&'i self, instance: &'i Value) -> ErrorIterator<'i> {
-        let mut ctx = ValidationContext::new();
-        self.root
-            .iter_errors(instance, &LazyLocation::new(), None, &mut ctx)
+        match &self.backend {
+            ValidatorBackend::Runtime(root) => {
+                let mut ctx = ValidationContext::new();
+                root.iter_errors(instance, &LazyLocation::new(), None, &mut ctx)
+            }
+            #[cfg(feature = "macros")]
+            ValidatorBackend::Generated { iter_errors, .. } => iter_errors(instance),
+        }
     }
     /// Run validation against `instance` but return a boolean result instead of an iterator.
     /// It is useful for cases, where it is important to only know the fact if the data is valid or not.
@@ -387,18 +435,28 @@ impl Validator {
     #[must_use]
     #[inline]
     pub fn is_valid(&self, instance: &Value) -> bool {
-        let mut ctx = ValidationContext::new();
-        self.root.is_valid(instance, &mut ctx)
+        match &self.backend {
+            ValidatorBackend::Runtime(root) => {
+                let mut ctx = ValidationContext::new();
+                root.is_valid(instance, &mut ctx)
+            }
+            #[cfg(feature = "macros")]
+            ValidatorBackend::Generated { is_valid, .. } => is_valid(instance),
+        }
     }
     /// Evaluate the schema and expose structured output formats.
     #[must_use]
     #[inline]
     pub fn evaluate(&self, instance: &Value) -> Evaluation {
-        let mut ctx = ValidationContext::new();
-        let root = self
-            .root
-            .evaluate_instance(instance, &LazyLocation::new(), None, &mut ctx);
-        Evaluation::new(root)
+        match &self.backend {
+            ValidatorBackend::Runtime(root) => {
+                let mut ctx = ValidationContext::new();
+                let root = root.evaluate_instance(instance, &LazyLocation::new(), None, &mut ctx);
+                Evaluation::new(root)
+            }
+            #[cfg(feature = "macros")]
+            ValidatorBackend::Generated { evaluate, .. } => evaluate(instance),
+        }
     }
     /// The [`Draft`] which was used to build this validator.
     #[must_use]
@@ -486,6 +544,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(irrefutable_let_patterns)]
     fn only_keyword() {
         // When only one keyword is specified
         let schema = json!({"type": "string"});
@@ -493,7 +552,10 @@ mod tests {
         let value1 = json!("AB");
         let value2 = json!(1);
         // And only this validator
-        assert_eq!(validator.root.validators().len(), 1);
+        let crate::validator::ValidatorBackend::Runtime(root) = &validator.backend else {
+            panic!("expected runtime validator");
+        };
+        assert_eq!(root.validators().len(), 1);
         assert!(validator.validate(&value1).is_ok());
         assert!(validator.validate(&value2).is_err());
     }

@@ -187,6 +187,28 @@ pub(crate) struct EmailOptionsConfig {
     pub(crate) allow_display_text: Option<bool>,
 }
 
+/// Per-method emission toggles. Four independent switches, not a state machine, so
+/// `struct_excessive_bools` does not apply.
+#[derive(Clone, Copy)]
+#[allow(clippy::struct_excessive_bools)]
+pub(crate) struct MethodGates {
+    pub(crate) is_valid: bool,
+    pub(crate) validate: bool,
+    pub(crate) iter_errors: bool,
+    pub(crate) evaluate: bool,
+}
+
+impl Default for MethodGates {
+    fn default() -> Self {
+        Self {
+            is_valid: true,
+            validate: true,
+            iter_errors: true,
+            evaluate: true,
+        }
+    }
+}
+
 /// Immutable configuration built from macro attributes.
 pub(crate) struct CodegenConfig {
     pub(crate) schema: serde_json::Value,
@@ -202,9 +224,17 @@ pub(crate) struct CodegenConfig {
     pub(crate) ignore_unknown_formats: bool,
     pub(crate) email_options: Option<EmailOptionsConfig>,
     pub(crate) pattern_options: PatternEngineConfig,
+    /// Whether `unevaluatedProperties`/`unevaluatedItems` appear in the root schema OR any registry
+    /// resource reachable from it. Scanned at config-construction where the raw resource `Value`s are
+    /// in hand, since `Registry` exposes no resource iteration.
+    pub(crate) uses_unevaluated_properties: bool,
+    pub(crate) uses_unevaluated_items: bool,
+    /// Which public methods to emit. A disabled method's exclusively-owned code is skipped.
+    pub(crate) method_gates: MethodGates,
 }
 
 /// Mutable compilation state threaded through all `compile_*` calls.
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct CompileContext<'cfg> {
     pub(crate) config: &'cfg CodegenConfig,
     pub(crate) draft: Draft,
@@ -216,6 +246,8 @@ pub(crate) struct CompileContext<'cfg> {
     pub(crate) key_eval_fns: FnTable,
     /// Per-subschema `unevaluatedItems` checks: is a given array index evaluated?
     pub(crate) item_eval_fns: FnTable,
+    /// Per-subschema structured evaluation helpers used by references.
+    pub(crate) evaluation_fns: FnTable,
     /// Applicator branches emitted once as paired validity and error-collection helpers.
     pub(crate) branch_helpers: Vec<(TokenStream, TokenStream)>,
     discriminator_assumption: Option<DiscriminatorAssumption>,
@@ -235,6 +267,36 @@ pub(crate) struct CompileContext<'cfg> {
     pub(crate) uses_recursive_ref: bool,
     pub(crate) uses_dynamic_ref: bool,
     pub(crate) uses_ref_cycle: bool,
+    /// Whether `unevaluatedProperties`/`unevaluatedItems` appear anywhere in the schema document,
+    /// scanned once up front so dead `key_eval`/`item_eval` helper generation can be skipped.
+    pub(crate) uses_unevaluated_properties: bool,
+    pub(crate) uses_unevaluated_items: bool,
+    /// Evaluation helpers reached through a plain `$ref` back-edge from inside an applicator
+    /// branch (`allOf`/`anyOf`/`oneOf`); their results are memoized to avoid sibling re-evaluation.
+    pub(crate) cyclic_evaluation_helpers: HashSet<String>,
+    /// Evaluation helpers targeted by a reference back-edge; only these need runtime re-entry guards.
+    pub(crate) recursive_evaluation_helpers: HashSet<String>,
+    /// Evaluation helpers whose root node keeps its baked absolute schema location; call sites
+    /// overwrite it with the referrer-derived location instead of a runtime absolutization walk.
+    pub(crate) baked_root_evaluation_helpers: HashSet<String>,
+    /// Full-validity gate expressions per `anyOf`/`oneOf`, registered by the `is_valid` pass and
+    /// keyed by the branches slice address, so `evaluate` branch gating reuses the already
+    /// compiled `is_branch_valid_*` helpers instead of recompiling every branch.
+    pub(crate) branch_gate_cache: HashMap<usize, BranchGates>,
+    /// Compiled single-keyword leaf expressions for `evaluate`, keyed by keyword content and
+    /// compile environment. Leaf compiles are path-independent (error paths thread through the
+    /// runtime `__schema_path` binding), so repeated keyword values share one compile.
+    pub(crate) leaf_expr_cache: HashMap<String, crate::codegen::CompiledExpr>,
+    /// Depth of `allOf`/`anyOf`/`oneOf` branch nesting currently being compiled.
+    pub(crate) applicator_branch_depth: usize,
+    /// Canonical schema path at the current evaluation helper's root, used to derive each node's
+    /// evaluation path relative to the helper so it can be prefixed at call time instead of rebased.
+    pub(crate) helper_root_schema_path: String,
+    /// Interned node-location statics for `evaluate`: schema-location string -> static ident name.
+    pub(crate) schema_path_static_names: HashMap<String, String>,
+    /// Emitted node-location statics in allocation order:
+    /// `(ident, keyword location, schema location, has absolute base)`.
+    pub(crate) schema_path_statics: Vec<(String, String, String, bool)>,
     pub(crate) uri_format_caches: BTreeSet<UriFormatCache>,
     /// JSON Pointer tracking the current position in the schema document, embedded into the error
     /// constructors generated by `validate()`.
@@ -253,6 +315,7 @@ impl<'cfg> CompileContext<'cfg> {
             is_valid_fns: FnTable::new("validate_ref"),
             key_eval_fns: FnTable::new("eval_ref"),
             item_eval_fns: FnTable::new("eval_items_ref"),
+            evaluation_fns: FnTable::new("evaluate_ref"),
             branch_helpers: Vec::new(),
             discriminator_assumption: None,
             dynamic_anchor_bindings_cache: HashMap::new(),
@@ -270,6 +333,17 @@ impl<'cfg> CompileContext<'cfg> {
             uses_recursive_ref: false,
             uses_dynamic_ref: false,
             uses_ref_cycle: false,
+            uses_unevaluated_properties: config.uses_unevaluated_properties,
+            uses_unevaluated_items: config.uses_unevaluated_items,
+            cyclic_evaluation_helpers: HashSet::new(),
+            recursive_evaluation_helpers: HashSet::new(),
+            baked_root_evaluation_helpers: HashSet::new(),
+            branch_gate_cache: HashMap::new(),
+            leaf_expr_cache: HashMap::new(),
+            applicator_branch_depth: 0,
+            helper_root_schema_path: String::new(),
+            schema_path_static_names: HashMap::new(),
+            schema_path_statics: Vec::new(),
             uri_format_caches: BTreeSet::new(),
             schema_path: String::new(),
         }
@@ -490,6 +564,65 @@ impl<'cfg> CompileContext<'cfg> {
         write_escaped_str(&mut path, keyword);
         path
     }
+
+    /// Interns an escaped schema-path string, returning the name of the static that holds its
+    /// precomputed node location (keyword location + absolute schema location). Deduplicated so
+    /// equal locations share one static. The absolute schema location is baked in at compile time
+    /// from the current base URI, so `evaluate` never re-derives it per node.
+    /// Whether node statics compiled under `base` carry baked absolute schema locations.
+    /// Baking happens only for real bases and drafts without `$recursiveRef`/`$dynamicRef`,
+    /// whose targets are resolved dynamically and rebased to a fallback base at call time.
+    pub(crate) fn bakes_absolute_locations(&self, base: &str) -> bool {
+        !base.starts_with("json-schema:///")
+            && !matches!(
+                self.draft,
+                referencing::Draft::Draft201909
+                    | referencing::Draft::Draft202012
+                    | referencing::Draft::Unknown
+            )
+    }
+
+    pub(crate) fn intern_schema_path(&mut self, path: &str) -> String {
+        let base = self.current_base_uri.as_str();
+        let absolute = self.bakes_absolute_locations(base);
+        let schema_location = if absolute {
+            format!("{}#{path}", base.trim_end_matches('#'))
+        } else {
+            path.to_owned()
+        };
+        let relative = path
+            .strip_prefix(self.helper_root_schema_path.as_str())
+            .unwrap_or(path)
+            .to_owned();
+        self.intern_node_location(relative, schema_location, absolute)
+    }
+
+    /// Interns a node location with an explicit schema location, bypassing derivation from the
+    /// current base URI.
+    pub(crate) fn intern_node_location(
+        &mut self,
+        relative: String,
+        schema_location: String,
+        absolute: bool,
+    ) -> String {
+        let key = format!("{relative}\u{0}{schema_location}");
+        if let Some(name) = self.schema_path_static_names.get(&key) {
+            return name.clone();
+        }
+        let name = format!("__JSONSCHEMA_SP_{}", self.schema_path_statics.len());
+        self.schema_path_static_names.insert(key, name.clone());
+        self.schema_path_statics
+            .push((name.clone(), relative, schema_location, absolute));
+        name
+    }
+}
+
+/// Full-validity gates for one `anyOf`/`oneOf`: `init` binds shared discriminator state and
+/// each gate expression decides one branch.
+#[derive(Clone)]
+pub(crate) struct BranchGates {
+    pub(crate) init: TokenStream,
+    pub(crate) gates: Vec<TokenStream>,
 }
 
 struct DiscriminatorAssumption {

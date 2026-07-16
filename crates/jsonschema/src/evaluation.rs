@@ -102,7 +102,7 @@ impl fmt::Display for ErrorDescription {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct EvaluationNode {
     pub(crate) keyword_location: Location,
     pub(crate) absolute_keyword_location: Option<Arc<Uri<String>>>,
@@ -210,10 +210,154 @@ pub struct Evaluation {
     root: EvaluationNode,
 }
 
+/// Precomputed location parts for a generated evaluation node, shared across `evaluate` calls.
+///
+/// `relative` is the node's evaluation path relative to its enclosing helper root; the full
+/// evaluation path is `eval_path` (the helper's entry prefix, passed at call time) concatenated
+/// with `relative`. `keyword_location` is the pre-built `Location` for the empty-prefix (root
+/// helper) case so non-`$ref` nodes avoid a concatenation.
+#[cfg(feature = "macros")]
+#[doc(hidden)]
+pub struct NodeLocation {
+    keyword_location: Location,
+    relative: Box<str>,
+    schema_location: Arc<str>,
+    absolute_keyword_location: Option<Arc<Uri<String>>>,
+    /// The joined location for the first non-empty evaluation-path prefix seen. Loops revisit
+    /// the same schema node with an identical prefix per element, so one entry removes the
+    /// per-visit rebuild; other prefixes fall back to building the string.
+    prefixed: std::sync::OnceLock<(Box<str>, Location)>,
+}
+
+#[cfg(feature = "macros")]
+impl NodeLocation {
+    #[must_use]
+    pub fn new(relative: &str, schema_location: &str, absolute: bool) -> Self {
+        let absolute_keyword_location = if absolute {
+            let uri = schema_location.strip_suffix('#').unwrap_or(schema_location);
+            Uri::parse(uri.to_owned()).ok().map(Arc::new)
+        } else {
+            None
+        };
+        NodeLocation {
+            keyword_location: Location::from_escaped(relative),
+            relative: Box::from(relative),
+            schema_location: Arc::from(schema_location),
+            absolute_keyword_location,
+            prefixed: std::sync::OnceLock::new(),
+        }
+    }
+
+    fn build_keyword_location(&self, eval_path: &str) -> Location {
+        if self.relative.is_empty() {
+            Location::from_escaped(eval_path)
+        } else {
+            let mut path = String::with_capacity(eval_path.len() + self.relative.len());
+            path.push_str(eval_path);
+            path.push_str(&self.relative);
+            Location::from_escaped(&path)
+        }
+    }
+
+    fn keyword_location(&self, eval_path: &str) -> Location {
+        if eval_path.is_empty() {
+            return self.keyword_location.clone();
+        }
+        if let Some((cached_path, cached)) = self.prefixed.get() {
+            if &**cached_path == eval_path {
+                return cached.clone();
+            }
+            return self.build_keyword_location(eval_path);
+        }
+        let built = self.build_keyword_location(eval_path);
+        let _ = self.prefixed.set((Box::from(eval_path), built.clone()));
+        built
+    }
+}
+
 impl Evaluation {
     pub(crate) fn new(root: EvaluationNode) -> Self {
         Evaluation { root }
     }
+
+    #[cfg(feature = "macros")]
+    pub(crate) fn generated_node_at(
+        eval_path: &str,
+        location: &NodeLocation,
+        instance_location: Location,
+        errors: Vec<ValidationError<'_>>,
+        annotations: Option<Annotations>,
+        children: Vec<EvaluationNode>,
+    ) -> EvaluationNode {
+        Self::generated_node_from_descriptions_at(
+            eval_path,
+            location,
+            instance_location,
+            errors
+                .into_iter()
+                .map(|error| ErrorDescription::from_validation_error(&error))
+                .collect(),
+            annotations,
+            children,
+        )
+    }
+
+    #[cfg(feature = "macros")]
+    pub(crate) fn generated_node_from_descriptions_at(
+        eval_path: &str,
+        location: &NodeLocation,
+        instance_location: Location,
+        errors: Vec<ErrorDescription>,
+        annotations: Option<Annotations>,
+        children: Vec<EvaluationNode>,
+    ) -> EvaluationNode {
+        let keyword_location = location.keyword_location(eval_path);
+        if errors.is_empty() && children.iter().all(|child| child.valid) {
+            EvaluationNode::valid(
+                keyword_location,
+                location.absolute_keyword_location.clone(),
+                Arc::clone(&location.schema_location),
+                instance_location,
+                annotations,
+                children,
+            )
+        } else {
+            EvaluationNode::invalid(
+                keyword_location,
+                location.absolute_keyword_location.clone(),
+                Arc::clone(&location.schema_location),
+                instance_location,
+                annotations,
+                errors,
+                children,
+            )
+        }
+    }
+
+    #[cfg(feature = "macros")]
+    pub(crate) fn set_generated_root_location(node: &mut EvaluationNode, location: &NodeLocation) {
+        node.schema_location = Arc::clone(&location.schema_location);
+        node.absolute_keyword_location
+            .clone_from(&location.absolute_keyword_location);
+    }
+
+    #[cfg(feature = "macros")]
+    pub(crate) fn generated_invalid_node_at(
+        eval_path: &str,
+        location: &NodeLocation,
+        instance_location: Location,
+    ) -> EvaluationNode {
+        EvaluationNode::invalid(
+            location.keyword_location(eval_path),
+            location.absolute_keyword_location.clone(),
+            Arc::clone(&location.schema_location),
+            instance_location,
+            None,
+            Vec::new(),
+            Vec::new(),
+        )
+    }
+
     /// Returns the flag output format.
     ///
     /// This is the simplest output format, containing only a boolean indicating

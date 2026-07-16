@@ -156,6 +156,13 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
         }
         _ => quote! {},
     };
+    ctx.branch_gate_cache.insert(
+        schemas.as_ptr() as usize,
+        crate::context::BranchGates {
+            init: discriminator_init.clone(),
+            gates: branch_validations.clone(),
+        },
+    );
 
     let first_check = &branch_validations[0];
     let rest_checks: Vec<TokenStream> = branch_validations[1..]
@@ -343,13 +350,10 @@ fn build_discriminator_plan(
     let mut classes = Vec::with_capacity(schemas.len());
     let mut branch_discriminators = Vec::with_capacity(schemas.len());
     for schema in schemas {
-        let resolved = resolve_lone_top_level_ref(ctx, schema);
-        classes.push(classify_branch(
-            resolved.as_ref(),
-            &ctx.config.custom_keywords,
-        ));
+        let (resolved, _hopped) = resolve_lone_top_level_ref(ctx, schema);
+        classes.push(classify_branch(resolved, &ctx.config.custom_keywords));
         branch_discriminators.push(extract_object(
-            resolved.as_ref(),
+            resolved,
             allow_const,
             &ctx.config.custom_keywords,
         ));

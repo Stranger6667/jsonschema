@@ -850,7 +850,10 @@ fn build_validator_with_registry<R>(
     let ctx = Context::new(config, resolver, vocabularies, draft, Location::new());
     let root = compile(&ctx, resource).map_err(ValidationError::to_owned)?;
     let draft = config.draft();
-    Ok(Validator { root, draft })
+    Ok(Validator {
+        backend: crate::validator::ValidatorBackend::Runtime(root),
+        draft,
+    })
 }
 
 pub(crate) fn normalize_base_uri(registry: &Registry<'_>, base_uri: &Uri<String>) -> Uri<String> {
@@ -1096,7 +1099,13 @@ fn collect_validators<'a>(
                 // declare their own `$schema` will still compile correctly since the
                 // registry handles resolution, but their Validator::draft() will reflect
                 // the top-level draft.
-                validators.insert(pointer.clone(), Validator { root: node, draft });
+                validators.insert(
+                    pointer.clone(),
+                    Validator {
+                        backend: crate::validator::ValidatorBackend::Runtime(node),
+                        draft,
+                    },
+                );
             }
         }
 

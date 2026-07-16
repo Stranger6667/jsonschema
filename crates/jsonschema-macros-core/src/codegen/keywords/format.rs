@@ -116,6 +116,11 @@ fn compile_builtin_format_check(
     }
 }
 
+pub(crate) fn is_known(ctx: &CompileContext<'_>, format_name: &str) -> bool {
+    ctx.config.custom_formats.contains_key(format_name)
+        || compile_builtin_format_check(ctx, format_name).is_some()
+}
+
 pub(crate) fn format_emits_assertion(ctx: &CompileContext<'_>, value: &Value) -> bool {
     let Some(format_name) = value.as_str() else {
         return true;
