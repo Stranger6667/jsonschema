@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.48.1] - 2026-07-17
+
 ### Fixed
 
 - Missing `required` errors in `evaluate` output for schemas with `properties` and a two-entry `required` array. [#1220](https://github.com/Stranger6667/jsonschema/issues/1220)
@@ -180,7 +182,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.1...HEAD
+[0.48.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.0...ruby-v0.48.1
 [0.48.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.47.0...ruby-v0.48.0
 [0.47.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.10...ruby-v0.47.0
 [0.46.10]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.9...ruby-v0.46.10
