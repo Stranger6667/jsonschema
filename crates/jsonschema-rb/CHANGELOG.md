@@ -5,6 +5,7 @@
 ### Fixed
 
 - Missing `required` errors in `evaluate` output for schemas with `properties` and a two-entry `required` array. [#1220](https://github.com/Stranger6667/jsonschema/issues/1220)
+- `contentEncoding` errors for invalid UTF-8 after decoding incorrectly had empty `instance_path` and `schema_path`.
 
 ## [0.48.0] - 2026-07-16
 

@@ -559,14 +559,13 @@ mod tests {
         let validator = options().with_draft(Draft::Draft7).build(&schema).unwrap();
         // Base64 for bytes 0xFF 0xFE, which is not valid UTF-8.
         let instance = json!("//4=");
-        // `ValidationError::from_utf8` carries no instance/schema location, unlike other kinds.
         assert_eq!(
             errors_of(&validator, &instance),
             json!([
                 {
                     "message": "invalid utf-8 sequence of 1 bytes from index 0",
                     "instancePath": [],
-                    "schemaPath": [],
+                    "schemaPath": ["contentEncoding"],
                     "kind": {"type": "fromUtf8", "message": "invalid utf-8 sequence of 1 bytes from index 0"}
                 }
             ])
