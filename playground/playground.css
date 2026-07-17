@@ -136,7 +136,7 @@ kbd {
 .action-hint {
   font-size: 0.82rem; color: var(--color-text-tertiary); line-height: 1.4;
   border-left: 1px solid var(--color-border-dark); margin-left: 2px; padding-left: 14px;
-  max-width: 52ch;
+  white-space: nowrap;
 }
 .ctl { display: inline-flex; align-items: center; gap: 8px; }
 .ctl-label { font-size: 0.82rem; color: var(--color-text-secondary); font-weight: 500; white-space: nowrap; }
