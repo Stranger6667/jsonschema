@@ -1,7 +1,7 @@
 use crate::{
     compiler,
     error::{no_error, ErrorIterator, ValidationError},
-    evaluation::Annotations,
+    evaluation::{format_schema_location, Annotations, ErrorDescription, EvaluationNode},
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
@@ -10,7 +10,9 @@ use crate::{
     validator::{EvaluationResult, Validate, ValidationContext},
 };
 use ahash::AHashMap;
+use referencing::Uri;
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 pub(crate) struct SmallPropertiesValidator {
     pub(crate) properties: Vec<(String, SchemaNode)>,
@@ -27,6 +29,7 @@ pub(crate) struct SmallPropertiesWithRequired2Validator {
     first: String,
     second: String,
     required_location: Location,
+    required_absolute_location: Option<Arc<Uri<String>>>,
 }
 
 impl SmallPropertiesValidator {
@@ -85,11 +88,13 @@ impl SmallPropertiesWithRequired2Validator {
             ));
         }
         let required_location = ctx.location().join("required");
+        let required_absolute_location = ctx.absolute_location(&required_location);
         Ok(Box::new(SmallPropertiesWithRequired2Validator {
             properties,
             first,
             second,
             required_location,
+            required_absolute_location,
         }))
     }
 }
@@ -286,10 +291,6 @@ impl Validate for SmallPropertiesWithRequired2Validator {
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Value::Object(props) = instance {
-            // Check required first
-            if !props.contains_key(&self.first) || !props.contains_key(&self.second) {
-                return EvaluationResult::invalid_empty(Vec::new());
-            }
             let mut matched_props = Vec::with_capacity(props.len());
             let mut children = Vec::new();
             for (prop_name, node) in &self.properties {
@@ -298,6 +299,46 @@ impl Validate for SmallPropertiesWithRequired2Validator {
                     matched_props.push(prop_name.clone());
                     children.push(node.evaluate_instance(prop, &path, tracker, ctx));
                 }
+            }
+            // `required` is fused into this validator, so its failures are emitted as a child node at
+            // the `required` keyword location to keep the correct `schemaLocation` in structured output.
+            let mut required_errors = Vec::new();
+            let eval_path = crate::paths::capture_evaluation_path(tracker, &self.required_location);
+            if !props.contains_key(&self.first) {
+                required_errors.push(ErrorDescription::from_validation_error(
+                    &ValidationError::required(
+                        self.required_location.clone(),
+                        eval_path.clone(),
+                        location.into(),
+                        instance,
+                        Value::String(self.first.clone()),
+                    ),
+                ));
+            }
+            if !props.contains_key(&self.second) {
+                required_errors.push(ErrorDescription::from_validation_error(
+                    &ValidationError::required(
+                        self.required_location.clone(),
+                        eval_path,
+                        location.into(),
+                        instance,
+                        Value::String(self.second.clone()),
+                    ),
+                ));
+            }
+            if !required_errors.is_empty() {
+                children.push(EvaluationNode::invalid(
+                    crate::paths::evaluation_path(tracker, &self.required_location),
+                    self.required_absolute_location.clone(),
+                    format_schema_location(
+                        &self.required_location,
+                        self.required_absolute_location.as_ref(),
+                    ),
+                    location.into(),
+                    None,
+                    required_errors,
+                    Vec::new(),
+                ));
             }
             let mut application = EvaluationResult::from_children(children);
             application.annotate(Annotations::new(Value::from(matched_props)));
@@ -534,5 +575,33 @@ mod tests {
         let instance = json!({"a": 1, "b": "x"});
         let errors: Vec<_> = validator.iter_errors(&instance).collect();
         assert!(errors.is_empty());
+    }
+
+    #[test_case(&json!({"a": 1, "b": "x"}), &[])] // valid
+    #[test_case(&json!({"a": 1}), &[("/required", "", "required", "\"b\" is a required property")])] // missing b
+    #[test_case(&json!({"b": "x"}), &[("/required", "", "required", "\"a\" is a required property")])] // missing a
+    #[test_case(&json!({}), &[
+        ("/required", "", "required", "\"a\" is a required property"),
+        ("/required", "", "required", "\"b\" is a required property"),
+    ])] // missing both
+    fn fused_properties_required2_evaluate(
+        instance: &Value,
+        expected: &[(&str, &str, &str, &str)],
+    ) {
+        let validator = crate::validator_for(&fused_schema()).unwrap();
+        let eval = validator.evaluate(instance);
+        assert_eq!(eval.flag().valid, expected.is_empty());
+        let errors: Vec<_> = eval
+            .iter_errors()
+            .map(|e| {
+                (
+                    e.schema_location,
+                    e.instance_location.as_str(),
+                    e.error.keyword(),
+                    e.error.message(),
+                )
+            })
+            .collect();
+        assert_eq!(errors.as_slice(), expected);
     }
 }

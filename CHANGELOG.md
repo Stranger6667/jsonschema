@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Missing `required` errors in `evaluate()` output for schemas with `properties` and a two-entry `required` array. [#1220](https://github.com/Stranger6667/jsonschema/issues/1220)
+
 ### Performance
 
 - Faster code generation for `#[jsonschema::validator]` (~5% across benchmarked schemas), via aliasing repeated paths in the emitted code.
