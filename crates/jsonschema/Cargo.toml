@@ -1,6 +1,6 @@
 [package]
 name = "jsonschema"
-version = "0.48.0"
+version = "0.48.1"
 description = "JSON schema validaton library"
 keywords = ["jsonschema", "validation"]
 categories = ["web-programming"]
@@ -51,8 +51,8 @@ reqwest = { version = "0.13", features = ["json"], default-features = false, opt
 
 [dependencies]
 ahash.workspace = true
-jsonschema-macros = { version = "0.48.0", path = "../jsonschema-macros", optional = true }
-jsonschema-regex = { version = "0.48.0", path = "../jsonschema-regex" }
+jsonschema-macros = { version = "0.48.1", path = "../jsonschema-macros", optional = true }
+jsonschema-regex = { version = "0.48.1", path = "../jsonschema-regex" }
 async-trait = { version = "0.1.86", optional = true }
 bytecount = { version = "0.6", features = ["runtime-dispatch-simd"] }
 data-encoding = "2.9"
@@ -67,7 +67,7 @@ num-bigint = { version = "0.4", optional = true }
 num-cmp = "0.1"
 num-traits = "0.2.19"
 percent-encoding = "2.3"
-referencing = { version = "0.48.0", path = "../jsonschema-referencing" }
+referencing = { version = "0.48.1", path = "../jsonschema-referencing" }
 regex = "1.11.1"
 serde.workspace = true
 # `float_roundtrip`: canonical JSON serialization round-trips floats through re-parses downstream.

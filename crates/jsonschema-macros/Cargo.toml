@@ -1,6 +1,6 @@
 [package]
 name = "jsonschema-macros"
-version = "0.48.0"
+version = "0.48.1"
 description = "Compile-time JSON Schema validator generation for the jsonschema crate"
 rust-version.workspace = true
 edition.workspace = true
@@ -16,7 +16,7 @@ arbitrary-precision = ["jsonschema-macros-core/arbitrary-precision"]
 float-roundtrip = ["jsonschema-macros-core/float-roundtrip"]
 
 [dependencies]
-jsonschema-macros-core = { version = "0.48.0", path = "../jsonschema-macros-core" }
+jsonschema-macros-core = { version = "0.48.1", path = "../jsonschema-macros-core" }
 proc-macro2 = "1"
 
 [dev-dependencies]
