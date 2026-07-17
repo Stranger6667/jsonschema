@@ -4,6 +4,7 @@
 /profiler/target
 .hypothesis
 .benchmarks
+crates/jsonschema-wasm/pkg/
 
 /profiler/dhat-heap.json
 
