@@ -1,0 +1,245 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --font-sans:  'Poppins', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:  'JetBrains Mono', 'SF Mono', Menlo, Monaco, Consolas, monospace;
+  --font-family-default: 'Poppins';
+  --font-family-monospace: var(--font-mono);
+
+  --font-size-xs:   0.75rem;
+  --font-size-sm:   0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg:   1.125rem;
+  --font-size-xl:   1.25rem;
+  --font-size-2xl:  1.5rem;
+  --font-size-3xl:  2rem;
+  --font-size-5xl:  3rem;
+
+  --color-background:      #1a1a1a;
+  --color-surface-1:       #212121;
+  --color-surface-2:       #2a2a2a;
+  --color-border:          #616161;
+  --color-border-subtle:   #404040;
+  --color-border-dark:     #242424;
+
+  --color-text-primary:    #eaebef;
+  --color-text-secondary:  #b6b6b6;
+  --color-text-tertiary:   #8a8a85;
+
+  --color-paper:           #ffffff;
+  --color-paper-2:         #fafaf9;
+  --color-paper-3:         #f4f4f2;
+  --color-paper-4:         #ebebe7;
+  --color-border-light:    #e5e5e2;
+  --color-border-light-2:  #d9d9d4;
+  --color-ink:             #0b0b0b;
+  --color-ink-2:           #111214;
+  --color-text-body:       #363636;
+  --color-text-muted:      #6b6b66;
+
+  --color-brand-success:   #51cd78;
+  --color-brand-warning:   #f5b74c;
+  --color-brand-danger:    #f76f61;
+  --color-brand-info:      #3b82f6;
+
+  --color-success-bg:      rgba(81, 205, 120, 0.10);
+  --color-warning-bg:      rgba(245, 183, 76, 0.10);
+  --color-danger-bg:       rgba(247, 111, 97, 0.10);
+  --color-info-bg:         rgba(59, 130, 246, 0.10);
+
+  --color-success-border:  rgba(81, 205, 120, 0.18);
+  --color-warning-border:  rgba(245, 183, 76, 0.18);
+  --color-danger-border:   rgba(247, 111, 97, 0.18);
+  --color-info-border:     rgba(59, 130, 246, 0.18);
+
+  --color-brand-success-tint:          rgba(81, 205, 120, 0.12);
+  --color-brand-success-border-strong: rgba(81, 205, 120, 0.50);
+  --color-brand-success-glow:          rgba(81, 205, 120, 0.55);
+
+  /* darker for AA contrast on paper */
+  --color-brand-success-on-light: #1d7a3a;
+  --color-brand-warning-on-light: #8a5e10;
+  --color-brand-danger-on-light:  #a6382c;
+  --color-brand-info-on-light:    #1e4fc4;
+
+  --c-bad:  var(--color-brand-danger);
+  --c-warn: var(--color-brand-warning);
+  --c-ok:   #349147;                  /* darker, AA on bg */
+  --color-coverage-positive: #349147;
+
+  --color-http-get:     var(--color-brand-info);
+  --color-http-post:    var(--color-brand-success);
+  --color-http-put:     var(--color-brand-warning);
+  --color-http-patch:   var(--color-brand-success);
+  --color-http-delete:  var(--color-brand-danger);
+  --color-http-head:    var(--color-brand-info);
+  --color-http-options: var(--color-brand-info);
+
+  --color-code-bg:       #1e1e1e;
+  --color-code-border:   #333333;
+  --color-code-text:     #d4d4cf;
+  --color-code-comment:  #6a6a64;
+  --color-code-keyword:  #7aa9ff;
+  --color-code-string:   var(--color-brand-warning);
+  --color-footer-bg:     #0d0d0d;
+  --color-footer-link:   #8a8a85;
+
+  --color-postman-brand: #ff6c37;
+
+  --space-2xs: 0.15rem;
+  --space-xs:  0.25rem;
+  --space-sm:  0.5rem;
+  --space-md:  1rem;
+  --space-lg:  1.5rem;
+  --space-xl:  2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4.5rem;
+  --space-4xl: 5.5rem;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
+
+  --shadow-sm:  0 2px 4px  rgba(0,0,0,0.10);
+  --shadow-md:  0 4px 8px  rgba(0,0,0,0.12);
+  --shadow-lg:  0 8px 25px rgba(0,0,0,0.15);
+  --shadow-deep: 0 10px 40px -20px rgba(0,0,0,0.6);
+  --shadow-glow: 0 6px 20px -8px var(--color-brand-success-glow);
+  --shadow-card-light: 0 20px 60px -24px rgba(0,0,0,0.18),
+                       0 4px 12px -4px  rgba(0,0,0,0.06);
+
+  --ease-out:  cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-snap: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast:  0.15s;
+  --dur-base:  0.2s;
+  --dur-slow:  0.3s;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, .h1 {
+  font-family: var(--font-sans);
+  font-size: 3.1rem;
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+  margin: 0 0 var(--space-lg);
+}
+h1 em, .h1 em {
+  color: var(--color-brand-success);
+  font-style: normal;
+  position: relative;
+}
+
+h2, .h2 {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-3xl);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  text-wrap: pretty;
+  margin: 0 0 0.625rem;
+}
+
+h3, .h3 {
+  font-family: var(--font-sans);
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--space-sm);
+}
+
+h4, .h4 {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  margin: 0 0 var(--space-xs);
+}
+
+p, .body {
+  font-size: var(--font-size-base);
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-md);
+  text-wrap: pretty;
+}
+
+.lead {
+  font-size: var(--font-size-lg);
+  color: var(--color-text-secondary);
+  line-height: 1.65;
+  max-width: 56ch;
+}
+
+small, .small {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.caption {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  font-style: italic;
+  line-height: 1.5;
+}
+
+code, .code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--color-paper-3);
+  color: var(--color-ink);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+}
+.dark code, .on-dark code {
+  background: rgba(255,255,255,0.06);
+  color: var(--color-text-primary);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+pre {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-base);
+  line-height: 1.6;
+  color: var(--color-code-text);
+  background: var(--color-code-bg);
+  border: 1px solid var(--color-code-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md) var(--space-lg);
+  overflow-x: auto;
+  margin: 0;
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+.meta-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.metric-value {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-3xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+a { color: var(--color-brand-success); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 2px; }

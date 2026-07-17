@@ -140,6 +140,54 @@ pub async fn dereference(schema: String, options: JsValue) -> Result<JsValue, Js
     to_js(&TransformResult { output, ms })
 }
 
+fn meta_validator_for_id(id: &str) -> Option<jsonschema::meta::MetaValidator<'static>> {
+    Some(match id {
+        "draft2020-12" => jsonschema::draft202012::meta::validator(),
+        "draft2019-09" => jsonschema::draft201909::meta::validator(),
+        "draft7" => jsonschema::draft7::meta::validator(),
+        "draft6" => jsonschema::draft6::meta::validator(),
+        "draft4" => jsonschema::draft4::meta::validator(),
+        _ => return None,
+    })
+}
+
+// `schema` stays owned to match the wasm-bindgen signature of the sibling exports above;
+// unlike those, this export has no `.await` point, so clippy's async carve-out for
+// `needless_pass_by_value` does not apply here.
+#[allow(clippy::needless_pass_by_value)]
+#[wasm_bindgen(skip_typescript)]
+pub fn meta_validate(schema: String, options: JsValue) -> Result<JsValue, JsValue> {
+    let options = parse_options(options)?;
+    let schema: Value = serde_json::from_str(&schema).map_err(to_js_err)?;
+    // Resolved eagerly so an unknown draft id always rejects, even if the schema's own
+    // `$schema` would end up taking precedence over it below.
+    let selected = options
+        .draft
+        .as_deref()
+        .map(|id| {
+            meta_validator_for_id(id).ok_or_else(|| to_js_err(format!("unknown draft `{id}`")))
+        })
+        .transpose()?;
+    let has_own_schema = schema.get("$schema").and_then(Value::as_str).is_some();
+    let t0 = js_sys::Date::now();
+    // A schema's own `$schema` wins, same as `build_options`' `.with_draft(draft)`: it only
+    // seeds the default that `Draft::detect` falls back to when the schema declares none.
+    let validator = match selected {
+        Some(validator) if !has_own_schema => validator,
+        _ => jsonschema::meta::validator_for(&schema).map_err(to_js_err)?,
+    };
+    let errors: Vec<Error> = validator
+        .iter_errors(&schema)
+        .map(|e| Error::from(&e))
+        .collect();
+    let ms = js_sys::Date::now() - t0;
+    to_js(&ValidateResult {
+        valid: errors.is_empty(),
+        errors,
+        ms,
+    })
+}
+
 #[wasm_bindgen(typescript_custom_section)]
 const TS: &'static str = r#"
 export type PathSegment = string | number;
@@ -167,4 +215,5 @@ export function drafts(): DraftEntry[];
 export function validate(schema: string, instance: string, options?: Options): Promise<ValidateResult>;
 export function bundle(schema: string, options?: Options): Promise<TransformResult>;
 export function dereference(schema: string, options?: Options): Promise<TransformResult>;
+export function meta_validate(schema: string, options?: Options): ValidateResult;
 "#;

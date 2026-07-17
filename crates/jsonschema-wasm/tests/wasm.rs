@@ -2,7 +2,7 @@
 use wasm_bindgen_test::*;
 wasm_bindgen_test_configure!(run_in_browser);
 
-use jsonschema_wasm::{bundle, dereference, validate};
+use jsonschema_wasm::{bundle, dereference, meta_validate, validate};
 use serde::Serialize;
 use serde_json::json;
 use wasm_bindgen::JsValue;
@@ -171,6 +171,73 @@ async fn error_kind_limit_is_number() {
     let kind = js_sys::Reflect::get(&error0, &"kind".into()).unwrap();
     let limit = js_sys::Reflect::get(&kind, &"limit".into()).unwrap();
     assert_eq!(limit.as_f64(), Some(10.0), "limit was not a JS number");
+}
+
+#[wasm_bindgen_test]
+fn meta_validate_valid_schema_reports_no_errors() {
+    let res = meta_validate(
+        r#"{"type":"string","maxLength":5}"#.into(),
+        JsValue::UNDEFINED,
+    )
+    .unwrap();
+    assert_eq!(without_ms(res), json!({"valid": true, "errors": []}));
+}
+
+#[wasm_bindgen_test]
+fn meta_validate_invalid_schema_reports_errors_pointing_into_schema() {
+    let res = meta_validate(r#"{"type":123}"#.into(), JsValue::UNDEFINED).unwrap();
+    let v = without_ms(res);
+    assert_eq!(v["valid"], json!(false));
+    let errors = v["errors"].as_array().expect("errors must be an array");
+    assert!(!errors.is_empty());
+    assert_eq!(errors[0]["instancePath"], json!(["type"]));
+}
+
+#[wasm_bindgen_test]
+fn meta_validate_selected_draft_forces_matching_metaschema() {
+    // `exclusiveMinimum: true` (boolean) is valid under Draft 4's meta-schema but must be
+    // numeric under Draft 2020-12's — the selected draft must override auto-detection.
+    let schema = r#"{"minimum":1,"exclusiveMinimum":true}"#;
+
+    let draft4_opts = json!({"draft": "draft4"})
+        .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+        .unwrap();
+    let res = meta_validate(schema.into(), draft4_opts).unwrap();
+    assert_eq!(without_ms(res), json!({"valid": true, "errors": []}));
+
+    let draft202012_opts = json!({"draft": "draft2020-12"})
+        .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+        .unwrap();
+    let res = meta_validate(schema.into(), draft202012_opts).unwrap();
+    assert_eq!(without_ms(res)["valid"], json!(false));
+}
+
+#[wasm_bindgen_test]
+fn meta_validate_own_schema_field_wins_over_selected_draft() {
+    // The schema declares Draft 2020-12 itself; the selected draft (Draft 4, where
+    // `exclusiveMinimum` must be boolean) must not override that declaration.
+    let schema = r#"{
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "minimum": 1,
+        "exclusiveMinimum": true
+    }"#;
+    let opts = json!({"draft": "draft4"})
+        .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+        .unwrap();
+    let res = meta_validate(schema.into(), opts).unwrap();
+    assert_eq!(without_ms(res)["valid"], json!(false));
+}
+
+#[wasm_bindgen_test]
+fn meta_validate_unknown_draft_rejects() {
+    let opts = json!({"draft": "not-a-real-draft"})
+        .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+        .unwrap();
+    let err = meta_validate("{}".into(), opts).expect_err("unknown draft id must reject");
+    assert_eq!(
+        err.as_string(),
+        Some("unknown draft `not-a-real-draft`".to_string())
+    );
 }
 
 #[wasm_bindgen_test]
