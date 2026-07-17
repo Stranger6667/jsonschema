@@ -613,7 +613,7 @@
     syncFormatDep();
     // contextual hint fills the toolbar on single-input actions
     const HINTS = {
-      bundle: "Closes a schema over its references into one self-contained document.",
+      bundle: "Fetches remote $refs and embeds them into one self-contained schema.",
       dereference: "Inlines every $ref, expanding the schema in place (cycle-safe).",
     };
     const hintEl = $("#actionHint");

@@ -5,6 +5,10 @@
 
 A fast command-line tool for JSON Schema validation and bundling, powered by the `jsonschema` crate.
 
+## Playground
+
+If you'd like to try `jsonschema`, you can check the WebAssembly-powered [playground](https://jsonschema.dygalo.dev/) to see the results instantly.
+
 ## Installation
 
 ### Pre-built Binaries
