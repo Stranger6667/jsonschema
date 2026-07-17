@@ -243,10 +243,11 @@
     renderHighlight() {
       const lines = this.area.value.split("\n");
       this.highlight.innerHTML = lines
-        .map((_, index) => {
+        .map((line, index) => {
           const lineNumber = index + 1;
           const className = this.focusLines.has(lineNumber) ? " hl-focus" : this.errorLines.has(lineNumber) ? " hl" : "";
-          return `<span class="hl-row${className}"> </span>`;
+          const content = line === "" ? " " : colorizeJSON(line);
+          return `<div class="hl-row${className}">${content}</div>`;
         })
         .join("");
     }
@@ -314,21 +315,21 @@
     }
   }
 
-  // JSON syntax highlighter (output)
-  function highlightJSON(value) {
-    const json = JSON.stringify(value, null, 2);
-    return escapeHTML(json).replace(
+  // JSON syntax highlighter, shared by the output view and the editor overlays
+  function colorizeJSON(text) {
+    return escapeHTML(text).replace(
       /("(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false)\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
       (match) => {
         let className = "j-num";
-        if (/^"/.test(match)) {
-          if (/:$/.test(match)) { className = "j-key"; }
-          else { className = "j-str"; }
-        } else if (/true|false/.test(match)) className = "j-bool";
+        if (/^"/.test(match)) className = /:$/.test(match) ? "j-key" : "j-str";
+        else if (/true|false/.test(match)) className = "j-bool";
         else if (/null/.test(match)) className = "j-null";
         return `<span class="${className}">${match}</span>`;
       }
     );
+  }
+  function highlightJSON(value) {
+    return colorizeJSON(JSON.stringify(value, null, 2));
   }
 
   // state
@@ -454,7 +455,19 @@
   // shared error-row list: status bar + rows that ambient-highlight `editors`
   // and hover/click-focus the specific instance<->schema pair for that error.
   // editors.instance is omitted for schema (metaschema) errors, which have no instance to pair with.
+  // collapse errors identical in instance path, schema path, and message
+  function dedupeErrors(errors) {
+    const seen = new Set();
+    return errors.filter((error) => {
+      const key = `${error.instancePath.join("/")}\n${error.schemaPath.join("/")}\n${error.message}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
   function renderErrorList(outBody, errors, editors, draftLabel) {
+    errors = dedupeErrors(errors);
     let html = `<div class="status-bar">
       <span class="status-pill status-invalid">
         <svg viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg> Invalid
@@ -582,7 +595,7 @@
     hideOutTools();
     outBody.innerHTML = `<div class="out-error">
       <div class="oe-title">${inputLabel} - invalid JSON</div>
-      <div>${escapeHTML(parseResult.error)}${parseResult.line ? ` <code>(line ${parseResult.line})</code>` : ""}</div>
+      <div>${escapeHTML(parseResult.error)}</div>
     </div>`;
   }
 
