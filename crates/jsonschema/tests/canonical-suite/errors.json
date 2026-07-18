@@ -1,0 +1,119 @@
+[
+  {
+    "description": "non_object_non_bool_root_is_rejected",
+    "draft": "draft2020-12",
+    "schemas": [
+      "not a schema",
+      42,
+      [
+        1,
+        2
+      ],
+      null
+    ],
+    "error": "InvalidSchemaType"
+  },
+  {
+    "description": "ir_non_schema_root_rejected",
+    "schema": "object",
+    "error": "InvalidSchemaType"
+  },
+  {
+    "description": "ir_metaschema_invalid_non_schema_in_property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "config": "object"
+      }
+    },
+    "error": "ValidationError"
+  },
+  {
+    "description": "ir_metaschema_invalid_string_additional_properties",
+    "schema": {
+      "type": "object",
+      "additionalProperties": "false"
+    },
+    "error": "ValidationError"
+  },
+  {
+    "description": "ir_metaschema_invalid_nonstandard_type_name",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "int"
+        }
+      }
+    },
+    "error": "ValidationError"
+  },
+  {
+    "description": "ir_non_string_pattern_rejected",
+    "schema": {
+      "type": "string",
+      "pattern": 0.0
+    },
+    "error": "ValidationError"
+  },
+  {
+    "description": "meta_schema_failure_unknown_type_is_validation_error",
+    "draft": "draft2020-12",
+    "schema": {
+      "type": "int"
+    },
+    "error": "ValidationError"
+  },
+  {
+    "description": "invalid_schemas_are_rejected integer_multiple_of_zero",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "multipleOf": 0
+    },
+    "error": "ValidationError"
+  },
+  {
+    "description": "invalid_schemas_are_rejected number_multiple_of_zero",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "multipleOf": 0.0
+    },
+    "error": "ValidationError"
+  },
+  {
+    "description": "invalid_schemas_are_rejected integer_negative_multiple_of",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "multipleOf": -3
+    },
+    "error": "ValidationError"
+  },
+  {
+    "description": "invalid_schemas_are_rejected one_of_empty",
+    "draft": "draft7",
+    "schema": {
+      "oneOf": []
+    },
+    "error": "ValidationError"
+  },
+  {
+    "description": "invalid_schemas_are_rejected empty_type",
+    "draft": "draft7",
+    "schema": {
+      "type": []
+    },
+    "error": "ValidationError"
+  },
+  {
+    "description": "invalid_schemas_are_rejected negative_multiple_of",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "multipleOf": -3.0
+    },
+    "error": "ValidationError"
+  }
+]

@@ -2,7 +2,8 @@ use std::{collections::BTreeMap, fs::File, io::BufReader, path::Path};
 
 use serde_json::Value;
 use testsuite_internal::OutputCase;
-use walkdir::WalkDir;
+
+use crate::files;
 
 pub(crate) type OutputCaseTree = BTreeMap<String, OutputCaseNode>;
 
@@ -29,23 +30,14 @@ pub(crate) fn load_cases(
     version: &str,
 ) -> Result<OutputCaseTree, Box<dyn std::error::Error>> {
     let content_root = Path::new(suite_path).join(version).join("content");
-    if !content_root.exists() {
-        return Err(format!("Path does not exist: {}", content_root.display()).into());
-    }
     let mut root = OutputCaseTree::new();
 
-    for entry in WalkDir::new(&content_root)
-        .into_iter()
-        .filter_map(Result::ok)
-    {
-        let path = entry.path();
-        if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {
-            let relative_path = path.strip_prefix(&content_root)?;
-            let file = File::open(path)?;
-            let reader = BufReader::new(file);
-            let cases: Vec<OutputCase> = serde_json::from_reader(reader)?;
-            insert_into_module_tree(&mut root, relative_path, cases)?;
-        }
+    for path in files::json_files(&content_root)? {
+        let relative_path = path.strip_prefix(&content_root)?;
+        let file = File::open(&path)?;
+        let reader = BufReader::new(file);
+        let cases: Vec<OutputCase> = serde_json::from_reader(reader)?;
+        insert_into_module_tree(&mut root, relative_path, cases)?;
     }
 
     Ok(root)
