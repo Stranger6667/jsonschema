@@ -205,8 +205,10 @@ impl<'value> CanonicalValue<'value> {
     }
 }
 
+/// Emits already-canonical number text verbatim, without parsing it into a [`Number`].
 #[cfg(feature = "arbitrary-precision")]
-struct BorrowedNumber<'a>(&'a str);
+#[doc(hidden)]
+pub struct BorrowedNumber<'a>(pub &'a str);
 
 #[cfg(feature = "arbitrary-precision")]
 impl Serialize for BorrowedNumber<'_> {
@@ -229,8 +231,10 @@ fn push_digits(output: &mut String, digits: &[u8]) {
 /// Canonical text for a valid JSON-number token, borrowing the input when it is already canonical.
 /// `None` only when the exponent magnitude overflows `usize` (32-bit targets), leaving the raw text.
 #[cfg(feature = "arbitrary-precision")]
+#[doc(hidden)]
+#[inline]
 #[must_use]
-fn canonical_number(raw: &str) -> Option<Cow<'_, str>> {
+pub fn canonical_number(raw: &str) -> Option<Cow<'_, str>> {
     // `raw` is a valid JSON-number token; the scan assumes that shape.
     let bytes = raw.as_bytes();
 
@@ -441,6 +445,8 @@ fn canonical_scientific_number(digits: &[u8], parts: &NumberParts<'_>) -> Option
     Some(output)
 }
 
+// `Number::from_f64` formats to shortest-roundtrip text before this runs, so the double nearest
+// `1e300` and exactly `1e300` collide here. The bindings convert native floats exactly and do not.
 fn serialize_number<S>(number: &Number, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,

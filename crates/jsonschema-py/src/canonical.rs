@@ -1,3 +1,4 @@
+use jsonschema::canonical::json::canonical_number;
 use pyo3::{exceptions, ffi, prelude::*};
 use serde::{
     ser::{self, Serialize, SerializeMap, SerializeSeq, SerializeStruct},
@@ -199,7 +200,9 @@ where
             result
         }
         DecimalKind::Fractional => {
-            let result = serializer.serialize_some(&BorrowedNumber(slice));
+            let canonical = canonical_number(slice);
+            let text = canonical.as_deref().unwrap_or(slice);
+            let result = serializer.serialize_some(&BorrowedNumber(text));
             unsafe { ffi::Py_DECREF(str_obj) };
             result
         }
@@ -209,6 +212,8 @@ where
 impl Formatter for CanonicalFormatter {
     #[inline]
     fn write_f64<W: io::Write + ?Sized>(&mut self, writer: &mut W, value: f64) -> io::Result<()> {
+        // Integral floats expand to the exact value of the double, which is not the
+        // shortest-roundtrip text, so they cannot go through `canonical_number`.
         if value.fract() == 0.0 {
             if (0.0..U64_UPPER_EXCLUSIVE_F64).contains(&value) {
                 // SAFETY: range check above guarantees lossless conversion.
@@ -220,7 +225,6 @@ impl Formatter for CanonicalFormatter {
                 let int = unsafe { value.to_int_unchecked::<i64>() };
                 return self.default.write_i64(writer, int);
             }
-            // Integer-valued float: convert to integer via Python FFI.
             // The GIL is held because we are always called from within a #[pyfunction].
             unsafe {
                 let py_float = ffi::PyFloat_FromDouble(value);
@@ -247,10 +251,14 @@ impl Formatter for CanonicalFormatter {
                 let bytes = std::slice::from_raw_parts(ptr.cast::<u8>(), str_size as usize);
                 let result = writer.write_all(bytes);
                 ffi::Py_DECREF(str_obj);
-                result
+                return result;
             }
-        } else {
-            self.default.write_f64(writer, value)
+        }
+        let mut buffer = zmij::Buffer::new();
+        let text = buffer.format_finite(value);
+        match canonical_number(text) {
+            Some(canonical) => writer.write_all(canonical.as_bytes()),
+            None => writer.write_all(text.as_bytes()),
         }
     }
 }

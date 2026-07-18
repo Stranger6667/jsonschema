@@ -755,6 +755,7 @@ dependencies = [
  "referencing",
  "serde",
  "serde_json",
+ "zmij",
 ]
 
 [[package]]

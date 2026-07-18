@@ -130,9 +130,18 @@ RSpec.describe JSONSchema do
       end
     end
 
-    it "keeps non-integer floats in exponent form when needed" do
-      expect(JSONSchema::Canonical::JSON.to_string(1e-6)).to eq("1e-6")
-      expect(JSONSchema::Canonical::JSON.to_string(1e-7)).to eq("1e-7")
+    it "emits plain decimal form for small non-integer floats" do
+      expect(JSONSchema::Canonical::JSON.to_string(1e-6)).to eq("0.000001")
+      expect(JSONSchema::Canonical::JSON.to_string(1e-7)).to eq("0.0000001")
+      expect(JSONSchema::Canonical::JSON.to_string(1.23456789e-7)).to eq("0.000000123456789")
+    end
+
+    it "gives equal Float and BigDecimal values one canonical form" do
+      require "bigdecimal"
+      { "1e-7" => 1e-7, "1e-6" => 1e-6, "1.5" => 1.5, "0.00001" => 1e-5 }.each do |text, float|
+        expect(JSONSchema::Canonical::JSON.to_string(float))
+          .to eq(JSONSchema::Canonical::JSON.to_string(BigDecimal(text)))
+      end
     end
 
     it "supports BigDecimal values" do

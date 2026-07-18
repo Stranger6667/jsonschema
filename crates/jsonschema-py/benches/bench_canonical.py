@@ -65,6 +65,8 @@ ENUM_KEY_DICT_512 = {member: idx for idx, member in enumerate(list(EnumKey)[::-1
 
 
 INT_FLOAT_LIST_4096 = [float(i) for i in range(4096)]
+FRACTIONAL_FLOAT_LIST_2048 = [i + (i % 997) / 1000.0 for i in range(1, 2049)]
+SMALL_FLOAT_LIST_2048 = [i * 1e-7 for i in range(1, 2049)]
 DECIMAL_FRACTIONAL_LIST_2048 = [Decimal(f"{i}.{(i * 37) % 1000:03d}") for i in range(1, 2049)]
 DECIMAL_SPECIAL_LIST_2048 = [Decimal("NaN"), Decimal("Infinity"), Decimal("-Infinity")] * 682 + [
     Decimal("NaN"),
@@ -167,6 +169,16 @@ def test_canonical_json_enum_key_dict_512(benchmark):
 @pytest.mark.benchmark(group="canonical-json-int-floats", **BENCHMARK_CONFIG)
 def test_canonical_json_int_float_list_4096(benchmark):
     benchmark(to_string, INT_FLOAT_LIST_4096)
+
+
+@pytest.mark.benchmark(group="canonical-json-fractional-floats", **BENCHMARK_CONFIG)
+def test_canonical_json_fractional_float_list_2048(benchmark):
+    benchmark(to_string, FRACTIONAL_FLOAT_LIST_2048)
+
+
+@pytest.mark.benchmark(group="canonical-json-small-floats", **BENCHMARK_CONFIG)
+def test_canonical_json_small_float_list_2048(benchmark):
+    benchmark(to_string, SMALL_FLOAT_LIST_2048)
 
 
 @pytest.mark.benchmark(group="canonical-json-decimal-fractional", **BENCHMARK_CONFIG)
