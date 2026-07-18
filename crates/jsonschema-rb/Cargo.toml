@@ -19,6 +19,7 @@ rb-sys = "0.9"
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
 referencing = { version = "*", path = "../jsonschema-referencing" }
+zmij = "1.0.23"
 
 [lints]
 workspace = true

@@ -1,4 +1,5 @@
 //! Serialization between Ruby values and `serde_json::Value`.
+use jsonschema::canonical::json::{canonical_number, BorrowedNumber};
 use magnus::{
     error::ErrorType,
     exception::ExceptionClass,
@@ -435,7 +436,12 @@ impl Serialize for CanonicalRubyValue<'_> {
                 number.serialize(serializer)
             }
             ruby_value_type::RUBY_T_FLOAT => {
-                let number = convert_float_for_canonical(self.ruby, self.value)
+                let float = f64::try_convert(self.value)
+                    .map_err(|error| ruby_error_to_canonical_serde::<S>(self.ruby, &error))?;
+                if float.fract() != 0.0 && float.is_finite() {
+                    return serialize_fractional_float(float, serializer);
+                }
+                let number = convert_float_for_canonical(self.ruby, float)
                     .map_err(|error| ruby_error_to_canonical_serde::<S>(self.ruby, &error))?;
                 number.serialize(serializer)
             }
@@ -547,9 +553,18 @@ impl Serialize for CanonicalRubyValue<'_> {
     }
 }
 
+fn serialize_fractional_float<S>(float: f64, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut buffer = zmij::Buffer::new();
+    let text = buffer.format_finite(float);
+    let canonical = canonical_number(text);
+    BorrowedNumber(canonical.as_deref().unwrap_or(text)).serialize(serializer)
+}
+
 #[inline]
-fn convert_float_for_canonical(ruby: &Ruby, value: Value) -> Result<JsonValue, Error> {
-    let float = f64::try_convert(value)?;
+fn convert_float_for_canonical(ruby: &Ruby, float: f64) -> Result<JsonValue, Error> {
     if !float.is_finite() {
         return Ok(JsonValue::Null);
     }

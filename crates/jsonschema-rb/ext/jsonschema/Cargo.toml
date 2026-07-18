@@ -16,5 +16,6 @@ rb-sys = "0.9"
 referencing = "0.48.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["arbitrary_precision"] }
+zmij = "1"
 
 [workspace]
