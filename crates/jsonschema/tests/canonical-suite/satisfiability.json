@@ -1,0 +1,1886 @@
+[
+  {
+    "description": "finite domain integer interval over domain cap stays satisfiable - admits a witness",
+    "schema": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 300
+    },
+    "witnesses": [
+      {
+        "data": 0,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "finite domain anyof disjoint integer ranges under cap stays satisfiable - admits a witness",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 12
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "finite domain anyof disjoint integer ranges over cap stays satisfiable - admits a witness",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 200
+        },
+        {
+          "type": "integer",
+          "minimum": 300,
+          "maximum": 400
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 100,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "admits oracle coverage - anyof null bounded integer parity and satisfiability",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            1,
+            2,
+            3
+          ]
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": null,
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 2,
+        "valid": true
+      },
+      {
+        "data": 3,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": false
+      },
+      {
+        "data": 0,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "admits oracle coverage - allOf const string not anyof format parity and satisfiability",
+    "schema": {
+      "allOf": [
+        {
+          "const": "x"
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string",
+                "format": "email"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": "x"
+      },
+      {
+        "data": 1
+      },
+      {
+        "data": null
+      },
+      {
+        "data": "a@b.com"
+      }
+    ]
+  },
+  {
+    "description": "admits oracle coverage - allOf const true not anyof format parity and satisfiability",
+    "schema": {
+      "allOf": [
+        {
+          "const": true
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string",
+                "format": "email"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": true
+      },
+      {
+        "data": false
+      },
+      {
+        "data": 1
+      },
+      {
+        "data": "x"
+      },
+      {
+        "data": null
+      }
+    ]
+  },
+  {
+    "description": "draft4 integer membership excludes float - enum with float member drops it for integer type",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "enum": [
+            1,
+            2.5,
+            3
+          ]
+        }
+      ]
+    },
+    "draft": "draft4",
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 1.0,
+        "valid": false
+      },
+      {
+        "data": 2,
+        "valid": false
+      },
+      {
+        "data": 2.5,
+        "valid": false
+      },
+      {
+        "data": 3,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "draft4 integer singleton bounds preserve float rejection - minimum equals maximum keeps integer-only",
+    "schema": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1
+    },
+    "draft": "draft4",
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 1.0,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "draft4 integer enum filter preserves float rejection - enum with 1.0 keeps only integer 1",
+    "schema": {
+      "type": "integer",
+      "enum": [
+        1.0
+      ]
+    },
+    "draft": "draft4",
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 1.0,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "object_canonicalization_is_idempotent required ordering is canonical in the first IR",
+    "schema": {
+      "type": "object",
+      "required": [
+        "b",
+        "a"
+      ],
+      "properties": {
+        "a": {
+          "type": "integer"
+        },
+        "b": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "description": "object_canonicalization_is_idempotent closed-object requirement ordering is canonical in the first IR",
+    "schema": {
+      "type": "object",
+      "required": [
+        "b",
+        "a"
+      ],
+      "properties": {
+        "a": {
+          "type": "integer"
+        },
+        "b": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "maxProperties": 2
+    }
+  },
+  {
+    "description": "object_canonicalization_is_idempotent tautological additionalProperties drops out in the first IR",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {
+        "not": false
+      }
+    }
+  },
+  {
+    "description": "object_canonicalization_is_idempotent tautological dependentSchemas entries drop out in the first IR",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "dependentSchemas": {
+        "a": {
+          "not": false
+        }
+      }
+    }
+  },
+  {
+    "description": "object_canonicalization_is_idempotent object-pinned allOf residual does not retain a redundant TypedGroup wrapper",
+    "schema": {
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "patternProperties": {
+            "^[a-zA-Z][a-zA-Z0-9-]*[a-zA-Z0-9]?$": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "description": "format_only_leaf_after_extended_not_pattern_drop_is_idempotent",
+    "schema": {
+      "type": "string",
+      "oneOf": [
+        {
+          "pattern": "^(?:fa[bdlrs] )?fa-(?!-)[a-z0-9-]+$"
+        },
+        {
+          "format": "uri-reference",
+          "not": {
+            "pattern": "^(?:fa[bdlrs] )?fa-(?!-)[a-z0-9-]+$"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "description": "fractional_window_beside_integer_ray_converges",
+    "schema": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "number",
+          "minimum": -5,
+          "maximum": 0,
+          "multipleOf": 1.5
+        }
+      ]
+    }
+  },
+  {
+    "description": "dense_interval_ray_null_seam_converges",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "number",
+          "minimum": 3,
+          "maximum": 4
+        }
+      ]
+    }
+  },
+  {
+    "description": "root_self_reference_is_idempotent_after_reparse draft7 root self-reference",
+    "schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "$id": "https://example.com/root#",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "child": {
+              "$ref": "#"
+            }
+          }
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    }
+  },
+  {
+    "description": "root_self_reference_is_idempotent_after_reparse draft4 root self-reference",
+    "schema": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "id": "https://example.com/root#",
+      "type": "object",
+      "properties": {
+        "child": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "$ref": "#"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "description": "numeric_bounds_satisfiable integer_closed_singleton",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 5
+    },
+    "witnesses": [
+      {
+        "data": 5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric_bounds_satisfiable integer_simple_interval",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "witnesses": [
+      {
+        "data": 3,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric_bounds_satisfiable integer_float_bounds_whole",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 1.0,
+      "maximum": 1.0
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric_bounds_satisfiable integer_float_bounds_admit_integer",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 1.5,
+      "maximum": 2.5
+    },
+    "witnesses": [
+      {
+        "data": 2,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric_bounds_satisfiable number_closed_singleton",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "minimum": 5,
+      "maximum": 5
+    },
+    "witnesses": [
+      {
+        "data": 5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric_bounds_satisfiable number_open_admits_float",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "exclusiveMinimum": 5,
+      "exclusiveMaximum": 6
+    },
+    "witnesses": [
+      {
+        "data": 5.5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric_bounds_satisfiable integer_multiple_of_in_interval",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 10,
+      "multipleOf": 3
+    },
+    "witnesses": [
+      {
+        "data": 3,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric_bounds_satisfiable integer_multiple_of_includes_zero",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "multipleOf": 7
+    },
+    "witnesses": [
+      {
+        "data": 0,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric_bounds_satisfiable integer_negative_interval_multiple_of",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": -10,
+      "maximum": -1,
+      "multipleOf": 4
+    },
+    "witnesses": [
+      {
+        "data": -8,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric_bounds_satisfiable integer_interval_includes_zero_multiple_of",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": -3,
+      "maximum": 3,
+      "multipleOf": 5
+    },
+    "witnesses": [
+      {
+        "data": 0,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric_bounds_satisfiable number_multiple_of_endpoint",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 0.3,
+      "multipleOf": 0.3
+    },
+    "witnesses": [
+      {
+        "data": 0.3,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric_bounds_satisfiable integer_exclusive_minimum_with_multiple_of",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 6,
+      "exclusiveMinimum": 0,
+      "multipleOf": 3
+    },
+    "witnesses": [
+      {
+        "data": 3,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "const_enum_filter_satisfiable number_const_integer_value",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "const": 2
+    },
+    "witnesses": [
+      {
+        "data": 2,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "const_enum_filter_satisfiable integer_const_float_no_fraction",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "const": 2.0
+    },
+    "witnesses": [
+      {
+        "data": 2,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "const_enum_filter_satisfiable number_enum_mixed_filters_to_numbers",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "enum": [
+        1,
+        2.5,
+        "foo"
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 2.5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "const_enum_filter_satisfiable type_list_enum",
+    "draft": "draft7",
+    "schema": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "enum": [
+        null,
+        "abc",
+        5
+      ]
+    },
+    "witnesses": [
+      {
+        "data": "abc",
+        "valid": true
+      },
+      {
+        "data": null,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "const_enum_filter_satisfiable type_list_enum_filters_string",
+    "draft": "draft7",
+    "schema": {
+      "type": [
+        "integer",
+        "number"
+      ],
+      "enum": [
+        2.0,
+        "skip"
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 2,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "const_enum_filter_satisfiable boolean_const_true",
+    "draft": "draft7",
+    "schema": {
+      "type": "boolean",
+      "const": true
+    },
+    "witnesses": [
+      {
+        "data": true,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "const_enum_filter_satisfiable object_const_empty",
+    "draft": "draft7",
+    "schema": {
+      "type": "object",
+      "const": {}
+    },
+    "witnesses": [
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "const_enum_filter_satisfiable array_const_empty",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "const": []
+    },
+    "witnesses": [
+      {
+        "data": [],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not_contradictions_satisfiable number_not_integer_admits_floats",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "not": {
+        "type": "integer"
+      }
+    },
+    "witnesses": [
+      {
+        "data": 1.5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not_contradictions_satisfiable string_minus_long_strings",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "type": "string"
+        },
+        {
+          "not": {
+            "type": "string",
+            "minLength": 3
+          }
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": "ab",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not_contradictions_satisfiable integer_interval_minus_one_value",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        {
+          "not": {
+            "const": 5
+          }
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 4,
+        "valid": true
+      },
+      {
+        "data": 5,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "array_satisfiable items_false_min_zero_admits_empty",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": false,
+      "minItems": 0
+    },
+    "witnesses": [
+      {
+        "data": [],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "array_satisfiable items_false_no_min",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": false
+    },
+    "witnesses": [
+      {
+        "data": [],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "array_satisfiable false_in_prefix_but_max_excludes",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": [
+        {
+          "type": "string"
+        },
+        false
+      ],
+      "minItems": 1,
+      "maxItems": 1
+    },
+    "witnesses": [
+      {
+        "data": [
+          "x"
+        ],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "array_satisfiable min_eq_max",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "witnesses": [
+      {
+        "data": [
+          1,
+          2,
+          3
+        ],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "array_satisfiable two_unique_booleans",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 2,
+      "items": {
+        "type": "boolean"
+      }
+    },
+    "witnesses": [
+      {
+        "data": [
+          true,
+          false
+        ],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "array_satisfiable unique_unbounded_integers",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 100,
+      "items": {
+        "type": "integer"
+      }
+    },
+    "witnesses": [
+      {
+        "data": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55,
+          56,
+          57,
+          58,
+          59,
+          60,
+          61,
+          62,
+          63,
+          64,
+          65,
+          66,
+          67,
+          68,
+          69,
+          70,
+          71,
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79,
+          80,
+          81,
+          82,
+          83,
+          84,
+          85,
+          86,
+          87,
+          88,
+          89,
+          90,
+          91,
+          92,
+          93,
+          94,
+          95,
+          96,
+          97,
+          98,
+          99
+        ],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "array_satisfiable unique_unbounded_strings",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 100,
+      "items": {
+        "type": "string"
+      }
+    },
+    "witnesses": [
+      {
+        "data": [
+          "s0",
+          "s1",
+          "s2",
+          "s3",
+          "s4",
+          "s5",
+          "s6",
+          "s7",
+          "s8",
+          "s9",
+          "s10",
+          "s11",
+          "s12",
+          "s13",
+          "s14",
+          "s15",
+          "s16",
+          "s17",
+          "s18",
+          "s19",
+          "s20",
+          "s21",
+          "s22",
+          "s23",
+          "s24",
+          "s25",
+          "s26",
+          "s27",
+          "s28",
+          "s29",
+          "s30",
+          "s31",
+          "s32",
+          "s33",
+          "s34",
+          "s35",
+          "s36",
+          "s37",
+          "s38",
+          "s39",
+          "s40",
+          "s41",
+          "s42",
+          "s43",
+          "s44",
+          "s45",
+          "s46",
+          "s47",
+          "s48",
+          "s49",
+          "s50",
+          "s51",
+          "s52",
+          "s53",
+          "s54",
+          "s55",
+          "s56",
+          "s57",
+          "s58",
+          "s59",
+          "s60",
+          "s61",
+          "s62",
+          "s63",
+          "s64",
+          "s65",
+          "s66",
+          "s67",
+          "s68",
+          "s69",
+          "s70",
+          "s71",
+          "s72",
+          "s73",
+          "s74",
+          "s75",
+          "s76",
+          "s77",
+          "s78",
+          "s79",
+          "s80",
+          "s81",
+          "s82",
+          "s83",
+          "s84",
+          "s85",
+          "s86",
+          "s87",
+          "s88",
+          "s89",
+          "s90",
+          "s91",
+          "s92",
+          "s93",
+          "s94",
+          "s95",
+          "s96",
+          "s97",
+          "s98",
+          "s99"
+        ],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "object_satisfiable required_with_string_schema",
+    "draft": "draft7",
+    "schema": {
+      "type": "object",
+      "required": [
+        "a"
+      ],
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      }
+    },
+    "witnesses": [
+      {
+        "data": {
+          "a": "x"
+        },
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "object_satisfiable property_names_admits_required",
+    "draft": "draft7",
+    "schema": {
+      "type": "object",
+      "required": [
+        "a"
+      ],
+      "propertyNames": {
+        "pattern": "^a"
+      }
+    },
+    "witnesses": [
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "object_satisfiable empty_required",
+    "draft": "draft7",
+    "schema": {
+      "type": "object",
+      "required": []
+    },
+    "witnesses": [
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "object_satisfiable max_zero_admits_empty_object",
+    "draft": "draft7",
+    "schema": {
+      "type": "object",
+      "minProperties": 0,
+      "maxProperties": 0
+    },
+    "witnesses": [
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "object_satisfiable required_with_zero_min",
+    "draft": "draft7",
+    "schema": {
+      "type": "object",
+      "required": [
+        "a"
+      ],
+      "minProperties": 0
+    },
+    "witnesses": [
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "parse_exclusive_satisfiable exclusive_overrides_when_stronger",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 5,
+      "exclusiveMinimum": 10
+    },
+    "witnesses": [
+      {
+        "data": 11,
+        "valid": true
+      },
+      {
+        "data": 10,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "parse_exclusive_satisfiable exclusive_weaker_preserves_minimum",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 1,
+      "exclusiveMinimum": 0
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 0,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "items_number_contains_integer",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "contains": {
+        "type": "integer"
+      }
+    },
+    "witnesses": [
+      {
+        "data": [
+          1
+        ],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "unique_items_prefix_plus_tail",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": [
+        {
+          "const": "x"
+        }
+      ],
+      "additionalItems": {
+        "type": "boolean"
+      },
+      "minItems": 3,
+      "uniqueItems": true
+    },
+    "witnesses": [
+      {
+        "data": [
+          "x",
+          true,
+          false
+        ],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "integer_subtype_of_number_satisfiable number_min_intersect_integer_max",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "type": "number",
+          "minimum": 1
+        },
+        {
+          "type": "integer",
+          "maximum": 10
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "integer_subtype_of_number_satisfiable integer_mod_two_intersect_number_mod_three",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer",
+          "multipleOf": 2
+        },
+        {
+          "type": "number",
+          "multipleOf": 3
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 6,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "integer_subtype_of_number_satisfiable any_of_integer_number",
+    "draft": "draft7",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 1.5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric_promotion_satisfiable multof_one_promotes_to_integer_satisfiable",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "multipleOf": 1.0
+    },
+    "witnesses": [
+      {
+        "data": 3,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric_promotion_satisfiable snap_min_admits_two_four_six",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 1,
+      "multipleOf": 2
+    },
+    "witnesses": [
+      {
+        "data": 2,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric_promotion_satisfiable integer_valued_mult_promotes",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "multipleOf": 2
+    },
+    "witnesses": [
+      {
+        "data": 4,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric_promotion_satisfiable fractional_multiple_of_is_number",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "multipleOf": 0.5
+    },
+    "witnesses": [
+      {
+        "data": 0.5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric_promotion_satisfiable zero_singleton_admitted_by_any_mult",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 0,
+      "multipleOf": 5
+    },
+    "witnesses": [
+      {
+        "data": 0,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "numeric_promotion_satisfiable multof_one_promotes_admits_neg_integers",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "multipleOf": 1,
+      "maximum": 0.5
+    },
+    "witnesses": [
+      {
+        "data": 0,
+        "valid": true
+      },
+      {
+        "data": -3,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "type_pin_simplification_satisfiable any_of_singleton_null_satisfiable",
+    "draft": "draft7",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": null,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "type_pin_simplification_satisfiable any_of_outer_type_narrows_to_string",
+    "draft": "draft7",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "type": [
+        "string",
+        "object"
+      ]
+    },
+    "witnesses": [
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "type_pin_simplification_satisfiable null_filter_emits_null",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            null,
+            true
+          ]
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": null,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "array_normalisation_satisfiable array_contains_subsumed_by_items",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      },
+      "contains": {
+        "type": "integer"
+      }
+    },
+    "witnesses": [
+      {
+        "data": [
+          1
+        ],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "array_normalisation_satisfiable array_short_tuple_with_minItems_one",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": [
+        {
+          "type": "string"
+        },
+        true
+      ],
+      "minItems": 1
+    },
+    "witnesses": [
+      {
+        "data": [
+          "x"
+        ],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "array_normalisation_satisfiable array_universe_one_cap_one",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "items": {
+        "const": 1
+      },
+      "uniqueItems": true,
+      "maxItems": 1
+    },
+    "witnesses": [
+      {
+        "data": [
+          1
+        ],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "object_and_not_merge_satisfiable object_only_a_blocked_admits_empty",
+    "draft": "draft7",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a": false
+      },
+      "additionalProperties": false
+    },
+    "witnesses": [
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "object_and_not_merge_satisfiable two_not_enums_admit_anything_else",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "not": {
+            "enum": [
+              1
+            ]
+          }
+        },
+        {
+          "not": {
+            "enum": [
+              "x"
+            ]
+          }
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 2,
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "unique array with wide-integer prefix slots whose universe sizes overflow u64 stays satisfiable",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": [0, 1],
+        "valid": true
+      },
+      {
+        "data": [0, 0],
+        "valid": false
+      },
+      {
+        "data": [0],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "unique array with wide-integer prefix and tail whose universe sizes overflow u64 stays satisfiable",
+    "schema": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        }
+      ],
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9223372036854775807
+      }
+    },
+    "witnesses": [
+      {
+        "data": [0, 1],
+        "valid": true
+      },
+      {
+        "data": [0, 0],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "array with a zero-minContains contains clause kept by its maxContains stays satisfiable",
+    "schema": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      },
+      "contains": {
+        "type": "integer"
+      },
+      "maxContains": 1,
+      "minContains": 0
+    },
+    "witnesses": [
+      {
+        "data": ["a"],
+        "valid": true
+      },
+      {
+        "data": [],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "const fractional under negated type set stays satisfiable - keeps a MultiType the const is tested against",
+    "schema": {
+      "allOf": [
+        {
+          "not": {
+            "type": ["integer", "string"]
+          }
+        },
+        {
+          "const": 1.5
+        }
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 1.5,
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "an unrecognized format is never proven disjoint from a rigid one even under assertions - date and semver-x stays satisfiable",
+    "draft": "draft2020-12",
+    "validate_formats": true,
+    "schema": {
+      "allOf": [
+        {
+          "type": "string",
+          "format": "date"
+        },
+        {
+          "type": "string",
+          "format": "semver-x"
+        }
+      ]
+    }
+  },
+  {
+    "description": "without format assertions, rigid formats are annotations only so date and email stays satisfiable",
+    "draft": "draft2020-12",
+    "schema": {
+      "allOf": [
+        {
+          "type": "string",
+          "format": "date"
+        },
+        {
+          "type": "string",
+          "format": "email"
+        }
+      ]
+    }
+  },
+  {
+    "description": "email and idn-email overlap, so their intersection stays satisfiable under assertions",
+    "draft": "draft2020-12",
+    "validate_formats": true,
+    "schema": {
+      "allOf": [
+        {
+          "type": "string",
+          "format": "email"
+        },
+        {
+          "type": "string",
+          "format": "idn-email"
+        }
+      ]
+    }
+  },
+  {
+    "description": "format assertion policy is preserved in the emitted schema - asserted email rejects a non-email",
+    "draft": "draft2020-12",
+    "validate_formats": true,
+    "schema": {
+      "type": "string",
+      "format": "email"
+    },
+    "witnesses": [
+      {
+        "data": "user@example.com",
+        "valid": true
+      },
+      {
+        "data": "not-email",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "annotation-only format policy is preserved in the emitted schema - draft7 email admits a non-email when assertions are off",
+    "draft": "draft7",
+    "validate_formats": false,
+    "schema": {
+      "type": "string",
+      "format": "email"
+    },
+    "witnesses": [
+      {
+        "data": "not-email",
+        "valid": true
+      }
+    ]
+  }
+]

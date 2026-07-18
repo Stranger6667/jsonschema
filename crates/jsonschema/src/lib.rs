@@ -934,6 +934,7 @@ mod retriever;
 pub mod types;
 mod validator;
 
+pub use canonical::CanonicalizationError;
 pub use error::{
     ErrorIterator, MaskedValidationError, ValidationError, ValidationErrorParts, ValidationErrors,
 };
@@ -1282,6 +1283,18 @@ pub async fn async_validator_map_for(
     schema: &Value,
 ) -> Result<ValidatorMap, ValidationError<'static>> {
     async_options().build_map(schema).await
+}
+
+/// Reduce a JSON Schema to its canonical IR form.
+///
+/// Use [`canonical::options`](fn@canonical::options) to configure canonicalization.
+///
+/// # Errors
+///
+/// Returns [`CanonicalizationError`] when the input is not a valid JSON Schema document or cannot be represented in
+/// canonical form.
+pub fn canonicalize(value: &Value) -> Result<canonical::CanonicalSchema, CanonicalizationError> {
+    canonical::options().canonicalize(value)
 }
 
 /// Create a builder for configuring JSON Schema validation options.

@@ -71,8 +71,8 @@ referencing = { version = "0.48.1", path = "../jsonschema-referencing" }
 regex = "1.11.1"
 serde.workspace = true
 # `float_roundtrip`: canonical JSON serialization round-trips floats through re-parses downstream.
-# `unbounded_depth`: consumers of canonical text re-parse payloads deeper than serde_json's default limit.
-serde_json = { workspace = true, features = ["float_roundtrip", "unbounded_depth"] }
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+strum = { version = "0.28.0", features = ["derive"] }
 tokio = { version = "1", default-features = false, features = ["rt"], optional = true }
 unicode-general-category = "1.1"
 uuid-simd = { version = "0.8", default-features = false, features = ["std", "detect"] }

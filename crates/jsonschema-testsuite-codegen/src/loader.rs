@@ -1,7 +1,8 @@
 use std::{borrow::Cow, collections::BTreeMap, fs, path::Path};
 
 use testsuite_internal::Case;
-use walkdir::WalkDir;
+
+use crate::files;
 
 pub(crate) type TestCaseTree = BTreeMap<String, TestCaseNode>;
 
@@ -25,20 +26,14 @@ pub(crate) fn load_suite(
     draft: &str,
 ) -> Result<TestCaseTree, Box<dyn std::error::Error>> {
     let full_path = Path::new(suite_path).join("tests").join(draft);
-    if !full_path.exists() {
-        return Err(format!("Path does not exist: {}", full_path.display()).into());
-    }
     let mut root = TestCaseTree::new();
 
-    for entry in WalkDir::new(&full_path).into_iter().filter_map(Result::ok) {
-        let path = entry.path();
-        if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {
-            let relative_path = path.strip_prefix(&full_path)?;
-            let contents = fs::read_to_string(path)?;
-            let cases: Vec<Case> = serde_json::from_str(&sanitize_lone_surrogates(&contents))?;
+    for path in files::json_files(&full_path)? {
+        let relative_path = path.strip_prefix(&full_path)?;
+        let contents = fs::read_to_string(&path)?;
+        let cases: Vec<Case> = serde_json::from_str(&sanitize_lone_surrogates(&contents))?;
 
-            insert_into_module_tree(&mut root, relative_path, cases)?;
-        }
+        insert_into_module_tree(&mut root, relative_path, cases)?;
     }
 
     Ok(root)
