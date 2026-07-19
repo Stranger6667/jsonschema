@@ -595,3 +595,46 @@ class _Meta:
     def validate(self, schema: _SchemaT, registry: Registry | None = None) -> None: ...
 
 meta: _Meta
+
+class CanonicalSchema:
+    """Canonical representation of a JSON Schema, obtained via :func:`canonicalize`."""
+
+    @property
+    def draft(self) -> int:
+        """The JSON Schema draft as an integer: 4, 6, 7, 19 (2019-09), or 20 (2020-12)."""
+        ...
+
+    @property
+    def kind(self) -> str:
+        """Structural kind label of this node."""
+        ...
+
+    def view(self) -> canonical.CanonicalViewType:
+        """Return the single view object for this node; dispatch with ``match``."""
+        ...
+
+    def definitions(self) -> dict[str, CanonicalSchema]:
+        """Map of reference uri -> canonical target."""
+        ...
+
+    def to_json_schema(self) -> JsonValue:
+        """Convert this canonical schema back to a plain Python JSON value."""
+        ...
+
+    def __hash__(self) -> int: ...
+    def __eq__(self, other: object) -> bool: ...
+    def __repr__(self) -> str: ...
+
+def canonicalize(
+    schema: _SchemaT,
+    /,
+    *,
+    draft: int | None = None,
+    validate_formats: bool | None = None,
+) -> CanonicalSchema:
+    """Parse and normalize a JSON Schema to its canonical form.
+
+    Raises :class:`ValidationError` when the schema fails meta-schema validation and
+    :class:`canonical.CanonicalizationError` when the root is not a boolean or an object.
+    """
+    ...

@@ -17,6 +17,7 @@ try:
         Draft201909Validator,
         Draft202012,
         Draft202012Validator,
+        CanonicalSchema,
         EmailOptions,
         Evaluation,
         FancyRegexOptions,
@@ -27,7 +28,7 @@ try:
         Resolved,
         ValidationErrorKind,
         ValidatorMap,
-        canonical,
+        canonicalize,
         dereference,
         evaluate,
         is_valid,
@@ -54,6 +55,8 @@ except ModuleNotFoundError as exc:
             f"wheel, or build from source."
         ) from exc
     raise
+
+from . import canonical
 
 Validator = Draft4Validator | Draft6Validator | Draft7Validator | Draft201909Validator | Draft202012Validator
 
@@ -137,7 +140,9 @@ class ReferencingError(Exception):
 __all__ = [
     "ReferencingError",
     "ValidationError",
+    "CanonicalSchema",
     "canonical",
+    "canonicalize",
     "ValidationErrorKind",
     "Evaluation",
     "bundle",
