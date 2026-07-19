@@ -5,6 +5,7 @@
 #![allow(clippy::unused_self)]
 #![allow(clippy::struct_field_names)]
 
+mod canonical;
 mod error_kind;
 mod evaluation;
 mod options;
@@ -1513,10 +1514,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     module.define_singleton_method("each_error", function!(each_error, -1))?;
     module.define_singleton_method("evaluate", function!(evaluate, -1))?;
 
-    let canonical_module = module.define_module("Canonical")?;
-    let canonical_json_module = canonical_module.define_module("JSON")?;
-    canonical_json_module
-        .define_singleton_method("to_string", function!(canonical_json_to_string, 1))?;
+    canonical::init_canonical(ruby, &module)?;
 
     // Validator class
     let validator_class = module.define_class("Validator", ruby.class_object())?;
