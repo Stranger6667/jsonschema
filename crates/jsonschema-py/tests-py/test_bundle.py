@@ -20,9 +20,7 @@ def large_integer_overflow_error_count():
     return sum(
         1
         for obj in gc.get_objects()
-        if type(obj) is OverflowError
-        and "convert" in str(obj)
-        and ("too big" in str(obj) or "too large" in str(obj))
+        if type(obj) is OverflowError and "convert" in str(obj) and ("too big" in str(obj) or "too large" in str(obj))
     )
 
 
