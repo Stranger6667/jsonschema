@@ -1,0 +1,39 @@
+[package]
+name = "jsonschema-wasm"
+version = "0.48.1"
+edition = "2021"
+rust-version = "1.83.0"
+license = "MIT"
+description = "WebAssembly bindings for the jsonschema crate"
+repository = "https://github.com/Stranger6667/jsonschema"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+jsonschema = { path = "../jsonschema", default-features = false, features = ["resolve-async", "arbitrary-precision"] }
+referencing = { version = "0.48.0", path = "../jsonschema-referencing" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "=0.2.126"
+wasm-bindgen-futures = "0.4"
+serde-wasm-bindgen = "0.6"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "Request", "RequestInit", "Response"] }
+getrandom = { version = "0.3", features = ["wasm_js"] }
+async-trait = "0.1"
+
+[dev-dependencies]
+test-case = "3"
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ['-Oz']
+
+[lints]
+workspace = true

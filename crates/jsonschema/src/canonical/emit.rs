@@ -14,7 +14,6 @@ use std::{borrow::Cow, sync::Arc};
 use ahash::{AHashMap, AHashSet};
 use num_traits::One;
 use referencing::Draft;
-use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
 use crate::{
@@ -442,15 +441,9 @@ fn emit(schema: &Schema, ctx: &EmitContext) -> Value {
         Schema::DynamicRef(_) => {
             unreachable!("DynamicRef is preserved as Raw before emit")
         }
-        Schema::Raw(value) => decode_raw_json(value),
+        Schema::Raw(value) => value.get().clone(),
         Schema::MultiType(set) => emit_multi_type(*set),
     }
-}
-
-fn decode_raw_json(value: &str) -> Value {
-    let mut deserializer = serde_json::Deserializer::from_str(value);
-    deserializer.disable_recursion_limit();
-    Value::deserialize(&mut deserializer).expect("Raw schema holds valid JSON")
 }
 
 // Refs in an id-less document resolve against the synthetic `json-schema:///` root (an internal artifact, not user
@@ -896,13 +889,7 @@ fn insert_requirements(
             Value::Array(required.into_iter().map(Value::String).collect()),
         );
     }
-    if !draft.is_known_keyword("dependentSchemas") {
-        let mut dependencies = dependent_required;
-        dependencies.extend(dependent_schemas);
-        if !dependencies.is_empty() {
-            map.insert("dependencies".into(), Value::Object(dependencies));
-        }
-    } else {
+    if draft.is_known_keyword("dependentSchemas") {
         if !dependent_required.is_empty() {
             map.insert(
                 "dependentRequired".into(),
@@ -911,6 +898,12 @@ fn insert_requirements(
         }
         if !dependent_schemas.is_empty() {
             map.insert("dependentSchemas".into(), Value::Object(dependent_schemas));
+        }
+    } else {
+        let mut dependencies = dependent_required;
+        dependencies.extend(dependent_schemas);
+        if !dependencies.is_empty() {
+            map.insert("dependencies".into(), Value::Object(dependencies));
         }
     }
 }

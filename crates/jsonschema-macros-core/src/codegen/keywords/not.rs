@@ -8,11 +8,11 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
     let not_schema_json = serde_json::to_string(value).expect("Failed to serialize not schema");
 
     let report_error = quote! {
-        static NOT_SCHEMA: std::sync::LazyLock<serde_json::Value> =
-            std::sync::LazyLock::new(|| {
+        static NOT_SCHEMA: __Lazy<serde_json::Value> =
+            __Lazy::new(|| {
                 serde_json::from_str(#not_schema_json).expect("Failed to parse not schema")
             });
-        return Some(jsonschema::__private::error::not(
+        return Some(__err::not(
             #schema_path, __path.into(), instance, NOT_SCHEMA.clone(),
         ));
     };

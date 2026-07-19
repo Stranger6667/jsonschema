@@ -67,6 +67,10 @@ The following drafts are supported:
 
 You can check the current status on the [Bowtie Report](https://bowtie.report/#/implementations/rust-jsonschema).
 
+## Playground
+
+If you'd like to try `jsonschema`, you can check the WebAssembly-powered [playground](https://jsonschema.dygalo.dev/) to see the results instantly.
+
 ## Installation
 
 To install `jsonschema-rs` via `pip` run the following command:

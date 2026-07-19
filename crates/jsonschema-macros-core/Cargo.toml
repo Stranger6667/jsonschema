@@ -1,6 +1,6 @@
 [package]
 name = "jsonschema-macros-core"
-version = "0.47.0"
+version = "0.48.1"
 description = "Code generation implementation for the jsonschema compile-time validator macro"
 rust-version.workspace = true
 edition.workspace = true
@@ -16,12 +16,12 @@ bench = []
 [dependencies]
 fancy-regex = "0.18"
 indexmap = "2"
-jsonschema-regex = { version = "0.47.0", path = "../jsonschema-regex" }
+jsonschema-regex = { version = "0.48.1", path = "../jsonschema-regex" }
 percent-encoding = "2.3"
 proc-macro2 = "1"
 proc-macro-crate = "3"
 quote = "1"
-referencing = { version = "0.47.0", path = "../jsonschema-referencing" }
+referencing = { version = "0.48.1", path = "../jsonschema-referencing" }
 regex = "1"
 serde_json = "1"
 syn = { version = "2", features = ["full"] }

@@ -68,6 +68,10 @@ See more usage examples in the [documentation](https://docs.rs/jsonschema).
 
 > ⚠️ **Upgrading from older versions?** Check our [Migration Guide](https://github.com/Stranger6667/jsonschema/blob/master/MIGRATION.md) for key changes.
 
+## Playground
+
+If you'd like to try `jsonschema`, you can check the WebAssembly-powered [playground](https://jsonschema.dygalo.dev/) to see the results instantly.
+
 ## Highlights
 
 - 📚 Full support for popular JSON Schema drafts

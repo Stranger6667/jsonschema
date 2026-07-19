@@ -358,7 +358,7 @@
         "config": "object"
       }
     },
-    "error": true
+    "error": "ValidationError"
   },
   {
     "description": "ir_metaschema_invalid_string_additional_properties",
@@ -366,7 +366,7 @@
       "type": "object",
       "additionalProperties": "false"
     },
-    "error": true
+    "error": "ValidationError"
   },
   {
     "description": "ir_metaschema_invalid_nonstandard_type_name",
@@ -378,7 +378,7 @@
         }
       }
     },
-    "error": true
+    "error": "ValidationError"
   },
   {
     "description": "ir_non_string_pattern_rejected",
@@ -386,7 +386,7 @@
       "type": "string",
       "pattern": 0.0
     },
-    "error": true
+    "error": "ValidationError"
   },
   {
     "description": "ir_invalid_regex_in_pattern",
@@ -455,7 +455,7 @@
       "type": "integer",
       "multipleOf": 0
     },
-    "error": true
+    "error": "ValidationError"
   },
   {
     "description": "invalid_schemas_are_rejected number_multiple_of_zero",
@@ -464,7 +464,7 @@
       "type": "number",
       "multipleOf": 0.0
     },
-    "error": true
+    "error": "ValidationError"
   },
   {
     "description": "invalid_schemas_are_rejected integer_negative_multiple_of",
@@ -473,7 +473,7 @@
       "type": "integer",
       "multipleOf": -3
     },
-    "error": true
+    "error": "ValidationError"
   },
   {
     "description": "invalid_schemas_are_rejected one_of_empty",
@@ -481,7 +481,7 @@
     "schema": {
       "oneOf": []
     },
-    "error": true
+    "error": "ValidationError"
   },
   {
     "description": "invalid_schemas_are_rejected empty_type",
@@ -489,7 +489,7 @@
     "schema": {
       "type": []
     },
-    "error": true
+    "error": "ValidationError"
   },
   {
     "description": "invalid_schemas_are_rejected negative_multiple_of",
@@ -498,7 +498,7 @@
       "type": "number",
       "multipleOf": -3.0
     },
-    "error": true
+    "error": "ValidationError"
   },
   {
     "description": "ill-founded recursion is rejected - required self-reference forces unbounded nesting",
@@ -639,7 +639,7 @@
         ]
       }
     ],
-    "error": true
+    "error": "ValidationError"
   },
   {
     "description": "intersect_integer_smuggled_multiple_of_zero_is_rejected",
@@ -662,7 +662,7 @@
         ]
       }
     ],
-    "error": true
+    "error": "ValidationError"
   },
   {
     "description": "intersect_number_smuggled_multiple_of_zero_is_rejected",
@@ -685,7 +685,7 @@
         ]
       }
     ],
-    "error": true
+    "error": "ValidationError"
   },
   {
     "description": "intersect_number_smuggled_not_multiple_of_zero_is_rejected",
@@ -713,6 +713,6 @@
         ]
       }
     ],
-    "error": true
+    "error": "ValidationError"
   }
 ]

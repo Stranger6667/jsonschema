@@ -19,7 +19,7 @@ pub(crate) fn compile(ctx: &CompileContext<'_>, value: &Value) -> CompiledExpr {
     #[cfg(not(feature = "arbitrary-precision"))]
     let error_expr = {
         let divisor = value.as_f64().expect("multipleOf is a JSON number");
-        quote! { jsonschema::__private::error::multiple_of(#schema_path, __path.into(), instance, #divisor) }
+        quote! { __err::multiple_of(#schema_path, __path.into(), instance, #divisor) }
     };
 
     #[cfg(feature = "arbitrary-precision")]
@@ -31,8 +31,8 @@ pub(crate) fn compile(ctx: &CompileContext<'_>, value: &Value) -> CompiledExpr {
             let value_json = serde_json::to_string(value).unwrap();
             quote! {
                 {
-                    static MULTIPLE_OF: std::sync::LazyLock<serde_json::Value> =
-                        std::sync::LazyLock::new(|| serde_json::from_str(#value_json).expect("multipleOf"));
+                    static MULTIPLE_OF: __Lazy<serde_json::Value> =
+                        __Lazy::new(|| serde_json::from_str(#value_json).expect("multipleOf"));
                     MULTIPLE_OF.clone()
                 }
             }
@@ -42,7 +42,7 @@ pub(crate) fn compile(ctx: &CompileContext<'_>, value: &Value) -> CompiledExpr {
                 .expect("multipleOf below the safe-integer bound is a positive u64");
             quote! { serde_json::Value::Number(serde_json::Number::from(#unsigned)) }
         };
-        quote! { jsonschema::__private::error::multiple_of(#schema_path, __path.into(), instance, #limit_value) }
+        quote! { __err::multiple_of(#schema_path, __path.into(), instance, #limit_value) }
     };
 
     CompiledExpr::from_check_and_error(check, error_expr)

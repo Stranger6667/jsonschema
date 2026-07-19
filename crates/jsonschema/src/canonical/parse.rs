@@ -22,8 +22,8 @@ use crate::ext::numeric::bignum::{try_parse_bigfraction, try_parse_bigint};
 use crate::{
     canonical::{
         document::{
-            contains_dynamic_scope_ref, exceeds_depth_limit, exceeds_raw_depth_limit,
-            raw_subschema, requires_opaque_preservation, validate_schema_document,
+            contains_dynamic_scope_ref, raw_subschema, requires_opaque_preservation,
+            validate_schema_document,
         },
         error::CanonicalizationError,
         intern::shared,
@@ -668,15 +668,6 @@ fn resolve_external(
         target_uri,
         |_, _| {},
         move |ctx| {
-            // Mirrors the root depth gate: everything below recurses over the target document. A
-            // target past the `Raw` round-trip bound errors here, which the caller converts into a
-            // raw root with the reference kept symbolic - the deep text is never embedded.
-            if exceeds_depth_limit(contents) {
-                if exceeds_raw_depth_limit(contents) {
-                    return Err(CanonicalizationError::DepthLimitExceeded);
-                }
-                return Ok(raw_subschema(contents));
-            }
             // Meta-validate each fresh external target (once per identity) so externals fail like the meta-validated root.
             validate_schema_document(contents, resolved_draft)?;
             // Screen external targets through the same opaque-preservation gate as the root: a dynamic ref or an

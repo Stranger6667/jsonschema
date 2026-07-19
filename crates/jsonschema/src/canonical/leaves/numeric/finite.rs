@@ -229,11 +229,10 @@ pub(crate) fn bounded_integer_grid_leaf(leaf: &IntegerLeaf, draft: Draft) -> Opt
                 return None;
             }
         } else {
+            let cap = i64::try_from(DOMAIN_CAP).expect("cap fits i64");
             let over_cap = span.as_ref().is_none_or(|span| {
                 let (quotient, _) = span.div_rem(&step_integer);
-                quotient
-                    .to_i64()
-                    .is_none_or(|count| count > DOMAIN_CAP as i64 + 1)
+                quotient.to_i64().is_none_or(|count| count > cap + 1)
             });
             if over_cap {
                 return None;

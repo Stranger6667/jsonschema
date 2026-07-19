@@ -5,6 +5,7 @@
 .hypothesis
 .benchmarks
 .hegel/
+crates/jsonschema-wasm/pkg/
 
 /profiler/dhat-heap.json
 

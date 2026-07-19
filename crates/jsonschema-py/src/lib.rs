@@ -2340,8 +2340,6 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_wrapped(wrap_pyfunction!(validate))?;
     module.add_wrapped(wrap_pyfunction!(iter_errors))?;
     module.add_wrapped(wrap_pyfunction!(evaluate))?;
-    module.add_class::<canonical::PyCanonicalSchema>()?;
-    module.add_wrapped(wrap_pyfunction!(canonical::canonicalize))?;
     module.add_wrapped(wrap_pyfunction!(validator_for))?;
     module.add_wrapped(wrap_pyfunction!(validator_map_for))?;
     module.add_class::<ValidatorMap>()?;
@@ -2369,6 +2367,8 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("Draft201909", DRAFT201909)?;
     module.add("Draft202012", DRAFT202012)?;
 
+    module.add_class::<canonical::PyCanonicalSchema>()?;
+    module.add_wrapped(wrap_pyfunction!(canonical::canonicalize))?;
     canonical::init_module(py, module)?;
 
     let meta = PyModule::new(py, "meta")?;

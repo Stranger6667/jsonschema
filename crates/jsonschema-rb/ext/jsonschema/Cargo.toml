@@ -1,6 +1,6 @@
 [package]
 name = "jsonschema-rb-ext"
-version = "0.47.0"
+version = "0.48.1"
 edition = "2021"
 publish = false
 
@@ -10,11 +10,12 @@ name = "jsonschema_rb"
 path = "../../src/lib.rs"
 
 [dependencies]
-jsonschema = { version = "0.47.0", default-features = false, features = ["arbitrary-precision", "resolve-http", "resolve-file", "tls-ring", "macros"] }
+jsonschema = { version = "0.48.1", default-features = false, features = ["arbitrary-precision", "resolve-http", "resolve-file", "tls-ring", "macros"] }
 magnus = { version = "0.8", features = ["rb-sys"] }
 rb-sys = "0.9"
-referencing = "0.47.0"
+referencing = "0.48.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["arbitrary_precision"] }
+zmij = "1"
 
 [workspace]

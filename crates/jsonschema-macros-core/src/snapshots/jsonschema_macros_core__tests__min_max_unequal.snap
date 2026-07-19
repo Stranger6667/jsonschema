@@ -4,7 +4,7 @@ description: "{\"maximum\":10,\"minimum\":1,\"type\":\"number\"}"
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Number(n) => {
+            __Value::Number(n) => {
                 (jsonschema::__private::numeric::ge(n, 1u64))
                     && (jsonschema::__private::numeric::le(n, 10u64))
             }

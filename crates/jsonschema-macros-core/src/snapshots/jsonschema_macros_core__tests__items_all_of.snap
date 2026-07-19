@@ -4,7 +4,7 @@ description: "{\"allOf\":[{\"prefixItems\":[{\"type\":\"integer\"}]}],\"type\":\
 expression: is_valid_body(schema)
 ---
 (match instance {
-            serde_json::Value::Array(arr) => {
+            __Value::Array(arr) => {
                 arr.iter()
                     .enumerate()
                     .all(|(idx, item)| { if idx < 1usize { true } else { false } })
@@ -12,14 +12,12 @@ expression: is_valid_body(schema)
             _ => false,
         })
             && (match instance {
-                serde_json::Value::Array(arr) => {
+                __Value::Array(arr) => {
                     arr.get(0usize)
                         .map_or(
                             true,
                             |instance| match instance {
-                                serde_json::Value::Number(n) => {
-                                    jsonschema::__private::types::is_integer(n)
-                                }
+                                __Value::Number(n) => __types::is_integer(n),
                                 _ => false,
                             },
                         )

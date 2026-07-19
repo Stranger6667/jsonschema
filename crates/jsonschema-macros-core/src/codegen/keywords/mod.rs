@@ -84,12 +84,12 @@ pub(super) fn compile_count_range(
                     quote! { (#count as u64) == #limit },
                     quote! {
                         if (#count as u64) < #limit {
-                            return Some(jsonschema::__private::error::#min_error(
+                            return Some(__err::#min_error(
                                 #min_path, __path.into(), instance, #limit,
                             ));
                         }
                         if (#count as u64) > #limit {
-                            return Some(jsonschema::__private::error::#max_error(
+                            return Some(__err::#max_error(
                                 #max_path, __path.into(), instance, #limit,
                             ));
                         }
@@ -145,7 +145,7 @@ pub(super) fn compile_count_limit(
             CompiledExpr::from_check_and_error(
                 quote! { (#count as u64) #valid_cmp #limit },
                 quote! {
-                    jsonschema::__private::error::#error(
+                    __err::#error(
                         #schema_path, __path.into(), instance, #limit,
                     )
                 },

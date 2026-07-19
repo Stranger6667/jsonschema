@@ -1,6 +1,6 @@
 [package]
 name = "jsonschema-rb"
-version = "0.47.0"
+version = "0.48.1"
 edition = "2021"
 authors = ["Dmitry Dygalo <dmitry@dygalo.dev>"]
 license = "MIT"
@@ -13,12 +13,13 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-jsonschema = { version = "0.47.0", default-features = false, features = ["arbitrary-precision", "resolve-http", "resolve-file", "tls-ring", "macros"] }
+jsonschema = { version = "0.48.1", default-features = false, features = ["arbitrary-precision", "resolve-http", "resolve-file", "tls-ring", "macros"] }
 magnus = { version = "0.8", features = ["rb-sys"] }
 rb-sys = "0.9"
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
 referencing = { version = "*", path = "../jsonschema-referencing" }
+zmij = "1.0.23"
 
 [lints]
 workspace = true

@@ -19,7 +19,7 @@ use crate::{
         context::CanonicalizationContext,
         coverage,
         definitions::{disambiguate_definitions, reachable_definitions, union_definitions},
-        document::raw_schema_from_text,
+        document::raw_schema_from_value,
         emit,
         intern::{self, shared},
         intersect,
@@ -263,6 +263,7 @@ impl CanonicalSchema {
         let draft = effective_draft(self.draft).max(effective_draft(other.draft));
         let validate_formats = self.validate_formats || other.validate_formats;
         let mut branch_texts: Vec<String> = Vec::new();
+        let mut branch_values: Vec<Value> = Vec::new();
         let mut push_operand = |operand: &CanonicalSchema, slot: &str| {
             let branches =
                 match previous_combination_branches(operand, combinator, validate_formats) {
@@ -274,6 +275,7 @@ impl CanonicalSchema {
                 // `allOf`/`anyOf` branches are idempotent; a branch already present adds nothing.
                 if !branch_texts.contains(&text) {
                     branch_texts.push(text);
+                    branch_values.push(branch);
                 }
             }
         };
@@ -289,16 +291,12 @@ impl CanonicalSchema {
             "urn:jsonschema:cross-draft:root:{:016x}",
             content_hash(&hash_parts)
         );
-        let text = format!(
-            "{{\"$schema\":\"{uri}\",\"$id\":\"{id}\",\"{combinator}\":[{}]}}",
-            branch_texts.join(",")
-        );
-        raw_schema_from_text(
-            Arc::from(text),
-            draft,
-            self.pattern_options,
-            validate_formats,
-        )
+        let document = serde_json::json!({
+            "$schema": uri,
+            "$id": id,
+            combinator: branch_values,
+        });
+        raw_schema_from_value(document, draft, self.pattern_options, validate_formats)
     }
 
     /// Shared skeleton for binary operations: disambiguate colliding definition keys, combine the operands, then

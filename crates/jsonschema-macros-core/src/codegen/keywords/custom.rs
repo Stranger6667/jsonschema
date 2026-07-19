@@ -22,8 +22,8 @@ pub(crate) fn compile(
     let schema_path = ctx.schema_path_for_keyword(name);
 
     let lazy = quote! {
-        static #static_ident: std::sync::LazyLock<Box<dyn jsonschema::Keyword>> =
-            std::sync::LazyLock::new(|| {
+        static #static_ident: __Lazy<Box<dyn jsonschema::Keyword>> =
+            __Lazy::new(|| {
                 let parent: serde_json::Value = serde_json::from_str(#parent_json)
                     .expect("Failed to parse parent schema");
                 let parent = parent.as_object().expect("parent schema is an object");
@@ -63,7 +63,7 @@ pub(crate) fn compile(
         },
         quote! {
             #lazy
-            let __custom_path: jsonschema::paths::Location = __path.into();
+            let __custom_path: __paths::Location = __path.into();
             jsonschema::__private::custom::collect_errors(
                 &**#static_ident,
                 instance,

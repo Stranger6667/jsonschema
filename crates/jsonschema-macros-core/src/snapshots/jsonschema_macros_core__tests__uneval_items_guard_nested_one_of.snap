@@ -4,9 +4,9 @@ description: "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"an
 expression: is_valid_body(schema)
 ---
 (match instance {
-            serde_json::Value::Array(arr) => {
+            __Value::Array(arr) => {
                 let __one_of_matches_0 = (true as usize) + (true as usize);
-                let __guard_0 = (|instance: &serde_json::Value| validate_ref_0(
+                let __guard_0 = (|instance: &__Value| validate_ref_0(
                     instance,
                 ))(instance);
                 arr.iter()

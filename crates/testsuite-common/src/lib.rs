@@ -44,8 +44,8 @@ impl Parse for SuiteConfig {
                         "Test suite path should be a string literal",
                     )?);
                 }
-                Meta::NameValue(name_value) if name_value.path.is_ident("drafts") => {
-                    if let Expr::Array(ExprArray { elems, .. }) = name_value.value {
+                Meta::NameValue(nv) if nv.path.is_ident("drafts") => {
+                    if let Expr::Array(ExprArray { elems, .. }) = nv.value {
                         for elem in elems {
                             if let Expr::Lit(ExprLit {
                                 lit: Lit::Str(lit), ..
@@ -61,13 +61,13 @@ impl Parse for SuiteConfig {
                         }
                     } else {
                         return Err(syn::Error::new_spanned(
-                            name_value.value,
+                            nv.value,
                             "Drafts should be an array of string literals",
                         ));
                     }
                 }
-                Meta::NameValue(name_value) if name_value.path.is_ident("xfail") => {
-                    if let Expr::Array(ExprArray { elems, .. }) = name_value.value {
+                Meta::NameValue(nv) if nv.path.is_ident("xfail") => {
+                    if let Expr::Array(ExprArray { elems, .. }) = nv.value {
                         for elem in elems {
                             if let Expr::Lit(ExprLit {
                                 lit: Lit::Str(lit), ..
@@ -83,7 +83,7 @@ impl Parse for SuiteConfig {
                         }
                     } else {
                         return Err(syn::Error::new_spanned(
-                            name_value.value,
+                            nv.value,
                             "XFail should be an array of string literals",
                         ));
                     }
@@ -106,8 +106,7 @@ impl Parse for SuiteConfig {
     }
 }
 
-/// Configuration for the `canonical_suite` attribute — a single `path` to a
-/// directory of `*.json` case files.
+/// `canonical_suite` args: the `path` to a directory of `*.json` case files.
 pub struct CanonicalSuiteConfig {
     pub path: String,
 }

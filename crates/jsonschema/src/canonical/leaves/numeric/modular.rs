@@ -36,24 +36,6 @@ pub(crate) fn absorb_not_multiple_of_siblings(
             .or_else(|| Some(BoundInteger::from(1)))
     }
 
-    // `q` if `schema` is a numeric leaf that only pins `multipleOf` (an open integer leaf is `q = 1`).
-    // Under Draft 4 an integer leaf is lexical, not the value-based `multipleOf` spelling, so it
-    // contributes no modulus to a `number` branch.
-    let numeric_multiple_of_only = |schema: &Schema| -> Option<BoundFraction> {
-        match schema {
-            Schema::Integer(_) if keeps_draft4_integer_guard(JsonType::Integer, draft) => None,
-            Schema::Integer(_) => integer_multiple_of_only(schema).map(BoundFraction::from),
-            Schema::Number(leaf)
-                if leaf.bounds == NumberBounds::default()
-                    && leaf.not_multiple_of.is_empty()
-                    && leaf.multiple_of.is_some() =>
-            {
-                (leaf.multiple_of.as_ref()).map(BoundFraction::owned)
-            }
-            _ => None,
-        }
-    };
-
     // Moduli `q_i` if `schema` is `Not(I)` or `Not(anyOf[I_i])` over leaves `only` accepts. The `anyOf` form is what an
     // emitted `not_multiple_of` re-parses to (`¬(I_2 ∨ I_3) = ¬I_2 ∧ ¬I_3`), so handling it keeps canonicalize a fixpoint.
     fn not_multiple_of_moduli<M>(
@@ -107,6 +89,24 @@ pub(crate) fn absorb_not_multiple_of_siblings(
         }
     }
 
+    // `q` if `schema` is a numeric leaf that only pins `multipleOf` (an open integer leaf is `q = 1`).
+    // Under Draft 4 an integer leaf is lexical, not the value-based `multipleOf` spelling, so it
+    // contributes no modulus to a `number` branch.
+    let numeric_multiple_of_only = |schema: &Schema| -> Option<BoundFraction> {
+        match schema {
+            Schema::Integer(_) if keeps_draft4_integer_guard(JsonType::Integer, draft) => None,
+            Schema::Integer(_) => integer_multiple_of_only(schema).map(BoundFraction::from),
+            Schema::Number(leaf)
+                if leaf.bounds == NumberBounds::default()
+                    && leaf.not_multiple_of.is_empty()
+                    && leaf.multiple_of.is_some() =>
+            {
+                (leaf.multiple_of.as_ref()).map(BoundFraction::owned)
+            }
+            _ => None,
+        }
+    };
+
     let mut changed = false;
     match absorb(
         branches,
@@ -127,7 +127,7 @@ pub(crate) fn absorb_not_multiple_of_siblings(
     match absorb(
         branches,
         |schema| matches!(schema, Schema::Number(_)),
-        |schema| not_multiple_of_moduli(schema, &numeric_multiple_of_only),
+        |schema| not_multiple_of_moduli(schema, numeric_multiple_of_only),
         |schema, excluded| {
             let Schema::Number(leaf) = schema else {
                 unreachable!("positive number leaf")

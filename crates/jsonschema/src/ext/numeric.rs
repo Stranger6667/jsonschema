@@ -8,9 +8,11 @@
 
 use fraction::{BigFraction, One, Zero};
 use serde_json::Number;
+#[cfg(feature = "arbitrary-precision")]
+use std::cmp::Ordering;
 
 macro_rules! define_num_cmp {
-    ($($trait_fn:ident => $fn_name:ident, $op:tt, $infinity_positive:literal),* $(,)?) => {
+    ($($trait_fn:ident => $fn_name:ident, $op:tt, $infinity_positive:literal, $ord_pat:pat),* $(,)?) => {
         $(
             pub(crate) fn $fn_name<T>(value: &Number, limit: T) -> bool
             where
@@ -24,6 +26,16 @@ macro_rules! define_num_cmp {
                 } else if let Some(v) = value.as_i64() {
                     num_cmp::NumCmp::$trait_fn(v, limit)
                 } else if let Some(v) = value.as_f64() {
+                    // Integers outside u64/i64 lose precision in `as_f64` and can round exactly
+                    // onto the limit (e.g. -9223372036854775809 -> -2^63); compare them exactly.
+                    #[cfg(feature = "arbitrary-precision")]
+                    if v <= i64::MIN as f64 || v >= u64::MAX as f64 {
+                        if let Some(big_value) = bignum::try_parse_bigint(value) {
+                            if let Some(ordering) = bignum::compare_bigint_to_limit(&big_value, limit) {
+                                return matches!(ordering, $ord_pat);
+                            }
+                        }
+                    }
                     num_cmp::NumCmp::$trait_fn(v, limit)
                 } else {
                     #[cfg(feature = "arbitrary-precision")]
@@ -53,10 +65,10 @@ macro_rules! define_num_cmp {
 }
 
 define_num_cmp!(
-    num_ge => ge, >=, true,   // +infinity passes >=, >
-    num_le => le, <=, false,  // -infinity passes <=, <
-    num_gt => gt, >, true,
-    num_lt => lt, <, false,
+    num_ge => ge, >=, true, Ordering::Greater | Ordering::Equal,   // +infinity passes >=, >
+    num_le => le, <=, false, Ordering::Less | Ordering::Equal,  // -infinity passes <=, <
+    num_gt => gt, >, true, Ordering::Greater,
+    num_lt => lt, <, false, Ordering::Less,
 );
 
 #[cfg(feature = "macros")]
@@ -450,6 +462,36 @@ pub(crate) mod bignum {
         Some(BigFraction::from(numerator) / BigFraction::from(denominator))
     }
 
+    /// Exact ordering of a big-integer instance against a numeric limit.
+    ///
+    /// Integer-representable limits compare via `BigInt`; infinite limits (schema numbers
+    /// beyond the exponent cap) order every finite instance. `None` means the limit has no
+    /// exact integer form and the caller should fall back to `f64` comparison.
+    pub(crate) fn compare_bigint_to_limit<T>(big: &BigInt, limit: T) -> Option<std::cmp::Ordering>
+    where
+        T: Copy + ToPrimitive,
+    {
+        use std::cmp::Ordering;
+
+        let limit_f64 = limit.to_f64()?;
+        if limit_f64.fract() == 0.0 {
+            // `to_i64`/`to_u64` are exact for u64/i64 limits and for integer-valued f64 limits.
+            if let Some(limit_int) = limit.to_i64() {
+                return Some(big.cmp(&BigInt::from(limit_int)));
+            }
+            if let Some(limit_int) = limit.to_u64() {
+                return Some(big.cmp(&BigInt::from(limit_int)));
+            }
+        }
+        if limit_f64 == f64::INFINITY {
+            return Some(Ordering::Less);
+        }
+        if limit_f64 == f64::NEG_INFINITY {
+            return Some(Ordering::Greater);
+        }
+        None
+    }
+
     macro_rules! define_bigint_cmp {
         ($($fn_name:ident, $prim_type:ty, $to_prim:ident, $op:tt, $overflow_sign:expr);* $(;)?) => {
             $(
@@ -580,6 +622,7 @@ mod tests {
     use fraction::BigFraction;
     use num_bigint::BigInt;
     use serde_json::{Number, Value};
+    use std::cmp::Ordering;
     use test_case::test_case;
 
     fn number_from_str(raw: &str) -> Number {
@@ -587,6 +630,28 @@ mod tests {
             Value::Number(num) => num,
             _ => unreachable!(),
         }
+    }
+
+    #[test_case("18446744073709551616", u64::MAX, Ordering::Greater; "above u64 limit")]
+    fn compare_bigint_to_u64_limit(big: &str, limit: u64, expected: Ordering) {
+        let big = BigInt::parse_bytes(big.as_bytes(), 10).unwrap();
+        assert_eq!(bignum::compare_bigint_to_limit(&big, limit), Some(expected));
+    }
+
+    #[test_case("-18446744073709551616", i64::MIN, Ordering::Less; "below i64 limit")]
+    fn compare_bigint_to_i64_limit(big: &str, limit: i64, expected: Ordering) {
+        let big = BigInt::parse_bytes(big.as_bytes(), 10).unwrap();
+        assert_eq!(bignum::compare_bigint_to_limit(&big, limit), Some(expected));
+    }
+
+    // Infinity limits come from schema numbers beyond the exponent cap (e.g. `1e2000000`);
+    // limits without an exact integer form defer to the caller's f64 comparison.
+    #[test_case(f64::INFINITY, Some(Ordering::Less); "infinity limit")]
+    #[test_case(f64::NEG_INFINITY, Some(Ordering::Greater); "negative infinity limit")]
+    #[test_case(0.5, None; "no exact integer form")]
+    fn compare_bigint_to_f64_limit(limit: f64, expected: Option<Ordering>) {
+        let big = BigInt::parse_bytes(b"18446744073709551616", 10).unwrap();
+        assert_eq!(bignum::compare_bigint_to_limit(&big, limit), expected);
     }
 
     #[test]

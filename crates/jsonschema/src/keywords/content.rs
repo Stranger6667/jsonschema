@@ -11,7 +11,7 @@ use crate::{
     validator::{EvaluationResult, Validate, ValidationContext},
 };
 use serde_json::{Map, Value};
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 /// Validator for `contentMediaType` keyword.
 pub(crate) struct ContentMediaTypeValidator {
@@ -202,7 +202,18 @@ impl Validate for ContentMediaTypeAndEncodingValidator {
                         ))
                     }
                 }
-                Err(e) => Err(e),
+                Err(e) => {
+                    let encoding_location = self.location.join("contentEncoding");
+                    let eval_path =
+                        crate::paths::capture_evaluation_path(tracker, &encoding_location);
+                    Err(ValidationError::new(
+                        Cow::Borrowed(instance),
+                        e.into_parts().kind,
+                        location.into(),
+                        encoding_location,
+                        eval_path,
+                    ))
+                }
             }
         } else {
             Ok(())
@@ -495,5 +506,38 @@ mod tests {
             .expect("Invalid schema");
         let error = validator.validate(instance).expect_err("Should fail");
         assert_eq!(error.schema_path().as_str(), expected);
+    }
+
+    #[test]
+    fn invalid_utf8_after_base64_decode_has_content_encoding_location() {
+        let schema = json!({
+            "properties": {
+                "data": {
+                    "contentMediaType": "application/json",
+                    "contentEncoding": "base64"
+                }
+            }
+        });
+        // "//4=" decodes to 0xFF 0xFE, which is not valid UTF-8
+        let instance = json!({"data": "//4="});
+        let validator = crate::options()
+            .with_draft(Draft::Draft7)
+            .build(&schema)
+            .expect("Invalid schema");
+        let error = validator.validate(&instance).expect_err("Should fail");
+        assert_eq!(error.instance_path().as_str(), "/data");
+        assert_eq!(
+            error.schema_path().as_str(),
+            "/properties/data/contentEncoding"
+        );
+        assert_eq!(error.instance().as_ref(), &json!("//4="));
+        assert!(
+            matches!(
+                error.kind(),
+                crate::error::ValidationErrorKind::FromUtf8 { .. }
+            ),
+            "expected FromUtf8, got {:?}",
+            error.kind()
+        );
     }
 }

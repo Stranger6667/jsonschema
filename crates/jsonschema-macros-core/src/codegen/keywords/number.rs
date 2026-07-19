@@ -120,12 +120,12 @@ fn compile_equal_bounds(
         eq_check,
         quote! {
             if #below_check {
-                return Some(jsonschema::__private::error::minimum(
+                return Some(__err::minimum(
                     #min_path, __path.into(), instance, #limit_expr,
                 ));
             }
             if #above_check {
-                return Some(jsonschema::__private::error::maximum(
+                return Some(__err::maximum(
                     #max_path, __path.into(), instance, #limit_expr,
                 ));
             }
@@ -169,10 +169,10 @@ fn compile_bound(
     let value_json = serde_json::to_string(value).unwrap();
 
     let error_fn: TokenStream = match op {
-        ComparisonOp::Gt => quote! { jsonschema::__private::error::exclusive_minimum },
-        ComparisonOp::Lt => quote! { jsonschema::__private::error::exclusive_maximum },
-        ComparisonOp::Gte => quote! { jsonschema::__private::error::minimum },
-        ComparisonOp::Lte => quote! { jsonschema::__private::error::maximum },
+        ComparisonOp::Gt => quote! { __err::exclusive_minimum },
+        ComparisonOp::Lt => quote! { __err::exclusive_maximum },
+        ComparisonOp::Gte => quote! { __err::minimum },
+        ComparisonOp::Lte => quote! { __err::maximum },
     };
 
     let limit_expr = build_limit_value_expr(value, &value_json);
@@ -193,8 +193,8 @@ fn build_limit_value_expr(value: &Value, value_json: &str) -> TokenStream {
         // Float or arbitrary-precision: use LazyLock to parse at runtime.
         quote! {
             {
-                static LIMIT: std::sync::LazyLock<serde_json::Value> =
-                    std::sync::LazyLock::new(|| serde_json::from_str(#value_json).expect("limit"));
+                static LIMIT: __Lazy<serde_json::Value> =
+                    __Lazy::new(|| serde_json::from_str(#value_json).expect("limit"));
                 LIMIT.clone()
             }
         }

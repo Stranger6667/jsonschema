@@ -18,8 +18,6 @@ pub enum CanonicalizationError {
     InvalidJsonValue(String),
     /// A `$ref` chain nested deeper than the parser's bound; the schema is preserved verbatim instead.
     RefDepthLimitExceeded,
-    /// Document nesting deeper than the emit round-trip can rebuild without exhausting the stack.
-    DepthLimitExceeded,
 }
 
 impl std::fmt::Display for CanonicalizationError {
@@ -36,7 +34,6 @@ impl std::fmt::Display for CanonicalizationError {
             }
             Self::InvalidJsonValue(message) => write!(f, "invalid JSON value: {message}"),
             Self::RefDepthLimitExceeded => write!(f, "$ref chain exceeds the depth limit"),
-            Self::DepthLimitExceeded => write!(f, "schema nesting exceeds the depth limit"),
         }
     }
 }

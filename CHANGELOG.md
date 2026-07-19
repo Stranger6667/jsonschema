@@ -4,18 +4,35 @@
 
 ### Added
 
-- `iter_errors` for `#[jsonschema::validator]`-generated validators.
 - `jsonschema::canonicalize` for reducing a JSON Schema to a canonical form with support for negation, intersection, union, subtraction, and draft-independent structural inspection.
 - **CLI**: `jsonschema canonicalize` subcommand.
 
-### Changed
+## [0.48.1] - 2026-07-17
 
-- One canonical number spelling from `canonical::json::to_string` under `arbitrary-precision` (`"1e-2"` becomes `"0.01"`, `"1.50"` becomes `"1.5"`) and correctly-rounded float parsing (`serde_json`'s `float_roundtrip`).
+### Fixed
+
+- Missing `required` errors in `evaluate()` output for schemas with `properties` and a two-entry `required` array. [#1220](https://github.com/Stranger6667/jsonschema/issues/1220)
+- `contentEncoding` errors for invalid UTF-8 after decoding incorrectly had empty `instance_path` and `schema_path`.
+
+### Performance
+
+- Faster code generation for `#[jsonschema::validator]` (~5% across benchmarked schemas), via aliasing repeated paths in the emitted code.
+
+## [0.48.0] - 2026-07-16
+
+### Added
+
+- `iter_errors` for `#[jsonschema::validator]`-generated validators.
 
 ### Fixed
 
 - Per-branch context on generated `anyOf` and `oneOf` validation errors, matching runtime validators.
 - `$recursiveRef` in generated validators incorrectly resolved to the innermost `$recursiveAnchor` (it should resolve to the outermost one).
+- Integer instances just outside the `i64`/`u64` range incorrectly compared against numeric bounds through lossy `f64` rounding under `arbitrary-precision` (e.g. `{"minimum": -9223372036854775808}` accepted `-9223372036854775809`).
+
+### Changed
+
+- One canonical number spelling from `canonical::json::to_string` under `arbitrary-precision` (`"1e-2"` becomes `"0.01"`, `"1.50"` becomes `"1.5"`) and correctly-rounded float parsing (`serde_json`'s `float_roundtrip`).
 
 ### Performance
 
@@ -1357,7 +1374,9 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.47.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.1...HEAD
+[0.48.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.0...rust-v0.48.1
+[0.48.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.47.0...rust-v0.48.0
 [0.47.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.10...rust-v0.47.0
 [0.46.10]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.9...rust-v0.46.10
 [0.46.9]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.8...rust-v0.46.9

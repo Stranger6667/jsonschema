@@ -4,7 +4,7 @@ description: "{\"properties\":{\"a\":{\"type\":\"string\"}},\"required\":[\"a\",
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 let mut __req_0 = false;
                 let mut __req_1 = false;
                 let __object_pass = obj

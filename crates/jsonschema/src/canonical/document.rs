@@ -11,7 +11,7 @@ use serde_json::Value;
 use crate::{
     canonical::{
         intern::shared,
-        ir::{Schema, SharedSchema},
+        ir::{RawJson, Schema, SharedSchema},
         parse,
         schema::CanonicalSchema,
         CanonicalizationError, DefinitionMap,
@@ -19,39 +19,6 @@ use crate::{
     compiler::formats_are_assertions_by_default,
     options::PatternEngineOptions,
 };
-
-/// Deepest document the recursive stages (metaschema validation, opaqueness scan, parse, the rewrite
-/// pipeline) are guaranteed to handle without exhausting the stack; deeper documents stay `Raw`.
-const MAX_SCHEMA_DEPTH: usize = 128;
-
-/// Deepest `Raw`-preserved document: round-tripping re-parses the stored text and drops the decoded
-/// tree, both recursing per nesting level, so past this bound canonicalization is rejected instead
-/// of handing out a schema whose emit exhausts the stack.
-const MAX_RAW_SCHEMA_DEPTH: usize = 8192;
-
-/// Iterative depth measurement: must not recurse, it guards the recursive stages.
-fn depth_exceeds(value: &Value, limit: usize) -> bool {
-    let mut stack = vec![(value, 1usize)];
-    while let Some((node, depth)) = stack.pop() {
-        if depth > limit {
-            return true;
-        }
-        match node {
-            Value::Object(map) => stack.extend(map.values().map(|child| (child, depth + 1))),
-            Value::Array(items) => stack.extend(items.iter().map(|child| (child, depth + 1))),
-            _ => {}
-        }
-    }
-    false
-}
-
-pub(crate) fn exceeds_depth_limit(value: &Value) -> bool {
-    depth_exceeds(value, MAX_SCHEMA_DEPTH)
-}
-
-pub(crate) fn exceeds_raw_depth_limit(value: &Value) -> bool {
-    depth_exceeds(value, MAX_RAW_SCHEMA_DEPTH)
-}
 
 fn ensure_schema_document_root(value: &Value) -> Result<(), CanonicalizationError> {
     match value {
@@ -73,22 +40,17 @@ pub(crate) fn raw_schema(
     pattern_options: PatternEngineOptions,
     validate_formats: bool,
 ) -> CanonicalSchema {
-    raw_schema_from_text(
-        raw_schema_text(value),
-        draft,
-        pattern_options,
-        validate_formats,
-    )
+    raw_schema_from_value(value.clone(), draft, pattern_options, validate_formats)
 }
 
-pub(crate) fn raw_schema_from_text(
-    text: Arc<str>,
+pub(crate) fn raw_schema_from_value(
+    value: Value,
     draft: Draft,
     pattern_options: PatternEngineOptions,
     validate_formats: bool,
 ) -> CanonicalSchema {
     CanonicalSchema::with_definitions(
-        shared(Schema::Raw(text)),
+        shared(Schema::Raw(RawJson::new(value))),
         draft,
         pattern_options,
         validate_formats,
@@ -119,20 +81,6 @@ pub(crate) fn prepare_root(
     let draft = detect_draft(value, draft, registry)?;
     let validate_formats =
         validate_formats.unwrap_or_else(|| formats_are_assertions_by_default(draft));
-    // Everything past this point recurses over the document (validation, opaqueness scan, parse),
-    // so a depth beyond what those stacks tolerate is preserved verbatim instead — up to the bound
-    // the `Raw` round-trip itself can rebuild.
-    if exceeds_depth_limit(value) {
-        if exceeds_raw_depth_limit(value) {
-            return Err(CanonicalizationError::DepthLimitExceeded);
-        }
-        return Ok(PreparedRoot::Raw(raw_schema(
-            value,
-            draft,
-            pattern_options,
-            validate_formats,
-        )));
-    }
     validate_schema_document(value, draft)?;
     if requires_opaque_preservation(value, draft) {
         return Ok(PreparedRoot::Raw(raw_schema(
@@ -353,55 +301,8 @@ pub(crate) fn root_base_uri(
     }
 }
 
-// Iterative to avoid the stack overflow `serde_json::to_string` hits on documents past
-// `MAX_SCHEMA_DEPTH` (the ones routed here). Scalars and keys reuse serde_json for identical output;
-// only the container walk is explicit.
-fn raw_schema_text(value: &Value) -> Arc<str> {
-    enum Step<'a> {
-        Value(&'a Value),
-        Literal(&'static str),
-        Key(&'a str),
-    }
-    let mut out = String::new();
-    let mut stack = vec![Step::Value(value)];
-    while let Some(step) = stack.pop() {
-        match step {
-            Step::Literal(text) => out.push_str(text),
-            Step::Key(key) => {
-                out.push_str(&serde_json::to_string(key).expect("string serializes"));
-                out.push(':');
-            }
-            Step::Value(Value::Array(items)) => {
-                out.push('[');
-                stack.push(Step::Literal("]"));
-                for (index, item) in items.iter().enumerate().rev() {
-                    stack.push(Step::Value(item));
-                    if index > 0 {
-                        stack.push(Step::Literal(","));
-                    }
-                }
-            }
-            Step::Value(Value::Object(map)) => {
-                out.push('{');
-                stack.push(Step::Literal("}"));
-                for (index, (key, item)) in map.iter().enumerate().rev() {
-                    stack.push(Step::Value(item));
-                    stack.push(Step::Key(key.as_str()));
-                    if index > 0 {
-                        stack.push(Step::Literal(","));
-                    }
-                }
-            }
-            Step::Value(scalar) => {
-                out.push_str(&serde_json::to_string(scalar).expect("scalar serializes"));
-            }
-        }
-    }
-    Arc::from(out)
-}
-
 /// The `Raw` node a `$ref` resolves to when its target document/fragment must be preserved verbatim
 /// (see [`requires_opaque_preservation`]) - the external-document analogue of the root's `PreparedRoot::Raw`.
 pub(crate) fn raw_subschema(value: &Value) -> SharedSchema {
-    shared(Schema::Raw(raw_schema_text(value)))
+    shared(Schema::Raw(RawJson::new(value.clone())))
 }

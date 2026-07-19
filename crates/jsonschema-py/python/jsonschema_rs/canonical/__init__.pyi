@@ -1,5 +1,4 @@
 from decimal import Decimal
-from typing import Any
 
 from . import json as json
 from . import schema as schema

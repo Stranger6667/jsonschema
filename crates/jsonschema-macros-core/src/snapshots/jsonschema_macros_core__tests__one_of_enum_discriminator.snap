@@ -5,9 +5,7 @@ expression: is_valid_body(schema)
 ---
 {
             let __one_of_discriminator = match instance {
-                serde_json::Value::Object(obj) => {
-                    obj.get("k").and_then(serde_json::Value::as_str)
-                }
+                __Value::Object(obj) => obj.get("k").and_then(__Value::as_str),
                 _ => None,
             };
             let mut matched = (matches!(__one_of_discriminator, Some("a" | "b"))

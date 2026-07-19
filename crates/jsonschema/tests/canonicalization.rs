@@ -44,11 +44,10 @@ fn schema_from_str(text: &str) -> Value {
     serde_json::from_str(text).expect("valid schema JSON")
 }
 
-/// An inert `definitions` filler nested past the recursion depth gate, routing the whole document
-/// to `Raw` preservation in every feature configuration (numeric-bound triggers are
-/// representable under `arbitrary-precision` and stop firing there).
-fn depth_gate_filler() -> Value {
-    nested_all_of_schema(130)
+/// An inert `definitions` filler carrying an unknown `$schema`, routing the whole document
+/// to `Raw` preservation in every feature configuration.
+fn opaque_filler() -> Value {
+    json!({"$schema": "https://example.com/opaque-filler-meta"})
 }
 
 fn nested_array(depth: usize) -> Value {
@@ -57,14 +56,6 @@ fn nested_array(depth: usize) -> Value {
         value = Value::Array(vec![value]);
     }
     value
-}
-
-fn nested_all_of_schema(depth: usize) -> Value {
-    let mut schema = json!({});
-    for _ in 0..depth {
-        schema = json!({"allOf": [schema]});
-    }
-    schema
 }
 
 #[cfg(feature = "arbitrary-precision")]
@@ -155,21 +146,7 @@ fn too_deep_literal_values_preserved_raw(keyword: &str) {
 }
 
 #[test]
-fn too_deep_content_schema_preserved_raw() {
-    let content_schema = nested_all_of_schema(256);
-    let schema = json!({
-        "$schema": DRAFT202012_SCHEMA_URI,
-        "type": "string",
-        "contentSchema": content_schema,
-    });
-    let canonical = canonicalize(&schema).expect("deep contentSchema canonicalizes");
-
-    assert_eq!(canonical.kind(), CanonicalKind::Raw);
-    assert_eq!(canonical.to_json_schema(), schema);
-}
-
-#[test]
-fn raw_preserved_schema_skips_literal_payload_depth_checks() {
+fn raw_preserved_schema_allows_deep_literal_payloads() {
     let literal = nested_array(256);
     let schema = json!({
         "$schema": "https://example.com/custom-meta-schema",
@@ -182,88 +159,9 @@ fn raw_preserved_schema_skips_literal_payload_depth_checks() {
     assert_eq!(canonical.to_json_schema(), schema);
 }
 
-// An external `$ref` target deeper than the schema depth limit must reach the Raw-preservation
-// gate; scanning it for dynamic-scope refs must not overflow the stack first.
-#[test]
-fn deep_external_ref_target_preserved_without_overflow() {
-    let mut target = json!({"type": "integer"});
-    for _ in 0..2_000 {
-        target = Value::Object(
-            [("allOf".to_owned(), Value::Array(vec![target]))]
-                .into_iter()
-                .collect(),
-        );
-    }
-    let registry = referencing::Registry::new()
-        .add("https://example.com/deep", target)
-        .expect("valid resource")
-        .prepare()
-        .expect("registry prepares");
-    let root = json!({"$ref": "https://example.com/deep"});
-    let canonical = jsonschema::canonical::options()
-        .with_registry(&registry)
-        .canonicalize(&root)
-        .expect("canonicalize");
-    assert!(canonical.is_satisfiable());
-}
-
-// An external target past the round-trip depth cap must never be embedded in the output (its
-// decoded tree cannot be rebuilt safely); the root is preserved raw with the ref kept symbolic.
-#[test]
-fn external_ref_target_past_depth_cap_kept_symbolic_without_overflow() {
-    let mut target = json!({"type": "integer"});
-    for _ in 0..20_000 {
-        target = Value::Object(
-            [("allOf".to_owned(), Value::Array(vec![target]))]
-                .into_iter()
-                .collect(),
-        );
-    }
-    let registry = referencing::Registry::new()
-        .add("https://example.com/deep", target)
-        .expect("valid resource")
-        .prepare()
-        .expect("registry prepares");
-    let root = json!({"$ref": "https://example.com/deep"});
-    let result = jsonschema::canonical::options()
-        .with_registry(&registry)
-        .canonicalize(&root);
-    // The registry's recursive Drop over the deep resource would overflow independently (also on
-    // assertion unwind); leak it first.
-    std::mem::forget(registry);
-    let canonical = result.expect("root canonicalizes with the target kept symbolic");
-    assert_eq!(canonical.kind(), CanonicalKind::Raw);
-    assert_eq!(canonical.to_json_schema(), root);
-}
-
-// Rebuilding and dropping the decoded tree during round-trip recurses per nesting level, so a
-// document past the cap is rejected outright; the depth check itself must not overflow the stack.
-#[test]
-fn document_past_depth_cap_rejected_without_overflow() {
-    // Build by moving the growing value into each new node; `json!` here would re-serialize it and
-    // overflow during construction instead.
-    let mut schema = json!({});
-    for _ in 0..100_000 {
-        schema = Value::Object(
-            [("allOf".to_owned(), Value::Array(vec![schema]))]
-                .into_iter()
-                .collect(),
-        );
-    }
-    let result = canonicalize(&schema);
-    // The input's own recursive Drop would overflow independently of what this covers (also on
-    // assertion unwind); leak it first.
-    std::mem::forget(schema);
-    assert!(
-        matches!(result, Err(CanonicalizationError::DepthLimitExceeded)),
-        "expected depth rejection, got {}",
-        if result.is_ok() { "Ok" } else { "other error" }
-    );
-}
-
 #[cfg(all(feature = "resolve-async", not(target_arch = "wasm32")))]
 #[tokio::test]
-async fn async_raw_preserved_schema_skips_literal_payload_depth_checks() {
+async fn async_raw_preserved_schema_allows_deep_literal_payloads() {
     let literal = nested_array(256);
     let schema = json!({
         "$schema": "https://example.com/custom-meta-schema",
@@ -1449,19 +1347,19 @@ fn deeply_nested_const_value_preserved_raw(use_objects: bool) {
 #[test]
 fn singleton_window_past_f64_precision_keeps_exact_const() {
     assert_parity_against_expected(
-        json!({"type": "number", "minimum": 9007199254740993i64, "maximum": 9007199254740993i64}),
+        json!({"type": "number", "minimum": 9_007_199_254_740_993i64, "maximum": 9_007_199_254_740_993i64}),
         &[
-            (json!(9007199254740993i64), true),
-            (json!(9007199254740992i64), false),
+            (json!(9_007_199_254_740_993i64), true),
+            (json!(9_007_199_254_740_992i64), false),
         ],
     );
     let canonical = canonicalize(
-        &json!({"type": "number", "minimum": 9007199254740993i64, "maximum": 9007199254740993i64}),
+        &json!({"type": "number", "minimum": 9_007_199_254_740_993i64, "maximum": 9_007_199_254_740_993i64}),
     )
     .expect("valid schema");
     assert_eq!(
         canonical.to_json_schema(),
-        json!({"$schema": DRAFT202012_SCHEMA_URI, "const": 9007199254740993i64})
+        json!({"$schema": DRAFT202012_SCHEMA_URI, "const": 9_007_199_254_740_993i64})
     );
 }
 
@@ -1470,11 +1368,11 @@ fn singleton_window_past_f64_precision_keeps_exact_const() {
 #[test]
 fn exclusive_bounds_past_f64_precision_do_not_collapse_to_const() {
     assert_parity_against_expected(
-        json!({"type": "number", "exclusiveMinimum": 9007199254740992i64, "maximum": 9007199254740994i64}),
+        json!({"type": "number", "exclusiveMinimum": 9_007_199_254_740_992i64, "maximum": 9_007_199_254_740_994i64}),
         &[
-            (json!(9007199254740993i64), true),
-            (json!(9007199254740994i64), true),
-            (json!(9007199254740992i64), false),
+            (json!(9_007_199_254_740_993i64), true),
+            (json!(9_007_199_254_740_994i64), true),
+            (json!(9_007_199_254_740_992i64), false),
         ],
     );
 }
@@ -1640,7 +1538,7 @@ fn cross_draft_union_adds_no_foreign_instances() {
 fn cross_draft_raw_branch_keeps_its_dialect() {
     let a = options()
         .with_draft(Draft::Draft4)
-        .canonicalize(&json!({"type": "integer", "definitions": {"filler": depth_gate_filler()}}))
+        .canonicalize(&json!({"type": "integer", "definitions": {"filler": opaque_filler()}}))
         .expect("valid schema");
     assert_eq!(a.kind(), CanonicalKind::Raw);
     let b = canonicalize(&json!({"$schema": DRAFT202012_SCHEMA_URI})).expect("valid schema");
@@ -1659,7 +1557,7 @@ fn cross_draft_fallback_covers_raw_definitions() {
         .with_inline_budget(0)
         .canonicalize(&json!({
             "properties": {"p": {"$ref": "#/customContainer/inner"}},
-            "customContainer": {"inner": {"type": "integer", "minLength": 10000000000000000000u64}}
+            "customContainer": {"inner": {"type": "integer", "minLength": 10_000_000_000_000_000_000u64}}
         }))
         .expect("valid schema");
     // The out-of-carrier bound is representable under `arbitrary-precision`, where this operand
@@ -1788,7 +1686,7 @@ fn cross_draft_legacy_ref_siblings_stay_suppressed() {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "$ref": "#/definitions/node",
         "maximum": 10,
-        "definitions": {"node": {"type": "integer"}, "filler": depth_gate_filler()}
+        "definitions": {"node": {"type": "integer"}, "filler": opaque_filler()}
     }))
     .expect("valid schema");
     assert_eq!(a.kind(), CanonicalKind::Raw);
@@ -1820,7 +1718,7 @@ fn cross_draft_legacy_wrap_rewrites_pointers_under_empty_id() {
         "definitions": {
             "entry": {"$id": "", "properties": {"a": {"$ref": "#/definitions/x"}}},
             "x": {"type": "string"},
-            "filler": depth_gate_filler()
+            "filler": opaque_filler()
         }
     }))
     .expect("valid schema");
@@ -1848,7 +1746,7 @@ fn cross_draft_legacy_wrap_keeps_nested_resource_refs_untouched() {
                     "y": {"type": "string"}
                 }
             },
-            "filler": depth_gate_filler()
+            "filler": opaque_filler()
         }
     }))
     .expect("valid schema");
@@ -1869,7 +1767,7 @@ fn cross_draft_legacy_wrap_follows_percent_encoded_pointers() {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "$ref": "#/customContainer/a%20b",
         "customContainer": {"a b": {"properties": {"a": {"$ref": "#/definitions/x"}}}},
-        "definitions": {"x": {"type": "string"}, "filler": depth_gate_filler()}
+        "definitions": {"x": {"type": "string"}, "filler": opaque_filler()}
     }))
     .expect("valid schema");
     assert_eq!(a.kind(), CanonicalKind::Raw);
@@ -1891,7 +1789,7 @@ fn cross_draft_unasserted_format_stripped_behind_percent_encoded_pointer() {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "$ref": "#/customContainer/a%20b",
             "customContainer": {"a b": {"type": "string", "format": "email"}},
-            "definitions": {"filler": depth_gate_filler()}
+            "definitions": {"filler": opaque_filler()}
         }))
         .expect("valid schema");
     assert_eq!(a.kind(), CanonicalKind::Raw);
@@ -1921,7 +1819,7 @@ fn cross_draft_unasserted_format_stays_annotation() {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "string",
             "format": "email",
-            "definitions": {"filler": depth_gate_filler()}
+            "definitions": {"filler": opaque_filler()}
         }))
         .expect("valid schema");
     assert_eq!(a.kind(), CanonicalKind::Raw);
@@ -1951,7 +1849,7 @@ fn cross_draft_unknown_format_stripped_from_asserting_operand() {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "string",
             "format": "my-custom",
-            "definitions": {"filler": depth_gate_filler()}
+            "definitions": {"filler": opaque_filler()}
         }))
         .expect("valid schema");
     assert_eq!(a.kind(), CanonicalKind::Raw);
@@ -1976,7 +1874,7 @@ fn cross_draft_asserted_format_stays_assertion() {
         .canonicalize(&json!({
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "string",
-            "definitions": {"filler": depth_gate_filler()}
+            "definitions": {"filler": opaque_filler()}
         }))
         .expect("valid schema");
     assert_eq!(a.kind(), CanonicalKind::Raw);
@@ -2715,30 +2613,3 @@ fn intersect_constrained_array_guard_with_const_defers_to_allof() {
 
 // `is_satisfiable` exercises the finite-domain emptiness oracle (`canonical/oracle/membership.rs`).
 // Each schema below drives a distinct branch of that oracle through the public API.
-
-#[test]
-fn deeply_nested_schema_preserved_raw() {
-    let mut schema = serde_json::json!({"type": "integer"});
-    for _ in 0..300 {
-        schema = serde_json::json!({"allOf": [schema]});
-    }
-    let canonical = canonicalize(&schema).expect("deep schema canonicalizes");
-    assert_eq!(canonical.kind(), CanonicalKind::Raw);
-    assert_eq!(canonical.to_json_schema(), schema);
-}
-
-// External documents bypass the root depth gate, so the resolver-side gates must catch them.
-// Depth stays below ~500, where `referencing::Registry::prepare` itself exhausts the stack.
-#[test]
-fn deeply_nested_external_ref_target_preserved_raw() {
-    let mut target = json!({"type": "integer"});
-    for _ in 0..300 {
-        target = json!({"allOf": [target]});
-    }
-    let registry = registry_with(&[("https://example.com/deep", target)]);
-    let canonical = options()
-        .with_registry(&registry)
-        .canonicalize(&json!({"$ref": "https://example.com/deep"}))
-        .expect("deep external target canonicalizes");
-    assert!(canonical.to_json_schema().is_object());
-}

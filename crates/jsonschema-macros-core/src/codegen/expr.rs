@@ -73,7 +73,7 @@ impl CollectBlock {
 /// Only sound for single-error leaves; multi-error loops/branches supply an explicit collect block.
 fn derive_collect(validate: &TokenStream) -> CollectBlock {
     CollectBlock::Expr(quote! {
-        __errors.extend((|| -> Option<jsonschema::ValidationError<'_>> { #validate None })());
+        __errors.extend((|| -> Option<__VE<'_>> { #validate None })());
     })
 }
 
@@ -94,7 +94,7 @@ impl CompiledExpr {
     pub(crate) fn from_bool_expr(is_valid: TokenStream, schema_path: &str) -> Self {
         let validate = quote! {
             if !(#is_valid) {
-                return Some(jsonschema::__private::error::false_schema(
+                return Some(__err::false_schema(
                     #schema_path, __path.into(), instance,
                 ));
             }

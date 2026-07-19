@@ -590,12 +590,14 @@ class Resolved:
     @property
     def draft(self) -> int: ...
 
-class CanonicalSchema:
-    """Canonical representation of a JSON Schema.
+class _Meta:
+    def is_valid(self, schema: _SchemaT, registry: Registry | None = None) -> bool: ...
+    def validate(self, schema: _SchemaT, registry: Registry | None = None) -> None: ...
 
-    Obtained via :func:`canonicalize`. Semantically equivalent to the input
-    but in a stable, reduced representation.
-    """
+meta: _Meta
+
+class CanonicalSchema:
+    """Canonical representation of a JSON Schema, obtained via :func:`canonicalize`."""
 
     @property
     def draft(self) -> int:
@@ -671,12 +673,7 @@ def canonicalize(
     Returns a :class:`CanonicalSchema` that is semantically equivalent to the
     input but in a stable, reduced representation.
 
-    Raises ``ValueError`` if the schema is invalid or cannot be canonicalized.
+    Raises :class:`ValidationError` when the schema fails meta-schema validation and a
+    :class:`canonical.CanonicalizationError` subclass otherwise.
     """
     ...
-
-class _Meta:
-    def is_valid(self, schema: _SchemaT, registry: Registry | None = None) -> bool: ...
-    def validate(self, schema: _SchemaT, registry: Registry | None = None) -> None: ...
-
-meta: _Meta

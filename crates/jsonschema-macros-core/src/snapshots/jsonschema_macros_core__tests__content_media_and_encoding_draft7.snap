@@ -4,7 +4,7 @@ description: "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"content
 expression: is_valid_body(schema)
 ---
 match instance {
-            serde_json::Value::String(s) => {
+            __Value::String(s) => {
                 match jsonschema::__private::content::from_base64(s) {
                     Ok(Some(__decoded)) => {
                         jsonschema::__private::content::is_json(&__decoded)

@@ -240,6 +240,8 @@ fn push_digits(output: &mut String, digits: &[u8]) {
 /// Past-cap values take the scientific normal form, which the runtime validator's exact numeric
 /// comparisons decline, so documents carrying them as instance data must stay raw.
 #[cfg(feature = "arbitrary-precision")]
+#[doc(hidden)]
+#[inline]
 #[must_use]
 pub(crate) fn number_spelling_stays_plain(raw: &str) -> bool {
     let canonical = canonical_number(raw);
@@ -473,6 +475,8 @@ fn canonical_scientific_number(digits: &[u8], parts: &NumberParts<'_>) -> Option
     Some(output)
 }
 
+// `Number::from_f64` formats to shortest-roundtrip text before this runs, so the double nearest
+// `1e300` and exactly `1e300` collide here. The bindings convert native floats exactly and do not.
 fn serialize_number<S>(number: &Number, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -552,6 +556,37 @@ mod tests {
 
     use super::to_string;
 
+    #[test]
+    fn canonical_string_is_stable_for_equivalent_schemas() {
+        let left: Value =
+            serde_json::from_str(r#"{"b":1,"a":{"z":3,"x":1,"y":2},"c":[{"d":4,"b":2}]}"#).unwrap();
+        let right: Value =
+            serde_json::from_str(r#"{"c":[{"b":2,"d":4}],"a":{"y":2,"x":1,"z":3},"b":1}"#).unwrap();
+
+        assert_eq!(to_string(&left).unwrap(), to_string(&right).unwrap());
+    }
+
+    #[test_case("null"; "null")]
+    #[test_case("true"; "bool_true")]
+    #[test_case("false"; "bool_false")]
+    #[test_case(r#""hello""#; "simple")]
+    #[test_case(r#""line\nbreak""#; "escaped_newline")]
+    fn scalar_literals_roundtrip(raw: &str) {
+        let value: Value = serde_json::from_str(raw).unwrap();
+        assert_eq!(to_string(&value).unwrap(), raw);
+    }
+
+    #[test]
+    fn canonical_output_is_idempotent() {
+        let value: Value =
+            serde_json::from_str(r#"{"z":{"b":1,"a":2},"a":[3,2,1],"f":1.0,"v":1.5}"#).unwrap();
+
+        let first = to_string(&value).unwrap();
+        let parsed: Value = serde_json::from_str(&first).unwrap();
+
+        assert_eq!(to_string(&parsed).unwrap(), first);
+    }
+
     fn nest_arrays(depth: usize) -> Value {
         let mut value = Value::Null;
         for _ in 0..depth {
@@ -606,6 +641,23 @@ mod tests {
         );
     }
 
+    #[test]
+    fn large_integer_valued_float_uses_integer_form() {
+        let value: Value = serde_json::from_str("1e300").unwrap();
+
+        #[cfg(feature = "arbitrary-precision")]
+        let expected = {
+            let mut output = String::with_capacity(301);
+            output.push('1');
+            output.push_str(&"0".repeat(300));
+            output
+        };
+        #[cfg(not(feature = "arbitrary-precision"))]
+        let expected = format!("{:.0}", 1e300_f64);
+
+        assert_eq!(to_string(&value).unwrap(), expected);
+    }
+
     #[cfg(feature = "arbitrary-precision")]
     fn canonical(raw: &str) -> String {
         to_string(&serde_json::from_str::<Value>(raw).unwrap()).unwrap()
@@ -638,6 +690,8 @@ mod tests {
     #[test_case("-5e-1", "-0.5" ; "negative fraction")]
     #[test_case("0e+10", "0" ; "zero with positive exponent")]
     #[test_case("-0E-1000", "0" ; "negative zero with huge negative exponent")]
+    // No exponent, already canonical, non-zero trailing digit: takes the zero-copy borrow path.
+    #[test_case("1.25", "1.25" ; "fractional decimal")]
     fn plain_decimal_normal_form(raw: &str, expected: &str) {
         assert_eq!(canonical(raw), expected);
     }

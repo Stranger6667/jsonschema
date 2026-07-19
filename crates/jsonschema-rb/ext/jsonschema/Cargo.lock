@@ -687,9 +687,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.47.0"
+version = "0.48.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "281c43ff06dcb331e9356d30e38853d559ce3d0a3f693e0b0e102667dec14fb1"
+checksum = "9baf521a926fd1e6f94af6922be9686b61c8a89a5fb7e14d6a1e21b79738d4cc"
 dependencies = [
  "ahash",
  "bytecount",
@@ -718,9 +718,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema-macros"
-version = "0.47.0"
+version = "0.48.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33814349f9eb1e2f5814207c40d92413098d4d57d0fb5b5972b1c47d63a79137"
+checksum = "11efb171797c352f167fd4f3754b3a5e969d814222e457e63136cffca111b014"
 dependencies = [
  "jsonschema-macros-core",
  "proc-macro2",
@@ -728,9 +728,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema-macros-core"
-version = "0.47.0"
+version = "0.48.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7bc971df1f0042bff8020f1db975da867b56e11c519821e6e573f489dd909a94"
+checksum = "a3ce6144063dbeca5c841049bc0958d2eaf7d0a20d600be0907c29a2d1a6267a"
 dependencies = [
  "fancy-regex",
  "indexmap",
@@ -747,7 +747,7 @@ dependencies = [
 
 [[package]]
 name = "jsonschema-rb-ext"
-version = "0.47.0"
+version = "0.48.1"
 dependencies = [
  "jsonschema",
  "magnus",
@@ -755,13 +755,14 @@ dependencies = [
  "referencing",
  "serde",
  "serde_json",
+ "zmij",
 ]
 
 [[package]]
 name = "jsonschema-regex"
-version = "0.47.0"
+version = "0.48.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee0b351864e7ffbc5db9273daf7fa1b4d5177b0946713d667ca571b83c0b4045"
+checksum = "d668f4775619127513d9a4f190704d20a66d20ccf0efc258f8ed42548e5fd7cd"
 dependencies = [
  "regex-syntax",
 ]
@@ -1106,9 +1107,9 @@ dependencies = [
 
 [[package]]
 name = "referencing"
-version = "0.47.0"
+version = "0.48.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "348e860aeb0b7bd035778fd11dd9cd5290d32e4aed3b8f2274a00287a9fd362b"
+checksum = "df843f41f0cb459649f64a8b6b10579cf454f7a7420dc702767c81a26f23d780"
 dependencies = [
  "ahash",
  "fluent-uri",

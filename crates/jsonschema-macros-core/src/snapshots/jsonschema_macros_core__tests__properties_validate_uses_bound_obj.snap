@@ -4,7 +4,7 @@ description: "{\"additionalProperties\":false,\"properties\":{\"a\":{\"type\":\"
 expression: validate_body(schema)
 ---
 match instance {
-            serde_json::Value::Object(obj) => {
+            __Value::Object(obj) => {
                 for (key, value) in obj.iter() {
                     let key_str = key.as_str();
                     match key_str {
@@ -13,18 +13,18 @@ match instance {
                             let __path = &__path.push("a");
                             if !(instance.is_string()) {
                                 return Some(
-                                    jsonschema::__private::error::single_type(
+                                    __err::single_type(
                                         "/properties/a/type",
                                         __path.into(),
                                         instance,
-                                        jsonschema::JsonType::String,
+                                        __JT::String,
                                     ),
                                 );
                             }
                         }
                         _ => {
                             return Some(
-                                jsonschema::__private::error::additional_properties(
+                                __err::additional_properties(
                                     "/additionalProperties",
                                     __path.into(),
                                     instance,
@@ -36,23 +36,13 @@ match instance {
                 }
                 if !(obj.contains_key("a")) {
                     return Some(
-                        jsonschema::__private::error::required(
-                            "/required",
-                            __path.into(),
-                            instance,
-                            "a",
-                        ),
+                        __err::required("/required", __path.into(), instance, "a"),
                     );
                 }
             }
             _ => {
                 return Some(
-                    jsonschema::__private::error::single_type(
-                        "/type",
-                        __path.into(),
-                        instance,
-                        jsonschema::JsonType::Object,
-                    ),
+                    __err::single_type("/type", __path.into(), instance, __JT::Object),
                 );
             }
         }

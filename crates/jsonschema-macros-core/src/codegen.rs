@@ -131,7 +131,7 @@ pub(crate) fn compile_schema(ctx: &mut CompileContext<'_>, schema: &Value) -> Co
             CompiledExpr::with_validate_blocks(
                 quote! { false },
                 quote! {
-                    return Some(jsonschema::__private::error::false_schema(
+                    return Some(__err::false_schema(
                         #schema_path, __path.into(), instance,
                     ));
                 },

@@ -38,10 +38,10 @@ impl super::NormalizeStage for ObjectStage {
 
     fn rewrite(recursed: SharedSchema, _ctx: &CanonicalizationContext) -> SharedSchema {
         fn latest<'a>(
-            rewritten: &'a Option<ObjectLeaf>,
+            rewritten: Option<&'a ObjectLeaf>,
             original: &'a ObjectLeaf,
         ) -> &'a ObjectLeaf {
-            rewritten.as_ref().unwrap_or(original)
+            rewritten.unwrap_or(original)
         }
         fn finish(rewritten: Option<ObjectLeaf>, recursed: SharedSchema) -> SharedSchema {
             match rewritten {
@@ -62,11 +62,11 @@ impl super::NormalizeStage for ObjectStage {
         ];
         let mut rewritten: Option<ObjectLeaf> = None;
         for step in steps {
-            if let Some(next) = step(latest(&rewritten, original)) {
+            if let Some(next) = step(latest(rewritten.as_ref(), original)) {
                 rewritten = Some(next);
             }
         }
-        let leaf = latest(&rewritten, original);
+        let leaf = latest(rewritten.as_ref(), original);
         if !additional_properties_is_false(leaf) {
             // `Exact(name) -> True` only matters when a catch-all would treat the name differently for being listed; else drop.
             let trimmed = if has_additional_catch_all(leaf) {

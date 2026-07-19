@@ -8,11 +8,26 @@
 
 ### Changed
 
-- One canonical number spelling from `canonical.json.to_string` (`Decimal("1.50")` serializes as `"1.5"`, integral values past 2^20 digits scientifically).
+- One canonical number spelling from `canonical.json.to_string` (integral values past 2^20 digits scientifically).
+
+### Fixed
+
+- `canonical.json.to_string` incorrectly keeping the input spelling of fractional `Decimal` values (e.g. `Decimal("1.50")` and `Decimal("1.5")` producing different strings).
+- `canonical.json.to_string` incorrectly emitting exponent form for small floats (e.g. `1e-7` instead of `0.0000001`).
+
+## [0.48.1] - 2026-07-17
+
+### Fixed
+
+- Missing `required` errors in `evaluate()` output for schemas with `properties` and a two-entry `required` array. [#1220](https://github.com/Stranger6667/jsonschema/issues/1220)
+- `contentEncoding` errors for invalid UTF-8 after decoding incorrectly had empty `instance_path` and `schema_path`.
+
+## [0.48.0] - 2026-07-16
 
 ### Fixed
 
 - `meta.is_valid` and `meta.validate` incorrectly accepted some Draft 2019-09 schemas that the meta-schema rejects.
+- Integers just outside the `i64`/`u64` range incorrectly compared against numeric bounds through lossy `f64` rounding (e.g. `{"minimum": -9223372036854775808}` accepted `-9223372036854775809`).
 
 ### Performance
 
@@ -1098,7 +1113,9 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.47.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.48.1...HEAD
+[0.48.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.48.0...python-v0.48.1
+[0.48.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.47.0...python-v0.48.0
 [0.47.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.10...python-v0.47.0
 [0.46.10]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.9...python-v0.46.10
 [0.46.9]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.8...python-v0.46.9

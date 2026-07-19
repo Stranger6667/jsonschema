@@ -31,10 +31,12 @@ use crate::{
 mod bound_cardinality;
 mod bound_fraction;
 mod bound_integer;
+mod raw;
 
 pub(crate) use bound_cardinality::BoundCardinality;
 pub(crate) use bound_fraction::BoundFraction;
 pub(crate) use bound_integer::BoundInteger;
+pub(crate) use raw::RawJson;
 
 /// A closed/open interval shared by integer and number leaves; `T` is the bound carrier
 /// (`BoundInteger` or `BoundFraction`). `None` on a side means unbounded there.
@@ -376,7 +378,7 @@ pub(crate) enum Schema {
     DynamicRef(Arc<str>),
     /// A schema object whose validation semantics are preserved verbatim because they depend on draft features the
     /// structural IR does not model.
-    Raw(Arc<str>),
+    Raw(RawJson),
 }
 
 /// Reference-counted handle to an interned [`SchemaNode`].

@@ -12,7 +12,7 @@ use serde_json::Value;
 use crate::{
     canonical::{
         context::compile_with,
-        document::{canonical_registry_builder, exceeds_depth_limit, root_base_uri},
+        document::{canonical_registry_builder, root_base_uri},
         error::CanonicalizationError,
         ir::{
             ArrayLeaf, ObjectConstraint, ObjectLeaf, ObjectRequirement, OneOf, PropertyNameMatcher,
@@ -169,12 +169,8 @@ fn visit_node<'r>(
     queue_nested_referenceable_nodes(schema, &resolver, draft, stack);
 }
 
-/// Queue an edge target as an unguarded visit. A target past the depth cap is raw-preserved by parse, so its
-/// cycles are moot; skip it.
+/// Queue an edge target as an unguarded visit.
 fn queue_edge<'r>(edge: ReferenceEdge<'r>, stack: &mut Vec<WorkItem<'r>>) {
-    if exceeds_depth_limit(edge.target_schema) {
-        return;
-    }
     stack.push(WorkItem {
         name: edge.target_name,
         schema: edge.target_schema,
