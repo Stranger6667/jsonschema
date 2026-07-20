@@ -116,7 +116,10 @@ if jsonschema_rs is not None:
     )
     @pytest.mark.benchmark(group="create schema")
     def test_create_schema(benchmark, func, name):
-        benchmark.group = f"{name}: {benchmark.group}"
+        # `benchmark.group` exists only under pytest-benchmark; the CodSpeed
+        # fixture groups by test id, so skip the rename there.
+        if hasattr(benchmark, "group"):
+            benchmark.group = f"{name}: {benchmark.group}"
         schema = load_from_benches(name, loader=load_json_str)
         benchmark(func, schema)
 
