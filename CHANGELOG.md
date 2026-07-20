@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.48.2] - 2026-07-21
+
 ### Performance
 
 - Faster validator compilation by pre-sizing internal caches.
@@ -1373,7 +1375,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.2...HEAD
+[0.48.2]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.1...rust-v0.48.2
 [0.48.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.0...rust-v0.48.1
 [0.48.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.47.0...rust-v0.48.0
 [0.47.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.46.10...rust-v0.47.0
