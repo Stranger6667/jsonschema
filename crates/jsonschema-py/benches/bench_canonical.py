@@ -45,12 +45,6 @@ def deepclone(value):
     return value
 
 
-BENCHMARK_CONFIG = {
-    "min_rounds": 20,
-    "warmup": True,
-}
-
-
 # Reversed insertion order keeps the input intentionally non-canonical
 # and exercises key collection + sorting in canonical.json.to_string.
 LARGE_DICT_1024 = {f"key-{i:04d}": i for i in range(1023, -1, -1)}
@@ -156,42 +150,42 @@ LARGE_SCHEMA = {
 }
 
 
-@pytest.mark.benchmark(group="canonical-json-dict-sort", **BENCHMARK_CONFIG)
+@pytest.mark.benchmark(group="canonical-json-dict-sort")
 def test_canonical_json_large_dict_1024(benchmark):
     benchmark(to_string, LARGE_DICT_1024)
 
 
-@pytest.mark.benchmark(group="canonical-json-enum-keys", **BENCHMARK_CONFIG)
+@pytest.mark.benchmark(group="canonical-json-enum-keys")
 def test_canonical_json_enum_key_dict_512(benchmark):
     benchmark(to_string, ENUM_KEY_DICT_512)
 
 
-@pytest.mark.benchmark(group="canonical-json-int-floats", **BENCHMARK_CONFIG)
+@pytest.mark.benchmark(group="canonical-json-int-floats")
 def test_canonical_json_int_float_list_4096(benchmark):
     benchmark(to_string, INT_FLOAT_LIST_4096)
 
 
-@pytest.mark.benchmark(group="canonical-json-fractional-floats", **BENCHMARK_CONFIG)
+@pytest.mark.benchmark(group="canonical-json-fractional-floats")
 def test_canonical_json_fractional_float_list_2048(benchmark):
     benchmark(to_string, FRACTIONAL_FLOAT_LIST_2048)
 
 
-@pytest.mark.benchmark(group="canonical-json-small-floats", **BENCHMARK_CONFIG)
+@pytest.mark.benchmark(group="canonical-json-small-floats")
 def test_canonical_json_small_float_list_2048(benchmark):
     benchmark(to_string, SMALL_FLOAT_LIST_2048)
 
 
-@pytest.mark.benchmark(group="canonical-json-decimal-fractional", **BENCHMARK_CONFIG)
+@pytest.mark.benchmark(group="canonical-json-decimal-fractional")
 def test_canonical_json_decimal_fractional_list_2048(benchmark):
     benchmark(to_string, DECIMAL_FRACTIONAL_LIST_2048)
 
 
-@pytest.mark.benchmark(group="canonical-json-decimal-special", **BENCHMARK_CONFIG)
+@pytest.mark.benchmark(group="canonical-json-decimal-special")
 def test_canonical_json_decimal_special_list_2048(benchmark):
     benchmark(to_string, DECIMAL_SPECIAL_LIST_2048)
 
 
-@pytest.mark.benchmark(group="canonical-json-mixed-nested", **BENCHMARK_CONFIG)
+@pytest.mark.benchmark(group="canonical-json-mixed-nested")
 def test_canonical_json_mixed_nested(benchmark):
     benchmark(to_string, MIXED_NESTED)
 
@@ -204,18 +198,18 @@ _CLONE_IMPLS = [
 
 
 @pytest.mark.parametrize("fn", _CLONE_IMPLS)
-@pytest.mark.benchmark(group="clone-small", **BENCHMARK_CONFIG)
+@pytest.mark.benchmark(group="clone-small")
 def test_clone_small(benchmark, fn):
     benchmark(fn, SMALL_SCHEMA)
 
 
 @pytest.mark.parametrize("fn", _CLONE_IMPLS)
-@pytest.mark.benchmark(group="clone-medium", **BENCHMARK_CONFIG)
+@pytest.mark.benchmark(group="clone-medium")
 def test_clone_medium(benchmark, fn):
     benchmark(fn, MEDIUM_SCHEMA)
 
 
 @pytest.mark.parametrize("fn", _CLONE_IMPLS)
-@pytest.mark.benchmark(group="clone-large", **BENCHMARK_CONFIG)
+@pytest.mark.benchmark(group="clone-large")
 def test_clone_large(benchmark, fn):
     benchmark(fn, LARGE_SCHEMA)
