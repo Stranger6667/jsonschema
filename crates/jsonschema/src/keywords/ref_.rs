@@ -1,19 +1,21 @@
+use std::borrow::Cow;
+
 use crate::{
     compiler,
     error::ErrorIterator,
-    keywords::CompilationResult,
+    keywords::{BoxedValidator, CompilationResult},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
-    ValidationError,
+    Json, ValidationError,
 };
 use serde_json::{Map, Value};
 
-/// Tracks `$ref` traversals for recursive references where the target is behind `Box<dyn Validate>`
+/// Tracks `$ref` traversals for recursive references where the target is behind `BoxedValidator`
 /// (either a `PendingSchemaNode` or a cached node returned by `lookup_maybe_recursive`).
-struct RefValidator {
-    inner: Box<dyn Validate>,
+struct RefValidator<F: Json> {
+    inner: BoxedValidator<F>,
     /// Path of this `$ref` keyword relative to its resource base.
     /// E.g., `/properties/foo/$ref` (not the full canonical path).
     /// Used for building the `tracker` prefix.
@@ -24,14 +26,14 @@ struct RefValidator {
     ref_target_base: Location,
 }
 
-impl Validate for RefValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+impl<F: Json> Validate<F> for RefValidator<F> {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         self.inner.is_valid(instance, ctx)
     }
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -43,7 +45,7 @@ impl Validate for RefValidator {
 
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -55,7 +57,7 @@ impl Validate for RefValidator {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -74,23 +76,23 @@ impl Validate for RefValidator {
     }
 }
 
-/// Like `RefValidator` but holds a concrete `SchemaNode` instead of `Box<dyn Validate>`,
+/// Like `RefValidator` but holds a concrete `SchemaNode` instead of `BoxedValidator`,
 /// eliminating one layer of vtable dispatch on every validation call.
 /// Used for non-recursive refs where the target is fully resolved at compile time.
-struct DirectRefValidator {
-    inner: SchemaNode,
+struct DirectRefValidator<F: Json> {
+    inner: SchemaNode<F>,
     ref_suffix: Location,
     ref_target_base: Location,
 }
 
-impl Validate for DirectRefValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+impl<F: Json> Validate<F> for DirectRefValidator<F> {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         self.inner.is_valid(instance, ctx)
     }
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -102,7 +104,7 @@ impl Validate for DirectRefValidator {
 
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -114,7 +116,7 @@ impl Validate for DirectRefValidator {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -253,8 +255,9 @@ fn compile_recursive_validator<'a>(
     );
     compiler::compile_with_alias(&inner_ctx, resource_ref, alias)
         .map(|node| {
+            let inner: BoxedValidator = Box::new(node);
             Box::new(RefValidator {
-                inner: Box::new(node),
+                inner,
                 ref_suffix,
                 ref_target_base,
             }) as Box<dyn Validate>
@@ -272,7 +275,7 @@ fn invalid_reference<'a>(
         location.clone(),
         location.clone(),
         location,
-        schema,
+        Cow::Borrowed(schema),
         JsonType::String,
     )
 }

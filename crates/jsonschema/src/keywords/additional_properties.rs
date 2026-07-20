@@ -22,11 +22,12 @@ use crate::{
     regex::RegexEngine,
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
+    Json, JsonNode, JsonObjectAccess, SerdeJson,
 };
 use ahash::AHashMap;
 use referencing::Uri;
 use serde_json::{Map, Value};
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 /// # Schema example
 ///
@@ -43,8 +44,8 @@ use std::sync::Arc;
 ///     "bar": 6
 /// }
 /// ```
-pub(crate) struct AdditionalPropertiesValidator {
-    node: SchemaNode,
+pub(crate) struct AdditionalPropertiesValidator<F: Json = SerdeJson> {
+    node: SchemaNode<F>,
 }
 impl AdditionalPropertiesValidator {
     #[inline]
@@ -55,10 +56,12 @@ impl AdditionalPropertiesValidator {
         }))
     }
 }
-impl Validate for AdditionalPropertiesValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if let Value::Object(item) = instance {
-            item.values().all(|i| self.node.is_valid(i, ctx))
+impl<F: Json> Validate<F> for AdditionalPropertiesValidator<F> {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
+        if let Some(object) = instance.as_object() {
+            object
+                .members()
+                .all(|(_, value)| self.node.is_valid(&value, ctx))
         } else {
             true
         }
@@ -66,15 +69,15 @@ impl Validate for AdditionalPropertiesValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Object(item) = instance {
-            for (name, value) in item {
+        if let Some(object) = instance.as_object() {
+            for (name, value) in object.members() {
                 self.node
-                    .validate(value, &location.push(name), tracker, ctx)?;
+                    .validate(&value, &location.push(name.as_ref()), tracker, ctx)?;
             }
         }
         Ok(())
@@ -82,17 +85,17 @@ impl Validate for AdditionalPropertiesValidator {
 
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if let Value::Object(item) = instance {
+        if let Some(object) = instance.as_object() {
             let mut errors = Vec::new();
-            for (name, value) in item {
+            for (name, value) in object.members() {
                 errors.extend(self.node.iter_errors(
-                    value,
-                    &location.push(name.as_str()),
+                    &value,
+                    &location.push(name.as_ref()),
                     tracker,
                     ctx,
                 ));
@@ -105,26 +108,25 @@ impl Validate for AdditionalPropertiesValidator {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        if let Value::Object(item) = instance {
-            let mut children = Vec::with_capacity(item.len());
-            for (name, value) in item {
+        if let Some(object) = instance.as_object() {
+            let mut children = Vec::with_capacity(object.len());
+            for (name, value) in object.members() {
                 children.push(self.node.evaluate_instance(
-                    value,
-                    &location.push(name.as_str()),
+                    &value,
+                    &location.push(name.as_ref()),
                     tracker,
                     ctx,
                 ));
             }
             let mut result = EvaluationResult::from_children(children);
-            let annotated_props = item
-                .keys()
-                .cloned()
-                .map(serde_json::Value::String)
+            let annotated_props = object
+                .members()
+                .map(|(name, _)| serde_json::Value::String(name.as_ref().to_owned()))
                 .collect();
             result.annotate(Annotations::new(serde_json::Value::Array(annotated_props)));
             result
@@ -156,10 +158,10 @@ impl AdditionalPropertiesFalseValidator {
         Ok(Box::new(AdditionalPropertiesFalseValidator { location }))
     }
 }
-impl Validate for AdditionalPropertiesFalseValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-        if let Value::Object(item) = instance {
-            item.iter().next().is_none()
+impl<F: Json> Validate<F> for AdditionalPropertiesFalseValidator {
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        if let Some(object) = instance.as_object() {
+            object.members().next().is_none()
         } else {
             true
         }
@@ -167,18 +169,18 @@ impl Validate for AdditionalPropertiesFalseValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Object(item) = instance {
-            if let Some((_, value)) = item.iter().next() {
+        if let Some(object) = instance.as_object() {
+            if let Some((_, value)) = object.members().next() {
                 return Err(ValidationError::false_schema(
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    value,
+                    value.to_value(),
                 ));
             }
         }
@@ -204,7 +206,7 @@ impl Validate for AdditionalPropertiesFalseValidator {
 ///     "foo": "bar",
 /// }
 /// ```
-pub(crate) struct AdditionalPropertiesNotEmptyFalseValidator<M: PropertiesValidatorsMap> {
+pub(crate) struct AdditionalPropertiesNotEmptyFalseValidator<M> {
     properties: M,
     location: Location,
 }
@@ -232,10 +234,12 @@ impl AdditionalPropertiesNotEmptyFalseValidator<BigValidatorsMap> {
         }))
     }
 }
-impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseValidator<M> {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if let Value::Object(props) = instance {
-            are_properties_valid(&self.properties, props, ctx, |_, _| false)
+impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
+    for AdditionalPropertiesNotEmptyFalseValidator<M>
+{
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
+        if let Some(object) = instance.as_object() {
+            are_properties_valid(&self.properties, &object, ctx, |_, _| false)
         } else {
             true
         }
@@ -243,22 +247,22 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Object(item) = instance {
-            for (property, value) in item {
-                if let Some((name, node)) = self.properties.get_key_validator(property) {
-                    node.validate(value, &location.push(name), tracker, ctx)?;
+        if let Some(object) = instance.as_object() {
+            for (property, value) in object.members() {
+                if let Some((name, node)) = self.properties.get_key_validator(property.as_ref()) {
+                    node.validate(&value, &location.push(name), tracker, ctx)?;
                 } else {
                     return Err(ValidationError::additional_properties(
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         location.into(),
-                        instance,
-                        vec![property.clone()],
+                        instance.to_value(),
+                        vec![property.as_ref().to_owned()],
                     ));
                 }
             }
@@ -268,24 +272,19 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
 
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if let Value::Object(item) = instance {
+        if let Some(object) = instance.as_object() {
             let mut errors = vec![];
             let mut unexpected = vec![];
-            for (property, value) in item {
-                if let Some((name, node)) = self.properties.get_key_validator(property) {
-                    errors.extend(node.iter_errors(
-                        value,
-                        &location.push(name.as_str()),
-                        tracker,
-                        ctx,
-                    ));
+            for (property, value) in object.members() {
+                if let Some((name, node)) = self.properties.get_key_validator(property.as_ref()) {
+                    errors.extend(node.iter_errors(&value, &location.push(name), tracker, ctx));
                 } else {
-                    unexpected.push(property.clone());
+                    unexpected.push(property.as_ref().to_owned());
                 }
             }
             if !unexpected.is_empty() {
@@ -293,7 +292,7 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance,
+                    instance.to_value(),
                     unexpected,
                 ));
             }
@@ -305,24 +304,24 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        if let Value::Object(item) = instance {
-            let mut unexpected = Vec::with_capacity(item.len());
-            let mut children = Vec::with_capacity(item.len());
-            for (property, value) in item {
-                if let Some((_name, node)) = self.properties.get_key_validator(property) {
+        if let Some(object) = instance.as_object() {
+            let mut unexpected = Vec::with_capacity(object.len());
+            let mut children = Vec::with_capacity(object.len());
+            for (property, value) in object.members() {
+                if let Some((_name, node)) = self.properties.get_key_validator(property.as_ref()) {
                     children.push(node.evaluate_instance(
-                        value,
-                        &location.push(property.as_str()),
+                        &value,
+                        &location.push(property.as_ref()),
                         tracker,
                         ctx,
                     ));
                 } else {
-                    unexpected.push(property.clone());
+                    unexpected.push(property.as_ref().to_owned());
                 }
             }
             let mut result = EvaluationResult::from_children(children);
@@ -333,7 +332,7 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
                         self.location.clone(),
                         eval_path,
                         location.into(),
-                        instance,
+                        instance.to_value(),
                         unexpected,
                     ),
                 ));
@@ -347,9 +346,7 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyFalseV
 
 /// Fused validator for properties + additionalProperties: false + required
 /// Eliminates separate required validation pass by tracking the required property during iteration.
-pub(crate) struct AdditionalPropertiesNotEmptyFalseWithRequired1Validator<
-    M: PropertiesValidatorsMap,
-> {
+pub(crate) struct AdditionalPropertiesNotEmptyFalseWithRequired1Validator<M> {
     properties: M,
     required: String,
     location: Location,
@@ -389,21 +386,21 @@ impl AdditionalPropertiesNotEmptyFalseWithRequired1Validator<BigValidatorsMap> {
         ))
     }
 }
-impl<M: PropertiesValidatorsMap> Validate
+impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
     for AdditionalPropertiesNotEmptyFalseWithRequired1Validator<M>
 {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if let Value::Object(props) = instance {
-            if props.is_empty() {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
+        if let Some(object) = instance.as_object() {
+            if object.is_empty() {
                 return false;
             }
             let mut found_required = false;
-            for (property, value) in props {
-                if let Some(node) = self.properties.get_validator(property) {
-                    if !node.is_valid(value, ctx) {
+            for (property, value) in object.members() {
+                if let Some(node) = self.properties.get_validator(property.as_ref()) {
+                    if !node.is_valid(&value, ctx) {
                         return false;
                     }
-                    if property == &self.required {
+                    if property.as_ref() == self.required.as_str() {
                         found_required = true;
                     }
                 } else {
@@ -418,17 +415,17 @@ impl<M: PropertiesValidatorsMap> Validate
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Object(item) = instance {
+        if let Some(object) = instance.as_object() {
             let mut found_required = false;
-            for (property, value) in item {
-                if let Some((name, node)) = self.properties.get_key_validator(property) {
-                    node.validate(value, &location.push(name), tracker, ctx)?;
-                    if property == &self.required {
+            for (property, value) in object.members() {
+                if let Some((name, node)) = self.properties.get_key_validator(property.as_ref()) {
+                    node.validate(&value, &location.push(name), tracker, ctx)?;
+                    if property.as_ref() == self.required.as_str() {
                         found_required = true;
                     }
                 } else {
@@ -436,8 +433,8 @@ impl<M: PropertiesValidatorsMap> Validate
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         location.into(),
-                        instance,
-                        vec![property.clone()],
+                        instance.to_value(),
+                        vec![property.as_ref().to_owned()],
                     ));
                 }
             }
@@ -446,7 +443,7 @@ impl<M: PropertiesValidatorsMap> Validate
                     self.required_location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.required_location),
                     location.into(),
-                    instance,
+                    instance.to_value(),
                     Value::String(self.required.clone()),
                 ));
             }
@@ -456,28 +453,23 @@ impl<M: PropertiesValidatorsMap> Validate
 
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if let Value::Object(item) = instance {
+        if let Some(object) = instance.as_object() {
             let mut errors = vec![];
             let mut unexpected = vec![];
             let mut found_required = false;
-            for (property, value) in item {
-                if let Some((name, node)) = self.properties.get_key_validator(property) {
-                    errors.extend(node.iter_errors(
-                        value,
-                        &location.push(name.as_str()),
-                        tracker,
-                        ctx,
-                    ));
-                    if property == &self.required {
+            for (property, value) in object.members() {
+                if let Some((name, node)) = self.properties.get_key_validator(property.as_ref()) {
+                    errors.extend(node.iter_errors(&value, &location.push(name), tracker, ctx));
+                    if property.as_ref() == self.required.as_str() {
                         found_required = true;
                     }
                 } else {
-                    unexpected.push(property.clone());
+                    unexpected.push(property.as_ref().to_owned());
                 }
             }
             if !unexpected.is_empty() {
@@ -485,7 +477,7 @@ impl<M: PropertiesValidatorsMap> Validate
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance,
+                    instance.to_value(),
                     unexpected,
                 ));
             }
@@ -494,7 +486,7 @@ impl<M: PropertiesValidatorsMap> Validate
                     self.required_location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.required_location),
                     location.into(),
-                    instance,
+                    instance.to_value(),
                     Value::String(self.required.clone()),
                 ));
             }
@@ -506,28 +498,28 @@ impl<M: PropertiesValidatorsMap> Validate
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        if let Value::Object(item) = instance {
-            let mut unexpected = Vec::with_capacity(item.len());
-            let mut children = Vec::with_capacity(item.len());
+        if let Some(object) = instance.as_object() {
+            let mut unexpected = Vec::with_capacity(object.len());
+            let mut children = Vec::with_capacity(object.len());
             let mut found_required = false;
-            for (property, value) in item {
-                if let Some((_name, node)) = self.properties.get_key_validator(property) {
+            for (property, value) in object.members() {
+                if let Some((_name, node)) = self.properties.get_key_validator(property.as_ref()) {
                     children.push(node.evaluate_instance(
-                        value,
-                        &location.push(property.as_str()),
+                        &value,
+                        &location.push(property.as_ref()),
                         tracker,
                         ctx,
                     ));
-                    if property == &self.required {
+                    if property.as_ref() == self.required.as_str() {
                         found_required = true;
                     }
                 } else {
-                    unexpected.push(property.clone());
+                    unexpected.push(property.as_ref().to_owned());
                 }
             }
             let mut result = EvaluationResult::from_children(children);
@@ -538,7 +530,7 @@ impl<M: PropertiesValidatorsMap> Validate
                         self.location.clone(),
                         eval_path,
                         location.into(),
-                        instance,
+                        instance.to_value(),
                         unexpected,
                     ),
                 ));
@@ -551,7 +543,7 @@ impl<M: PropertiesValidatorsMap> Validate
                         self.required_location.clone(),
                         eval_path,
                         location.into(),
-                        instance,
+                        instance.to_value(),
                         Value::String(self.required.clone()),
                     ),
                 ));
@@ -582,8 +574,8 @@ impl<M: PropertiesValidatorsMap> Validate
 ///     "bar": 6
 /// }
 /// ```
-pub(crate) struct AdditionalPropertiesNotEmptyValidator<M: PropertiesValidatorsMap> {
-    node: SchemaNode,
+pub(crate) struct AdditionalPropertiesNotEmptyValidator<M, F: Json = SerdeJson> {
+    node: SchemaNode<F>,
     properties: M,
 }
 impl AdditionalPropertiesNotEmptyValidator<SmallValidatorsMap> {
@@ -614,10 +606,12 @@ impl AdditionalPropertiesNotEmptyValidator<BigValidatorsMap> {
         }))
     }
 }
-impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyValidator<M> {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if let Value::Object(props) = instance {
-            are_properties_valid(&self.properties, props, ctx, |instance, ctx| {
+impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
+    for AdditionalPropertiesNotEmptyValidator<M, F>
+{
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
+        if let Some(object) = instance.as_object() {
+            are_properties_valid(&self.properties, &object, ctx, |instance, ctx| {
                 self.node.is_valid(instance, ctx)
             })
         } else {
@@ -627,19 +621,19 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyValida
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Object(props) = instance {
-            for (property, value) in props {
-                let property_location = location.push(property);
-                if let Some(validator) = self.properties.get_validator(property) {
-                    validator.validate(value, &property_location, tracker, ctx)?;
+        if let Some(object) = instance.as_object() {
+            for (property, value) in object.members() {
+                let property_location = location.push(property.as_ref());
+                if let Some(validator) = self.properties.get_validator(property.as_ref()) {
+                    validator.validate(&value, &property_location, tracker, ctx)?;
                 } else {
                     self.node
-                        .validate(value, &property_location, tracker, ctx)?;
+                        .validate(&value, &property_location, tracker, ctx)?;
                 }
             }
         }
@@ -648,27 +642,27 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyValida
 
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if let Value::Object(map) = instance {
+        if let Some(object) = instance.as_object() {
             let mut errors = vec![];
-            for (property, value) in map {
+            for (property, value) in object.members() {
                 if let Some((name, property_validators)) =
-                    self.properties.get_key_validator(property)
+                    self.properties.get_key_validator(property.as_ref())
                 {
                     errors.extend(property_validators.iter_errors(
-                        value,
-                        &location.push(name.as_str()),
+                        &value,
+                        &location.push(name),
                         tracker,
                         ctx,
                     ));
                 } else {
                     errors.extend(self.node.iter_errors(
-                        value,
-                        &location.push(property.as_str()),
+                        &value,
+                        &location.push(property.as_ref()),
                         tracker,
                         ctx,
                     ));
@@ -682,24 +676,24 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyValida
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        if let Value::Object(map) = instance {
-            let mut matched_propnames = Vec::with_capacity(map.len());
-            let mut children = Vec::with_capacity(map.len());
-            for (property, value) in map {
-                let path = location.push(property.as_str());
+        if let Some(object) = instance.as_object() {
+            let mut matched_propnames = Vec::with_capacity(object.len());
+            let mut children = Vec::with_capacity(object.len());
+            for (property, value) in object.members() {
+                let path = location.push(property.as_ref());
                 if let Some((_name, property_validators)) =
-                    self.properties.get_key_validator(property)
+                    self.properties.get_key_validator(property.as_ref())
                 {
                     children
-                        .push(property_validators.evaluate_instance(value, &path, tracker, ctx));
+                        .push(property_validators.evaluate_instance(&value, &path, tracker, ctx));
                 } else {
-                    children.push(self.node.evaluate_instance(value, &path, tracker, ctx));
-                    matched_propnames.push(property.clone());
+                    children.push(self.node.evaluate_instance(&value, &path, tracker, ctx));
+                    matched_propnames.push(property.as_ref().to_owned());
                 }
             }
             let mut result = EvaluationResult::from_children(children);
@@ -734,9 +728,9 @@ impl<M: PropertiesValidatorsMap> Validate for AdditionalPropertiesNotEmptyValida
 ///     "bar": 8
 /// }
 /// ```
-pub(crate) struct AdditionalPropertiesWithPatternsValidator<R> {
-    node: SchemaNode,
-    patterns: Vec<(R, SchemaNode)>,
+pub(crate) struct AdditionalPropertiesWithPatternsValidator<R, F: Json = SerdeJson> {
+    node: SchemaNode<F>,
+    patterns: Vec<(R, SchemaNode<F>)>,
     /// We need this because `compiler::compile` uses the additionalProperties keyword to compile
     /// this validator. That means that the schema node which contains this validator has
     /// "additionalProperties" as it's path. However, we need to produce annotations which have the
@@ -745,20 +739,20 @@ pub(crate) struct AdditionalPropertiesWithPatternsValidator<R> {
     pattern_keyword_absolute_location: Option<Arc<Uri<String>>>,
 }
 
-impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsValidator<R> {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if let Value::Object(item) = instance {
-            for (property, value) in item {
+impl<F: Json, R: RegexEngine> Validate<F> for AdditionalPropertiesWithPatternsValidator<R, F> {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
+        if let Some(object) = instance.as_object() {
+            for (property, value) in object.members() {
                 let mut has_match = false;
                 for (re, node) in &self.patterns {
-                    if re.is_match(property).unwrap_or(false) {
+                    if re.is_match(property.as_ref()).unwrap_or(false) {
                         has_match = true;
-                        if !node.is_valid(value, ctx) {
+                        if !node.is_valid(&value, ctx) {
                             return false;
                         }
                     }
                 }
-                if !has_match && !self.node.is_valid(value, ctx) {
+                if !has_match && !self.node.is_valid(&value, ctx) {
                     return false;
                 }
             }
@@ -768,24 +762,24 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsValidator<R> {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Object(item) = instance {
-            for (property, value) in item {
-                let property_location = location.push(property);
+        if let Some(object) = instance.as_object() {
+            for (property, value) in object.members() {
+                let property_location = location.push(property.as_ref());
                 let mut has_match = false;
                 for (re, node) in &self.patterns {
-                    if re.is_match(property).unwrap_or(false) {
+                    if re.is_match(property.as_ref()).unwrap_or(false) {
                         has_match = true;
-                        node.validate(value, &property_location, tracker, ctx)?;
+                        node.validate(&value, &property_location, tracker, ctx)?;
                     }
                 }
                 if !has_match {
                     self.node
-                        .validate(value, &property_location, tracker, ctx)?;
+                        .validate(&value, &property_location, tracker, ctx)?;
                 }
             }
         }
@@ -794,21 +788,21 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsValidator<R> {
 
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if let Value::Object(item) = instance {
+        if let Some(object) = instance.as_object() {
             let mut errors = vec![];
-            for (property, value) in item {
+            for (property, value) in object.members() {
                 let mut has_match = false;
                 for (re, node) in &self.patterns {
-                    if re.is_match(property).unwrap_or(false) {
+                    if re.is_match(property.as_ref()).unwrap_or(false) {
                         has_match = true;
                         errors.extend(node.iter_errors(
-                            value,
-                            &location.push(property.as_str()),
+                            &value,
+                            &location.push(property.as_ref()),
                             tracker,
                             ctx,
                         ));
@@ -816,8 +810,8 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsValidator<R> {
                 }
                 if !has_match {
                     errors.extend(self.node.iter_errors(
-                        value,
-                        &location.push(property.as_str()),
+                        &value,
+                        &location.push(property.as_ref()),
                         tracker,
                         ctx,
                     ));
@@ -831,28 +825,28 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsValidator<R> {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        if let Value::Object(item) = instance {
-            let mut pattern_matched_propnames = Vec::with_capacity(item.len());
-            let mut additional_matched_propnames = Vec::with_capacity(item.len());
-            let mut children = Vec::with_capacity(item.len());
-            for (property, value) in item {
-                let path = location.push(property.as_str());
+        if let Some(object) = instance.as_object() {
+            let mut pattern_matched_propnames = Vec::with_capacity(object.len());
+            let mut additional_matched_propnames = Vec::with_capacity(object.len());
+            let mut children = Vec::with_capacity(object.len());
+            for (property, value) in object.members() {
+                let path = location.push(property.as_ref());
                 let mut has_match = false;
                 for (pattern, node) in &self.patterns {
-                    if pattern.is_match(property).unwrap_or(false) {
+                    if pattern.is_match(property.as_ref()).unwrap_or(false) {
                         has_match = true;
-                        pattern_matched_propnames.push(property.clone());
-                        children.push(node.evaluate_instance(value, &path, tracker, ctx));
+                        pattern_matched_propnames.push(property.as_ref().to_owned());
+                        children.push(node.evaluate_instance(&value, &path, tracker, ctx));
                     }
                 }
                 if !has_match {
-                    additional_matched_propnames.push(property.clone());
-                    children.push(self.node.evaluate_instance(value, &path, tracker, ctx));
+                    additional_matched_propnames.push(property.as_ref().to_owned());
+                    children.push(self.node.evaluate_instance(&value, &path, tracker, ctx));
                 }
             }
             if !pattern_matched_propnames.is_empty() {
@@ -902,22 +896,22 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsValidator<R> {
 ///     "x-baz-x": 8,
 /// }
 /// ```
-pub(crate) struct AdditionalPropertiesWithPatternsFalseValidator<R> {
-    patterns: Vec<(R, SchemaNode)>,
+pub(crate) struct AdditionalPropertiesWithPatternsFalseValidator<R, F: Json = SerdeJson> {
+    patterns: Vec<(R, SchemaNode<F>)>,
     location: Location,
     pattern_keyword_path: Location,
     pattern_keyword_absolute_location: Option<Arc<Uri<String>>>,
 }
 
-impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsFalseValidator<R> {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if let Value::Object(item) = instance {
-            for (property, value) in item {
+impl<F: Json, R: RegexEngine> Validate<F> for AdditionalPropertiesWithPatternsFalseValidator<R, F> {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
+        if let Some(object) = instance.as_object() {
+            for (property, value) in object.members() {
                 let mut has_match = false;
                 for (re, node) in &self.patterns {
-                    if re.is_match(property).unwrap_or(false) {
+                    if re.is_match(property.as_ref()).unwrap_or(false) {
                         has_match = true;
-                        if !node.is_valid(value, ctx) {
+                        if !node.is_valid(&value, ctx) {
                             return false;
                         }
                     }
@@ -932,19 +926,19 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsFalseValidator
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Object(item) = instance {
-            for (property, value) in item {
-                let property_location = location.push(property);
+        if let Some(object) = instance.as_object() {
+            for (property, value) in object.members() {
+                let property_location = location.push(property.as_ref());
                 let mut has_match = false;
                 for (re, node) in &self.patterns {
-                    if re.is_match(property).unwrap_or(false) {
+                    if re.is_match(property.as_ref()).unwrap_or(false) {
                         has_match = true;
-                        node.validate(value, &property_location, tracker, ctx)?;
+                        node.validate(&value, &property_location, tracker, ctx)?;
                     }
                 }
                 if !has_match {
@@ -952,8 +946,8 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsFalseValidator
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         location.into(),
-                        instance,
-                        vec![property.clone()],
+                        instance.to_value(),
+                        vec![property.as_ref().to_owned()],
                     ));
                 }
             }
@@ -963,29 +957,29 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsFalseValidator
 
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if let Value::Object(item) = instance {
+        if let Some(object) = instance.as_object() {
             let mut errors = vec![];
             let mut unexpected = vec![];
-            for (property, value) in item {
+            for (property, value) in object.members() {
                 let mut has_match = false;
                 for (re, node) in &self.patterns {
-                    if re.is_match(property).unwrap_or(false) {
+                    if re.is_match(property.as_ref()).unwrap_or(false) {
                         has_match = true;
                         errors.extend(node.iter_errors(
-                            value,
-                            &location.push(property.as_str()),
+                            &value,
+                            &location.push(property.as_ref()),
                             tracker,
                             ctx,
                         ));
                     }
                 }
                 if !has_match {
-                    unexpected.push(property.clone());
+                    unexpected.push(property.as_ref().to_owned());
                 }
             }
             if !unexpected.is_empty() {
@@ -993,7 +987,7 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsFalseValidator
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance,
+                    instance.to_value(),
                     unexpected,
                 ));
             }
@@ -1005,27 +999,27 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsFalseValidator
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        if let Value::Object(item) = instance {
-            let mut unexpected = Vec::with_capacity(item.len());
-            let mut pattern_matched_props = Vec::with_capacity(item.len());
-            let mut children = Vec::with_capacity(item.len());
-            for (property, value) in item {
-                let path = location.push(property.as_str());
+        if let Some(object) = instance.as_object() {
+            let mut unexpected = Vec::with_capacity(object.len());
+            let mut pattern_matched_props = Vec::with_capacity(object.len());
+            let mut children = Vec::with_capacity(object.len());
+            for (property, value) in object.members() {
+                let path = location.push(property.as_ref());
                 let mut has_match = false;
                 for (pattern, node) in &self.patterns {
-                    if pattern.is_match(property).unwrap_or(false) {
+                    if pattern.is_match(property.as_ref()).unwrap_or(false) {
                         has_match = true;
-                        pattern_matched_props.push(property.clone());
-                        children.push(node.evaluate_instance(value, &path, tracker, ctx));
+                        pattern_matched_props.push(property.as_ref().to_owned());
+                        children.push(node.evaluate_instance(&value, &path, tracker, ctx));
                     }
                 }
                 if !has_match {
-                    unexpected.push(property.clone());
+                    unexpected.push(property.as_ref().to_owned());
                 }
             }
             if !pattern_matched_props.is_empty() {
@@ -1051,7 +1045,7 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsFalseValidator
                         self.location.clone(),
                         eval_path,
                         location.into(),
-                        instance,
+                        instance.to_value(),
                         unexpected,
                     ),
                 ));
@@ -1089,30 +1083,32 @@ impl<R: RegexEngine> Validate for AdditionalPropertiesWithPatternsFalseValidator
 ///     "bar": 42
 /// }
 /// ```
-pub(crate) struct AdditionalPropertiesWithPatternsNotEmptyValidator<M: PropertiesValidatorsMap, R> {
-    node: SchemaNode,
+pub(crate) struct AdditionalPropertiesWithPatternsNotEmptyValidator<M, R, F: Json = SerdeJson> {
+    node: SchemaNode<F>,
     properties: M,
-    patterns: Vec<(R, SchemaNode)>,
+    patterns: Vec<(R, SchemaNode<F>)>,
     /// Pre-computed pattern indices for properties defined in `properties`.
     /// Maps property name -> indices into `patterns` Vec for patterns that match.
     /// Eliminates regex matching at validation time for known properties.
     property_pattern_indices: AHashMap<String, Box<[usize]>>,
 }
 
-impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
-    for AdditionalPropertiesWithPatternsNotEmptyValidator<M, R>
+impl<F: Json, M: PropertiesValidatorsMap<F>, R: RegexEngine> Validate<F>
+    for AdditionalPropertiesWithPatternsNotEmptyValidator<M, R, F>
 {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if let Value::Object(item) = instance {
-            for (property, value) in item {
-                if let Some(node) = self.properties.get_validator(property) {
-                    if !node.is_valid(value, ctx) {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
+        if let Some(object) = instance.as_object() {
+            for (property, value) in object.members() {
+                if let Some(node) = self.properties.get_validator(property.as_ref()) {
+                    if !node.is_valid(&value, ctx) {
                         return false;
                     }
                     // Use pre-computed pattern indices - no regex at runtime
-                    if let Some(pattern_indices) = self.property_pattern_indices.get(property) {
+                    if let Some(pattern_indices) =
+                        self.property_pattern_indices.get(property.as_ref())
+                    {
                         for &idx in pattern_indices {
-                            if !self.patterns[idx].1.is_valid(value, ctx) {
+                            if !self.patterns[idx].1.is_valid(&value, ctx) {
                                 return false;
                             }
                         }
@@ -1121,14 +1117,14 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
                     // Unknown property - need runtime regex matching
                     let mut has_match = false;
                     for (re, node) in &self.patterns {
-                        if re.is_match(property).unwrap_or(false) {
+                        if re.is_match(property.as_ref()).unwrap_or(false) {
                             has_match = true;
-                            if !node.is_valid(value, ctx) {
+                            if !node.is_valid(&value, ctx) {
                                 return false;
                             }
                         }
                     }
-                    if !has_match && !self.node.is_valid(value, ctx) {
+                    if !has_match && !self.node.is_valid(&value, ctx) {
                         return false;
                     }
                 }
@@ -1141,37 +1137,39 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Object(item) = instance {
-            for (property, value) in item {
-                if let Some((name, node)) = self.properties.get_key_validator(property) {
+        if let Some(object) = instance.as_object() {
+            for (property, value) in object.members() {
+                if let Some((name, node)) = self.properties.get_key_validator(property.as_ref()) {
                     let name_location = location.push(name);
-                    node.validate(value, &name_location, tracker, ctx)?;
+                    node.validate(&value, &name_location, tracker, ctx)?;
                     // Use pre-computed pattern indices - no regex at runtime
-                    if let Some(pattern_indices) = self.property_pattern_indices.get(property) {
+                    if let Some(pattern_indices) =
+                        self.property_pattern_indices.get(property.as_ref())
+                    {
                         for &idx in pattern_indices {
                             self.patterns[idx]
                                 .1
-                                .validate(value, &name_location, tracker, ctx)?;
+                                .validate(&value, &name_location, tracker, ctx)?;
                         }
                     }
                 } else {
                     // Unknown property - need runtime regex matching
-                    let property_location = location.push(property);
+                    let property_location = location.push(property.as_ref());
                     let mut has_match = false;
                     for (re, node) in &self.patterns {
-                        if re.is_match(property).unwrap_or(false) {
+                        if re.is_match(property.as_ref()).unwrap_or(false) {
                             has_match = true;
-                            node.validate(value, &property_location, tracker, ctx)?;
+                            node.validate(&value, &property_location, tracker, ctx)?;
                         }
                     }
                     if !has_match {
                         self.node
-                            .validate(value, &property_location, tracker, ctx)?;
+                            .validate(&value, &property_location, tracker, ctx)?;
                     }
                 }
             }
@@ -1181,22 +1179,24 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
 
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if let Value::Object(item) = instance {
+        if let Some(object) = instance.as_object() {
             let mut errors = vec![];
-            for (property, value) in item {
-                if let Some((name, node)) = self.properties.get_key_validator(property) {
-                    let name_location = location.push(name.as_str());
-                    errors.extend(node.iter_errors(value, &name_location, tracker, ctx));
+            for (property, value) in object.members() {
+                if let Some((name, node)) = self.properties.get_key_validator(property.as_ref()) {
+                    let name_location = location.push(name);
+                    errors.extend(node.iter_errors(&value, &name_location, tracker, ctx));
                     // Use pre-computed pattern indices - no regex at runtime
-                    if let Some(pattern_indices) = self.property_pattern_indices.get(property) {
+                    if let Some(pattern_indices) =
+                        self.property_pattern_indices.get(property.as_ref())
+                    {
                         for &idx in pattern_indices {
                             errors.extend(self.patterns[idx].1.iter_errors(
-                                value,
+                                &value,
                                 &name_location,
                                 tracker,
                                 ctx,
@@ -1207,11 +1207,11 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
                     // Unknown property - need runtime regex matching
                     let mut has_match = false;
                     for (re, node) in &self.patterns {
-                        if re.is_match(property).unwrap_or(false) {
+                        if re.is_match(property.as_ref()).unwrap_or(false) {
                             has_match = true;
                             errors.extend(node.iter_errors(
-                                value,
-                                &location.push(property.as_str()),
+                                &value,
+                                &location.push(property.as_ref()),
                                 tracker,
                                 ctx,
                             ));
@@ -1219,8 +1219,8 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
                     }
                     if !has_match {
                         errors.extend(self.node.iter_errors(
-                            value,
-                            &location.push(property.as_str()),
+                            &value,
+                            &location.push(property.as_ref()),
                             tracker,
                             ctx,
                         ));
@@ -1235,25 +1235,27 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        if let Value::Object(item) = instance {
-            let mut additional_matches = Vec::with_capacity(item.len());
-            let mut children = Vec::with_capacity(item.len());
-            for (property, value) in item {
-                let path = location.push(property.as_str());
-                if let Some((_name, node)) = self.properties.get_key_validator(property) {
-                    children.push(node.evaluate_instance(value, &path, tracker, ctx));
+        if let Some(object) = instance.as_object() {
+            let mut additional_matches = Vec::with_capacity(object.len());
+            let mut children = Vec::with_capacity(object.len());
+            for (property, value) in object.members() {
+                let path = location.push(property.as_ref());
+                if let Some((_name, node)) = self.properties.get_key_validator(property.as_ref()) {
+                    children.push(node.evaluate_instance(&value, &path, tracker, ctx));
                     // Use pre-computed pattern indices - no regex at runtime
-                    if let Some(pattern_indices) = self.property_pattern_indices.get(property) {
+                    if let Some(pattern_indices) =
+                        self.property_pattern_indices.get(property.as_ref())
+                    {
                         for &idx in pattern_indices {
                             children.push(
                                 self.patterns[idx]
                                     .1
-                                    .evaluate_instance(value, &path, tracker, ctx),
+                                    .evaluate_instance(&value, &path, tracker, ctx),
                             );
                         }
                     }
@@ -1261,14 +1263,14 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
                     // Unknown property - need runtime regex matching
                     let mut has_match = false;
                     for (pattern, node) in &self.patterns {
-                        if pattern.is_match(property).unwrap_or(false) {
+                        if pattern.is_match(property.as_ref()).unwrap_or(false) {
                             has_match = true;
-                            children.push(node.evaluate_instance(value, &path, tracker, ctx));
+                            children.push(node.evaluate_instance(&value, &path, tracker, ctx));
                         }
                     }
                     if !has_match {
-                        additional_matches.push(property.clone());
-                        children.push(self.node.evaluate_instance(value, &path, tracker, ctx));
+                        additional_matches.push(property.as_ref().to_owned());
+                        children.push(self.node.evaluate_instance(&value, &path, tracker, ctx));
                     }
                 }
             }
@@ -1306,12 +1308,10 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
 ///     "x-baz-x": 8,
 /// }
 /// ```
-pub(crate) struct AdditionalPropertiesWithPatternsNotEmptyFalseValidator<
-    M: PropertiesValidatorsMap,
-    R,
-> {
+pub(crate) struct AdditionalPropertiesWithPatternsNotEmptyFalseValidator<M, R, F: Json = SerdeJson>
+{
     properties: M,
-    patterns: Vec<(R, SchemaNode)>,
+    patterns: Vec<(R, SchemaNode<F>)>,
     /// Pre-computed pattern indices for properties defined in `properties`.
     /// Maps property name -> indices into `patterns` Vec for patterns that match.
     /// Eliminates regex matching at validation time for known properties.
@@ -1319,20 +1319,22 @@ pub(crate) struct AdditionalPropertiesWithPatternsNotEmptyFalseValidator<
     location: Location,
 }
 
-impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
-    for AdditionalPropertiesWithPatternsNotEmptyFalseValidator<M, R>
+impl<F: Json, M: PropertiesValidatorsMap<F>, R: RegexEngine> Validate<F>
+    for AdditionalPropertiesWithPatternsNotEmptyFalseValidator<M, R, F>
 {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if let Value::Object(item) = instance {
-            for (property, value) in item {
-                if let Some(node) = self.properties.get_validator(property) {
-                    if !node.is_valid(value, ctx) {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
+        if let Some(object) = instance.as_object() {
+            for (property, value) in object.members() {
+                if let Some(node) = self.properties.get_validator(property.as_ref()) {
+                    if !node.is_valid(&value, ctx) {
                         return false;
                     }
                     // Use pre-computed pattern indices - no regex at runtime for known properties
-                    if let Some(pattern_indices) = self.property_pattern_indices.get(property) {
+                    if let Some(pattern_indices) =
+                        self.property_pattern_indices.get(property.as_ref())
+                    {
                         for &idx in pattern_indices {
-                            if !self.patterns[idx].1.is_valid(value, ctx) {
+                            if !self.patterns[idx].1.is_valid(&value, ctx) {
                                 return false;
                             }
                         }
@@ -1341,9 +1343,9 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
                     // Unknown property - need runtime regex matching
                     let mut has_match = false;
                     for (re, node) in &self.patterns {
-                        if re.is_match(property).unwrap_or(false) {
+                        if re.is_match(property.as_ref()).unwrap_or(false) {
                             has_match = true;
-                            if !node.is_valid(value, ctx) {
+                            if !node.is_valid(&value, ctx) {
                                 return false;
                             }
                         }
@@ -1359,32 +1361,34 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Object(item) = instance {
-            for (property, value) in item {
-                if let Some((name, node)) = self.properties.get_key_validator(property) {
+        if let Some(object) = instance.as_object() {
+            for (property, value) in object.members() {
+                if let Some((name, node)) = self.properties.get_key_validator(property.as_ref()) {
                     let name_location = location.push(name);
-                    node.validate(value, &name_location, tracker, ctx)?;
+                    node.validate(&value, &name_location, tracker, ctx)?;
                     // Use pre-computed pattern indices - no regex at runtime
-                    if let Some(pattern_indices) = self.property_pattern_indices.get(property) {
+                    if let Some(pattern_indices) =
+                        self.property_pattern_indices.get(property.as_ref())
+                    {
                         for &idx in pattern_indices {
                             self.patterns[idx]
                                 .1
-                                .validate(value, &name_location, tracker, ctx)?;
+                                .validate(&value, &name_location, tracker, ctx)?;
                         }
                     }
                 } else {
                     // Unknown property - need runtime regex matching
-                    let property_location = location.push(property);
+                    let property_location = location.push(property.as_ref());
                     let mut has_match = false;
                     for (re, node) in &self.patterns {
-                        if re.is_match(property).unwrap_or(false) {
+                        if re.is_match(property.as_ref()).unwrap_or(false) {
                             has_match = true;
-                            node.validate(value, &property_location, tracker, ctx)?;
+                            node.validate(&value, &property_location, tracker, ctx)?;
                         }
                     }
                     if !has_match {
@@ -1392,8 +1396,8 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
                             self.location.clone(),
                             crate::paths::capture_evaluation_path(tracker, &self.location),
                             location.into(),
-                            instance,
-                            vec![property.clone()],
+                            instance.to_value(),
+                            vec![property.as_ref().to_owned()],
                         ));
                     }
                 }
@@ -1404,23 +1408,25 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
 
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if let Value::Object(item) = instance {
+        if let Some(object) = instance.as_object() {
             let mut errors = vec![];
             let mut unexpected = vec![];
-            for (property, value) in item {
-                if let Some((name, node)) = self.properties.get_key_validator(property) {
-                    let name_location = location.push(name.as_str());
-                    errors.extend(node.iter_errors(value, &name_location, tracker, ctx));
+            for (property, value) in object.members() {
+                if let Some((name, node)) = self.properties.get_key_validator(property.as_ref()) {
+                    let name_location = location.push(name);
+                    errors.extend(node.iter_errors(&value, &name_location, tracker, ctx));
                     // Use pre-computed pattern indices - no regex at runtime
-                    if let Some(pattern_indices) = self.property_pattern_indices.get(property) {
+                    if let Some(pattern_indices) =
+                        self.property_pattern_indices.get(property.as_ref())
+                    {
                         for &idx in pattern_indices {
                             errors.extend(self.patterns[idx].1.iter_errors(
-                                value,
+                                &value,
                                 &name_location,
                                 tracker,
                                 ctx,
@@ -1431,18 +1437,18 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
                     // Unknown property - need runtime regex matching
                     let mut has_match = false;
                     for (re, node) in &self.patterns {
-                        if re.is_match(property).unwrap_or(false) {
+                        if re.is_match(property.as_ref()).unwrap_or(false) {
                             has_match = true;
                             errors.extend(node.iter_errors(
-                                value,
-                                &location.push(property.as_str()),
+                                &value,
+                                &location.push(property.as_ref()),
                                 tracker,
                                 ctx,
                             ));
                         }
                     }
                     if !has_match {
-                        unexpected.push(property.clone());
+                        unexpected.push(property.as_ref().to_owned());
                     }
                 }
             }
@@ -1451,7 +1457,7 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance,
+                    instance.to_value(),
                     unexpected,
                 ));
             }
@@ -1463,25 +1469,27 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        if let Value::Object(item) = instance {
+        if let Some(object) = instance.as_object() {
             let mut unexpected = vec![];
-            let mut children = Vec::with_capacity(item.len());
-            for (property, value) in item {
-                let path = location.push(property.as_str());
-                if let Some((_name, node)) = self.properties.get_key_validator(property) {
-                    children.push(node.evaluate_instance(value, &path, tracker, ctx));
+            let mut children = Vec::with_capacity(object.len());
+            for (property, value) in object.members() {
+                let path = location.push(property.as_ref());
+                if let Some((_name, node)) = self.properties.get_key_validator(property.as_ref()) {
+                    children.push(node.evaluate_instance(&value, &path, tracker, ctx));
                     // Use pre-computed pattern indices - no regex at runtime
-                    if let Some(pattern_indices) = self.property_pattern_indices.get(property) {
+                    if let Some(pattern_indices) =
+                        self.property_pattern_indices.get(property.as_ref())
+                    {
                         for &idx in pattern_indices {
                             children.push(
                                 self.patterns[idx]
                                     .1
-                                    .evaluate_instance(value, &path, tracker, ctx),
+                                    .evaluate_instance(&value, &path, tracker, ctx),
                             );
                         }
                     }
@@ -1489,13 +1497,13 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
                     // Unknown property - need runtime regex matching
                     let mut has_match = false;
                     for (pattern, node) in &self.patterns {
-                        if pattern.is_match(property).unwrap_or(false) {
+                        if pattern.is_match(property.as_ref()).unwrap_or(false) {
                             has_match = true;
-                            children.push(node.evaluate_instance(value, &path, tracker, ctx));
+                            children.push(node.evaluate_instance(&value, &path, tracker, ctx));
                         }
                     }
                     if !has_match {
-                        unexpected.push(property.clone());
+                        unexpected.push(property.as_ref().to_owned());
                     }
                 }
             }
@@ -1507,7 +1515,7 @@ impl<M: PropertiesValidatorsMap, R: RegexEngine> Validate
                         self.location.clone(),
                         eval_path,
                         location.into(),
-                        instance,
+                        instance.to_value(),
                         unexpected,
                     ),
                 ));
@@ -1644,7 +1652,7 @@ pub(crate) fn compile<'a>(
                                         location.clone(),
                                         location,
                                         Location::new(),
-                                        properties,
+                                        Cow::Borrowed(properties),
                                         "Unexpected type",
                                     )))
                                 }
@@ -1675,7 +1683,7 @@ pub(crate) fn compile<'a>(
                                         location.clone(),
                                         location,
                                         Location::new(),
-                                        properties,
+                                        Cow::Borrowed(properties),
                                         "Unexpected type",
                                     )))
                                 }
@@ -1715,7 +1723,7 @@ pub(crate) fn compile<'a>(
                                         location.clone(),
                                         location,
                                         Location::new(),
-                                        properties,
+                                        Cow::Borrowed(properties),
                                         "Unexpected type",
                                     )))
                                 }
@@ -1746,7 +1754,7 @@ pub(crate) fn compile<'a>(
                                         location.clone(),
                                         location,
                                         Location::new(),
-                                        properties,
+                                        Cow::Borrowed(properties),
                                         "Unexpected type",
                                     )))
                                 }
@@ -1774,7 +1782,7 @@ pub(crate) fn compile<'a>(
                 location.clone(),
                 location,
                 Location::new(),
-                patterns,
+                Cow::Borrowed(patterns),
                 JsonType::Object,
             )))
         }

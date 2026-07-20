@@ -6,9 +6,11 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{Validate, ValidationContext},
+    Json, JsonNode,
 };
 use num_cmp::NumCmp;
 use serde_json::{Map, Value};
+use std::borrow::Cow;
 
 macro_rules! define_numeric_keywords {
     ($($struct_name:ident => $fn_name:path => $error_fn_name:ident),* $(,)?) => {
@@ -26,36 +28,37 @@ macro_rules! define_numeric_keywords {
                 }
             }
 
-            impl<T> Validate for $struct_name<T>
+            impl<T, F> Validate<F> for $struct_name<T>
             where
                 T: Copy + Send + Sync + num_traits::ToPrimitive,
                 u64: NumCmp<T>,
                 i64: NumCmp<T>,
                 f64: NumCmp<T>,
+                F: Json,
             {
                 fn validate<'i>(
                     &self,
-                    instance: &'i Value,
+                    instance: &F::Node<'i>,
                     location: &LazyLocation,
                     tracker: Option<&RefTracker>,
                     ctx: &mut ValidationContext,
                 ) -> Result<(), ValidationError<'i>> {
-                    if self.is_valid(instance, ctx) {
+                    if Validate::<F>::is_valid(self, instance, ctx) {
                         Ok(())
                     } else {
                         Err(ValidationError::$error_fn_name(
                             self.location.clone(),
                             crate::paths::capture_evaluation_path(tracker, &self.location),
                             location.into(),
-                            instance,
+                            instance.to_value(),
                             self.limit_val.clone(),
                         ))
                     }
                 }
 
-                fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-                    if let Value::Number(item) = instance {
-                        $fn_name(item, self.limit)
+                fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+                    if let Some(item) = instance.as_number() {
+                        $fn_name(&item, self.limit)
                     } else {
                         true
                     }
@@ -75,8 +78,8 @@ define_numeric_keywords!(
 #[cfg(feature = "arbitrary-precision")]
 pub(crate) mod bigint_validators {
     use super::{
-        numeric, LazyLocation, Location, RefTracker, Validate, ValidationContext, ValidationError,
-        Value,
+        numeric, Json, JsonNode, LazyLocation, Location, RefTracker, Validate, ValidationContext,
+        ValidationError, Value,
     };
     use crate::ext::numeric::bignum::{
         f64_ge_bigfrac, f64_ge_bigint, f64_gt_bigfrac, f64_gt_bigint, f64_le_bigfrac,
@@ -102,32 +105,32 @@ pub(crate) mod bigint_validators {
                 }
             }
 
-            impl Validate for $struct_name {
+            impl<F: Json> Validate<F> for $struct_name {
                 fn validate<'i>(
                     &self,
-                    instance: &'i Value,
+                    instance: &F::Node<'i>,
                     location: &LazyLocation,
                     tracker: Option<&RefTracker>,
                     ctx: &mut ValidationContext,
                 ) -> Result<(), ValidationError<'i>> {
-                    if self.is_valid(instance, ctx) {
+                    if Validate::<F>::is_valid(self, instance, ctx) {
                         Ok(())
                     } else {
                         Err(ValidationError::$error_fn(
                             self.location.clone(),
                             crate::paths::capture_evaluation_path(tracker, &self.location),
                             location.into(),
-                            instance,
+                            instance.to_value(),
                             self.limit_val.clone(),
                         ))
                     }
                 }
 
-                fn is_valid(&self, instance: &Value, _ctx: &mut  ValidationContext) -> bool {
+                fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut  ValidationContext) -> bool {
                     use fraction::BigFraction;
-                    if let Value::Number(item) = instance {
+                    if let Some(item) = instance.as_number() {
                         // Try to parse instance as BigInt first
-                        if let Some(instance_bigint) = numeric::bignum::try_parse_bigint(item) {
+                        if let Some(instance_bigint) = numeric::bignum::try_parse_bigint(&item) {
                             // Both are BigInt - direct comparison
                             instance_bigint $bigint_op self.limit
                         } else if let Some(v) = item.as_u64() {
@@ -139,7 +142,7 @@ pub(crate) mod bigint_validators {
                         } else {
                             // Number doesn't fit in f64 (e.g., 1e1000)
                             // Since limit is BigInt, we need to compare with BigFraction
-                            if let Some(instance_bigfrac) = numeric::bignum::try_parse_bigfraction(item) {
+                            if let Some(instance_bigfrac) = numeric::bignum::try_parse_bigfraction(&item) {
                                 // Convert BigInt limit to BigFraction for comparison
                                 // Use clone to avoid truncation through i128
                                 let limit_frac = BigFraction::from(self.limit.clone());
@@ -215,31 +218,31 @@ pub(crate) mod bigint_validators {
                 }
             }
 
-            impl Validate for $struct_name {
+            impl<F: Json> Validate<F> for $struct_name {
                 fn validate<'i>(
                     &self,
-                    instance: &'i Value,
+                    instance: &F::Node<'i>,
                     location: &LazyLocation,
                     tracker: Option<&RefTracker>,
                     ctx: &mut ValidationContext,
                 ) -> Result<(), ValidationError<'i>> {
-                    if self.is_valid(instance, ctx) {
+                    if Validate::<F>::is_valid(self, instance, ctx) {
                         Ok(())
                     } else {
                         Err(ValidationError::$error_fn(
                             self.location.clone(),
                             crate::paths::capture_evaluation_path(tracker, &self.location),
                             location.into(),
-                            instance,
+                            instance.to_value(),
                             self.limit_val.clone(),
                         ))
                     }
                 }
 
-                fn is_valid(&self, instance: &Value, _ctx: &mut  ValidationContext) -> bool {
-                    if let Value::Number(item) = instance {
+                fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut  ValidationContext) -> bool {
+                    if let Some(item) = instance.as_number() {
                         // Try to parse instance as BigFraction for exact precision
-                        if let Some(instance_bigfrac) = try_parse_bigfraction(item) {
+                        if let Some(instance_bigfrac) = try_parse_bigfraction(&item) {
                             // Both are BigFraction - direct comparison
                             instance_bigfrac $bigfrac_op self.limit
                         } else if let Some(v) = item.as_u64() {
@@ -321,7 +324,7 @@ fn number_type_error<'a>(
         location.clone(),
         location,
         Location::new(),
-        schema,
+        Cow::Borrowed(schema),
         JsonType::Number,
     ))
 }

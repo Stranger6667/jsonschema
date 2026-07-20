@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use crate::{
     compiler,
@@ -12,6 +12,7 @@ use crate::{
     },
     types::JsonType,
     validator::{Validate, ValidationContext},
+    Json, JsonNode,
 };
 use serde_json::{Map, Value};
 
@@ -22,9 +23,9 @@ pub(crate) struct PrefixPatternValidator {
     location: Location,
 }
 
-impl Validate for PrefixPatternValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-        if let Value::String(item) = instance {
+impl<F: Json> Validate<F> for PrefixPatternValidator {
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        if let Some(item) = instance.as_string() {
             item.starts_with(&self.prefix)
         } else {
             true
@@ -33,18 +34,18 @@ impl Validate for PrefixPatternValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::String(item) = instance {
+        if let Some(item) = instance.as_string() {
             if !item.starts_with(&self.prefix) {
                 return Err(ValidationError::pattern(
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance,
+                    instance.to_value(),
                     self.pattern.clone(),
                 ));
             }
@@ -60,10 +61,10 @@ pub(crate) struct ExactPatternValidator {
     location: Location,
 }
 
-impl Validate for ExactPatternValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-        if let Value::String(item) = instance {
-            item.as_str() == self.exact
+impl<F: Json> Validate<F> for ExactPatternValidator {
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        if let Some(item) = instance.as_string() {
+            item.as_ref() == self.exact
         } else {
             true
         }
@@ -71,18 +72,18 @@ impl Validate for ExactPatternValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::String(item) = instance {
-            if item.as_str() != self.exact {
+        if let Some(item) = instance.as_string() {
+            if item.as_ref() != self.exact {
                 return Err(ValidationError::pattern(
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance,
+                    instance.to_value(),
                     self.pattern.clone(),
                 ));
             }
@@ -98,12 +99,12 @@ pub(crate) struct AlternationPatternValidator {
     location: Location,
 }
 
-impl Validate for AlternationPatternValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-        if let Value::String(item) = instance {
+impl<F: Json> Validate<F> for AlternationPatternValidator {
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        if let Some(item) = instance.as_string() {
             self.alternatives
                 .iter()
-                .any(|a| a.as_str() == item.as_str())
+                .any(|a| a.as_str() == item.as_ref())
         } else {
             true
         }
@@ -111,22 +112,22 @@ impl Validate for AlternationPatternValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::String(item) = instance {
+        if let Some(item) = instance.as_string() {
             if !self
                 .alternatives
                 .iter()
-                .any(|a| a.as_str() == item.as_str())
+                .any(|a| a.as_str() == item.as_ref())
             {
                 return Err(ValidationError::pattern(
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance,
+                    instance.to_value(),
                     self.pattern.clone(),
                 ));
             }
@@ -141,9 +142,9 @@ pub(crate) struct NoWhitespacePatternValidator {
     location: Location,
 }
 
-impl Validate for NoWhitespacePatternValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-        if let Value::String(item) = instance {
+impl<F: Json> Validate<F> for NoWhitespacePatternValidator {
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        if let Some(item) = instance.as_string() {
             !item.chars().any(is_ecma_whitespace)
         } else {
             true
@@ -152,18 +153,18 @@ impl Validate for NoWhitespacePatternValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::String(item) = instance {
+        if let Some(item) = instance.as_string() {
             if item.chars().any(is_ecma_whitespace) {
                 return Err(ValidationError::pattern(
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance,
+                    instance.to_value(),
                     self.pattern.clone(),
                 ));
             }
@@ -180,23 +181,23 @@ pub(crate) struct PatternValidator<R> {
     location: Location,
 }
 
-impl<R: RegexEngine> Validate for PatternValidator<R> {
+impl<R: RegexEngine, F: Json> Validate<F> for PatternValidator<R> {
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::String(item) = instance {
-            match self.regex.is_match(item) {
+        if let Some(item) = instance.as_string() {
+            match self.regex.is_match(&item) {
                 Ok(is_match) => {
                     if !is_match {
                         return Err(ValidationError::pattern(
                             self.location.clone(),
                             crate::paths::capture_evaluation_path(tracker, &self.location),
                             location.into(),
-                            instance,
+                            instance.to_value(),
                             self.pattern.clone(),
                         ));
                     }
@@ -209,14 +210,14 @@ impl<R: RegexEngine> Validate for PatternValidator<R> {
                             self.location.clone(),
                             tracker,
                             location.into(),
-                            instance,
+                            instance.to_value(),
                             error,
                         ),
                         RegexFailureReason::Panicked => ValidationError::regex_engine_failure(
                             self.location.clone(),
                             tracker,
                             location.into(),
-                            instance,
+                            instance.to_value(),
                             format!("Regex engine failed to evaluate pattern '{pattern}'"),
                         ),
                     });
@@ -226,9 +227,9 @@ impl<R: RegexEngine> Validate for PatternValidator<R> {
         Ok(())
     }
 
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-        if let Value::String(item) = instance {
-            return self.regex.is_match(item).unwrap_or(false);
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        if let Some(item) = instance.as_string() {
+            return self.regex.is_match(&item).unwrap_or(false);
         }
         true
     }
@@ -301,7 +302,7 @@ pub(crate) fn compile<'a>(
             location.clone(),
             location,
             Location::new(),
-            schema,
+            Cow::Borrowed(schema),
             JsonType::String,
         )))
     }
@@ -312,7 +313,7 @@ fn invalid_regex<'a>(ctx: &compiler::Context, schema: &'a Value) -> ValidationEr
         ctx.location().join("pattern"),
         LazyEvaluationPath::SameAsSchemaPath,
         Location::new(),
-        schema,
+        Cow::Borrowed(schema),
         "regex",
     )
 }

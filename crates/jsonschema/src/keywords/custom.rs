@@ -2,7 +2,7 @@ use crate::{
     error::ErrorIterator,
     paths::{LazyLocation, Location, RefTracker},
     validator::{Validate, ValidationContext},
-    ValidationError,
+    Json, SerdeJson, ValidationError,
 };
 use serde_json::{Map, Value};
 
@@ -22,10 +22,11 @@ impl CustomKeyword {
     }
 }
 
+// Custom keywords consume `&Value`; the adapter stays serde_json-only.
 impl Validate for CustomKeyword {
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &<SerdeJson as Json>::Node<'i>,
         instance_path: &LazyLocation,
         _tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
@@ -35,13 +36,17 @@ impl Validate for CustomKeyword {
             .map_err(|err| err.with_context(instance, instance_path, &self.location, &self.keyword))
     }
 
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(
+        &self,
+        instance: &<SerdeJson as Json>::Node<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
         self.inner.is_valid(instance)
     }
 
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &<SerdeJson as Json>::Node<'i>,
         instance_path: &LazyLocation,
         _tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,

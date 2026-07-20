@@ -40,10 +40,10 @@ use core::fmt;
 use referencing::{Draft, Vocabulary};
 use serde_json::{Map, Value};
 
-use crate::{compiler, error, validator::Validate};
+use crate::{compiler, error, validator::Validate, SerdeJson};
 
 pub(crate) type CompilationResult<'a> = Result<BoxedValidator, error::ValidationError<'a>>;
-pub(crate) type BoxedValidator = Box<dyn Validate>;
+pub(crate) type BoxedValidator<F = SerdeJson> = Box<dyn Validate<F>>;
 
 type CompileFunc<'a> =
     fn(&'a compiler::Context, &'a Map<String, Value>, &'a Value) -> Option<CompilationResult<'a>>;

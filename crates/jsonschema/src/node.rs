@@ -5,7 +5,7 @@ use crate::{
     keywords::{BoxedValidator, Keyword},
     paths::{LazyLocation, Location, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
-    ValidationError,
+    Json, JsonNode, SerdeJson, ValidationError,
 };
 use referencing::Uri;
 use serde_json::Value;
@@ -14,12 +14,12 @@ use std::{
     sync::{Arc, OnceLock, Weak},
 };
 
-struct SchemaNodeInner {
-    validators: NodeValidators,
+struct SchemaNodeInner<F: Json> {
+    validators: NodeValidators<F>,
     formatted_schema_location: OnceLock<Arc<str>>,
 }
 
-impl fmt::Debug for SchemaNodeInner {
+impl<F: Json> fmt::Debug for SchemaNodeInner<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SchemaNodeInner")
             .field("validators", &self.validators)
@@ -28,27 +28,65 @@ impl fmt::Debug for SchemaNodeInner {
 }
 
 /// A node in the schema tree, returned by `compiler::compile`
-#[derive(Clone, Debug)]
-pub(crate) struct SchemaNode {
-    inner: Arc<SchemaNodeInner>,
+pub(crate) struct SchemaNode<F: Json = SerdeJson> {
+    inner: Arc<SchemaNodeInner<F>>,
     location: Location,
     absolute_path: Option<Arc<Uri<String>>>,
+}
+
+impl<F: Json> Clone for SchemaNode<F> {
+    fn clone(&self) -> Self {
+        SchemaNode {
+            inner: Arc::clone(&self.inner),
+            location: self.location.clone(),
+            absolute_path: self.absolute_path.clone(),
+        }
+    }
+}
+
+impl<F: Json> fmt::Debug for SchemaNode<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SchemaNode")
+            .field("inner", &self.inner)
+            .field("location", &self.location)
+            .finish_non_exhaustive()
+    }
 }
 
 // Separate type used only during compilation for handling recursive references
-#[derive(Clone, Debug)]
-pub(crate) struct PendingSchemaNode {
-    cell: Arc<OnceLock<PendingTarget>>,
+pub(crate) struct PendingSchemaNode<F: Json = SerdeJson> {
+    cell: Arc<OnceLock<PendingTarget<F>>>,
 }
 
-#[derive(Debug)]
-struct PendingTarget {
-    inner: Weak<SchemaNodeInner>,
+impl<F: Json> Clone for PendingSchemaNode<F> {
+    fn clone(&self) -> Self {
+        PendingSchemaNode {
+            cell: Arc::clone(&self.cell),
+        }
+    }
+}
+
+impl<F: Json> fmt::Debug for PendingSchemaNode<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PendingSchemaNode").finish_non_exhaustive()
+    }
+}
+
+struct PendingTarget<F: Json> {
+    inner: Weak<SchemaNodeInner<F>>,
     location: Location,
     absolute_path: Option<Arc<Uri<String>>>,
 }
 
-enum NodeValidators {
+impl<F: Json> fmt::Debug for PendingTarget<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PendingTarget")
+            .field("location", &self.location)
+            .finish_non_exhaustive()
+    }
+}
+
+enum NodeValidators<F: Json> {
     /// The result of compiling a boolean valued schema, e.g
     ///
     /// ```json
@@ -59,17 +97,19 @@ enum NodeValidators {
     ///
     /// Here the result of `compiler::compile` called with the `false` value will return a
     /// `SchemaNode` with a single `BooleanValidator` as it's `validators`.
-    Boolean { validator: Option<BoxedValidator> },
+    Boolean {
+        validator: Option<BoxedValidator<F>>,
+    },
     /// The result of compiling a schema which is composed of keywords (almost all schemas)
-    Keyword(KeywordValidators),
+    Keyword(KeywordValidators<F>),
     /// The result of compiling a schema which is "array valued", e.g the "dependencies" keyword of
     /// draft 7 which can take values which are an array of other property names
     Array {
-        validators: Vec<ArrayValidatorEntry>,
+        validators: Vec<ArrayValidatorEntry<F>>,
     },
 }
 
-impl fmt::Debug for NodeValidators {
+impl<F: Json> fmt::Debug for NodeValidators<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Boolean { .. } => f.debug_struct("Boolean").finish(),
@@ -79,37 +119,37 @@ impl fmt::Debug for NodeValidators {
     }
 }
 
-struct KeywordValidators {
+struct KeywordValidators<F: Json> {
     /// The keywords on this node which were not recognized by any vocabularies. These are
     /// stored so we can later produce them as annotations
     unmatched_keywords: Option<Arc<Value>>,
     // We should probably use AHashMap here but it breaks a bunch of tests which assume
     // validators are in a particular order
-    validators: Vec<KeywordValidatorEntry>,
+    validators: Vec<KeywordValidatorEntry<F>>,
 }
 
-struct KeywordValidatorEntry {
-    validator: BoxedValidator,
+struct KeywordValidatorEntry<F: Json> {
+    validator: BoxedValidator<F>,
     location: Location,
     absolute_location: Option<Arc<Uri<String>>>,
     formatted_schema_location: OnceLock<Arc<str>>,
 }
 
-struct ArrayValidatorEntry {
-    validator: BoxedValidator,
+struct ArrayValidatorEntry<F: Json> {
+    validator: BoxedValidator<F>,
     location: Location,
     absolute_location: Option<Arc<Uri<String>>>,
     formatted_schema_location: OnceLock<Arc<str>>,
 }
 
-impl PendingSchemaNode {
+impl<F: Json> PendingSchemaNode<F> {
     pub(crate) fn new() -> Self {
         PendingSchemaNode {
             cell: Arc::new(OnceLock::new()),
         }
     }
 
-    pub(crate) fn initialize(&self, node: &SchemaNode) {
+    pub(crate) fn initialize(&self, node: &SchemaNode<F>) {
         let target = PendingTarget {
             inner: Arc::downgrade(&node.inner),
             location: node.location.clone(),
@@ -120,13 +160,13 @@ impl PendingSchemaNode {
             .expect("pending node initialized twice");
     }
 
-    pub(crate) fn get(&self) -> Option<SchemaNode> {
+    pub(crate) fn get(&self) -> Option<SchemaNode<F>> {
         self.cell.get().map(PendingTarget::materialize)
     }
 
-    fn with_node<F, R>(&self, f: F) -> R
+    fn with_node<T, R>(&self, f: T) -> R
     where
-        F: FnOnce(&SchemaNode) -> R,
+        T: FnOnce(&SchemaNode<F>) -> R,
     {
         let target = self
             .cell
@@ -144,8 +184,8 @@ impl PendingSchemaNode {
     }
 }
 
-impl PendingTarget {
-    fn materialize(&self) -> SchemaNode {
+impl<F: Json> PendingTarget<F> {
+    fn materialize(&self) -> SchemaNode<F> {
         let inner = self.inner.upgrade().expect("pending schema target dropped");
         SchemaNode {
             inner,
@@ -155,71 +195,79 @@ impl PendingTarget {
     }
 }
 
-impl Validate for PendingSchemaNode {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+impl<F: Json> Validate<F> for PendingSchemaNode<F> {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         let node_id = self.node_id();
+        let cache_key = instance.container_cache_key();
         // Check memoization cache first (only for arrays/objects)
-        if let Some(cached) = ctx.get_cached_result(node_id, instance) {
+        if let Some(cached) = ctx.get_cached_result(node_id, cache_key) {
             return cached;
         }
-        if ctx.enter(node_id, instance) {
+        let identity = instance.cache_key();
+        if ctx.enter(node_id, identity) {
             return true; // Cycle detected
         }
         let result = self.with_node(|node| node.is_valid(instance, ctx));
-        ctx.exit(node_id, instance);
+        ctx.exit(node_id, identity);
         // Cache result for recursive schemas
-        ctx.cache_result(node_id, instance, result);
+        ctx.cache_result(node_id, cache_key, result);
         result
     }
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if ctx.enter(self.node_id(), instance) {
+        let identity = instance.cache_key();
+        if ctx.enter(self.node_id(), identity) {
             return Ok(());
         }
         let result = self.with_node(|node| node.validate(instance, location, tracker, ctx));
-        ctx.exit(self.node_id(), instance);
+        ctx.exit(self.node_id(), identity);
         result
     }
 
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if ctx.enter(self.node_id(), instance) {
+        let identity = instance.cache_key();
+        if ctx.enter(self.node_id(), identity) {
             return crate::error::no_error();
         }
         let result = self.with_node(|node| node.iter_errors(instance, location, tracker, ctx));
-        ctx.exit(self.node_id(), instance);
+        ctx.exit(self.node_id(), identity);
         result
     }
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        if ctx.enter(self.node_id(), instance) {
+        let identity = instance.cache_key();
+        if ctx.enter(self.node_id(), identity) {
             return EvaluationResult::valid_empty();
         }
         let result = self.with_node(|node| node.evaluate(instance, location, tracker, ctx));
-        ctx.exit(self.node_id(), instance);
+        ctx.exit(self.node_id(), identity);
         result
     }
 }
 
-impl SchemaNode {
-    pub(crate) fn from_boolean(ctx: &Context<'_>, validator: Option<BoxedValidator>) -> SchemaNode {
+impl<F: Json> SchemaNode<F> {
+    pub(crate) fn from_boolean(
+        ctx: &Context<'_>,
+        validator: Option<BoxedValidator<F>>,
+    ) -> SchemaNode<F> {
         let location = ctx.location().clone();
         let absolute_path = ctx.base_uri();
         SchemaNode {
@@ -234,9 +282,9 @@ impl SchemaNode {
 
     pub(crate) fn from_keywords(
         ctx: &Context<'_>,
-        mut validators: Vec<(Keyword, BoxedValidator)>,
+        mut validators: Vec<(Keyword, BoxedValidator<F>)>,
         unmatched_keywords: Option<Arc<Value>>,
-    ) -> SchemaNode {
+    ) -> SchemaNode<F> {
         // Sort validators by priority (lower = execute first).
         // This enables "fail fast" by running cheap validators (type, const)
         // before expensive ones (allOf, $ref).
@@ -270,7 +318,10 @@ impl SchemaNode {
         }
     }
 
-    pub(crate) fn from_array(ctx: &Context<'_>, validators: Vec<BoxedValidator>) -> SchemaNode {
+    pub(crate) fn from_array(
+        ctx: &Context<'_>,
+        validators: Vec<BoxedValidator<F>>,
+    ) -> SchemaNode<F> {
         let location = ctx.location().clone();
         let absolute_path = ctx.base_uri();
         let validators = validators
@@ -297,7 +348,7 @@ impl SchemaNode {
         }
     }
 
-    pub(crate) fn validators(&self) -> impl ExactSizeIterator<Item = &BoxedValidator> {
+    pub(crate) fn validators(&self) -> impl ExactSizeIterator<Item = &BoxedValidator<F>> {
         match &self.inner.validators {
             NodeValidators::Boolean { validator } => {
                 if let Some(v) = validator {
@@ -317,7 +368,7 @@ impl SchemaNode {
 
     pub(crate) fn evaluate_instance(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -358,8 +409,8 @@ impl SchemaNode {
     }
 
     /// Helper function to evaluate subschemas which already know their locations.
-    fn evaluate_subschemas<'a, I>(
-        instance: &Value,
+    fn evaluate_subschemas<'a, 'i, I>(
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         subschemas: I,
@@ -372,7 +423,7 @@ impl SchemaNode {
                     &'a Location,
                     Option<&'a Arc<Uri<String>>>,
                     &'a OnceLock<Arc<str>>,
-                    &'a BoxedValidator,
+                    &'a BoxedValidator<F>,
                 ),
             > + 'a,
     {
@@ -458,8 +509,8 @@ impl SchemaNode {
     }
 }
 
-impl Validate for SchemaNode {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+impl<F: Json> Validate<F> for SchemaNode<F> {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         match &self.inner.validators {
             // Single validator fast path
             NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
@@ -483,7 +534,7 @@ impl Validate for SchemaNode {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -523,7 +574,7 @@ impl Validate for SchemaNode {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance,
+                    instance.to_value(),
                 )
                 .with_absolute_keyword_location(self.absolute_path.clone()));
             }
@@ -534,7 +585,7 @@ impl Validate for SchemaNode {
 
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -599,7 +650,7 @@ impl Validate for SchemaNode {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -658,15 +709,15 @@ impl Validate for SchemaNode {
     }
 }
 
-enum NodeValidatorsIter<'a> {
+enum NodeValidatorsIter<'a, F: Json> {
     NoValidator,
-    BooleanValidators(std::iter::Once<&'a BoxedValidator>),
-    KeywordValidators(std::slice::Iter<'a, KeywordValidatorEntry>),
-    ArrayValidators(std::slice::Iter<'a, ArrayValidatorEntry>),
+    BooleanValidators(std::iter::Once<&'a BoxedValidator<F>>),
+    KeywordValidators(std::slice::Iter<'a, KeywordValidatorEntry<F>>),
+    ArrayValidators(std::slice::Iter<'a, ArrayValidatorEntry<F>>),
 }
 
-impl<'a> Iterator for NodeValidatorsIter<'a> {
-    type Item = &'a BoxedValidator;
+impl<'a, F: Json> Iterator for NodeValidatorsIter<'a, F> {
+    type Item = &'a BoxedValidator<F>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -677,10 +728,10 @@ impl<'a> Iterator for NodeValidatorsIter<'a> {
         }
     }
 
-    fn all<F>(&mut self, mut f: F) -> bool
+    fn all<T>(&mut self, mut f: T) -> bool
     where
         Self: Sized,
-        F: FnMut(Self::Item) -> bool,
+        T: FnMut(Self::Item) -> bool,
     {
         match self {
             Self::NoValidator => true,
@@ -691,7 +742,7 @@ impl<'a> Iterator for NodeValidatorsIter<'a> {
     }
 }
 
-impl ExactSizeIterator for NodeValidatorsIter<'_> {
+impl<F: Json> ExactSizeIterator for NodeValidatorsIter<'_, F> {
     fn len(&self) -> usize {
         match self {
             Self::NoValidator => 0,

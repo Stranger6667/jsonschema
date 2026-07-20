@@ -10,7 +10,11 @@ use ahash::AHashSet;
 use fancy_regex::Regex;
 use referencing::Vocabulary;
 use serde_json::{Map, Value};
-use std::sync::{Arc, OnceLock};
+use std::{
+    borrow::Cow,
+    fmt,
+    sync::{Arc, OnceLock},
+};
 
 use crate::{
     compiler,
@@ -18,62 +22,115 @@ use crate::{
     node::SchemaNode,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
-    ValidationError,
+    Json, JsonNode, JsonObjectAccess, SerdeJson, ValidationError,
 };
 
 use super::CompilationResult;
 
 /// Lazy property validators that are compiled on first access.
 /// Used for $recursiveRef and circular references to handle cycles during compilation.
-pub(crate) type PendingPropertyValidators = Arc<OnceLock<PropertyValidators>>;
+pub(crate) type PendingPropertyValidators<F = SerdeJson> = Arc<OnceLock<PropertyValidators<F>>>;
 
 /// Holds compiled validators for property evaluation in unevaluatedProperties.
 /// This structure is built during schema compilation and used during validation.
-#[derive(Debug, Clone)]
-pub(crate) struct PropertyValidators {
+pub(crate) struct PropertyValidators<F: Json = SerdeJson> {
     /// Property names from "properties" keyword for O(1) lookup
     properties: AHashSet<String>,
     /// Validator from "additionalProperties" keyword
-    additional: Option<SchemaNode>,
+    additional: Option<SchemaNode<F>>,
     /// Pattern-based property validators from "patternProperties" keyword
-    pattern_properties: Vec<(Regex, SchemaNode)>,
+    pattern_properties: Vec<(Regex, SchemaNode<F>)>,
     /// Validator from "unevaluatedProperties" keyword itself
-    unevaluated: Option<SchemaNode>,
+    unevaluated: Option<SchemaNode<F>>,
     /// Validators from "allOf" keyword - both the schema and its property validators
-    all_of: Vec<(SchemaNode, PropertyValidators)>,
+    all_of: Vec<(SchemaNode<F>, PropertyValidators<F>)>,
     /// Validators from "anyOf" keyword
-    any_of: Vec<(SchemaNode, PropertyValidators)>,
+    any_of: Vec<(SchemaNode<F>, PropertyValidators<F>)>,
     /// Validators from "oneOf" keyword
-    one_of: Vec<(SchemaNode, PropertyValidators)>,
+    one_of: Vec<(SchemaNode<F>, PropertyValidators<F>)>,
     /// Conditional validators from "if/then/else" keywords
-    conditional: Option<Box<ConditionalValidators>>,
+    conditional: Option<Box<ConditionalValidators<F>>>,
     /// Reference validators from "$ref" keyword (may be circular)
-    ref_: Option<RefValidator>,
+    ref_: Option<RefValidator<F>>,
     /// Reference validators from "$dynamicRef" keyword
     /// Uses pending pattern to handle circular references
-    dynamic_ref: Option<PendingPropertyValidators>,
+    dynamic_ref: Option<PendingPropertyValidators<F>>,
     /// Validators from "$recursiveRef" keyword (Draft 2019-09 only)
     /// Uses pending pattern to handle circular references
-    recursive_ref: Option<PendingPropertyValidators>,
-    /// Dependent schema validators from "dependentSchemas" keyword
-    dependent: Vec<(String, PropertyValidators)>,
+    recursive_ref: Option<PendingPropertyValidators<F>>,
+    /// Dependent schema validators from "dependentSchemas" keyword.
+    /// `Arc` keeps this struct `Clone` for the pending cell: `F::PreparedKey` itself has no `Clone` bound.
+    dependent: Vec<(Arc<F::PreparedKey>, PropertyValidators<F>)>,
+}
+
+impl<F: Json> Clone for PropertyValidators<F> {
+    fn clone(&self) -> Self {
+        PropertyValidators {
+            properties: self.properties.clone(),
+            additional: self.additional.clone(),
+            pattern_properties: self.pattern_properties.clone(),
+            unevaluated: self.unevaluated.clone(),
+            all_of: self.all_of.clone(),
+            any_of: self.any_of.clone(),
+            one_of: self.one_of.clone(),
+            conditional: self.conditional.clone(),
+            ref_: self.ref_.clone(),
+            dynamic_ref: self.dynamic_ref.clone(),
+            recursive_ref: self.recursive_ref.clone(),
+            dependent: self.dependent.clone(),
+        }
+    }
+}
+
+impl<F: Json> fmt::Debug for PropertyValidators<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PropertyValidators").finish_non_exhaustive()
+    }
 }
 
 /// Reference validator - just wraps `PropertyValidators`
 /// Circular references are handled by returning None during compilation
-#[derive(Debug, Clone)]
-struct RefValidator(Box<PropertyValidators>);
+struct RefValidator<F: Json = SerdeJson>(Box<PropertyValidators<F>>);
 
-/// Conditional validators from "if/then/else" keywords
-#[derive(Debug, Clone)]
-struct ConditionalValidators {
-    condition: SchemaNode,
-    if_: PropertyValidators,
-    then_: Option<PropertyValidators>,
-    else_: Option<PropertyValidators>,
+impl<F: Json> Clone for RefValidator<F> {
+    fn clone(&self) -> Self {
+        RefValidator(self.0.clone())
+    }
 }
 
-impl PropertyValidators {
+impl<F: Json> fmt::Debug for RefValidator<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("RefValidator").finish()
+    }
+}
+
+/// Conditional validators from "if/then/else" keywords
+struct ConditionalValidators<F: Json = SerdeJson> {
+    condition: SchemaNode<F>,
+    if_: PropertyValidators<F>,
+    then_: Option<PropertyValidators<F>>,
+    else_: Option<PropertyValidators<F>>,
+}
+
+impl<F: Json> Clone for ConditionalValidators<F> {
+    fn clone(&self) -> Self {
+        ConditionalValidators {
+            condition: self.condition.clone(),
+            if_: self.if_.clone(),
+            then_: self.then_.clone(),
+            else_: self.else_.clone(),
+        }
+    }
+}
+
+impl<F: Json> fmt::Debug for ConditionalValidators<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ConditionalValidators")
+            .finish_non_exhaustive()
+    }
+}
+
+impl<F: Json> PropertyValidators<F> {
     /// Core implementation for marking evaluated properties.
     ///
     /// When `include_unevaluated` is `true` (used by `is_valid`/`validate`), also marks
@@ -82,25 +139,28 @@ impl PropertyValidators {
     /// are left unmarked so `evaluate_instance()` is called on them to collect annotations.
     fn mark_evaluated_properties_impl<'i>(
         &self,
-        instance: &'i Value,
-        properties: &mut AHashSet<&'i String>,
+        instance: &F::Node<'i>,
+        properties: &mut AHashSet<Cow<'i, str>>,
         ctx: &mut ValidationContext,
         include_unevaluated: bool,
     ) {
         // Break cycles from self-referential `$dynamicRef`/`$recursiveRef` where the
         // pending node resolves back to this same validators for the same instance.
-        let validators_id = std::ptr::from_ref::<PropertyValidators>(self) as usize;
-        if ctx.enter_marking(validators_id, instance) {
+        let validators_id = std::ptr::from_ref(self) as usize;
+        let identity = instance.cache_key();
+        if ctx.enter_marking(validators_id, identity) {
             return;
         }
         self.mark_evaluated_properties_inner(instance, properties, ctx, include_unevaluated);
-        ctx.exit_marking();
+        if identity.is_some() {
+            ctx.exit_marking();
+        }
     }
 
     fn mark_evaluated_properties_inner<'i>(
         &self,
-        instance: &'i Value,
-        properties: &mut AHashSet<&'i String>,
+        instance: &F::Node<'i>,
+        properties: &mut AHashSet<Cow<'i, str>>,
         ctx: &mut ValidationContext,
         include_unevaluated: bool,
     ) {
@@ -126,23 +186,23 @@ impl PropertyValidators {
         }
 
         // Process properties on the instance
-        if let Value::Object(obj) = instance {
+        if let Some(obj) = instance.as_object() {
             // Mark properties from "properties" keyword (O(1) lookup)
-            for property in obj.keys() {
-                if self.properties.contains(property) {
-                    properties.insert(property);
+            for (property, _) in obj.members() {
+                if self.properties.contains(property.as_ref()) {
+                    properties.insert(property.into());
                 }
             }
 
             // Check "patternProperties" keyword - mark if property name matches
             if !self.pattern_properties.is_empty() {
-                for property in obj.keys() {
-                    if properties.contains(property) {
+                for (property, _) in obj.members() {
+                    if properties.contains(property.as_ref()) {
                         continue; // Already marked by "properties"
                     }
                     for (pattern, _) in &self.pattern_properties {
-                        if pattern.is_match(property).unwrap_or(false) {
-                            properties.insert(property);
+                        if pattern.is_match(property.as_ref()).unwrap_or(false) {
+                            properties.insert(property.into());
                             break;
                         }
                     }
@@ -152,10 +212,10 @@ impl PropertyValidators {
             // Check "additionalProperties" keyword - applies to properties NOT in properties/patternProperties
             // This must be done after marking all properties/patternProperties to avoid order dependency
             if self.additional.is_some() {
-                for property in obj.keys() {
+                for (property, _) in obj.members() {
                     // Only mark if not already marked by properties or patternProperties
-                    if !properties.contains(property) {
-                        properties.insert(property);
+                    if !properties.contains(property.as_ref()) {
+                        properties.insert(property.into());
                     }
                 }
             }
@@ -166,13 +226,13 @@ impl PropertyValidators {
             // Skipped when called from evaluate() so evaluate_instance() can collect annotations.
             if include_unevaluated {
                 if let Some(unevaluated) = &self.unevaluated {
-                    for (property, value) in obj {
+                    for (property, value) in obj.members() {
                         // Skip if already marked - avoid redundant validation
-                        if properties.contains(property) {
+                        if properties.contains(property.as_ref()) {
                             continue;
                         }
-                        if unevaluated.is_valid(value, ctx) {
-                            properties.insert(property);
+                        if unevaluated.is_valid(&value, ctx) {
+                            properties.insert(property.into());
                         }
                     }
                 }
@@ -180,7 +240,7 @@ impl PropertyValidators {
 
             // Check "dependentSchemas" keyword
             for (dep_property, dep_validators) in &self.dependent {
-                if obj.contains_key(dep_property) {
+                if obj.get(&**dep_property).is_some() {
                     dep_validators.mark_evaluated_properties(instance, properties, ctx);
                 }
             }
@@ -228,8 +288,8 @@ impl PropertyValidators {
     /// Mark all properties evaluated by this schema (including by `unevaluatedProperties` itself).
     fn mark_evaluated_properties<'i>(
         &self,
-        instance: &'i Value,
-        properties: &mut AHashSet<&'i String>,
+        instance: &F::Node<'i>,
+        properties: &mut AHashSet<Cow<'i, str>>,
         ctx: &mut ValidationContext,
     ) {
         self.mark_evaluated_properties_impl(instance, properties, ctx, true);
@@ -241,19 +301,19 @@ impl PropertyValidators {
     /// are still visited by `evaluate_instance()`, allowing their annotations to be collected.
     fn mark_evaluated_by_other_keywords<'i>(
         &self,
-        instance: &'i Value,
-        properties: &mut AHashSet<&'i String>,
+        instance: &F::Node<'i>,
+        properties: &mut AHashSet<Cow<'i, str>>,
         ctx: &mut ValidationContext,
     ) {
         self.mark_evaluated_properties_impl(instance, properties, ctx, false);
     }
 }
 
-impl ConditionalValidators {
+impl<F: Json> ConditionalValidators<F> {
     fn mark_evaluated_properties<'i>(
         &self,
-        instance: &'i Value,
-        properties: &mut AHashSet<&'i String>,
+        instance: &F::Node<'i>,
+        properties: &mut AHashSet<Cow<'i, str>>,
         ctx: &mut ValidationContext,
     ) {
         if self.condition.is_valid(instance, ctx) {
@@ -389,7 +449,7 @@ fn compile_pattern_properties<'a>(
                 schema_ctx.location().clone(),
                 LazyEvaluationPath::SameAsSchemaPath,
                 Location::new(),
-                schema,
+                Cow::Borrowed(schema),
                 "regex",
             ));
         };
@@ -624,10 +684,12 @@ fn compile_recursive_ref<'a>(
     }
 }
 
+type DependentEntry = (Arc<<SerdeJson as Json>::PreparedKey>, PropertyValidators);
+
 fn compile_dependent<'a>(
     ctx: &compiler::Context<'_>,
     parent: &'a Map<String, Value>,
-) -> Result<Vec<(String, PropertyValidators)>, ValidationError<'a>> {
+) -> Result<Vec<DependentEntry>, ValidationError<'a>> {
     let Some(Value::Object(map)) = parent.get("dependentSchemas") else {
         return Ok(Vec::new());
     };
@@ -639,7 +701,7 @@ fn compile_dependent<'a>(
         if let Value::Object(obj) = subschema {
             let property_ctx = dependent_ctx.new_at_location(property.as_str());
             let validators = compile_property_validators(&property_ctx, obj)?;
-            result.push((property.clone(), validators));
+            result.push((Arc::new(SerdeJson::prepare_key(property)), validators));
         }
     }
 
@@ -647,9 +709,9 @@ fn compile_dependent<'a>(
 }
 
 /// Validator for the `unevaluatedProperties` keyword.
-pub(crate) struct UnevaluatedPropertiesValidator {
+pub(crate) struct UnevaluatedPropertiesValidator<F: Json = SerdeJson> {
     location: Location,
-    validators: PropertyValidators,
+    validators: PropertyValidators<F>,
 }
 
 impl UnevaluatedPropertiesValidator {
@@ -667,40 +729,40 @@ impl UnevaluatedPropertiesValidator {
     }
 }
 
-impl Validate for UnevaluatedPropertiesValidator {
+impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Object(properties) = instance {
-            let mut evaluated = AHashSet::with_capacity(properties.len());
+        if let Some(object) = instance.as_object() {
+            let mut evaluated = AHashSet::with_capacity(object.len());
 
             // Mark all evaluated properties
             self.validators
                 .mark_evaluated_properties(instance, &mut evaluated, ctx);
 
             // Early return if all properties are evaluated
-            if evaluated.len() == properties.len() {
+            if evaluated.len() == object.len() {
                 return Ok(());
             }
 
             // Check for unevaluated properties
             let mut unevaluated = Vec::new();
-            for (property, value) in properties {
-                if evaluated.contains(property) {
+            for (property, value) in object.members() {
+                if evaluated.contains(property.as_ref()) {
                     continue;
                 }
                 // Check against unevaluatedProperties schema
                 if let Some(unevaluated_schema) = &self.validators.unevaluated {
-                    if !unevaluated_schema.is_valid(value, ctx) {
-                        unevaluated.push(property.clone());
+                    if !unevaluated_schema.is_valid(&value, ctx) {
+                        unevaluated.push(property.as_ref().to_owned());
                     }
                 } else {
                     // No unevaluatedProperties schema means false (reject all)
-                    unevaluated.push(property.clone());
+                    unevaluated.push(property.as_ref().to_owned());
                 }
             }
 
@@ -709,7 +771,7 @@ impl Validate for UnevaluatedPropertiesValidator {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance,
+                    instance.to_value(),
                     unevaluated,
                 ));
             }
@@ -717,23 +779,23 @@ impl Validate for UnevaluatedPropertiesValidator {
         Ok(())
     }
 
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if let Value::Object(properties) = instance {
-            let mut evaluated = AHashSet::with_capacity(properties.len());
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
+        if let Some(object) = instance.as_object() {
+            let mut evaluated = AHashSet::with_capacity(object.len());
             self.validators
                 .mark_evaluated_properties(instance, &mut evaluated, ctx);
 
             // Early return if all properties are evaluated
-            if evaluated.len() == properties.len() {
+            if evaluated.len() == object.len() {
                 return true;
             }
 
-            for (property, value) in properties {
-                if evaluated.contains(property) {
+            for (property, value) in object.members() {
+                if evaluated.contains(property.as_ref()) {
                     continue;
                 }
                 if let Some(unevaluated_schema) = &self.validators.unevaluated {
-                    if !unevaluated_schema.is_valid(value, ctx) {
+                    if !unevaluated_schema.is_valid(&value, ctx) {
                         return false;
                     }
                 } else {
@@ -746,34 +808,38 @@ impl Validate for UnevaluatedPropertiesValidator {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        if let Value::Object(properties) = instance {
-            let mut evaluated = AHashSet::with_capacity(properties.len());
+        if let Some(object) = instance.as_object() {
+            let mut evaluated = AHashSet::with_capacity(object.len());
             self.validators
                 .mark_evaluated_by_other_keywords(instance, &mut evaluated, ctx);
             let mut children = Vec::new();
             let mut unevaluated = Vec::new();
             let mut invalid = false;
 
-            for (property, value) in properties {
-                if evaluated.contains(property) {
+            for (property, value) in object.members() {
+                if evaluated.contains(property.as_ref()) {
                     continue;
                 }
                 if let Some(validator) = &self.validators.unevaluated {
-                    let child =
-                        validator.evaluate_instance(value, &location.push(property), tracker, ctx);
+                    let child = validator.evaluate_instance(
+                        &value,
+                        &location.push(property.as_ref()),
+                        tracker,
+                        ctx,
+                    );
                     if !child.valid {
                         invalid = true;
-                        unevaluated.push(property.clone());
+                        unevaluated.push(property.as_ref().to_owned());
                     }
                     children.push(child);
                 } else {
                     invalid = true;
-                    unevaluated.push(property.clone());
+                    unevaluated.push(property.as_ref().to_owned());
                 }
             }
 
@@ -784,7 +850,7 @@ impl Validate for UnevaluatedPropertiesValidator {
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         location.into(),
-                        instance,
+                        instance.to_value(),
                         unevaluated,
                     ),
                 ));
