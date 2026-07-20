@@ -90,6 +90,8 @@ enum Command {
     Bundle(BundleArgs),
     /// Dereference a JSON Schema, inlining all $ref targets.
     Dereference(DereferenceArgs),
+    /// Canonicalize a JSON Schema to its simplified canonical form.
+    Canonicalize(CanonicalizeArgs),
 }
 
 #[derive(Args, Clone)]
@@ -243,6 +245,24 @@ struct DereferenceArgs {
 
     #[command(flatten)]
     http: HttpArgs,
+}
+
+#[derive(Args)]
+struct CanonicalizeArgs {
+    /// Path to the JSON Schema file to canonicalize.
+    #[arg(value_parser)]
+    schema: PathBuf,
+
+    /// Which JSON Schema draft to enforce (else auto-detected from $schema).
+    #[arg(short = 'd', long = "draft", value_enum)]
+    draft: Option<Draft>,
+
+    #[command(flatten)]
+    format: FormatAssertionArgs,
+
+    /// Write canonical output to FILE instead of stdout.
+    #[arg(short = 'o', long = "output")]
+    output: Option<PathBuf>,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -832,6 +852,47 @@ fn run_dereference(args: DereferenceArgs) -> ExitCode {
     }
 }
 
+fn run_canonicalize(args: CanonicalizeArgs) -> ExitCode {
+    let CanonicalizeArgs {
+        schema,
+        draft,
+        format,
+        output,
+    } = args;
+
+    let schema_json = match read_json(&schema) {
+        Ok(value) => value,
+        Err(error) => return fail_with_error(error),
+    };
+
+    let mut options = jsonschema::canonical::options();
+    if let Some(draft) = draft {
+        options = options.with_draft(draft.into());
+    }
+    if let Some(validate_formats) = format.validate_formats() {
+        options = options.should_validate_formats(validate_formats);
+    }
+
+    let canonical = match options.canonicalize(&schema_json) {
+        Ok(canonical) => canonical,
+        Err(error) => return fail_with_error(error),
+    };
+
+    let json = match serde_json::to_string_pretty(&canonical.to_json_schema()) {
+        Ok(json) => json,
+        Err(error) => return fail_with_error(error),
+    };
+    match output {
+        Some(path) => {
+            if let Err(error) = std::fs::write(&path, &json) {
+                return fail_with_error(format!("{}: {error}", path.display()));
+            }
+        }
+        None => println!("{json}"),
+    }
+    ExitCode::SUCCESS
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
@@ -844,6 +905,7 @@ fn main() -> ExitCode {
         Some(Command::Validate(args)) => run_validate(args),
         Some(Command::Bundle(args)) => run_bundle(args),
         Some(Command::Dereference(args)) => run_dereference(args),
+        Some(Command::Canonicalize(args)) => run_canonicalize(args),
         None => {
             // Flat invocation is deprecated — emit a warning, then proceed as `validate`
             if let Some(schema) = cli.schema {
