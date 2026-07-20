@@ -11,19 +11,23 @@ license.workspace = true
 [features]
 default = ["serde_json"]
 serde_json = ["dep:bytecount"]
+pyo3 = ["dep:pyo3"]
+# Runs the pyo3 tests: links libpython, so it is not implied by `pyo3`.
+pyo3-tests = ["pyo3", "pyo3/auto-initialize"]
 macros = []
 conformance = []
 arbitrary-precision = ["serde_json/arbitrary_precision", "dep:num-bigint"]
 
 [dependencies]
 ahash.workspace = true
-bytecount ={ version = "0.6", features = ["runtime-dispatch-simd"], optional = true }
+bytecount = { version = "0.6", features = ["runtime-dispatch-simd"], optional = true }
 fraction = { version = "0.15", default-features = false, features = [
   "with-bigint",
 ] }
 num-bigint = { version = "0.4", optional = true }
 num-cmp = "0.1"
 num-traits = "0.2.19"
+pyo3 = { version = "0.29", optional = true, features = ["abi3-py310"] }
 serde_json = { workspace = true, features = ["float_roundtrip"] }
 
 [dev-dependencies]

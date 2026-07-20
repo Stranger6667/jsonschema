@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- Validation of recursive Python objects. [#945](https://github.com/Stranger6667/jsonschema/issues/945)
+
+### Fixed
+
+- `list` subclasses incorrectly rejected as unsupported types.
+- Segmentation fault on enum members whose `value` resolves back to the member.
+
+### Performance
+
+- Up to 5x faster validation by working on Python objects directly instead of converting them to `serde_json`. [#239](https://github.com/Stranger6667/jsonschema/issues/239)
+
 ## [0.48.5] - 2026-07-22
 
 ### Performance
