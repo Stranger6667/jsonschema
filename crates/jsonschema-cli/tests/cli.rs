@@ -1733,3 +1733,52 @@ fn test_dereference_resource_with_transitive_unresolvable_ref_prints_error_on_st
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(!stderr.is_empty(), "expected error on stderr");
 }
+
+#[test]
+fn test_canonicalize_basic() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type":"string","minLength":3}"#);
+
+    let output = cli().arg("canonicalize").arg(&schema).output().unwrap();
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let canonical: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(
+        canonical,
+        serde_json::json!({"type": "string", "minLength": 3})
+    );
+}
+
+#[test]
+fn test_canonicalize_output_to_file() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type":"integer"}"#);
+    let out_path = dir.path().join("canonical.json");
+
+    let output = cli()
+        .arg("canonicalize")
+        .arg(&schema)
+        .arg("--output")
+        .arg(&out_path)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+
+    let written = fs::read_to_string(&out_path).unwrap();
+    let canonical: Value = serde_json::from_str(&written).unwrap();
+    assert_eq!(canonical, serde_json::json!({"type": "integer"}));
+}
+
+#[test]
+fn test_canonicalize_invalid_schema_errors() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", r#"{"type":123}"#);
+
+    let output = cli().arg("canonicalize").arg(&schema).output().unwrap();
+    assert!(!output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(!stderr.is_empty(), "expected error on stderr");
+}
