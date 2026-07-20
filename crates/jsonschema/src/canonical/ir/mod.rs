@@ -208,12 +208,7 @@ impl SchemaKind {
                 _ => return None,
             };
         }
-        // Distinctness check: a duplicated member means some inhabitant is missing.
-        if bits.count_ones() as usize != values.len() {
-            return None;
-        }
         match bits {
-            NULL => Some(JsonTypeSet::from(JsonType::Null)),
             BOTH_BOOLEANS => Some(JsonTypeSet::from(JsonType::Boolean)),
             ALL => Some(JsonTypeSet::from(JsonType::Null).insert(JsonType::Boolean)),
             _ => None,

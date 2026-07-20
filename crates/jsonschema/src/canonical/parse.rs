@@ -15,7 +15,7 @@ pub(crate) fn parse(value: &Value, draft: Draft) -> Option<Schema> {
         Value::Bool(true) => return Some(Schema::new(SchemaKind::True)),
         Value::Bool(false) => return Some(Schema::new(SchemaKind::False)),
         Value::Object(map) => map,
-        _ => return None,
+        _ => unreachable!("meta-validation rejects a non-object, non-boolean schema document"),
     };
 
     let mut type_set = None;
