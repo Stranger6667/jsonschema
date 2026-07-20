@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.48.2] - 2026-07-21
+
 ### Fixed
 
 - `Canonical::JSON.to_string` incorrectly emitting exponent form for small `Float` values (e.g. `1e-7` instead of `0.0000001`).
@@ -190,7 +192,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.2...HEAD
+[0.48.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.1...ruby-v0.48.2
 [0.48.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.0...ruby-v0.48.1
 [0.48.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.47.0...ruby-v0.48.0
 [0.47.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.46.10...ruby-v0.47.0
