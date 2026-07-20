@@ -157,10 +157,11 @@ struct PatternCacheEntry {
 }
 
 impl SharedContextState {
-    fn new() -> Self {
+    /// `capacity` pre-sizes the per-location node cache to avoid rehashing during a build.
+    fn new(capacity: usize) -> Self {
         Self {
             seen: Rc::new(RefCell::new(AHashSet::new())),
-            location_nodes: Rc::new(RefCell::new(AHashMap::new())),
+            location_nodes: Rc::new(RefCell::new(AHashMap::with_capacity(capacity))),
             alias_nodes: Rc::new(RefCell::new(AHashMap::new())),
             pending_nodes: Rc::new(RefCell::new(AHashMap::new())),
             alias_placeholders: Rc::new(RefCell::new(AHashMap::new())),
@@ -208,6 +209,7 @@ impl<'a> Context<'a> {
         vocabularies: VocabularySet,
         draft: Draft,
         location: Location,
+        capacity: usize,
     ) -> Self {
         Context {
             config,
@@ -216,7 +218,7 @@ impl<'a> Context<'a> {
             location,
             vocabularies,
             draft,
-            shared: SharedContextState::new(),
+            shared: SharedContextState::new(capacity),
         }
     }
     pub(crate) fn draft(&self) -> Draft {
@@ -836,6 +838,18 @@ pub(crate) async fn build_validator_async(
     build_validator_with_registry(config, schema, draft, resource_ref, &registry)
 }
 
+/// Upper-bound object-node count in `schema`, used to pre-size the per-location node cache.
+///
+/// Over-counts (data objects in `enum`/`const` are not subschemas), but it only sizes a transient
+/// build cache, so over-provisioning is cheap and under-provisioning would reintroduce rehashing.
+fn estimate_subschema_count(schema: &Value) -> usize {
+    match schema {
+        Value::Object(map) => 1 + map.values().map(estimate_subschema_count).sum::<usize>(),
+        Value::Array(items) => items.iter().map(estimate_subschema_count).sum(),
+        _ => 0,
+    }
+}
+
 fn build_validator_with_registry<R>(
     config: &ValidationOptions<'_, R>,
     schema: &Value,
@@ -847,7 +861,15 @@ fn build_validator_with_registry<R>(
     let base_uri = normalize_base_uri(registry, &requested_base_uri);
     let vocabularies = registry.find_vocabularies(draft, schema);
     let resolver = registry.resolver(base_uri);
-    let ctx = Context::new(config, resolver, vocabularies, draft, Location::new());
+    let capacity = estimate_subschema_count(schema);
+    let ctx = Context::new(
+        config,
+        resolver,
+        vocabularies,
+        draft,
+        Location::new(),
+        capacity,
+    );
     let root = compile(&ctx, resource).map_err(ValidationError::to_owned)?;
     let draft = config.draft();
     Ok(Validator { root, draft })
@@ -1091,6 +1113,7 @@ fn collect_validators<'a>(
                 vocabularies.clone(),
                 draft,
                 Location::new(),
+                estimate_subschema_count(current),
             );
             let resource_ref = ctx.as_resource_ref(current);
             if let Ok(node) = compile(&ctx, resource_ref) {
