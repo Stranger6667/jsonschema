@@ -9,9 +9,13 @@ pub mod numeric_check;
 pub mod types;
 pub mod unique;
 
+#[cfg(feature = "pyo3")]
+mod pyo3;
 #[cfg(feature = "serde_json")]
 mod serde_json;
 
+#[cfg(feature = "pyo3")]
+pub use pyo3::{probe_root, take_pending_error, PendingErrorScope, Pyo3};
 #[cfg(feature = "serde_json")]
 pub use serde_json::SerdeJson;
 

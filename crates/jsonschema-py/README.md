@@ -700,11 +700,11 @@ try:
         "api_key": "secret_key_123"
     })
 except jsonschema_rs.ValidationError as exc:
-    assert str(exc) == '''[REDACTED] does not match "^[A-Z0-9]{32}$"
+    assert str(exc) == '''[REDACTED] is shorter than 8 characters
 
-Failed validating "pattern" in schema["properties"]["api_key"]
+Failed validating "minLength" in schema["properties"]["password"]
 
-On instance["api_key"]:
+On instance["password"]:
     [REDACTED]'''
 ```
 

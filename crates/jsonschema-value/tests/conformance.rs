@@ -1,3 +1,5 @@
+#![cfg(feature = "conformance")]
+
 use std::borrow::Cow;
 
 use jsonschema_value::{conformance, types::JsonType, Array, Json, Node, Object};

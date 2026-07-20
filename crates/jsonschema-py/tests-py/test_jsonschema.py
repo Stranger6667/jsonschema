@@ -64,6 +64,11 @@ def test_lone_surrogate_instance_raises():
         is_valid(True, "\ud800")
 
 
+def test_lone_surrogate_nested_raises():
+    with pytest.raises(ValueError, match="surrogates not allowed"):
+        is_valid({"properties": {"n": {"const": "x"}}}, {"n": "\ud800"})
+
+
 def test_repr():
     assert repr(validator_for({"minimum": 5})) == "<Draft202012Validator>"
 
@@ -118,18 +123,116 @@ def test_named_tuple():
         validate(schema, person_a)
 
 
+RECURSIVE_OBJECT_SCHEMA = {
+    "$defs": {"node": {"type": "object", "additionalProperties": {"$ref": "#/$defs/node"}}},
+    "$ref": "#/$defs/node",
+}
+RECURSIVE_ARRAY_SCHEMA = {
+    "$defs": {"node": {"type": "array", "items": {"$ref": "#/$defs/node"}}},
+    "$ref": "#/$defs/node",
+}
+
+
+# A schema that actually walks the cycle, so the test fails without cycle detection
 def test_recursive_dict():
     instance = {}
     instance["foo"] = instance
-    with pytest.raises(ValueError):
-        is_valid(True, instance)
+    assert is_valid(RECURSIVE_OBJECT_SCHEMA, instance)
 
 
 def test_recursive_list():
     instance = []
     instance.append(instance)
+    assert is_valid(RECURSIVE_ARRAY_SCHEMA, instance)
+
+
+def test_recursive_dict_reports_nested_error():
+    instance = {"a": {}}
+    instance["a"]["b"] = instance
+    schema = {
+        "$defs": {
+            "node": {
+                "type": "object",
+                "additionalProperties": {"$ref": "#/$defs/node"},
+                "propertyNames": {"maxLength": 1},
+            }
+        },
+        "$ref": "#/$defs/node",
+    }
+    assert is_valid(schema, instance)
+    instance["toolong"] = {}
+    assert not is_valid(schema, instance)
+
+
+class Opaque:
+    pass
+
+
+@pytest.mark.parametrize(
+    ("schema", "instance"),
+    (
+        ({"uniqueItems": True}, [Opaque(), Opaque()]),
+        ({"uniqueItems": True}, [None, Opaque()]),
+        ({"properties": {"a": {"const": 1}}}, {"a": Opaque()}),
+        ({"properties": {"a": {"enum": [1, 2]}}}, {"a": Opaque()}),
+        ({"items": {"const": 1}}, [Opaque()]),
+    ),
+)
+def test_unsupported_type_raises(schema, instance):
+    with pytest.raises(ValueError, match="Unsupported type: 'Opaque'"):
+        is_valid(schema, instance)
+
+
+@pytest.mark.parametrize("schema", ({"type": "null"}, {"const": None}))
+def test_enum_member_wrapping_none_is_null(schema):
+    class Nothing(E.Enum):
+        NOTHING = None
+
+    assert is_valid(schema, Nothing.NOTHING)
+
+
+@pytest.mark.parametrize("schema", ({"type": "null"}, {"const": None}))
+def test_unsupported_type_against_null_schema_raises(schema):
+    with pytest.raises(ValueError, match="Unsupported type: 'Opaque'"):
+        is_valid({"properties": {"a": schema}}, {"a": Opaque()})
+
+
+def test_self_referential_enum_value_raises():
+    class Weird(E.Enum):
+        A = 1
+
+        @property
+        def value(self):
+            return self
+
     with pytest.raises(ValueError):
-        is_valid(True, instance)
+        is_valid({"type": "integer"}, Weird.A)
+
+
+def test_nested_validation_keeps_outer_error():
+    calls = []
+
+    class Nested:
+        def __init__(self, schema, *args, **kwargs):
+            pass
+
+        def is_valid(self, instance):
+            calls.append(is_valid({"type": "string"}, "inner"))
+            return True
+
+        def validate(self, instance):
+            self.is_valid(instance)
+            return iter(())
+
+    # `allOf` runs in order: the first branch records an error while still passing, then the
+    # keyword nests a validation that must not consume it
+    validator = validator_for(
+        {"allOf": [{"properties": {"a": {"uniqueItems": True}}}, {"nested": 1}]},
+        keywords={"nested": Nested},
+    )
+    with pytest.raises(ValueError, match="Unsupported type: 'Opaque'"):
+        validator.is_valid({"a": [Opaque(), 1]})
+    assert calls == [True]
 
 
 def test_paths():
@@ -494,11 +597,12 @@ SCHEMA = {"properties": {"foo": {"type": "integer"}, "bar": {"type": "string"}}}
 def test_iter_err_message(func):
     errors = func({"foo": None, "bar": None})
 
+    # Errors follow instance order
     first = next(errors)
-    assert first.message == 'null is not of type "string"'
+    assert first.message == 'null is not of type "integer"'
 
     second = next(errors)
-    assert second.message == 'null is not of type "integer"'
+    assert second.message == 'null is not of type "string"'
 
     with suppress(StopIteration):
         next(errors)
