@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Faster validator compilation by pre-sizing internal caches.
+
 ## [0.48.1] - 2026-07-17
 
 ### Fixed

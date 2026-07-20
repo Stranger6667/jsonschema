@@ -7,6 +7,10 @@
 - `canonical.json.to_string` incorrectly keeping the input spelling of fractional `Decimal` values (e.g. `Decimal("1.50")` and `Decimal("1.5")` producing different strings).
 - `canonical.json.to_string` incorrectly emitting exponent form for small floats (e.g. `1e-7` instead of `0.0000001`).
 
+### Performance
+
+- Faster validator compilation by pre-sizing internal caches.
+
 ## [0.48.1] - 2026-07-17
 
 ### Fixed

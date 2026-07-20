@@ -6,6 +6,10 @@
 
 - `Canonical::JSON.to_string` incorrectly emitting exponent form for small `Float` values (e.g. `1e-7` instead of `0.0000001`).
 
+### Performance
+
+- Faster validator compilation by pre-sizing internal caches.
+
 ## [0.48.1] - 2026-07-17
 
 ### Fixed
