@@ -14,8 +14,8 @@ fn run_case(case: CanonicalCase) {
 
     if let Some(expected_kind) = &case.error {
         assert!(
-            case.expected.is_none() && case.witnesses.is_empty() && case.satisfiable.is_none(),
-            "case `{}`: `error` cases cannot also set `expected`/`witnesses`/`satisfiable`",
+            case.expected.is_none() && case.tests.is_empty() && case.satisfiable.is_none(),
+            "case `{}`: `error` cases cannot also set `expected`/`tests`/`satisfiable`",
             case.description
         );
         for input in &inputs {
@@ -71,14 +71,10 @@ fn run_case(case: CanonicalCase) {
             case.description
         );
     }
-    if case
-        .witnesses
-        .iter()
-        .any(|witness| witness.valid == Some(true))
-    {
+    if case.tests.iter().any(|test| test.valid == Some(true)) {
         assert!(
             satisfiable,
-            "case `{}`: admits a witness but is_satisfiable() is false\n  form = {form}",
+            "case `{}`: admits a valid value but is_satisfiable() is false\n  form = {form}",
             case.description
         );
     }
@@ -91,27 +87,27 @@ fn run_case(case: CanonicalCase) {
         );
     }
 
-    // Raw and canonical validators must agree on every witness.
-    if !case.witnesses.is_empty() {
+    // Raw and canonical validators must agree on every test value.
+    if !case.tests.is_empty() {
         let canonical_validator = case.build(&form, form_draft);
         let raw_validators: Vec<_> = inputs
             .iter()
             .map(|input| (input, case.build(input, raw_draft)))
             .collect();
-        for witness in &case.witnesses {
-            let canon_valid = canonical_validator.is_valid(&witness.data);
+        for test in &case.tests {
+            let canon_valid = canonical_validator.is_valid(&test.data);
             for (input, raw_validator) in &raw_validators {
-                let raw_valid = raw_validator.is_valid(&witness.data);
+                let raw_valid = raw_validator.is_valid(&test.data);
                 assert_eq!(
                     raw_valid, canon_valid,
                     "case `{}`: parity disagrees on {}\n  raw   ({input}) = {raw_valid}\n  canon ({form}) = {canon_valid}",
-                    case.description, witness.data
+                    case.description, test.data
                 );
-                if let Some(expected_valid) = witness.valid {
+                if let Some(expected_valid) = test.valid {
                     assert_eq!(
                         raw_valid, expected_valid,
                         "case `{}`: raw verdict wrong on {}: expected {expected_valid}, got {raw_valid}",
-                        case.description, witness.data
+                        case.description, test.data
                     );
                 }
             }
@@ -132,8 +128,8 @@ struct CanonicalCase {
     #[serde(default)]
     expected: Option<Value>,
     #[serde(default)]
-    witnesses: Vec<Witness>,
-    /// Pins `CanonicalSchema::is_satisfiable()`; a `valid: true` witness already implies satisfiable.
+    tests: Vec<SchemaTest>,
+    /// Pins `CanonicalSchema::is_satisfiable()`; a `valid: true` test already implies satisfiable.
     #[serde(default)]
     satisfiable: Option<bool>,
     /// Force `should_validate_formats`; `None` keeps the draft default.
@@ -154,12 +150,12 @@ fn error_kind(error: &CanonicalizationError) -> &'static str {
 
 /// Plain JSON value (parity-only) or `{"data": ..., "valid": bool}` (also checks verdict).
 #[derive(Debug)]
-struct Witness {
+struct SchemaTest {
     data: Value,
     valid: Option<bool>,
 }
 
-impl<'de> Deserialize<'de> for Witness {
+impl<'de> Deserialize<'de> for SchemaTest {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
@@ -173,9 +169,9 @@ impl<'de> Deserialize<'de> for Witness {
             Value::Object(object) if object.contains_key("data") => {
                 let Tagged { data, valid } =
                     serde_json::from_value(value).map_err(serde::de::Error::custom)?;
-                Ok(Witness { data, valid })
+                Ok(SchemaTest { data, valid })
             }
-            _ => Ok(Witness {
+            _ => Ok(SchemaTest {
                 data: value,
                 valid: None,
             }),

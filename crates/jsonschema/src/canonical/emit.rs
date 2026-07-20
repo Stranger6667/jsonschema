@@ -43,6 +43,12 @@ fn emit(kind: &SchemaKind, draft: Draft) -> Value {
             map.insert("type".into(), Value::String(ty.to_string()));
             Value::Object(map)
         }
+        SchemaKind::AnyOf(branches) => json!({
+            "anyOf": branches
+                .iter()
+                .map(|branch| emit(branch.kind(), draft))
+                .collect::<Vec<_>>()
+        }),
         SchemaKind::Raw(value) => value.get().clone(),
     }
 }

@@ -3,7 +3,10 @@ use referencing::Draft;
 use serde_json::Value;
 
 use crate::{
-    canonical::ir::{CanonicalJson, Schema, SchemaKind},
+    canonical::{
+        algebra,
+        ir::{CanonicalJson, Schema, SchemaKind},
+    },
     JsonType, JsonTypeSet,
 };
 
@@ -11,6 +14,10 @@ use crate::{
 /// Keywords the draft does not define are annotations the validator ignores, so they never block
 /// modeling - except an unknown `$schema`, whose dialect semantics are unknowable.
 pub(crate) fn parse(value: &Value, draft: Draft) -> Option<Schema> {
+    parse_schema(value, draft, true)
+}
+
+fn parse_schema(value: &Value, draft: Draft, is_root: bool) -> Option<Schema> {
     let map = match value {
         Value::Bool(true) => return Some(Schema::new(SchemaKind::True)),
         Value::Bool(false) => return Some(Schema::new(SchemaKind::False)),
@@ -21,13 +28,31 @@ pub(crate) fn parse(value: &Value, draft: Draft) -> Option<Schema> {
     let mut type_set = None;
     let mut enum_values = None;
     let mut const_value = None;
+    let mut conjuncts: Vec<Schema> = Vec::new();
     for (key, entry) in map {
         match key.as_str() {
+            // TODO(canonical): not modeled yet - a nested `$schema` starts an embedded resource
+            // with its own dialect.
+            "$schema" if !is_root => return None,
             "$schema" => {
                 let uri = entry.as_str().expect("meta-valid $schema is a string");
                 if matches!(Draft::from_schema_uri(uri), Draft::Unknown) {
                     return None;
                 }
+            }
+            "allOf" => {
+                for branch in entry.as_array().expect("meta-valid allOf is an array") {
+                    conjuncts.push(parse_schema(branch, draft, false)?);
+                }
+            }
+            "anyOf" => {
+                let branches = entry
+                    .as_array()
+                    .expect("meta-valid anyOf is an array")
+                    .iter()
+                    .map(|branch| parse_schema(branch, draft, false))
+                    .collect::<Option<Vec<_>>>()?;
+                conjuncts.push(algebra::union(branches, draft));
             }
             "type" => type_set = Some(parse_type_set(entry)),
             // TODO(canonical): not modeled yet - `const`/`enum` numbers without a plain spelling
@@ -61,14 +86,16 @@ pub(crate) fn parse(value: &Value, draft: Draft) -> Option<Schema> {
         return None;
     }
 
-    Some(
-        match (type_set, admitted_values(enum_values, const_value)) {
-            (None, None) => Schema::new(SchemaKind::True),
-            (Some(set), None) => type_set_schema(set),
-            (None, Some(values)) => canonicalize_value_set(values),
-            (Some(set), Some(values)) => restrict_values_to_types(values, set, draft),
-        },
-    )
+    let base = match (type_set, admitted_values(enum_values, const_value)) {
+        (None, None) => Schema::new(SchemaKind::True),
+        (Some(set), None) => type_set_schema(set),
+        (None, Some(values)) => canonicalize_value_set(values),
+        (Some(set), Some(values)) => restrict_values_to_types(values, set, draft),
+    };
+    // A schema object's keywords all apply to the same value at once, so combine them by intersection.
+    Some(conjuncts.into_iter().fold(base, |result, conjunct| {
+        algebra::intersect(result, conjunct, draft)
+    }))
 }
 
 /// The finite value set admitted by `const` and `enum` together: their conjunction.
@@ -92,7 +119,11 @@ fn admitted_values(
 }
 
 /// Intersect admitted values with a `type` set: drop values outside it, then pack the rest.
-fn restrict_values_to_types(values: Vec<CanonicalJson>, set: JsonTypeSet, draft: Draft) -> Schema {
+pub(crate) fn restrict_values_to_types(
+    values: Vec<CanonicalJson>,
+    set: JsonTypeSet,
+    draft: Draft,
+) -> Schema {
     let cover = SchemaKind::semantic_cover(set);
     let filtered = values
         .into_iter()
@@ -148,7 +179,7 @@ fn parse_type_set(value: &Value) -> JsonTypeSet {
 
 /// Canonical node for a bare type set: `null`/`boolean` become their finite value sets, the full
 /// set is `True`, anything else stays a `MultiType`.
-fn type_set_schema(set: JsonTypeSet) -> Schema {
+pub(crate) fn type_set_schema(set: JsonTypeSet) -> Schema {
     let set = SchemaKind::canonical_type_set(set);
     if SchemaKind::semantic_cover(set) == JsonTypeSet::all() {
         return Schema::new(SchemaKind::True);

@@ -105,6 +105,22 @@ impl From<JsonType> for JsonTypeSet {
     }
 }
 
+impl std::ops::BitOr for JsonType {
+    type Output = JsonTypeSet;
+    #[inline]
+    fn bitor(self, rhs: JsonType) -> JsonTypeSet {
+        JsonTypeSet::from(self).insert(rhs)
+    }
+}
+
+impl std::ops::BitOr<JsonType> for JsonTypeSet {
+    type Output = JsonTypeSet;
+    #[inline]
+    fn bitor(self, rhs: JsonType) -> JsonTypeSet {
+        self.insert(rhs)
+    }
+}
+
 impl JsonTypeSet {
     /// Create an empty set of types.
     #[inline]
@@ -138,6 +154,18 @@ impl JsonTypeSet {
     pub const fn remove(mut self, ty: JsonType) -> Self {
         self.0 &= !(ty as u8);
         self
+    }
+    /// Types in both sets.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn intersect(self, other: Self) -> Self {
+        Self(self.0 & other.0)
+    }
+    /// Types in either set.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
     }
     /// Return the number of types in this set.
     #[inline]
@@ -288,6 +316,20 @@ mod tests {
     use super::*;
     use serde_json::json;
     use test_case::test_case;
+
+    #[test]
+    fn type_bitor_builds_set() {
+        let set = JsonType::String | JsonType::Integer;
+        assert!(set.contains(JsonType::String));
+        assert!(set.contains(JsonType::Integer));
+        assert!(!set.contains(JsonType::Null));
+        let extended = set | JsonType::Null;
+        assert_eq!(
+            extended,
+            JsonType::String | JsonType::Integer | JsonType::Null
+        );
+        assert!(extended.contains(JsonType::Null));
+    }
 
     #[test_case("array" => Ok(JsonType::Array) ; "parse array")]
     #[test_case("boolean" => Ok(JsonType::Boolean) ; "parse boolean")]

@@ -6,11 +6,12 @@ TrueView = _canonical.TrueView
 FalseView = _canonical.FalseView
 MultiTypeView = _canonical.MultiTypeView
 TypedGroupView = _canonical.TypedGroupView
+AnyOfView = _canonical.AnyOfView
 ConstView = _canonical.ConstView
 EnumView = _canonical.EnumView
 RawView = _canonical.RawView
 
-CanonicalViewType = TrueView | FalseView | MultiTypeView | TypedGroupView | ConstView | EnumView | RawView
+CanonicalViewType = TrueView | FalseView | MultiTypeView | TypedGroupView | AnyOfView | ConstView | EnumView | RawView
 
 json = _canonical.json
 schema = _canonical.schema
@@ -34,6 +35,7 @@ class InvalidSchemaType(CanonicalizationError):
 
 
 __all__ = [
+    "AnyOfView",
     "CanonicalViewType",
     "CanonicalizationError",
     "ConstView",
