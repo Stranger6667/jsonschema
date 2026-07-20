@@ -1,4 +1,7 @@
-use jsonschema::canonical::{CanonicalKind, CanonicalSchema, CanonicalView, CanonicalizationError};
+use jsonschema::{
+    canonical::{CanonicalSchema, CanonicalView, CanonicalizationError},
+    JsonType,
+};
 use magnus::{
     function, method,
     prelude::*,
@@ -52,12 +55,6 @@ fn canonicalization_error(ruby: &Ruby, error: CanonicalizationError) -> Error {
     }
 }
 
-fn kind_label(kind: CanonicalKind) -> &'static str {
-    match kind {
-        CanonicalKind::Raw => "raw",
-    }
-}
-
 #[derive(magnus::TypedData, PartialEq, Eq, Hash)]
 #[magnus(
     class = "JSONSchema::Canonical::CanonicalSchema",
@@ -87,7 +84,11 @@ impl RbCanonicalSchema {
     }
 
     fn kind(ruby: &Ruby, rb_self: &Self) -> Value {
-        ruby.sym_new(kind_label(rb_self.inner.kind())).as_value()
+        ruby.sym_new(rb_self.inner.kind().as_str()).as_value()
+    }
+
+    fn satisfiable(rb_self: &Self) -> bool {
+        rb_self.inner.is_satisfiable()
     }
 
     fn inspect(rb_self: &Self) -> String {
@@ -95,7 +96,7 @@ impl RbCanonicalSchema {
         // `to_json_schema` re-emits the whole document.
         format!(
             "#<JSONSchema::Canonical::CanonicalSchema kind={} draft={:?}>",
-            kind_label(rb_self.inner.kind()),
+            rb_self.inner.kind().as_str(),
             rb_self.inner.draft()
         )
     }
@@ -109,7 +110,23 @@ impl RbCanonicalSchema {
 
     fn view(ruby: &Ruby, rb_self: &Self) -> Value {
         match rb_self.inner.view() {
+            CanonicalView::MultiType(set) => ruby
+                .obj_wrap(MultiTypeView {
+                    types: set.iter().map(JsonType::as_str).collect(),
+                })
+                .as_value(),
+            CanonicalView::TypedGroup(group) => ruby
+                .obj_wrap(TypedGroupView {
+                    type_name: group.ty.as_str(),
+                    body: group.body,
+                })
+                .as_value(),
+            CanonicalView::Const(value) => ruby.obj_wrap(ConstView { value }).as_value(),
+            CanonicalView::Enum(values) => ruby.obj_wrap(EnumView { values }).as_value(),
+            CanonicalView::True => ruby.obj_wrap(TrueView).as_value(),
+            CanonicalView::False => ruby.obj_wrap(FalseView).as_value(),
             CanonicalView::Raw(schema) => ruby.obj_wrap(RawView { schema }).as_value(),
+            // TODO(canonical): new `CanonicalView` variants need view classes here.
             other => unreachable!("unsupported canonical view: {other:?}"),
         }
     }
@@ -151,6 +168,149 @@ impl RawView {
             ruby.sym_new("schema"),
             value_to_ruby(ruby, &rb_self.schema)?,
         )?;
+        Ok(hash)
+    }
+}
+
+/// Matches any value.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::TrueView", free_immediately)]
+pub struct TrueView;
+
+impl DataTypeFunctions for TrueView {}
+
+/// Matches no value.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::FalseView", free_immediately)]
+pub struct FalseView;
+
+impl DataTypeFunctions for FalseView {}
+
+/// A value matches iff its JSON type is in `types`.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::MultiTypeView", free_immediately)]
+pub struct MultiTypeView {
+    types: Vec<&'static str>,
+}
+
+impl DataTypeFunctions for MultiTypeView {}
+
+impl MultiTypeView {
+    fn types(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        let array = ruby.ary_new_capa(rb_self.types.len());
+        for type_name in &rb_self.types {
+            array.push(ruby.sym_new(*type_name).as_value())?;
+        }
+        Ok(array.as_value())
+    }
+
+    fn inspect(rb_self: &Self) -> String {
+        format!(
+            "#<JSONSchema::Canonical::MultiTypeView types={:?}>",
+            rb_self.types
+        )
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("types"), Self::types(ruby, rb_self)?)?;
+        Ok(hash)
+    }
+}
+
+/// A value matches iff its JSON type is `type_name` *and* it satisfies `body`.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::TypedGroupView", free_immediately)]
+pub struct TypedGroupView {
+    type_name: &'static str,
+    body: CanonicalSchema,
+}
+
+impl DataTypeFunctions for TypedGroupView {}
+
+impl TypedGroupView {
+    fn type_name(ruby: &Ruby, rb_self: &Self) -> Value {
+        ruby.sym_new(rb_self.type_name).as_value()
+    }
+
+    fn body(ruby: &Ruby, rb_self: &Self) -> Value {
+        ruby.obj_wrap(RbCanonicalSchema {
+            inner: rb_self.body.clone(),
+        })
+        .as_value()
+    }
+
+    fn inspect(rb_self: &Self) -> String {
+        format!(
+            "#<JSONSchema::Canonical::TypedGroupView type_name={:?}>",
+            rb_self.type_name
+        )
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("type_name"), Self::type_name(ruby, rb_self))?;
+        hash.aset(ruby.sym_new("body"), Self::body(ruby, rb_self))?;
+        Ok(hash)
+    }
+}
+
+/// Exactly one admitted value.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::ConstView", free_immediately)]
+pub struct ConstView {
+    value: serde_json::Value,
+}
+
+impl DataTypeFunctions for ConstView {}
+
+impl ConstView {
+    fn value(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        value_to_ruby(ruby, &rb_self.value)
+    }
+
+    fn inspect(rb_self: &Self) -> String {
+        format!(
+            "#<JSONSchema::Canonical::ConstView value={}>",
+            rb_self.value
+        )
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("value"), Self::value(ruby, rb_self)?)?;
+        Ok(hash)
+    }
+}
+
+/// A sorted, deduplicated finite set of admitted values.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::EnumView", free_immediately)]
+pub struct EnumView {
+    values: Vec<serde_json::Value>,
+}
+
+impl DataTypeFunctions for EnumView {}
+
+impl EnumView {
+    fn values(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        let array = ruby.ary_new_capa(rb_self.values.len());
+        for value in &rb_self.values {
+            array.push(value_to_ruby(ruby, value)?)?;
+        }
+        Ok(array.as_value())
+    }
+
+    fn inspect(rb_self: &Self) -> String {
+        format!(
+            "#<JSONSchema::Canonical::EnumView values={:?}>",
+            rb_self.values
+        )
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("values"), Self::values(ruby, rb_self)?)?;
         Ok(hash)
     }
 }
@@ -206,6 +366,37 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     )?;
     canonical_schema.define_method("view", method!(RbCanonicalSchema::view, 0))?;
     canonical_schema.define_method("definitions", method!(RbCanonicalSchema::definitions, 0))?;
+    canonical_schema.define_method("satisfiable?", method!(RbCanonicalSchema::satisfiable, 0))?;
+
+    canonical_module.define_class("TrueView", ruby.class_object())?;
+    canonical_module.define_class("FalseView", ruby.class_object())?;
+
+    let multi_type_view = canonical_module.define_class("MultiTypeView", ruby.class_object())?;
+    multi_type_view.define_method("types", method!(MultiTypeView::types, 0))?;
+    multi_type_view.define_method("inspect", method!(MultiTypeView::inspect, 0))?;
+    multi_type_view.define_method(
+        "deconstruct_keys",
+        method!(MultiTypeView::deconstruct_keys, 1),
+    )?;
+
+    let typed_group_view = canonical_module.define_class("TypedGroupView", ruby.class_object())?;
+    typed_group_view.define_method("type_name", method!(TypedGroupView::type_name, 0))?;
+    typed_group_view.define_method("body", method!(TypedGroupView::body, 0))?;
+    typed_group_view.define_method("inspect", method!(TypedGroupView::inspect, 0))?;
+    typed_group_view.define_method(
+        "deconstruct_keys",
+        method!(TypedGroupView::deconstruct_keys, 1),
+    )?;
+
+    let const_view = canonical_module.define_class("ConstView", ruby.class_object())?;
+    const_view.define_method("value", method!(ConstView::value, 0))?;
+    const_view.define_method("inspect", method!(ConstView::inspect, 0))?;
+    const_view.define_method("deconstruct_keys", method!(ConstView::deconstruct_keys, 1))?;
+
+    let enum_view = canonical_module.define_class("EnumView", ruby.class_object())?;
+    enum_view.define_method("values", method!(EnumView::values, 0))?;
+    enum_view.define_method("inspect", method!(EnumView::inspect, 0))?;
+    enum_view.define_method("deconstruct_keys", method!(EnumView::deconstruct_keys, 1))?;
 
     let raw_view = canonical_module.define_class("RawView", ruby.class_object())?;
     raw_view.define_method("schema", method!(RawView::schema, 0))?;

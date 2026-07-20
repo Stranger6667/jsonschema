@@ -2,6 +2,8 @@ import pytest
 
 from jsonschema_rs import CanonicalSchema, ValidationError, canonical, canonicalize
 
+DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
+
 
 @pytest.mark.parametrize(
     "schema",
@@ -9,52 +11,114 @@ from jsonschema_rs import CanonicalSchema, ValidationError, canonical, canonical
         {"type": "string", "minLength": 3},
         {"allOf": [{"type": "integer"}, {"minimum": 0}]},
         {"$defs": {"a": {"type": "null"}}, "$ref": "#/$defs/a"},
-        {},
-        True,
-        False,
     ],
 )
-def test_round_trip_verbatim(schema):
+def test_unmodeled_round_trips_verbatim(schema):
     result = canonicalize(schema)
     assert isinstance(result, CanonicalSchema)
     assert result.to_json_schema() == schema
+    assert result.kind == "raw"
 
 
-def test_view_is_raw():
-    match canonicalize({"type": "string"}).view():
+@pytest.mark.parametrize(
+    ("schema", "expected"),
+    [
+        ({"enum": [5]}, {"$schema": DRAFT202012, "const": 5}),
+        ({"enum": ["z", 2, None, 1]}, {"$schema": DRAFT202012, "enum": [None, 1, 2, "z"]}),
+        ({"const": None}, {"$schema": DRAFT202012, "type": "null"}),
+        ({"type": ["integer", "string"]}, {"$schema": DRAFT202012, "type": ["integer", "string"]}),
+        ({"type": "boolean", "enum": [True]}, {"$schema": DRAFT202012, "const": True}),
+        ({"type": "integer", "enum": [1, "x", 2]}, {"$schema": DRAFT202012, "enum": [1, 2]}),
+    ],
+)
+def test_valueset_canonical_forms(schema, expected):
+    assert canonicalize(schema).to_json_schema() == expected
+
+
+def test_view_const():
+    match canonicalize({"enum": [5]}).view():
+        case canonical.ConstView(value=value):
+            assert value == 5
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
+def test_view_enum():
+    match canonicalize({"enum": [2, 1]}).view():
+        case canonical.EnumView(values=values):
+            assert values == [1, 2]
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
+def test_view_multi_type():
+    match canonicalize({"type": ["string", "integer"]}).view():
+        case canonical.MultiTypeView(types=types):
+            assert types == ["integer", "string"]
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
+def test_view_true_false():
+    assert isinstance(canonicalize({}).view(), canonical.TrueView)
+    assert isinstance(canonicalize(False).view(), canonical.FalseView)
+
+
+def test_view_typed_group_draft4_integer():
+    schema = {
+        "$schema": "http://json-schema.org/draft-04/schema#",
+        "type": "integer",
+        "enum": [1, 2],
+    }
+    match canonicalize(schema).view():
+        case canonical.TypedGroupView(type_name=type_name, body=body) if isinstance(body, CanonicalSchema):
+            assert type_name == "integer"
+            match body.view():
+                case canonical.EnumView(values=values):
+                    assert values == [1, 2]
+                case other:
+                    pytest.fail(f"unexpected body view: {other!r}")
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
+def test_view_raw():
+    match canonicalize({"not": {}}).view():
         case canonical.RawView(schema=payload):
-            assert payload == {"type": "string"}
+            assert payload == {"not": {}}
         case other:
             pytest.fail(f"unexpected view: {other!r}")
 
 
 @pytest.mark.parametrize(
-    ("schema", "draft", "expected"),
+    ("schema", "kind"),
     [
-        ({}, None, 20),
-        ({"$schema": "http://json-schema.org/draft-07/schema#"}, None, 7),
-        ({"$schema": "https://json-schema.org/draft/2019-09/schema"}, None, 19),
-        ({}, 4, 4),
-        ({}, 7, 7),
+        ({"const": 5}, "const"),
+        ({"enum": [1, 2]}, "enum"),
+        ({"type": ["integer", "string"]}, "multi_type"),
+        ({}, "true"),
+        (False, "false"),
+        ({"pattern": "a"}, "raw"),
     ],
 )
-def test_draft(schema, draft, expected):
-    kwargs = {} if draft is None else {"draft": draft}
-    assert canonicalize(schema, **kwargs).draft == expected
+def test_kind(schema, kind):
+    assert canonicalize(schema).kind == kind
 
 
-def test_kind():
-    assert canonicalize({}).kind == "raw"
+def test_is_satisfiable():
+    assert canonicalize({"const": 5}).is_satisfiable()
+    assert not canonicalize({"type": "integer", "enum": ["x"]}).is_satisfiable()
 
 
-def test_equality_is_document_identity():
-    assert canonicalize({"const": 1}) == canonicalize({"const": 1})
-    assert canonicalize({"const": 1}) != canonicalize({"const": 1.0})
-    assert hash(canonicalize({"const": 1})) == hash(canonicalize({"const": 1}))
-
-
-def test_definitions_is_empty():
-    assert canonicalize({"$defs": {"a": {}}, "$ref": "#/$defs/a"}).definitions() == {}
+@pytest.mark.parametrize(
+    ("left", "right"),
+    [
+        ({"enum": [5]}, {"const": 5}),
+        ({"const": 1}, {"const": 1.0}),
+    ],
+)
+def test_value_equivalence(left, right):
+    assert canonicalize(left) == canonicalize(right)
 
 
 def test_invalid_schema_raises_validation_error():

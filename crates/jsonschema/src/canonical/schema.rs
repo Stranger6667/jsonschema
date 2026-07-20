@@ -86,7 +86,17 @@ impl CanonicalSchema {
     /// Emit this canonical schema back to JSON Schema.
     #[must_use]
     pub fn to_json_schema(&self) -> Value {
-        emit::to_json_schema(&self.inner)
+        emit::to_json_schema(&self.inner, self.draft)
+    }
+
+    /// Return `false` when this schema provably admits no instances.
+    ///
+    /// Conservative: `true` means "not provably empty", not a satisfiability proof.
+    #[must_use]
+    pub fn is_satisfiable(&self) -> bool {
+        // TODO(canonical): not modeled yet - only `False` is provably empty; unsatisfiable
+        // combinations reduce to `False` as more constructs become modeled.
+        !matches!(self.schema_kind(), SchemaKind::False)
     }
 
     /// Borrow the internal canonical IR kind.

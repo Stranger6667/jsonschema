@@ -2,17 +2,13 @@ pub(crate) mod json;
 
 use std::hash::{Hash, Hasher};
 
+use jsonschema::canonical::{CanonicalSchema, CanonicalView};
+
 use pyo3::prelude::*;
 
 #[pyclass(frozen, name = "CanonicalSchema")]
 pub(crate) struct PyCanonicalSchema {
-    inner: jsonschema::canonical::CanonicalSchema,
-}
-
-fn kind_label(kind: jsonschema::canonical::CanonicalKind) -> &'static str {
-    match kind {
-        jsonschema::canonical::CanonicalKind::Raw => "raw",
-    }
+    inner: CanonicalSchema,
 }
 
 #[pymethods]
@@ -37,21 +33,56 @@ impl PyCanonicalSchema {
     /// Structural kind label of this node.
     #[getter]
     fn kind(&self) -> &'static str {
-        kind_label(self.inner.kind())
+        self.inner.kind().as_str()
     }
 
     /// Return the single view object for this node.
     fn view(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        match self.inner.view() {
-            jsonschema::canonical::CanonicalView::Raw(schema) => Ok(Py::new(
+        Ok(match self.inner.view() {
+            CanonicalView::MultiType(set) => Py::new(
+                py,
+                MultiTypeView {
+                    types: set.iter().map(|ty| ty.to_string()).collect(),
+                },
+            )?
+            .into_any(),
+            CanonicalView::TypedGroup(group) => Py::new(
+                py,
+                TypedGroupView {
+                    type_name: group.ty.to_string(),
+                    body: Py::new(py, PyCanonicalSchema { inner: group.body })?.into_any(),
+                },
+            )?
+            .into_any(),
+            CanonicalView::Const(value) => Py::new(
+                py,
+                ConstView {
+                    value: crate::value_to_python(py, &value)?,
+                },
+            )?
+            .into_any(),
+            CanonicalView::Enum(values) => Py::new(
+                py,
+                EnumView {
+                    values: values
+                        .iter()
+                        .map(|value| crate::value_to_python(py, value))
+                        .collect::<PyResult<_>>()?,
+                },
+            )?
+            .into_any(),
+            CanonicalView::True => Py::new(py, TrueView)?.into_any(),
+            CanonicalView::False => Py::new(py, FalseView)?.into_any(),
+            CanonicalView::Raw(schema) => Py::new(
                 py,
                 RawView {
                     schema: crate::value_to_python(py, &schema)?,
                 },
             )?
-            .into_any()),
+            .into_any(),
+            // TODO(canonical): new `CanonicalView` variants need view classes here.
             other => unreachable!("unsupported canonical view: {other:?}"),
-        }
+        })
     }
 
     /// Map of reference uri -> canonical target for every reference reachable from this schema.
@@ -69,6 +100,11 @@ impl PyCanonicalSchema {
         hasher.finish()
     }
 
+    /// Return `False` when this schema provably admits no instances.
+    fn is_satisfiable(&self) -> bool {
+        self.inner.is_satisfiable()
+    }
+
     fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
         other
             .cast::<PyCanonicalSchema>()
@@ -80,7 +116,7 @@ impl PyCanonicalSchema {
         // `to_json_schema` re-emits the whole document.
         format!(
             "<CanonicalSchema kind={} draft={:?}>",
-            kind_label(self.inner.kind()),
+            self.inner.kind().as_str(),
             self.inner.draft()
         )
     }
@@ -98,6 +134,76 @@ impl RawView {
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("schema",)
+    }
+}
+
+/// Matches any value.
+#[pyclass(frozen, name = "TrueView", module = "jsonschema_rs.canonical")]
+pub(crate) struct TrueView;
+
+/// Matches no value.
+#[pyclass(frozen, name = "FalseView", module = "jsonschema_rs.canonical")]
+pub(crate) struct FalseView;
+
+/// A value matches iff its JSON type is in `types`.
+#[pyclass(frozen, name = "MultiTypeView", module = "jsonschema_rs.canonical")]
+pub(crate) struct MultiTypeView {
+    #[pyo3(get)]
+    types: Vec<String>,
+}
+
+#[pymethods]
+impl MultiTypeView {
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("types",)
+    }
+}
+
+/// A value matches iff its JSON type is `type_name` *and* it satisfies `body`.
+#[pyclass(frozen, name = "TypedGroupView", module = "jsonschema_rs.canonical")]
+pub(crate) struct TypedGroupView {
+    #[pyo3(get)]
+    type_name: String,
+    #[pyo3(get)]
+    body: Py<PyAny>,
+}
+
+#[pymethods]
+impl TypedGroupView {
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("type_name", "body")
+    }
+}
+
+/// Exactly one admitted value.
+#[pyclass(frozen, name = "ConstView", module = "jsonschema_rs.canonical")]
+pub(crate) struct ConstView {
+    #[pyo3(get)]
+    value: Py<PyAny>,
+}
+
+#[pymethods]
+impl ConstView {
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("value",)
+    }
+}
+
+/// A sorted, deduplicated finite set of admitted values.
+#[pyclass(frozen, name = "EnumView", module = "jsonschema_rs.canonical")]
+pub(crate) struct EnumView {
+    #[pyo3(get)]
+    values: Vec<Py<PyAny>>,
+}
+
+#[pymethods]
+impl EnumView {
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("values",)
     }
 }
 
@@ -156,6 +262,12 @@ fn canonicalization_error(
 pub(crate) fn init_module(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     let canonical_module = PyModule::new(py, "canonical")?;
 
+    canonical_module.add_class::<TrueView>()?;
+    canonical_module.add_class::<FalseView>()?;
+    canonical_module.add_class::<MultiTypeView>()?;
+    canonical_module.add_class::<TypedGroupView>()?;
+    canonical_module.add_class::<ConstView>()?;
+    canonical_module.add_class::<EnumView>()?;
     canonical_module.add_class::<RawView>()?;
 
     let canonical_json_module = PyModule::new(py, "json")?;

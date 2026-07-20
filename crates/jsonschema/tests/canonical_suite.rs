@@ -12,11 +12,10 @@ use testsuite::canonical_suite;
 fn run_case(case: CanonicalCase) {
     let inputs = case.inputs();
 
-    // Negative cases: every input must be rejected with the expected `CanonicalizationError` variant.
     if let Some(expected_kind) = &case.error {
         assert!(
-            case.expected.is_none() && case.witnesses.is_empty(),
-            "case `{}`: `error` cases cannot also set `expected`/`witnesses`",
+            case.expected.is_none() && case.witnesses.is_empty() && case.satisfiable.is_none(),
+            "case `{}`: `error` cases cannot also set `expected`/`witnesses`/`satisfiable`",
             case.description
         );
         for input in &inputs {
@@ -35,9 +34,10 @@ fn run_case(case: CanonicalCase) {
         .draft()
         .unwrap_or_else(|| Draft::default().detect(inputs[0]));
 
-    // Canonicalize every input; check idempotency and convergence.
+    // Idempotency and convergence across inputs.
     let mut form: Option<Value> = None;
     let mut form_draft = raw_draft;
+    let mut canonical: Option<CanonicalSchema> = None;
     for input in &inputs {
         let canon = case.canonicalize(input);
         let emitted = canon.to_json_schema();
@@ -51,6 +51,7 @@ fn run_case(case: CanonicalCase) {
             None => {
                 form_draft = canon.draft();
                 form = Some(emitted);
+                canonical = Some(canon);
             }
             Some(prev) => assert_eq!(
                 prev, &emitted,
@@ -60,8 +61,28 @@ fn run_case(case: CanonicalCase) {
         }
     }
     let form = form.expect("at least one input");
+    let canonical = canonical.expect("at least one input");
 
-    // Exact canonical form, if pinned.
+    let satisfiable = canonical.is_satisfiable();
+    if let Some(expected) = case.satisfiable {
+        assert_eq!(
+            satisfiable, expected,
+            "case `{}`: is_satisfiable() = {satisfiable}, expected {expected}\n  form = {form}",
+            case.description
+        );
+    }
+    if case
+        .witnesses
+        .iter()
+        .any(|witness| witness.valid == Some(true))
+    {
+        assert!(
+            satisfiable,
+            "case `{}`: admits a witness but is_satisfiable() is false\n  form = {form}",
+            case.description
+        );
+    }
+
     if let Some(expected) = &case.expected {
         assert_eq!(
             &form, expected,
@@ -70,7 +91,7 @@ fn run_case(case: CanonicalCase) {
         );
     }
 
-    // Witness parity: raw validator(s) and the canonical validator must agree.
+    // Raw and canonical validators must agree on every witness.
     if !case.witnesses.is_empty() {
         let canonical_validator = case.build(&form, form_draft);
         let raw_validators: Vec<_> = inputs
@@ -112,6 +133,9 @@ struct CanonicalCase {
     expected: Option<Value>,
     #[serde(default)]
     witnesses: Vec<Witness>,
+    /// Pins `CanonicalSchema::is_satisfiable()`; a `valid: true` witness already implies satisfiable.
+    #[serde(default)]
+    satisfiable: Option<bool>,
     /// Force `should_validate_formats`; `None` keeps the draft default.
     #[serde(default)]
     validate_formats: Option<bool>,
