@@ -22,7 +22,7 @@ impl CanonicalKind {
 // TODO(canonical): not modeled yet - constructs beyond value sets surface as `Raw`; new variants
 // arrive here as they become modeled.
 #[non_exhaustive]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CanonicalView {
     /// A value matches iff its JSON type is in the set.
     MultiType(JsonTypeSet),
@@ -36,7 +36,7 @@ pub enum CanonicalView {
 }
 
 /// Payload of [`CanonicalView::TypedGroup`]: JSON type `ty` and a `body` schema constraining its values.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TypedGroupView {
     pub ty: JsonType,
     pub body: CanonicalSchema,
