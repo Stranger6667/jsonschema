@@ -6,11 +6,13 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::{JsonType, JsonTypeSet},
     validator::{Validate, ValidationContext},
+    Json, JsonArrayAccess, JsonNode, SerdeJson,
 };
 use serde_json::{Map, Value};
+use std::borrow::Cow;
 
-pub(crate) struct AdditionalItemsObjectValidator {
-    node: SchemaNode,
+pub(crate) struct AdditionalItemsObjectValidator<F: Json = SerdeJson> {
+    node: SchemaNode<F>,
     items_count: usize,
 }
 impl AdditionalItemsObjectValidator {
@@ -27,13 +29,13 @@ impl AdditionalItemsObjectValidator {
         }))
     }
 }
-impl Validate for AdditionalItemsObjectValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if let Value::Array(items) = instance {
-            items
-                .iter()
+impl<F: Json> Validate<F> for AdditionalItemsObjectValidator<F> {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
+        if let Some(array) = instance.as_array() {
+            array
+                .elements()
                 .skip(self.items_count)
-                .all(|item| self.node.is_valid(item, ctx))
+                .all(|item| self.node.is_valid(&item, ctx))
         } else {
             true
         }
@@ -41,15 +43,15 @@ impl Validate for AdditionalItemsObjectValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Array(items) = instance {
-            for (idx, item) in items.iter().enumerate().skip(self.items_count) {
+        if let Some(array) = instance.as_array() {
+            for (idx, item) in array.elements().enumerate().skip(self.items_count) {
                 self.node
-                    .validate(item, &location.push(idx), tracker, ctx)?;
+                    .validate(&item, &location.push(idx), tracker, ctx)?;
             }
         }
         Ok(())
@@ -57,17 +59,17 @@ impl Validate for AdditionalItemsObjectValidator {
 
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if let Value::Array(items) = instance {
+        if let Some(array) = instance.as_array() {
             let mut errors = Vec::new();
-            for (idx, item) in items.iter().enumerate().skip(self.items_count) {
+            for (idx, item) in array.elements().enumerate().skip(self.items_count) {
                 errors.extend(
                     self.node
-                        .iter_errors(item, &location.push(idx), tracker, ctx),
+                        .iter_errors(&item, &location.push(idx), tracker, ctx),
                 );
             }
             ErrorIterator::from_iterator(errors.into_iter())
@@ -90,10 +92,10 @@ impl AdditionalItemsBooleanValidator {
         }))
     }
 }
-impl Validate for AdditionalItemsBooleanValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-        if let Value::Array(items) = instance {
-            if items.len() > self.items_count {
+impl<F: Json> Validate<F> for AdditionalItemsBooleanValidator {
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        if let Some(array) = instance.as_array() {
+            if array.len() > self.items_count {
                 return false;
             }
         }
@@ -102,18 +104,18 @@ impl Validate for AdditionalItemsBooleanValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Array(items) = instance {
-            if items.len() > self.items_count {
+        if let Some(array) = instance.as_array() {
+            if array.len() > self.items_count {
                 return Err(ValidationError::additional_items(
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance,
+                    instance.to_value(),
                     self.items_count,
                 ));
             }
@@ -161,7 +163,7 @@ pub(crate) fn compile<'a>(
                     location.clone(),
                     location,
                     Location::new(),
-                    schema,
+                    Cow::Borrowed(schema),
                     JsonTypeSet::from(JsonType::Object)
                         .insert(JsonType::Array)
                         .insert(JsonType::Boolean),

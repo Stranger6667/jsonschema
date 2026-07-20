@@ -22,7 +22,7 @@ use referencing::{
     Vocabulary, VocabularySet,
 };
 use serde_json::{Map, Value};
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::{borrow::Cow, cell::RefCell, rc::Rc, sync::Arc};
 
 const DEFAULT_SCHEME: &str = "json-schema";
 pub(crate) const DEFAULT_BASE_URI: &str = "json-schema:///";
@@ -1081,7 +1081,7 @@ fn compile_without_cache<'a>(
                 location.clone(),
                 location,
                 Location::new(),
-                resource.contents(),
+                Cow::Borrowed(resource.contents()),
                 JsonTypeSet::from(JsonType::Boolean).insert(JsonType::Object),
             ))
         }

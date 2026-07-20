@@ -1,14 +1,15 @@
 use crate::{
     compiler,
     error::ValidationError,
-    ext::cmp,
     keywords::CompilationResult,
     paths::{LazyLocation, Location, RefTracker},
     types::{JsonType, JsonTypeSet},
     validator::{Validate, ValidationContext},
+    Json, JsonNode,
 };
 use ahash::AHashSet;
 use serde_json::{Map, Value};
+use std::borrow::Cow;
 
 const STRING_ENUM_THRESHOLD: usize = 10;
 
@@ -41,33 +42,33 @@ impl EnumValidator {
     }
 }
 
-impl Validate for EnumValidator {
+impl<F: Json> Validate<F> for EnumValidator {
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if Validate::<F>::is_valid(self, instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::enumeration(
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance,
+                instance.to_value(),
                 &self.options,
             ))
         }
     }
 
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         // If the input value type is not in the types present among the enum options, then there
         // is no reason to compare it against all items - we know that
         // there are no items with such type at all
-        if self.types.contains_value_type(instance) {
-            self.items.iter().any(|item| cmp::equal(instance, item))
+        if self.types.contains_value_type::<F>(instance) {
+            self.items.iter().any(|item| instance.equals_value(item))
         } else {
             false
         }
@@ -96,29 +97,29 @@ impl SingleValueEnumValidator {
     }
 }
 
-impl Validate for SingleValueEnumValidator {
+impl<F: Json> Validate<F> for SingleValueEnumValidator {
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if Validate::<F>::is_valid(self, instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::enumeration(
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance,
+                instance.to_value(),
                 &self.options,
             ))
         }
     }
 
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-        cmp::equal(&self.value, instance)
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        instance.equals_value(&self.value)
     }
 }
 
@@ -148,30 +149,30 @@ impl SmallStringEnumValidator {
     }
 }
 
-impl Validate for SmallStringEnumValidator {
+impl<F: Json> Validate<F> for SmallStringEnumValidator {
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if Validate::<F>::is_valid(self, instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::enumeration(
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance,
+                instance.to_value(),
                 &self.options,
             ))
         }
     }
 
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-        if let Value::String(s) = instance {
-            self.items.iter().any(|item| item.as_ref() == s.as_str())
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        if let Some(s) = instance.as_string() {
+            self.items.iter().any(|item| item.as_ref() == s.as_ref())
         } else {
             false
         }
@@ -204,30 +205,30 @@ impl BigStringEnumValidator {
     }
 }
 
-impl Validate for BigStringEnumValidator {
+impl<F: Json> Validate<F> for BigStringEnumValidator {
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if Validate::<F>::is_valid(self, instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::enumeration(
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance,
+                instance.to_value(),
                 &self.options,
             ))
         }
     }
 
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-        if let Value::String(s) = instance {
-            self.items.contains(s.as_str())
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        if let Some(s) = instance.as_string() {
+            self.items.contains(s.as_ref())
         } else {
             false
         }
@@ -260,7 +261,7 @@ pub(crate) fn compile<'a>(
             location.clone(),
             location,
             Location::new(),
-            schema,
+            Cow::Borrowed(schema),
             JsonType::Array,
         )))
     }

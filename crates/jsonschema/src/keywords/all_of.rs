@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::{
     compiler,
     error::{ErrorIterator, ValidationError},
@@ -5,16 +7,17 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
+    Json, SerdeJson,
 };
 use serde_json::{Map, Value};
 
 use super::CompilationResult;
 
-pub(crate) struct AllOfValidator {
-    schemas: Vec<SchemaNode>,
+pub(crate) struct AllOfValidator<F: Json> {
+    schemas: Vec<SchemaNode<F>>,
 }
 
-impl AllOfValidator {
+impl AllOfValidator<SerdeJson> {
     #[inline]
     pub(crate) fn compile<'a>(
         ctx: &compiler::Context,
@@ -31,14 +34,14 @@ impl AllOfValidator {
     }
 }
 
-impl Validate for AllOfValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+impl<F: Json> Validate<F> for AllOfValidator<F> {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         self.schemas.iter().all(|n| n.is_valid(instance, ctx))
     }
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -52,7 +55,7 @@ impl Validate for AllOfValidator {
     #[allow(clippy::needless_collect)]
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -67,7 +70,7 @@ impl Validate for AllOfValidator {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -80,11 +83,11 @@ impl Validate for AllOfValidator {
     }
 }
 
-pub(crate) struct SingleValueAllOfValidator {
-    node: SchemaNode,
+pub(crate) struct SingleValueAllOfValidator<F: Json> {
+    node: SchemaNode<F>,
 }
 
-impl SingleValueAllOfValidator {
+impl SingleValueAllOfValidator<SerdeJson> {
     #[inline]
     pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
         let ctx = ctx.new_at_location("allOf");
@@ -94,14 +97,14 @@ impl SingleValueAllOfValidator {
     }
 }
 
-impl Validate for SingleValueAllOfValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+impl<F: Json> Validate<F> for SingleValueAllOfValidator<F> {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         self.node.is_valid(instance, ctx)
     }
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -111,7 +114,7 @@ impl Validate for SingleValueAllOfValidator {
 
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -121,7 +124,7 @@ impl Validate for SingleValueAllOfValidator {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -152,7 +155,7 @@ pub(crate) fn compile<'a>(
             location.clone(),
             location,
             Location::new(),
-            schema,
+            Cow::Borrowed(schema),
             JsonType::Array,
         )))
     }

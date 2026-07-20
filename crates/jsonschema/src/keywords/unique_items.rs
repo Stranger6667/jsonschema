@@ -5,6 +5,7 @@ use crate::{
     keywords::CompilationResult,
     paths::Location,
     validator::{Validate, ValidationContext},
+    Json, JsonArrayAccess, JsonNode,
 };
 use ahash::{AHashSet, AHasher};
 use serde_json::{Map, Value};
@@ -97,6 +98,16 @@ pub fn is_unique(items: &[Value]) -> bool {
     }
 }
 
+fn has_unique_items<F: Json>(instance: &F::Node<'_>) -> bool {
+    let Some(array) = instance.as_array() else {
+        return true;
+    };
+    match array.as_value_slice() {
+        Some(items) => is_unique(items),
+        None => unreachable!("uniqueItems requires a representation backed by a `Value` slice"),
+    }
+}
+
 pub(crate) struct UniqueItemsValidator {
     location: Location,
 }
@@ -108,31 +119,26 @@ impl UniqueItemsValidator {
     }
 }
 
-impl Validate for UniqueItemsValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-        if let Value::Array(items) = instance {
-            if !is_unique(items) {
-                return false;
-            }
-        }
-        true
+impl<F: Json> Validate<F> for UniqueItemsValidator {
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        has_unique_items::<F>(instance)
     }
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
+        _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if has_unique_items::<F>(instance) {
             Ok(())
         } else {
             Err(ValidationError::unique_items(
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance,
+                instance.to_value(),
             ))
         }
     }

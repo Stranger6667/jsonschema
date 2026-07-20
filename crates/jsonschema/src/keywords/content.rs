@@ -9,6 +9,7 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
+    Json, JsonNode,
 };
 use serde_json::{Map, Value};
 use std::{borrow::Cow, sync::Arc};
@@ -36,10 +37,10 @@ impl ContentMediaTypeValidator {
 }
 
 /// Validator delegates validation to the stored function.
-impl Validate for ContentMediaTypeValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-        if let Value::String(item) = instance {
-            (self.func)(item)
+impl<F: Json> Validate<F> for ContentMediaTypeValidator {
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        if let Some(item) = instance.as_string() {
+            (self.func)(&item)
         } else {
             true
         }
@@ -47,22 +48,24 @@ impl Validate for ContentMediaTypeValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
+        _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
-            Ok(())
-        } else if let Value::String(_) = instance {
-            let loc = &self.location;
-            Err(ValidationError::content_media_type(
-                loc.clone(),
-                crate::paths::capture_evaluation_path(tracker, loc),
-                location.into(),
-                instance,
-                &self.media_type,
-            ))
+        if let Some(item) = instance.as_string() {
+            if (self.func)(&item) {
+                Ok(())
+            } else {
+                let loc = &self.location;
+                Err(ValidationError::content_media_type(
+                    loc.clone(),
+                    crate::paths::capture_evaluation_path(tracker, loc),
+                    location.into(),
+                    instance.to_value(),
+                    &self.media_type,
+                ))
+            }
         } else {
             Ok(())
         }
@@ -91,10 +94,10 @@ impl ContentEncodingValidator {
     }
 }
 
-impl Validate for ContentEncodingValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-        if let Value::String(item) = instance {
-            (self.func)(item)
+impl<F: Json> Validate<F> for ContentEncodingValidator {
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        if let Some(item) = instance.as_string() {
+            (self.func)(&item)
         } else {
             true
         }
@@ -102,22 +105,24 @@ impl Validate for ContentEncodingValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
+        _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
-            Ok(())
-        } else if let Value::String(_) = instance {
-            let loc = &self.location;
-            Err(ValidationError::content_encoding(
-                loc.clone(),
-                crate::paths::capture_evaluation_path(tracker, loc),
-                location.into(),
-                instance,
-                &self.encoding,
-            ))
+        if let Some(item) = instance.as_string() {
+            if (self.func)(&item) {
+                Ok(())
+            } else {
+                let loc = &self.location;
+                Err(ValidationError::content_encoding(
+                    loc.clone(),
+                    crate::paths::capture_evaluation_path(tracker, loc),
+                    location.into(),
+                    instance.to_value(),
+                    &self.encoding,
+                ))
+            }
         } else {
             Ok(())
         }
@@ -153,10 +158,10 @@ impl ContentMediaTypeAndEncodingValidator {
 }
 
 /// Decode the input value & check media type
-impl Validate for ContentMediaTypeAndEncodingValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-        if let Value::String(item) = instance {
-            match (self.converter)(item) {
+impl<F: Json> Validate<F> for ContentMediaTypeAndEncodingValidator {
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        if let Some(item) = instance.as_string() {
+            match (self.converter)(&item) {
                 Ok(None) | Err(_) => false,
                 Ok(Some(converted)) => (self.func)(&converted),
             }
@@ -167,13 +172,13 @@ impl Validate for ContentMediaTypeAndEncodingValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::String(item) = instance {
-            match (self.converter)(item) {
+        if let Some(item) = instance.as_string() {
+            match (self.converter)(&item) {
                 Ok(None) => {
                     let encoding_location = self.location.join("contentEncoding");
                     let eval_path =
@@ -182,7 +187,7 @@ impl Validate for ContentMediaTypeAndEncodingValidator {
                         encoding_location,
                         eval_path,
                         location.into(),
-                        instance,
+                        instance.to_value(),
                         &self.encoding,
                     ))
                 }
@@ -197,7 +202,7 @@ impl Validate for ContentMediaTypeAndEncodingValidator {
                             media_type_location,
                             eval_path,
                             location.into(),
-                            instance,
+                            instance.to_value(),
                             &self.media_type,
                         ))
                     }
@@ -207,7 +212,7 @@ impl Validate for ContentMediaTypeAndEncodingValidator {
                     let eval_path =
                         crate::paths::capture_evaluation_path(tracker, &encoding_location);
                     Err(ValidationError::new(
-                        Cow::Borrowed(instance),
+                        instance.to_value(),
                         e.into_parts().kind,
                         location.into(),
                         encoding_location,
@@ -245,7 +250,7 @@ pub(crate) fn compile_media_type<'a>(
                     location.clone(),
                     location,
                     Location::new(),
-                    content_encoding,
+                    Cow::Borrowed(content_encoding),
                     JsonType::String,
                 )))
             }
@@ -262,7 +267,7 @@ pub(crate) fn compile_media_type<'a>(
             location.clone(),
             location,
             Location::new(),
-            subschema,
+            Cow::Borrowed(subschema),
             JsonType::String,
         )))
     }
@@ -292,7 +297,7 @@ pub(crate) fn compile_content_encoding<'a>(
             location.clone(),
             location,
             Location::new(),
-            subschema,
+            Cow::Borrowed(subschema),
             JsonType::String,
         )))
     }
@@ -321,14 +326,14 @@ impl ContentMediaTypeAnnotationValidator {
     }
 }
 
-impl Validate for ContentMediaTypeAnnotationValidator {
-    fn is_valid(&self, _instance: &Value, _ctx: &mut ValidationContext) -> bool {
+impl<F: Json> Validate<F> for ContentMediaTypeAnnotationValidator {
+    fn is_valid(&self, _instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         true
     }
 
     fn validate<'i>(
         &self,
-        _instance: &'i Value,
+        _instance: &F::Node<'i>,
         _location: &LazyLocation,
         _tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
@@ -338,7 +343,7 @@ impl Validate for ContentMediaTypeAnnotationValidator {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         _location: &LazyLocation,
         _tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
@@ -384,14 +389,14 @@ impl ContentEncodingAnnotationValidator {
     }
 }
 
-impl Validate for ContentEncodingAnnotationValidator {
-    fn is_valid(&self, _instance: &Value, _ctx: &mut ValidationContext) -> bool {
+impl<F: Json> Validate<F> for ContentEncodingAnnotationValidator {
+    fn is_valid(&self, _instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         true
     }
 
     fn validate<'i>(
         &self,
-        _instance: &'i Value,
+        _instance: &F::Node<'i>,
         _location: &LazyLocation,
         _tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
@@ -401,7 +406,7 @@ impl Validate for ContentEncodingAnnotationValidator {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         _location: &LazyLocation,
         _tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
@@ -449,14 +454,14 @@ impl ContentSchemaAnnotationValidator {
     }
 }
 
-impl Validate for ContentSchemaAnnotationValidator {
-    fn is_valid(&self, _instance: &Value, _ctx: &mut ValidationContext) -> bool {
+impl<F: Json> Validate<F> for ContentSchemaAnnotationValidator {
+    fn is_valid(&self, _instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         true
     }
 
     fn validate<'i>(
         &self,
-        _instance: &'i Value,
+        _instance: &F::Node<'i>,
         _location: &LazyLocation,
         _tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
@@ -466,7 +471,7 @@ impl Validate for ContentSchemaAnnotationValidator {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         _location: &LazyLocation,
         _tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,

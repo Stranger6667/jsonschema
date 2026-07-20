@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::{
     compiler,
     error::{no_error, ErrorIterator, ValidationError},
@@ -5,6 +7,7 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
+    Json, JsonNode, JsonObjectAccess, SerdeJson,
 };
 use serde_json::{Map, Value};
 
@@ -22,12 +25,17 @@ impl PropertyNamesObjectValidator {
     }
 }
 
+// String-keyed subschema; stays serde_json-only until the node trait can wrap host strings.
 impl Validate for PropertyNamesObjectValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if let Value::Object(item) = &instance {
+    fn is_valid(
+        &self,
+        instance: &<SerdeJson as Json>::Node<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Value::Object(item) = &**instance {
             item.keys().all(move |key| {
                 let wrapper = Value::String(key.clone());
-                self.node.is_valid(&wrapper, ctx)
+                self.node.is_valid(&&wrapper, ctx)
             })
         } else {
             true
@@ -36,15 +44,15 @@ impl Validate for PropertyNamesObjectValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &<SerdeJson as Json>::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Object(item) = &instance {
+        if let Value::Object(item) = &**instance {
             for key in item.keys() {
                 let wrapper = Value::String(key.clone());
-                match self.node.validate(&wrapper, location, tracker, ctx) {
+                match self.node.validate(&&wrapper, location, tracker, ctx) {
                     Ok(()) => {}
                     Err(error) => {
                         let schema_path = error.schema_path().clone();
@@ -52,7 +60,7 @@ impl Validate for PropertyNamesObjectValidator {
                             schema_path.clone(),
                             crate::paths::capture_evaluation_path(tracker, &schema_path),
                             location.into(),
-                            instance,
+                            Cow::Borrowed(*instance),
                             error.to_owned(),
                         ));
                     }
@@ -64,22 +72,22 @@ impl Validate for PropertyNamesObjectValidator {
 
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &<SerdeJson as Json>::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if let Value::Object(item) = &instance {
+        if let Value::Object(item) = &**instance {
             let mut errors = Vec::new();
             for key in item.keys() {
                 let wrapper = Value::String(key.clone());
-                for error in self.node.iter_errors(&wrapper, location, tracker, ctx) {
+                for error in self.node.iter_errors(&&wrapper, location, tracker, ctx) {
                     let schema_path = error.schema_path().clone();
                     errors.push(ValidationError::property_names(
                         schema_path.clone(),
                         crate::paths::capture_evaluation_path(tracker, &schema_path),
                         location.into(),
-                        instance,
+                        Cow::Borrowed(*instance),
                         error.to_owned(),
                     ));
                 }
@@ -92,18 +100,18 @@ impl Validate for PropertyNamesObjectValidator {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &<SerdeJson as Json>::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        if let Value::Object(item) = instance {
+        if let Value::Object(item) = &**instance {
             let mut children = Vec::with_capacity(item.len());
             for key in item.keys() {
                 let wrapper = Value::String(key.clone());
                 children.push(
                     self.node
-                        .evaluate_instance(&wrapper, location, tracker, ctx),
+                        .evaluate_instance(&&wrapper, location, tracker, ctx),
                 );
             }
             EvaluationResult::from_children(children)
@@ -125,10 +133,10 @@ impl PropertyNamesBooleanValidator {
     }
 }
 
-impl Validate for PropertyNamesBooleanValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-        if let Value::Object(item) = instance {
-            if !item.is_empty() {
+impl<F: Json> Validate<F> for PropertyNamesBooleanValidator {
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        if let Some(object) = instance.as_object() {
+            if !object.is_empty() {
                 return false;
             }
         }
@@ -137,19 +145,19 @@ impl Validate for PropertyNamesBooleanValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if self.is_valid(instance, ctx) {
+        if <Self as Validate<F>>::is_valid(self, instance, ctx) {
             Ok(())
         } else {
             Err(ValidationError::false_schema(
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance,
+                instance.to_value(),
             ))
         }
     }

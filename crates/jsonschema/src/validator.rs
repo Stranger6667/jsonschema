@@ -6,7 +6,7 @@ use crate::{
     evaluation::{Annotations, ErrorDescription, Evaluation, EvaluationNode},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
-    Draft, ValidationError, ValidationOptions,
+    Draft, Json, SerdeJson, ValidationError, ValidationOptions,
 };
 use ahash::AHashMap;
 use serde_json::Value;
@@ -33,10 +33,13 @@ impl ValidationContext {
         Self::default()
     }
 
-    /// Returns `true` if cycle detected.
+    /// Returns `true` if cycle detected. `None` identity disables cycle tracking for this node.
     #[inline]
-    pub(crate) fn enter(&mut self, node_id: usize, instance: &Value) -> bool {
-        let key = (node_id, std::ptr::from_ref::<Value>(instance) as usize);
+    pub(crate) fn enter(&mut self, node_id: usize, instance_identity: Option<usize>) -> bool {
+        let Some(identity) = instance_identity else {
+            return false;
+        };
+        let key = (node_id, identity);
         if self.validating.contains(&key) {
             return true;
         }
@@ -45,23 +48,29 @@ impl ValidationContext {
     }
 
     #[inline]
-    pub(crate) fn exit(&mut self, node_id: usize, instance: &Value) {
-        let key = (node_id, std::ptr::from_ref::<Value>(instance) as usize);
+    pub(crate) fn exit(&mut self, node_id: usize, instance_identity: Option<usize>) {
+        let Some(identity) = instance_identity else {
+            return;
+        };
         let popped = self.validating.pop();
         debug_assert_eq!(
             popped,
-            Some(key),
+            Some((node_id, identity)),
             "ValidationContext::exit called out of order"
         );
     }
 
     /// Returns `true` if this `(validators, instance)` pair is already being marked (cycle).
     #[inline]
-    pub(crate) fn enter_marking(&mut self, validators_id: usize, instance: &Value) -> bool {
-        let key = (
-            validators_id,
-            std::ptr::from_ref::<Value>(instance) as usize,
-        );
+    pub(crate) fn enter_marking(
+        &mut self,
+        validators_id: usize,
+        instance_identity: Option<usize>,
+    ) -> bool {
+        let Some(identity) = instance_identity else {
+            return false;
+        };
+        let key = (validators_id, identity);
         if self.marking.contains(&key) {
             return true;
         }
@@ -74,27 +83,28 @@ impl ValidationContext {
         self.marking.pop();
     }
 
-    /// Only caches arrays/objects to avoid false hits from stack address reuse.
+    /// Keyed by `JsonNode::container_cache_key`: only containers, to avoid false hits from stack address
+    /// reuse.
     #[inline]
-    pub(crate) fn get_cached_result(&self, node_id: usize, instance: &Value) -> Option<bool> {
-        if !matches!(instance, Value::Array(_) | Value::Object(_)) {
-            return None;
-        }
+    pub(crate) fn get_cached_result(
+        &self,
+        node_id: usize,
+        cache_key: Option<usize>,
+    ) -> Option<bool> {
         let cache = self.is_valid_cache.as_ref()?;
-        let key = (node_id, std::ptr::from_ref::<Value>(instance) as usize);
-        cache.get(&key).copied()
+        cache.get(&(node_id, cache_key?)).copied()
     }
 
-    /// Only caches arrays/objects to avoid false hits from stack address reuse.
+    /// Keyed by `JsonNode::container_cache_key`: only containers, to avoid false hits from stack address
+    /// reuse.
     #[inline]
-    pub(crate) fn cache_result(&mut self, node_id: usize, instance: &Value, result: bool) {
-        if !matches!(instance, Value::Array(_) | Value::Object(_)) {
+    pub(crate) fn cache_result(&mut self, node_id: usize, cache_key: Option<usize>, result: bool) {
+        let Some(key) = cache_key else {
             return;
-        }
-        let key = (node_id, std::ptr::from_ref::<Value>(instance) as usize);
+        };
         self.is_valid_cache
             .get_or_insert_with(AHashMap::new)
-            .insert(key, result);
+            .insert((node_id, key), result);
     }
     /// Check if an ECMA regex pattern is valid.
     pub(crate) fn is_valid_ecma_regex(&mut self, pattern: &str) -> bool {
@@ -130,10 +140,10 @@ impl ValidationContext {
 ///
 /// - `is_valid` takes `LightweightContext`: Only cycle detection, zero path tracking overhead.
 /// - `validate`, `iter_errors`, `evaluate` take `ValidationContext`: Cycle detection + evaluation path tracking.
-pub(crate) trait Validate: Send + Sync {
+pub(crate) trait Validate<F: Json = SerdeJson>: Send + Sync {
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -144,11 +154,11 @@ pub(crate) trait Validate: Send + Sync {
         }
     }
 
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool;
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool;
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -156,7 +166,7 @@ pub(crate) trait Validate: Send + Sync {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -371,7 +381,7 @@ impl Validator {
     pub fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
         let mut ctx = ValidationContext::new();
         self.root
-            .validate(instance, &LazyLocation::new(), None, &mut ctx)
+            .validate(&instance, &LazyLocation::new(), None, &mut ctx)
     }
     /// Run validation against `instance` and return an iterator over [`ValidationError`] in the error case.
     #[inline]
@@ -379,7 +389,7 @@ impl Validator {
     pub fn iter_errors<'i>(&'i self, instance: &'i Value) -> ErrorIterator<'i> {
         let mut ctx = ValidationContext::new();
         self.root
-            .iter_errors(instance, &LazyLocation::new(), None, &mut ctx)
+            .iter_errors(&instance, &LazyLocation::new(), None, &mut ctx)
     }
     /// Run validation against `instance` but return a boolean result instead of an iterator.
     /// It is useful for cases, where it is important to only know the fact if the data is valid or not.
@@ -388,7 +398,7 @@ impl Validator {
     #[inline]
     pub fn is_valid(&self, instance: &Value) -> bool {
         let mut ctx = ValidationContext::new();
-        self.root.is_valid(instance, &mut ctx)
+        self.root.is_valid(&instance, &mut ctx)
     }
     /// Evaluate the schema and expose structured output formats.
     #[must_use]
@@ -397,7 +407,7 @@ impl Validator {
         let mut ctx = ValidationContext::new();
         let root = self
             .root
-            .evaluate_instance(instance, &LazyLocation::new(), None, &mut ctx);
+            .evaluate_instance(&instance, &LazyLocation::new(), None, &mut ctx);
         Evaluation::new(root)
     }
     /// The [`Draft`] which was used to build this validator.

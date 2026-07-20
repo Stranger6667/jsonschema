@@ -5,16 +5,17 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, RefTracker},
     validator::{Validate, ValidationContext},
+    Json, JsonNode, SerdeJson,
 };
 use serde_json::{Map, Value};
 
-pub(crate) struct NotValidator {
+pub(crate) struct NotValidator<F: Json> {
     // needed only for error representation
     original: Value,
-    node: SchemaNode,
+    node: SchemaNode<F>,
 }
 
-impl NotValidator {
+impl NotValidator<SerdeJson> {
     #[inline]
     pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
         let ctx = ctx.new_at_location("not");
@@ -25,14 +26,14 @@ impl NotValidator {
     }
 }
 
-impl Validate for NotValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+impl<F: Json> Validate<F> for NotValidator<F> {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         !self.node.is_valid(instance, ctx)
     }
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -44,7 +45,7 @@ impl Validate for NotValidator {
                 self.node.location().clone(),
                 crate::paths::capture_evaluation_path(tracker, self.node.location()),
                 location.into(),
-                instance,
+                instance.to_value(),
                 self.original.clone(),
             ))
         }

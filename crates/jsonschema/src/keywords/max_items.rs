@@ -6,6 +6,7 @@ use crate::{
     keywords::{helpers::fail_on_non_positive_integer, CompilationResult},
     paths::{LazyLocation, Location, RefTracker},
     validator::{Validate, ValidationContext},
+    Json, JsonArrayAccess, JsonNode,
 };
 use serde_json::{Map, Value};
 
@@ -40,10 +41,10 @@ impl MaxItemsValidator {
     }
 }
 
-impl Validate for MaxItemsValidator {
-    fn is_valid(&self, instance: &Value, _ctx: &mut ValidationContext) -> bool {
-        if let Value::Array(items) = instance {
-            if (items.len() as u64) > self.limit {
+impl<F: Json> Validate<F> for MaxItemsValidator {
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        if let Some(array) = instance.as_array() {
+            if (array.len() as u64) > self.limit {
                 return false;
             }
         }
@@ -52,18 +53,18 @@ impl Validate for MaxItemsValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Array(items) = instance {
-            if (items.len() as u64) > self.limit {
+        if let Some(array) = instance.as_array() {
+            if (array.len() as u64) > self.limit {
                 return Err(ValidationError::max_items(
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance,
+                    instance.to_value(),
                     self.limit,
                 ));
             }

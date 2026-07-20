@@ -5,16 +5,16 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
-    ValidationError,
+    Json, SerdeJson, ValidationError,
 };
 use serde_json::{Map, Value};
 
-pub(crate) struct IfThenValidator {
-    schema: SchemaNode,
-    then_schema: SchemaNode,
+pub(crate) struct IfThenValidator<F: Json> {
+    schema: SchemaNode<F>,
+    then_schema: SchemaNode<F>,
 }
 
-impl IfThenValidator {
+impl IfThenValidator<SerdeJson> {
     #[inline]
     pub(crate) fn compile<'a>(
         ctx: &compiler::Context,
@@ -34,8 +34,8 @@ impl IfThenValidator {
     }
 }
 
-impl Validate for IfThenValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+impl<F: Json> Validate<F> for IfThenValidator<F> {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if self.schema.is_valid(instance, ctx) {
             self.then_schema.is_valid(instance, ctx)
         } else {
@@ -45,7 +45,7 @@ impl Validate for IfThenValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -60,7 +60,7 @@ impl Validate for IfThenValidator {
     #[allow(clippy::needless_collect)]
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -78,7 +78,7 @@ impl Validate for IfThenValidator {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -97,12 +97,12 @@ impl Validate for IfThenValidator {
     }
 }
 
-pub(crate) struct IfElseValidator {
-    schema: SchemaNode,
-    else_schema: SchemaNode,
+pub(crate) struct IfElseValidator<F: Json> {
+    schema: SchemaNode<F>,
+    else_schema: SchemaNode<F>,
 }
 
-impl IfElseValidator {
+impl IfElseValidator<SerdeJson> {
     #[inline]
     pub(crate) fn compile<'a>(
         ctx: &compiler::Context,
@@ -122,8 +122,8 @@ impl IfElseValidator {
     }
 }
 
-impl Validate for IfElseValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+impl<F: Json> Validate<F> for IfElseValidator<F> {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if self.schema.is_valid(instance, ctx) {
             true
         } else {
@@ -133,7 +133,7 @@ impl Validate for IfElseValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -148,7 +148,7 @@ impl Validate for IfElseValidator {
     #[allow(clippy::needless_collect)]
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -166,7 +166,7 @@ impl Validate for IfElseValidator {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -185,13 +185,13 @@ impl Validate for IfElseValidator {
     }
 }
 
-pub(crate) struct IfThenElseValidator {
-    schema: SchemaNode,
-    then_schema: SchemaNode,
-    else_schema: SchemaNode,
+pub(crate) struct IfThenElseValidator<F: Json> {
+    schema: SchemaNode<F>,
+    then_schema: SchemaNode<F>,
+    else_schema: SchemaNode<F>,
 }
 
-impl IfThenElseValidator {
+impl IfThenElseValidator<SerdeJson> {
     #[inline]
     pub(crate) fn compile<'a>(
         ctx: &compiler::Context,
@@ -216,8 +216,8 @@ impl IfThenElseValidator {
     }
 }
 
-impl Validate for IfThenElseValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
+impl<F: Json> Validate<F> for IfThenElseValidator<F> {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if self.schema.is_valid(instance, ctx) {
             self.then_schema.is_valid(instance, ctx)
         } else {
@@ -227,7 +227,7 @@ impl Validate for IfThenElseValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -242,7 +242,7 @@ impl Validate for IfThenElseValidator {
     #[allow(clippy::needless_collect)]
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
@@ -264,7 +264,7 @@ impl Validate for IfThenElseValidator {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,

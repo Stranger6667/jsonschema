@@ -8,6 +8,8 @@ use std::str::FromStr;
 
 use serde_json::Value;
 
+use crate::{Json, JsonNode};
+
 /// Represents a JSON value type.
 ///
 /// Discriminant order is `Null < Boolean < Integer < Number < String < Array < Object`
@@ -185,24 +187,19 @@ impl JsonTypeSet {
     pub fn contains(self, ty: JsonType) -> bool {
         self.0 & ty as u8 != 0
     }
-    /// Check if a JSON value's type is allowed by this set.
+    /// Whether a JSON value's type is allowed by this set.
     #[must_use]
-    pub fn contains_value_type(self, value: &Value) -> bool {
-        match value {
-            Value::Array(_) => self.contains(JsonType::Array),
-            Value::Bool(_) => self.contains(JsonType::Boolean),
-            Value::Null => self.contains(JsonType::Null),
-            Value::Number(n) => {
-                if number_is_integer(n) {
-                    // Integer numbers match either Integer or Number types
+    pub fn contains_value_type<F: Json>(self, value: &F::Node<'_>) -> bool {
+        match value.json_type() {
+            JsonType::Number => match value.as_number() {
+                // Integers satisfy both `integer` and `number`; non-integers only `number`.
+                Some(n) if number_is_integer(&n) => {
                     self.contains(JsonType::Integer) || self.contains(JsonType::Number)
-                } else {
-                    // Floating-point numbers only match Number type
-                    self.contains(JsonType::Number)
                 }
-            }
-            Value::Object(_) => self.contains(JsonType::Object),
-            Value::String(_) => self.contains(JsonType::String),
+                Some(_) => self.contains(JsonType::Number),
+                None => false,
+            },
+            other => self.contains(other),
         }
     }
     /// Get an iterator over the types in this set.
@@ -386,17 +383,18 @@ mod tests {
         assert_eq!(set.len(), 1);
     }
 
-    #[test_case(&json!(null), JsonTypeSet::from(JsonType::Null) => true ; "null type")]
-    #[test_case(&json!(true), JsonTypeSet::from(JsonType::Boolean) => true ; "boolean type")]
-    #[test_case(&json!("test"), JsonTypeSet::from(JsonType::String) => true ; "string type")]
-    #[test_case(&json!([1,2]), JsonTypeSet::from(JsonType::Array) => true ; "array type")]
-    #[test_case(&json!({"a": 1}), JsonTypeSet::from(JsonType::Object) => true ; "object type")]
-    #[test_case(&json!(42), JsonTypeSet::from(JsonType::Number) => true ; "number matches number")]
-    #[test_case(&json!(42), JsonTypeSet::from(JsonType::Integer) => true ; "int matches integer")]
-    #[test_case(&json!(1.23), JsonTypeSet::from(JsonType::Number) => true ; "float matches number")]
-    #[test_case(&json!(1.23), JsonTypeSet::from(JsonType::Integer) => false ; "float doesn't match integer")]
+    #[cfg(feature = "serde_json")]
+    #[test_case(&json!(null), JsonType::Null.into() => true ; "null type")]
+    #[test_case(&json!(true), JsonType::Boolean.into() => true ; "boolean type")]
+    #[test_case(&json!("test"), JsonType::String.into() => true ; "string type")]
+    #[test_case(&json!([1,2]), JsonType::Array.into() => true ; "array type")]
+    #[test_case(&json!({"a": 1}), JsonType::Object.into() => true ; "object type")]
+    #[test_case(&json!(42), JsonType::Number.into() => true ; "number matches number")]
+    #[test_case(&json!(42), JsonType::Integer.into() => true ; "int matches integer")]
+    #[test_case(&json!(1.23), JsonType::Number.into() => true ; "float matches number")]
+    #[test_case(&json!(1.23), JsonType::Integer.into() => false ; "float doesn't match integer")]
     fn test_contains_value_type(value: &Value, set: JsonTypeSet) -> bool {
-        set.contains_value_type(value)
+        set.contains_value_type::<crate::SerdeJson>(&value)
     }
 
     #[test]

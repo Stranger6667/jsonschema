@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use crate::{
     compiler,
@@ -6,7 +6,7 @@ use crate::{
     paths::{LazyEvaluationPath, Location},
     regex::{analyze_pattern, is_ecma_whitespace, LiteralMatchError, PatternOptimization},
     validator::Validate as _,
-    ValidationContext,
+    Json, JsonObjectAccess, SerdeJson, ValidationContext,
 };
 use ahash::AHashMap;
 use serde_json::{Map, Value};
@@ -48,20 +48,20 @@ pub(crate) type FancyRegexValidators = Vec<(CompiledPattern<fancy_regex::Regex>,
 pub(crate) type RegexValidators = Vec<(CompiledPattern<regex::Regex>, SchemaNode)>;
 
 /// A value that can look up property validators by name.
-pub(crate) trait PropertiesValidatorsMap: Send + Sync {
-    fn get_validator(&self, property: &str) -> Option<&SchemaNode>;
-    fn get_key_validator(&self, property: &str) -> Option<(&String, &SchemaNode)>;
+pub(crate) trait PropertiesValidatorsMap<F: Json = SerdeJson>: Send + Sync {
+    fn get_validator(&self, property: &str) -> Option<&SchemaNode<F>>;
+    fn get_key_validator(&self, property: &str) -> Option<(&str, &SchemaNode<F>)>;
 }
 
 /// Threshold for switching from linear scan to `HashMap`.
 pub(crate) const HASHMAP_THRESHOLD: usize = 15;
 
-pub(crate) type SmallValidatorsMap = Vec<(String, SchemaNode)>;
-pub(crate) type BigValidatorsMap = AHashMap<String, SchemaNode>;
+pub(crate) type SmallValidatorsMap<F = SerdeJson> = Vec<(String, SchemaNode<F>)>;
+pub(crate) type BigValidatorsMap<F = SerdeJson> = AHashMap<String, SchemaNode<F>>;
 
-impl PropertiesValidatorsMap for SmallValidatorsMap {
+impl<F: Json> PropertiesValidatorsMap<F> for SmallValidatorsMap<F> {
     #[inline]
-    fn get_validator(&self, property: &str) -> Option<&SchemaNode> {
+    fn get_validator(&self, property: &str) -> Option<&SchemaNode<F>> {
         for (prop, node) in self {
             if prop == property {
                 return Some(node);
@@ -70,25 +70,26 @@ impl PropertiesValidatorsMap for SmallValidatorsMap {
         None
     }
     #[inline]
-    fn get_key_validator(&self, property: &str) -> Option<(&String, &SchemaNode)> {
+    fn get_key_validator(&self, property: &str) -> Option<(&str, &SchemaNode<F>)> {
         for (prop, node) in self {
             if prop == property {
-                return Some((prop, node));
+                return Some((prop.as_str(), node));
             }
         }
         None
     }
 }
 
-impl PropertiesValidatorsMap for BigValidatorsMap {
+impl<F: Json> PropertiesValidatorsMap<F> for BigValidatorsMap<F> {
     #[inline]
-    fn get_validator(&self, property: &str) -> Option<&SchemaNode> {
+    fn get_validator(&self, property: &str) -> Option<&SchemaNode<F>> {
         self.get(property)
     }
 
     #[inline]
-    fn get_key_validator(&self, property: &str) -> Option<(&String, &SchemaNode)> {
+    fn get_key_validator(&self, property: &str) -> Option<(&str, &SchemaNode<F>)> {
         self.get_key_value(property)
+            .map(|(key, node)| (key.as_str(), node))
     }
 }
 
@@ -124,22 +125,24 @@ pub(crate) fn compile_big_map<'a>(
     Ok(properties)
 }
 
-pub(crate) fn are_properties_valid<M, F>(
+pub(crate) fn are_properties_valid<'i, F, M, O, C>(
     prop_map: &M,
-    props: &Map<String, Value>,
+    object: &O,
     ctx: &mut ValidationContext,
-    check: F,
+    check: C,
 ) -> bool
 where
-    M: PropertiesValidatorsMap,
-    F: Fn(&Value, &mut ValidationContext) -> bool,
+    F: Json,
+    M: PropertiesValidatorsMap<F>,
+    O: JsonObjectAccess<'i, F, Node = F::Node<'i>>,
+    C: Fn(&F::Node<'i>, &mut ValidationContext) -> bool,
 {
-    for (property, instance) in props {
-        if let Some(validator) = prop_map.get_validator(property) {
-            if !validator.is_valid(instance, ctx) {
+    for (property, instance) in object.members() {
+        if let Some(validator) = prop_map.get_validator(property.as_ref()) {
+            if !validator.is_valid(&instance, ctx) {
                 return false;
             }
-        } else if !check(instance, ctx) {
+        } else if !check(&instance, ctx) {
             return false;
         }
     }
@@ -170,7 +173,7 @@ pub(crate) fn compile_fancy_regex_patterns<'a>(
                         kctx.location().clone(),
                         LazyEvaluationPath::SameAsSchemaPath,
                         Location::new(),
-                        subschema,
+                        Cow::Borrowed(subschema),
                         "regex",
                     )
                 })?;
@@ -207,7 +210,7 @@ pub(crate) fn compile_regex_patterns<'a>(
                         kctx.location().clone(),
                         LazyEvaluationPath::SameAsSchemaPath,
                         Location::new(),
-                        subschema,
+                        Cow::Borrowed(subschema),
                         "regex",
                     )
                 })?;
@@ -238,7 +241,7 @@ macro_rules! compile_dynamic_prop_map_validator {
                 location.clone(),
                 location,
                 Location::new(),
-                $properties,
+                std::borrow::Cow::Borrowed($properties),
                 "Unexpected type",
             )))
         }

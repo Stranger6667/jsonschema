@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::{
     compiler,
     error::{no_error, ErrorIterator, ValidationError},
@@ -8,26 +10,29 @@ use crate::{
     properties::HASHMAP_THRESHOLD,
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
+    Json, JsonNode, JsonObjectAccess, SerdeJson,
 };
 use ahash::AHashMap;
 use referencing::Uri;
 use serde_json::{Map, Value};
 use std::sync::Arc;
 
-pub(crate) struct SmallPropertiesValidator {
-    pub(crate) properties: Vec<(String, SchemaNode)>,
+pub(crate) struct SmallPropertiesValidator<F: Json = SerdeJson> {
+    pub(crate) properties: Vec<(String, F::PreparedKey, SchemaNode<F>)>,
 }
 
-pub(crate) struct BigPropertiesValidator {
-    pub(crate) properties: AHashMap<String, SchemaNode>,
+pub(crate) struct BigPropertiesValidator<F: Json = SerdeJson> {
+    pub(crate) properties: AHashMap<String, SchemaNode<F>>,
 }
 
 /// Fused validator for `properties` + `required: [2 items]` (no `additionalProperties: false`).
 /// Eliminates separate required validation pass and duplicate `BTreeMap` lookups.
-pub(crate) struct SmallPropertiesWithRequired2Validator {
-    pub(crate) properties: Vec<(String, SchemaNode)>,
+pub(crate) struct SmallPropertiesWithRequired2Validator<F: Json = SerdeJson> {
+    pub(crate) properties: Vec<(String, F::PreparedKey, SchemaNode<F>)>,
     first: String,
+    first_key: F::PreparedKey,
     second: String,
+    second_key: F::PreparedKey,
     required_location: Location,
     required_absolute_location: Option<Arc<Uri<String>>>,
 }
@@ -44,6 +49,7 @@ impl SmallPropertiesValidator {
             let ctx = ctx.new_at_location(key.as_str());
             properties.push((
                 key.clone(),
+                SerdeJson::prepare_key(key),
                 compiler::compile(&ctx, ctx.as_resource_ref(subschema))?,
             ));
         }
@@ -84,6 +90,7 @@ impl SmallPropertiesWithRequired2Validator {
             let kctx = pctx.new_at_location(key.as_str());
             properties.push((
                 key.clone(),
+                SerdeJson::prepare_key(key),
                 compiler::compile(&kctx, kctx.as_resource_ref(subschema))?,
             ));
         }
@@ -91,6 +98,8 @@ impl SmallPropertiesWithRequired2Validator {
         let required_absolute_location = ctx.absolute_location(&required_location);
         Ok(Box::new(SmallPropertiesWithRequired2Validator {
             properties,
+            first_key: SerdeJson::prepare_key(&first),
+            second_key: SerdeJson::prepare_key(&second),
             first,
             second,
             required_location,
@@ -99,12 +108,12 @@ impl SmallPropertiesWithRequired2Validator {
     }
 }
 
-impl Validate for SmallPropertiesValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if let Value::Object(item) = instance {
-            for (name, node) in &self.properties {
-                if let Some(prop) = item.get(name) {
-                    if !node.is_valid(prop, ctx) {
+impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
+        if let Some(object) = instance.as_object() {
+            for (_, key, node) in &self.properties {
+                if let Some(prop) = object.get(key) {
+                    if !node.is_valid(&prop, ctx) {
                         return false;
                     }
                 }
@@ -117,15 +126,15 @@ impl Validate for SmallPropertiesValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Object(item) = instance {
-            for (name, node) in &self.properties {
-                if let Some(item) = item.get(name) {
-                    node.validate(item, &location.push(name), tracker, ctx)?;
+        if let Some(object) = instance.as_object() {
+            for (name, key, node) in &self.properties {
+                if let Some(prop) = object.get(key) {
+                    node.validate(&prop, &location.push(name), tracker, ctx)?;
                 }
             }
         }
@@ -135,17 +144,17 @@ impl Validate for SmallPropertiesValidator {
     #[allow(clippy::needless_collect)]
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if let Value::Object(item) = instance {
+        if let Some(object) = instance.as_object() {
             let mut errors = Vec::new();
-            for (name, node) in &self.properties {
-                if let Some(prop) = item.get(name) {
+            for (name, key, node) in &self.properties {
+                if let Some(prop) = object.get(key) {
                     let instance_path = location.push(name.as_str());
-                    errors.extend(node.iter_errors(prop, &instance_path, tracker, ctx));
+                    errors.extend(node.iter_errors(&prop, &instance_path, tracker, ctx));
                 }
             }
             ErrorIterator::from_iterator(errors.into_iter())
@@ -156,19 +165,19 @@ impl Validate for SmallPropertiesValidator {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        if let Value::Object(props) = instance {
-            let mut matched_props = Vec::with_capacity(props.len());
+        if let Some(object) = instance.as_object() {
+            let mut matched_props = Vec::with_capacity(object.len());
             let mut children = Vec::new();
-            for (prop_name, node) in &self.properties {
-                if let Some(prop) = props.get(prop_name) {
+            for (prop_name, key, node) in &self.properties {
+                if let Some(prop) = object.get(key) {
                     let path = location.push(prop_name.as_str());
                     matched_props.push(prop_name.clone());
-                    children.push(node.evaluate_instance(prop, &path, tracker, ctx));
+                    children.push(node.evaluate_instance(&prop, &path, tracker, ctx));
                 }
             }
             let mut application = EvaluationResult::from_children(children);
@@ -180,18 +189,20 @@ impl Validate for SmallPropertiesValidator {
     }
 }
 
-impl Validate for SmallPropertiesWithRequired2Validator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if let Value::Object(item) = instance {
+impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
+        if let Some(object) = instance.as_object() {
             // Check required first (fast fail)
-            if item.len() < 2 || !item.contains_key(&self.first) || !item.contains_key(&self.second)
+            if object.len() < 2
+                || object.get(&self.first_key).is_none()
+                || object.get(&self.second_key).is_none()
             {
                 return false;
             }
             // Validate properties
-            for (name, node) in &self.properties {
-                if let Some(prop) = item.get(name) {
-                    if !node.is_valid(prop, ctx) {
+            for (_, key, node) in &self.properties {
+                if let Some(prop) = object.get(key) {
+                    if !node.is_valid(&prop, ctx) {
                         return false;
                     }
                 }
@@ -204,35 +215,35 @@ impl Validate for SmallPropertiesWithRequired2Validator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Object(item) = instance {
+        if let Some(object) = instance.as_object() {
             // Check required first
-            if !item.contains_key(&self.first) {
+            if object.get(&self.first_key).is_none() {
                 return Err(ValidationError::required(
                     self.required_location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.required_location),
                     location.into(),
-                    instance,
+                    instance.to_value(),
                     Value::String(self.first.clone()),
                 ));
             }
-            if !item.contains_key(&self.second) {
+            if object.get(&self.second_key).is_none() {
                 return Err(ValidationError::required(
                     self.required_location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.required_location),
                     location.into(),
-                    instance,
+                    instance.to_value(),
                     Value::String(self.second.clone()),
                 ));
             }
             // Validate properties
-            for (name, node) in &self.properties {
-                if let Some(prop) = item.get(name) {
-                    node.validate(prop, &location.push(name), tracker, ctx)?;
+            for (name, key, node) in &self.properties {
+                if let Some(prop) = object.get(key) {
+                    node.validate(&prop, &location.push(name), tracker, ctx)?;
                 }
             }
         }
@@ -242,38 +253,38 @@ impl Validate for SmallPropertiesWithRequired2Validator {
     #[allow(clippy::needless_collect)]
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if let Value::Object(item) = instance {
+        if let Some(object) = instance.as_object() {
             let mut errors = Vec::new();
             // Check required
             let eval_path = crate::paths::capture_evaluation_path(tracker, &self.required_location);
-            if !item.contains_key(&self.first) {
+            if object.get(&self.first_key).is_none() {
                 errors.push(ValidationError::required(
                     self.required_location.clone(),
                     eval_path.clone(),
                     location.into(),
-                    instance,
+                    instance.to_value(),
                     Value::String(self.first.clone()),
                 ));
             }
-            if !item.contains_key(&self.second) {
+            if object.get(&self.second_key).is_none() {
                 errors.push(ValidationError::required(
                     self.required_location.clone(),
                     eval_path,
                     location.into(),
-                    instance,
+                    instance.to_value(),
                     Value::String(self.second.clone()),
                 ));
             }
             // Validate properties
-            for (name, node) in &self.properties {
-                if let Some(prop) = item.get(name) {
+            for (name, key, node) in &self.properties {
+                if let Some(prop) = object.get(key) {
                     let instance_path = location.push(name.as_str());
-                    errors.extend(node.iter_errors(prop, &instance_path, tracker, ctx));
+                    errors.extend(node.iter_errors(&prop, &instance_path, tracker, ctx));
                 }
             }
             if !errors.is_empty() {
@@ -285,43 +296,43 @@ impl Validate for SmallPropertiesWithRequired2Validator {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        if let Value::Object(props) = instance {
-            let mut matched_props = Vec::with_capacity(props.len());
+        if let Some(object) = instance.as_object() {
+            let mut matched_props = Vec::with_capacity(object.len());
             let mut children = Vec::new();
-            for (prop_name, node) in &self.properties {
-                if let Some(prop) = props.get(prop_name) {
+            for (prop_name, key, node) in &self.properties {
+                if let Some(prop) = object.get(key) {
                     let path = location.push(prop_name.as_str());
                     matched_props.push(prop_name.clone());
-                    children.push(node.evaluate_instance(prop, &path, tracker, ctx));
+                    children.push(node.evaluate_instance(&prop, &path, tracker, ctx));
                 }
             }
             // `required` is fused into this validator, so its failures are emitted as a child node at
             // the `required` keyword location to keep the correct `schemaLocation` in structured output.
             let mut required_errors = Vec::new();
             let eval_path = crate::paths::capture_evaluation_path(tracker, &self.required_location);
-            if !props.contains_key(&self.first) {
+            if object.get(&self.first_key).is_none() {
                 required_errors.push(ErrorDescription::from_validation_error(
                     &ValidationError::required(
                         self.required_location.clone(),
                         eval_path.clone(),
                         location.into(),
-                        instance,
+                        instance.to_value(),
                         Value::String(self.first.clone()),
                     ),
                 ));
             }
-            if !props.contains_key(&self.second) {
+            if object.get(&self.second_key).is_none() {
                 required_errors.push(ErrorDescription::from_validation_error(
                     &ValidationError::required(
                         self.required_location.clone(),
                         eval_path,
                         location.into(),
-                        instance,
+                        instance.to_value(),
                         Value::String(self.second.clone()),
                     ),
                 ));
@@ -349,13 +360,13 @@ impl Validate for SmallPropertiesWithRequired2Validator {
     }
 }
 
-impl Validate for BigPropertiesValidator {
-    fn is_valid(&self, instance: &Value, ctx: &mut ValidationContext) -> bool {
-        if let Value::Object(item) = instance {
+impl<F: Json> Validate<F> for BigPropertiesValidator<F> {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
+        if let Some(object) = instance.as_object() {
             // Iterate over instance properties and look up in schema's HashMap
-            for (name, prop) in item {
-                if let Some(node) = self.properties.get(name) {
-                    if !node.is_valid(prop, ctx) {
+            for (name, prop) in object.members() {
+                if let Some(node) = self.properties.get(name.as_ref()) {
+                    if !node.is_valid(&prop, ctx) {
                         return false;
                     }
                 }
@@ -368,15 +379,15 @@ impl Validate for BigPropertiesValidator {
 
     fn validate<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Value::Object(item) = instance {
-            for (name, value) in item {
-                if let Some(node) = self.properties.get(name) {
-                    node.validate(value, &location.push(name), tracker, ctx)?;
+        if let Some(object) = instance.as_object() {
+            for (name, value) in object.members() {
+                if let Some(node) = self.properties.get(name.as_ref()) {
+                    node.validate(&value, &location.push(name.as_ref()), tracker, ctx)?;
                 }
             }
         }
@@ -386,17 +397,17 @@ impl Validate for BigPropertiesValidator {
     #[allow(clippy::needless_collect)]
     fn iter_errors<'i>(
         &self,
-        instance: &'i Value,
+        instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        if let Value::Object(item) = instance {
+        if let Some(object) = instance.as_object() {
             let mut errors = Vec::new();
-            for (name, prop) in item {
-                if let Some(node) = self.properties.get(name) {
-                    let instance_path = location.push(name.as_str());
-                    errors.extend(node.iter_errors(prop, &instance_path, tracker, ctx));
+            for (name, prop) in object.members() {
+                if let Some(node) = self.properties.get(name.as_ref()) {
+                    let instance_path = location.push(name.as_ref());
+                    errors.extend(node.iter_errors(&prop, &instance_path, tracker, ctx));
                 }
             }
             ErrorIterator::from_iterator(errors.into_iter())
@@ -407,19 +418,19 @@ impl Validate for BigPropertiesValidator {
 
     fn evaluate(
         &self,
-        instance: &Value,
+        instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        if let Value::Object(props) = instance {
-            let mut matched_props = Vec::with_capacity(props.len());
+        if let Some(object) = instance.as_object() {
+            let mut matched_props = Vec::with_capacity(object.len());
             let mut children = Vec::new();
-            for (prop_name, prop) in props {
-                if let Some(node) = self.properties.get(prop_name) {
-                    let path = location.push(prop_name.as_str());
-                    matched_props.push(prop_name.clone());
-                    children.push(node.evaluate_instance(prop, &path, tracker, ctx));
+            for (prop_name, prop) in object.members() {
+                if let Some(node) = self.properties.get(prop_name.as_ref()) {
+                    let path = location.push(prop_name.as_ref());
+                    matched_props.push(prop_name.as_ref().to_owned());
+                    children.push(node.evaluate_instance(&prop, &path, tracker, ctx));
                 }
             }
             let mut application = EvaluationResult::from_children(children);
@@ -479,7 +490,7 @@ pub(crate) fn compile<'a>(
                     location.clone(),
                     location,
                     Location::new(),
-                    schema,
+                    Cow::Borrowed(schema),
                     JsonType::Object,
                 )))
             }
