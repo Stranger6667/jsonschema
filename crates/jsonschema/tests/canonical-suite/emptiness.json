@@ -1,0 +1,135 @@
+[
+  {
+    "description": "number intersect multitype with integer is not empty - admits integer witness",
+    "schema": {
+      "allOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": [
+            "null",
+            "integer"
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 0,
+        "valid": true
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_typed_value_set_with_conflicting_type_is_empty",
+    "schema": {
+      "allOf": [
+        {
+          "type": "null"
+        },
+        {
+          "const": 1
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "ir_allof_conflicting_types_collapses_to_false",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "ir_trivial_allof_false_short_circuits",
+    "schema": {
+      "allOf": [
+        false,
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "integer_subtype_of_number_empty integer_and_string_disjoint",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "type_pin_simplification_empty null_const_zero_disjoint",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "type": "null"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "type_pin_simplification_empty null_enum_no_null_disjoint",
+    "draft": "draft7",
+    "schema": {
+      "allOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            0,
+            "a",
+            true
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  }
+]

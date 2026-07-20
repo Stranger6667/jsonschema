@@ -1,0 +1,102 @@
+[
+  {
+    "description": "fractional spellings unify: const 3.14e-3 intersects enum 0.00314",
+    "schema": {
+      "allOf": [
+        {
+          "const": 3.14e-3
+        },
+        {
+          "enum": [
+            0.00314
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 0.00314,
+        "valid": true
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": 0.00314
+    }
+  },
+  {
+    "description": "fractional spellings unify: exponent vs decimal 5e-1 vs 0.5",
+    "schema": {
+      "allOf": [
+        {
+          "const": 5e-1
+        },
+        {
+          "enum": [
+            0.5
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 0.5,
+        "valid": true
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": 0.5
+    }
+  },
+  {
+    "description": "fractional spellings unify: trailing zero 1.50 vs plain 1.5",
+    "schema": {
+      "allOf": [
+        {
+          "const": 1.50
+        },
+        {
+          "enum": [
+            1.5
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 1.5,
+        "valid": true
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": 1.5
+    }
+  },
+  {
+    "description": "fractional spellings unify: zero aliases 0.0 vs 0.00",
+    "schema": {
+      "allOf": [
+        {
+          "const": 0.0
+        },
+        {
+          "enum": [
+            0.00
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 0.0,
+        "valid": true
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": 0
+    }
+  }
+]

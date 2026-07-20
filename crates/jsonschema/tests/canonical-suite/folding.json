@@ -1,0 +1,425 @@
+[
+  {
+    "description": "to_expected any_of_with_true_collapses_to_true",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          {},
+          {
+            "type": "null"
+          }
+        ]
+      },
+      {}
+    ],
+    "tests": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  {
+    "description": "to_expected_any_of_collapse any_of_flattens_to_type_list",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "array"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": [
+          "number",
+          "string",
+          "array"
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": [
+        "number",
+        "string",
+        "array"
+      ]
+    }
+  },
+  {
+    "description": "to_expected_any_of_collapse any_of_nested_collapses_to_const_null",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "const": null
+      }
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "null"
+    }
+  },
+  {
+    "description": "to_expected_any_of_collapse any_of_intersected_with_outer_type",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          }
+        ],
+        "type": [
+          "string",
+          "object"
+        ]
+      },
+      {
+        "type": "string"
+      }
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "string"
+    }
+  },
+  {
+    "description": "to_expected_any_of_integer_number_subsumes",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      {
+        "type": "number"
+      }
+    ],
+    "tests": [
+      null,
+      true,
+      false,
+      0,
+      1,
+      -1,
+      0.5,
+      "x",
+      [],
+      [
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      {},
+      {
+        "a": 1
+      }
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "number"
+    }
+  },
+  {
+    "description": "to_expected_any_of_flatten any_of_nested_consts_flattens",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "const": "a"
+          },
+          {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "const": "c"
+                  }
+                ]
+              },
+              {
+                "const": "b"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "const": "a"
+          },
+          {
+            "const": "b"
+          },
+          {
+            "const": "c"
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "enum": [
+        "a",
+        "b",
+        "c"
+      ]
+    }
+  },
+  {
+    "description": "any_of_open_leaves_folds_to_type_list",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "object"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "integer",
+        "object"
+      ]
+    }
+  },
+  {
+    "description": "ir_enum_null_boolean_branch_folds_into_type_list",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array"
+        },
+        {
+          "type": "object"
+        },
+        {
+          "enum": [
+            false,
+            null,
+            true
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "null",
+        "boolean",
+        "string",
+        "array",
+        "object"
+      ]
+    }
+  },
+  {
+    "description": "ir_anyof_unconstrained_types_to_type_array",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "integer",
+        "object"
+      ]
+    }
+  },
+  {
+    "description": "ir_trivial_allof_singleton",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_trivial_anyof_singleton",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_trivial_allof_drops_true",
+    "schema": {
+      "allOf": [
+        true,
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_trivial_anyof_drops_false",
+    "schema": {
+      "anyOf": [
+        false,
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_trivial_anyof_true_short_circuits",
+    "schema": {
+      "anyOf": [
+        true,
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "ir_anyof_of_enums_merges",
+    "schema": {
+      "anyOf": [
+        {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        {
+          "enum": [
+            5,
+            9
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        1,
+        2,
+        5,
+        9
+      ]
+    }
+  },
+  {
+    "description": "ir_anyof_enum_and_const_merges",
+    "schema": {
+      "anyOf": [
+        {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        {
+          "const": 9
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        1,
+        2,
+        9
+      ]
+    }
+  }
+]

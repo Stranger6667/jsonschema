@@ -13,8 +13,7 @@ mod raw;
 
 pub(crate) use raw::RawJson;
 
-/// A `Const`/`Enum` member with one spelling per JSON value: numbers are normalized at
-/// construction (`1.0` becomes `1`), so plain `Value` equality is value equality.
+/// A `Const`/`Enum` member normalized at construction (`1.0` becomes `1`) so `Value` equality is value equality.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CanonicalJson(Arc<Value>);
 
@@ -40,7 +39,7 @@ impl CanonicalJson {
             Value::Null => JsonType::Null,
             Value::Bool(_) => JsonType::Boolean,
             Value::Number(number) => {
-                if number.as_i64().is_some() || number.as_u64().is_some() {
+                if crate::types::number_is_integer(number) {
                     JsonType::Integer
                 } else {
                     JsonType::Number
@@ -143,6 +142,15 @@ impl Schema {
     pub(crate) fn kind(&self) -> &SchemaKind {
         &self.0.kind
     }
+
+    /// Take the kind out, cloning only when the node is shared.
+    #[must_use]
+    pub(crate) fn into_kind(self) -> SchemaKind {
+        match Arc::try_unwrap(self.0) {
+            Ok(data) => data.kind,
+            Err(shared) => shared.kind.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumDiscriminants)]
@@ -162,6 +170,8 @@ pub(crate) enum SchemaKind {
     Const(CanonicalJson),
     /// A sorted, deduplicated finite set of admitted values.
     Enum(Vec<CanonicalJson>),
+    /// A value matches iff at least one of the sorted, mutually unmergeable branches matches.
+    AnyOf(Vec<Schema>),
     /// Matches any value.
     True,
     /// Matches no value.
@@ -171,6 +181,16 @@ pub(crate) enum SchemaKind {
 }
 
 impl SchemaKind {
+    /// The admitted values when this node is a finite value set (`Const`/`Enum`), else `None`.
+    #[must_use]
+    pub(crate) fn finite_values(&self) -> Option<&[CanonicalJson]> {
+        match self {
+            SchemaKind::Const(value) => Some(std::slice::from_ref(value)),
+            SchemaKind::Enum(values) => Some(values),
+            _ => None,
+        }
+    }
+
     /// Drop redundant entries from a type set: `Integer` is removed when `Number` is present.
     #[must_use]
     pub(crate) fn canonical_type_set(set: JsonTypeSet) -> JsonTypeSet {

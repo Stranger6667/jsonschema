@@ -9,7 +9,11 @@
       {
         "type": "null"
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "null"
+    }
   },
   {
     "description": "emit_boolean_restricted_to_true_draft4_is_enum",
@@ -87,7 +91,10 @@
         ]
       },
       {}
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
   },
   {
     "description": "to_expected_enum_sort enum_sorted_canonical",
@@ -111,7 +118,17 @@
           "aa"
         ]
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "enum": [
+        null,
+        1,
+        2,
+        "aa",
+        "z"
+      ]
+    }
   },
   {
     "description": "const_null_emits_as_type_null",
@@ -159,7 +176,7 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "boolean"
     },
-    "witnesses": [
+    "tests": [
       {
         "data": true,
         "valid": true
@@ -182,7 +199,10 @@
         "const": 5
       },
       {}
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#"
+    }
   },
   {
     "description": "draft4_integer_enum_grid_stays_enum enum_form",
@@ -246,7 +266,7 @@
     "schema": {
       "type": "integer"
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 1,
         "valid": true
@@ -259,43 +279,59 @@
         "data": "not an integer",
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
   },
   {
     "description": "canonicalize_preserves_validation boolean",
     "schema": {
       "type": "boolean"
     },
-    "witnesses": [
+    "tests": [
       true,
       false,
       0,
       "true"
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "boolean"
+    }
   },
   {
     "description": "canonicalize_preserves_validation null",
     "schema": {
       "type": "null"
     },
-    "witnesses": [
+    "tests": [
       null,
       0,
       false,
       ""
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "null"
+    }
   },
   {
     "description": "canonicalize_preserves_validation const_string",
     "schema": {
       "const": "hello"
     },
-    "witnesses": [
+    "tests": [
       "hello",
       "world",
       null,
       0
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": "hello"
+    }
   },
   {
     "description": "canonicalize_preserves_validation enum_ints",
@@ -306,33 +342,48 @@
         3
       ]
     },
-    "witnesses": [
+    "tests": [
       1,
       2,
       3,
       4,
       "1"
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        1,
+        2,
+        3
+      ]
+    }
   },
   {
     "description": "canonicalize_preserves_validation true_schema",
     "schema": true,
-    "witnesses": [
+    "tests": [
       null,
       0,
       "x",
       []
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
   },
   {
     "description": "canonicalize_preserves_validation false_schema",
     "schema": false,
-    "witnesses": [
+    "tests": [
       null,
       0,
       "x",
       []
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
   },
   {
     "description": "canonicalize_preserves_validation type_list_int_string",
@@ -342,13 +393,20 @@
         "string"
       ]
     },
-    "witnesses": [
+    "tests": [
       0,
       "x",
       null,
       0.5,
       []
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "integer",
+        "string"
+      ]
+    }
   },
   {
     "description": "draft4_float_without_frac_is_not_integer",
@@ -357,13 +415,25 @@
       "$schema": "http://json-schema.org/draft-04/schema#",
       "type": "integer"
     },
-    "witnesses": [
+    "tests": [
       1.0
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "integer"
+    }
   },
   {
     "description": "canonicalize_ignores_unguarded_cycles_outside_schema_positions const_payload",
     "schema": {
+      "const": {
+        "not": {
+          "$ref": "#/const"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "const": {
         "not": {
           "$ref": "#/const"
@@ -380,7 +450,7 @@
       ]
     },
     "draft": "draft4",
-    "witnesses": [
+    "tests": [
       {
         "data": 1,
         "valid": true
@@ -389,7 +459,14 @@
         "data": 1.0,
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "enum": [
+        1
+      ],
+      "type": "integer"
+    }
   },
   {
     "description": "const_enum_filter_satisfiable number_const_integer_value",
@@ -398,12 +475,16 @@
       "type": "number",
       "const": 2
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 2,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": 2
+    }
   },
   {
     "description": "const_enum_filter_satisfiable integer_const_float_no_fraction",
@@ -412,12 +493,16 @@
       "type": "integer",
       "const": 2.0
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 2,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": 2
+    }
   },
   {
     "description": "const_enum_filter_satisfiable number_enum_mixed_filters_to_numbers",
@@ -430,12 +515,19 @@
         "foo"
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 2.5,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "enum": [
+        1,
+        2.5
+      ]
+    }
   },
   {
     "description": "const_enum_filter_satisfiable type_list_enum",
@@ -451,7 +543,7 @@
         5
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": "abc",
         "valid": true
@@ -460,7 +552,14 @@
         "data": null,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "enum": [
+        null,
+        "abc"
+      ]
+    }
   },
   {
     "description": "const_enum_filter_satisfiable type_list_enum_filters_string",
@@ -475,12 +574,16 @@
         "skip"
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 2,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": 2
+    }
   },
   {
     "description": "const_enum_filter_satisfiable boolean_const_true",
@@ -489,12 +592,16 @@
       "type": "boolean",
       "const": true
     },
-    "witnesses": [
+    "tests": [
       {
         "data": true,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": true
+    }
   },
   {
     "description": "const_enum_filter_satisfiable object_const_empty",
@@ -503,12 +610,16 @@
       "type": "object",
       "const": {}
     },
-    "witnesses": [
+    "tests": [
       {
         "data": {},
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": {}
+    }
   },
   {
     "description": "const_enum_filter_satisfiable array_const_empty",
@@ -517,12 +628,16 @@
       "type": "array",
       "const": []
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [],
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": []
+    }
   },
   {
     "description": "ir_raw_preserves_custom_dialect_root",
@@ -549,7 +664,7 @@
         1.5
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 1,
         "valid": true
@@ -687,7 +802,10 @@
         "then": false
       },
       {}
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#"
+    }
   },
   {
     "description": "unknown_keyword_ignored draft4_contains",
@@ -699,7 +817,10 @@
         }
       },
       {}
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#"
+    }
   },
   {
     "description": "unknown_keyword_ignored draft7_prefix_items",
@@ -711,7 +832,10 @@
         ]
       },
       {}
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
   },
   {
     "description": "unknown_keyword_ignored draft7_unevaluated_properties",
@@ -721,7 +845,10 @@
         "unevaluatedProperties": false
       },
       {}
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
   },
   {
     "description": "unknown_keyword_ignored draft7_dynamic_ref",
@@ -731,7 +858,10 @@
         "$dynamicRef": "#x"
       },
       {}
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
   },
   {
     "description": "unknown_keyword_ignored draft7_dependent_required",
@@ -745,6 +875,9 @@
         }
       },
       {}
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
   }
 ]

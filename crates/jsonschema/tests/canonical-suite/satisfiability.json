@@ -6,7 +6,7 @@
       "minimum": 0,
       "maximum": 300
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 0,
         "valid": true
@@ -29,7 +29,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 1,
         "valid": true
@@ -52,7 +52,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 100,
         "valid": true
@@ -75,7 +75,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": null,
         "valid": true
@@ -100,7 +100,16 @@
         "data": 0,
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        null,
+        1,
+        2,
+        3
+      ]
+    }
   },
   {
     "description": "admits oracle coverage - allOf const string not anyof format parity and satisfiability",
@@ -124,7 +133,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": "x"
       },
@@ -161,7 +170,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": true
       },
@@ -196,7 +205,7 @@
       ]
     },
     "draft": "draft4",
-    "witnesses": [
+    "tests": [
       {
         "data": 1,
         "valid": true
@@ -217,7 +226,15 @@
         "data": 3,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "enum": [
+        1,
+        3
+      ],
+      "type": "integer"
+    }
   },
   {
     "description": "draft4 integer singleton bounds preserve float rejection - minimum equals maximum keeps integer-only",
@@ -227,7 +244,7 @@
       "maximum": 1
     },
     "draft": "draft4",
-    "witnesses": [
+    "tests": [
       {
         "data": 1,
         "valid": true
@@ -247,7 +264,7 @@
       ]
     },
     "draft": "draft4",
-    "witnesses": [
+    "tests": [
       {
         "data": 1,
         "valid": true
@@ -256,7 +273,14 @@
         "data": 1.0,
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "enum": [
+        1
+      ],
+      "type": "integer"
+    }
   },
   {
     "description": "object_canonicalization_is_idempotent required ordering is canonical in the first IR",
@@ -450,7 +474,7 @@
       "minimum": 5,
       "maximum": 5
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 5,
         "valid": true
@@ -465,7 +489,7 @@
       "minimum": 1,
       "maximum": 5
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 3,
         "valid": true
@@ -480,7 +504,7 @@
       "minimum": 1.0,
       "maximum": 1.0
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 1,
         "valid": true
@@ -495,7 +519,7 @@
       "minimum": 1.5,
       "maximum": 2.5
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 2,
         "valid": true
@@ -510,7 +534,7 @@
       "minimum": 5,
       "maximum": 5
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 5,
         "valid": true
@@ -525,7 +549,7 @@
       "exclusiveMinimum": 5,
       "exclusiveMaximum": 6
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 5.5,
         "valid": true
@@ -541,7 +565,7 @@
       "maximum": 10,
       "multipleOf": 3
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 3,
         "valid": true
@@ -557,7 +581,7 @@
       "maximum": 100,
       "multipleOf": 7
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 0,
         "valid": true
@@ -573,7 +597,7 @@
       "maximum": -1,
       "multipleOf": 4
     },
-    "witnesses": [
+    "tests": [
       {
         "data": -8,
         "valid": true
@@ -589,7 +613,7 @@
       "maximum": 3,
       "multipleOf": 5
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 0,
         "valid": true
@@ -605,7 +629,7 @@
       "maximum": 0.3,
       "multipleOf": 0.3
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 0.3,
         "valid": true
@@ -622,7 +646,7 @@
       "exclusiveMinimum": 0,
       "multipleOf": 3
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 3,
         "valid": true
@@ -636,12 +660,16 @@
       "type": "number",
       "const": 2
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 2,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": 2
+    }
   },
   {
     "description": "const_enum_filter_satisfiable integer_const_float_no_fraction",
@@ -650,12 +678,16 @@
       "type": "integer",
       "const": 2.0
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 2,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": 2
+    }
   },
   {
     "description": "const_enum_filter_satisfiable number_enum_mixed_filters_to_numbers",
@@ -668,12 +700,19 @@
         "foo"
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 2.5,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "enum": [
+        1,
+        2.5
+      ]
+    }
   },
   {
     "description": "const_enum_filter_satisfiable type_list_enum",
@@ -689,7 +728,7 @@
         5
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": "abc",
         "valid": true
@@ -698,7 +737,14 @@
         "data": null,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "enum": [
+        null,
+        "abc"
+      ]
+    }
   },
   {
     "description": "const_enum_filter_satisfiable type_list_enum_filters_string",
@@ -713,12 +759,16 @@
         "skip"
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 2,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": 2
+    }
   },
   {
     "description": "const_enum_filter_satisfiable boolean_const_true",
@@ -727,12 +777,16 @@
       "type": "boolean",
       "const": true
     },
-    "witnesses": [
+    "tests": [
       {
         "data": true,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": true
+    }
   },
   {
     "description": "const_enum_filter_satisfiable object_const_empty",
@@ -741,12 +795,16 @@
       "type": "object",
       "const": {}
     },
-    "witnesses": [
+    "tests": [
       {
         "data": {},
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": {}
+    }
   },
   {
     "description": "const_enum_filter_satisfiable array_const_empty",
@@ -755,12 +813,16 @@
       "type": "array",
       "const": []
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [],
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": []
+    }
   },
   {
     "description": "not_contradictions_satisfiable number_not_integer_admits_floats",
@@ -771,7 +833,7 @@
         "type": "integer"
       }
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 1.5,
         "valid": true
@@ -794,7 +856,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": "ab",
         "valid": true
@@ -818,7 +880,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 4,
         "valid": true
@@ -837,7 +899,7 @@
       "items": false,
       "minItems": 0
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [],
         "valid": true
@@ -851,7 +913,7 @@
       "type": "array",
       "items": false
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [],
         "valid": true
@@ -872,7 +934,7 @@
       "minItems": 1,
       "maxItems": 1
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [
           "x"
@@ -889,7 +951,7 @@
       "minItems": 3,
       "maxItems": 3
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [
           1,
@@ -911,7 +973,7 @@
         "type": "boolean"
       }
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [
           true,
@@ -932,7 +994,7 @@
         "type": "integer"
       }
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [
           0,
@@ -1051,7 +1113,7 @@
         "type": "string"
       }
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [
           "s0",
@@ -1173,7 +1235,7 @@
         }
       }
     },
-    "witnesses": [
+    "tests": [
       {
         "data": {
           "a": "x"
@@ -1194,7 +1256,7 @@
         "pattern": "^a"
       }
     },
-    "witnesses": [
+    "tests": [
       {
         "data": {
           "a": 1
@@ -1210,7 +1272,7 @@
       "type": "object",
       "required": []
     },
-    "witnesses": [
+    "tests": [
       {
         "data": {},
         "valid": true
@@ -1225,7 +1287,7 @@
       "minProperties": 0,
       "maxProperties": 0
     },
-    "witnesses": [
+    "tests": [
       {
         "data": {},
         "valid": true
@@ -1242,7 +1304,7 @@
       ],
       "minProperties": 0
     },
-    "witnesses": [
+    "tests": [
       {
         "data": {
           "a": 1
@@ -1259,7 +1321,7 @@
       "minimum": 5,
       "exclusiveMinimum": 10
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 11,
         "valid": true
@@ -1278,7 +1340,7 @@
       "minimum": 1,
       "exclusiveMinimum": 0
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 1,
         "valid": true
@@ -1301,7 +1363,7 @@
         "type": "integer"
       }
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [
           1
@@ -1326,7 +1388,7 @@
       "minItems": 3,
       "uniqueItems": true
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [
           "x",
@@ -1352,7 +1414,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 5,
         "valid": true
@@ -1374,7 +1436,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 6,
         "valid": true
@@ -1394,7 +1456,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 1,
         "valid": true
@@ -1403,7 +1465,11 @@
         "data": 1.5,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "number"
+    }
   },
   {
     "description": "numeric_promotion_satisfiable multof_one_promotes_to_integer_satisfiable",
@@ -1412,7 +1478,7 @@
       "type": "number",
       "multipleOf": 1.0
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 3,
         "valid": true
@@ -1427,7 +1493,7 @@
       "minimum": 1,
       "multipleOf": 2
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 2,
         "valid": true
@@ -1441,7 +1507,7 @@
       "type": "number",
       "multipleOf": 2
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 4,
         "valid": true
@@ -1455,7 +1521,7 @@
       "type": "number",
       "multipleOf": 0.5
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 0.5,
         "valid": true
@@ -1471,7 +1537,7 @@
       "maximum": 0,
       "multipleOf": 5
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 0,
         "valid": true
@@ -1486,7 +1552,7 @@
       "multipleOf": 1,
       "maximum": 0.5
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 0,
         "valid": true
@@ -1507,12 +1573,16 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": null,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "null"
+    }
   },
   {
     "description": "type_pin_simplification_satisfiable any_of_outer_type_narrows_to_string",
@@ -1531,7 +1601,7 @@
         "object"
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": "x",
         "valid": true
@@ -1540,7 +1610,11 @@
         "data": 1,
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "string"
+    }
   },
   {
     "description": "type_pin_simplification_satisfiable null_filter_emits_null",
@@ -1558,12 +1632,16 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": null,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "null"
+    }
   },
   {
     "description": "array_normalisation_satisfiable array_contains_subsumed_by_items",
@@ -1577,7 +1655,7 @@
         "type": "integer"
       }
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [
           1
@@ -1599,7 +1677,7 @@
       ],
       "minItems": 1
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [
           "x"
@@ -1619,7 +1697,7 @@
       "uniqueItems": true,
       "maxItems": 1
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [
           1
@@ -1638,7 +1716,7 @@
       },
       "additionalProperties": false
     },
-    "witnesses": [
+    "tests": [
       {
         "data": {},
         "valid": true
@@ -1666,7 +1744,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 2,
         "valid": true
@@ -1700,7 +1778,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [
           0,
@@ -1742,7 +1820,7 @@
         "maximum": 9223372036854775807
       }
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [
           0,
@@ -1773,7 +1851,7 @@
       "maxContains": 1,
       "minContains": 0
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [
           "a"
@@ -1803,7 +1881,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 1.5,
         "valid": true
@@ -1876,7 +1954,7 @@
       "type": "string",
       "format": "email"
     },
-    "witnesses": [
+    "tests": [
       {
         "data": "user@example.com",
         "valid": true
@@ -1895,11 +1973,33 @@
       "type": "string",
       "format": "email"
     },
-    "witnesses": [
+    "tests": [
       {
         "data": "not-email",
         "valid": true
       }
     ]
+  },
+  {
+    "description": "ir: nested allOf with disjoint type domains is unsatisfiable",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "allOf": [
+            {
+              "type": "string"
+            }
+          ]
+        }
+      ]
+    },
+    "satisfiable": false,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
   }
 ]

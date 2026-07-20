@@ -6,7 +6,7 @@
       "minimum": 0,
       "maximum": 10
     },
-    "witnesses": [
+    "tests": [
       0,
       5,
       10,
@@ -24,7 +24,7 @@
       "minimum": 1.5,
       "exclusiveMaximum": 2.5
     },
-    "witnesses": [
+    "tests": [
       1.5,
       2.0,
       2.5,
@@ -40,7 +40,7 @@
       "minLength": 1,
       "maxLength": 3
     },
-    "witnesses": [
+    "tests": [
       "",
       "a",
       "abc",
@@ -53,24 +53,32 @@
     "schema": {
       "type": "boolean"
     },
-    "witnesses": [
+    "tests": [
       true,
       false,
       0,
       "true"
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "boolean"
+    }
   },
   {
     "description": "canonicalize_preserves_validation null",
     "schema": {
       "type": "null"
     },
-    "witnesses": [
+    "tests": [
       null,
       0,
       false,
       ""
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "null"
+    }
   },
   {
     "description": "canonicalize_preserves_validation anyof_int_or_string",
@@ -84,25 +92,36 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       0,
       "x",
       0.5,
       null,
       []
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "integer",
+        "string"
+      ]
+    }
   },
   {
     "description": "canonicalize_preserves_validation const_string",
     "schema": {
       "const": "hello"
     },
-    "witnesses": [
+    "tests": [
       "hello",
       "world",
       null,
       0
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": "hello"
+    }
   },
   {
     "description": "canonicalize_preserves_validation enum_ints",
@@ -113,13 +132,21 @@
         3
       ]
     },
-    "witnesses": [
+    "tests": [
       1,
       2,
       3,
       4,
       "1"
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        1,
+        2,
+        3
+      ]
+    }
   },
   {
     "description": "canonicalize_preserves_validation array_int_items_min",
@@ -130,7 +157,7 @@
       },
       "minItems": 1
     },
-    "witnesses": [
+    "tests": [
       [],
       [
         1
@@ -159,7 +186,7 @@
         }
       }
     },
-    "witnesses": [
+    "tests": [
       {},
       {
         "name": "x"
@@ -180,7 +207,7 @@
         "type": "string"
       }
     },
-    "witnesses": [
+    "tests": [
       0,
       "x",
       null,
@@ -200,7 +227,7 @@
         "type": "string"
       }
     },
-    "witnesses": [
+    "tests": [
       0,
       -1,
       "x",
@@ -217,7 +244,7 @@
         "type": "boolean"
       }
     },
-    "witnesses": [
+    "tests": [
       [],
       [
         true
@@ -248,7 +275,7 @@
         }
       }
     },
-    "witnesses": [
+    "tests": [
       {},
       {
         "a": 1
@@ -265,22 +292,29 @@
   {
     "description": "canonicalize_preserves_validation true_schema",
     "schema": true,
-    "witnesses": [
+    "tests": [
       null,
       0,
       "x",
       []
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
   },
   {
     "description": "canonicalize_preserves_validation false_schema",
     "schema": false,
-    "witnesses": [
+    "tests": [
       null,
       0,
       "x",
       []
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
   },
   {
     "description": "canonicalize_preserves_validation type_list_int_string",
@@ -290,13 +324,20 @@
         "string"
       ]
     },
-    "witnesses": [
+    "tests": [
       0,
       "x",
       null,
       0.5,
       []
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "integer",
+        "string"
+      ]
+    }
   },
   {
     "description": "canonicalize_preserves_validation number_multiple_of_one_becomes_integer",
@@ -304,7 +345,7 @@
       "type": "number",
       "multipleOf": 1.0
     },
-    "witnesses": [
+    "tests": [
       0,
       1,
       1.5,
@@ -319,7 +360,7 @@
       "minimum": 1,
       "multipleOf": 2
     },
-    "witnesses": [
+    "tests": [
       0,
       1,
       2,
@@ -334,7 +375,7 @@
       "minimum": 0,
       "exclusiveMaximum": 5e-324
     },
-    "witnesses": [
+    "tests": [
       0,
       0.0,
       -1,
@@ -353,7 +394,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       -1,
       0,
       5,
@@ -377,12 +418,16 @@
         "object"
       ]
     },
-    "witnesses": [
+    "tests": [
       "x",
       0,
       {},
       null
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string"
+    }
   },
   {
     "description": "canonicalize_preserves_validation array_false_in_prefix_caps_max",
@@ -394,7 +439,7 @@
         true
       ]
     },
-    "witnesses": [
+    "tests": [
       [],
       [
         1
@@ -426,7 +471,7 @@
         ]
       }
     },
-    "witnesses": [
+    "tests": [
       {},
       {
         "a": 1
@@ -448,7 +493,7 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "contentEncoding": "base64"
     },
-    "witnesses": [
+    "tests": [
       "e30=",
       "%%%",
       0,
@@ -465,7 +510,7 @@
       },
       "unevaluatedProperties": false
     },
-    "witnesses": [
+    "tests": [
       {},
       {
         "a": 1
@@ -494,7 +539,7 @@
       ],
       "unevaluatedProperties": false
     },
-    "witnesses": [
+    "tests": [
       {},
       {
         "a": 1
@@ -520,7 +565,7 @@
       ],
       "unevaluatedItems": false
     },
-    "witnesses": [
+    "tests": [
       [],
       [
         1
@@ -544,7 +589,7 @@
       },
       "unevaluatedItems": false
     },
-    "witnesses": [
+    "tests": [
       [],
       [
         "x"
@@ -573,7 +618,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       "2024-01-01",
       "550e8400-e29b-41d4-a716-446655440000",
       "neither",
@@ -599,7 +644,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -634,7 +679,7 @@
       "type": "array",
       "uniqueItems": true
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -669,7 +714,7 @@
       "type": "array",
       "uniqueItems": true
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -709,7 +754,7 @@
       ],
       "type": "array"
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -746,7 +791,7 @@
       },
       "type": "array"
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -789,7 +834,7 @@
       ],
       "type": "array"
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -823,7 +868,7 @@
       "maxItems": 3,
       "type": "array"
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -855,7 +900,7 @@
       "multipleOf": 2,
       "type": "integer"
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -885,7 +930,7 @@
       "format": "json-pointer",
       "type": "string"
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -922,7 +967,7 @@
         "object"
       ]
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -952,7 +997,7 @@
       "maximum": 18014398509481983,
       "minimum": -18014398509481983
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -986,7 +1031,7 @@
         "number"
       ]
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -1016,7 +1061,7 @@
       "exclusiveMaximum": 0,
       "maximum": 1
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -1046,7 +1091,7 @@
       "exclusiveMinimum": 1,
       "minimum": 0
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -1126,7 +1171,7 @@
       ],
       "type": "object"
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -1170,7 +1215,7 @@
       ],
       "type": "object"
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -1202,7 +1247,7 @@
       },
       "type": "number"
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -1243,7 +1288,7 @@
       },
       "type": "object"
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -1287,7 +1332,7 @@
         }
       }
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -1317,7 +1362,7 @@
       "format": "relative-json-pointer",
       "type": "string"
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -1348,7 +1393,7 @@
       "pattern": "^\\w+@",
       "type": "string"
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -1378,7 +1423,7 @@
       "format": "Unknown formats should be treated as annotations and pass validation",
       "type": "string"
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -1417,7 +1462,7 @@
       "type": "array",
       "uniqueItems": true
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -1451,7 +1496,7 @@
       "type": "array",
       "uniqueItems": true
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -1493,7 +1538,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -1528,7 +1573,7 @@
       },
       "type": "array"
     },
-    "witnesses": [
+    "tests": [
       null,
       true,
       false,
@@ -1561,7 +1606,7 @@
         "minimum": 0
       }
     },
-    "witnesses": [
+    "tests": [
       {
         "data": "x",
         "valid": true
@@ -1590,7 +1635,7 @@
         "type": "string"
       }
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 5,
         "valid": true
@@ -1615,7 +1660,7 @@
       "type": "integer",
       "minimum": 1.5
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 1,
         "valid": false
@@ -1636,7 +1681,7 @@
       "type": "integer",
       "multipleOf": 1.5
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 0,
         "valid": true
@@ -1671,7 +1716,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 1,
         "valid": true
@@ -1684,7 +1729,11 @@
         "data": "1",
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": 1
+    }
   },
   {
     "description": "canonicalize_matches_expected_verdict array_prefix_satisfies_contains",
@@ -1702,7 +1751,7 @@
         "type": "string"
       }
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [
           "a"
@@ -1735,7 +1784,7 @@
         ]
       }
     },
-    "witnesses": [
+    "tests": [
       {
         "data": {
           "a": 1
@@ -1774,7 +1823,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": {
           "a": 1,
@@ -1813,7 +1862,7 @@
       },
       "$ref": "#/$defs/a~1b"
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 5,
         "valid": true
@@ -1840,7 +1889,7 @@
       },
       "minItems": 5
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [
           [
@@ -1879,7 +1928,7 @@
       "items": true,
       "minItems": 5
     },
-    "witnesses": [
+    "tests": [
       {
         "data": [
           null,
@@ -1917,7 +1966,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 1,
         "valid": true
@@ -1934,7 +1983,14 @@
         "data": 2,
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        1,
+        "x"
+      ]
+    }
   },
   {
     "description": "draft4_float_without_frac_is_not_integer",
@@ -1943,9 +1999,13 @@
       "$schema": "http://json-schema.org/draft-04/schema#",
       "type": "integer"
     },
-    "witnesses": [
+    "tests": [
       1.0
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "integer"
+    }
   },
   {
     "description": "intersect_number_leaf_drops_unrepresentable_out_of_bound_member",
@@ -1963,7 +2023,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 1e+22,
         "valid": false
@@ -1982,6 +2042,14 @@
           "$ref": "#/const"
         }
       }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": {
+        "not": {
+          "$ref": "#/const"
+        }
+      }
     }
   },
   {
@@ -1992,6 +2060,9 @@
           "$ref": "#/x-data"
         }
       }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
     }
   },
   {
@@ -2005,7 +2076,7 @@
         }
       }
     },
-    "witnesses": [
+    "tests": [
       {
         "data": {
           "const": 0
@@ -2032,7 +2103,7 @@
         }
       ]
     },
-    "witnesses": [
+    "tests": [
       {
         "data": 1,
         "valid": true

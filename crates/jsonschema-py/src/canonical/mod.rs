@@ -71,6 +71,18 @@ impl PyCanonicalSchema {
                 },
             )?
             .into_any(),
+            CanonicalView::AnyOf(branches) => Py::new(
+                py,
+                AnyOfView {
+                    branches: branches
+                        .into_iter()
+                        .map(|branch| {
+                            Ok(Py::new(py, PyCanonicalSchema { inner: branch })?.into_any())
+                        })
+                        .collect::<PyResult<_>>()?,
+                },
+            )?
+            .into_any(),
             CanonicalView::True => Py::new(py, TrueView)?.into_any(),
             CanonicalView::False => Py::new(py, FalseView)?.into_any(),
             CanonicalView::Raw(schema) => Py::new(
@@ -177,6 +189,21 @@ impl TypedGroupView {
     }
 }
 
+/// A value matches iff at least one branch matches.
+#[pyclass(frozen, name = "AnyOfView", module = "jsonschema_rs.canonical")]
+pub(crate) struct AnyOfView {
+    #[pyo3(get)]
+    branches: Vec<Py<PyAny>>,
+}
+
+#[pymethods]
+impl AnyOfView {
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("branches",)
+    }
+}
+
 /// Exactly one admitted value.
 #[pyclass(frozen, name = "ConstView", module = "jsonschema_rs.canonical")]
 pub(crate) struct ConstView {
@@ -266,6 +293,7 @@ pub(crate) fn init_module(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyRes
     canonical_module.add_class::<FalseView>()?;
     canonical_module.add_class::<MultiTypeView>()?;
     canonical_module.add_class::<TypedGroupView>()?;
+    canonical_module.add_class::<AnyOfView>()?;
     canonical_module.add_class::<ConstView>()?;
     canonical_module.add_class::<EnumView>()?;
     canonical_module.add_class::<RawView>()?;

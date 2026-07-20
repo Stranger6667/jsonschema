@@ -1,0 +1,1464 @@
+[
+  {
+    "description": "intersect_integer_enum_with_oversized_integer",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "enum": [
+            99999999999999999999999,
+            18446744073709551615,
+            1
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 99999999999999999999999,
+        "valid": true
+      },
+      {
+        "data": 18446744073709551615,
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 2,
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        1,
+        18446744073709551615,
+        99999999999999999999999
+      ]
+    }
+  },
+  {
+    "description": "intersect_number_enum_with_oversized_number",
+    "schema": {
+      "allOf": [
+        {
+          "type": "number"
+        },
+        {
+          "enum": [
+            18446744073709551615,
+            1
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 18446744073709551615,
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 2,
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        1,
+        18446744073709551615
+      ]
+    }
+  },
+  {
+    "description": "intersect_anyof_narrows_to_matching_branch",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    },
+    "schema": {
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    }
+  },
+  {
+    "description": "intersect_const_bool_disjoint_is_false",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "schema": {
+      "allOf": [
+        {
+          "const": true
+        },
+        {
+          "const": false
+        }
+      ]
+    }
+  },
+  {
+    "description": "intersect_const_equal_returns_value",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": 42
+    },
+    "schema": {
+      "allOf": [
+        {
+          "const": 42
+        },
+        {
+          "const": 42
+        }
+      ]
+    }
+  },
+  {
+    "description": "intersect_const_disjoint_is_false",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "schema": {
+      "allOf": [
+        {
+          "const": 1
+        },
+        {
+          "const": 2
+        }
+      ]
+    }
+  },
+  {
+    "description": "intersect_enum_emits_shared_values",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        2,
+        3
+      ]
+    },
+    "schema": {
+      "allOf": [
+        {
+          "enum": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "enum": [
+            2,
+            3,
+            4
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "description": "intersect_const_enum_emits_member",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": 2
+    },
+    "schema": {
+      "allOf": [
+        {
+          "const": 2
+        },
+        {
+          "enum": [
+            1,
+            2,
+            3
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "description": "intersect_const_enum_disjoint_is_false",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "schema": {
+      "allOf": [
+        {
+          "const": 99
+        },
+        {
+          "enum": [
+            1,
+            2,
+            3
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "description": "intersect_disjoint_integer_string_is_false",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    }
+  },
+  {
+    "description": "intersect_disjoint_null_boolean_is_false",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "schema": {
+      "allOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    }
+  },
+  {
+    "description": "intersect_disjoint_object_array_is_false",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "schema": {
+      "allOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "array"
+        }
+      ]
+    }
+  },
+  {
+    "description": "intersect_false_left_absorbs",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "schema": {
+      "allOf": [
+        false,
+        {
+          "type": "integer"
+        }
+      ]
+    }
+  },
+  {
+    "description": "intersect_false_right_absorbs",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer"
+        },
+        false
+      ]
+    }
+  },
+  {
+    "description": "intersect_false_meets_false_is_false",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "schema": {
+      "allOf": [
+        false,
+        false
+      ]
+    }
+  },
+  {
+    "description": "intersect_false_meets_true_is_false",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "schema": {
+      "allOf": [
+        false,
+        true
+      ]
+    }
+  },
+  {
+    "description": "intersect_typed_group_value_set_is_false",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "schema": {
+      "allOf": [
+        {
+          "const": true
+        },
+        {
+          "const": false
+        }
+      ]
+    }
+  },
+  {
+    "description": "intersect_distinct_boolean_leaves_to_full_set",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "boolean"
+    },
+    "schema": {
+      "allOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    }
+  },
+  {
+    "description": "merged_integer_vs_string_is_false",
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    },
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    }
+  },
+  {
+    "description": "merged_null_vs_boolean_is_false",
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    },
+    "schema": {
+      "allOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    }
+  },
+  {
+    "description": "merged_integer_vs_number_picks_integer",
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "integer"
+    },
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        }
+      ]
+    }
+  },
+  {
+    "description": "merged_null_vs_const_zero_is_false",
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    },
+    "schema": {
+      "allOf": [
+        {
+          "type": "null"
+        },
+        {
+          "const": 0
+        }
+      ]
+    }
+  },
+  {
+    "description": "merged_null_vs_enum_zero_is_false",
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    },
+    "schema": {
+      "allOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            0
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "description": "merged_null_vs_enum_null_true_picks_null",
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "null"
+    },
+    "schema": {
+      "allOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            null,
+            true
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "description": "merged_string_vs_enum_picks_string_value",
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": "abc"
+    },
+    "schema": {
+      "allOf": [
+        {
+          "type": "string"
+        },
+        {
+          "enum": [
+            "abc",
+            true
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "description": "merged_null_vs_type_list_picks_null",
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "null"
+    },
+    "schema": {
+      "allOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": [
+            "null",
+            "boolean"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "description": "intersect_parity_null_leaf_filters_enum",
+    "schema": {
+      "allOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            null,
+            1,
+            "x"
+          ]
+        }
+      ]
+    },
+    "tests": [
+      null,
+      1,
+      "x",
+      true
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "null"
+    }
+  },
+  {
+    "description": "intersect_parity_boolean_leaf_filters_enum",
+    "schema": {
+      "allOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "enum": [
+            true,
+            false,
+            1,
+            "x"
+          ]
+        }
+      ]
+    },
+    "tests": [
+      true,
+      false,
+      1,
+      "x"
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "boolean"
+    }
+  },
+  {
+    "description": "intersect_parity_open_array_leaf_filters_enum",
+    "schema": {
+      "allOf": [
+        {
+          "type": "array"
+        },
+        {
+          "enum": [
+            [
+              1,
+              2
+            ],
+            "x",
+            []
+          ]
+        }
+      ]
+    },
+    "tests": [
+      [
+        1,
+        2
+      ],
+      "x",
+      []
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        [],
+        [
+          1,
+          2
+        ]
+      ]
+    }
+  },
+  {
+    "description": "intersect_parity_open_object_leaf_filters_enum",
+    "schema": {
+      "allOf": [
+        {
+          "type": "object"
+        },
+        {
+          "enum": [
+            {
+              "a": 1
+            },
+            5
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "a": 1
+      },
+      5
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": {
+        "a": 1
+      }
+    }
+  },
+  {
+    "description": "intersect_enum_with_const_keeps_only_shared_member",
+    "schema": {
+      "allOf": [
+        {
+          "enum": [
+            true,
+            false,
+            "x"
+          ]
+        },
+        {
+          "const": true
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": true,
+        "valid": true
+      },
+      {
+        "data": false,
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": true
+    }
+  },
+  {
+    "description": "intersect_draft4_integer_enums_keeps_shared_values_under_guard",
+    "draft": "draft4",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer",
+          "enum": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "type": "integer",
+          "enum": [
+            2,
+            3,
+            4
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "integer",
+      "enum": [
+        2,
+        3
+      ]
+    },
+    "tests": [
+      {
+        "data": 2,
+        "valid": true
+      },
+      {
+        "data": 3,
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": 4,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "multi-type set intersected with an enum filters by type",
+    "schema": {
+      "allOf": [
+        {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "enum": [
+            1,
+            "a",
+            null,
+            true
+          ]
+        }
+      ]
+    },
+    "tests": [
+      "a",
+      null,
+      1,
+      true
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        null,
+        "a"
+      ]
+    }
+  },
+  {
+    "description": "union_value_set_beside_type_set_drops_covered_members_and_survives",
+    "schema": {
+      "anyOf": [
+        {
+          "enum": [
+            1,
+            "a"
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": 1
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": "a",
+        "valid": true
+      },
+      {
+        "data": "zzz",
+        "valid": true
+      },
+      {
+        "data": 2,
+        "valid": false
+      },
+      {
+        "data": null,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "union_of_type_sets_folds_to_type_list",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "null",
+        "integer",
+        "string"
+      ]
+    },
+    "tests": [
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": 3,
+        "valid": true
+      },
+      {
+        "data": null,
+        "valid": true
+      },
+      {
+        "data": true,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "union_with_true_branch_is_true",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "tests": [
+      {
+        "data": 0,
+        "valid": true
+      },
+      {
+        "data": null,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "union_of_equivalent_value_sets_folds_to_const",
+    "schema": {
+      "anyOf": [
+        {
+          "const": 5
+        },
+        {
+          "enum": [
+            5
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": 5
+    },
+    "tests": [
+      {
+        "data": 5,
+        "valid": true
+      },
+      {
+        "data": 6,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "conjunct_type_distributes_through_union",
+    "schema": {
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "const": 1
+            },
+            {
+              "const": "a"
+            }
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": "a"
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "draft4_union_keeps_integer_guard_branch",
+    "schema": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {
+          "type": "integer",
+          "enum": [
+            1,
+            1.0
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer",
+          "enum": [
+            1
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": 1.0,
+        "valid": false
+      },
+      {
+        "data": 2,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "intersect_conjunct_distributes_through_anyof_result",
+    "schema": {
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "enum": [
+                1,
+                "a"
+              ]
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string"
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": true
+      },
+      {
+        "data": "zzz",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": null,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "intersect_type_base_distributes_through_anyof_conjunct",
+    "schema": {
+      "type": "string",
+      "anyOf": [
+        {
+          "enum": [
+            1,
+            "a"
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string"
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": null,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "intersect_type_meets_true_leaves_type",
+    "schema": {
+      "allOf": [
+        {
+          "type": "string"
+        },
+        true
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string"
+    },
+    "tests": [
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "intersect_draft4_integer_group_meets_integer_type_keeps_group",
+    "draft": "draft4",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer",
+          "enum": [
+            1,
+            2
+          ]
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "integer",
+      "enum": [
+        1,
+        2
+      ]
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 2,
+        "valid": true
+      },
+      {
+        "data": 3,
+        "valid": false
+      },
+      {
+        "data": 1.0,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "intersect_draft4_string_type_meets_integer_group_is_false",
+    "draft": "draft4",
+    "schema": {
+      "allOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer",
+          "enum": [
+            1
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "not": {}
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "intersect_draft4_disjoint_integer_groups_is_false",
+    "draft": "draft4",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer",
+          "enum": [
+            1
+          ]
+        },
+        {
+          "type": "integer",
+          "enum": [
+            2
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "not": {}
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": 2,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "intersect_draft4_enum_meets_integer_group_keeps_guarded_values",
+    "draft": "draft4",
+    "schema": {
+      "allOf": [
+        {
+          "enum": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "type": "integer",
+          "enum": [
+            1,
+            2
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "integer",
+      "enum": [
+        1,
+        2
+      ]
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 2,
+        "valid": true
+      },
+      {
+        "data": 3,
+        "valid": false
+      },
+      {
+        "data": 1.0,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "union_flattens_nested_anyof",
+    "schema": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "enum": [
+                1,
+                "a"
+              ]
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "integer",
+        "string"
+      ]
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": null,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "union_draft4_pools_same_type_integer_groups",
+    "draft": "draft4",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "enum": [
+            1
+          ]
+        },
+        {
+          "type": "integer",
+          "enum": [
+            2
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "integer",
+      "enum": [
+        1,
+        2
+      ]
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 2,
+        "valid": true
+      },
+      {
+        "data": 3,
+        "valid": false
+      },
+      {
+        "data": 1.0,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "union_of_false_branches_is_false",
+    "schema": {
+      "anyOf": [
+        false,
+        false
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": null,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "union_draft4_keeps_value_set_beside_integer_type",
+    "draft": "draft4",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "enum": [
+            1
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "enum": [
+            1
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 1.0,
+        "valid": true
+      },
+      {
+        "data": 2,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "union_draft4_value_set_absorbs_integer_group",
+    "draft": "draft4",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "enum": [
+            1
+          ]
+        },
+        {
+          "enum": [
+            1,
+            "a"
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "enum": [
+        1,
+        "a"
+      ]
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 1.0,
+        "valid": true
+      },
+      {
+        "data": "a",
+        "valid": true
+      },
+      {
+        "data": 2,
+        "valid": false
+      }
+    ]
+  }
+]

@@ -30,6 +30,8 @@ pub enum CanonicalView {
     TypedGroup(TypedGroupView),
     Const(Value),
     Enum(Vec<Value>),
+    /// A value matches iff at least one branch matches.
+    AnyOf(Vec<CanonicalSchema>),
     True,
     False,
     Raw(Value),
@@ -56,6 +58,12 @@ impl CanonicalSchema {
             SchemaKind::Enum(values) => {
                 CanonicalView::Enum(values.iter().map(CanonicalJson::to_value).collect())
             }
+            SchemaKind::AnyOf(branches) => CanonicalView::AnyOf(
+                branches
+                    .iter()
+                    .map(|branch| self.wrap_child(branch))
+                    .collect(),
+            ),
             SchemaKind::True => CanonicalView::True,
             SchemaKind::False => CanonicalView::False,
             SchemaKind::Raw(_) => CanonicalView::Raw(self.to_json_schema()),

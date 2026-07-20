@@ -1,8 +1,8 @@
 use std::cmp::Ordering;
 
 use jsonschema::{
-    canonical::{options, CanonicalKind, CanonicalView},
-    canonicalize, Draft, JsonType, JsonTypeSet,
+    canonical::{options, CanonicalKind, CanonicalSchema, CanonicalView},
+    canonicalize, Draft, JsonType,
 };
 use serde_json::{json, Map, Value};
 use test_case::test_case;
@@ -29,7 +29,7 @@ fn kind_reports_its_label(schema: &Value, kind: CanonicalKind, label: &str) {
 }
 
 // `view()` exposes each modeled node with its payload.
-#[test_case(&json!({"type": ["string", "number"]}), &CanonicalView::MultiType(JsonTypeSet::empty().insert(JsonType::String).insert(JsonType::Number)); "multi_type")]
+#[test_case(&json!({"type": ["string", "number"]}), &CanonicalView::MultiType(JsonType::String | JsonType::Number); "multi_type")]
 #[test_case(&json!({"const": [1, "a"]}), &CanonicalView::Const(json!([1, "a"])); "const_value")]
 #[test_case(&json!({"enum": [3, 1, 2]}), &CanonicalView::Enum(vec![json!(1), json!(2), json!(3)]); "enum_values")]
 #[test_case(&json!(true), &CanonicalView::True; "boolean true")]
@@ -53,6 +53,28 @@ fn draft4_integer_values_are_a_typed_group() {
     };
     assert_eq!(group.ty, JsonType::Integer);
     assert_eq!(group.body.kind(), CanonicalKind::Enum);
+}
+
+// An `anyOf` whose branches stay disjoint surfaces as an AnyOf view exposing each branch.
+#[test]
+fn view_exposes_anyof_branches() {
+    let canonical =
+        canonicalize(&json!({"anyOf": [{"type": "string"}, {"const": 1}]})).expect("canonicalizes");
+    assert_eq!(canonical.kind(), CanonicalKind::AnyOf);
+    assert_eq!(canonical.kind().as_str(), "any_of");
+    let CanonicalView::AnyOf(branches) = canonical.view() else {
+        panic!("expected an AnyOf view");
+    };
+    assert_eq!(
+        branches
+            .iter()
+            .map(CanonicalSchema::view)
+            .collect::<Vec<_>>(),
+        vec![
+            CanonicalView::MultiType(JsonType::String.into()),
+            CanonicalView::Const(json!(1)),
+        ]
+    );
 }
 
 #[test]

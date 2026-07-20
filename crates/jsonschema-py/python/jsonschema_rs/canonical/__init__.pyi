@@ -31,6 +31,14 @@ class TypedGroupView:
     def body(self) -> CanonicalSchema: ...
 
 @final
+class AnyOfView:
+    """A value matches iff at least one branch matches."""
+
+    __match_args__: tuple[str, ...]
+    @property
+    def branches(self) -> list[CanonicalSchema]: ...
+
+@final
 class ConstView:
     """Exactly one admitted value."""
 
@@ -54,7 +62,9 @@ class RawView:
     @property
     def schema(self) -> JsonValue: ...
 
-CanonicalViewType: TypeAlias = TrueView | FalseView | MultiTypeView | TypedGroupView | ConstView | EnumView | RawView
+CanonicalViewType: TypeAlias = (
+    TrueView | FalseView | MultiTypeView | TypedGroupView | AnyOfView | ConstView | EnumView | RawView
+)
 
 class CanonicalizationError(ValueError):
     """A schema could not be reduced to canonical form."""

@@ -29,6 +29,18 @@ def test_unmodeled_round_trips_verbatim(schema):
         ({"type": ["integer", "string"]}, {"$schema": DRAFT202012, "type": ["integer", "string"]}),
         ({"type": "boolean", "enum": [True]}, {"$schema": DRAFT202012, "const": True}),
         ({"type": "integer", "enum": [1, "x", 2]}, {"$schema": DRAFT202012, "enum": [1, 2]}),
+        (
+            {"allOf": [{"type": ["integer", "string"]}, {"enum": [1, "x", None]}]},
+            {"$schema": DRAFT202012, "enum": [1, "x"]},
+        ),
+        (
+            {"anyOf": [{"const": 5}, {"type": "string"}]},
+            {"$schema": DRAFT202012, "anyOf": [{"type": "string"}, {"const": 5}]},
+        ),
+        (
+            {"anyOf": [{"type": "integer"}, {"type": "string"}]},
+            {"$schema": DRAFT202012, "type": ["integer", "string"]},
+        ),
     ],
 )
 def test_valueset_canonical_forms(schema, expected):
@@ -82,6 +94,15 @@ def test_view_typed_group_draft4_integer():
             pytest.fail(f"unexpected view: {other!r}")
 
 
+def test_view_any_of():
+    match canonicalize({"anyOf": [{"const": 5}, {"type": "string"}]}).view():
+        case canonical.AnyOfView(branches=branches):
+            assert [branch.kind for branch in branches] == ["multi_type", "const"]
+            assert all(isinstance(branch, CanonicalSchema) for branch in branches)
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
 def test_view_raw():
     match canonicalize({"not": {}}).view():
         case canonical.RawView(schema=payload):
@@ -96,6 +117,7 @@ def test_view_raw():
         ({"const": 5}, "const"),
         ({"enum": [1, 2]}, "enum"),
         ({"type": ["integer", "string"]}, "multi_type"),
+        ({"anyOf": [{"const": 5}, {"type": "string"}]}, "any_of"),
         ({}, "true"),
         (False, "false"),
         ({"pattern": "a"}, "raw"),
