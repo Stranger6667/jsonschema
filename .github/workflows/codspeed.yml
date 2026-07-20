@@ -57,3 +57,32 @@ jobs:
           run: cargo codspeed run
           mode: "instrumentation"
           token: ${{ secrets.CODSPEED_TOKEN }}
+
+  python:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    name: "Run benchmarks (python)"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+
+      - run: uv python install 3.14
+
+      - name: Build and install extension
+        working-directory: crates/jsonschema-py
+        env:
+          MATURIN_STRIP: "false"
+          CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+        run: |
+          uv venv --python 3.14
+          uv pip install ".[bench]"
+
+      - uses: CodSpeedHQ/action@f99becdce5e5d51fd556489ebef684f4ecfd6286 # v4.18.5
+        with:
+          working-directory: crates/jsonschema-py
+          run: .venv/bin/pytest benches/bench.py -k '(jsonschema-rs or not jsonschema) and not py-parse' --codspeed
+          mode: "instrumentation"
+          token: ${{ secrets.CODSPEED_TOKEN }}

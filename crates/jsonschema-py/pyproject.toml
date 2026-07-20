@@ -45,6 +45,7 @@ bench = [
     "fastjsonschema>=2.20.0",
     "jsonschema>=4.23.0",
     "pytest-benchmark>=4.0.0",
+    "pytest-codspeed>=5.0.0",
 ]
 
 [project.urls]
