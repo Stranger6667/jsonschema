@@ -1702,15 +1702,23 @@
     },
     "witnesses": [
       {
-        "data": [0, 1],
+        "data": [
+          0,
+          1
+        ],
         "valid": true
       },
       {
-        "data": [0, 0],
+        "data": [
+          0,
+          0
+        ],
         "valid": false
       },
       {
-        "data": [0],
+        "data": [
+          0
+        ],
         "valid": false
       }
     ]
@@ -1736,11 +1744,17 @@
     },
     "witnesses": [
       {
-        "data": [0, 1],
+        "data": [
+          0,
+          1
+        ],
         "valid": true
       },
       {
-        "data": [0, 0],
+        "data": [
+          0,
+          0
+        ],
         "valid": false
       }
     ]
@@ -1761,7 +1775,9 @@
     },
     "witnesses": [
       {
-        "data": ["a"],
+        "data": [
+          "a"
+        ],
         "valid": true
       },
       {
@@ -1776,7 +1792,10 @@
       "allOf": [
         {
           "not": {
-            "type": ["integer", "string"]
+            "type": [
+              "integer",
+              "string"
+            ]
           }
         },
         {

@@ -41,7 +41,7 @@ impl Ord for RawJson {
     }
 }
 
-fn hash_value<H: Hasher>(value: &Value, state: &mut H) {
+pub(crate) fn hash_value<H: Hasher>(value: &Value, state: &mut H) {
     match value {
         Value::Null => state.write_u8(0),
         Value::Bool(item) => {
@@ -83,7 +83,7 @@ fn hash_value<H: Hasher>(value: &Value, state: &mut H) {
     }
 }
 
-fn compare_values(left: &Value, right: &Value) -> Ordering {
+pub(crate) fn compare_values(left: &Value, right: &Value) -> Ordering {
     fn rank(value: &Value) -> u8 {
         match value {
             Value::Null => 0,

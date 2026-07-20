@@ -1,0 +1,750 @@
+[
+  {
+    "description": "const_null_canonicalizes_to_null_type",
+    "draft": "draft2020-12",
+    "schemas": [
+      {
+        "const": null
+      },
+      {
+        "type": "null"
+      }
+    ]
+  },
+  {
+    "description": "emit_boolean_restricted_to_true_draft4_is_enum",
+    "draft": "draft4",
+    "schema": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "enum": [
+        true
+      ]
+    }
+  },
+  {
+    "description": "ir_leaf_identity_true",
+    "schema": true,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "ir_leaf_identity_empty_object",
+    "schema": {},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "ir_leaf_identity_integer",
+    "schema": {
+      "type": "integer"
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    }
+  },
+  {
+    "description": "ir_leaf_identity_string",
+    "schema": {
+      "type": "string"
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string"
+    }
+  },
+  {
+    "description": "ir_const_is_const",
+    "schema": {
+      "const": "hello"
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": "hello"
+    }
+  },
+  {
+    "description": "to_expected_full_type_list all_types_folds_to_empty",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "type": [
+          "null",
+          "boolean",
+          "integer",
+          "number",
+          "string",
+          "array",
+          "object"
+        ]
+      },
+      {}
+    ]
+  },
+  {
+    "description": "to_expected_enum_sort enum_sorted_canonical",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "enum": [
+          "aa",
+          2,
+          "z",
+          null,
+          1
+        ]
+      },
+      {
+        "enum": [
+          null,
+          1,
+          2,
+          "z",
+          "aa"
+        ]
+      }
+    ]
+  },
+  {
+    "description": "const_null_emits_as_type_null",
+    "schema": {
+      "const": null
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "null"
+    }
+  },
+  {
+    "description": "boolean_restricted_to_true_folds_to_const",
+    "schema": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": true
+    }
+  },
+  {
+    "description": "boolean_type_and_exhaustive_enum_spellings_converge",
+    "schemas": [
+      {
+        "type": "boolean"
+      },
+      {
+        "enum": [
+          false,
+          true
+        ]
+      },
+      {
+        "enum": [
+          true,
+          false
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "boolean"
+    },
+    "witnesses": [
+      {
+        "data": true,
+        "valid": true
+      },
+      {
+        "data": false,
+        "valid": true
+      },
+      {
+        "data": 0,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "unknown_keyword_ignored draft4_const",
+    "draft": "draft4",
+    "schemas": [
+      {
+        "const": 5
+      },
+      {}
+    ]
+  },
+  {
+    "description": "draft4_integer_enum_grid_stays_enum enum_form",
+    "draft": "draft4",
+    "schema": {
+      "enum": [
+        0,
+        1,
+        2
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "enum": [
+        0,
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "description": "misaligned_progression_stays_enum",
+    "draft": "draft7",
+    "schema": {
+      "enum": [
+        1,
+        3,
+        5
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "enum": [
+        1,
+        3,
+        5
+      ]
+    }
+  },
+  {
+    "description": "irregular_set_stays_enum",
+    "draft": "draft7",
+    "schema": {
+      "enum": [
+        0,
+        1,
+        5
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "enum": [
+        0,
+        1,
+        5
+      ]
+    }
+  },
+  {
+    "description": "integer schema validates consistently after canonicalization",
+    "schema": {
+      "type": "integer"
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 1.5,
+        "valid": false
+      },
+      {
+        "data": "not an integer",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation boolean",
+    "schema": {
+      "type": "boolean"
+    },
+    "witnesses": [
+      true,
+      false,
+      0,
+      "true"
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation null",
+    "schema": {
+      "type": "null"
+    },
+    "witnesses": [
+      null,
+      0,
+      false,
+      ""
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation const_string",
+    "schema": {
+      "const": "hello"
+    },
+    "witnesses": [
+      "hello",
+      "world",
+      null,
+      0
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation enum_ints",
+    "schema": {
+      "enum": [
+        1,
+        2,
+        3
+      ]
+    },
+    "witnesses": [
+      1,
+      2,
+      3,
+      4,
+      "1"
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation true_schema",
+    "schema": true,
+    "witnesses": [
+      null,
+      0,
+      "x",
+      []
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation false_schema",
+    "schema": false,
+    "witnesses": [
+      null,
+      0,
+      "x",
+      []
+    ]
+  },
+  {
+    "description": "canonicalize_preserves_validation type_list_int_string",
+    "schema": {
+      "type": [
+        "integer",
+        "string"
+      ]
+    },
+    "witnesses": [
+      0,
+      "x",
+      null,
+      0.5,
+      []
+    ]
+  },
+  {
+    "description": "draft4_float_without_frac_is_not_integer",
+    "draft": "draft4",
+    "schema": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "integer"
+    },
+    "witnesses": [
+      1.0
+    ]
+  },
+  {
+    "description": "canonicalize_ignores_unguarded_cycles_outside_schema_positions const_payload",
+    "schema": {
+      "const": {
+        "not": {
+          "$ref": "#/const"
+        }
+      }
+    }
+  },
+  {
+    "description": "draft4 integer enum filter preserves float rejection - enum with 1.0 keeps only integer 1",
+    "schema": {
+      "type": "integer",
+      "enum": [
+        1.0
+      ]
+    },
+    "draft": "draft4",
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 1.0,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "const_enum_filter_satisfiable number_const_integer_value",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "const": 2
+    },
+    "witnesses": [
+      {
+        "data": 2,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "const_enum_filter_satisfiable integer_const_float_no_fraction",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "const": 2.0
+    },
+    "witnesses": [
+      {
+        "data": 2,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "const_enum_filter_satisfiable number_enum_mixed_filters_to_numbers",
+    "draft": "draft7",
+    "schema": {
+      "type": "number",
+      "enum": [
+        1,
+        2.5,
+        "foo"
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 2.5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "const_enum_filter_satisfiable type_list_enum",
+    "draft": "draft7",
+    "schema": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "enum": [
+        null,
+        "abc",
+        5
+      ]
+    },
+    "witnesses": [
+      {
+        "data": "abc",
+        "valid": true
+      },
+      {
+        "data": null,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "const_enum_filter_satisfiable type_list_enum_filters_string",
+    "draft": "draft7",
+    "schema": {
+      "type": [
+        "integer",
+        "number"
+      ],
+      "enum": [
+        2.0,
+        "skip"
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 2,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "const_enum_filter_satisfiable boolean_const_true",
+    "draft": "draft7",
+    "schema": {
+      "type": "boolean",
+      "const": true
+    },
+    "witnesses": [
+      {
+        "data": true,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "const_enum_filter_satisfiable object_const_empty",
+    "draft": "draft7",
+    "schema": {
+      "type": "object",
+      "const": {}
+    },
+    "witnesses": [
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "const_enum_filter_satisfiable array_const_empty",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "const": []
+    },
+    "witnesses": [
+      {
+        "data": [],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "ir_raw_preserves_custom_dialect_root",
+    "schema": {
+      "$schema": "https://example.com/custom-meta-schema",
+      "type": "string"
+    },
+    "expected": {
+      "$schema": "https://example.com/custom-meta-schema",
+      "type": "string"
+    }
+  },
+  {
+    "description": "draft4 mixed type list with enum keeps string members",
+    "draft": "draft4",
+    "schema": {
+      "type": [
+        "integer",
+        "string"
+      ],
+      "enum": [
+        1,
+        "x",
+        1.5
+      ]
+    },
+    "witnesses": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": 1.5,
+        "valid": false
+      },
+      {
+        "data": 2,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "mixed enum sorts by value order",
+    "schema": {
+      "enum": [
+        "z",
+        2,
+        null,
+        1
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        null,
+        1,
+        2,
+        "z"
+      ]
+    }
+  },
+  {
+    "description": "draft4 integer enum emits merged object form",
+    "draft": "draft4",
+    "schema": {
+      "type": "integer",
+      "enum": [
+        2,
+        1
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "integer",
+      "enum": [
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "description": "the false schema canonicalizes to its empty not form",
+    "schema": false,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "const_enum_filter_empty integer_const_with_fraction",
+    "draft": "draft7",
+    "schema": {
+      "type": "integer",
+      "const": 2.5
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "const_enum_filter_empty array_const_object_value",
+    "draft": "draft7",
+    "schema": {
+      "type": "array",
+      "const": {}
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "const_enum_filter_empty string_const_integer",
+    "draft": "draft7",
+    "schema": {
+      "type": "string",
+      "const": 5
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty null_enum_excludes_null",
+    "draft": "draft7",
+    "schema": {
+      "type": "null",
+      "enum": [
+        false,
+        true
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "to_empty boolean_const_null",
+    "draft": "draft7",
+    "schema": {
+      "type": "boolean",
+      "const": null
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "unknown_keyword_ignored draft4_if_then",
+    "draft": "draft4",
+    "schemas": [
+      {
+        "if": {},
+        "then": false
+      },
+      {}
+    ]
+  },
+  {
+    "description": "unknown_keyword_ignored draft4_contains",
+    "draft": "draft4",
+    "schemas": [
+      {
+        "contains": {
+          "type": "string"
+        }
+      },
+      {}
+    ]
+  },
+  {
+    "description": "unknown_keyword_ignored draft7_prefix_items",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "prefixItems": [
+          false
+        ]
+      },
+      {}
+    ]
+  },
+  {
+    "description": "unknown_keyword_ignored draft7_unevaluated_properties",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "unevaluatedProperties": false
+      },
+      {}
+    ]
+  },
+  {
+    "description": "unknown_keyword_ignored draft7_dynamic_ref",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "$dynamicRef": "#x"
+      },
+      {}
+    ]
+  },
+  {
+    "description": "unknown_keyword_ignored draft7_dependent_required",
+    "draft": "draft7",
+    "schemas": [
+      {
+        "dependentRequired": {
+          "a": [
+            "b"
+          ]
+        }
+      },
+      {}
+    ]
+  }
+]

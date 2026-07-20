@@ -1768,7 +1768,10 @@ fn test_canonicalize_output_to_file() {
 
     let written = fs::read_to_string(&out_path).unwrap();
     let canonical: Value = serde_json::from_str(&written).unwrap();
-    assert_eq!(canonical, serde_json::json!({"type": "integer"}));
+    assert_eq!(
+        canonical,
+        serde_json::json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer"})
+    );
 }
 
 #[test]
