@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.48.2] - 2026-07-21
+
 ### Fixed
 
 - `canonical.json.to_string` incorrectly keeping the input spelling of fractional `Decimal` values (e.g. `Decimal("1.50")` and `Decimal("1.5")` producing different strings).
@@ -1109,7 +1111,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.48.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.48.2...HEAD
+[0.48.2]: https://github.com/Stranger6667/jsonschema/compare/python-v0.48.1...python-v0.48.2
 [0.48.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.48.0...python-v0.48.1
 [0.48.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.47.0...python-v0.48.0
 [0.47.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.46.10...python-v0.47.0
