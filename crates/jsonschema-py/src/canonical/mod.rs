@@ -83,6 +83,21 @@ impl PyCanonicalSchema {
                 },
             )?
             .into_any(),
+            CanonicalView::String(view) => Py::new(
+                py,
+                StringView {
+                    min_length: view
+                        .min_length
+                        .as_ref()
+                        .and_then(serde_json::Number::as_u64),
+                    max_length: view
+                        .max_length
+                        .as_ref()
+                        .and_then(serde_json::Number::as_u64),
+                    patterns: view.patterns,
+                },
+            )?
+            .into_any(),
             CanonicalView::True => Py::new(py, TrueView)?.into_any(),
             CanonicalView::False => Py::new(py, FalseView)?.into_any(),
             CanonicalView::Raw(schema) => Py::new(
@@ -189,6 +204,25 @@ impl TypedGroupView {
     }
 }
 
+/// A string value within a length window matching every pattern.
+#[pyclass(frozen, name = "StringView", module = "jsonschema_rs.canonical")]
+pub(crate) struct StringView {
+    #[pyo3(get)]
+    min_length: Option<u64>,
+    #[pyo3(get)]
+    max_length: Option<u64>,
+    #[pyo3(get)]
+    patterns: Vec<String>,
+}
+
+#[pymethods]
+impl StringView {
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("min_length", "max_length", "patterns")
+    }
+}
+
 /// A value matches iff at least one branch matches.
 #[pyclass(frozen, name = "AnyOfView", module = "jsonschema_rs.canonical")]
 pub(crate) struct AnyOfView {
@@ -272,6 +306,7 @@ fn canonicalization_error(
     }
     let name = match &error {
         CanonicalizationError::InvalidSchemaType(_) => "InvalidSchemaType",
+        CanonicalizationError::InvalidPattern { .. } => "InvalidPattern",
         _ => "CanonicalizationError",
     };
     let built = py.import("jsonschema_rs").and_then(|module| {
@@ -293,6 +328,7 @@ pub(crate) fn init_module(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyRes
     canonical_module.add_class::<FalseView>()?;
     canonical_module.add_class::<MultiTypeView>()?;
     canonical_module.add_class::<TypedGroupView>()?;
+    canonical_module.add_class::<StringView>()?;
     canonical_module.add_class::<AnyOfView>()?;
     canonical_module.add_class::<ConstView>()?;
     canonical_module.add_class::<EnumView>()?;

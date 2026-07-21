@@ -8,7 +8,6 @@ DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
 @pytest.mark.parametrize(
     "schema",
     [
-        {"type": "string", "minLength": 3},
         {"allOf": [{"type": "integer"}, {"minimum": 0}]},
         {"$defs": {"a": {"type": "null"}}, "$ref": "#/$defs/a"},
     ],
@@ -94,6 +93,16 @@ def test_view_typed_group_draft4_integer():
             pytest.fail(f"unexpected view: {other!r}")
 
 
+def test_view_string():
+    match canonicalize({"type": "string", "minLength": 2, "pattern": "^a"}).view():
+        case canonical.StringView(min_length=min_length, max_length=max_length, patterns=patterns):
+            assert min_length == 2
+            assert max_length is None
+            assert patterns == ["^a"]
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
 def test_view_any_of():
     match canonicalize({"anyOf": [{"const": 5}, {"type": "string"}]}).view():
         case canonical.AnyOfView(branches=branches):
@@ -120,7 +129,8 @@ def test_view_raw():
         ({"anyOf": [{"const": 5}, {"type": "string"}]}, "any_of"),
         ({}, "true"),
         (False, "false"),
-        ({"pattern": "a"}, "raw"),
+        ({"type": "string", "minLength": 3}, "string"),
+        ({"pattern": "a"}, "any_of"),
     ],
 )
 def test_kind(schema, kind):
@@ -154,6 +164,29 @@ def test_invalid_schema_type(schema):
         canonicalize(schema)
 
 
-def test_exception_hierarchy():
-    assert issubclass(canonical.CanonicalizationError, ValueError)
-    assert issubclass(canonical.InvalidSchemaType, canonical.CanonicalizationError)
+def test_invalid_pattern():
+    with pytest.raises(canonical.InvalidPattern):
+        canonicalize({"pattern": "["})
+
+
+@pytest.mark.parametrize(
+    ("schema", "expected"),
+    [
+        (
+            {"type": "string", "minLength": 2, "maxLength": 4},
+            {"$schema": DRAFT202012, "type": "string", "minLength": 2, "maxLength": 4},
+        ),
+        (
+            {"pattern": "^a"},
+            {
+                "$schema": DRAFT202012,
+                "anyOf": [
+                    {"type": ["null", "boolean", "number", "array", "object"]},
+                    {"type": "string", "pattern": "^a"},
+                ],
+            },
+        ),
+    ],
+)
+def test_string_canonical_forms(schema, expected):
+    assert canonicalize(schema).to_json_schema() == expected

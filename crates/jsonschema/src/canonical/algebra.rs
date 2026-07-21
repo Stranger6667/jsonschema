@@ -1,19 +1,27 @@
 //! Set algebra over canonical IR nodes.
+use std::sync::Arc;
+
 use referencing::Draft;
+use serde_json::Value;
 
 use crate::{
     canonical::{
-        ir::{CanonicalJson, Schema, SchemaKind},
+        context::{CanonicalizationContext, CompiledMatcher},
+        ir::{BoundCardinality, CanonicalJson, Schema, SchemaKind, StringLeaf},
         parse,
     },
     JsonType, JsonTypeSet,
 };
 
 /// The schema accepting exactly the values that BOTH `left` and `right` accept (set intersection, `allOf`).
-pub(crate) fn intersect(left: Schema, right: Schema, draft: Draft) -> Schema {
+pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationContext) -> Schema {
     match (left.into_kind(), right.into_kind()) {
         // `False` accepts no value. If either side is `False`, nothing can satisfy both, so the result is `False`.
-        (SchemaKind::False, _) | (_, SchemaKind::False) => Schema::new(SchemaKind::False),
+        (SchemaKind::False, _)
+        | (_, SchemaKind::False)
+        // A typed group holds one non-string type (Draft 4 `integer`), so it shares no value with a string.
+        | (SchemaKind::TypedGroup { .. }, SchemaKind::String(_))
+        | (SchemaKind::String(_), SchemaKind::TypedGroup { .. }) => Schema::new(SchemaKind::False),
         // `True` accepts every value, so "must satisfy both" collapses to just the other side.
         (SchemaKind::True, right) => Schema::new(right),
         // Same as above with the sides swapped: `True` on the right keeps the left side.
@@ -25,15 +33,15 @@ pub(crate) fn intersect(left: Schema, right: Schema, draft: Draft) -> Schema {
         //         {"type": "string"}
         //       ]  =>  {"type": "string"}
         (SchemaKind::AnyOf(branches), other) | (other, SchemaKind::AnyOf(branches)) => {
-            distribute(branches, Schema::new(other), draft)
+            distribute(branches, Schema::new(other), ctx)
         }
         // `Const`/`Enum` is a fixed set of allowed values. Keep only those values the other side also accepts.
         (left @ (SchemaKind::Const(_) | SchemaKind::Enum(_)), right) => {
-            restrict_members(into_members(left), Schema::new(right), draft)
+            restrict_members(into_members(left), Schema::new(right), ctx)
         }
         // Same as above with the fixed value set on the right.
         (left, right @ (SchemaKind::Const(_) | SchemaKind::Enum(_))) => {
-            restrict_members(into_members(right), Schema::new(left), draft)
+            restrict_members(into_members(right), Schema::new(left), ctx)
         }
         // Each side is a set of allowed JSON types (e.g. string, number). Keep the types allowed by both;
         // `Number` also allows every `Integer`. If they share no type, nothing matches, so `False`.
@@ -78,10 +86,24 @@ pub(crate) fn intersect(left: Schema, right: Schema, draft: Draft) -> Schema {
             },
         ) => {
             if first == second {
-                typed_group(first, intersect(body, other, draft))
+                typed_group(first, intersect(body, other, ctx))
             } else {
                 Schema::new(SchemaKind::False)
             }
+        }
+        // A string leaf constrains string values. A type set keeps it only when the set covers `string`;
+        // otherwise the two share no value, so `False`.
+        (SchemaKind::MultiType(set), SchemaKind::String(leaf))
+        | (SchemaKind::String(leaf), SchemaKind::MultiType(set)) => {
+            if SchemaKind::semantic_cover(set).contains(JsonType::String) {
+                string_leaf(leaf)
+            } else {
+                Schema::new(SchemaKind::False)
+            }
+        }
+        // Two string leaves: keep the strings both accept by tightening to the narrower length window.
+        (SchemaKind::String(first), SchemaKind::String(second)) => {
+            string_leaf(intersect_string_leaves(first, second))
         }
         // `Raw` is an unmodeled schema kept verbatim. It only ever appears as the whole document (parse keeps
         // the entire document `Raw` when it cannot model it), never nested in a combinator, so intersect never sees it.
@@ -92,11 +114,12 @@ pub(crate) fn intersect(left: Schema, right: Schema, draft: Draft) -> Schema {
 }
 
 /// The schema accepting every value that ANY of the `branches` accepts (set union, `anyOf`), in normal form.
-pub(crate) fn union(branches: Vec<Schema>, draft: Draft) -> Schema {
+pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Schema {
     // Each branch is sorted into an accumulator: allowed JSON types, loose values, and per-type value groups.
     let mut members: Vec<CanonicalJson> = Vec::new();
     let mut types = JsonTypeSet::empty();
     let mut groups: Vec<(JsonType, Vec<CanonicalJson>)> = Vec::new();
+    let mut strings: Vec<StringLeaf> = Vec::new();
 
     let mut stack = branches;
     while let Some(branch) = stack.pop() {
@@ -124,6 +147,8 @@ pub(crate) fn union(branches: Vec<Schema>, draft: Draft) -> Schema {
                     None => groups.push((ty, values)),
                 }
             }
+            // A string leaf accepts a length window; collect each into its own branch pool.
+            SchemaKind::String(leaf) => strings.push(leaf),
             // `Raw` is whole-document and never nested in a combinator, so union never sees it.
             SchemaKind::Raw(_) => {
                 unreachable!("`Raw` is whole-document; combinators never contain it")
@@ -144,8 +169,12 @@ pub(crate) fn union(branches: Vec<Schema>, draft: Draft) -> Schema {
     //       ]  =>  {"type": "string"}
     // Draft 4 keeps such a value beside its type, since `1` also matches `1.0` (which `integer` rejects), so
     // anyOf [{"type": "integer"}, {"enum": [1]}] stays whole.
-    members.retain(|member| !type_set_absorbs_member(cover, member, draft));
+    members.retain(|member| !type_set_absorbs_member(cover, member, ctx.draft()));
     groups.retain(|(ty, _)| !cover.contains(*ty));
+    // Any string matches the `string` type, so a string leaf is redundant once the type set covers it.
+    if cover.contains(JsonType::String) {
+        strings.clear();
+    }
 
     let value_set = parse::canonicalize_value_set(members);
     // Packing the loose values may fill a whole type's domain (all of `null`/`boolean`), turning them into a
@@ -164,7 +193,12 @@ pub(crate) fn union(branches: Vec<Schema>, draft: Draft) -> Schema {
                 .into_iter()
                 .map(|(ty, pool)| typed_group(ty, parse::canonicalize_value_set(pool))),
         );
-        return union(rest, draft);
+        rest.extend(
+            strings
+                .into_iter()
+                .map(|leaf| Schema::new(SchemaKind::String(leaf))),
+        );
+        return union(rest, ctx);
     }
 
     // Assemble the surviving branches. The collected types become one branch.
@@ -183,6 +217,10 @@ pub(crate) fn union(branches: Vec<Schema>, draft: Draft) -> Schema {
             out.push(typed_group(ty, body));
         }
     }
+    // Each surviving string leaf becomes its own branch.
+    for leaf in strings {
+        out.push(Schema::new(SchemaKind::String(leaf)));
+    }
     // The loose value set becomes a branch, unless it collapsed to empty.
     if !matches!(value_set.kind(), SchemaKind::False) {
         out.push(value_set);
@@ -200,14 +238,14 @@ pub(crate) fn union(branches: Vec<Schema>, draft: Draft) -> Schema {
 }
 
 /// Intersect `other` with each union branch; the last branch moves `other` instead of cloning it.
-fn distribute(mut branches: Vec<Schema>, other: Schema, draft: Draft) -> Schema {
+fn distribute(mut branches: Vec<Schema>, other: Schema, ctx: &CanonicalizationContext) -> Schema {
     let last = branches.pop().expect("AnyOf carries at least two branches");
     let mut out: Vec<Schema> = branches
         .into_iter()
-        .map(|branch| intersect(branch, other.clone(), draft))
+        .map(|branch| intersect(branch, other.clone(), ctx))
         .collect();
-    out.push(intersect(last, other, draft));
-    union(out, draft)
+    out.push(intersect(last, other, ctx));
+    union(out, ctx)
 }
 
 fn into_members(kind: SchemaKind) -> Vec<CanonicalJson> {
@@ -219,7 +257,11 @@ fn into_members(kind: SchemaKind) -> Vec<CanonicalJson> {
 }
 
 /// Keep only the `members` that `other` also accepts, packed back into a canonical value set.
-fn restrict_members(members: Vec<CanonicalJson>, other: Schema, draft: Draft) -> Schema {
+fn restrict_members(
+    members: Vec<CanonicalJson>,
+    other: Schema,
+    ctx: &CanonicalizationContext,
+) -> Schema {
     match other.into_kind() {
         // `other` is itself a value set: keep the members present in both.
         kind @ (SchemaKind::Const(_) | SchemaKind::Enum(_)) => {
@@ -232,7 +274,23 @@ fn restrict_members(members: Vec<CanonicalJson>, other: Schema, draft: Draft) ->
             )
         }
         // `other` allows a set of JSON types: keep the members whose type is allowed.
-        SchemaKind::MultiType(set) => parse::restrict_values_to_types(members, set, draft),
+        SchemaKind::MultiType(set) => parse::restrict_values_to_types(members, set, ctx),
+        // `other` is a string leaf: keep the members that fit its window and match every pattern.
+        SchemaKind::String(leaf) => {
+            let regexes: Vec<_> = leaf
+                .patterns
+                .iter()
+                .map(|pattern| {
+                    ctx.compile_regex(pattern)
+                        .expect("pattern validated during parsing")
+                })
+                .collect();
+            let kept = members
+                .into_iter()
+                .filter(|member| string_leaf_admits(&leaf, &regexes, member))
+                .collect();
+            parse::canonicalize_value_set(kept)
+        }
         // `other` is a typed group: keep the members that match its type AND sit in its value set.
         SchemaKind::TypedGroup { ty, body } => {
             let admitted = into_members(body.into_kind());
@@ -291,4 +349,53 @@ fn value_set_admits_group(value_set: &Schema, body: &Schema) -> bool {
 /// Union of two type sets, dropping `Integer` when `Number` is present.
 fn union_type_sets(left: JsonTypeSet, right: JsonTypeSet) -> JsonTypeSet {
     SchemaKind::canonical_type_set(left.union(right))
+}
+
+/// A `String` node, collapsed to `False` when its length window is empty (`min_length > max_length`).
+pub(crate) fn string_leaf(leaf: StringLeaf) -> Schema {
+    if let (Some(min), Some(max)) = (&leaf.min_length, &leaf.max_length) {
+        if min > max {
+            return Schema::new(SchemaKind::False);
+        }
+    }
+    Schema::new(SchemaKind::String(leaf))
+}
+
+/// Tighten two string leaves to the strings both accept: the higher minimum, the lower maximum length,
+/// and every pattern from both. A missing bound imposes no limit, so the present one wins.
+fn intersect_string_leaves(first: StringLeaf, second: StringLeaf) -> StringLeaf {
+    let mut patterns = first.patterns;
+    patterns.extend(second.patterns);
+    patterns.sort();
+    patterns.dedup();
+    StringLeaf {
+        min_length: match (first.min_length, second.min_length) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (bound, None) | (None, bound) => bound,
+        },
+        max_length: match (first.max_length, second.max_length) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (bound, None) | (None, bound) => bound,
+        },
+        patterns,
+    }
+}
+
+/// Whether the string `member` falls within the leaf's length window and matches every pattern.
+fn string_leaf_admits(
+    leaf: &StringLeaf,
+    regexes: &[Arc<CompiledMatcher>],
+    member: &CanonicalJson,
+) -> bool {
+    let Value::String(text) = member.as_value() else {
+        return false;
+    };
+    let length = BoundCardinality::from(bytecount::num_chars(text.as_bytes()) as u64);
+    if leaf.min_length.as_ref().is_some_and(|min| length < *min) {
+        return false;
+    }
+    if leaf.max_length.as_ref().is_some_and(|max| length > *max) {
+        return false;
+    }
+    regexes.iter().all(|regex| regex.is_match(text))
 }

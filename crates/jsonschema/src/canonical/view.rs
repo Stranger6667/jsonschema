@@ -1,8 +1,8 @@
-use serde_json::Value;
+use serde_json::{Number, Value};
 
 use crate::{
     canonical::{
-        ir::{CanonicalJson, SchemaKind},
+        ir::{BoundCardinality, CanonicalJson, SchemaKind, StringLeaf},
         CanonicalSchema,
     },
     JsonType, JsonTypeSet,
@@ -28,6 +28,8 @@ pub enum CanonicalView {
     MultiType(JsonTypeSet),
     /// A value matches iff its JSON type is `ty` *and* it satisfies `body`; other types do not match.
     TypedGroup(TypedGroupView),
+    /// A string value within a length window.
+    String(StringView),
     Const(Value),
     Enum(Vec<Value>),
     /// A value matches iff at least one branch matches.
@@ -44,6 +46,14 @@ pub struct TypedGroupView {
     pub body: CanonicalSchema,
 }
 
+/// Payload of [`CanonicalView::String`]: the `minLength`/`maxLength` bounds and patterns on a string value.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StringView {
+    pub min_length: Option<Number>,
+    pub max_length: Option<Number>,
+    pub patterns: Vec<String>,
+}
+
 impl CanonicalSchema {
     /// This node's structural view.
     #[must_use]
@@ -54,6 +64,7 @@ impl CanonicalSchema {
                 ty: *ty,
                 body: self.wrap_child(body),
             }),
+            SchemaKind::String(leaf) => CanonicalView::String(string_view(leaf)),
             SchemaKind::Const(value) => CanonicalView::Const(value.to_value()),
             SchemaKind::Enum(values) => {
                 CanonicalView::Enum(values.iter().map(CanonicalJson::to_value).collect())
@@ -74,5 +85,13 @@ impl CanonicalSchema {
     #[must_use]
     pub fn kind(&self) -> CanonicalKind {
         self.schema_kind().into()
+    }
+}
+
+fn string_view(leaf: &StringLeaf) -> StringView {
+    StringView {
+        min_length: leaf.min_length.as_ref().map(BoundCardinality::to_number),
+        max_length: leaf.max_length.as_ref().map(BoundCardinality::to_number),
+        patterns: leaf.patterns.iter().map(ToString::to_string).collect(),
     }
 }

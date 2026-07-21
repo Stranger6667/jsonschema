@@ -1746,7 +1746,11 @@ fn test_canonicalize_basic() {
     let canonical: Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(
         canonical,
-        serde_json::json!({"type": "string", "minLength": 3})
+        serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "minLength": 3
+        })
     );
 }
 

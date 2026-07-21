@@ -9,8 +9,10 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{JsonType, JsonTypeSet};
 
+mod bound_cardinality;
 mod raw;
 
+pub(crate) use bound_cardinality::BoundCardinality;
 pub(crate) use raw::RawJson;
 
 /// A `Const`/`Enum` member normalized at construction (`1.0` becomes `1`) so `Value` equality is value equality.
@@ -166,6 +168,8 @@ pub(crate) enum SchemaKind {
     MultiType(JsonTypeSet),
     /// A value matches iff its JSON type is `ty` *and* it satisfies `body` (Draft 4 `integer`, where `1.0` is not an integer).
     TypedGroup { ty: JsonType, body: Schema },
+    /// A string value within a length window; non-string values are matched by a surrounding union.
+    String(StringLeaf),
     /// Exactly one admitted value.
     Const(CanonicalJson),
     /// A sorted, deduplicated finite set of admitted values.
@@ -178,6 +182,15 @@ pub(crate) enum SchemaKind {
     False,
     /// A schema the structural IR does not model, kept verbatim.
     Raw(RawJson),
+}
+
+/// The constraints a [`SchemaKind::String`] places on a string value.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub(crate) struct StringLeaf {
+    pub(crate) min_length: Option<BoundCardinality>,
+    pub(crate) max_length: Option<BoundCardinality>,
+    /// Sorted, deduplicated. A string must match every pattern.
+    pub(crate) patterns: Vec<Arc<str>>,
 }
 
 impl SchemaKind {

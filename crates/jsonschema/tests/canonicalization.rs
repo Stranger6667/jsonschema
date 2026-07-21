@@ -4,10 +4,9 @@ use jsonschema::{
     canonical::{options, CanonicalKind, CanonicalSchema, CanonicalView},
     canonicalize, Draft, JsonType,
 };
-use serde_json::{json, Map, Value};
+use serde_json::{json, Map, Number, Value};
 use test_case::test_case;
 
-#[test_case(&json!({"type": "string", "minLength": 3}); "string constraints")]
 #[test_case(&json!({"allOf": [{"type": "integer"}, {"minimum": 0}]}); "allOf")]
 #[test_case(&json!({"$defs": {"a": {"type": "null"}}, "$ref": "#/$defs/a"}); "ref into defs")]
 fn unmodeled_document_round_trips_verbatim(schema: &Value) {
@@ -16,12 +15,59 @@ fn unmodeled_document_round_trips_verbatim(schema: &Value) {
     assert!(matches!(canonical.view(), CanonicalView::Raw(_)));
 }
 
+#[test]
+fn string_view_exposes_facets() {
+    let CanonicalView::String(view) =
+        canonicalize(&json!({"type": "string", "minLength": 2, "pattern": "^a"}))
+            .unwrap()
+            .view()
+    else {
+        panic!("expected a String view");
+    };
+    assert_eq!(view.min_length, Some(Number::from(2u64)));
+    assert_eq!(view.max_length, None);
+    assert_eq!(view.patterns, vec!["^a".to_string()]);
+}
+
+// Modeled exactly under arbitrary precision; past `u64` in the default build it stays raw.
+#[cfg(feature = "arbitrary-precision")]
+#[test]
+fn huge_length_bound_is_modeled() {
+    let schema: Value =
+        serde_json::from_str(r#"{"type": "string", "minLength": 99999999999999999999999}"#)
+            .unwrap();
+    let canonical = canonicalize(&schema).unwrap();
+    assert_eq!(canonical.kind(), CanonicalKind::String);
+    assert_eq!(
+        canonical.to_json_schema()["minLength"].to_string(),
+        "99999999999999999999999"
+    );
+}
+
+#[cfg(not(feature = "arbitrary-precision"))]
+#[test_case("minLength")]
+#[test_case("maxLength")]
+fn huge_length_bound_stays_raw(keyword: &str) {
+    let schema: Value = serde_json::from_str(&format!(
+        r#"{{"type": "string", "{keyword}": 99999999999999999999999}}"#
+    ))
+    .unwrap();
+    assert_eq!(canonicalize(&schema).unwrap().kind(), CanonicalKind::Raw);
+}
+
+// The suite checks only the error variant; the `Display` message is exercised here.
+#[test_case(&json!(42), "schema must be a boolean or object, got: 42"; "invalid schema type")]
+#[test_case(&json!({"pattern": "["}), "invalid regular expression: \"[\""; "invalid pattern")]
+fn error_display(schema: &Value, message: &str) {
+    assert_eq!(canonicalize(schema).unwrap_err().to_string(), message);
+}
+
 #[test_case(&json!({"type": "string"}), CanonicalKind::MultiType, "multi_type"; "multi_type")]
 #[test_case(&json!({"const": 1}), CanonicalKind::Const, "const"; "const_value")]
 #[test_case(&json!({"enum": [1, 2, 3]}), CanonicalKind::Enum, "enum"; "enum_values")]
 #[test_case(&json!({}), CanonicalKind::True, "true"; "empty object")]
 #[test_case(&json!(false), CanonicalKind::False, "false"; "boolean false")]
-#[test_case(&json!({"type": "string", "minLength": 3}), CanonicalKind::Raw, "raw"; "raw")]
+#[test_case(&json!({"allOf": [{"type": "integer"}, {"minimum": 0}]}), CanonicalKind::Raw, "raw"; "raw")]
 fn kind_reports_its_label(schema: &Value, kind: CanonicalKind, label: &str) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     assert_eq!(canonical.kind(), kind);

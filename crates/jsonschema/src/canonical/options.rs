@@ -7,6 +7,7 @@ use serde_json::Value;
 
 use crate::{
     canonical::{
+        context::CanonicalizationContext,
         ir::{RawJson, Schema, SchemaKind},
         parse,
         schema::CanonicalSchema,
@@ -89,8 +90,11 @@ fn build(
     let validate_formats =
         validate_formats.unwrap_or_else(|| formats_are_assertions_by_default(draft));
     validate_schema(draft, value)?;
-    let inner = parse::parse(value, draft)
-        .unwrap_or_else(|| Schema::new(SchemaKind::Raw(RawJson::new(value.clone()))));
+    let context = CanonicalizationContext::new(draft, pattern_options);
+    let inner = match parse::parse(value, &context)? {
+        Some(schema) => schema,
+        None => Schema::new(SchemaKind::Raw(RawJson::new(value.clone()))),
+    };
     Ok(CanonicalSchema::new(
         inner,
         draft,
