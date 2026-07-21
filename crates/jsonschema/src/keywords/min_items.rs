@@ -76,9 +76,13 @@ impl<F: Json> Validate<F> for MinItemsValidator {
 #[inline]
 pub(crate) fn compile<'a, F: Json>(
     ctx: &compiler::Context<F>,
-    _: &'a Map<String, Value>,
+    parent: &'a Map<String, Value>,
     schema: &'a Value,
 ) -> Option<CompilationResult<'a, F>> {
+    // Absorbed by the fused array-shape validator emitted from `items`.
+    if crate::keywords::items::array_shape_fusion(ctx, parent) {
+        return None;
+    }
     let location = ctx.location().join("minItems");
     Some(MinItemsValidator::compile(ctx, schema, location))
 }
