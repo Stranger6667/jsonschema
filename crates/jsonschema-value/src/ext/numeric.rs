@@ -3,7 +3,8 @@
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
     clippy::cast_precision_loss,
-    clippy::float_cmp
+    clippy::float_cmp,
+    clippy::must_use_candidate
 )]
 
 use fraction::{BigFraction, One, Zero};
@@ -14,7 +15,7 @@ use std::cmp::Ordering;
 macro_rules! define_num_cmp {
     ($($trait_fn:ident => $fn_name:ident, $op:tt, $infinity_positive:literal, $ord_pat:pat),* $(,)?) => {
         $(
-            pub(crate) fn $fn_name<T>(value: &Number, limit: T) -> bool
+            pub fn $fn_name<T>(value: &Number, limit: T) -> bool
             where
                 T: Copy + num_traits::ToPrimitive,
                 u64: num_cmp::NumCmp<T>,
@@ -72,7 +73,7 @@ define_num_cmp!(
 );
 
 #[cfg(feature = "macros")]
-pub(crate) fn eq<T>(value: &Number, limit: T) -> bool
+pub fn eq<T>(value: &Number, limit: T) -> bool
 where
     T: Copy + num_traits::ToPrimitive,
     u64: num_cmp::NumCmp<T>,
@@ -102,7 +103,7 @@ where
     }
 }
 
-pub(crate) fn is_multiple_of_float(value: &Number, multiple: f64) -> bool {
+pub fn is_multiple_of_float(value: &Number, multiple: f64) -> bool {
     if let Some(value_f64) = value.as_f64() {
         // Zero is a multiple of any non-zero number
         // This check must come first to avoid division-related edge cases
@@ -133,7 +134,7 @@ pub(crate) fn is_multiple_of_float(value: &Number, multiple: f64) -> bool {
 /// Beyond this value, f64 loses precision and arithmetic operations become unreliable.
 const MAX_SAFE_INTEGER: u64 = 1u64 << 53;
 
-pub(crate) fn is_multiple_of_integer(value: &Number, multiple: f64) -> bool {
+pub fn is_multiple_of_integer(value: &Number, multiple: f64) -> bool {
     // Integer instances use integer modulo directly: it is exact and avoids the slower float
     // `fract()` + `%`. The divisor guard keeps it exact - divisors above 2^53 may already have
     // lost precision when converted to f64 during schema compilation, and `multiple > 0.0` avoids
@@ -184,7 +185,7 @@ pub(crate) fn is_multiple_of_integer(value: &Number, multiple: f64) -> bool {
 }
 
 #[cfg(feature = "arbitrary-precision")]
-pub(crate) mod bignum {
+pub mod bignum {
     use fraction::BigFraction;
     use num_bigint::BigInt;
     use num_traits::{ToPrimitive, Zero};
@@ -341,7 +342,7 @@ pub(crate) mod bignum {
 
     /// Try to parse a Number as `BigInt` if it's outside i64 range or for compile-time
     /// schema values that need exact representation
-    pub(crate) fn try_parse_bigint(num: &Number) -> Option<BigInt> {
+    pub fn try_parse_bigint(num: &Number) -> Option<BigInt> {
         use super::MAX_SAFE_INTEGER;
 
         let num_str = num.as_str();
@@ -413,7 +414,7 @@ pub(crate) mod bignum {
     /// Returns None for:
     /// - Integers that fit in i64 (handled by standard numeric path)
     /// - Large integers including u64 beyond `i64::MAX` (handled by `try_parse_bigint`)
-    pub(crate) fn try_parse_bigfraction(num: &Number) -> Option<BigFraction> {
+    pub fn try_parse_bigfraction(num: &Number) -> Option<BigFraction> {
         // Skip integers that fit in i64 - they don't need BigFraction
         if num.as_i64().is_some() {
             return None;
@@ -495,7 +496,7 @@ pub(crate) mod bignum {
     macro_rules! define_bigint_cmp {
         ($($fn_name:ident, $prim_type:ty, $to_prim:ident, $op:tt, $overflow_sign:expr);* $(;)?) => {
             $(
-                pub(crate) fn $fn_name(bigint: &BigInt, value: $prim_type) -> bool {
+                pub fn $fn_name(bigint: &BigInt, value: $prim_type) -> bool {
                     if let Some(converted) = bigint.$to_prim() {
                         converted $op value
                     } else {
@@ -525,19 +526,19 @@ pub(crate) mod bignum {
     macro_rules! define_reverse_cmp {
         ($($rev_ge:ident, $rev_le:ident, $rev_gt:ident, $rev_lt:ident, $prim_type:ty, $big_type:ty, $fwd_ge:ident, $fwd_le:ident, $fwd_gt:ident, $fwd_lt:ident);* $(;)?) => {
             $(
-                pub(crate) fn $rev_ge(value: $prim_type, big: &$big_type) -> bool {
+                pub fn $rev_ge(value: $prim_type, big: &$big_type) -> bool {
                     $fwd_le(big, value)
                 }
 
-                pub(crate) fn $rev_le(value: $prim_type, big: &$big_type) -> bool {
+                pub fn $rev_le(value: $prim_type, big: &$big_type) -> bool {
                     $fwd_ge(big, value)
                 }
 
-                pub(crate) fn $rev_gt(value: $prim_type, big: &$big_type) -> bool {
+                pub fn $rev_gt(value: $prim_type, big: &$big_type) -> bool {
                     $fwd_lt(big, value)
                 }
 
-                pub(crate) fn $rev_lt(value: $prim_type, big: &$big_type) -> bool {
+                pub fn $rev_lt(value: $prim_type, big: &$big_type) -> bool {
                     $fwd_gt(big, value)
                 }
             )*
@@ -551,7 +552,7 @@ pub(crate) mod bignum {
     );
 
     /// Check if a Number (as `BigInt`) is a multiple of another `BigInt`
-    pub(crate) fn is_multiple_of_bigint(value: &BigInt, multiple: &BigInt) -> bool {
+    pub fn is_multiple_of_bigint(value: &BigInt, multiple: &BigInt) -> bool {
         // Zero is a multiple of any non-zero number
         // Mathematically: 0 = k * multiple for k = 0
         if value.is_zero() {
@@ -571,7 +572,7 @@ pub(crate) mod bignum {
     macro_rules! define_bigfraction_cmp {
         ($($fn_name:ident, $prim_type:ty, $op:tt);* $(;)?) => {
             $(
-                pub(crate) fn $fn_name(bigfrac: &BigFraction, value: $prim_type) -> bool {
+                pub fn $fn_name(bigfrac: &BigFraction, value: $prim_type) -> bool {
                     let value_frac = BigFraction::from(value);
                     *bigfrac $op value_frac
                 }
@@ -601,7 +602,7 @@ pub(crate) mod bignum {
     );
 
     /// Check if a `BigFraction` is a multiple of another value
-    pub(crate) fn is_multiple_of_bigfrac(value: &BigFraction, multiple: &BigFraction) -> bool {
+    pub fn is_multiple_of_bigfrac(value: &BigFraction, multiple: &BigFraction) -> bool {
         // Zero is a multiple of any non-zero number
         if value.is_zero() {
             return true;
@@ -683,30 +684,5 @@ mod tests {
     fn bigfraction_skips_scientific_integer() {
         let num = number_from_str("3e4");
         assert!(bignum::try_parse_bigfraction(&num).is_none());
-    }
-
-    // Huge decimal beyond f64 range
-    const HUGE_POSITIVE: &str = "99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.5";
-    const HUGE_NEGATIVE: &str = "-99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.5";
-
-    #[test_case(r#"{"minimum": 0}"#, HUGE_POSITIVE, true ; "huge_positive_vs_minimum_0")]
-    #[test_case(r#"{"minimum": 0}"#, HUGE_NEGATIVE, false ; "huge_negative_vs_minimum_0")]
-    #[test_case(r#"{"maximum": 1000}"#, HUGE_POSITIVE, false ; "huge_positive_vs_maximum_1000")]
-    #[test_case(r#"{"maximum": 0}"#, HUGE_NEGATIVE, true ; "huge_negative_vs_maximum_0")]
-    #[test_case(r#"{"exclusiveMinimum": 0}"#, HUGE_POSITIVE, true ; "huge_positive_vs_exclusive_minimum_0")]
-    #[test_case(r#"{"exclusiveMinimum": 0}"#, HUGE_NEGATIVE, false ; "huge_negative_vs_exclusive_minimum_0")]
-    #[test_case(r#"{"exclusiveMaximum": 1000}"#, HUGE_POSITIVE, false ; "huge_positive_vs_exclusive_maximum_1000")]
-    #[test_case(r#"{"exclusiveMaximum": 0}"#, HUGE_NEGATIVE, true ; "huge_negative_vs_exclusive_maximum_0")]
-    #[test_case(r#"{"minimum": -1000, "maximum": 1000}"#, HUGE_POSITIVE, false ; "huge_positive_outside_range")]
-    #[test_case(r#"{"minimum": -1000, "maximum": 1000}"#, HUGE_NEGATIVE, false ; "huge_negative_outside_range")]
-    #[test_case(r#"{"multipleOf": 0.5}"#, HUGE_POSITIVE, true ; "huge_positive_multiple_of_0_5")]
-    #[test_case(r#"{"multipleOf": 0.5}"#, HUGE_NEGATIVE, true ; "huge_negative_multiple_of_0_5")]
-    #[test_case(r#"{"multipleOf": 2}"#, HUGE_POSITIVE, false ; "huge_positive_not_multiple_of_2")]
-    fn test_huge_decimal_validation(schema_json: &str, instance_value: &str, expected_valid: bool) {
-        let schema: serde_json::Value = serde_json::from_str(schema_json).unwrap();
-        let validator = crate::validator_for(&schema).unwrap();
-        let instance = serde_json::from_str(instance_value).unwrap();
-
-        assert_eq!(validator.is_valid(&instance), expected_valid);
     }
 }

@@ -39,7 +39,7 @@ impl CanonicalJson {
             Value::Null => JsonType::Null,
             Value::Bool(_) => JsonType::Boolean,
             Value::Number(number) => {
-                if crate::types::number_is_integer(number) {
+                if jsonschema_value::types::number_is_integer(number) {
                     JsonType::Integer
                 } else {
                     JsonType::Number

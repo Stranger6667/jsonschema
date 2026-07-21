@@ -911,6 +911,7 @@ compile_error!(
 );
 
 pub(crate) mod bundler;
+#[doc(hidden)]
 pub mod canonical;
 pub(crate) mod compiler;
 mod content_encoding;
@@ -919,7 +920,7 @@ pub(crate) mod dereferencer;
 pub mod error;
 mod evaluation;
 #[doc(hidden)]
-pub mod ext;
+pub use jsonschema_value::ext;
 mod http;
 mod keywords;
 #[cfg(all(feature = "macros", not(target_family = "wasm")))]
@@ -931,9 +932,12 @@ pub mod paths;
 pub(crate) mod properties;
 pub(crate) mod regex;
 mod retriever;
-pub mod types;
+pub mod types {
+    pub use jsonschema_value::types::{JsonType, JsonTypeSet, JsonTypeSetIterator};
+}
 mod validator;
 
+#[doc(hidden)]
 pub use canonical::CanonicalizationError;
 pub use error::{
     ErrorIterator, MaskedValidationError, ValidationError, ValidationErrorParts, ValidationErrors,
@@ -1293,6 +1297,7 @@ pub async fn async_validator_map_for(
 ///
 /// Returns [`CanonicalizationError`] when the input is not a valid JSON Schema document or cannot be represented in
 /// canonical form.
+#[doc(hidden)]
 pub fn canonicalize(value: &Value) -> Result<canonical::CanonicalSchema, CanonicalizationError> {
     canonical::options().canonicalize(value)
 }
@@ -2917,7 +2922,7 @@ pub mod __private {
         /// Integer check per drafts 6+: floats with zero fractional part count.
         #[must_use]
         pub fn is_integer(n: &serde_json::Number) -> bool {
-            crate::types::number_is_integer(n)
+            jsonschema_value::types::number_is_integer(n)
         }
         /// Integer check per draft 4: numbers written with a decimal point are not integers.
         #[must_use]

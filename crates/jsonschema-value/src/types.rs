@@ -158,13 +158,13 @@ impl JsonTypeSet {
     /// Types in both sets.
     #[inline]
     #[must_use]
-    pub(crate) const fn intersect(self, other: Self) -> Self {
+    pub const fn intersect(self, other: Self) -> Self {
         Self(self.0 & other.0)
     }
     /// Types in either set.
     #[inline]
     #[must_use]
-    pub(crate) const fn union(self, other: Self) -> Self {
+    pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
     /// Return the number of types in this set.
@@ -214,7 +214,8 @@ impl JsonTypeSet {
 }
 
 /// Whether `n` holds an integer value per drafts 6+ (floats with a zero fractional part count as integers).
-pub(crate) fn number_is_integer(n: &serde_json::Number) -> bool {
+#[must_use]
+pub fn number_is_integer(n: &serde_json::Number) -> bool {
     #[cfg(feature = "arbitrary-precision")]
     {
         use crate::ext::numeric::bignum;

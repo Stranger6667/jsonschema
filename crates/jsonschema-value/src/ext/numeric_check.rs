@@ -1,9 +1,11 @@
+#![allow(clippy::must_use_candidate)]
+
 use serde_json::Number;
 
 use super::numeric;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum BoundOp {
+pub enum BoundOp {
     Lt,
     Lte,
     Gt,
@@ -11,7 +13,7 @@ pub(crate) enum BoundOp {
 }
 
 impl BoundOp {
-    pub(crate) fn from_u8(value: u8) -> Option<Self> {
+    pub fn from_u8(value: u8) -> Option<Self> {
         match value {
             0 => Some(Self::Lt),
             1 => Some(Self::Lte),
@@ -25,7 +27,7 @@ impl BoundOp {
 // Codegen inlines every u64/i64-representable bound and only routes limits with no `as_u64`/`as_i64`
 // representation through `compile_bound`, so no integer variant is ever constructed.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum CompiledBound {
+pub enum CompiledBound {
     F64 {
         op: BoundOp,
         limit: f64,
@@ -45,7 +47,7 @@ pub(crate) enum CompiledBound {
 // Codegen inlines every multipleOf that fits f64 and only routes arbitrary-precision
 // divisors through `compile_multiple_of`, so only the big variants are ever constructed.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum CompiledMultipleOf {
+pub enum CompiledMultipleOf {
     #[cfg(feature = "arbitrary-precision")]
     BigInt(num_bigint::BigInt),
     #[cfg(feature = "arbitrary-precision")]
@@ -176,7 +178,7 @@ fn check_bigfrac_bound(op: BoundOp, limit: &fraction::BigFraction, value: &Numbe
     true
 }
 
-pub(crate) fn compile_bound(op: BoundOp, limit: &Number) -> CompiledBound {
+pub fn compile_bound(op: BoundOp, limit: &Number) -> CompiledBound {
     #[cfg(feature = "arbitrary-precision")]
     {
         if let Some(value) = numeric::bignum::try_parse_bigint(limit) {
@@ -207,7 +209,7 @@ pub(crate) fn compile_bound(op: BoundOp, limit: &Number) -> CompiledBound {
     }
 }
 
-pub(crate) fn check_bound(compiled: &CompiledBound, value: &Number) -> bool {
+pub fn check_bound(compiled: &CompiledBound, value: &Number) -> bool {
     match compiled {
         CompiledBound::F64 { op, limit } => check_primitive_bound(*op, value, *limit),
         #[cfg(feature = "arbitrary-precision")]
@@ -217,7 +219,7 @@ pub(crate) fn check_bound(compiled: &CompiledBound, value: &Number) -> bool {
     }
 }
 
-pub(crate) fn compile_multiple_of(multiple_of: &Number) -> CompiledMultipleOf {
+pub fn compile_multiple_of(multiple_of: &Number) -> CompiledMultipleOf {
     #[cfg(feature = "arbitrary-precision")]
     {
         if let Some(value) = numeric::bignum::try_parse_bigint(multiple_of) {
@@ -231,7 +233,7 @@ pub(crate) fn compile_multiple_of(multiple_of: &Number) -> CompiledMultipleOf {
     CompiledMultipleOf::Unsupported
 }
 
-pub(crate) fn check_multiple_of(compiled: &CompiledMultipleOf, value: &Number) -> bool {
+pub fn check_multiple_of(compiled: &CompiledMultipleOf, value: &Number) -> bool {
     match compiled {
         #[cfg(feature = "arbitrary-precision")]
         CompiledMultipleOf::BigInt(multiple) => {
