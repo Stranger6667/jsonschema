@@ -103,6 +103,15 @@ def test_view_string():
             pytest.fail(f"unexpected view: {other!r}")
 
 
+def test_view_integer():
+    match canonicalize({"type": "integer", "minimum": 2, "maximum": 9}).view():
+        case canonical.IntegerView(minimum=minimum, maximum=maximum):
+            assert minimum == 2
+            assert maximum == 9
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
 def test_view_any_of():
     match canonicalize({"anyOf": [{"const": 5}, {"type": "string"}]}).view():
         case canonical.AnyOfView(branches=branches):
@@ -130,6 +139,7 @@ def test_view_raw():
         ({}, "true"),
         (False, "false"),
         ({"type": "string", "minLength": 3}, "string"),
+        ({"type": "integer", "minimum": 0}, "integer"),
         ({"pattern": "a"}, "any_of"),
     ],
 )

@@ -4,7 +4,7 @@ use referencing::Draft;
 use serde_json::{json, Map, Value};
 
 use crate::{
-    canonical::ir::{CanonicalJson, Schema, SchemaKind, StringLeaf},
+    canonical::ir::{CanonicalJson, IntegerLeaf, Schema, SchemaKind, StringLeaf},
     JsonTypeSet,
 };
 
@@ -33,6 +33,7 @@ fn emit(kind: &SchemaKind, draft: Draft) -> Value {
         SchemaKind::Const(value) => json!({"const": value.to_value()}),
         SchemaKind::Enum(values) => emit_enum(values),
         SchemaKind::String(leaf) => emit_string(leaf),
+        SchemaKind::Integer(leaf) => emit_integer(leaf),
         SchemaKind::MultiType(set) => emit_multi_type(*set),
         // The body emits a `const`/`enum` object without a `type` key, so adding `type` beside it
         // expresses "both must hold" and re-parses to the same IR.
@@ -77,6 +78,19 @@ fn emit_string(leaf: &StringLeaf) -> Value {
                 .collect();
             map.insert("allOf".into(), Value::Array(conjuncts));
         }
+    }
+    Value::Object(map)
+}
+
+/// Emit an integer leaf as `{"type":"integer"}` plus its interval bounds.
+fn emit_integer(leaf: &IntegerLeaf) -> Value {
+    let mut map = Map::new();
+    map.insert("type".into(), Value::String("integer".into()));
+    if let Some(min) = &leaf.bounds.minimum {
+        map.insert("minimum".into(), Value::Number(min.to_number()));
+    }
+    if let Some(max) = &leaf.bounds.maximum {
+        map.insert("maximum".into(), Value::Number(max.to_number()));
     }
     Value::Object(map)
 }

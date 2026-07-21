@@ -98,6 +98,24 @@ impl PyCanonicalSchema {
                 },
             )?
             .into_any(),
+            CanonicalView::Integer(view) => Py::new(
+                py,
+                IntegerView {
+                    minimum: view
+                        .minimum
+                        .map(|number| {
+                            crate::value_to_python(py, &serde_json::Value::Number(number))
+                        })
+                        .transpose()?,
+                    maximum: view
+                        .maximum
+                        .map(|number| {
+                            crate::value_to_python(py, &serde_json::Value::Number(number))
+                        })
+                        .transpose()?,
+                },
+            )?
+            .into_any(),
             CanonicalView::True => Py::new(py, TrueView)?.into_any(),
             CanonicalView::False => Py::new(py, FalseView)?.into_any(),
             CanonicalView::Raw(schema) => Py::new(
@@ -223,6 +241,23 @@ impl StringView {
     }
 }
 
+/// An integer value within a range.
+#[pyclass(frozen, name = "IntegerView", module = "jsonschema_rs.canonical")]
+pub(crate) struct IntegerView {
+    #[pyo3(get)]
+    minimum: Option<Py<PyAny>>,
+    #[pyo3(get)]
+    maximum: Option<Py<PyAny>>,
+}
+
+#[pymethods]
+impl IntegerView {
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("minimum", "maximum")
+    }
+}
+
 /// A value matches iff at least one branch matches.
 #[pyclass(frozen, name = "AnyOfView", module = "jsonschema_rs.canonical")]
 pub(crate) struct AnyOfView {
@@ -329,6 +364,7 @@ pub(crate) fn init_module(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyRes
     canonical_module.add_class::<MultiTypeView>()?;
     canonical_module.add_class::<TypedGroupView>()?;
     canonical_module.add_class::<StringView>()?;
+    canonical_module.add_class::<IntegerView>()?;
     canonical_module.add_class::<AnyOfView>()?;
     canonical_module.add_class::<ConstView>()?;
     canonical_module.add_class::<EnumView>()?;

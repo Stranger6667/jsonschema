@@ -13,9 +13,9 @@ use serde_json::{
     Number, Value,
 };
 
-pub(crate) const I64_UPPER_EXCLUSIVE_F64: f64 = 9_223_372_036_854_775_808.0;
-pub(crate) const I64_LOWER_INCLUSIVE_F64: f64 = -9_223_372_036_854_775_808.0;
-pub(crate) const U64_UPPER_EXCLUSIVE_F64: f64 = 18_446_744_073_709_551_616.0;
+const I64_UPPER_EXCLUSIVE_F64: f64 = 9_223_372_036_854_775_808.0;
+const I64_LOWER_INCLUSIVE_F64: f64 = -9_223_372_036_854_775_808.0;
+const U64_UPPER_EXCLUSIVE_F64: f64 = 18_446_744_073_709_551_616.0;
 const RECURSION_LIMIT: u16 = 255;
 const MAX_SCRATCH_POOL_SIZE: usize = 8;
 const MAX_SCRATCH_CAPACITY: usize = 16_384;
@@ -23,6 +23,27 @@ const MAX_SCRATCH_CAPACITY: usize = 16_384;
 const SERDE_JSON_NUMBER_TOKEN: &str = "$serde_json::private::Number";
 #[cfg(feature = "arbitrary-precision")]
 const MAX_EXPANDED_INTEGER_DIGITS: usize = 1 << 20;
+
+/// An integer-valued `f64` within the `u64` range as `u64`, else `None`.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "guarded by the `0.0..U64_UPPER_EXCLUSIVE_F64` range and zero fractional part"
+)]
+pub(crate) fn integer_valued_u64(value: f64) -> Option<u64> {
+    (value.fract() == 0.0 && (0.0..U64_UPPER_EXCLUSIVE_F64).contains(&value))
+        .then_some(value as u64)
+}
+
+/// An integer-valued `f64` within the `i64` range as `i64`, else `None`.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "guarded by the `I64_LOWER_INCLUSIVE_F64..I64_UPPER_EXCLUSIVE_F64` range and zero fractional part"
+)]
+pub(crate) fn integer_valued_i64(value: f64) -> Option<i64> {
+    (value.fract() == 0.0 && (I64_LOWER_INCLUSIVE_F64..I64_UPPER_EXCLUSIVE_F64).contains(&value))
+        .then_some(value as i64)
+}
 
 /// Error returned by [`to_string`].
 #[derive(Debug)]
@@ -114,28 +135,15 @@ struct CanonicalFormatter {
 impl Formatter for CanonicalFormatter {
     #[inline]
     fn write_f64<W: io::Write + ?Sized>(&mut self, writer: &mut W, value: f64) -> io::Result<()> {
-        if value.fract() == 0.0 {
-            if (0.0..U64_UPPER_EXCLUSIVE_F64).contains(&value) {
-                #[expect(
-                    clippy::cast_possible_truncation,
-                    clippy::cast_sign_loss,
-                    reason = "guarded by the `0.0..U64_UPPER_EXCLUSIVE_F64` range and zero fractional part"
-                )]
-                let integer = value as u64;
-                return self.default.write_u64(writer, integer);
-            }
-            if (I64_LOWER_INCLUSIVE_F64..I64_UPPER_EXCLUSIVE_F64).contains(&value) {
-                #[expect(
-                    clippy::cast_possible_truncation,
-                    reason = "guarded by the `I64_LOWER_INCLUSIVE_F64..I64_UPPER_EXCLUSIVE_F64` range and zero fractional part"
-                )]
-                let integer = value as i64;
-                return self.default.write_i64(writer, integer);
-            }
-            let integer = format!("{value:.0}");
-            return writer.write_all(integer.as_bytes());
+        if let Some(integer) = integer_valued_u64(value) {
+            return self.default.write_u64(writer, integer);
         }
-
+        if let Some(integer) = integer_valued_i64(value) {
+            return self.default.write_i64(writer, integer);
+        }
+        if value.fract() == 0.0 {
+            return writer.write_all(format!("{value:.0}").as_bytes());
+        }
         self.default.write_f64(writer, value)
     }
 }

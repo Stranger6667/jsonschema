@@ -98,5 +98,125 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "const": 0
     }
+  },
+  {
+    "description": "ir: integer interval bounds emit back",
+    "schema": {"type": "integer", "minimum": 2, "maximum": 9},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 9
+    },
+    "tests": [
+      {"data": 2, "valid": true},
+      {"data": 9, "valid": true},
+      {"data": 1, "valid": false},
+      {"data": 10, "valid": false},
+      {"data": 5.5, "valid": false},
+      {"data": "5", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: integer minimum alone",
+    "schema": {"type": "integer", "minimum": 3},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer",
+      "minimum": 3
+    },
+    "tests": [
+      {"data": 3, "valid": true},
+      {"data": 2, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: two integer ranges intersect to the tighter one",
+    "schema": {
+      "allOf": [
+        {"type": "integer", "minimum": 0},
+        {"type": "integer", "minimum": 3, "maximum": 9}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer",
+      "minimum": 3,
+      "maximum": 9
+    },
+    "tests": [
+      {"data": 3, "valid": true},
+      {"data": 9, "valid": true},
+      {"data": 2, "valid": false},
+      {"data": 10, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: integer minimum above maximum is unsatisfiable",
+    "schema": {"type": "integer", "minimum": 5, "maximum": 2},
+    "satisfiable": false,
+    "tests": [
+      {"data": 3, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a constant integer outside the bound is unsatisfiable",
+    "schema": {"type": "integer", "const": 3, "minimum": 5},
+    "satisfiable": false,
+    "tests": [
+      {"data": 3, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: intersect keeps the open minimum and the tighter of two maxima",
+    "schema": {
+      "allOf": [
+        {"type": "integer", "maximum": 9},
+        {"type": "integer", "minimum": 3, "maximum": 5}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer",
+      "minimum": 3,
+      "maximum": 5
+    },
+    "tests": [
+      {"data": 3, "valid": true},
+      {"data": 5, "valid": true},
+      {"data": 2, "valid": false},
+      {"data": 9, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a maximum drops the enum members above it",
+    "schema": {"type": "integer", "enum": [1, 2, 3], "maximum": 2},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [1, 2]
+    },
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": 2, "valid": true},
+      {"data": 3, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an integer bound drops a fractional enum member as a non-integer",
+    "schema": {
+      "allOf": [
+        {"type": "integer", "minimum": 2},
+        {"enum": [1, 2, 2.5]}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": 2
+    },
+    "tests": [
+      {"data": 2, "valid": true},
+      {"data": 1, "valid": false},
+      {"data": 2.5, "valid": false}
+    ]
   }
 ]

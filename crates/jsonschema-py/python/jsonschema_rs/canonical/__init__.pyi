@@ -43,6 +43,16 @@ class StringView:
     def patterns(self) -> list[str]: ...
 
 @final
+class IntegerView:
+    """An integer value within a range."""
+
+    __match_args__: tuple[str, ...]
+    @property
+    def minimum(self) -> int | None: ...
+    @property
+    def maximum(self) -> int | None: ...
+
+@final
 class AnyOfView:
     """A value matches iff at least one branch matches."""
 
@@ -75,7 +85,16 @@ class RawView:
     def schema(self) -> JsonValue: ...
 
 CanonicalViewType: TypeAlias = (
-    TrueView | FalseView | MultiTypeView | TypedGroupView | StringView | AnyOfView | ConstView | EnumView | RawView
+    TrueView
+    | FalseView
+    | MultiTypeView
+    | TypedGroupView
+    | StringView
+    | IntegerView
+    | AnyOfView
+    | ConstView
+    | EnumView
+    | RawView
 )
 
 class CanonicalizationError(ValueError):

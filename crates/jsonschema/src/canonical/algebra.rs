@@ -7,7 +7,10 @@ use serde_json::Value;
 use crate::{
     canonical::{
         context::{CanonicalizationContext, CompiledMatcher},
-        ir::{BoundCardinality, CanonicalJson, Schema, SchemaKind, StringLeaf},
+        ir::{
+            BoundCardinality, BoundInteger, CanonicalJson, IntegerBounds, IntegerLeaf, Schema,
+            SchemaKind, StringLeaf,
+        },
         parse,
     },
     JsonType, JsonTypeSet,
@@ -16,12 +19,15 @@ use crate::{
 /// The schema accepting exactly the values that BOTH `left` and `right` accept (set intersection, `allOf`).
 pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationContext) -> Schema {
     match (left.into_kind(), right.into_kind()) {
-        // `False` accepts no value. If either side is `False`, nothing can satisfy both, so the result is `False`.
+        // `False` accepts no value, so nothing satisfies both sides.
         (SchemaKind::False, _)
         | (_, SchemaKind::False)
-        // A typed group holds one non-string type (Draft 4 `integer`), so it shares no value with a string.
-        | (SchemaKind::TypedGroup { .. }, SchemaKind::String(_))
-        | (SchemaKind::String(_), SchemaKind::TypedGroup { .. }) => Schema::new(SchemaKind::False),
+        // A string leaf shares no value with a typed group (a non-string type) or an integer leaf:
+        // nothing is two JSON types at once, so the result is `False`.
+        | (SchemaKind::TypedGroup { .. } | SchemaKind::Integer(_), SchemaKind::String(_))
+        | (SchemaKind::String(_), SchemaKind::TypedGroup { .. } | SchemaKind::Integer(_)) => {
+            Schema::new(SchemaKind::False)
+        }
         // `True` accepts every value, so "must satisfy both" collapses to just the other side.
         (SchemaKind::True, right) => Schema::new(right),
         // Same as above with the sides swapped: `True` on the right keeps the left side.
@@ -105,6 +111,29 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
         (SchemaKind::String(first), SchemaKind::String(second)) => {
             string_leaf(intersect_string_leaves(first, second))
         }
+        // An integer leaf constrains integer values. A type set keeps it only when the set covers
+        // `integer`; otherwise the two share no value, so `False`.
+        (SchemaKind::MultiType(set), SchemaKind::Integer(leaf))
+        | (SchemaKind::Integer(leaf), SchemaKind::MultiType(set)) => {
+            if SchemaKind::semantic_cover(set).contains(JsonType::Integer) {
+                integer_leaf(leaf)
+            } else {
+                Schema::new(SchemaKind::False)
+            }
+        }
+        // Two integer leaves: keep the integers both accept by tightening to the narrower interval.
+        (SchemaKind::Integer(first), SchemaKind::Integer(second)) => {
+            integer_leaf(intersect_integer_leaves(first, second))
+        }
+        // A typed group holds `integer` values (Draft 4); keep the ones within the leaf's interval.
+        (SchemaKind::TypedGroup { ty, body }, SchemaKind::Integer(leaf))
+        | (SchemaKind::Integer(leaf), SchemaKind::TypedGroup { ty, body }) => {
+            let kept = into_members(body.into_kind())
+                .into_iter()
+                .filter(|member| integer_leaf_admits(&leaf, member))
+                .collect();
+            typed_group(ty, parse::canonicalize_value_set(kept))
+        }
         // `Raw` is an unmodeled schema kept verbatim. It only ever appears as the whole document (parse keeps
         // the entire document `Raw` when it cannot model it), never nested in a combinator, so intersect never sees it.
         (SchemaKind::Raw(_), _) | (_, SchemaKind::Raw(_)) => {
@@ -120,6 +149,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     let mut types = JsonTypeSet::empty();
     let mut groups: Vec<(JsonType, Vec<CanonicalJson>)> = Vec::new();
     let mut strings: Vec<StringLeaf> = Vec::new();
+    let mut integers: Vec<IntegerLeaf> = Vec::new();
 
     let mut stack = branches;
     while let Some(branch) = stack.pop() {
@@ -149,6 +179,8 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             }
             // A string leaf accepts a length window; collect each into its own branch pool.
             SchemaKind::String(leaf) => strings.push(leaf),
+            // An integer leaf accepts an interval; collect each into its own branch pool.
+            SchemaKind::Integer(leaf) => integers.push(leaf),
             // `Raw` is whole-document and never nested in a combinator, so union never sees it.
             SchemaKind::Raw(_) => {
                 unreachable!("`Raw` is whole-document; combinators never contain it")
@@ -175,6 +207,10 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     if cover.contains(JsonType::String) {
         strings.clear();
     }
+    // Likewise an integer leaf is redundant once the type set covers `integer`.
+    if cover.contains(JsonType::Integer) {
+        integers.clear();
+    }
 
     let value_set = parse::canonicalize_value_set(members);
     // Packing the loose values may fill a whole type's domain (all of `null`/`boolean`), turning them into a
@@ -198,6 +234,11 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
                 .into_iter()
                 .map(|leaf| Schema::new(SchemaKind::String(leaf))),
         );
+        rest.extend(
+            integers
+                .into_iter()
+                .map(|leaf| Schema::new(SchemaKind::Integer(leaf))),
+        );
         return union(rest, ctx);
     }
 
@@ -220,6 +261,10 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     // Each surviving string leaf becomes its own branch.
     for leaf in strings {
         out.push(Schema::new(SchemaKind::String(leaf)));
+    }
+    // Each surviving integer leaf becomes its own branch.
+    for leaf in integers {
+        out.push(Schema::new(SchemaKind::Integer(leaf)));
     }
     // The loose value set becomes a branch, unless it collapsed to empty.
     if !matches!(value_set.kind(), SchemaKind::False) {
@@ -291,6 +336,20 @@ fn restrict_members(
                 .collect();
             parse::canonicalize_value_set(kept)
         }
+        // `other` is an integer leaf: keep the integer members within its interval. Draft 4 keeps the
+        // integer type guard so `1.0` cannot match `1` through value equality.
+        SchemaKind::Integer(leaf) => {
+            let kept = members
+                .into_iter()
+                .filter(|member| integer_leaf_admits(&leaf, member))
+                .collect();
+            let value_set = parse::canonicalize_value_set(kept);
+            if matches!(ctx.draft(), Draft::Draft4) {
+                typed_group(JsonType::Integer, value_set)
+            } else {
+                value_set
+            }
+        }
         // `other` is a typed group: keep the members that match its type AND sit in its value set.
         SchemaKind::TypedGroup { ty, body } => {
             let admitted = into_members(body.into_kind());
@@ -359,6 +418,67 @@ pub(crate) fn string_leaf(leaf: StringLeaf) -> Schema {
         }
     }
     Schema::new(SchemaKind::String(leaf))
+}
+
+/// An `Integer` node, collapsed to `False` when its interval is empty (`minimum > maximum`).
+pub(crate) fn integer_leaf(leaf: IntegerLeaf) -> Schema {
+    if let (Some(min), Some(max)) = (&leaf.bounds.minimum, &leaf.bounds.maximum) {
+        if min > max {
+            return Schema::new(SchemaKind::False);
+        }
+    }
+    Schema::new(SchemaKind::Integer(leaf))
+}
+
+/// Tighten two integer intervals to the values both accept: the higher minimum, the lower maximum.
+fn intersect_integer_leaves(first: IntegerLeaf, second: IntegerLeaf) -> IntegerLeaf {
+    IntegerLeaf {
+        bounds: IntegerBounds {
+            minimum: match (first.bounds.minimum, second.bounds.minimum) {
+                (Some(a), Some(b)) => Some(a.max(b)),
+                (bound, None) | (None, bound) => bound,
+            },
+            maximum: match (first.bounds.maximum, second.bounds.maximum) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (bound, None) | (None, bound) => bound,
+            },
+        },
+    }
+}
+
+/// Whether `member` is an integer value within the leaf's interval.
+fn integer_leaf_admits(leaf: &IntegerLeaf, member: &CanonicalJson) -> bool {
+    let Value::Number(number) = member.as_value() else {
+        return false;
+    };
+    match BoundInteger::from_number(number) {
+        Some(value) => {
+            leaf.bounds.minimum.as_ref().is_none_or(|min| value >= *min)
+                && leaf.bounds.maximum.as_ref().is_none_or(|max| value <= *max)
+        }
+        None => admits_out_of_range(leaf, number),
+    }
+}
+
+/// Admittance for an integer `number` that [`BoundInteger::from_number`] cannot hold. In the default
+/// build it lies beyond one end of the `i64` range: above every representable maximum, below every
+/// representable minimum. A non-integer is never admitted.
+#[cfg(not(feature = "arbitrary-precision"))]
+fn admits_out_of_range(leaf: &IntegerLeaf, number: &serde_json::Number) -> bool {
+    if !jsonschema_value::types::number_is_integer(number) {
+        return false;
+    }
+    if number.as_f64().is_some_and(|float| float > 0.0) {
+        leaf.bounds.maximum.is_none()
+    } else {
+        leaf.bounds.minimum.is_none()
+    }
+}
+
+// Arbitrary precision holds every integer, so `from_number` only returns `None` for a non-integer.
+#[cfg(feature = "arbitrary-precision")]
+fn admits_out_of_range(_leaf: &IntegerLeaf, _number: &serde_json::Number) -> bool {
+    false
 }
 
 /// Tighten two string leaves to the strings both accept: the higher minimum, the lower maximum length,

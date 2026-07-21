@@ -3,7 +3,15 @@ use hegel::{extras::serde_json as json_gs, generators as gs, TestCase};
 use jsonschema::Draft;
 use serde_json::{json, Value};
 
-const DRAFT: Draft = Draft::Draft202012;
+fn draw_draft(tc: &TestCase) -> Draft {
+    tc.draw(gs::sampled_from(vec![
+        Draft::Draft4,
+        Draft::Draft6,
+        Draft::Draft7,
+        Draft::Draft201909,
+        Draft::Draft202012,
+    ]))
+}
 
 fn draw_type(tc: &TestCase) -> &'static str {
     tc.draw(gs::sampled_from(vec![
@@ -15,7 +23,11 @@ fn small_length(tc: &TestCase) -> u8 {
     tc.draw(gs::integers::<u8>().min_value(0).max_value(4))
 }
 
-fn ordered(a: u8, b: u8) -> (u8, u8) {
+fn small_int(tc: &TestCase) -> i32 {
+    tc.draw(gs::integers::<i32>().min_value(-8).max_value(8))
+}
+
+fn ordered<T: Ord>(a: T, b: T) -> (T, T) {
     if a <= b {
         (a, b)
     } else {
@@ -61,20 +73,24 @@ fn arbitrary_scalar(tc: TestCase) -> Value {
 
 #[hegel::composite]
 fn arbitrary_instance(tc: TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(6)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(7)) {
         0 => Value::Null,
         1 => Value::Bool(tc.draw(gs::booleans())),
         2 => json!(tc.draw(gs::integers::<i32>().min_value(-8).max_value(8))),
         3 => json!(finite_float(&tc)),
-        4 => Value::String(tc.draw(gs::text().max_size(5))),
-        5 => json!([]),
+        // An integer-valued float (`2.0`): Draft 4 treats it as a non-integer, later drafts as an integer.
+        4 => json!(f64::from(
+            tc.draw(gs::integers::<i32>().min_value(-4).max_value(4))
+        )),
+        5 => Value::String(tc.draw(gs::text().max_size(5))),
+        6 => json!([]),
         _ => json!({}),
     }
 }
 
-// A modeled leaf: value sets, type sets, and string facets.
+// A modeled leaf: value sets, type sets, string facets, and integer interval bounds.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(11)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(14)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -96,6 +112,12 @@ fn draw_leaf(tc: &TestCase) -> Value {
             json!({ "type": "string", "pattern": pattern })
         }
         10 => json!({ "type": "string", "minLength": small_length(tc), "pattern": "^a" }),
+        11 => json!({ "type": "integer", "minimum": small_int(tc) }),
+        12 => json!({ "type": "integer", "maximum": small_int(tc) }),
+        13 => {
+            let (min, max) = ordered(small_int(tc), small_int(tc));
+            json!({ "type": "integer", "minimum": min, "maximum": max })
+        }
         _ => json!({ "type": ["string", "integer"] }),
     }
 }
@@ -113,22 +135,19 @@ fn draw_schema(tc: &TestCase, depth: u32) -> Value {
     }
 }
 
-// Meta-valid keywords PR6 does not model; a document carrying one stays `Raw`.
+// Meta-valid keywords the canonicaliser does not model; a document carrying one stays `Raw`.
 fn draw_unmodeled_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(9)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(8)) {
         0 => {
-            json!({ "type": "integer", "minimum": tc.draw(gs::integers::<i32>().min_value(-8).max_value(8)) })
-        }
-        1 => {
             json!({ "type": "integer", "multipleOf": tc.draw(gs::integers::<u8>().min_value(1).max_value(7)) })
         }
-        2 => json!({ "type": "object", "required": ["a"] }),
-        3 => json!({ "type": "object", "properties": { "a": { "type": "integer" } } }),
-        4 => json!({ "type": "array", "items": { "type": "integer" } }),
-        5 => json!({ "type": "array", "uniqueItems": true }),
-        6 => json!({ "not": { "type": "string" } }),
-        7 => json!({ "$defs": { "a": { "type": "null" } }, "$ref": "#/$defs/a" }),
-        8 => json!({ "format": "email" }),
+        1 => json!({ "type": "object", "required": ["a"] }),
+        2 => json!({ "type": "object", "properties": { "a": { "type": "integer" } } }),
+        3 => json!({ "type": "array", "items": { "type": "integer" } }),
+        4 => json!({ "type": "array", "uniqueItems": true }),
+        5 => json!({ "not": { "type": "string" } }),
+        6 => json!({ "$defs": { "a": { "type": "null" } }, "$ref": "#/$defs/a" }),
+        7 => json!({ "format": "email" }),
         _ => json!({ "oneOf": [{ "type": "string" }, { "type": "integer" }] }),
     }
 }
@@ -152,9 +171,9 @@ fn draw_broad_schema(tc: &TestCase, depth: u32) -> Value {
     }
 }
 
-fn canonicalize(schema: &Value) -> Option<Value> {
+fn canonicalize(schema: &Value, draft: Draft) -> Option<Value> {
     jsonschema::canonical::options()
-        .with_draft(DRAFT)
+        .with_draft(draft)
         .canonicalize(schema)
         .ok()
         .map(|canonical| canonical.to_json_schema())
@@ -163,22 +182,55 @@ fn canonicalize(schema: &Value) -> Option<Value> {
 // Canonicalizing an already-canonical form yields the same form.
 #[hegel::test(test_cases = 10_000)]
 fn canonicalize_is_idempotent(tc: TestCase) {
+    let draft = draw_draft(&tc);
     let schema = draw_schema(&tc, 3);
-    if let Some(once) = canonicalize(&schema) {
-        let twice = canonicalize(&once).expect("a canonical form re-canonicalizes");
+    if let Some(once) = canonicalize(&schema, draft) {
+        let twice = canonicalize(&once, draft).expect("a canonical form re-canonicalizes");
         assert_eq!(once, twice);
     }
 }
 
-// The canonical form accepts exactly the values the original does.
+// The canonical form accepts exactly the values the original does, across drafts.
 #[hegel::test(test_cases = 10_000)]
 fn canonical_form_preserves_validation(tc: TestCase) {
+    let draft = draw_draft(&tc);
     let schema = draw_schema(&tc, 3);
     let instance = tc.draw(arbitrary_instance());
-    let Some(emitted) = canonicalize(&schema) else {
+    let Some(emitted) = canonicalize(&schema, draft) else {
         return;
     };
-    let build = |value: &Value| jsonschema::options().with_draft(DRAFT).build(value);
+    let build = |value: &Value| jsonschema::options().with_draft(draft).build(value);
+    let (Ok(raw), Ok(canonical)) = (build(&schema), build(&emitted)) else {
+        return;
+    };
+    assert_eq!(raw.is_valid(&instance), canonical.is_valid(&instance));
+}
+
+// A value set intersected with an integer bound preserves validation on its own members and their
+// float spellings - the interaction that a dropped Draft 4 integer guard makes unsound.
+#[hegel::test(test_cases = 10_000)]
+fn integer_value_set_intersection_preserves_validation(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    let count = tc.draw(gs::integers::<usize>().min_value(1).max_value(3));
+    let members: Vec<i32> = (0..count).map(|_| small_int(&tc)).collect();
+    let (min, max) = ordered(small_int(&tc), small_int(&tc));
+    let schema = json!({
+        "allOf": [
+            { "enum": members },
+            { "type": "integer", "minimum": min, "maximum": max },
+        ]
+    });
+    // An instance drawn from the members, spelled as an integer or as an integer-valued float.
+    let chosen = members[tc.draw(gs::integers::<usize>().min_value(0).max_value(count - 1))];
+    let instance = if tc.draw(gs::booleans()) {
+        json!(chosen)
+    } else {
+        json!(f64::from(chosen))
+    };
+    let Some(emitted) = canonicalize(&schema, draft) else {
+        return;
+    };
+    let build = |value: &Value| jsonschema::options().with_draft(draft).build(value);
     let (Ok(raw), Ok(canonical)) = (build(&schema), build(&emitted)) else {
         return;
     };
@@ -188,12 +240,13 @@ fn canonical_form_preserves_validation(tc: TestCase) {
 // Any input reduces to `Ok(modeled)`, `Ok(Raw)`, or an error - never a panic.
 #[hegel::test(test_cases = 10_000)]
 fn canonicalize_never_panics(tc: TestCase) {
+    let draft = draw_draft(&tc);
     let schema = if tc.draw(gs::booleans()) {
         tc.draw(json_gs::values())
     } else {
         draw_broad_schema(&tc, 3)
     };
     let _ = jsonschema::canonical::options()
-        .with_draft(DRAFT)
+        .with_draft(draft)
         .canonicalize(&schema);
 }
