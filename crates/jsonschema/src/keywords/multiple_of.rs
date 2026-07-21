@@ -852,5 +852,31 @@ mod tests {
             let schema = parse_json(schema_json);
             assert!(crate::validator_for(&schema).is_ok());
         }
+
+        const HUGE_POSITIVE: &str = "99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.5";
+        const HUGE_NEGATIVE: &str = "-99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.5";
+
+        #[test_case(r#"{"minimum": 0}"#, HUGE_POSITIVE, true ; "huge_positive_vs_minimum_0")]
+        #[test_case(r#"{"minimum": 0}"#, HUGE_NEGATIVE, false ; "huge_negative_vs_minimum_0")]
+        #[test_case(r#"{"maximum": 1000}"#, HUGE_POSITIVE, false ; "huge_positive_vs_maximum_1000")]
+        #[test_case(r#"{"maximum": 0}"#, HUGE_NEGATIVE, true ; "huge_negative_vs_maximum_0")]
+        #[test_case(r#"{"exclusiveMinimum": 0}"#, HUGE_POSITIVE, true ; "huge_positive_vs_exclusive_minimum_0")]
+        #[test_case(r#"{"exclusiveMinimum": 0}"#, HUGE_NEGATIVE, false ; "huge_negative_vs_exclusive_minimum_0")]
+        #[test_case(r#"{"exclusiveMaximum": 1000}"#, HUGE_POSITIVE, false ; "huge_positive_vs_exclusive_maximum_1000")]
+        #[test_case(r#"{"exclusiveMaximum": 0}"#, HUGE_NEGATIVE, true ; "huge_negative_vs_exclusive_maximum_0")]
+        #[test_case(r#"{"minimum": -1000, "maximum": 1000}"#, HUGE_POSITIVE, false ; "huge_positive_outside_range")]
+        #[test_case(r#"{"minimum": -1000, "maximum": 1000}"#, HUGE_NEGATIVE, false ; "huge_negative_outside_range")]
+        #[test_case(r#"{"multipleOf": 0.5}"#, HUGE_POSITIVE, true ; "huge_positive_multiple_of_0_5")]
+        #[test_case(r#"{"multipleOf": 0.5}"#, HUGE_NEGATIVE, true ; "huge_negative_multiple_of_0_5")]
+        #[test_case(r#"{"multipleOf": 2}"#, HUGE_POSITIVE, false ; "huge_positive_not_multiple_of_2")]
+        fn huge_decimal_validation(schema_json: &str, instance_value: &str, expected_valid: bool) {
+            let schema = parse_json(schema_json);
+            let instance = parse_json(instance_value);
+            if expected_valid {
+                tests_util::is_valid(&schema, &instance);
+            } else {
+                tests_util::is_not_valid(&schema, &instance);
+            }
+        }
     }
 }

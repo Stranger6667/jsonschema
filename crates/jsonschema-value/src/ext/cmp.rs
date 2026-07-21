@@ -124,7 +124,8 @@ pub fn equal(left: &Value, right: &Value) -> bool {
 }
 
 #[inline]
-pub(crate) fn equal_arrays(left: &[Value], right: &[Value]) -> bool {
+#[must_use]
+pub fn equal_arrays(left: &[Value], right: &[Value]) -> bool {
     left.len() == right.len() && {
         let mut idx = 0_usize;
         while idx < left.len() {
@@ -138,7 +139,8 @@ pub(crate) fn equal_arrays(left: &[Value], right: &[Value]) -> bool {
 }
 
 #[inline]
-pub(crate) fn equal_objects(left: &Map<String, Value>, right: &Map<String, Value>) -> bool {
+#[must_use]
+pub fn equal_objects(left: &Map<String, Value>, right: &Map<String, Value>) -> bool {
     left.len() == right.len()
         && left
             .iter()

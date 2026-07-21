@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **INTERNAL**. Extract common JSON Schema semantic into a separate `jsonschema-value` crate.
+
 ## [0.48.2] - 2026-07-21
 
 ### Performance
