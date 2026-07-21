@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 use jsonschema::{
     canonical::{options, CanonicalKind, CanonicalSchema, CanonicalView},
-    canonicalize, Draft, JsonType,
+    canonicalize, CanonicalizationError, Draft, JsonType, PatternOptions,
 };
 use serde_json::{json, Map, Number, Value};
 use test_case::test_case;
@@ -53,6 +53,21 @@ fn huge_length_bound_stays_raw(keyword: &str) {
     ))
     .unwrap();
     assert_eq!(canonicalize(&schema).unwrap().kind(), CanonicalKind::Raw);
+}
+
+// The `regex` engine rejects a negative lookahead the fancy engine accepts.
+#[test]
+fn pattern_engine_selects_dialect() {
+    let schema = json!({"pattern": "^(?!x)"});
+    assert!(canonicalize(&schema).is_ok());
+    let error = options()
+        .with_pattern_options(PatternOptions::regex())
+        .canonicalize(&schema)
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        CanonicalizationError::InvalidPattern { .. }
+    ));
 }
 
 // The suite checks only the error variant; the `Display` message is exercised here.
