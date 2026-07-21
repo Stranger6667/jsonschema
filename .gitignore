@@ -14,3 +14,5 @@ crates/jsonschema-wasm/pkg/
 
 Cargo.lock
 .worktrees/
+
+.hegel/

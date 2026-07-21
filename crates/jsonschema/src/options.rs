@@ -781,7 +781,7 @@ impl fmt::Debug for ValidationOptions<'_, Arc<dyn Retrieve>> {
 /// when the binary is built with `panic = "unwind"`; with `panic = "abort"` the process aborts.
 #[derive(Debug, Clone)]
 pub struct PatternOptions<E> {
-    inner: PatternEngineOptions,
+    pub(crate) inner: PatternEngineOptions,
     _marker: PhantomData<E>,
 }
 

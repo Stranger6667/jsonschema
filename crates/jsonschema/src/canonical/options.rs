@@ -14,7 +14,7 @@ use crate::{
         CanonicalizationError, DefinitionMap,
     },
     compiler::{formats_are_assertions_by_default, validate_schema},
-    options::PatternEngineOptions,
+    options::{PatternEngineOptions, PatternOptions},
 };
 
 /// Build a [`CanonicalizeOptions`] for configurable canonicalization.
@@ -54,6 +54,14 @@ impl<'r> CanonicalizeOptions<'r> {
     #[must_use]
     pub fn should_validate_formats(mut self, enabled: bool) -> Self {
         self.validate_formats = Some(enabled);
+        self
+    }
+
+    /// Select the regular-expression engine used for `pattern` compilation and membership.
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn with_pattern_options<E>(mut self, options: PatternOptions<E>) -> Self {
+        self.pattern_options = options.inner;
         self
     }
 
