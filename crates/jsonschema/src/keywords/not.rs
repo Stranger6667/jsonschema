@@ -17,7 +17,10 @@ pub(crate) struct NotValidator<F: Json> {
 
 impl NotValidator<SerdeJson> {
     #[inline]
-    pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
+        schema: &'a Value,
+    ) -> CompilationResult<'a, F> {
         let ctx = ctx.new_at_location("not");
         Ok(Box::new(NotValidator {
             original: schema.clone(),
@@ -53,11 +56,11 @@ impl<F: Json> Validate<F> for NotValidator<F> {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     Some(NotValidator::compile(ctx, schema))
 }
 

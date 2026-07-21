@@ -20,7 +20,10 @@ pub(crate) struct OneOfValidator<F: Json> {
 
 impl OneOfValidator<SerdeJson> {
     #[inline]
-    pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
+        schema: &'a Value,
+    ) -> CompilationResult<'a, F> {
         if let Value::Array(items) = schema {
             let ctx = ctx.new_at_location("oneOf");
             let mut schemas = Vec::with_capacity(items.len());
@@ -85,7 +88,10 @@ pub(crate) struct SingleOneOfValidator<F: Json> {
 
 impl SingleOneOfValidator<SerdeJson> {
     #[inline]
-    pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
+        schema: &'a Value,
+    ) -> CompilationResult<'a, F> {
         let one_of_ctx = ctx.new_at_location("oneOf");
         let item_ctx = one_of_ctx.new_at_location(0);
         let node = compiler::compile(&item_ctx, item_ctx.as_resource_ref(schema))?;
@@ -237,11 +243,11 @@ impl<F: Json> Validate<F> for OneOfValidator<F> {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     match schema {
         Value::Array(items) => match items.as_slice() {
             [item] => Some(SingleOneOfValidator::compile(ctx, item)),

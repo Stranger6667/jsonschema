@@ -11,7 +11,10 @@ use ahash::{AHashSet, AHasher};
 use serde_json::{Map, Value};
 
 use crate::paths::{LazyLocation, RefTracker};
-use std::hash::{Hash, Hasher};
+use std::{
+    borrow::{Borrow, Cow},
+    hash::{Hash, Hasher},
+};
 
 // Based on implementation proposed by Sven Marnach:
 // https://stackoverflow.com/questions/60882381/what-is-the-fastest-correct-way-to-detect-that-there-are-no-duplicates-in-a-json
@@ -68,15 +71,25 @@ impl Hash for HashedValue<'_> {
 const ITEMS_SIZE_THRESHOLD: usize = 15;
 
 #[inline]
+#[must_use]
 pub fn is_unique(items: &[Value]) -> bool {
+    is_unique_impl(items)
+}
+
+// Generic over `Borrow<Value>` so both borrowed `serde_json` slices and the `Cow<Value>` handles
+// materialized from foreign representations run the same duplicate-detection algorithm.
+#[inline]
+fn is_unique_impl<T: Borrow<Value>>(items: &[T]) -> bool {
     let size = items.len();
     if size <= 1 {
         // Empty arrays and one-element arrays always contain unique elements
         true
     } else if let [first, second] = items {
-        !cmp::equal(first, second)
+        !cmp::equal(first.borrow(), second.borrow())
     } else if let [first, second, third] = items {
-        !cmp::equal(first, second) && !cmp::equal(first, third) && !cmp::equal(second, third)
+        !cmp::equal(first.borrow(), second.borrow())
+            && !cmp::equal(first.borrow(), third.borrow())
+            && !cmp::equal(second.borrow(), third.borrow())
     } else if size <= ITEMS_SIZE_THRESHOLD {
         // If the array size is small enough we can compare all elements pairwise, which will
         // be faster than calculating hashes for each element, even if the algorithm is O(N^2)
@@ -84,7 +97,7 @@ pub fn is_unique(items: &[Value]) -> bool {
         while idx < items.len() {
             let mut inner_idx = idx + 1;
             while inner_idx < items.len() {
-                if cmp::equal(&items[idx], &items[inner_idx]) {
+                if cmp::equal(items[idx].borrow(), items[inner_idx].borrow()) {
                     return false;
                 }
                 inner_idx += 1;
@@ -94,18 +107,24 @@ pub fn is_unique(items: &[Value]) -> bool {
         true
     } else {
         let mut seen = AHashSet::with_capacity(size);
-        items.iter().map(HashedValue).all(move |x| seen.insert(x))
+        items
+            .iter()
+            .map(|item| HashedValue(item.borrow()))
+            .all(move |x| seen.insert(x))
     }
 }
 
+// Representations backed by a contiguous `[Value]` (`serde_json`) run the check on the borrowed
+// slice with zero allocation; others materialize each element once into a `Cow<Value>`.
 fn has_unique_items<F: Json>(instance: &F::Node<'_>) -> bool {
     let Some(array) = instance.as_array() else {
         return true;
     };
-    match array.as_value_slice() {
-        Some(items) => is_unique(items),
-        None => unreachable!("uniqueItems requires a representation backed by a `Value` slice"),
+    if let Some(items) = array.as_value_slice() {
+        return is_unique(items);
     }
+    let values: Vec<Cow<'_, Value>> = array.elements().map(|element| element.to_value()).collect();
+    is_unique_impl(&values)
 }
 
 pub(crate) struct UniqueItemsValidator {
@@ -114,7 +133,7 @@ pub(crate) struct UniqueItemsValidator {
 
 impl UniqueItemsValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(location: Location) -> CompilationResult<'a, F> {
         Ok(Box::new(UniqueItemsValidator { location }))
     }
 }
@@ -145,11 +164,11 @@ impl<F: Json> Validate<F> for UniqueItemsValidator {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     if let Value::Bool(value) = schema {
         if *value {
             let location = ctx.location().join("uniqueItems");

@@ -18,7 +18,10 @@ pub(crate) struct DependenciesValidator<F: Json = SerdeJson> {
 
 impl DependenciesValidator {
     #[inline]
-    pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
+        schema: &'a Value,
+    ) -> CompilationResult<'a, F> {
         if let Value::Object(map) = schema {
             let kctx = ctx.new_at_location("dependencies");
             let mut dependencies = Vec::with_capacity(map.len());
@@ -36,7 +39,7 @@ impl DependenciesValidator {
                         }
                         _ => compiler::compile(&ctx, ctx.as_resource_ref(subschema))?,
                     };
-                dependencies.push((SerdeJson::prepare_key(key), s));
+                dependencies.push((F::prepare_key(key), s));
             }
             Ok(Box::new(DependenciesValidator { dependencies }))
         } else {
@@ -130,7 +133,10 @@ pub(crate) struct DependentRequiredValidator<F: Json = SerdeJson> {
 
 impl DependentRequiredValidator {
     #[inline]
-    pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
+        schema: &'a Value,
+    ) -> CompilationResult<'a, F> {
         if let Value::Object(map) = schema {
             let kctx = ctx.new_at_location("dependentRequired");
             let mut dependencies = Vec::with_capacity(map.len());
@@ -154,7 +160,7 @@ impl DependentRequiredValidator {
                                 )?,
                         ];
                     dependencies.push((
-                        SerdeJson::prepare_key(key),
+                        F::prepare_key(key),
                         SchemaNode::from_array(&kctx, validators),
                     ));
                 } else {
@@ -258,14 +264,17 @@ pub(crate) struct DependentSchemasValidator<F: Json = SerdeJson> {
 }
 impl DependentSchemasValidator {
     #[inline]
-    pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
+        schema: &'a Value,
+    ) -> CompilationResult<'a, F> {
         if let Value::Object(map) = schema {
             let ctx = ctx.new_at_location("dependentSchemas");
             let mut dependencies = Vec::with_capacity(map.len());
             for (key, subschema) in map {
                 let ctx = ctx.new_at_location(key.as_str());
                 let schema_nodes = compiler::compile(&ctx, ctx.as_resource_ref(subschema))?;
-                dependencies.push((SerdeJson::prepare_key(key), schema_nodes));
+                dependencies.push((F::prepare_key(key), schema_nodes));
             }
             Ok(Box::new(DependentSchemasValidator { dependencies }))
         } else {
@@ -353,27 +362,27 @@ impl<F: Json> Validate<F> for DependentSchemasValidator<F> {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     Some(DependenciesValidator::compile(ctx, schema))
 }
 #[inline]
-pub(crate) fn compile_dependent_required<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_dependent_required<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     Some(DependentRequiredValidator::compile(ctx, schema))
 }
 #[inline]
-pub(crate) fn compile_dependent_schemas<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_dependent_schemas<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     Some(DependentSchemasValidator::compile(ctx, schema))
 }
 #[cfg(test)]

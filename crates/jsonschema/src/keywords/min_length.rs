@@ -17,11 +17,11 @@ pub(crate) struct MinLengthValidator {
 
 impl MinLengthValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
         schema: &'a Value,
         location: Location,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         if let Some(limit) = schema.as_u64() {
             return Ok(Box::new(MinLengthValidator { limit, location }));
         }
@@ -74,11 +74,11 @@ impl<F: Json> Validate<F> for MinLengthValidator {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     let location = ctx.location().join("minLength");
     Some(MinLengthValidator::compile(ctx, schema, location))
 }

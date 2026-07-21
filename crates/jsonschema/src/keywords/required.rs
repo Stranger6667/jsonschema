@@ -19,12 +19,15 @@ pub(crate) struct RequiredValidator<F: Json = SerdeJson> {
 
 impl RequiredValidator {
     #[inline]
-    pub(crate) fn compile(items: &[Value], location: Location) -> CompilationResult<'_> {
+    pub(crate) fn compile<F: Json>(
+        items: &[Value],
+        location: Location,
+    ) -> CompilationResult<'_, F> {
         let mut required = Vec::with_capacity(items.len());
         for item in items {
             match item {
                 Value::String(string) => {
-                    required.push((string.clone(), SerdeJson::prepare_key(string)));
+                    required.push((string.clone(), F::prepare_key(string)));
                 }
                 _ => {
                     return Err(ValidationError::single_type_error(
@@ -114,10 +117,10 @@ pub(crate) struct SingleItemRequiredValidator<F: Json = SerdeJson> {
 
 impl SingleItemRequiredValidator {
     #[inline]
-    pub(crate) fn compile(value: &str, location: Location) -> CompilationResult<'_> {
+    pub(crate) fn compile<F: Json>(value: &str, location: Location) -> CompilationResult<'_, F> {
         Ok(Box::new(SingleItemRequiredValidator {
             value: value.to_string(),
-            key: SerdeJson::prepare_key(value),
+            key: F::prepare_key(value),
             location,
         }))
     }
@@ -167,14 +170,14 @@ pub(crate) struct Required2Validator<F: Json = SerdeJson> {
 
 impl Required2Validator {
     #[inline]
-    pub(crate) fn compile(
+    pub(crate) fn compile<F: Json>(
         first: String,
         second: String,
         location: Location,
-    ) -> CompilationResult<'static> {
+    ) -> CompilationResult<'static, F> {
         Ok(Box::new(Required2Validator {
-            first_key: SerdeJson::prepare_key(&first),
-            second_key: SerdeJson::prepare_key(&second),
+            first_key: F::prepare_key(&first),
+            second_key: F::prepare_key(&second),
             first,
             second,
             location,
@@ -274,16 +277,16 @@ pub(crate) struct Required3Validator<F: Json = SerdeJson> {
 
 impl Required3Validator {
     #[inline]
-    pub(crate) fn compile(
+    pub(crate) fn compile<F: Json>(
         first: String,
         second: String,
         third: String,
         location: Location,
-    ) -> CompilationResult<'static> {
+    ) -> CompilationResult<'static, F> {
         Ok(Box::new(Required3Validator {
-            first_key: SerdeJson::prepare_key(&first),
-            second_key: SerdeJson::prepare_key(&second),
-            third_key: SerdeJson::prepare_key(&third),
+            first_key: F::prepare_key(&first),
+            second_key: F::prepare_key(&second),
+            third_key: F::prepare_key(&third),
             first,
             second,
             third,
@@ -390,11 +393,11 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     parent: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     // Check if fused validators handle this case
     if let Value::Array(items) = schema {
         let has_properties = parent.contains_key("properties");
@@ -435,10 +438,10 @@ pub(crate) fn compile<'a>(
 }
 
 #[inline]
-pub(crate) fn compile_with_path(
+pub(crate) fn compile_with_path<F: Json>(
     schema: &Value,
     location: Location,
-) -> Option<CompilationResult<'_>> {
+) -> Option<CompilationResult<'_, F>> {
     // IMPORTANT: If this function will ever return `None`, adjust `dependencies.rs` accordingly
     match schema {
         Value::Array(items) => match items.len() {

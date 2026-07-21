@@ -19,10 +19,10 @@ pub(crate) struct PrefixItemsValidator<F: Json = SerdeJson> {
 
 impl PrefixItemsValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
         items: &'a [Value],
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         let ctx = ctx.new_at_location("prefixItems");
         let mut schemas = Vec::with_capacity(items.len());
         for (idx, item) in items.iter().enumerate() {
@@ -118,11 +118,11 @@ impl<F: Json> Validate<F> for PrefixItemsValidator<F> {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     if let Value::Array(items) = schema {
         Some(PrefixItemsValidator::compile(ctx, items))
     } else {

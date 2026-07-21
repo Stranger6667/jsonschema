@@ -265,7 +265,7 @@ impl<F: Json> Validate<F> for PendingSchemaNode<F> {
 
 impl<F: Json> SchemaNode<F> {
     pub(crate) fn from_boolean(
-        ctx: &Context<'_>,
+        ctx: &Context<'_, F>,
         validator: Option<BoxedValidator<F>>,
     ) -> SchemaNode<F> {
         let location = ctx.location().clone();
@@ -281,7 +281,7 @@ impl<F: Json> SchemaNode<F> {
     }
 
     pub(crate) fn from_keywords(
-        ctx: &Context<'_>,
+        ctx: &Context<'_, F>,
         mut validators: Vec<(Keyword, BoxedValidator<F>)>,
         unmatched_keywords: Option<Arc<Value>>,
     ) -> SchemaNode<F> {
@@ -319,7 +319,7 @@ impl<F: Json> SchemaNode<F> {
     }
 
     pub(crate) fn from_array(
-        ctx: &Context<'_>,
+        ctx: &Context<'_, F>,
         validators: Vec<BoxedValidator<F>>,
     ) -> SchemaNode<F> {
         let location = ctx.location().clone();

@@ -16,7 +16,10 @@ struct ConstArrayValidator {
 }
 impl ConstArrayValidator {
     #[inline]
-    pub(crate) fn compile(value: &[Value], location: Location) -> CompilationResult<'_> {
+    pub(crate) fn compile<F: Json>(
+        value: &[Value],
+        location: Location,
+    ) -> CompilationResult<'_, F> {
         Ok(Box::new(ConstArrayValidator {
             value: value.to_vec(),
             location,
@@ -64,7 +67,10 @@ struct ConstBooleanValidator {
 }
 impl ConstBooleanValidator {
     #[inline]
-    pub(crate) fn compile<'a>(value: bool, location: Location) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(
+        value: bool,
+        location: Location,
+    ) -> CompilationResult<'a, F> {
         Ok(Box::new(ConstBooleanValidator { value, location }))
     }
 }
@@ -100,7 +106,7 @@ struct ConstNullValidator {
 }
 impl ConstNullValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(location: Location) -> CompilationResult<'a, F> {
         Ok(Box::new(ConstNullValidator { location }))
     }
 }
@@ -137,7 +143,10 @@ struct ConstNumberValidator {
 
 impl ConstNumberValidator {
     #[inline]
-    pub(crate) fn compile(original_value: &Number, location: Location) -> CompilationResult<'_> {
+    pub(crate) fn compile<F: Json>(
+        original_value: &Number,
+        location: Location,
+    ) -> CompilationResult<'_, F> {
         Ok(Box::new(ConstNumberValidator {
             original_value: original_value.clone(),
             location,
@@ -183,7 +192,10 @@ pub(crate) struct ConstObjectValidator {
 
 impl ConstObjectValidator {
     #[inline]
-    pub(crate) fn compile(value: &Map<String, Value>, location: Location) -> CompilationResult<'_> {
+    pub(crate) fn compile<F: Json>(
+        value: &Map<String, Value>,
+        location: Location,
+    ) -> CompilationResult<'_, F> {
         Ok(Box::new(ConstObjectValidator {
             value: Value::Object(value.clone()),
             location,
@@ -225,7 +237,7 @@ pub(crate) struct ConstStringValidator {
 
 impl ConstStringValidator {
     #[inline]
-    pub(crate) fn compile(value: &str, location: Location) -> CompilationResult<'_> {
+    pub(crate) fn compile<F: Json>(value: &str, location: Location) -> CompilationResult<'_, F> {
         Ok(Box::new(ConstStringValidator {
             value: value.to_string(),
             location,
@@ -265,11 +277,11 @@ impl<F: Json> Validate<F> for ConstStringValidator {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     let location = ctx.location().join("const");
     match schema {
         Value::Array(items) => Some(ConstArrayValidator::compile(items, location)),

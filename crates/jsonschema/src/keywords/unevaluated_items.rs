@@ -326,10 +326,10 @@ impl<F: Json> ConditionalValidators<F> {
 /// Recursively builds the `ItemsValidators` tree by examining all keywords that
 /// can evaluate items. Handles circular references via pending nodes cached
 /// by location and schema pointer.
-fn compile_items_validators<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_items_validators<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<ItemsValidators, ValidationError<'a>> {
+) -> Result<ItemsValidators<F>, ValidationError<'a>> {
     // Create a pending node and cache it before compiling to handle circular refs
     let cache_key = ctx.location_cache_key();
     let pending = Arc::new(OnceLock::new());
@@ -403,10 +403,10 @@ fn compile_items_validators<'a>(
     Ok(validators)
 }
 
-fn compile_unevaluated<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_unevaluated<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<Option<SchemaNode>, ValidationError<'a>> {
+) -> Result<Option<SchemaNode<F>>, ValidationError<'a>> {
     if let Some(subschema) = parent.get("unevaluatedItems") {
         let unevaluated_ctx = ctx.new_at_location("unevaluatedItems");
         Ok(Some(
@@ -418,10 +418,10 @@ fn compile_unevaluated<'a>(
     }
 }
 
-fn compile_contains<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_contains<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<Option<SchemaNode>, ValidationError<'a>> {
+) -> Result<Option<SchemaNode<F>>, ValidationError<'a>> {
     if let Some(subschema) = parent.get("contains") {
         let contains_ctx = ctx.new_at_location("contains");
         Ok(Some(
@@ -433,10 +433,10 @@ fn compile_contains<'a>(
     }
 }
 
-fn compile_ref<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_ref<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<Option<RefValidator>, ValidationError<'a>> {
+) -> Result<Option<RefValidator<F>>, ValidationError<'a>> {
     if let Some(Value::String(reference)) = parent.get("$ref") {
         let resolved = ctx.lookup(reference)?;
         if let Value::Object(subschema) = resolved.contents() {
@@ -448,10 +448,10 @@ fn compile_ref<'a>(
     Ok(None)
 }
 
-fn compile_dynamic_ref<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_dynamic_ref<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &Map<String, Value>,
-) -> Result<Option<PendingItemsValidators>, ValidationError<'a>> {
+) -> Result<Option<PendingItemsValidators<F>>, ValidationError<'a>> {
     let Some(Value::String(reference)) = parent.get("$dynamicRef") else {
         return Ok(None);
     };
@@ -479,10 +479,10 @@ fn compile_dynamic_ref<'a>(
     }
 }
 
-fn compile_recursive_ref<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_recursive_ref<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &Map<String, Value>,
-) -> Result<Option<PendingItemsValidators>, ValidationError<'a>> {
+) -> Result<Option<PendingItemsValidators<F>>, ValidationError<'a>> {
     if !parent.contains_key("$recursiveRef") {
         return Ok(None);
     }
@@ -521,8 +521,8 @@ fn compile_recursive_ref<'a>(
     }
 }
 
-fn compile_items<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_items<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
 ) -> Result<(Option<usize>, bool), ValidationError<'a>> {
     if let Some(subschema) = parent.get("items") {
@@ -547,8 +547,8 @@ fn compile_items<'a>(
     }
 }
 
-fn compile_prefix_items<'a>(
-    _ctx: &compiler::Context<'_>,
+fn compile_prefix_items<'a, F: Json>(
+    _ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
 ) -> Result<Option<usize>, ValidationError<'a>> {
     if let Some(Some(items)) = parent.get("prefixItems").map(Value::as_array) {
@@ -558,10 +558,10 @@ fn compile_prefix_items<'a>(
     }
 }
 
-fn compile_conditional<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_conditional<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<Option<Box<ConditionalValidators>>, ValidationError<'a>> {
+) -> Result<Option<Box<ConditionalValidators<F>>>, ValidationError<'a>> {
     if let Some(subschema) = parent.get("if") {
         if let Value::Object(if_parent) = subschema {
             let if_ctx = ctx.new_at_location("if");
@@ -597,10 +597,12 @@ fn compile_conditional<'a>(
     Ok(None)
 }
 
-fn compile_all_of<'a>(
-    ctx: &compiler::Context<'_>,
+type CompiledItemsSubschemas<F> = Vec<(SchemaNode<F>, ItemsValidators<F>)>;
+
+fn compile_all_of<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<Option<Vec<(SchemaNode, ItemsValidators)>>, ValidationError<'a>> {
+) -> Result<Option<CompiledItemsSubschemas<F>>, ValidationError<'a>> {
     if let Some(Some(subschemas)) = parent.get("allOf").map(Value::as_array) {
         let all_of_ctx = ctx.new_at_location("allOf");
         let mut result = Vec::with_capacity(subschemas.len());
@@ -623,10 +625,10 @@ fn compile_all_of<'a>(
     }
 }
 
-fn compile_any_of<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_any_of<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<Option<Vec<(SchemaNode, ItemsValidators)>>, ValidationError<'a>> {
+) -> Result<Option<CompiledItemsSubschemas<F>>, ValidationError<'a>> {
     if let Some(Some(subschemas)) = parent.get("anyOf").map(Value::as_array) {
         let any_of_ctx = ctx.new_at_location("anyOf");
         let mut result = Vec::with_capacity(subschemas.len());
@@ -649,10 +651,10 @@ fn compile_any_of<'a>(
     }
 }
 
-fn compile_one_of<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_one_of<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<Option<Vec<(SchemaNode, ItemsValidators)>>, ValidationError<'a>> {
+) -> Result<Option<CompiledItemsSubschemas<F>>, ValidationError<'a>> {
     if let Some(Some(subschemas)) = parent.get("oneOf").map(Value::as_array) {
         let one_of_ctx = ctx.new_at_location("oneOf");
         let mut result = Vec::with_capacity(subschemas.len());
@@ -682,10 +684,10 @@ pub(crate) struct UnevaluatedItemsValidator<F: Json = SerdeJson> {
 }
 
 impl UnevaluatedItemsValidator {
-    pub(crate) fn compile<'a>(
-        ctx: &'a compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &'a compiler::Context<F>,
         parent: &'a Map<String, Value>,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         let validators =
             compile_items_validators(ctx, parent).map_err(ValidationError::to_owned)?;
 
@@ -823,11 +825,11 @@ impl<F: Json> Validate<F> for UnevaluatedItemsValidator<F> {
     }
 }
 
-pub(crate) fn compile<'a>(
-    ctx: &'a compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &'a compiler::Context<F>,
     parent: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     match schema.as_bool() {
         Some(true) => None,
         _ => Some(UnevaluatedItemsValidator::compile(ctx, parent)),

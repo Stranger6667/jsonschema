@@ -17,7 +17,10 @@ pub(crate) struct MultipleTypesValidator {
 
 impl MultipleTypesValidator {
     #[inline]
-    pub(crate) fn compile(items: &[Value], location: Location) -> CompilationResult<'_> {
+    pub(crate) fn compile<F: Json>(
+        items: &[Value],
+        location: Location,
+    ) -> CompilationResult<'_, F> {
         let mut types = JsonTypeSet::empty();
         for item in items {
             match item {
@@ -94,7 +97,7 @@ pub(crate) struct IntegerTypeValidator {
 
 impl IntegerTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(location: Location) -> CompilationResult<'a, F> {
         Ok(Box::new(IntegerTypeValidator { location }))
     }
 }
@@ -153,11 +156,11 @@ pub(crate) fn is_integer(num: &Number) -> bool {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     let location = ctx.location().join("type");
     match schema {
         Value::String(item) => Some(compile_single_type(item.as_str(), location, schema)),
@@ -192,11 +195,11 @@ pub(crate) fn compile<'a>(
     }
 }
 
-fn compile_single_type<'a>(
+fn compile_single_type<'a, F: Json>(
     item: &str,
     location: Location,
     instance: &'a Value,
-) -> CompilationResult<'a> {
+) -> CompilationResult<'a, F> {
     match JsonType::from_str(item) {
         Ok(JsonType::Array) => type_::ArrayTypeValidator::compile(location),
         Ok(JsonType::Boolean) => type_::BooleanTypeValidator::compile(location),

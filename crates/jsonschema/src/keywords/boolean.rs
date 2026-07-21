@@ -12,7 +12,7 @@ pub(crate) struct FalseValidator {
 }
 impl FalseValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(location: Location) -> CompilationResult<'a, F> {
         Ok(Box::new(FalseValidator { location }))
     }
 }

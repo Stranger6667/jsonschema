@@ -20,11 +20,11 @@ pub(crate) struct MultipleOfFloatValidator {
 
 impl MultipleOfFloatValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
+    pub(crate) fn compile<'a, F: Json>(
         multiple_of: f64,
         #[cfg(feature = "arbitrary-precision")] original_value: &serde_json::Number,
         location: Location,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         Ok(Box::new(MultipleOfFloatValidator {
             multiple_of,
             #[cfg(feature = "arbitrary-precision")]
@@ -85,11 +85,11 @@ pub(crate) struct MultipleOfIntegerValidator {
 
 impl MultipleOfIntegerValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
+    pub(crate) fn compile<'a, F: Json>(
         multiple_of: f64,
         #[cfg(feature = "arbitrary-precision")] original_value: &serde_json::Number,
         location: Location,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         Ok(Box::new(MultipleOfIntegerValidator {
             multiple_of,
             #[cfg(feature = "arbitrary-precision")]
@@ -151,11 +151,11 @@ pub(crate) struct MultipleOfBigIntValidator {
 #[cfg(feature = "arbitrary-precision")]
 impl MultipleOfBigIntValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
+    pub(crate) fn compile<'a, F: Json>(
         multiple_of: num_bigint::BigInt,
         original_value: &serde_json::Number,
         location: Location,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         Ok(Box::new(MultipleOfBigIntValidator {
             multiple_of,
             original_value: original_value.clone(),
@@ -250,11 +250,11 @@ pub(crate) struct MultipleOfBigFracValidator {
 #[cfg(feature = "arbitrary-precision")]
 impl MultipleOfBigFracValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
+    pub(crate) fn compile<'a, F: Json>(
         multiple_of: fraction::BigFraction,
         original_value: &serde_json::Number,
         location: Location,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         Ok(Box::new(MultipleOfBigFracValidator {
             multiple_of,
             original_value: original_value.clone(),
@@ -311,11 +311,11 @@ impl<F: Json> Validate<F> for MultipleOfBigFracValidator {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     if let Value::Number(multiple_of) = schema {
         let location = ctx.location().join("multipleOf");
 

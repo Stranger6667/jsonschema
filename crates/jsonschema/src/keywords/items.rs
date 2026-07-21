@@ -17,10 +17,10 @@ pub(crate) struct ItemsArrayValidator<F: Json = SerdeJson> {
 }
 impl ItemsArrayValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
         schemas: &'a [Value],
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         let kctx = ctx.new_at_location("items");
         let mut items = Vec::with_capacity(schemas.len());
         for (idx, item) in schemas.iter().enumerate() {
@@ -103,7 +103,10 @@ pub(crate) struct ItemsObjectValidator<F: Json = SerdeJson> {
 
 impl ItemsObjectValidator {
     #[inline]
-    pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
+        schema: &'a Value,
+    ) -> CompilationResult<'a, F> {
         let ctx = ctx.new_at_location("items");
         let node = compiler::compile(&ctx, ctx.as_resource_ref(schema))?;
         Ok(Box::new(ItemsObjectValidator { node }))
@@ -189,11 +192,11 @@ pub(crate) struct ItemsObjectSkipPrefixValidator<F: Json = SerdeJson> {
 
 impl ItemsObjectSkipPrefixValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
+    pub(crate) fn compile<'a, F: Json>(
         schema: &'a Value,
         skip_prefix: usize,
-        ctx: &compiler::Context,
-    ) -> CompilationResult<'a> {
+        ctx: &compiler::Context<F>,
+    ) -> CompilationResult<'a, F> {
         let ctx = ctx.new_at_location("items");
         let node = compiler::compile(&ctx, ctx.as_resource_ref(schema))?;
         Ok(Box::new(ItemsObjectSkipPrefixValidator {
@@ -290,7 +293,7 @@ pub(crate) struct ItemsNumberTypeValidator {
 
 impl ItemsNumberTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(location: Location) -> CompilationResult<'a, F> {
         Ok(Box::new(ItemsNumberTypeValidator { location }))
     }
 }
@@ -299,7 +302,7 @@ impl<F: Json> Validate<F> for ItemsNumberTypeValidator {
     #[inline]
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
-            array.elements().all(|item| item.as_number().is_some())
+            array.elements().all(|item| item.is_number())
         } else {
             true
         }
@@ -314,7 +317,7 @@ impl<F: Json> Validate<F> for ItemsNumberTypeValidator {
     ) -> Result<(), ValidationError<'i>> {
         if let Some(array) = instance.as_array() {
             for (idx, item) in array.elements().enumerate() {
-                if item.as_number().is_none() {
+                if !item.is_number() {
                     return Err(ValidationError::single_type_error(
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
@@ -339,7 +342,7 @@ impl<F: Json> Validate<F> for ItemsNumberTypeValidator {
             let errors: Vec<_> = array
                 .elements()
                 .enumerate()
-                .filter(|(_, item)| item.as_number().is_none())
+                .filter(|(_, item)| !item.is_number())
                 .map(|(idx, item)| {
                     ValidationError::single_type_error(
                         self.location.clone(),
@@ -367,7 +370,7 @@ impl<F: Json> Validate<F> for ItemsNumberTypeValidator {
             let errors: Vec<_> = array
                 .elements()
                 .enumerate()
-                .filter(|(_, item)| item.as_number().is_none())
+                .filter(|(_, item)| !item.is_number())
                 .map(|(idx, item)| {
                     let item = item.to_value();
                     ErrorDescription::new(
@@ -398,7 +401,7 @@ pub(crate) struct ItemsStringTypeValidator {
 
 impl ItemsStringTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(location: Location) -> CompilationResult<'a, F> {
         Ok(Box::new(ItemsStringTypeValidator { location }))
     }
 }
@@ -506,7 +509,7 @@ pub(crate) struct ItemsIntegerTypeValidator {
 
 impl ItemsIntegerTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(location: Location) -> CompilationResult<'a, F> {
         Ok(Box::new(ItemsIntegerTypeValidator { location }))
     }
 }
@@ -629,7 +632,7 @@ pub(crate) struct ItemsIntegerTypeValidatorDraft4 {
 
 impl ItemsIntegerTypeValidatorDraft4 {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(location: Location) -> CompilationResult<'a, F> {
         Ok(Box::new(ItemsIntegerTypeValidatorDraft4 { location }))
     }
 }
@@ -751,7 +754,7 @@ pub(crate) struct ItemsBooleanTypeValidator {
 
 impl ItemsBooleanTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(location: Location) -> CompilationResult<'a, F> {
         Ok(Box::new(ItemsBooleanTypeValidator { location }))
     }
 }
@@ -863,11 +866,11 @@ fn get_simple_type_schema(schema: &Value) -> Option<&str> {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     parent: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     match schema {
         Value::Array(items) => Some(ItemsArrayValidator::compile(ctx, items)),
         Value::Object(_) | Value::Bool(false) => {
