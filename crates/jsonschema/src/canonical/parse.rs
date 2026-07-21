@@ -8,7 +8,10 @@ use crate::{
     canonical::{
         algebra,
         context::CanonicalizationContext,
-        ir::{BoundCardinality, CanonicalJson, Schema, SchemaKind, StringLeaf},
+        ir::{
+            BoundCardinality, BoundInteger, CanonicalJson, IntegerBounds, IntegerLeaf, Schema,
+            SchemaKind, StringLeaf,
+        },
         CanonicalizationError,
     },
     JsonType, JsonTypeSet,
@@ -42,6 +45,8 @@ fn parse_schema(
     let mut min_length: Option<BoundCardinality> = None;
     let mut max_length: Option<BoundCardinality> = None;
     let mut patterns: Vec<Arc<str>> = Vec::new();
+    let mut minimum: Option<BoundInteger> = None;
+    let mut maximum: Option<BoundInteger> = None;
     let mut conjuncts: Vec<Schema> = Vec::new();
     for (key, entry) in map {
         match key.as_str() {
@@ -106,6 +111,15 @@ fn parse_schema(
                 }
                 patterns.push(pattern);
             }
+            // A fractional or (default build) out-of-`i64` bound has no modeled integer form; keep it raw.
+            "minimum" if ctx.draft().is_known_keyword("minimum") => match numeric_bound(entry) {
+                Some(bound) => minimum = Some(bound),
+                None => return Ok(None),
+            },
+            "maximum" if ctx.draft().is_known_keyword("maximum") => match numeric_bound(entry) {
+                Some(bound) => maximum = Some(bound),
+                None => return Ok(None),
+            },
             // TODO(canonical): not modeled yet - every other known keyword keeps the document raw.
             other if ctx.draft().is_known_keyword(other) => return Ok(None),
             _ => {}
@@ -138,6 +152,17 @@ fn parse_schema(
         conjuncts.push(string_facet_schema(leaf, ctx));
     }
 
+    if minimum.is_some() || maximum.is_some() {
+        // Only `type: integer` bounds are modeled yet; `number`/untyped numeric facets stay raw.
+        if type_set == Some(JsonTypeSet::from(JsonType::Integer)) {
+            conjuncts.push(algebra::integer_leaf(IntegerLeaf {
+                bounds: IntegerBounds { minimum, maximum },
+            }));
+        } else {
+            return Ok(None);
+        }
+    }
+
     let base = match (type_set, admitted_values(enum_values, const_value)) {
         (None, None) => Schema::new(SchemaKind::True),
         (Some(set), None) => type_set_schema(set),
@@ -158,6 +183,14 @@ fn length_bound(value: &Value) -> Option<BoundCardinality> {
         unreachable!("meta-valid length bound is a number")
     };
     BoundCardinality::from_number(number)
+}
+
+/// A modeled integer bound, or `None` (keep the document raw) when the value is not an integer.
+fn numeric_bound(value: &Value) -> Option<BoundInteger> {
+    let Value::Number(number) = value else {
+        unreachable!("meta-valid numeric bound is a number")
+    };
+    BoundInteger::from_number(number)
 }
 
 /// The finite value set admitted by `const` and `enum` together: their conjunction.
@@ -187,23 +220,31 @@ pub(crate) fn restrict_values_to_types(
     ctx: &CanonicalizationContext,
 ) -> Schema {
     let cover = SchemaKind::semantic_cover(set);
-    let filtered = values
+    let filtered: Vec<CanonicalJson> = values
         .into_iter()
         .filter(|value| cover.contains(value.json_type()))
         .collect();
-    let value_set = canonicalize_value_set(filtered);
-    // Draft 4 says `1.0` is not an integer, and value equality cannot tell `1` from `1.0` -
-    // keep the type check.
-    if keeps_draft4_integer_guard(set, ctx.draft())
-        && !matches!(value_set.kind(), SchemaKind::False)
-    {
-        Schema::new(SchemaKind::TypedGroup {
-            ty: JsonType::Integer,
-            body: value_set,
-        })
-    } else {
-        value_set
+    if !keeps_draft4_integer_guard(set, ctx.draft()) {
+        return canonicalize_value_set(filtered);
     }
+    // Draft 4 cannot tell `1` from `1.0` by value equality, so integer members keep the integer type
+    // guard; members of other types (which the set also admits) do not.
+    let (integers, others): (Vec<_>, Vec<_>) = filtered
+        .into_iter()
+        .partition(|value| value.json_type() == JsonType::Integer);
+    let mut branches = Vec::new();
+    let integer_set = canonicalize_value_set(integers);
+    if !matches!(integer_set.kind(), SchemaKind::False) {
+        branches.push(Schema::new(SchemaKind::TypedGroup {
+            ty: JsonType::Integer,
+            body: integer_set,
+        }));
+    }
+    let other_set = canonicalize_value_set(others);
+    if !matches!(other_set.kind(), SchemaKind::False) {
+        branches.push(other_set);
+    }
+    algebra::union(branches, ctx)
 }
 
 /// Whether every number nested in an instance-data value keeps a plain canonical spelling.

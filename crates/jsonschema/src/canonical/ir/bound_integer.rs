@@ -1,14 +1,14 @@
-//! A non-negative count bound on a string, array, or object size.
+//! A signed integer bound.
 #[cfg(feature = "arbitrary-precision")]
-type InnerCardinality = num_bigint::BigInt;
+type InnerInteger = num_bigint::BigInt;
 #[cfg(not(feature = "arbitrary-precision"))]
-type InnerCardinality = u64;
+type InnerInteger = i64;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub(crate) struct BoundCardinality(InnerCardinality);
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct BoundInteger(InnerInteger);
 
-impl BoundCardinality {
-    /// This count as an exact JSON number.
+impl BoundInteger {
+    /// This bound as an exact JSON number.
     pub(crate) fn to_number(&self) -> serde_json::Number {
         #[cfg(not(feature = "arbitrary-precision"))]
         {
@@ -16,20 +16,21 @@ impl BoundCardinality {
         }
         #[cfg(feature = "arbitrary-precision")]
         {
-            match num_traits::ToPrimitive::to_u64(&self.0) {
+            match num_traits::ToPrimitive::to_i64(&self.0) {
                 Some(value) => serde_json::Number::from(value),
                 None => serde_json::Number::from_string_unchecked(self.0.to_string()),
             }
         }
     }
 
-    /// A non-negative integer count from a JSON number; `None` past `u64` in the default build.
+    /// A signed integer from a JSON number, reading integer-valued floats; `None` for fractional values
+    /// or (default build) magnitudes past `i64`.
     pub(crate) fn from_number(number: &serde_json::Number) -> Option<Self> {
         #[cfg(not(feature = "arbitrary-precision"))]
         {
             number
-                .as_u64()
-                .or_else(|| crate::canonical::json::integer_valued_u64(number.as_f64()?))
+                .as_i64()
+                .or_else(|| crate::canonical::json::integer_valued_i64(number.as_f64()?))
                 .map(Self)
         }
         #[cfg(feature = "arbitrary-precision")]
@@ -37,28 +38,12 @@ impl BoundCardinality {
             let text = number.as_str();
             let canonical = crate::canonical::json::canonical_number(text);
             let integer = canonical.as_deref().unwrap_or(text);
-            if integer.bytes().all(|byte| byte.is_ascii_digit()) {
+            let digits = integer.strip_prefix('-').unwrap_or(integer);
+            if !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) {
                 integer.parse::<num_bigint::BigInt>().ok().map(Self)
             } else {
                 None
             }
         }
-    }
-
-    pub(crate) fn is_zero(&self) -> bool {
-        #[cfg(not(feature = "arbitrary-precision"))]
-        {
-            self.0 == 0
-        }
-        #[cfg(feature = "arbitrary-precision")]
-        {
-            num_traits::Zero::is_zero(&self.0)
-        }
-    }
-}
-
-impl From<u64> for BoundCardinality {
-    fn from(value: u64) -> Self {
-        Self(InnerCardinality::from(value))
     }
 }

@@ -10,9 +10,11 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 use crate::{JsonType, JsonTypeSet};
 
 mod bound_cardinality;
+mod bound_integer;
 mod raw;
 
 pub(crate) use bound_cardinality::BoundCardinality;
+pub(crate) use bound_integer::BoundInteger;
 pub(crate) use raw::RawJson;
 
 /// A `Const`/`Enum` member normalized at construction (`1.0` becomes `1`) so `Value` equality is value equality.
@@ -89,33 +91,17 @@ fn normalized(value: &Value) -> Value {
 /// Rewrite an integer-valued float (`1.0`, `-0.0`) to its integer form so `Number` equality is value equality.
 #[cfg(not(feature = "arbitrary-precision"))]
 fn normalized_number(number: &Number) -> Number {
-    use crate::canonical::json::{
-        I64_LOWER_INCLUSIVE_F64, I64_UPPER_EXCLUSIVE_F64, U64_UPPER_EXCLUSIVE_F64,
-    };
+    use crate::canonical::json::{integer_valued_i64, integer_valued_u64};
     let Some(float) = number
         .as_f64()
         .filter(|_| !number.is_i64() && !number.is_u64())
     else {
         return number.clone();
     };
-    if float.fract() == 0.0 {
-        if (0.0..U64_UPPER_EXCLUSIVE_F64).contains(&float) {
-            #[expect(
-                clippy::cast_possible_truncation,
-                clippy::cast_sign_loss,
-                reason = "guarded by the `0.0..U64_UPPER_EXCLUSIVE_F64` range and zero fractional part"
-            )]
-            return Number::from(float as u64);
-        }
-        if (I64_LOWER_INCLUSIVE_F64..I64_UPPER_EXCLUSIVE_F64).contains(&float) {
-            #[expect(
-                clippy::cast_possible_truncation,
-                reason = "guarded by the `I64_LOWER_INCLUSIVE_F64..I64_UPPER_EXCLUSIVE_F64` range and zero fractional part"
-            )]
-            return Number::from(float as i64);
-        }
-    }
-    number.clone()
+    integer_valued_u64(float)
+        .map(Number::from)
+        .or_else(|| integer_valued_i64(float).map(Number::from))
+        .unwrap_or_else(|| number.clone())
 }
 
 /// Rewrite an integer-valued float (`1.0`, `-0.0`) to its integer form so `Number` equality is value equality.
@@ -170,6 +156,8 @@ pub(crate) enum SchemaKind {
     TypedGroup { ty: JsonType, body: Schema },
     /// A string value within a length window; non-string values are matched by a surrounding union.
     String(StringLeaf),
+    /// An integer value within a range; non-integer values are matched by a surrounding union.
+    Integer(IntegerLeaf),
     /// Exactly one admitted value.
     Const(CanonicalJson),
     /// A sorted, deduplicated finite set of admitted values.
@@ -191,6 +179,21 @@ pub(crate) struct StringLeaf {
     pub(crate) max_length: Option<BoundCardinality>,
     /// Sorted, deduplicated. A string must match every pattern.
     pub(crate) patterns: Vec<Arc<str>>,
+}
+
+/// A closed interval; an absent side is unbounded.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct Bounds<T> {
+    pub(crate) minimum: Option<T>,
+    pub(crate) maximum: Option<T>,
+}
+
+pub(crate) type IntegerBounds = Bounds<BoundInteger>;
+
+/// The constraints a [`SchemaKind::Integer`] places on an integer value.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct IntegerLeaf {
+    pub(crate) bounds: IntegerBounds,
 }
 
 impl SchemaKind {

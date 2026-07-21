@@ -2,7 +2,9 @@ use serde_json::{Number, Value};
 
 use crate::{
     canonical::{
-        ir::{BoundCardinality, CanonicalJson, SchemaKind, StringLeaf},
+        ir::{
+            BoundCardinality, BoundInteger, CanonicalJson, IntegerBounds, SchemaKind, StringLeaf,
+        },
         CanonicalSchema,
     },
     JsonType, JsonTypeSet,
@@ -30,6 +32,8 @@ pub enum CanonicalView {
     TypedGroup(TypedGroupView),
     /// A string value within a length window.
     String(StringView),
+    /// An integer value within a range.
+    Integer(IntegerView),
     Const(Value),
     Enum(Vec<Value>),
     /// A value matches iff at least one branch matches.
@@ -54,6 +58,13 @@ pub struct StringView {
     pub patterns: Vec<String>,
 }
 
+/// Payload of [`CanonicalView::Integer`]: the interval bounds on an integer value.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IntegerView {
+    pub minimum: Option<Number>,
+    pub maximum: Option<Number>,
+}
+
 impl CanonicalSchema {
     /// This node's structural view.
     #[must_use]
@@ -65,6 +76,7 @@ impl CanonicalSchema {
                 body: self.wrap_child(body),
             }),
             SchemaKind::String(leaf) => CanonicalView::String(string_view(leaf)),
+            SchemaKind::Integer(leaf) => CanonicalView::Integer(integer_view(&leaf.bounds)),
             SchemaKind::Const(value) => CanonicalView::Const(value.to_value()),
             SchemaKind::Enum(values) => {
                 CanonicalView::Enum(values.iter().map(CanonicalJson::to_value).collect())
@@ -85,6 +97,13 @@ impl CanonicalSchema {
     #[must_use]
     pub fn kind(&self) -> CanonicalKind {
         self.schema_kind().into()
+    }
+}
+
+fn integer_view(bounds: &IntegerBounds) -> IntegerView {
+    IntegerView {
+        minimum: bounds.minimum.as_ref().map(BoundInteger::to_number),
+        maximum: bounds.maximum.as_ref().map(BoundInteger::to_number),
     }
 }
 

@@ -7,13 +7,23 @@ FalseView = _canonical.FalseView
 MultiTypeView = _canonical.MultiTypeView
 TypedGroupView = _canonical.TypedGroupView
 StringView = _canonical.StringView
+IntegerView = _canonical.IntegerView
 AnyOfView = _canonical.AnyOfView
 ConstView = _canonical.ConstView
 EnumView = _canonical.EnumView
 RawView = _canonical.RawView
 
 CanonicalViewType = (
-    TrueView | FalseView | MultiTypeView | TypedGroupView | StringView | AnyOfView | ConstView | EnumView | RawView
+    TrueView
+    | FalseView
+    | MultiTypeView
+    | TypedGroupView
+    | StringView
+    | IntegerView
+    | AnyOfView
+    | ConstView
+    | EnumView
+    | RawView
 )
 
 json = _canonical.json
@@ -48,6 +58,7 @@ __all__ = [
     "ConstView",
     "EnumView",
     "FalseView",
+    "IntegerView",
     "InvalidPattern",
     "InvalidSchemaType",
     "MultiTypeView",
