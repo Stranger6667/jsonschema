@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Avoid map lookups in some `properties` validators.
+
 ## [0.48.2] - 2026-07-21
 
 ### Fixed
