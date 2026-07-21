@@ -1,0 +1,292 @@
+[
+  {
+    "description": "ir: string length window preserves validation",
+    "schema": {"type": "string", "minLength": 2, "maxLength": 4},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 4
+    },
+    "tests": [
+      {"data": "ab", "valid": true},
+      {"data": "abcd", "valid": true},
+      {"data": "a", "valid": false},
+      {"data": "abcde", "valid": false},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: minLength zero converges to the bare type",
+    "schemas": [
+      {"type": "string", "minLength": 0},
+      {"type": "string"}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string"
+    }
+  },
+  {
+    "description": "ir: bare pattern constrains only strings",
+    "schema": {"pattern": "^a"},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "array", "object"]},
+        {"type": "string", "pattern": "^a"}
+      ]
+    },
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": "xyz", "valid": false},
+      {"data": 5, "valid": true},
+      {"data": null, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: allOf of string leaves tightens to one leaf",
+    "schema": {
+      "allOf": [
+        {"type": "string", "minLength": 2},
+        {"type": "string", "minLength": 3, "maxLength": 5}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 5
+    },
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": "abcde", "valid": true},
+      {"data": "ab", "valid": false},
+      {"data": "abcdef", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: multiple patterns emit as allOf and every pattern applies",
+    "schema": {
+      "allOf": [
+        {"type": "string", "pattern": "^a"},
+        {"type": "string", "pattern": "z$"}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "allOf": [{"pattern": "^a"}, {"pattern": "z$"}]
+    },
+    "tests": [
+      {"data": "az", "valid": true},
+      {"data": "abz", "valid": true},
+      {"data": "ab", "valid": false},
+      {"data": "bz", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: constant string filtered by a pattern",
+    "schema": {"const": "abc", "pattern": "^a"},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": "abc"
+    },
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": "abd", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: constant string excluded by a pattern is unsatisfiable",
+    "schema": {"const": "xyz", "pattern": "^a"},
+    "satisfiable": false,
+    "tests": [
+      {"data": "xyz", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: empty string length window is unsatisfiable",
+    "schema": {"type": "string", "minLength": 5, "maxLength": 2},
+    "satisfiable": false,
+    "tests": [
+      {"data": "abc", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: integer-valued float length bound is modeled like the validator",
+    "schema": {"type": "string", "minLength": 3.0},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "minLength": 3
+    },
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": "ab", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: minLength alone emits a single bound",
+    "schema": {"type": "string", "minLength": 3},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "minLength": 3
+    },
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": "ab", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: maxLength alone emits a single bound",
+    "schema": {"type": "string", "maxLength": 3},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "maxLength": 3
+    },
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": "abcd", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: typed string pattern emits back",
+    "schema": {"type": "string", "pattern": "^a"},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "pattern": "^a"
+    },
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": "xyz", "valid": false},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: bare length facet constrains only strings",
+    "schema": {"minLength": 3},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "array", "object"]},
+        {"type": "string", "minLength": 3}
+      ]
+    },
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": "ab", "valid": false},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: impossible bare length window keeps only non-strings",
+    "schema": {"minLength": 5, "maxLength": 2},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": ["null", "boolean", "number", "array", "object"]
+    },
+    "tests": [
+      {"data": "abc", "valid": false},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: bare minLength zero is the always-true schema",
+    "schema": {"minLength": 0},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
+    "tests": [
+      {"data": "anything", "valid": true},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: constant string within its length window is kept",
+    "schema": {"const": "abc", "minLength": 2},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": "abc"
+    },
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": "ab", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: constant string below its minimum length is unsatisfiable",
+    "schema": {"const": "a", "minLength": 2},
+    "satisfiable": false,
+    "tests": [
+      {"data": "a", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: non-overlapping string windows stay separate anyOf branches",
+    "schema": {
+      "anyOf": [
+        {"type": "string", "maxLength": 2},
+        {"type": "string", "minLength": 5}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "string", "maxLength": 2},
+        {"type": "string", "minLength": 5}
+      ]
+    },
+    "tests": [
+      {"data": "a", "valid": true},
+      {"data": "abcde", "valid": true},
+      {"data": "abc", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: two maxLength bounds tighten to the smaller",
+    "schema": {
+      "allOf": [
+        {"type": "string", "maxLength": 5},
+        {"type": "string", "maxLength": 3}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "maxLength": 3
+    },
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": "abcd", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a length facet skips non-string enum members",
+    "schema": {"enum": [1, "abc"], "minLength": 2},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [1, "abc"]
+    },
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": "abc", "valid": true},
+      {"data": "a", "valid": false},
+      {"data": 2, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a constant string longer than maxLength is unsatisfiable",
+    "schema": {"const": "abcd", "maxLength": 3},
+    "satisfiable": false,
+    "tests": [
+      {"data": "abcd", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: invalid regex in pattern is rejected",
+    "schema": {"pattern": "["},
+    "error": "InvalidPattern"
+  }
+]

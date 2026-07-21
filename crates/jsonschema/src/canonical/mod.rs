@@ -23,6 +23,7 @@
 pub mod json;
 
 pub(crate) mod algebra;
+pub(crate) mod context;
 pub(crate) mod emit;
 pub(crate) mod error;
 pub(crate) mod ir;

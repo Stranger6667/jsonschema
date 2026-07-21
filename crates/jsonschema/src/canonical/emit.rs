@@ -4,7 +4,7 @@ use referencing::Draft;
 use serde_json::{json, Map, Value};
 
 use crate::{
-    canonical::ir::{CanonicalJson, Schema, SchemaKind},
+    canonical::ir::{CanonicalJson, Schema, SchemaKind, StringLeaf},
     JsonTypeSet,
 };
 
@@ -32,6 +32,7 @@ fn emit(kind: &SchemaKind, draft: Draft) -> Value {
         }
         SchemaKind::Const(value) => json!({"const": value.to_value()}),
         SchemaKind::Enum(values) => emit_enum(values),
+        SchemaKind::String(leaf) => emit_string(leaf),
         SchemaKind::MultiType(set) => emit_multi_type(*set),
         // The body emits a `const`/`enum` object without a `type` key, so adding `type` beside it
         // expresses "both must hold" and re-parses to the same IR.
@@ -51,6 +52,33 @@ fn emit(kind: &SchemaKind, draft: Draft) -> Value {
         }),
         SchemaKind::Raw(value) => value.get().clone(),
     }
+}
+
+/// Emit a string leaf as `{"type":"string"}` plus its length bounds and patterns. A single pattern is
+/// inline; several become an `allOf` of `{"pattern": ...}`, since one leaf can hold only one `pattern`.
+fn emit_string(leaf: &StringLeaf) -> Value {
+    let mut map = Map::new();
+    map.insert("type".into(), Value::String("string".into()));
+    if let Some(min) = &leaf.min_length {
+        map.insert("minLength".into(), Value::Number(min.to_number()));
+    }
+    if let Some(max) = &leaf.max_length {
+        map.insert("maxLength".into(), Value::Number(max.to_number()));
+    }
+    match leaf.patterns.as_slice() {
+        [] => {}
+        [pattern] => {
+            map.insert("pattern".into(), Value::String(pattern.to_string()));
+        }
+        patterns => {
+            let conjuncts = patterns
+                .iter()
+                .map(|pattern| json!({ "pattern": pattern.as_ref() }))
+                .collect();
+            map.insert("allOf".into(), Value::Array(conjuncts));
+        }
+    }
+    Value::Object(map)
 }
 
 /// Emit a standalone `Enum`; collapse to `type:[...]` when the value set saturates one or more JSON types.

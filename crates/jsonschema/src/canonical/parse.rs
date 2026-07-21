@@ -1,26 +1,37 @@
 //! Parsing schema documents into structural IR; anything not modeled stays `Raw`.
+use std::sync::Arc;
+
 use referencing::Draft;
 use serde_json::Value;
 
 use crate::{
     canonical::{
         algebra,
-        ir::{CanonicalJson, Schema, SchemaKind},
+        context::CanonicalizationContext,
+        ir::{BoundCardinality, CanonicalJson, Schema, SchemaKind, StringLeaf},
+        CanonicalizationError,
     },
     JsonType, JsonTypeSet,
 };
 
-/// Parse a document into structural IR when every construct is modeled; `None` keeps it `Raw`.
+/// Parse a document into structural IR when every construct is modeled; `Ok(None)` keeps it `Raw`.
 /// Keywords the draft does not define are annotations the validator ignores, so they never block
 /// modeling - except an unknown `$schema`, whose dialect semantics are unknowable.
-pub(crate) fn parse(value: &Value, draft: Draft) -> Option<Schema> {
-    parse_schema(value, draft, true)
+pub(crate) fn parse(
+    value: &Value,
+    ctx: &CanonicalizationContext,
+) -> Result<Option<Schema>, CanonicalizationError> {
+    parse_schema(value, ctx, true)
 }
 
-fn parse_schema(value: &Value, draft: Draft, is_root: bool) -> Option<Schema> {
+fn parse_schema(
+    value: &Value,
+    ctx: &CanonicalizationContext,
+    is_root: bool,
+) -> Result<Option<Schema>, CanonicalizationError> {
     let map = match value {
-        Value::Bool(true) => return Some(Schema::new(SchemaKind::True)),
-        Value::Bool(false) => return Some(Schema::new(SchemaKind::False)),
+        Value::Bool(true) => return Ok(Some(Schema::new(SchemaKind::True))),
+        Value::Bool(false) => return Ok(Some(Schema::new(SchemaKind::False))),
         Value::Object(map) => map,
         _ => unreachable!("meta-validation rejects a non-object, non-boolean schema document"),
     };
@@ -28,74 +39,125 @@ fn parse_schema(value: &Value, draft: Draft, is_root: bool) -> Option<Schema> {
     let mut type_set = None;
     let mut enum_values = None;
     let mut const_value = None;
+    let mut min_length: Option<BoundCardinality> = None;
+    let mut max_length: Option<BoundCardinality> = None;
+    let mut patterns: Vec<Arc<str>> = Vec::new();
     let mut conjuncts: Vec<Schema> = Vec::new();
     for (key, entry) in map {
         match key.as_str() {
             // TODO(canonical): not modeled yet - a nested `$schema` starts an embedded resource
             // with its own dialect.
-            "$schema" if !is_root => return None,
+            "$schema" if !is_root => return Ok(None),
             "$schema" => {
                 let uri = entry.as_str().expect("meta-valid $schema is a string");
                 if matches!(Draft::from_schema_uri(uri), Draft::Unknown) {
-                    return None;
+                    return Ok(None);
                 }
             }
             "allOf" => {
                 for branch in entry.as_array().expect("meta-valid allOf is an array") {
-                    conjuncts.push(parse_schema(branch, draft, false)?);
+                    match parse_schema(branch, ctx, false)? {
+                        Some(schema) => conjuncts.push(schema),
+                        None => return Ok(None),
+                    }
                 }
             }
             "anyOf" => {
-                let branches = entry
-                    .as_array()
-                    .expect("meta-valid anyOf is an array")
-                    .iter()
-                    .map(|branch| parse_schema(branch, draft, false))
-                    .collect::<Option<Vec<_>>>()?;
-                conjuncts.push(algebra::union(branches, draft));
+                let mut branches = Vec::new();
+                for branch in entry.as_array().expect("meta-valid anyOf is an array") {
+                    match parse_schema(branch, ctx, false)? {
+                        Some(schema) => branches.push(schema),
+                        None => return Ok(None),
+                    }
+                }
+                conjuncts.push(algebra::union(branches, ctx));
             }
             "type" => type_set = Some(parse_type_set(entry)),
             // TODO(canonical): not modeled yet - `const`/`enum` numbers without a plain spelling
             // have no exact runtime comparison; such documents stay raw.
-            "enum" if draft.is_known_keyword("enum") => {
+            "enum" if ctx.draft().is_known_keyword("enum") => {
                 if !finite_value_spelling_is_exact(entry) {
-                    return None;
+                    return Ok(None);
                 }
                 enum_values = Some(entry.as_array().expect("meta-valid enum is an array"));
             }
-            "const" if draft.is_known_keyword("const") => {
+            "const" if ctx.draft().is_known_keyword("const") => {
                 if !finite_value_spelling_is_exact(entry) {
-                    return None;
+                    return Ok(None);
                 }
                 const_value = Some(entry);
             }
+            // In the default build a length bound past `u64` has no modeled form; keep the document raw.
+            "minLength" if ctx.draft().is_known_keyword("minLength") => match length_bound(entry) {
+                Some(bound) => min_length = Some(bound),
+                None => return Ok(None),
+            },
+            "maxLength" if ctx.draft().is_known_keyword("maxLength") => match length_bound(entry) {
+                Some(bound) => max_length = Some(bound),
+                None => return Ok(None),
+            },
+            "pattern" if ctx.draft().is_known_keyword("pattern") => {
+                let pattern: Arc<str> =
+                    Arc::from(entry.as_str().expect("meta-valid pattern is a string"));
+                if ctx.compile_regex(&pattern).is_none() {
+                    return Err(CanonicalizationError::InvalidPattern {
+                        pattern: pattern.to_string(),
+                    });
+                }
+                patterns.push(pattern);
+            }
             // TODO(canonical): not modeled yet - every other known keyword keeps the document raw.
-            other if draft.is_known_keyword(other) => return None,
+            other if ctx.draft().is_known_keyword(other) => return Ok(None),
             _ => {}
         }
     }
 
     // TODO(canonical): not modeled yet - Draft 4 `integer` mixed with other types in a type list
     // alongside `const`/`enum`.
-    if matches!(draft, Draft::Draft4)
+    if matches!(ctx.draft(), Draft::Draft4)
         && (enum_values.is_some() || const_value.is_some())
         && type_set.is_some_and(|set| {
             set.contains(JsonType::Integer) && set != JsonTypeSet::from(JsonType::Integer)
         })
     {
-        return None;
+        return Ok(None);
+    }
+
+    // `minLength: 0` is the type-default, so drop it: the leaf then compares equal to one without it.
+    if min_length.as_ref().is_some_and(BoundCardinality::is_zero) {
+        min_length = None;
+    }
+    if min_length.is_some() || max_length.is_some() || !patterns.is_empty() {
+        patterns.sort();
+        patterns.dedup();
+        let leaf = StringLeaf {
+            min_length,
+            max_length,
+            patterns,
+        };
+        conjuncts.push(string_facet_schema(leaf, ctx));
     }
 
     let base = match (type_set, admitted_values(enum_values, const_value)) {
         (None, None) => Schema::new(SchemaKind::True),
         (Some(set), None) => type_set_schema(set),
         (None, Some(values)) => canonicalize_value_set(values),
-        (Some(set), Some(values)) => restrict_values_to_types(values, set, draft),
+        (Some(set), Some(values)) => restrict_values_to_types(values, set, ctx),
     };
     // A schema object's keywords all apply to the same value at once, so combine them by intersection.
-    Some(conjuncts.into_iter().fold(base, |result, conjunct| {
-        algebra::intersect(result, conjunct, draft)
-    }))
+    Ok(Some(
+        conjuncts.into_iter().fold(base, |result, conjunct| {
+            algebra::intersect(result, conjunct, ctx)
+        }),
+    ))
+}
+
+/// A modeled length bound, or `None` (keep the document raw) when the count is not representable.
+fn length_bound(value: &Value) -> Option<BoundCardinality> {
+    let Value::Number(number) = value else {
+        unreachable!("meta-valid length bound is a number")
+    };
+    BoundCardinality::from_number(number)
 }
 
 /// The finite value set admitted by `const` and `enum` together: their conjunction.
@@ -122,7 +184,7 @@ fn admitted_values(
 pub(crate) fn restrict_values_to_types(
     values: Vec<CanonicalJson>,
     set: JsonTypeSet,
-    draft: Draft,
+    ctx: &CanonicalizationContext,
 ) -> Schema {
     let cover = SchemaKind::semantic_cover(set);
     let filtered = values
@@ -132,7 +194,9 @@ pub(crate) fn restrict_values_to_types(
     let value_set = canonicalize_value_set(filtered);
     // Draft 4 says `1.0` is not an integer, and value equality cannot tell `1` from `1.0` -
     // keep the type check.
-    if keeps_draft4_integer_guard(set, draft) && !matches!(value_set.kind(), SchemaKind::False) {
+    if keeps_draft4_integer_guard(set, ctx.draft())
+        && !matches!(value_set.kind(), SchemaKind::False)
+    {
         Schema::new(SchemaKind::TypedGroup {
             ty: JsonType::Integer,
             body: value_set,
@@ -215,6 +279,15 @@ pub(crate) fn canonicalize_value_set(mut members: Vec<CanonicalJson>) -> Schema 
             Schema::new(SchemaKind::Enum(members))
         }
     }
+}
+
+/// A string facet constrains only strings, so `{"minLength": 3}` becomes
+/// `anyOf: [<non-string types>, {"type": "string", "minLength": 3}]`.
+fn string_facet_schema(leaf: StringLeaf, ctx: &CanonicalizationContext) -> Schema {
+    let non_string = Schema::new(SchemaKind::MultiType(
+        JsonTypeSet::all().remove(JsonType::String),
+    ));
+    algebra::union(vec![non_string, algebra::string_leaf(leaf)], ctx)
 }
 
 /// Draft 4 says `1.0` is not an integer, so its `integer` check cannot fold into value equality.

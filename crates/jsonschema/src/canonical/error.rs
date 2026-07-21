@@ -8,6 +8,11 @@ pub enum CanonicalizationError {
     InvalidSchemaType(String),
     /// Meta-schema validation failed.
     ValidationError(ValidationError<'static>),
+    /// A `pattern` value is not a valid regular expression.
+    InvalidPattern {
+        /// The offending pattern.
+        pattern: String,
+    },
 }
 
 impl std::fmt::Display for CanonicalizationError {
@@ -17,6 +22,9 @@ impl std::fmt::Display for CanonicalizationError {
                 write!(f, "schema must be a boolean or object, got: {value}")
             }
             Self::ValidationError(error) => write!(f, "schema validation failed: {error}"),
+            Self::InvalidPattern { pattern } => {
+                write!(f, "invalid regular expression: {pattern:?}")
+            }
         }
     }
 }

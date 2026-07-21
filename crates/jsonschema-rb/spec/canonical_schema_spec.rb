@@ -6,7 +6,6 @@ DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
 
 RSpec.describe "JSONSchema.canonicalize" do
   [
-    { "type" => "string", "minLength" => 3 },
     { "allOf" => [{ "type" => "integer" }, { "minimum" => 0 }] },
     { "$defs" => { "a" => { "type" => "null" } }, "$ref" => "#/$defs/a" }
   ].each do |schema|
@@ -86,7 +85,8 @@ RSpec.describe "JSONSchema.canonicalize" do
     [{ "type" => %w[integer string] }, :multi_type],
     [{}, :true], # rubocop:disable Lint/BooleanSymbol
     [false, :false], # rubocop:disable Lint/BooleanSymbol
-    [{ "pattern" => "a" }, :raw]
+    [{ "type" => "string", "minLength" => 3 }, :string],
+    [{ "pattern" => "a" }, :any_of]
   ].each do |schema, kind|
     it "kind of #{schema.inspect} is #{kind.inspect}" do
       expect(JSONSchema.canonicalize(schema).kind).to eq(kind)

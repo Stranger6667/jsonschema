@@ -144,6 +144,7 @@ fn error_kind(error: &CanonicalizationError) -> &'static str {
     match error {
         CanonicalizationError::InvalidSchemaType(_) => "InvalidSchemaType",
         CanonicalizationError::ValidationError(_) => "ValidationError",
+        CanonicalizationError::InvalidPattern { .. } => "InvalidPattern",
         _ => "Unknown",
     }
 }
