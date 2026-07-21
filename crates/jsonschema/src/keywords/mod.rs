@@ -40,13 +40,17 @@ use core::fmt;
 use referencing::{Draft, Vocabulary};
 use serde_json::{Map, Value};
 
-use crate::{compiler, error, validator::Validate, SerdeJson};
+use crate::{compiler, error, validator::Validate, Json, SerdeJson};
 
-pub(crate) type CompilationResult<'a> = Result<BoxedValidator, error::ValidationError<'a>>;
+pub(crate) type CompilationResult<'a, F = SerdeJson> =
+    Result<BoxedValidator<F>, error::ValidationError<'a>>;
 pub(crate) type BoxedValidator<F = SerdeJson> = Box<dyn Validate<F>>;
 
-type CompileFunc<'a> =
-    fn(&'a compiler::Context, &'a Map<String, Value>, &'a Value) -> Option<CompilationResult<'a>>;
+type CompileFunc<'a, F> = fn(
+    &'a compiler::Context<F>,
+    &'a Map<String, Value>,
+    &'a Value,
+) -> Option<CompilationResult<'a, F>>;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Keyword {
@@ -254,10 +258,10 @@ pub(crate) fn keyword_priority(keyword: &Keyword) -> u8 {
     }
 }
 
-pub(crate) fn get_for_draft<'a>(
-    ctx: &compiler::Context<'a>,
+pub(crate) fn get_for_draft<'a, F: Json>(
+    ctx: &compiler::Context<'a, F>,
     keyword: &'a str,
-) -> Option<(Keyword, CompileFunc<'a>)> {
+) -> Option<(Keyword, CompileFunc<'a, F>)> {
     match (ctx.draft(), keyword) {
         // Keywords common to all drafts
         (_, "$ref") => Some((BuiltinKeyword::Ref.into(), ref_::compile_ref)),

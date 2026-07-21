@@ -14,7 +14,7 @@ use crate::{
     paths::{Location, LocationSegment},
     types::{JsonType, JsonTypeSet},
     validator::Validate,
-    ValidationError, Validator, ValidatorMap,
+    Json, SerdeJson, ValidationError, Validator, ValidatorMap,
 };
 use ahash::{AHashMap, AHashSet};
 use referencing::{
@@ -22,7 +22,7 @@ use referencing::{
     Vocabulary, VocabularySet,
 };
 use serde_json::{Map, Value};
-use std::{borrow::Cow, cell::RefCell, rc::Rc, sync::Arc};
+use std::{borrow::Cow, cell::RefCell, fmt, rc::Rc, sync::Arc};
 
 const DEFAULT_SCHEME: &str = "json-schema";
 pub(crate) const DEFAULT_BASE_URI: &str = "json-schema:///";
@@ -132,21 +132,46 @@ pub(crate) struct AliasCacheKey {
 }
 
 /// Shared caches reused across every `Context` derived from a schema root.
-#[derive(Debug, Clone)]
-struct SharedContextState {
+struct SharedContextState<F: Json = SerdeJson> {
     seen: SharedSet<Arc<Uri<String>>>,
-    location_nodes: SharedCache<LocationCacheKey, SchemaNode>,
-    alias_nodes: SharedCache<AliasCacheKey, SchemaNode>,
-    pending_nodes: SharedCache<LocationCacheKey, PendingSchemaNode>,
-    alias_placeholders: SharedCache<Arc<Uri<String>>, PendingSchemaNode>,
-    pending_property_validators: SharedCache<LocationCacheKey, PendingPropertyValidators>,
+    location_nodes: SharedCache<LocationCacheKey, SchemaNode<F>>,
+    alias_nodes: SharedCache<AliasCacheKey, SchemaNode<F>>,
+    pending_nodes: SharedCache<LocationCacheKey, PendingSchemaNode<F>>,
+    alias_placeholders: SharedCache<Arc<Uri<String>>, PendingSchemaNode<F>>,
+    pending_property_validators: SharedCache<LocationCacheKey, PendingPropertyValidators<F>>,
     pending_property_validators_by_schema:
-        SharedCache<PropertyValidatorsPendingKey, PendingPropertyValidators>,
-    pending_items_validators: SharedCache<LocationCacheKey, PendingItemsValidators>,
+        SharedCache<PropertyValidatorsPendingKey, PendingPropertyValidators<F>>,
+    pending_items_validators: SharedCache<LocationCacheKey, PendingItemsValidators<F>>,
     pending_items_validators_by_schema:
-        SharedCache<ItemsValidatorsPendingKey, PendingItemsValidators>,
+        SharedCache<ItemsValidatorsPendingKey, PendingItemsValidators<F>>,
     pattern_cache: SharedCache<Arc<str>, PatternCacheEntry>,
     uri_buffer: Rc<RefCell<String>>,
+}
+
+impl<F: Json> Clone for SharedContextState<F> {
+    fn clone(&self) -> Self {
+        Self {
+            seen: self.seen.clone(),
+            location_nodes: self.location_nodes.clone(),
+            alias_nodes: self.alias_nodes.clone(),
+            pending_nodes: self.pending_nodes.clone(),
+            alias_placeholders: self.alias_placeholders.clone(),
+            pending_property_validators: self.pending_property_validators.clone(),
+            pending_property_validators_by_schema: self
+                .pending_property_validators_by_schema
+                .clone(),
+            pending_items_validators: self.pending_items_validators.clone(),
+            pending_items_validators_by_schema: self.pending_items_validators_by_schema.clone(),
+            pattern_cache: self.pattern_cache.clone(),
+            uri_buffer: self.uri_buffer.clone(),
+        }
+    }
+}
+
+impl<F: Json> fmt::Debug for SharedContextState<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SharedContextState").finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -156,7 +181,7 @@ struct PatternCacheEntry {
     standard: Option<Arc<regex::Regex>>,
 }
 
-impl SharedContextState {
+impl<F: Json> SharedContextState<F> {
     /// `capacity` pre-sizes the per-location node cache to avoid rehashing during a build.
     fn new(capacity: usize) -> Self {
         Self {
@@ -176,8 +201,7 @@ impl SharedContextState {
 }
 
 /// Per-location view used while compiling schemas into validators.
-#[derive(Clone)]
-pub(crate) struct Context<'a> {
+pub(crate) struct Context<'a, F: Json = SerdeJson> {
     config: &'a dyn CompilationOptions,
     resolver: Resolver<'a>,
     vocabularies: VocabularySet,
@@ -199,10 +223,24 @@ pub(crate) struct Context<'a> {
     /// ```
     resource_base: Location,
     pub(crate) draft: Draft,
-    shared: SharedContextState,
+    shared: SharedContextState<F>,
 }
 
-impl<'a> Context<'a> {
+impl<F: Json> Clone for Context<'_, F> {
+    fn clone(&self) -> Self {
+        Context {
+            config: self.config,
+            resolver: self.resolver.clone(),
+            vocabularies: self.vocabularies.clone(),
+            location: self.location.clone(),
+            resource_base: self.resource_base.clone(),
+            draft: self.draft,
+            shared: self.shared.clone(),
+        }
+    }
+}
+
+impl<'a, F: Json> Context<'a, F> {
     pub(crate) fn new(
         config: &'a dyn CompilationOptions,
         resolver: Resolver<'a>,
@@ -232,7 +270,7 @@ impl<'a> Context<'a> {
     pub(crate) fn in_subresource(
         &'a self,
         resource: ResourceRef<'_>,
-    ) -> Result<Context<'a>, referencing::Error> {
+    ) -> Result<Context<'a, F>, referencing::Error> {
         let resolver = self.resolver.in_subresource(resource)?;
         Ok(Context {
             config: self.config,
@@ -243,6 +281,20 @@ impl<'a> Context<'a> {
             location: self.location.clone(),
             shared: self.shared.clone(),
         })
+    }
+    /// A context over a different JSON representation at the same location, with fresh caches.
+    /// Used by keywords that compile a subschema against `serde_json` regardless of `F` (e.g.
+    /// `propertyNames`, which validates materialized property-name strings).
+    pub(crate) fn to_representation<G: Json>(&self) -> Context<'a, G> {
+        Context {
+            config: self.config,
+            resolver: self.resolver.clone(),
+            vocabularies: self.vocabularies.clone(),
+            draft: self.draft,
+            resource_base: self.resource_base.clone(),
+            location: self.location.clone(),
+            shared: SharedContextState::new(0),
+        }
     }
     pub(crate) fn as_resource_ref<'r>(&'a self, contents: &'r Value) -> ResourceRef<'r> {
         self.draft.detect(contents).create_resource_ref(contents)
@@ -338,7 +390,7 @@ impl<'a> Context<'a> {
         draft: Draft,
         vocabularies: VocabularySet,
         resource_base: Location,
-    ) -> Context<'a> {
+    ) -> Context<'a, F> {
         Context {
             config: self.config,
             resolver,
@@ -417,33 +469,33 @@ impl<'a> Context<'a> {
             .resolve_uri(&self.resolver.base_uri().borrow(), reference)
     }
 
-    pub(crate) fn cached_location_node(&self, key: &LocationCacheKey) -> Option<SchemaNode> {
+    pub(crate) fn cached_location_node(&self, key: &LocationCacheKey) -> Option<SchemaNode<F>> {
         self.shared.location_nodes.borrow().get(key).cloned()
     }
 
-    pub(crate) fn cache_location_node(&self, key: LocationCacheKey, node: SchemaNode) {
+    pub(crate) fn cache_location_node(&self, key: LocationCacheKey, node: SchemaNode<F>) {
         self.shared.location_nodes.borrow_mut().insert(key, node);
     }
 
-    pub(crate) fn cached_alias_node(&self, key: &AliasCacheKey) -> Option<SchemaNode> {
+    pub(crate) fn cached_alias_node(&self, key: &AliasCacheKey) -> Option<SchemaNode<F>> {
         self.shared.alias_nodes.borrow().get(key).cloned()
     }
 
-    pub(crate) fn cache_alias_node(&self, key: AliasCacheKey, node: SchemaNode) {
+    pub(crate) fn cache_alias_node(&self, key: AliasCacheKey, node: SchemaNode<F>) {
         self.shared.alias_nodes.borrow_mut().insert(key, node);
     }
 
     pub(crate) fn cached_pending_location_node(
         &self,
         key: &LocationCacheKey,
-    ) -> Option<PendingSchemaNode> {
+    ) -> Option<PendingSchemaNode<F>> {
         self.shared.pending_nodes.borrow().get(key).cloned()
     }
 
     pub(crate) fn cache_pending_location_node(
         &self,
         key: LocationCacheKey,
-        node: PendingSchemaNode,
+        node: PendingSchemaNode<F>,
     ) {
         self.shared.pending_nodes.borrow_mut().insert(key, node);
     }
@@ -455,7 +507,7 @@ impl<'a> Context<'a> {
     pub(crate) fn get_pending_property_validators(
         &self,
         key: &LocationCacheKey,
-    ) -> Option<PendingPropertyValidators> {
+    ) -> Option<PendingPropertyValidators<F>> {
         self.shared
             .pending_property_validators
             .borrow()
@@ -466,7 +518,7 @@ impl<'a> Context<'a> {
     pub(crate) fn cache_pending_property_validators(
         &self,
         key: LocationCacheKey,
-        pending: PendingPropertyValidators,
+        pending: PendingPropertyValidators<F>,
     ) {
         self.shared
             .pending_property_validators
@@ -488,7 +540,7 @@ impl<'a> Context<'a> {
     pub(crate) fn get_pending_property_validators_for_schema(
         &self,
         schema: &Map<String, Value>,
-    ) -> Option<PendingPropertyValidators> {
+    ) -> Option<PendingPropertyValidators<F>> {
         let key = Self::property_schema_key(schema);
         self.shared
             .pending_property_validators_by_schema
@@ -500,7 +552,7 @@ impl<'a> Context<'a> {
     pub(crate) fn cache_pending_property_validators_for_schema(
         &self,
         schema: &Map<String, Value>,
-        pending: PendingPropertyValidators,
+        pending: PendingPropertyValidators<F>,
     ) {
         let key = Self::property_schema_key(schema);
         self.shared
@@ -527,7 +579,7 @@ impl<'a> Context<'a> {
     pub(crate) fn get_pending_items_validators_for_schema(
         &self,
         schema: &Map<String, Value>,
-    ) -> Option<PendingItemsValidators> {
+    ) -> Option<PendingItemsValidators<F>> {
         let key = Self::items_schema_key(schema);
         self.shared
             .pending_items_validators_by_schema
@@ -539,7 +591,7 @@ impl<'a> Context<'a> {
     pub(crate) fn get_pending_items_validators(
         &self,
         key: &LocationCacheKey,
-    ) -> Option<PendingItemsValidators> {
+    ) -> Option<PendingItemsValidators<F>> {
         self.shared
             .pending_items_validators
             .borrow()
@@ -550,7 +602,7 @@ impl<'a> Context<'a> {
     pub(crate) fn cache_pending_items_validators(
         &self,
         key: LocationCacheKey,
-        pending: PendingItemsValidators,
+        pending: PendingItemsValidators<F>,
     ) {
         self.shared
             .pending_items_validators
@@ -568,7 +620,7 @@ impl<'a> Context<'a> {
     pub(crate) fn cache_pending_items_validators_for_schema(
         &self,
         schema: &Map<String, Value>,
-        pending: PendingItemsValidators,
+        pending: PendingItemsValidators<F>,
     ) {
         let key = Self::items_schema_key(schema);
         self.shared
@@ -588,11 +640,15 @@ impl<'a> Context<'a> {
     pub(crate) fn cached_alias_placeholder(
         &self,
         alias: &Arc<Uri<String>>,
-    ) -> Option<PendingSchemaNode> {
+    ) -> Option<PendingSchemaNode<F>> {
         self.shared.alias_placeholders.borrow().get(alias).cloned()
     }
 
-    pub(crate) fn set_alias_placeholder(&self, alias: Arc<Uri<String>>, node: PendingSchemaNode) {
+    pub(crate) fn set_alias_placeholder(
+        &self,
+        alias: Arc<Uri<String>>,
+        node: PendingSchemaNode<F>,
+    ) {
         self.shared
             .alias_placeholders
             .borrow_mut()
@@ -682,7 +738,7 @@ impl<'a> Context<'a> {
     pub(crate) fn lookup_maybe_recursive(
         &self,
         reference: &str,
-    ) -> Result<Option<Box<dyn Validate>>, ValidationError<'static>> {
+    ) -> Result<Option<Box<dyn Validate<F>>>, ValidationError<'static>> {
         if self.is_circular_reference(reference)? {
             let uri = self
                 .resolve_reference_uri(reference)
@@ -850,19 +906,19 @@ fn estimate_subschema_count(schema: &Value) -> usize {
     }
 }
 
-fn build_validator_with_registry<R>(
+fn compile_root_with_registry<R, F: Json>(
     config: &ValidationOptions<'_, R>,
     schema: &Value,
     draft: Draft,
     resource: ResourceRef<'_>,
     registry: &Registry<'_>,
-) -> Result<Validator, ValidationError<'static>> {
+) -> Result<SchemaNode<F>, ValidationError<'static>> {
     let requested_base_uri = resolve_base_uri(config.base_uri.as_ref(), resource.id())?;
     let base_uri = normalize_base_uri(registry, &requested_base_uri);
     let vocabularies = registry.find_vocabularies(draft, schema);
     let resolver = registry.resolver(base_uri);
     let capacity = estimate_subschema_count(schema);
-    let ctx = Context::new(
+    let ctx: Context<'_, F> = Context::new(
         config,
         resolver,
         vocabularies,
@@ -870,9 +926,21 @@ fn build_validator_with_registry<R>(
         Location::new(),
         capacity,
     );
-    let root = compile(&ctx, resource).map_err(ValidationError::to_owned)?;
-    let draft = config.draft();
-    Ok(Validator { root, draft })
+    compile(&ctx, resource).map_err(ValidationError::to_owned)
+}
+fn build_validator_with_registry<R>(
+    config: &ValidationOptions<'_, R>,
+    schema: &Value,
+    draft: Draft,
+    resource: ResourceRef<'_>,
+    registry: &Registry<'_>,
+) -> Result<Validator, ValidationError<'static>> {
+    let root =
+        compile_root_with_registry::<_, SerdeJson>(config, schema, draft, resource, registry)?;
+    Ok(Validator {
+        root,
+        draft: config.draft(),
+    })
 }
 
 pub(crate) fn normalize_base_uri(registry: &Registry<'_>, base_uri: &Uri<String>) -> Uri<String> {
@@ -929,28 +997,28 @@ pub(crate) fn validate_schema(
 }
 
 /// Compile a JSON Schema instance to a tree of nodes.
-pub(crate) fn compile<'a>(
-    ctx: &Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &Context<F>,
     resource: ResourceRef<'a>,
-) -> Result<SchemaNode, ValidationError<'a>> {
+) -> Result<SchemaNode<F>, ValidationError<'a>> {
     let ctx = ctx.in_subresource(resource)?;
     compile_with_internal(&ctx, resource, None)
 }
 
-pub(crate) fn compile_with_alias<'a>(
-    ctx: &Context,
+pub(crate) fn compile_with_alias<'a, F: Json>(
+    ctx: &Context<F>,
     resource: ResourceRef<'a>,
     alias: Arc<Uri<String>>,
-) -> Result<SchemaNode, ValidationError<'a>> {
+) -> Result<SchemaNode<F>, ValidationError<'a>> {
     compile_with_internal(ctx, resource, Some(alias))
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn compile_with_internal<'a>(
-    ctx: &Context,
+fn compile_with_internal<'a, F: Json>(
+    ctx: &Context<F>,
     resource: ResourceRef<'a>,
     alias: Option<Arc<Uri<String>>>,
-) -> Result<SchemaNode, ValidationError<'a>> {
+) -> Result<SchemaNode<F>, ValidationError<'a>> {
     // Check if this alias already has a cached node
     if let Some(alias_key) = alias.as_ref() {
         let scoped_key = ctx.alias_cache_key(Arc::clone(alias_key));
@@ -1002,10 +1070,10 @@ fn compile_with_internal<'a>(
     }
 }
 
-fn compile_without_cache<'a>(
-    ctx: &Context,
+fn compile_without_cache<'a, F: Json>(
+    ctx: &Context<F>,
     resource: ResourceRef<'a>,
-) -> Result<SchemaNode, ValidationError<'a>> {
+) -> Result<SchemaNode<F>, ValidationError<'a>> {
     match resource.contents() {
         Value::Bool(value) => match value {
             true => Ok(SchemaNode::from_boolean(ctx, None)),
@@ -1057,7 +1125,7 @@ fn compile_without_cache<'a>(
                         path,
                         keyword.clone(),
                     );
-                    let validator: BoxedValidator = Box::new(validator);
+                    let validator: BoxedValidator<F> = Box::new(validator);
                     validators.push((Keyword::custom(keyword), validator));
                 } else if let Some((keyword, validator)) = keywords::get_for_draft(ctx, keyword)
                     .and_then(|(keyword, f)| f(ctx, schema, value).map(|v| (keyword, v)))

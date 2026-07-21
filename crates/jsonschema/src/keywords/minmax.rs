@@ -301,24 +301,24 @@ pub(crate) mod bigint_validators {
 }
 
 #[inline]
-fn create_validator<T, V>(
-    ctx: &compiler::Context,
+fn create_validator<T, V, F: Json>(
+    ctx: &compiler::Context<F>,
     keyword: &str,
     limit: T,
     schema: &Value,
-) -> CompilationResult<'static>
+) -> CompilationResult<'static, F>
 where
-    V: From<(T, Value, Location)> + Validate + 'static,
+    V: From<(T, Value, Location)> + Validate<F> + 'static,
 {
     let location = ctx.location().join(keyword);
     Ok(Box::new(V::from((limit, schema.clone(), location))))
 }
 
-fn number_type_error<'a>(
-    ctx: &compiler::Context,
+fn number_type_error<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     keyword: &str,
     schema: &'a Value,
-) -> CompilationResult<'a> {
+) -> CompilationResult<'a, F> {
     let location = ctx.location().join(keyword);
     Err(ValidationError::single_type_error(
         location.clone(),
@@ -332,11 +332,11 @@ fn number_type_error<'a>(
 macro_rules! create_numeric_validator {
     ($validator_type:ident, $ctx:expr, $keyword:expr, $limit:expr, $schema:expr) => {
         if let Some(limit) = $limit.as_u64() {
-            Some(create_validator::<_, $validator_type<u64>>(
+            Some(create_validator::<_, $validator_type<u64>, _>(
                 $ctx, $keyword, limit, $schema,
             ))
         } else if let Some(limit) = $limit.as_i64() {
-            Some(create_validator::<_, $validator_type<i64>>(
+            Some(create_validator::<_, $validator_type<i64>, _>(
                 $ctx, $keyword, limit, $schema,
             ))
         } else {
@@ -349,7 +349,7 @@ macro_rules! create_numeric_validator {
             // Handle numbers that don't fit in f64 (e.g., 1e10000)
             // These are extremely large scientific notation numbers
             if let Some(limit_f64) = $limit.as_f64() {
-                Some(create_validator::<_, $validator_type<f64>>(
+                Some(create_validator::<_, $validator_type<f64>, _>(
                     $ctx, $keyword, limit_f64, $schema,
                 ))
             } else {
@@ -364,7 +364,7 @@ macro_rules! create_numeric_validator {
                     } else {
                         f64::INFINITY
                     };
-                    Some(create_validator::<_, $validator_type<f64>>(
+                    Some(create_validator::<_, $validator_type<f64>, _>(
                         $ctx,
                         $keyword,
                         infinity_limit,
@@ -381,12 +381,12 @@ macro_rules! create_numeric_validator {
 }
 
 #[cfg(feature = "arbitrary-precision")]
-fn create_bigint_validator(
-    ctx: &compiler::Context,
+fn create_bigint_validator<F: Json>(
+    ctx: &compiler::Context<F>,
     keyword: &str,
     limit: &serde_json::Number,
     schema: &Value,
-) -> Option<CompilationResult<'static>> {
+) -> Option<CompilationResult<'static, F>> {
     use bigint_validators::{
         BigFracExclusiveMaximum, BigFracExclusiveMinimum, BigFracMaximum, BigFracMinimum,
         BigIntExclusiveMaximum, BigIntExclusiveMinimum, BigIntMaximum, BigIntMinimum,
@@ -395,7 +395,7 @@ fn create_bigint_validator(
     // Try BigInt first for large integers
     if let Some(bigint_limit) = numeric::bignum::try_parse_bigint(limit) {
         let location = ctx.location().join(keyword);
-        let validator: Box<dyn Validate> = match keyword {
+        let validator: Box<dyn Validate<F>> = match keyword {
             "minimum" => Box::new(BigIntMinimum::new(bigint_limit, schema.clone(), location)),
             "maximum" => Box::new(BigIntMaximum::new(bigint_limit, schema.clone(), location)),
             "exclusiveMinimum" => Box::new(BigIntExclusiveMinimum::new(
@@ -416,7 +416,7 @@ fn create_bigint_validator(
     // If not a BigInt, try BigFraction for exact decimal precision
     if let Some(bigfrac_limit) = numeric::bignum::try_parse_bigfraction(limit) {
         let location = ctx.location().join(keyword);
-        let validator: Box<dyn Validate> = match keyword {
+        let validator: Box<dyn Validate<F>> = match keyword {
             "minimum" => Box::new(BigFracMinimum::new(bigfrac_limit, schema.clone(), location)),
             "maximum" => Box::new(BigFracMaximum::new(bigfrac_limit, schema.clone(), location)),
             "exclusiveMinimum" => Box::new(BigFracExclusiveMinimum::new(
@@ -438,11 +438,11 @@ fn create_bigint_validator(
 }
 
 #[inline]
-pub(crate) fn compile_minimum<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_minimum<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     match schema {
         Value::Number(limit) => create_numeric_validator!(Minimum, ctx, "minimum", limit, schema),
         _ => Some(number_type_error(ctx, "minimum", schema)),
@@ -450,11 +450,11 @@ pub(crate) fn compile_minimum<'a>(
 }
 
 #[inline]
-pub(crate) fn compile_maximum<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_maximum<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     match schema {
         Value::Number(limit) => create_numeric_validator!(Maximum, ctx, "maximum", limit, schema),
         _ => Some(number_type_error(ctx, "maximum", schema)),
@@ -462,11 +462,11 @@ pub(crate) fn compile_maximum<'a>(
 }
 
 #[inline]
-pub(crate) fn compile_exclusive_minimum<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_exclusive_minimum<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     match schema {
         Value::Number(limit) => {
             create_numeric_validator!(ExclusiveMinimum, ctx, "exclusiveMinimum", limit, schema)
@@ -476,11 +476,11 @@ pub(crate) fn compile_exclusive_minimum<'a>(
 }
 
 #[inline]
-pub(crate) fn compile_exclusive_maximum<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_exclusive_maximum<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     match schema {
         Value::Number(limit) => {
             create_numeric_validator!(ExclusiveMaximum, ctx, "exclusiveMaximum", limit, schema)

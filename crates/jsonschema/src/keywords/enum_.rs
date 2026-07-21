@@ -24,11 +24,11 @@ pub(crate) struct EnumValidator {
 
 impl EnumValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
+    pub(crate) fn compile<'a, F: Json>(
         schema: &'a Value,
         items: &'a [Value],
         location: Location,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         let mut types = JsonTypeSet::empty();
         for item in items {
             types = types.insert(JsonType::from(item));
@@ -84,11 +84,11 @@ pub(crate) struct SingleValueEnumValidator {
 
 impl SingleValueEnumValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
+    pub(crate) fn compile<'a, F: Json>(
         schema: &'a Value,
         value: &'a Value,
         location: Location,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         Ok(Box::new(SingleValueEnumValidator {
             options: schema.clone(),
             value: value.clone(),
@@ -132,11 +132,11 @@ pub(crate) struct SmallStringEnumValidator {
 
 impl SmallStringEnumValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
+    pub(crate) fn compile<'a, F: Json>(
         schema: &'a Value,
         items: &'a [Value],
         location: Location,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         let strings = items
             .iter()
             .map(|v| v.as_str().expect("all items are strings").into())
@@ -188,11 +188,11 @@ pub(crate) struct BigStringEnumValidator {
 
 impl BigStringEnumValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
+    pub(crate) fn compile<'a, F: Json>(
         schema: &'a Value,
         items: &'a [Value],
         location: Location,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         let strings = items
             .iter()
             .map(|v| v.as_str().expect("all items are strings").into())
@@ -236,11 +236,11 @@ impl<F: Json> Validate<F> for BigStringEnumValidator {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     if let Value::Array(items) = schema {
         let location = ctx.location().join("enum");
         if items.len() == 1 {

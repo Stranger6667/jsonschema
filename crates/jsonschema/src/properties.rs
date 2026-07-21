@@ -44,8 +44,10 @@ impl<R: crate::regex::RegexEngine> crate::regex::RegexEngine for CompiledPattern
     }
 }
 
-pub(crate) type FancyRegexValidators = Vec<(CompiledPattern<fancy_regex::Regex>, SchemaNode)>;
-pub(crate) type RegexValidators = Vec<(CompiledPattern<regex::Regex>, SchemaNode)>;
+pub(crate) type FancyRegexValidators<F = SerdeJson> =
+    Vec<(CompiledPattern<fancy_regex::Regex>, SchemaNode<F>)>;
+pub(crate) type RegexValidators<F = SerdeJson> =
+    Vec<(CompiledPattern<regex::Regex>, SchemaNode<F>)>;
 
 /// A value that can look up property validators by name.
 pub(crate) trait PropertiesValidatorsMap<F: Json = SerdeJson>: Send + Sync {
@@ -93,10 +95,10 @@ impl<F: Json> PropertiesValidatorsMap<F> for BigValidatorsMap<F> {
     }
 }
 
-pub(crate) fn compile_small_map<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_small_map<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     map: &'a Map<String, Value>,
-) -> Result<SmallValidatorsMap, ValidationError<'a>> {
+) -> Result<SmallValidatorsMap<F>, ValidationError<'a>> {
     let mut properties = Vec::with_capacity(map.len());
     let kctx = ctx.new_at_location("properties");
     for (key, subschema) in map {
@@ -109,10 +111,10 @@ pub(crate) fn compile_small_map<'a>(
     Ok(properties)
 }
 
-pub(crate) fn compile_big_map<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_big_map<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     map: &'a Map<String, Value>,
-) -> Result<BigValidatorsMap, ValidationError<'a>> {
+) -> Result<BigValidatorsMap<F>, ValidationError<'a>> {
     let mut properties = AHashMap::with_capacity(map.len());
     let kctx = ctx.new_at_location("properties");
     for (key, subschema) in map {
@@ -152,10 +154,10 @@ where
 /// Create a vector of pattern-validators pairs.
 /// Uses prefix optimization when patterns are simple `^prefix` patterns.
 #[inline]
-pub(crate) fn compile_fancy_regex_patterns<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_fancy_regex_patterns<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     obj: &'a Map<String, Value>,
-) -> Result<FancyRegexValidators, ValidationError<'a>> {
+) -> Result<FancyRegexValidators<F>, ValidationError<'a>> {
     let kctx = ctx.new_at_location("patternProperties");
     let mut compiled_patterns = Vec::with_capacity(obj.len());
     for (pattern, subschema) in obj {
@@ -189,10 +191,10 @@ pub(crate) fn compile_fancy_regex_patterns<'a>(
 /// Create a vector of pattern-validators pairs using standard regex.
 /// Uses literal optimizations when patterns are simple prefix or exact-match patterns.
 #[inline]
-pub(crate) fn compile_regex_patterns<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_regex_patterns<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     obj: &'a Map<String, Value>,
-) -> Result<RegexValidators, ValidationError<'a>> {
+) -> Result<RegexValidators<F>, ValidationError<'a>> {
     let kctx = ctx.new_at_location("patternProperties");
     let mut compiled_patterns = Vec::with_capacity(obj.len());
     for (pattern, subschema) in obj {
@@ -227,11 +229,11 @@ macro_rules! compile_dynamic_prop_map_validator {
     ($validator:tt, $properties:ident, $ctx:expr, $( $arg:expr ),* $(,)*) => {{
         if let Value::Object(map) = $properties {
             if map.len() < HASHMAP_THRESHOLD {
-                Some($validator::<SmallValidatorsMap>::compile(
+                Some($validator::<SmallValidatorsMap<F>>::compile(
                     map, $ctx, $($arg, )*
                 ))
             } else {
-                Some($validator::<BigValidatorsMap>::compile(
+                Some($validator::<BigValidatorsMap<F>>::compile(
                     map, $ctx, $($arg, )*
                 ))
             }

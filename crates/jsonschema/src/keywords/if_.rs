@@ -16,11 +16,11 @@ pub(crate) struct IfThenValidator<F: Json> {
 
 impl IfThenValidator<SerdeJson> {
     #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
         schema: &'a Value,
         then_schema: &'a Value,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         Ok(Box::new(IfThenValidator {
             schema: {
                 let ctx = ctx.new_at_location("if");
@@ -104,11 +104,11 @@ pub(crate) struct IfElseValidator<F: Json> {
 
 impl IfElseValidator<SerdeJson> {
     #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
         schema: &'a Value,
         else_schema: &'a Value,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         Ok(Box::new(IfElseValidator {
             schema: {
                 let ctx = ctx.new_at_location("if");
@@ -193,12 +193,12 @@ pub(crate) struct IfThenElseValidator<F: Json> {
 
 impl IfThenElseValidator<SerdeJson> {
     #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
         schema: &'a Value,
         then_schema: &'a Value,
         else_schema: &'a Value,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         Ok(Box::new(IfThenElseValidator {
             schema: {
                 let ctx = ctx.new_at_location("if");
@@ -287,11 +287,11 @@ impl<F: Json> Validate<F> for IfThenElseValidator<F> {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     parent: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     let then = parent.get("then");
     let else_ = parent.get("else");
     match (then, else_) {

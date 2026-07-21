@@ -209,11 +209,11 @@ impl<F: Json, R: RegexEngine> Validate<F> for SingleValuePatternPropertiesValida
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     parent: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     if matches!(
         parent.get("additionalProperties"),
         Some(Value::Bool(false) | Value::Object(_))
@@ -249,7 +249,7 @@ pub(crate) fn compile<'a>(
             .map(|patterns| {
                 build_validator_from_entries(patterns, |regex, node| {
                     Box::new(SingleValuePatternPropertiesValidator { regex, node })
-                        as Box<dyn Validate>
+                        as Box<dyn Validate<F>>
                 })
             })
         }
@@ -261,7 +261,7 @@ pub(crate) fn compile<'a>(
             .map(|patterns| {
                 build_validator_from_entries(patterns, |regex, node| {
                     Box::new(SingleValuePatternPropertiesValidator { regex, node })
-                        as Box<dyn Validate>
+                        as Box<dyn Validate<F>>
                 })
             })
         }
@@ -271,10 +271,10 @@ pub(crate) fn compile<'a>(
 
 /// Try to compile all patterns as literal matches (prefix or exact).
 /// Returns `Some` if ALL patterns are optimizable, `None` if any requires a full regex.
-fn try_compile_as_literals<'a>(
-    ctx: &compiler::Context,
+fn try_compile_as_literals<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     map: &'a Map<String, Value>,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     let mut entries = Vec::with_capacity(map.len());
     for (pattern, subschema) in map {
         let pctx = ctx.new_at_location(pattern.as_str());
@@ -293,11 +293,14 @@ fn try_compile_as_literals<'a>(
         entries.push((Arc::new(matcher), node));
     }
     Some(Ok(build_validator_from_entries(entries, |regex, node| {
-        Box::new(SingleValuePatternPropertiesValidator { regex, node }) as Box<dyn Validate>
+        Box::new(SingleValuePatternPropertiesValidator { regex, node }) as Box<dyn Validate<F>>
     })))
 }
 
-fn invalid_regex<'a>(ctx: &compiler::Context, schema: &'a Value) -> ValidationError<'a> {
+fn invalid_regex<'a, F: Json>(
+    ctx: &compiler::Context<F>,
+    schema: &'a Value,
+) -> ValidationError<'a> {
     ValidationError::format(
         ctx.location().clone(),
         LazyEvaluationPath::SameAsSchemaPath,
@@ -307,14 +310,16 @@ fn invalid_regex<'a>(ctx: &compiler::Context, schema: &'a Value) -> ValidationEr
     )
 }
 
+type CompiledPatterns<R, F> = Vec<(Arc<R>, SchemaNode<F>)>;
+
 /// Compile every `(pattern, subschema)` pair into `(regex, node)` tuples.
-fn compile_pattern_entries<'a, R, F>(
-    ctx: &compiler::Context,
+fn compile_pattern_entries<'a, R, C, F: Json>(
+    ctx: &compiler::Context<F>,
     map: &'a Map<String, Value>,
-    mut compile_regex: F,
-) -> Result<Vec<(Arc<R>, SchemaNode)>, ValidationError<'a>>
+    mut compile_regex: C,
+) -> Result<CompiledPatterns<R, F>, ValidationError<'a>>
 where
-    F: FnMut(&compiler::Context, &str, &'a Value) -> Result<Arc<R>, ValidationError<'a>>,
+    C: FnMut(&compiler::Context<F>, &str, &'a Value) -> Result<Arc<R>, ValidationError<'a>>,
 {
     let mut patterns = Vec::with_capacity(map.len());
     for (pattern, subschema) in map {
@@ -327,10 +332,10 @@ where
 }
 
 /// Pick the optimal validator representation for the compiled pattern entries.
-fn build_validator_from_entries<R>(
-    mut entries: Vec<(Arc<R>, SchemaNode)>,
-    single_factory: impl FnOnce(Arc<R>, SchemaNode) -> Box<dyn Validate>,
-) -> Box<dyn Validate>
+fn build_validator_from_entries<R, F: Json>(
+    mut entries: Vec<(Arc<R>, SchemaNode<F>)>,
+    single_factory: impl FnOnce(Arc<R>, SchemaNode<F>) -> Box<dyn Validate<F>>,
+) -> Box<dyn Validate<F>>
 where
     R: RegexEngine + 'static,
 {

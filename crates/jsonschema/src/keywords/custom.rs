@@ -2,7 +2,7 @@ use crate::{
     error::ErrorIterator,
     paths::{LazyLocation, Location, RefTracker},
     validator::{Validate, ValidationContext},
-    Json, SerdeJson, ValidationError,
+    Json, JsonNode, ValidationError,
 };
 use serde_json::{Map, Value};
 
@@ -22,39 +22,41 @@ impl CustomKeyword {
     }
 }
 
-// Custom keywords consume `&Value`; the adapter stays serde_json-only.
-impl Validate for CustomKeyword {
+// Custom keywords consume `&Value`; foreign representations are materialized per call.
+impl<F: Json> Validate<F> for CustomKeyword {
     fn validate<'i>(
         &self,
-        instance: &<SerdeJson as Json>::Node<'i>,
+        instance: &F::Node<'i>,
         instance_path: &LazyLocation,
         _tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        self.inner
-            .validate(instance)
-            .map_err(|err| err.with_context(instance, instance_path, &self.location, &self.keyword))
+        let value = instance.to_value();
+        self.inner.validate(&value).map_err(|err| {
+            err.with_context(&value, instance_path, &self.location, &self.keyword)
+                .to_owned()
+        })
     }
 
-    fn is_valid(
-        &self,
-        instance: &<SerdeJson as Json>::Node<'_>,
-        _ctx: &mut ValidationContext,
-    ) -> bool {
-        self.inner.is_valid(instance)
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        self.inner.is_valid(&instance.to_value())
     }
 
     fn iter_errors<'i>(
         &self,
-        instance: &<SerdeJson as Json>::Node<'i>,
+        instance: &F::Node<'i>,
         instance_path: &LazyLocation,
         _tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
+        let value = instance.to_value();
         let errors: Vec<_> = self
             .inner
-            .iter_errors(instance)
-            .map(|err| err.with_context(instance, instance_path, &self.location, &self.keyword))
+            .iter_errors(&value)
+            .map(|err| {
+                err.with_context(&value, instance_path, &self.location, &self.keyword)
+                    .to_owned()
+            })
             .collect();
         ErrorIterator::from_iterator(errors.into_iter())
     }

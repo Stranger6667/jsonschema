@@ -39,17 +39,17 @@ pub(crate) struct SmallPropertiesWithRequired2Validator<F: Json = SerdeJson> {
 
 impl SmallPropertiesValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
         map: &'a Map<String, Value>,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         let ctx = ctx.new_at_location("properties");
         let mut properties = Vec::with_capacity(map.len());
         for (key, subschema) in map {
             let ctx = ctx.new_at_location(key.as_str());
             properties.push((
                 key.clone(),
-                SerdeJson::prepare_key(key),
+                F::prepare_key(key),
                 compiler::compile(&ctx, ctx.as_resource_ref(subschema))?,
             ));
         }
@@ -59,10 +59,10 @@ impl SmallPropertiesValidator {
 
 impl BigPropertiesValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
         map: &'a Map<String, Value>,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         let ctx = ctx.new_at_location("properties");
         let mut properties = AHashMap::with_capacity(map.len());
         for (key, subschema) in map {
@@ -78,19 +78,19 @@ impl BigPropertiesValidator {
 
 impl SmallPropertiesWithRequired2Validator {
     #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
         map: &'a Map<String, Value>,
         first: String,
         second: String,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         let pctx = ctx.new_at_location("properties");
         let mut properties = Vec::with_capacity(map.len());
         for (key, subschema) in map {
             let kctx = pctx.new_at_location(key.as_str());
             properties.push((
                 key.clone(),
-                SerdeJson::prepare_key(key),
+                F::prepare_key(key),
                 compiler::compile(&kctx, kctx.as_resource_ref(subschema))?,
             ));
         }
@@ -98,8 +98,8 @@ impl SmallPropertiesWithRequired2Validator {
         let required_absolute_location = ctx.absolute_location(&required_location);
         Ok(Box::new(SmallPropertiesWithRequired2Validator {
             properties,
-            first_key: SerdeJson::prepare_key(&first),
-            second_key: SerdeJson::prepare_key(&second),
+            first_key: F::prepare_key(&first),
+            second_key: F::prepare_key(&second),
             first,
             second,
             required_location,
@@ -462,11 +462,11 @@ fn extract_required2(parent: &Map<String, Value>) -> Option<(String, String)> {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     parent: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     match parent.get("additionalProperties") {
         // This type of `additionalProperties` validator handles `properties` logic
         Some(Value::Bool(false) | Value::Object(_)) => None,

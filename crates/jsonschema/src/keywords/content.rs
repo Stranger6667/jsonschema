@@ -23,11 +23,11 @@ pub(crate) struct ContentMediaTypeValidator {
 
 impl ContentMediaTypeValidator {
     #[inline]
-    pub(crate) fn compile(
+    pub(crate) fn compile<F: Json>(
         media_type: &str,
         func: ContentMediaTypeCheckType,
         location: Location,
-    ) -> CompilationResult<'_> {
+    ) -> CompilationResult<'_, F> {
         Ok(Box::new(ContentMediaTypeValidator {
             media_type: media_type.to_string(),
             func,
@@ -81,11 +81,11 @@ pub(crate) struct ContentEncodingValidator {
 
 impl ContentEncodingValidator {
     #[inline]
-    pub(crate) fn compile(
+    pub(crate) fn compile<F: Json>(
         encoding: &str,
         func: ContentEncodingCheckType,
         location: Location,
-    ) -> CompilationResult<'_> {
+    ) -> CompilationResult<'_, F> {
         Ok(Box::new(ContentEncodingValidator {
             encoding: encoding.to_string(),
             func,
@@ -140,13 +140,13 @@ pub(crate) struct ContentMediaTypeAndEncodingValidator {
 
 impl ContentMediaTypeAndEncodingValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
+    pub(crate) fn compile<'a, F: Json>(
         media_type: &'a str,
         encoding: &'a str,
         func: ContentMediaTypeCheckType,
         converter: ContentEncodingConverterType,
         location: Location,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         Ok(Box::new(ContentMediaTypeAndEncodingValidator {
             media_type: media_type.to_string(),
             encoding: encoding.to_string(),
@@ -227,11 +227,11 @@ impl<F: Json> Validate<F> for ContentMediaTypeAndEncodingValidator {
 }
 
 #[inline]
-pub(crate) fn compile_media_type<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_media_type<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     schema: &'a Map<String, Value>,
     subschema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     if let Value::String(media_type) = subschema {
         let func = ctx.get_content_media_type_check(media_type.as_str())?;
         if let Some(content_encoding) = schema.get("contentEncoding") {
@@ -274,11 +274,11 @@ pub(crate) fn compile_media_type<'a>(
 }
 
 #[inline]
-pub(crate) fn compile_content_encoding<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_content_encoding<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     schema: &'a Map<String, Value>,
     subschema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     // Performed during media type validation
     if schema.get("contentMediaType").is_some() {
         // TODO. what if media type is not supported?
@@ -311,11 +311,11 @@ pub(crate) struct ContentMediaTypeAnnotationValidator {
 }
 
 impl ContentMediaTypeAnnotationValidator {
-    pub(crate) fn compile<'a>(
-        _ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        _ctx: &compiler::Context<F>,
         _schema: &'a Map<String, Value>,
         subschema: &'a Value,
-    ) -> Option<CompilationResult<'a>> {
+    ) -> Option<CompilationResult<'a, F>> {
         if let Value::String(_) = subschema {
             Some(Ok(Box::new(ContentMediaTypeAnnotationValidator {
                 annotation: Arc::new(subschema.clone()),
@@ -358,11 +358,11 @@ impl<F: Json> Validate<F> for ContentMediaTypeAnnotationValidator {
     }
 }
 
-pub(crate) fn compile_media_type_annotation<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_media_type_annotation<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     schema: &'a Map<String, Value>,
     subschema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     ContentMediaTypeAnnotationValidator::compile(ctx, schema, subschema)
 }
 
@@ -374,11 +374,11 @@ pub(crate) struct ContentEncodingAnnotationValidator {
 }
 
 impl ContentEncodingAnnotationValidator {
-    pub(crate) fn compile<'a>(
-        _ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        _ctx: &compiler::Context<F>,
         _schema: &'a Map<String, Value>,
         subschema: &'a Value,
-    ) -> Option<CompilationResult<'a>> {
+    ) -> Option<CompilationResult<'a, F>> {
         if let Value::String(_) = subschema {
             Some(Ok(Box::new(ContentEncodingAnnotationValidator {
                 annotation: Arc::new(subschema.clone()),
@@ -421,11 +421,11 @@ impl<F: Json> Validate<F> for ContentEncodingAnnotationValidator {
     }
 }
 
-pub(crate) fn compile_content_encoding_annotation<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_content_encoding_annotation<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     schema: &'a Map<String, Value>,
     subschema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     ContentEncodingAnnotationValidator::compile(ctx, schema, subschema)
 }
 
@@ -438,11 +438,11 @@ pub(crate) struct ContentSchemaAnnotationValidator {
 }
 
 impl ContentSchemaAnnotationValidator {
-    pub(crate) fn compile<'a>(
-        _ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        _ctx: &compiler::Context<F>,
         schema: &'a Map<String, Value>,
         subschema: &'a Value,
-    ) -> Option<CompilationResult<'a>> {
+    ) -> Option<CompilationResult<'a, F>> {
         // contentSchema only annotates when contentMediaType is also present
         if schema.contains_key("contentMediaType") {
             Some(Ok(Box::new(ContentSchemaAnnotationValidator {
@@ -486,11 +486,11 @@ impl<F: Json> Validate<F> for ContentSchemaAnnotationValidator {
     }
 }
 
-pub(crate) fn compile_content_schema_annotation<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_content_schema_annotation<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     schema: &'a Map<String, Value>,
     subschema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     ContentSchemaAnnotationValidator::compile(ctx, schema, subschema)
 }
 

@@ -236,11 +236,11 @@ impl<R: RegexEngine, F: Json> Validate<F> for PatternValidator<R> {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     if let Value::String(item) = schema {
         // Try literal optimizations before compiling a full regex.
         match analyze_pattern(item) {
@@ -308,7 +308,10 @@ pub(crate) fn compile<'a>(
     }
 }
 
-fn invalid_regex<'a>(ctx: &compiler::Context, schema: &'a Value) -> ValidationError<'a> {
+fn invalid_regex<'a, F: Json>(
+    ctx: &compiler::Context<F>,
+    schema: &'a Value,
+) -> ValidationError<'a> {
     ValidationError::format(
         ctx.location().join("pattern"),
         LazyEvaluationPath::SameAsSchemaPath,

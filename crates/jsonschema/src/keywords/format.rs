@@ -1053,7 +1053,7 @@ macro_rules! format_validators {
             }
 
             impl $validator {
-                pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
+                pub(crate) fn compile<'a, F: Json>(ctx: &compiler::Context<F>) -> CompilationResult<'a, F> {
                     let location = ctx.location().join("format");
                     let annotation = Arc::new(Value::String($format.to_owned()));
                     Ok(Box::new($validator { location, annotation }))
@@ -1138,7 +1138,7 @@ struct RegexValidator {
 }
 
 impl RegexValidator {
-    pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(ctx: &compiler::Context<F>) -> CompilationResult<'a, F> {
         let location = ctx.location().join("format");
         let annotation = Arc::new(Value::String("regex".to_owned()));
         Ok(Box::new(RegexValidator {
@@ -1187,7 +1187,7 @@ struct EmailValidator {
 }
 
 impl EmailValidator {
-    pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(ctx: &compiler::Context<F>) -> CompilationResult<'a, F> {
         let location = ctx.location().join("format");
         let annotation = Arc::new(Value::String("email".to_owned()));
         let email_options = ctx.config().email_options().copied();
@@ -1238,7 +1238,7 @@ struct IdnEmailValidator {
 }
 
 impl IdnEmailValidator {
-    pub(crate) fn compile<'a>(ctx: &compiler::Context) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(ctx: &compiler::Context<F>) -> CompilationResult<'a, F> {
         let location = ctx.location().join("format");
         let annotation = Arc::new(Value::String("idn-email".to_owned()));
         let email_options = ctx.config().email_options().copied();
@@ -1288,11 +1288,11 @@ struct CustomFormatValidator {
     check: Arc<dyn Format>,
 }
 impl CustomFormatValidator {
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
         format_name: String,
         check: Arc<dyn Format>,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         let location = ctx.location().join("format");
         let annotation = Arc::new(Value::String(format_name.clone()));
         Ok(Box::new(CustomFormatValidator {
@@ -1453,11 +1453,11 @@ fn builtin_format(draft: Draft, format: &str) -> Option<BuiltinFormat> {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     if let Value::String(format) = schema {
         if ctx.validates_formats_by_default() {
             // Format validation is enabled: each specific validator carries its own annotation

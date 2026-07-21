@@ -333,10 +333,10 @@ impl<F: Json> ConditionalValidators<F> {
 /// Recursively builds the `PropertyValidators` tree by examining all keywords that
 /// can evaluate properties. Handles circular references via pending nodes cached
 /// by location and schema pointer.
-fn compile_property_validators<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_property_validators<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<PropertyValidators, ValidationError<'a>> {
+) -> Result<PropertyValidators<F>, ValidationError<'a>> {
     // Create a pending node and cache it before compiling to handle circular refs
     let cache_key = ctx.location_cache_key();
     let pending = Arc::new(OnceLock::new());
@@ -404,8 +404,8 @@ fn compile_property_validators<'a>(
     Ok(validators)
 }
 
-fn compile_properties<'a>(
-    _ctx: &compiler::Context<'_>,
+fn compile_properties<'a, F: Json>(
+    _ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
 ) -> Result<AHashSet<String>, ValidationError<'a>> {
     let Some(Value::Object(map)) = parent.get("properties") else {
@@ -415,10 +415,10 @@ fn compile_properties<'a>(
     Ok(map.keys().cloned().collect())
 }
 
-fn compile_additional<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_additional<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<Option<SchemaNode>, ValidationError<'a>> {
+) -> Result<Option<SchemaNode<F>>, ValidationError<'a>> {
     let Some(subschema) = parent.get("additionalProperties") else {
         return Ok(None);
     };
@@ -429,10 +429,10 @@ fn compile_additional<'a>(
     Ok(Some(node))
 }
 
-fn compile_pattern_properties<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_pattern_properties<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<Vec<(Regex, SchemaNode)>, ValidationError<'a>> {
+) -> Result<Vec<(Regex, SchemaNode<F>)>, ValidationError<'a>> {
     let Some(Value::Object(patterns)) = parent.get("patternProperties") else {
         return Ok(Vec::new());
     };
@@ -461,10 +461,10 @@ fn compile_pattern_properties<'a>(
     Ok(result)
 }
 
-fn compile_unevaluated<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_unevaluated<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<Option<SchemaNode>, ValidationError<'a>> {
+) -> Result<Option<SchemaNode<F>>, ValidationError<'a>> {
     let Some(subschema) = parent.get("unevaluatedProperties") else {
         return Ok(None);
     };
@@ -475,10 +475,12 @@ fn compile_unevaluated<'a>(
     Ok(Some(node))
 }
 
-fn compile_all_of<'a>(
-    ctx: &compiler::Context<'_>,
+type CompiledPropertySubschemas<F> = Vec<(SchemaNode<F>, PropertyValidators<F>)>;
+
+fn compile_all_of<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<Vec<(SchemaNode, PropertyValidators)>, ValidationError<'a>> {
+) -> Result<CompiledPropertySubschemas<F>, ValidationError<'a>> {
     let Some(Some(subschemas)) = parent.get("allOf").map(Value::as_array) else {
         return Ok(Vec::new());
     };
@@ -500,10 +502,10 @@ fn compile_all_of<'a>(
     Ok(result)
 }
 
-fn compile_any_of<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_any_of<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<Vec<(SchemaNode, PropertyValidators)>, ValidationError<'a>> {
+) -> Result<CompiledPropertySubschemas<F>, ValidationError<'a>> {
     let Some(Some(subschemas)) = parent.get("anyOf").map(Value::as_array) else {
         return Ok(Vec::new());
     };
@@ -525,10 +527,10 @@ fn compile_any_of<'a>(
     Ok(result)
 }
 
-fn compile_one_of<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_one_of<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<Vec<(SchemaNode, PropertyValidators)>, ValidationError<'a>> {
+) -> Result<CompiledPropertySubschemas<F>, ValidationError<'a>> {
     let Some(Some(subschemas)) = parent.get("oneOf").map(Value::as_array) else {
         return Ok(Vec::new());
     };
@@ -550,10 +552,10 @@ fn compile_one_of<'a>(
     Ok(result)
 }
 
-fn compile_conditional<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_conditional<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<Option<Box<ConditionalValidators>>, ValidationError<'a>> {
+) -> Result<Option<Box<ConditionalValidators<F>>>, ValidationError<'a>> {
     let Some(Value::Object(if_schema)) = parent.get("if") else {
         return Ok(None);
     };
@@ -588,10 +590,10 @@ fn compile_conditional<'a>(
     })))
 }
 
-fn compile_ref<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_ref<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &Map<String, Value>,
-) -> Result<Option<RefValidator>, ValidationError<'a>> {
+) -> Result<Option<RefValidator<F>>, ValidationError<'a>> {
     let Some(Value::String(reference)) = parent.get("$ref") else {
         return Ok(None);
     };
@@ -611,10 +613,10 @@ fn compile_ref<'a>(
     }
 }
 
-fn compile_dynamic_ref<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_dynamic_ref<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &Map<String, Value>,
-) -> Result<Option<PendingPropertyValidators>, ValidationError<'a>> {
+) -> Result<Option<PendingPropertyValidators<F>>, ValidationError<'a>> {
     let Some(Value::String(reference)) = parent.get("$dynamicRef") else {
         return Ok(None);
     };
@@ -642,10 +644,10 @@ fn compile_dynamic_ref<'a>(
     }
 }
 
-fn compile_recursive_ref<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_recursive_ref<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &Map<String, Value>,
-) -> Result<Option<PendingPropertyValidators>, ValidationError<'a>> {
+) -> Result<Option<PendingPropertyValidators<F>>, ValidationError<'a>> {
     if !parent.contains_key("$recursiveRef") {
         return Ok(None);
     }
@@ -684,12 +686,12 @@ fn compile_recursive_ref<'a>(
     }
 }
 
-type DependentEntry = (Arc<<SerdeJson as Json>::PreparedKey>, PropertyValidators);
+type DependentEntry<F> = (Arc<<F as Json>::PreparedKey>, PropertyValidators<F>);
 
-fn compile_dependent<'a>(
-    ctx: &compiler::Context<'_>,
+fn compile_dependent<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<Vec<DependentEntry>, ValidationError<'a>> {
+) -> Result<Vec<DependentEntry<F>>, ValidationError<'a>> {
     let Some(Value::Object(map)) = parent.get("dependentSchemas") else {
         return Ok(Vec::new());
     };
@@ -701,7 +703,7 @@ fn compile_dependent<'a>(
         if let Value::Object(obj) = subschema {
             let property_ctx = dependent_ctx.new_at_location(property.as_str());
             let validators = compile_property_validators(&property_ctx, obj)?;
-            result.push((Arc::new(SerdeJson::prepare_key(property)), validators));
+            result.push((Arc::new(F::prepare_key(property)), validators));
         }
     }
 
@@ -715,10 +717,10 @@ pub(crate) struct UnevaluatedPropertiesValidator<F: Json = SerdeJson> {
 }
 
 impl UnevaluatedPropertiesValidator {
-    pub(crate) fn compile<'a>(
-        ctx: &'a compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &'a compiler::Context<F>,
         parent: &'a Map<String, Value>,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         let validators =
             compile_property_validators(ctx, parent).map_err(ValidationError::to_owned)?;
 
@@ -874,11 +876,11 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
     }
 }
 
-pub(crate) fn compile<'a>(
-    ctx: &'a compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &'a compiler::Context<F>,
     parent: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     match schema.as_bool() {
         Some(true) => None, // unevaluatedProperties: true is a no-op
         _ => Some(UnevaluatedPropertiesValidator::compile(ctx, parent)),

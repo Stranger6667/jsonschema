@@ -49,7 +49,10 @@ pub(crate) struct AdditionalPropertiesValidator<F: Json = SerdeJson> {
 }
 impl AdditionalPropertiesValidator {
     #[inline]
-    pub(crate) fn compile<'a>(schema: &'a Value, ctx: &compiler::Context) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(
+        schema: &'a Value,
+        ctx: &compiler::Context<F>,
+    ) -> CompilationResult<'a, F> {
         let ctx = ctx.new_at_location("additionalProperties");
         Ok(Box::new(AdditionalPropertiesValidator {
             node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
@@ -154,7 +157,7 @@ pub(crate) struct AdditionalPropertiesFalseValidator {
 }
 impl AdditionalPropertiesFalseValidator {
     #[inline]
-    pub(crate) fn compile<'a>(location: Location) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(location: Location) -> CompilationResult<'a, F> {
         Ok(Box::new(AdditionalPropertiesFalseValidator { location }))
     }
 }
@@ -210,24 +213,24 @@ pub(crate) struct AdditionalPropertiesNotEmptyFalseValidator<M> {
     properties: M,
     location: Location,
 }
-impl AdditionalPropertiesNotEmptyFalseValidator<SmallValidatorsMap> {
+impl<F: Json> AdditionalPropertiesNotEmptyFalseValidator<SmallValidatorsMap<F>> {
     #[inline]
     pub(crate) fn compile<'a>(
         map: &'a Map<String, Value>,
-        ctx: &compiler::Context,
-    ) -> CompilationResult<'a> {
+        ctx: &compiler::Context<F>,
+    ) -> CompilationResult<'a, F> {
         Ok(Box::new(AdditionalPropertiesNotEmptyFalseValidator {
             properties: compile_small_map(ctx, map)?,
             location: ctx.location().join("additionalProperties"),
         }))
     }
 }
-impl AdditionalPropertiesNotEmptyFalseValidator<BigValidatorsMap> {
+impl<F: Json> AdditionalPropertiesNotEmptyFalseValidator<BigValidatorsMap<F>> {
     #[inline]
     pub(crate) fn compile<'a>(
         map: &'a Map<String, Value>,
-        ctx: &compiler::Context,
-    ) -> CompilationResult<'a> {
+        ctx: &compiler::Context<F>,
+    ) -> CompilationResult<'a, F> {
         Ok(Box::new(AdditionalPropertiesNotEmptyFalseValidator {
             properties: compile_big_map(ctx, map)?,
             location: ctx.location().join("additionalProperties"),
@@ -352,13 +355,13 @@ pub(crate) struct AdditionalPropertiesNotEmptyFalseWithRequired1Validator<M> {
     location: Location,
     required_location: Location,
 }
-impl AdditionalPropertiesNotEmptyFalseWithRequired1Validator<SmallValidatorsMap> {
+impl<F: Json> AdditionalPropertiesNotEmptyFalseWithRequired1Validator<SmallValidatorsMap<F>> {
     #[inline]
     pub(crate) fn compile<'a>(
         map: &'a Map<String, Value>,
-        ctx: &compiler::Context,
+        ctx: &compiler::Context<F>,
         required: String,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         Ok(Box::new(
             AdditionalPropertiesNotEmptyFalseWithRequired1Validator {
                 properties: compile_small_map(ctx, map)?,
@@ -369,13 +372,13 @@ impl AdditionalPropertiesNotEmptyFalseWithRequired1Validator<SmallValidatorsMap>
         ))
     }
 }
-impl AdditionalPropertiesNotEmptyFalseWithRequired1Validator<BigValidatorsMap> {
+impl<F: Json> AdditionalPropertiesNotEmptyFalseWithRequired1Validator<BigValidatorsMap<F>> {
     #[inline]
     pub(crate) fn compile<'a>(
         map: &'a Map<String, Value>,
-        ctx: &compiler::Context,
+        ctx: &compiler::Context<F>,
         required: String,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         Ok(Box::new(
             AdditionalPropertiesNotEmptyFalseWithRequired1Validator {
                 properties: compile_big_map(ctx, map)?,
@@ -578,13 +581,13 @@ pub(crate) struct AdditionalPropertiesNotEmptyValidator<M, F: Json = SerdeJson> 
     node: SchemaNode<F>,
     properties: M,
 }
-impl AdditionalPropertiesNotEmptyValidator<SmallValidatorsMap> {
+impl<F: Json> AdditionalPropertiesNotEmptyValidator<SmallValidatorsMap<F>> {
     #[inline]
     pub(crate) fn compile<'a>(
         map: &'a Map<String, Value>,
-        ctx: &compiler::Context,
+        ctx: &compiler::Context<F>,
         schema: &'a Value,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         let kctx = ctx.new_at_location("additionalProperties");
         Ok(Box::new(AdditionalPropertiesNotEmptyValidator {
             properties: compile_small_map(ctx, map)?,
@@ -592,13 +595,13 @@ impl AdditionalPropertiesNotEmptyValidator<SmallValidatorsMap> {
         }))
     }
 }
-impl AdditionalPropertiesNotEmptyValidator<BigValidatorsMap> {
+impl<F: Json> AdditionalPropertiesNotEmptyValidator<BigValidatorsMap<F>> {
     #[inline]
     pub(crate) fn compile<'a>(
         map: &'a Map<String, Value>,
-        ctx: &compiler::Context,
+        ctx: &compiler::Context<F>,
         schema: &'a Value,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         let kctx = ctx.new_at_location("additionalProperties");
         Ok(Box::new(AdditionalPropertiesNotEmptyValidator {
             properties: compile_big_map(ctx, map)?,
@@ -1538,9 +1541,9 @@ macro_rules! try_compile {
 
 /// Pre-compute which `patternProperties` patterns match each property name from `properties`.
 /// This eliminates regex matching at validation time for known properties.
-fn precompute_property_pattern_indices<R: RegexEngine>(
+fn precompute_property_pattern_indices<R: RegexEngine, F: Json>(
     property_names: impl Iterator<Item = impl AsRef<str> + Clone + Into<String>>,
-    patterns: &[(R, SchemaNode)],
+    patterns: &[(R, SchemaNode<F>)],
 ) -> AHashMap<String, Box<[usize]>> {
     let mut result = AHashMap::new();
     for prop_name in property_names {
@@ -1557,12 +1560,12 @@ fn precompute_property_pattern_indices<R: RegexEngine>(
     result
 }
 
-fn compile_pattern_non_empty<'a, R>(
-    ctx: &compiler::Context,
+fn compile_pattern_non_empty<'a, R, F: Json>(
+    ctx: &compiler::Context<F>,
     map: &'a Map<String, Value>,
-    patterns: Vec<(R, SchemaNode)>,
+    patterns: Vec<(R, SchemaNode<F>)>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>>
+) -> Option<CompilationResult<'a, F>>
 where
     R: RegexEngine + 'static,
 {
@@ -1571,7 +1574,7 @@ where
 
     if map.len() < HASHMAP_THRESHOLD {
         Some(Ok(Box::new(
-            AdditionalPropertiesWithPatternsNotEmptyValidator::<SmallValidatorsMap, R> {
+            AdditionalPropertiesWithPatternsNotEmptyValidator::<SmallValidatorsMap<F>, R, F> {
                 node: try_compile!(compiler::compile(&kctx, kctx.as_resource_ref(schema))),
                 properties: try_compile!(compile_small_map(ctx, map)),
                 patterns,
@@ -1580,7 +1583,7 @@ where
         )))
     } else {
         Some(Ok(Box::new(
-            AdditionalPropertiesWithPatternsNotEmptyValidator::<BigValidatorsMap, R> {
+            AdditionalPropertiesWithPatternsNotEmptyValidator::<BigValidatorsMap<F>, R, F> {
                 node: try_compile!(compiler::compile(&kctx, kctx.as_resource_ref(schema))),
                 properties: try_compile!(compile_big_map(ctx, map)),
                 patterns,
@@ -1590,11 +1593,11 @@ where
     }
 }
 
-fn compile_pattern_non_empty_false<'a, R>(
-    ctx: &compiler::Context,
+fn compile_pattern_non_empty_false<'a, R, F: Json>(
+    ctx: &compiler::Context<F>,
     map: &'a Map<String, Value>,
-    patterns: Vec<(R, SchemaNode)>,
-) -> Option<CompilationResult<'a>>
+    patterns: Vec<(R, SchemaNode<F>)>,
+) -> Option<CompilationResult<'a, F>>
 where
     R: RegexEngine + 'static,
 {
@@ -1603,7 +1606,7 @@ where
 
     if map.len() < HASHMAP_THRESHOLD {
         Some(Ok(Box::new(
-            AdditionalPropertiesWithPatternsNotEmptyFalseValidator::<SmallValidatorsMap, R> {
+            AdditionalPropertiesWithPatternsNotEmptyFalseValidator::<SmallValidatorsMap<F>, R, F> {
                 properties: try_compile!(compile_small_map(ctx, map)),
                 patterns,
                 property_pattern_indices,
@@ -1612,7 +1615,7 @@ where
         )))
     } else {
         Some(Ok(Box::new(
-            AdditionalPropertiesWithPatternsNotEmptyFalseValidator::<BigValidatorsMap, R> {
+            AdditionalPropertiesWithPatternsNotEmptyFalseValidator::<BigValidatorsMap<F>, R, F> {
                 properties: try_compile!(compile_big_map(ctx, map)),
                 patterns,
                 property_pattern_indices,
@@ -1623,11 +1626,11 @@ where
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     parent: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     let properties = parent.get("properties");
     if let Some(patterns) = parent.get("patternProperties") {
         if let Value::Object(obj) = patterns {
@@ -1645,6 +1648,7 @@ pub(crate) fn compile<'a>(
                                 if let Value::Object(map) = properties {
                                     compile_pattern_non_empty_false::<
                                         CompiledPattern<fancy_regex::Regex>,
+                                        F,
                                     >(ctx, map, patterns)
                                 } else {
                                     let location = ctx.location().join("properties");
@@ -1674,9 +1678,10 @@ pub(crate) fn compile<'a>(
                         _ => {
                             if let Some(properties) = properties {
                                 if let Value::Object(map) = properties {
-                                    compile_pattern_non_empty::<CompiledPattern<fancy_regex::Regex>>(
-                                        ctx, map, patterns, schema,
-                                    )
+                                    compile_pattern_non_empty::<
+                                        CompiledPattern<fancy_regex::Regex>,
+                                        F,
+                                    >(ctx, map, patterns, schema)
                                 } else {
                                     let location = ctx.location().join("properties");
                                     Some(Err(ValidationError::compile_error(
@@ -1714,9 +1719,10 @@ pub(crate) fn compile<'a>(
                         Value::Bool(false) => {
                             if let Some(properties) = properties {
                                 if let Value::Object(map) = properties {
-                                    compile_pattern_non_empty_false::<CompiledPattern<regex::Regex>>(
-                                        ctx, map, patterns,
-                                    )
+                                    compile_pattern_non_empty_false::<
+                                        CompiledPattern<regex::Regex>,
+                                        F,
+                                    >(ctx, map, patterns)
                                 } else {
                                     let location = ctx.location().join("properties");
                                     Some(Err(ValidationError::compile_error(
@@ -1745,7 +1751,7 @@ pub(crate) fn compile<'a>(
                         _ => {
                             if let Some(properties) = properties {
                                 if let Value::Object(map) = properties {
-                                    compile_pattern_non_empty::<CompiledPattern<regex::Regex>>(
+                                    compile_pattern_non_empty::<CompiledPattern<regex::Regex>, F>(
                                         ctx, map, patterns, schema,
                                     )
                                 } else {
@@ -1799,7 +1805,7 @@ pub(crate) fn compile<'a>(
                                     return if map.len() < HASHMAP_THRESHOLD {
                                         Some(
                                             AdditionalPropertiesNotEmptyFalseWithRequired1Validator::<
-                                                SmallValidatorsMap,
+                                                SmallValidatorsMap<F>,
                                             >::compile(
                                                 map, ctx, req.clone()
                                             ),
@@ -1807,7 +1813,7 @@ pub(crate) fn compile<'a>(
                                     } else {
                                         Some(
                                             AdditionalPropertiesNotEmptyFalseWithRequired1Validator::<
-                                                BigValidatorsMap,
+                                                BigValidatorsMap<F>,
                                             >::compile(
                                                 map, ctx, req.clone()
                                             ),

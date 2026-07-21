@@ -12,7 +12,7 @@ use crate::{
 };
 use serde_json::{Map, Value};
 
-/// Tracks `$ref` traversals for recursive references where the target is behind `BoxedValidator`
+/// Tracks `$ref` traversals for recursive references where the target is behind `BoxedValidator<F>`
 /// (either a `PendingSchemaNode` or a cached node returned by `lookup_maybe_recursive`).
 struct RefValidator<F: Json> {
     inner: BoxedValidator<F>,
@@ -76,7 +76,7 @@ impl<F: Json> Validate<F> for RefValidator<F> {
     }
 }
 
-/// Like `RefValidator` but holds a concrete `SchemaNode` instead of `BoxedValidator`,
+/// Like `RefValidator` but holds a concrete `SchemaNode<F>` instead of `BoxedValidator<F>`,
 /// eliminating one layer of vtable dispatch on every validation call.
 /// Used for non-recursive refs where the target is fully resolved at compile time.
 struct DirectRefValidator<F: Json> {
@@ -147,11 +147,11 @@ fn extract_ref_target_base(alias: &referencing::Uri<String>) -> Location {
     Location::new()
 }
 
-fn compile_reference_validator<'a>(
-    ctx: &compiler::Context,
+fn compile_reference_validator<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     reference: &str,
     keyword: &str,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     let current_location = match ctx.absolute_location_uri().map_err(ValidationError::from) {
         Ok(uri) => uri,
         Err(error) => return Some(Err(error)),
@@ -209,16 +209,16 @@ fn compile_reference_validator<'a>(
                     inner: node,
                     ref_suffix,
                     ref_target_base,
-                }) as Box<dyn Validate>
+                }) as Box<dyn Validate<F>>
             })
             .map_err(ValidationError::to_owned),
     )
 }
 
-fn compile_recursive_validator<'a>(
-    ctx: &compiler::Context,
+fn compile_recursive_validator<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     reference: &str,
-) -> CompilationResult<'a> {
+) -> CompilationResult<'a, F> {
     let ref_suffix = ctx.suffix().join("$recursiveRef");
     let alias = ctx
         .resolve_reference_uri(reference)
@@ -255,18 +255,18 @@ fn compile_recursive_validator<'a>(
     );
     compiler::compile_with_alias(&inner_ctx, resource_ref, alias)
         .map(|node| {
-            let inner: BoxedValidator = Box::new(node);
+            let inner: BoxedValidator<F> = Box::new(node);
             Box::new(RefValidator {
                 inner,
                 ref_suffix,
                 ref_target_base,
-            }) as Box<dyn Validate>
+            }) as Box<dyn Validate<F>>
         })
         .map_err(ValidationError::to_owned)
 }
 
-fn invalid_reference<'a>(
-    ctx: &compiler::Context,
+fn invalid_reference<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     keyword: &str,
     schema: &'a Value,
 ) -> ValidationError<'a> {
@@ -281,12 +281,12 @@ fn invalid_reference<'a>(
 }
 
 #[inline]
-pub(crate) fn compile_impl<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_impl<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _parent: &'a Map<String, Value>,
     schema: &'a Value,
     keyword: &str,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     if let Some(reference) = schema.as_str() {
         compile_reference_validator(ctx, reference, keyword)
     } else {
@@ -295,29 +295,29 @@ pub(crate) fn compile_impl<'a>(
 }
 
 #[inline]
-pub(crate) fn compile_dynamic_ref<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_dynamic_ref<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     parent: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     compile_impl(ctx, parent, schema, "$dynamicRef")
 }
 
 #[inline]
-pub(crate) fn compile_ref<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_ref<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     parent: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     compile_impl(ctx, parent, schema, "$ref")
 }
 
 #[inline]
-pub(crate) fn compile_recursive_ref<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile_recursive_ref<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     Some(
         schema
             .as_str()

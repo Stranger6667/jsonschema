@@ -17,11 +17,11 @@ pub(crate) struct AdditionalItemsObjectValidator<F: Json = SerdeJson> {
 }
 impl AdditionalItemsObjectValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
         schema: &'a Value,
         items_count: usize,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         let node = compiler::compile(ctx, ctx.as_resource_ref(schema))?;
         Ok(Box::new(AdditionalItemsObjectValidator {
             node,
@@ -85,7 +85,10 @@ pub(crate) struct AdditionalItemsBooleanValidator {
 }
 impl AdditionalItemsBooleanValidator {
     #[inline]
-    pub(crate) fn compile<'a>(items_count: usize, location: Location) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(
+        items_count: usize,
+        location: Location,
+    ) -> CompilationResult<'a, F> {
         Ok(Box::new(AdditionalItemsBooleanValidator {
             items_count,
             location,
@@ -125,11 +128,11 @@ impl<F: Json> Validate<F> for AdditionalItemsBooleanValidator {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     parent: &Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     if let Some(items) = parent.get("items") {
         match items {
             Value::Object(_) => None,

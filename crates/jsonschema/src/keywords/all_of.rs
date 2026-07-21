@@ -19,10 +19,10 @@ pub(crate) struct AllOfValidator<F: Json> {
 
 impl AllOfValidator<SerdeJson> {
     #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
         items: &'a [Value],
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         let ctx = ctx.new_at_location("allOf");
         let mut schemas = Vec::with_capacity(items.len());
         for (idx, item) in items.iter().enumerate() {
@@ -89,7 +89,10 @@ pub(crate) struct SingleValueAllOfValidator<F: Json> {
 
 impl SingleValueAllOfValidator<SerdeJson> {
     #[inline]
-    pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
+        schema: &'a Value,
+    ) -> CompilationResult<'a, F> {
         let ctx = ctx.new_at_location("allOf");
         let ctx = ctx.new_at_location(0);
         let node = compiler::compile(&ctx, ctx.as_resource_ref(schema))?;
@@ -137,11 +140,11 @@ impl<F: Json> Validate<F> for SingleValueAllOfValidator<F> {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     _: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     if let Value::Array(items) = schema {
         if items.len() == 1 {
             let value = items.iter().next().expect("Vec is not empty");

@@ -4,15 +4,15 @@ use std::borrow::Cow;
 
 use serde_json::{Map, Value};
 
-use crate::{compiler, paths::Location, types::JsonType, ValidationError};
+use crate::{compiler, paths::Location, types::JsonType, Json, ValidationError};
 
 /// Extract a u64 value from a schema map, returning a compilation error if invalid.
 ///
 /// This is a defensive check - normally caught by metaschema validation.
 #[inline]
-pub(crate) fn map_get_u64<'a>(
+pub(crate) fn map_get_u64<'a, F: Json>(
     m: &'a Map<String, Value>,
-    ctx: &compiler::Context,
+    ctx: &compiler::Context<F>,
     keyword: &str,
 ) -> Option<Result<u64, ValidationError<'a>>> {
     let schema_value = m.get(keyword)?;

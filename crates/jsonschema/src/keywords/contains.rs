@@ -18,7 +18,10 @@ pub(crate) struct ContainsValidator<F: Json = SerdeJson> {
 
 impl ContainsValidator {
     #[inline]
-    pub(crate) fn compile<'a>(ctx: &compiler::Context, schema: &'a Value) -> CompilationResult<'a> {
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
+        schema: &'a Value,
+    ) -> CompilationResult<'a, F> {
         let ctx = ctx.new_at_location("contains");
         Ok(Box::new(ContainsValidator {
             node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
@@ -115,11 +118,11 @@ pub(crate) struct MinContainsValidator<F: Json = SerdeJson> {
 
 impl MinContainsValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
         schema: &'a Value,
         min_contains: u64,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         let ctx = ctx.new_at_location("minContains");
         Ok(Box::new(MinContainsValidator {
             node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
@@ -198,11 +201,11 @@ pub(crate) struct MaxContainsValidator<F: Json = SerdeJson> {
 
 impl MaxContainsValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
         schema: &'a Value,
         max_contains: u64,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         let ctx = ctx.new_at_location("maxContains");
         Ok(Box::new(MaxContainsValidator {
             node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
@@ -289,12 +292,12 @@ pub(crate) struct MinMaxContainsValidator<F: Json = SerdeJson> {
 
 impl MinMaxContainsValidator {
     #[inline]
-    pub(crate) fn compile<'a>(
-        ctx: &compiler::Context,
+    pub(crate) fn compile<'a, F: Json>(
+        ctx: &compiler::Context<F>,
         schema: &'a Value,
         min_contains: u64,
         max_contains: u64,
-    ) -> CompilationResult<'a> {
+    ) -> CompilationResult<'a, F> {
         Ok(Box::new(MinMaxContainsValidator {
             node: compiler::compile(ctx, ctx.as_resource_ref(schema))?,
             min_contains,
@@ -373,11 +376,11 @@ impl<F: Json> Validate<F> for MinMaxContainsValidator<F> {
 }
 
 #[inline]
-pub(crate) fn compile<'a>(
-    ctx: &compiler::Context,
+pub(crate) fn compile<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     parent: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     match ctx.draft() {
         Draft::Draft4 | Draft::Draft6 | Draft::Draft7 => {
             Some(ContainsValidator::compile(ctx, schema))
@@ -388,11 +391,11 @@ pub(crate) fn compile<'a>(
 }
 
 #[inline]
-fn compile_contains<'a>(
-    ctx: &compiler::Context,
+fn compile_contains<'a, F: Json>(
+    ctx: &compiler::Context<F>,
     parent: &'a Map<String, Value>,
     schema: &'a Value,
-) -> Option<CompilationResult<'a>> {
+) -> Option<CompilationResult<'a, F>> {
     let min_contains = match map_get_u64(parent, ctx, "minContains").transpose() {
         Ok(n) => n,
         Err(err) => return Some(Err(err)),
