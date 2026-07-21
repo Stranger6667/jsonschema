@@ -36,7 +36,7 @@ jobs:
             benches: ""
     name: "Run benchmarks (${{ matrix.name }})"
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -59,7 +59,7 @@ jobs:
     timeout-minutes: 30
     name: "Run benchmarks (python)"
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -80,5 +80,31 @@ jobs:
         with:
           working-directory: crates/jsonschema-py
           run: .venv/bin/pytest benches/bench.py -k '(jsonschema-rs or not jsonschema) and not py-parse' --codspeed
+          mode: "instrumentation"
+          token: ${{ secrets.CODSPEED_TOKEN }}
+
+  ruby:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    name: "Run benchmarks (ruby)"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: ruby/setup-ruby@a30dfa457ad68707b8b910ac3a244714b61c0626 # v1.320.0
+        with:
+          working-directory: crates/jsonschema-rb
+          ruby-version: .ruby-version
+          bundler-cache: true
+
+      - name: Build extension
+        working-directory: crates/jsonschema-rb
+        run: bundle exec rake compile
+
+      - uses: CodSpeedHQ/action@f99becdce5e5d51fd556489ebef684f4ecfd6286 # v4.18.5
+        with:
+          working-directory: crates/jsonschema-rb
+          config: crates/jsonschema-rb/codspeed.yml
           mode: "instrumentation"
           token: ${{ secrets.CODSPEED_TOKEN }}

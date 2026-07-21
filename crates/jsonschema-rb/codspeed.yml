@@ -1,0 +1,13 @@
+benchmarks:
+  - name: "ruby-openapi"
+    exec: bundle exec ruby bench/codspeed_bench.rb openapi
+  - name: "ruby-swagger"
+    exec: bundle exec ruby bench/codspeed_bench.rb swagger
+  - name: "ruby-geojson"
+    exec: bundle exec ruby bench/codspeed_bench.rb geojson
+  - name: "ruby-citm"
+    exec: bundle exec ruby bench/codspeed_bench.rb citm
+  - name: "ruby-fhir"
+    exec: bundle exec ruby bench/codspeed_bench.rb fhir
+  - name: "ruby-recursive"
+    exec: bundle exec ruby bench/codspeed_bench.rb recursive
