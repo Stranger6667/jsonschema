@@ -2868,7 +2868,7 @@ pub mod __private {
         pub use regex::{Regex, RegexBuilder};
     }
     pub mod unique_items {
-        pub use crate::keywords::unique_items::is_unique;
+        pub use crate::ext::unique::is_unique;
     }
     pub mod cmp {
         pub use crate::ext::cmp::{equal, equal_numbers};
