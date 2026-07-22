@@ -879,5 +879,15 @@
     "expected": {
       "$schema": "http://json-schema.org/draft-07/schema#"
     }
+  },
+  {
+    "description": "ir: composite enum members sort by their document order",
+    "schema": {"enum": [{"b": 1}, [2], {"a": 1, "b": 2}, [1, 2], {"a": 1}, [1]]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "enum": [[1], [1, 2], [2], {"a": 1}, {"a": 1, "b": 2}, {"b": 1}]},
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": {"b": 1}, "valid": true},
+      {"data": [3], "valid": false}
+    ]
   }
 ]

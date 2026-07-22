@@ -63,6 +63,49 @@ impl BoundInteger {
         }
     }
 
+    /// The nearest integer to `number` in `direction`, or `None` when it leaves the representable
+    /// range. Used to pull a fractional real bound onto the integers it admits.
+    pub(crate) fn round_from_number(number: &serde_json::Number, direction: Round) -> Option<Self> {
+        // An integer is already at rest; only a fractional value moves.
+        if let Some(whole) = Self::from_number(number) {
+            return Some(whole);
+        }
+        #[cfg(not(feature = "arbitrary-precision"))]
+        {
+            // `i64::MAX as f64` rounds up to 2^63, so the range is bounded by that power of two
+            // instead: it is exact in `f64`, and its negation is `i64::MIN` exactly.
+            const LIMIT: f64 = 9_223_372_036_854_775_808.0;
+            let value = number.as_f64()?;
+            let rounded = match direction {
+                Round::Up => value.ceil(),
+                Round::Down => value.floor(),
+            };
+            if !(-LIMIT..LIMIT).contains(&rounded) {
+                return None;
+            }
+            // The range check above leaves no value the cast can truncate.
+            #[allow(clippy::cast_possible_truncation)]
+            Some(Self(rounded as i64))
+        }
+        #[cfg(feature = "arbitrary-precision")]
+        {
+            let value = jsonschema_value::numeric::bignum::try_parse_bigfraction(number)?;
+            let rounded = match direction {
+                Round::Up => value.ceil(),
+                Round::Down => value.floor(),
+            };
+            // Rounding leaves a denominator of one, so the numerator is the magnitude already.
+            let magnitude = num_bigint::BigInt::from(rounded.numer()?.clone());
+            Some(Self(
+                if matches!(rounded.sign(), Some(fraction::Sign::Minus)) {
+                    -magnitude
+                } else {
+                    magnitude
+                },
+            ))
+        }
+    }
+
     /// Whether `self` divides `value` exactly. `self` is a positive divisor.
     pub(crate) fn divides(&self, value: &Self) -> bool {
         (&value.0 % &self.0).is_zero()
@@ -184,4 +227,30 @@ fn gcd(left: &InnerInteger, right: &InnerInteger) -> InnerInteger {
         b = rest;
     }
     a
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_case::test_case;
+
+    #[test_case("1.5", 2, 1; "positive fraction")]
+    #[test_case("-1.5", -1, -2; "negative fraction")]
+    #[test_case("2", 2, 2; "positive whole")]
+    #[test_case("-2", -2, -2; "negative whole")]
+    #[test_case("0.0001", 1, 0; "just above zero")]
+    #[test_case("-0.5", 0, -1; "just below zero")]
+    #[test_case("0", 0, 0; "zero")]
+    fn rounds_toward_the_named_direction(text: &str, up: i64, down: i64) {
+        let number: serde_json::Number = text.parse().expect("number");
+        let expected = |value: i64| BoundInteger::from_number(&value.into()).expect("whole");
+        assert_eq!(
+            BoundInteger::round_from_number(&number, Round::Up),
+            Some(expected(up))
+        );
+        assert_eq!(
+            BoundInteger::round_from_number(&number, Round::Down),
+            Some(expected(down))
+        );
+    }
 }

@@ -645,5 +645,180 @@
       {"data": 2, "valid": true},
       {"data": 2.5, "valid": true}
     ]
+  },
+  {
+    "description": "ir: a fractional bound is a number interval",
+    "schema": {"type": "number", "minimum": 1.5},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "minimum": 1.5},
+    "tests": [
+      {"data": 1.5, "valid": true},
+      {"data": 2, "valid": true},
+      {"data": 1.4, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an untyped fractional bound constrains only numbers",
+    "schema": {"minimum": 1.1},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": ["null", "boolean", "string", "array", "object"]}, {"type": "number", "minimum": 1.1}]},
+    "tests": [
+      {"data": 1.1, "valid": true},
+      {"data": 1, "valid": false},
+      {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "ir: fractional intervals tighten across an allOf",
+    "schema": {"allOf": [{"type": "number", "minimum": 1.5}, {"type": "number", "maximum": 2.5}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "minimum": 1.5, "maximum": 2.5},
+    "tests": [
+      {"data": 2, "valid": true},
+      {"data": 1.4, "valid": false},
+      {"data": 2.6, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an integer type rounds a fractional bound inward",
+    "schemas": [
+      {"allOf": [{"type": "integer"}, {"minimum": 1.5}]},
+      {"type": "integer", "minimum": 2}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer", "minimum": 2},
+    "tests": [
+      {"data": 2, "valid": true},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an integer type rounds a fractional maximum inward",
+    "schemas": [
+      {"allOf": [{"type": "integer"}, {"maximum": 2.5}]},
+      {"type": "integer", "maximum": 2}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer", "maximum": 2},
+    "tests": [
+      {"data": 2, "valid": true},
+      {"data": 3, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a fractional window holding no integer admits none",
+    "schema": {"allOf": [{"type": "integer"}, {"minimum": 1.2, "maximum": 1.8}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: fractional intervals meeting on a shared point merge",
+    "schemas": [
+      {"anyOf": [{"type": "number", "maximum": 1.5}, {"type": "number", "minimum": 1.5}]},
+      {"type": "number"}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number"},
+    "tests": [
+      {"data": 1.5, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: number intervals sharing a minimum merge on the one admitting it",
+    "schemas": [
+      {"anyOf": [{"type": "number", "minimum": 1, "maximum": 2}, {"type": "number", "exclusiveMinimum": 1, "maximum": 3}]},
+      {"type": "number", "minimum": 1, "maximum": 3}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "minimum": 1, "maximum": 3},
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": 3, "valid": true},
+      {"data": 3.5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a number interval unbounded above swallows one it reaches",
+    "schemas": [
+      {"anyOf": [{"type": "number", "minimum": 0}, {"type": "number", "minimum": 5, "maximum": 6}]},
+      {"type": "number", "minimum": 0}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "minimum": 0},
+    "tests": [
+      {"data": 7, "valid": true},
+      {"data": -1, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: overlapping number intervals merge into their hull",
+    "schemas": [
+      {"anyOf": [{"type": "number", "minimum": 0, "maximum": 5}, {"type": "number", "minimum": 3, "maximum": 8}]},
+      {"type": "number", "minimum": 0, "maximum": 8}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "minimum": 0, "maximum": 8},
+    "tests": [
+      {"data": 8, "valid": true},
+      {"data": 8.5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a number interval holding another drops it",
+    "schemas": [
+      {"anyOf": [{"type": "number", "minimum": 0, "maximum": 10}, {"type": "number", "minimum": 2, "maximum": 5}]},
+      {"type": "number", "minimum": 0, "maximum": 10}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "minimum": 0, "maximum": 10},
+    "tests": [
+      {"data": 10, "valid": true},
+      {"data": 11, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: number intervals unbounded below keep the wider maximum",
+    "schemas": [
+      {"anyOf": [{"type": "number", "maximum": 0}, {"type": "number", "maximum": 5}]},
+      {"type": "number", "maximum": 5}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "maximum": 5},
+    "tests": [
+      {"data": 5, "valid": true},
+      {"data": 6, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: number intervals tighten to the values both admit",
+    "schemas": [
+      {"allOf": [{"type": "number", "minimum": 5, "maximum": 100}, {"type": "number", "minimum": 2, "maximum": 9}]},
+      {"allOf": [{"type": "number", "minimum": 2, "maximum": 9}, {"type": "number", "minimum": 5, "maximum": 100}]},
+      {"type": "number", "minimum": 5, "maximum": 9}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "minimum": 5, "maximum": 9},
+    "tests": [
+      {"data": 5, "valid": true},
+      {"data": 9, "valid": true},
+      {"data": 4.9, "valid": false},
+      {"data": 9.1, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an integer type keeps the integers a number interval admits",
+    "schema": {"allOf": [{"type": "integer", "minimum": 0}, {"type": "number", "maximum": 10.5}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer", "minimum": 0, "maximum": 10},
+    "tests": [
+      {"data": 10, "valid": true},
+      {"data": 11, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a number interval keeps the values it admits and drops the rest",
+    "schema": {"allOf": [{"enum": [1, "a", 5, 50]}, {"type": "number", "minimum": 0, "maximum": 10}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "enum": [1, 5]},
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": "a", "valid": false},
+      {"data": 50, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a divisor outside the integer domain keeps the document raw",
+    "schema": {"type": "number", "multipleOf": 2},
+    "expected": {"type": "number", "multipleOf": 2},
+    "tests": [
+      {"data": 4, "valid": true},
+      {"data": 3, "valid": false}
+    ]
   }
 ]
