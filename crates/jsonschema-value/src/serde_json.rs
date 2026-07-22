@@ -6,7 +6,7 @@ use serde_json::{Map, Value};
 
 use crate::{cmp, types::JsonType};
 
-use super::{Array, Json, Node, Object};
+use super::{Array, Json, JsonNumber, Node, Object};
 
 pub struct SerdeJson;
 
@@ -19,9 +19,46 @@ impl Json for SerdeJson {
     }
 }
 
+impl JsonNumber for serde_json::Number {
+    fn as_u64(&self) -> Option<u64> {
+        serde_json::Number::as_u64(self)
+    }
+    fn as_i64(&self) -> Option<i64> {
+        serde_json::Number::as_i64(self)
+    }
+    fn as_f64(&self) -> Option<f64> {
+        serde_json::Number::as_f64(self)
+    }
+    fn as_str(&self) -> Cow<'_, str> {
+        Cow::Owned(self.to_string())
+    }
+    fn to_number(&self) -> Cow<'_, serde_json::Number> {
+        Cow::Borrowed(self)
+    }
+}
+
+impl JsonNumber for &serde_json::Number {
+    fn as_u64(&self) -> Option<u64> {
+        serde_json::Number::as_u64(self)
+    }
+    fn as_i64(&self) -> Option<i64> {
+        serde_json::Number::as_i64(self)
+    }
+    fn as_f64(&self) -> Option<f64> {
+        serde_json::Number::as_f64(self)
+    }
+    fn as_str(&self) -> Cow<'_, str> {
+        Cow::Owned(self.to_string())
+    }
+    fn to_number(&self) -> Cow<'_, serde_json::Number> {
+        Cow::Borrowed(self)
+    }
+}
+
 impl<'a> Node<'a, SerdeJson> for &'a Value {
     type Object = &'a Map<String, Value>;
     type Array = &'a [Value];
+    type Number = &'a serde_json::Number;
 
     fn as_object(&self) -> Option<&'a Map<String, Value>> {
         match self {
@@ -44,9 +81,9 @@ impl<'a> Node<'a, SerdeJson> for &'a Value {
         }
     }
 
-    fn as_number(&self) -> Option<Cow<'a, serde_json::Number>> {
+    fn as_number(&self) -> Option<&'a serde_json::Number> {
         match self {
-            Value::Number(number) => Some(Cow::Borrowed(number)),
+            Value::Number(number) => Some(number),
             _ => None,
         }
     }
@@ -147,7 +184,7 @@ mod tests {
     use test_case::test_case;
 
     use super::{
-        super::{Array, Json, Node, Object},
+        super::{Array, Json, JsonNumber, Node, Object},
         SerdeJson,
     };
     use crate::types::JsonType;

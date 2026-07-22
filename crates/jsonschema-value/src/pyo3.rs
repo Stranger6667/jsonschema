@@ -30,7 +30,7 @@ use pyo3::{
 };
 use serde_json::{Map, Number, Value};
 
-use crate::{cmp, types::JsonType, Array, Json, Node, Object};
+use crate::{cmp, types::JsonType, Array, Json, JsonNumber, Node, Object};
 
 type PyNode<'py> = Borrowed<'py, 'py, PyAny>;
 
@@ -395,6 +395,7 @@ fn key_is_usable(key: PyNode<'_>) -> bool {
 impl<'py> Node<'py, Pyo3> for PyNode<'py> {
     type Object = Borrowed<'py, 'py, PyDict>;
     type Array = PyArray<'py>;
+    type Number = PyNumber<'py>;
 
     fn as_object(&self) -> Option<Self::Object> {
         match object_type(*self) {
@@ -433,8 +434,24 @@ impl<'py> Node<'py, Pyo3> for PyNode<'py> {
         }
     }
 
-    fn as_number(&self) -> Option<Cow<'py, Number>> {
-        number_of(*self).map(Cow::Owned)
+    fn as_number(&self) -> Option<PyNumber<'py>> {
+        let kind = object_type(*self);
+        match kind {
+            ObjType::Int => Some(PyNumber { node: *self, kind }),
+            // Non-finite floats and `Decimal("nan")` are not JSON numbers.
+            ObjType::Float => unsafe { ffi::PyFloat_AsDouble(self.as_ptr()) }
+                .is_finite()
+                .then_some(PyNumber { node: *self, kind }),
+            ObjType::Decimal => number_of(*self)
+                .is_some()
+                .then_some(PyNumber { node: *self, kind }),
+            ObjType::Enum => resolved(*self).as_number(),
+            ObjType::Unknown => {
+                record_unsupported(*self);
+                None
+            }
+            _ => None,
+        }
     }
 
     fn is_number(&self) -> bool {
@@ -518,7 +535,7 @@ impl<'py> Node<'py, Pyo3> for PyNode<'py> {
             Value::Bool(b) => self.as_boolean() == Some(*b),
             Value::Number(n) => self
                 .as_number()
-                .is_some_and(|got| cmp::equal_numbers(got.as_ref(), n)),
+                .is_some_and(|got| cmp::equal_numbers(&got, n)),
             Value::String(s) => self
                 .as_string()
                 .is_some_and(|got| got.as_ref() == s.as_str()),
@@ -544,6 +561,61 @@ impl<'py> Node<'py, Pyo3> for PyNode<'py> {
 
     fn cache_key(&self) -> Option<usize> {
         Some(self.as_ptr() as usize)
+    }
+}
+
+/// A Python number read in place; `kind` is the classification already done by `as_number`.
+pub struct PyNumber<'py> {
+    node: PyNode<'py>,
+    kind: ObjType,
+}
+
+impl JsonNumber for PyNumber<'_> {
+    fn as_u64(&self) -> Option<u64> {
+        match self.kind {
+            ObjType::Int => {
+                let value = unsafe { ffi::PyLong_AsUnsignedLongLong(self.node.as_ptr()) };
+                if value == u64::MAX && unsafe { !ffi::PyErr_Occurred().is_null() } {
+                    unsafe { ffi::PyErr_Clear() };
+                    return None;
+                }
+                Some(value)
+            }
+            _ => self.to_number().as_u64(),
+        }
+    }
+
+    fn as_i64(&self) -> Option<i64> {
+        match self.kind {
+            ObjType::Int => {
+                let value = unsafe { ffi::PyLong_AsLongLong(self.node.as_ptr()) };
+                if value == -1 && unsafe { !ffi::PyErr_Occurred().is_null() } {
+                    unsafe { ffi::PyErr_Clear() };
+                    return None;
+                }
+                Some(value)
+            }
+            _ => self.to_number().as_i64(),
+        }
+    }
+
+    fn as_f64(&self) -> Option<f64> {
+        match self.kind {
+            ObjType::Float => Some(unsafe { ffi::PyFloat_AsDouble(self.node.as_ptr()) }),
+            _ => self.to_number().as_f64(),
+        }
+    }
+
+    fn as_str(&self) -> Cow<'_, str> {
+        self.node
+            .str()
+            .ok()
+            .and_then(|text| text.to_str().map(|text| Cow::Owned(text.to_owned())).ok())
+            .unwrap_or(Cow::Borrowed(""))
+    }
+
+    fn to_number(&self) -> Cow<'_, Number> {
+        number_of(self.node).map_or(Cow::Owned(Number::from(0)), Cow::Owned)
     }
 }
 

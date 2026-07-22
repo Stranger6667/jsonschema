@@ -2,7 +2,7 @@
 
 use serde_json::{json, Value};
 
-use crate::{types::JsonType, Array, Json, Node, Object};
+use crate::{types::JsonType, Array, Json, JsonNumber, Node, Object};
 
 /// The document to encode before calling [`assert_conformance`].
 #[must_use]
@@ -40,6 +40,7 @@ pub fn assert_conformance<F: Json>(root: &F::Node<'_>) {
 
     assert_types::<F>(&member);
     assert_scalars::<F>(&member);
+    assert_numbers::<F>(&member);
     assert_containers::<F>(&member);
     assert_equality::<F>(&member);
     assert_identity::<F>(root, &member("object"));
@@ -109,6 +110,35 @@ fn assert_scalars<'a, F: Json>(member: &impl Fn(&str) -> F::Node<'a>) {
     );
     assert_eq!(member("boolean").as_boolean(), Some(true), "as_boolean");
     assert_eq!(member("string").as_boolean(), None, "as_boolean None");
+}
+
+// A number must be readable without building a `serde_json::Number`
+fn assert_numbers<'a, F: Json>(member: &impl Fn(&str) -> F::Node<'a>) {
+    let integer = member("integer").as_number().expect("integer");
+    assert_eq!(integer.as_u64(), Some(42), "as_u64");
+    assert_eq!(integer.as_i64(), Some(42), "as_i64");
+    assert_eq!(integer.as_f64(), Some(42.0), "as_f64");
+    assert!(integer.is_integer(), "integer is_integer");
+    assert_eq!(
+        integer.to_number().as_ref(),
+        &serde_json::Number::from(42),
+        "to_number"
+    );
+
+    let float = member("float").as_number().expect("float");
+    assert_eq!(float.as_f64(), Some(1.5), "float as_f64");
+    assert_eq!(float.as_u64(), None, "float as_u64");
+    assert_eq!(float.as_i64(), None, "float as_i64");
+    assert!(!float.is_integer(), "float is_integer");
+
+    assert!(
+        member("string").as_number().is_none(),
+        "string is not a number"
+    );
+    assert!(
+        member("boolean").as_number().is_none(),
+        "boolean is not a number"
+    );
 }
 
 fn assert_containers<'a, F: Json>(member: &impl Fn(&str) -> F::Node<'a>) {

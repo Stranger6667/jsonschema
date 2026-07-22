@@ -8,15 +8,15 @@
 )]
 
 use fraction::{BigFraction, One, Zero};
-use serde_json::Number;
 #[cfg(feature = "arbitrary-precision")]
 use std::cmp::Ordering;
 
 macro_rules! define_num_cmp {
     ($($trait_fn:ident => $fn_name:ident, $op:tt, $infinity_positive:literal, $ord_pat:pat),* $(,)?) => {
         $(
-            pub fn $fn_name<T>(value: &Number, limit: T) -> bool
+            pub fn $fn_name<N, T>(value: &N, limit: T) -> bool
             where
+                N: crate::JsonNumber,
                 T: Copy + num_traits::ToPrimitive,
                 u64: num_cmp::NumCmp<T>,
                 i64: num_cmp::NumCmp<T>,
@@ -31,7 +31,7 @@ macro_rules! define_num_cmp {
                     // onto the limit (e.g. -9223372036854775809 -> -2^63); compare them exactly.
                     #[cfg(feature = "arbitrary-precision")]
                     if v <= i64::MIN as f64 || v >= u64::MAX as f64 {
-                        if let Some(big_value) = bignum::try_parse_bigint(value) {
+                        if let Some(big_value) = bignum::try_parse_bigint(&value.to_number()) {
                             if let Some(ordering) = bignum::compare_bigint_to_limit(&big_value, limit) {
                                 return matches!(ordering, $ord_pat);
                             }
@@ -41,7 +41,7 @@ macro_rules! define_num_cmp {
                 } else {
                     #[cfg(feature = "arbitrary-precision")]
                     {
-                        if let Some(big_value) = bignum::try_parse_bigfraction(value) {
+                        if let Some(big_value) = bignum::try_parse_bigfraction(&value.to_number()) {
                             if let Some(limit_f64) = num_traits::ToPrimitive::to_f64(&limit) {
                                 let limit_frac = BigFraction::from(limit_f64);
                                 return big_value $op limit_frac;
@@ -73,8 +73,9 @@ define_num_cmp!(
 );
 
 #[cfg(feature = "macros")]
-pub fn eq<T>(value: &Number, limit: T) -> bool
+pub fn eq<N, T>(value: &N, limit: T) -> bool
 where
+    N: crate::JsonNumber,
     T: Copy + num_traits::ToPrimitive,
     u64: num_cmp::NumCmp<T>,
     i64: num_cmp::NumCmp<T>,
@@ -89,7 +90,7 @@ where
     } else {
         #[cfg(feature = "arbitrary-precision")]
         {
-            if let Some(big_value) = bignum::try_parse_bigfraction(value) {
+            if let Some(big_value) = bignum::try_parse_bigfraction(&value.to_number()) {
                 if let Some(limit_f64) = num_traits::ToPrimitive::to_f64(&limit) {
                     return big_value == BigFraction::from(limit_f64);
                 }
@@ -103,7 +104,7 @@ where
     }
 }
 
-pub fn is_multiple_of_float(value: &Number, multiple: f64) -> bool {
+pub fn is_multiple_of_float<N: crate::JsonNumber>(value: &N, multiple: f64) -> bool {
     if let Some(value_f64) = value.as_f64() {
         // Zero is a multiple of any non-zero number
         // This check must come first to avoid division-related edge cases
@@ -134,7 +135,7 @@ pub fn is_multiple_of_float(value: &Number, multiple: f64) -> bool {
 /// Beyond this value, f64 loses precision and arithmetic operations become unreliable.
 const MAX_SAFE_INTEGER: u64 = 1u64 << 53;
 
-pub fn is_multiple_of_integer(value: &Number, multiple: f64) -> bool {
+pub fn is_multiple_of_integer<N: crate::JsonNumber>(value: &N, multiple: f64) -> bool {
     // Integer instances use integer modulo directly: it is exact and avoids the slower float
     // `fract()` + `%`. The divisor guard keeps it exact - divisors above 2^53 may already have
     // lost precision when converted to f64 during schema compilation, and `multiple > 0.0` avoids
@@ -160,7 +161,7 @@ pub fn is_multiple_of_integer(value: &Number, multiple: f64) -> bool {
         #[cfg(feature = "arbitrary-precision")]
         {
             // Try parsing as BigInt first for large integers
-            if let Some(big_value) = bignum::try_parse_bigint(value) {
+            if let Some(big_value) = bignum::try_parse_bigint(&value.to_number()) {
                 use num_bigint::BigInt;
                 // Convert the multiple to BigInt.
                 // Note: For large divisors beyond i64/u64 range, the schema compilation

@@ -45,14 +45,14 @@ macro_rules! num_cmp {
 #[inline]
 #[doc(hidden)]
 #[must_use]
-pub fn equal_numbers(left: &serde_json::Number, right: &serde_json::Number) -> bool {
+pub fn equal_numbers<L: crate::JsonNumber>(left: &L, right: &serde_json::Number) -> bool {
     #[cfg(feature = "arbitrary-precision")]
     {
         use crate::numeric::bignum;
         use fraction::BigFraction;
 
         // Check BigInt/BigFraction first to avoid precision loss from f64 conversion
-        if let Some(left_bigint) = bignum::try_parse_bigint(left) {
+        if let Some(left_bigint) = bignum::try_parse_bigint(&left.to_number()) {
             if let Some(right_bigint) = bignum::try_parse_bigint(right) {
                 left_bigint == right_bigint
             } else if let Some(b) = right.as_u64() {
@@ -66,7 +66,7 @@ pub fn equal_numbers(left: &serde_json::Number, right: &serde_json::Number) -> b
             } else {
                 unreachable!("Right is not parseable as any numeric type - should not happen for valid JSON numbers")
             }
-        } else if let Some(left_frac) = bignum::try_parse_bigfraction(left) {
+        } else if let Some(left_frac) = bignum::try_parse_bigfraction(&left.to_number()) {
             if let Some(right_frac) = bignum::try_parse_bigfraction(right) {
                 left_frac == right_frac
             } else if let Some(right_bigint) = bignum::try_parse_bigint(right) {
