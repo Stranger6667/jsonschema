@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Packaging issue again.
+
 ## [0.48.4] - 2026-07-22
 
 ### Fixed
