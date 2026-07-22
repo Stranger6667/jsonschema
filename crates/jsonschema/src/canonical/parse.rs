@@ -9,8 +9,8 @@ use crate::{
         algebra,
         context::CanonicalizationContext,
         ir::{
-            tighter, BoundCardinality, BoundInteger, CanonicalJson, IntegerBounds, LengthBounds,
-            Schema, SchemaKind, StringLeaf,
+            tighter, AtLeastTwo, BoundCardinality, BoundInteger, CanonicalJson, Discrete,
+            IntegerBounds, LengthBounds, Schema, SchemaKind, StringLeaf,
         },
         CanonicalizationError,
     },
@@ -37,7 +37,7 @@ fn parse_schema(
         Value::Bool(false) => return Ok(Some(Schema::new(SchemaKind::False))),
         Value::Object(map) => map,
         // Not a schema document; the root is rejected earlier, a nested one keeps the document raw.
-        _ => return Ok(None),
+        Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => return Ok(None),
     };
 
     let mut type_set = None;
@@ -119,7 +119,10 @@ fn parse_schema(
                         pattern: pattern.to_string(),
                     });
                 }
-                patterns.push(pattern);
+                // `pattern` matches anywhere in the string, so an empty one matches every string.
+                if !pattern.is_empty() {
+                    patterns.push(pattern);
+                }
             }
             // A fractional or (default build) out-of-`i64` bound has no modeled integer form; keep it raw.
             ("minimum", Value::Number(number)) if ctx.draft().is_known_keyword("minimum") => {
@@ -302,7 +305,7 @@ fn finite_value_spelling_is_exact(value: &Value) -> bool {
         }
         Value::Array(items) => items.iter().all(finite_value_spelling_is_exact),
         Value::Object(map) => map.values().all(finite_value_spelling_is_exact),
-        _ => true,
+        Value::Null | Value::Bool(_) | Value::String(_) => true,
     }
 }
 
@@ -320,7 +323,7 @@ fn parse_type_set(value: &Value) -> Option<JsonTypeSet> {
         Value::Array(names) => names.iter().try_fold(JsonTypeSet::empty(), |set, name| {
             Some(set.insert(name.as_str()?.parse::<JsonType>().ok()?))
         }),
-        _ => None,
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Object(_) => None,
     }
 }
 
@@ -335,32 +338,30 @@ pub(crate) fn type_set_schema(set: JsonTypeSet) -> Schema {
         return Schema::new(SchemaKind::Const(CanonicalJson::from_value(&Value::Null)));
     }
     if set == JsonTypeSet::from(JsonType::Boolean) {
-        return Schema::new(SchemaKind::Enum(vec![
+        return canonicalize_value_set(vec![
             CanonicalJson::from_value(&Value::Bool(false)),
             CanonicalJson::from_value(&Value::Bool(true)),
-        ]));
+        ]);
     }
     Schema::new(SchemaKind::MultiType(set))
 }
 
 /// Pack members into the canonical value-set shape: empty is unsatisfiable, singletons are `const`,
 /// larger sets are sorted, deduplicated `enum`s - unless they saturate 2+ types, which is a type list.
-pub(crate) fn canonicalize_value_set(mut members: Vec<CanonicalJson>) -> Schema {
-    members.sort();
-    members.dedup();
-    match members.len() {
-        0 => Schema::new(SchemaKind::False),
-        1 => Schema::new(SchemaKind::Const(
-            members.into_iter().next().expect("len == 1"),
-        )),
-        _ => {
-            if let Some(type_set) = SchemaKind::finite_values_saturated_domain(&members) {
+pub(crate) fn canonicalize_value_set(members: Vec<CanonicalJson>) -> Schema {
+    match AtLeastTwo::new(members) {
+        Ok(values) => {
+            if let Some(type_set) = SchemaKind::finite_values_saturated_domain(values.as_slice()) {
                 if type_set.len() >= 2 {
                     return Schema::new(SchemaKind::MultiType(type_set));
                 }
             }
-            Schema::new(SchemaKind::Enum(members))
+            Schema::new(SchemaKind::Enum(values))
         }
+        Err(mut lone) => match lone.pop() {
+            Some(only) => Schema::new(SchemaKind::Const(only)),
+            None => Schema::new(SchemaKind::False),
+        },
     }
 }
 

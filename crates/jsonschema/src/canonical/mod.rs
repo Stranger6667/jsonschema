@@ -23,6 +23,8 @@
 //!   [`view`](CanonicalSchema::view).
 //! - [`CanonicalView`] - a total, match-once view of one canonical node for structural inspection.
 
+#![deny(clippy::wildcard_enum_match_arm)]
+
 pub mod json;
 
 pub(crate) mod algebra;

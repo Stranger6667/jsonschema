@@ -8,8 +8,8 @@ use crate::{
     canonical::{
         context::{CanonicalizationContext, CompiledMatcher},
         ir::{
-            BoundCardinality, BoundInteger, CanonicalJson, IntegerBounds, Schema, SchemaKind,
-            StringLeaf,
+            AtLeastTwo, BoundCardinality, BoundInteger, CanonicalJson, IntegerBounds, LengthBounds,
+            NonEmpty, Schema, SchemaKind, StringLeaf, StringLeaves, Windows,
         },
         parse,
     },
@@ -102,35 +102,35 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
         (SchemaKind::MultiType(set), SchemaKind::String(leaf))
         | (SchemaKind::String(leaf), SchemaKind::MultiType(set)) => {
             if SchemaKind::semantic_cover(set).contains(JsonType::String) {
-                string_leaf(leaf)
+                string_leaf(leaf.into_inner())
             } else {
                 Schema::new(SchemaKind::False)
             }
         }
         // Two string leaves: keep the strings both accept by tightening to the narrower length window.
         (SchemaKind::String(first), SchemaKind::String(second)) => {
-            string_leaf(intersect_string_leaves(first, second))
+            string_leaf(intersect_string_leaves(first.into_inner(), second.into_inner()))
         }
         // An integer leaf constrains integer values. A type set keeps it only when the set covers
         // `integer`; otherwise the two share no value, so `False`.
         (SchemaKind::MultiType(set), SchemaKind::Integer(bounds))
         | (SchemaKind::Integer(bounds), SchemaKind::MultiType(set)) => {
             if SchemaKind::semantic_cover(set).contains(JsonType::Integer) {
-                integer_leaf(bounds, ctx)
+                integer_leaf(bounds.into_inner(), ctx)
             } else {
                 Schema::new(SchemaKind::False)
             }
         }
         // Two integer leaves: keep the integers both accept by tightening to the narrower interval.
         (SchemaKind::Integer(first), SchemaKind::Integer(second)) => {
-            integer_leaf(first.intersect(second), ctx)
+            integer_leaf(first.into_inner().intersect(second.into_inner()), ctx)
         }
         // A typed group holds `integer` values (Draft 4); keep the ones within the leaf's interval.
         (SchemaKind::TypedGroup { ty, body }, SchemaKind::Integer(bounds))
         | (SchemaKind::Integer(bounds), SchemaKind::TypedGroup { ty, body }) => {
             let kept = into_members(body.into_kind())
                 .into_iter()
-                .filter(|member| integer_leaf_admits(&bounds, member))
+                .filter(|member| integer_leaf_admits(bounds.get(), member))
                 .collect();
             typed_group(ty, parse::canonicalize_value_set(kept))
         }
@@ -144,12 +144,13 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
 
 /// The schema accepting every value that ANY of the `branches` accepts (set union, `anyOf`), in normal form.
 pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Schema {
-    // Each branch is sorted into an accumulator: allowed JSON types, loose values, and per-type value groups.
+    // Every branch is sorted into one of these: the JSON types any branch allows, loose values, the
+    // values each `TypedGroup` allows for its type, and the string/integer branches kept as windows.
     let mut members: Vec<CanonicalJson> = Vec::new();
     let mut types = JsonTypeSet::empty();
     let mut groups: Vec<(JsonType, Vec<CanonicalJson>)> = Vec::new();
-    let mut strings: Vec<StringLeaf> = Vec::new();
-    let mut integers: Vec<IntegerBounds> = Vec::new();
+    let mut strings = StringLeaves::default();
+    let mut integers: Windows<BoundInteger> = Windows::default();
 
     let mut stack = branches;
     while let Some(branch) = stack.pop() {
@@ -168,19 +169,19 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             SchemaKind::Const(value) => members.push(value),
             // Collect a finite set of allowed values.
             SchemaKind::Enum(values) => members.extend(values),
-            // A `TypedGroup` accepts values of one JSON type that lie in a value set; collect those values
-            // into that type's pool.
+            // A `TypedGroup` accepts values of one JSON type that lie in a value set; collect those
+            // values under that type.
             SchemaKind::TypedGroup { ty, body } => {
                 let values = into_members(body.into_kind());
                 match groups.iter_mut().find(|(existing, _)| *existing == ty) {
-                    Some((_, pool)) => pool.extend(values),
+                    Some((_, collected)) => collected.extend(values),
                     None => groups.push((ty, values)),
                 }
             }
-            // A string leaf accepts a length window; collect each into its own branch pool.
-            SchemaKind::String(leaf) => strings.push(leaf),
-            // An integer leaf accepts an interval; collect each into its own branch pool.
-            SchemaKind::Integer(bounds) => integers.push(bounds),
+            // A string leaf accepts a length window; collect it with the other string branches.
+            SchemaKind::String(leaf) => strings.insert(leaf.into_inner()),
+            // An integer leaf accepts an interval; collect it with the other integer branches.
+            SchemaKind::Integer(bounds) => integers.insert(bounds.into_inner()),
             // `Raw` is whole-document and never nested in a combinator, so union never sees it.
             SchemaKind::Raw(_) => {
                 unreachable!("`Raw` is whole-document; combinators never contain it")
@@ -212,6 +213,92 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         integers.clear();
     }
 
+    // A single value is a one-value window spelled differently, so move it in beside the windows and
+    // let it merge with a neighbour it touches.
+    // e.g.  anyOf [
+    //         {"type": "integer", "minimum": 6},
+    //         {"const": 5}
+    //       ]  =>  {"type": "integer", "minimum": 5}
+    if !strings.is_empty() || !integers.is_empty() {
+        members.retain(|member| !lift_degenerate_member(&mut strings, &mut integers, member, ctx));
+    }
+
+    // A Draft 4 `integer` group and an `integer` interval both reject `7.0`, so an interval holding
+    // every value of the group makes it redundant.
+    // e.g.  Draft 4, anyOf [
+    //         {"type": "integer", "minimum": 2},
+    //         {"type": "integer", "enum": [7]}
+    //       ]  =>  {"type": "integer", "minimum": 2}
+    // A loose `{"enum": [7]}` is not redundant the same way: it also matches `7.0`, which the interval
+    // rejects, so anyOf [{"type": "integer", "minimum": 2}, {"enum": [7]}] stays whole.
+    if !integers.is_empty() {
+        let windows = integers.as_slice();
+        groups.retain(|(ty, values)| {
+            *ty != JsonType::Integer
+                || !values.iter().all(|member| {
+                    windows
+                        .iter()
+                        .any(|bounds| integer_leaf_admits(bounds, member))
+                })
+        });
+    }
+
+    // A window left unbounded on both sides - and, for a string, carrying no pattern - accepts every
+    // value of its type, so it *is* that type. Fold it into the type set and re-run, which lets the
+    // wider set absorb further branches.
+    // e.g.  anyOf [
+    //         {"type": "integer", "maximum": 0},
+    //         {"type": "integer", "minimum": 1}
+    //       ]  =>  {"type": "integer"}
+    // Windows of a type the set already covers were cleared above, so widening here always adds a
+    // bit. Were one to survive, it would be dropped without widening - a branch lost silently.
+    debug_assert!(integers.is_empty() || !cover.contains(JsonType::Integer));
+    debug_assert!(strings.is_empty() || !cover.contains(JsonType::String));
+    let mut widened = types;
+    integers.retain(|bounds| {
+        let spans_domain = bounds.is_unbounded();
+        if spans_domain {
+            widened = union_type_sets(widened, JsonTypeSet::from(JsonType::Integer));
+        }
+        !spans_domain
+    });
+    strings.retain(|leaf| {
+        let spans_domain = leaf.lengths.is_unbounded() && leaf.patterns.is_empty();
+        if spans_domain {
+            widened = union_type_sets(widened, JsonTypeSet::from(JsonType::String));
+        }
+        !spans_domain
+    });
+    if widened != types {
+        debug_assert!(widened.union(types) == widened, "type set lost a member");
+        return rerun(widened, members, groups, strings, integers, ctx);
+    }
+
+    // A value one of the surviving windows already accepts adds nothing beside it.
+    // e.g.  anyOf [
+    //         {"type": "string", "minLength": 1},
+    //         {"const": "abc"}
+    //       ]  =>  {"type": "string", "minLength": 1}
+    if !members.is_empty() && (!strings.is_empty() || !integers.is_empty()) {
+        let compiled: Vec<(&StringLeaf, Vec<Arc<CompiledMatcher>>)> = strings
+            .as_slice()
+            .iter()
+            .map(|leaf| {
+                let regexes = leaf
+                    .patterns
+                    .iter()
+                    .map(|pattern| {
+                        ctx.compile_regex(pattern)
+                            .expect("pattern validated during parsing")
+                    })
+                    .collect();
+                (leaf, regexes)
+            })
+            .collect();
+        let windows = integers.as_slice();
+        members.retain(|member| !leaf_absorbs_member(&compiled, windows, member, ctx));
+    }
+
     let value_set = parse::canonicalize_value_set(members);
     // Packing the loose values may fill a whole type's domain (all of `null`/`boolean`), turning them into a
     // type. As a type it can now absorb more values/groups, so fold it back in and re-run the whole pass.
@@ -221,25 +308,10 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     //         {"const": true}
     //       ]  =>  {"type": ["null", "boolean"]}
     if let SchemaKind::MultiType(saturated) = value_set.kind() {
-        let mut rest: Vec<Schema> = vec![Schema::new(SchemaKind::MultiType(union_type_sets(
-            types, *saturated,
-        )))];
-        rest.extend(
-            groups
-                .into_iter()
-                .map(|(ty, pool)| typed_group(ty, parse::canonicalize_value_set(pool))),
-        );
-        rest.extend(
-            strings
-                .into_iter()
-                .map(|leaf| Schema::new(SchemaKind::String(leaf))),
-        );
-        rest.extend(
-            integers
-                .into_iter()
-                .map(|bounds| Schema::new(SchemaKind::Integer(bounds))),
-        );
-        return union(rest, ctx);
+        let widened = union_type_sets(types, *saturated);
+        debug_assert!(widened.union(types) == widened, "type set lost a member");
+        debug_assert!(widened != types, "re-run without a wider type set");
+        return rerun(widened, Vec::new(), groups, strings, integers, ctx);
     }
 
     // Assemble the surviving branches. The collected types become one branch.
@@ -252,40 +324,117 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     //         {"type": "integer", "enum": [1]},
     //         {"enum": [1, "a"]}
     //       ]  =>  {"enum": [1, "a"]}
-    for (ty, pool) in groups {
-        let body = parse::canonicalize_value_set(pool);
+    for (ty, values) in groups {
+        let body = parse::canonicalize_value_set(values);
         if body.kind().finite_values().is_some() && !value_set_admits_group(&value_set, &body) {
             out.push(typed_group(ty, body));
         }
     }
     // Each surviving string leaf becomes its own branch.
     for leaf in strings {
-        out.push(Schema::new(SchemaKind::String(leaf)));
+        out.push(string_leaf(leaf));
     }
     // Each surviving integer leaf becomes its own branch.
     for bounds in integers {
-        out.push(Schema::new(SchemaKind::Integer(bounds)));
+        out.push(integer_leaf(bounds, ctx));
     }
     // The loose value set becomes a branch, unless it collapsed to empty.
     if !matches!(value_set.kind(), SchemaKind::False) {
         out.push(value_set);
     }
 
-    // Sort and dedup for a stable form, then collapse: no branches accept nothing (`False`), a lone branch
-    // needs no `anyOf` wrapper, and two or more stay an `AnyOf`.
-    out.sort();
-    out.dedup();
-    match out.len() {
-        0 => Schema::new(SchemaKind::False),
-        1 => out.into_iter().next().expect("len == 1"),
-        _ => Schema::new(SchemaKind::AnyOf(out)),
+    // Zero branches accept nothing, so the union is `False`; one branch needs no `anyOf` wrapper.
+    match AtLeastTwo::new(out) {
+        Ok(branches) => {
+            // `intersect` dispatches on the assumption that a branch is none of these.
+            debug_assert!(
+                branches.as_slice().iter().all(|branch| !matches!(
+                    branch.kind(),
+                    SchemaKind::True | SchemaKind::False | SchemaKind::AnyOf(_)
+                )),
+                "union branch is not in normal form"
+            );
+            Schema::new(SchemaKind::AnyOf(branches))
+        }
+        Err(mut lone) => match lone.pop() {
+            Some(only) => only,
+            None => Schema::new(SchemaKind::False),
+        },
     }
 }
 
+/// Move a value in beside the windows of its own type when a one-value window says the same thing.
+/// Returns `true` when it moved, so the caller drops it from the loose values.
+// The arms are guarded on what has been collected and on the draft, so they cannot be enumerated.
+#[allow(clippy::wildcard_enum_match_arm)]
+fn lift_degenerate_member(
+    strings: &mut StringLeaves,
+    integers: &mut Windows<BoundInteger>,
+    member: &CanonicalJson,
+    ctx: &CanonicalizationContext,
+) -> bool {
+    match member.as_value() {
+        // `maxLength: 0` accepts the empty string and nothing else, so `{"const": ""}` is that
+        // window written another way.
+        Value::String(text) if text.is_empty() && !strings.is_empty() => {
+            strings.insert(StringLeaf {
+                lengths: LengthBounds {
+                    minimum: None,
+                    maximum: Some(BoundCardinality::from(0)),
+                },
+                patterns: Vec::new(),
+            });
+            true
+        }
+        // Outside Draft 4 the value and the window accept the same instances. Draft 4 keeps the value
+        // where it is: `7` there also matches `7.0`, which an `integer` window rejects.
+        Value::Number(number) if !integers.is_empty() && !matches!(ctx.draft(), Draft::Draft4) => {
+            match BoundInteger::from_number(number) {
+                Some(bound) => {
+                    integers.insert(IntegerBounds {
+                        minimum: Some(bound.clone()),
+                        maximum: Some(bound),
+                    });
+                    true
+                }
+                None => false,
+            }
+        }
+        _ => false,
+    }
+}
+
+/// Re-run `union` with a wider type set: everything collected so far goes back in, so nothing is
+/// dropped. `types` grows strictly on every re-run and holds at most one bit per JSON type, which
+/// bounds the recursion; the callers assert that growth.
+fn rerun(
+    types: JsonTypeSet,
+    members: Vec<CanonicalJson>,
+    groups: Vec<(JsonType, Vec<CanonicalJson>)>,
+    strings: StringLeaves,
+    integers: Windows<BoundInteger>,
+    ctx: &CanonicalizationContext,
+) -> Schema {
+    let mut rest: Vec<Schema> = vec![Schema::new(SchemaKind::MultiType(types))];
+    rest.push(parse::canonicalize_value_set(members));
+    rest.extend(
+        groups
+            .into_iter()
+            .map(|(ty, values)| typed_group(ty, parse::canonicalize_value_set(values))),
+    );
+    rest.extend(strings.into_iter().map(string_leaf));
+    rest.extend(integers.into_iter().map(|bounds| integer_leaf(bounds, ctx)));
+    union(rest, ctx)
+}
+
 /// Intersect `other` with each union branch; the last branch moves `other` instead of cloning it.
-fn distribute(mut branches: Vec<Schema>, other: Schema, ctx: &CanonicalizationContext) -> Schema {
-    let last = branches.pop().expect("AnyOf carries at least two branches");
-    let mut out: Vec<Schema> = branches
+fn distribute(
+    branches: AtLeastTwo<Schema>,
+    other: Schema,
+    ctx: &CanonicalizationContext,
+) -> Schema {
+    let (rest, last) = branches.split_last();
+    let mut out: Vec<Schema> = rest
         .into_iter()
         .map(|branch| intersect(branch, other.clone(), ctx))
         .collect();
@@ -296,8 +445,15 @@ fn distribute(mut branches: Vec<Schema>, other: Schema, ctx: &CanonicalizationCo
 fn into_members(kind: SchemaKind) -> Vec<CanonicalJson> {
     match kind {
         SchemaKind::Const(value) => vec![value],
-        SchemaKind::Enum(values) => values,
-        other => unreachable!("value-set kind expected: {other:?}"),
+        SchemaKind::Enum(values) => values.into_vec(),
+        other @ (SchemaKind::MultiType(_)
+        | SchemaKind::TypedGroup { .. }
+        | SchemaKind::String(_)
+        | SchemaKind::Integer(_)
+        | SchemaKind::AnyOf(_)
+        | SchemaKind::True
+        | SchemaKind::False
+        | SchemaKind::Raw(_)) => unreachable!("value-set kind expected: {other:?}"),
     }
 }
 
@@ -323,6 +479,7 @@ fn restrict_members(
         // `other` is a string leaf: keep the members that fit its window and match every pattern.
         SchemaKind::String(leaf) => {
             let regexes: Vec<_> = leaf
+                .get()
                 .patterns
                 .iter()
                 .map(|pattern| {
@@ -332,7 +489,7 @@ fn restrict_members(
                 .collect();
             let kept = members
                 .into_iter()
-                .filter(|member| string_leaf_admits(&leaf, &regexes, member))
+                .filter(|member| string_leaf_admits(leaf.get(), &regexes, member))
                 .collect();
             parse::canonicalize_value_set(kept)
         }
@@ -341,7 +498,7 @@ fn restrict_members(
         SchemaKind::Integer(bounds) => {
             let kept = members
                 .into_iter()
-                .filter(|member| integer_leaf_admits(&bounds, member))
+                .filter(|member| integer_leaf_admits(bounds.get(), member))
                 .collect();
             let value_set = parse::canonicalize_value_set(kept);
             if matches!(ctx.draft(), Draft::Draft4) {
@@ -360,7 +517,10 @@ fn restrict_members(
             typed_group(ty, parse::canonicalize_value_set(kept))
         }
         // Intersect dispatch already handled `True`/`False`/`AnyOf`/`Raw`, so `other` is a leaf here.
-        other => unreachable!("dispatch handles the remaining kinds: {other:?}"),
+        other @ (SchemaKind::True
+        | SchemaKind::False
+        | SchemaKind::AnyOf(_)
+        | SchemaKind::Raw(_)) => unreachable!("dispatch handles the remaining kinds: {other:?}"),
     }
 }
 
@@ -405,6 +565,27 @@ fn value_set_admits_group(value_set: &Schema, body: &Schema) -> bool {
         .all(|value| admitted.binary_search(value).is_ok())
 }
 
+/// Whether a surviving window already accepts `member`; only a window of its own JSON type can.
+// The arms are guarded on the draft, so they cannot be enumerated.
+#[allow(clippy::wildcard_enum_match_arm)]
+fn leaf_absorbs_member(
+    strings: &[(&StringLeaf, Vec<Arc<CompiledMatcher>>)],
+    integers: &[IntegerBounds],
+    member: &CanonicalJson,
+    ctx: &CanonicalizationContext,
+) -> bool {
+    match member.as_value() {
+        Value::String(_) => strings
+            .iter()
+            .any(|(leaf, regexes)| string_leaf_admits(leaf, regexes, member)),
+        // Draft 4 keeps the value: `7` there also matches `7.0`, which an `integer` interval rejects.
+        Value::Number(_) if !matches!(ctx.draft(), Draft::Draft4) => integers
+            .iter()
+            .any(|bounds| integer_leaf_admits(bounds, member)),
+        _ => false,
+    }
+}
+
 /// Union of two type sets, dropping `Integer` when `Number` is present.
 fn union_type_sets(left: JsonTypeSet, right: JsonTypeSet) -> JsonTypeSet {
     SchemaKind::canonical_type_set(left.union(right))
@@ -412,8 +593,22 @@ fn union_type_sets(left: JsonTypeSet, right: JsonTypeSet) -> JsonTypeSet {
 
 /// A `String` node, collapsed to `False` when its length window is empty.
 pub(crate) fn string_leaf(leaf: StringLeaf) -> Schema {
-    if leaf.lengths.is_empty() {
+    let Some(leaf) = NonEmpty::new(leaf) else {
         return Schema::new(SchemaKind::False);
+    };
+    // `maxLength: 0` accepts the empty string and nothing else.
+    // e.g.  {"type": "string", "maxLength": 0}  =>  {"const": ""}
+    if leaf.get().patterns.is_empty()
+        && leaf
+            .get()
+            .lengths
+            .maximum
+            .as_ref()
+            .is_some_and(BoundCardinality::is_zero)
+    {
+        return Schema::new(SchemaKind::Const(CanonicalJson::from_value(
+            &Value::String(String::new()),
+        )));
     }
     Schema::new(SchemaKind::String(leaf))
 }
@@ -421,10 +616,10 @@ pub(crate) fn string_leaf(leaf: StringLeaf) -> Schema {
 /// An `Integer` node, collapsed to `False` when its interval is empty and to the value itself when the
 /// interval holds exactly one. Draft 4 keeps the integer guard on that value, where `5.0` is not `5`.
 pub(crate) fn integer_leaf(bounds: IntegerBounds, ctx: &CanonicalizationContext) -> Schema {
-    if bounds.is_empty() {
+    let Some(bounds) = NonEmpty::new(bounds) else {
         return Schema::new(SchemaKind::False);
-    }
-    if let (Some(min), Some(max)) = (&bounds.minimum, &bounds.maximum) {
+    };
+    if let (Some(min), Some(max)) = (&bounds.get().minimum, &bounds.get().maximum) {
         if min == max {
             let value = Schema::new(SchemaKind::Const(CanonicalJson::from_value(
                 &Value::Number(min.to_number()),

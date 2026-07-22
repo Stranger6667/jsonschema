@@ -133,6 +133,16 @@ fn oversized_integer_compares_by_overflow_direction(text: &str, expected: &Value
     assert_eq!(canonical.to_json_schema(), Value::Object(expected));
 }
 
+// Default build: a value past `i64` cannot lift into a window, so a covering interval absorbs it by
+// overflow direction alone.
+#[cfg(not(feature = "arbitrary-precision"))]
+#[test_case(r#"{"anyOf":[{"type":"integer","minimum":2},{"const":1e30}]}"#, CanonicalKind::Integer; "absorbed above every maximum")]
+#[test_case(r#"{"anyOf":[{"type":"integer","maximum":5},{"const":1e30}]}"#, CanonicalKind::AnyOf; "kept beyond the maximum")]
+fn oversized_member_absorption(text: &str, kind: CanonicalKind) {
+    let schema: Value = serde_json::from_str(text).expect("valid schema JSON");
+    assert_eq!(canonicalize(&schema).expect("canonicalizes").kind(), kind);
+}
+
 // Draft 4 `integer` is a typed group an interval bound narrows; a bound excluding every member leaves
 // nothing satisfiable, a mixed type set guards only its integer members, and the bound may sit on
 // either side of the intersection.

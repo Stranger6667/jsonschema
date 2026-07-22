@@ -140,8 +140,6 @@ impl RbCanonicalSchema {
                 .as_value(),
             CanonicalView::AnyOf(branches) => ruby.obj_wrap(AnyOfView { branches }).as_value(),
             CanonicalView::Raw(schema) => ruby.obj_wrap(RawView { schema }).as_value(),
-            // TODO(canonical): new `CanonicalView` variants need view classes here.
-            other => unreachable!("unsupported canonical view: {other:?}"),
         }
     }
 
