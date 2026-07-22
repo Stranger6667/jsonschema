@@ -6,7 +6,7 @@ use serde_json::{Map, Value};
 
 use crate::{cmp, types::JsonType};
 
-use super::{Array, Json, JsonNumber, Node, Object};
+use super::{Array, Json, JsonNumber, Node, NodeIdentity, Object};
 
 pub struct SerdeJson;
 
@@ -126,8 +126,8 @@ impl<'a> Node<'a, SerdeJson> for &'a Value {
         Cow::Borrowed(self)
     }
 
-    fn cache_key(&self) -> Option<usize> {
-        Some(std::ptr::from_ref::<Value>(self) as usize)
+    fn identity(&self) -> Option<NodeIdentity> {
+        Some(NodeIdentity::new(std::ptr::from_ref::<Value>(self) as usize))
     }
 }
 
@@ -254,20 +254,20 @@ mod tests {
         assert!(matches!(node.to_value(), Cow::Borrowed(_)));
     }
 
-    fn assert_cache_key_stability<F: Json>(node: &F::Node<'_>) {
+    fn assert_identity_stability<F: Json>(node: &F::Node<'_>) {
         let child = node
             .as_object()
             .expect("object")
             .get(&F::prepare_key("a"))
             .expect("present");
-        assert_eq!(node.cache_key(), node.cache_key());
-        assert_ne!(node.cache_key(), child.cache_key());
+        assert_eq!(node.identity(), node.identity());
+        assert_ne!(node.identity(), child.identity());
     }
 
     #[test]
-    fn cache_key_is_stable_per_node() {
+    fn identity_is_stable_per_node() {
         let document = json!({"a": {"b": 1}});
-        assert_cache_key_stability::<SerdeJson>(&&document);
+        assert_identity_stability::<SerdeJson>(&&document);
     }
 
     fn assert_iteration_order<F: Json>(node: &F::Node<'_>) {

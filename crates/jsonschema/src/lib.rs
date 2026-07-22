@@ -919,12 +919,14 @@ mod content_media_type;
 pub(crate) mod dereferencer;
 pub mod error;
 mod evaluation;
-pub(crate) use jsonschema_value::{cmp, numeric, unique, Array, Json, Node, Object, SerdeJson};
+pub(crate) use jsonschema_value::{
+    cmp, numeric, unique, Array, Json, Node, NodeIdentity, Object, SerdeJson,
+};
 /// Implementing a JSON representation, so that [`options_for`] builds a validator accepting it.
 pub mod json {
     #[cfg(feature = "conformance")]
     pub use jsonschema_value::conformance;
-    pub use jsonschema_value::{cmp, unique, Array, Json, Node, Object, SerdeJson};
+    pub use jsonschema_value::{cmp, unique, Array, Json, Node, NodeIdentity, Object, SerdeJson};
 }
 mod http;
 mod keywords;

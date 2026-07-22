@@ -144,7 +144,7 @@ impl<F: Json> ItemsValidators<F> {
         // Break cycles from self-referential `$dynamicRef`/`$recursiveRef` under
         // `unevaluatedItems`.
         let validators_id = std::ptr::from_ref::<ItemsValidators<F>>(self) as usize;
-        let identity = instance.cache_key();
+        let identity = instance.identity();
         if ctx.enter_marking(validators_id, identity) {
             return;
         }

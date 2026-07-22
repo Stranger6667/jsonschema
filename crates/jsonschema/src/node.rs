@@ -198,19 +198,19 @@ impl<F: Json> PendingTarget<F> {
 impl<F: Json> Validate<F> for PendingSchemaNode<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         let node_id = self.node_id();
-        let cache_key = instance.container_cache_key();
+        let container_identity = instance.container_identity();
         // Check memoization cache first (only for arrays/objects)
-        if let Some(cached) = ctx.get_cached_result(node_id, cache_key) {
+        if let Some(cached) = ctx.get_cached_result(node_id, container_identity) {
             return cached;
         }
-        let identity = instance.cache_key();
+        let identity = instance.identity();
         if ctx.enter(node_id, identity) {
             return true; // Cycle detected
         }
         let result = self.with_node(|node| node.is_valid(instance, ctx));
         ctx.exit(node_id, identity);
         // Cache result for recursive schemas
-        ctx.cache_result(node_id, cache_key, result);
+        ctx.cache_result(node_id, container_identity, result);
         result
     }
 
@@ -221,7 +221,7 @@ impl<F: Json> Validate<F> for PendingSchemaNode<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        let identity = instance.cache_key();
+        let identity = instance.identity();
         if ctx.enter(self.node_id(), identity) {
             return Ok(());
         }
@@ -237,7 +237,7 @@ impl<F: Json> Validate<F> for PendingSchemaNode<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> ErrorIterator<'i> {
-        let identity = instance.cache_key();
+        let identity = instance.identity();
         if ctx.enter(self.node_id(), identity) {
             return crate::error::no_error();
         }
@@ -253,7 +253,7 @@ impl<F: Json> Validate<F> for PendingSchemaNode<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        let identity = instance.cache_key();
+        let identity = instance.identity();
         if ctx.enter(self.node_id(), identity) {
             return EvaluationResult::valid_empty();
         }

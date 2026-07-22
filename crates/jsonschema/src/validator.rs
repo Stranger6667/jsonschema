@@ -6,7 +6,7 @@ use crate::{
     evaluation::{Annotations, ErrorDescription, Evaluation, EvaluationNode},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
-    Draft, Json, SerdeJson, ValidationError, ValidationOptions,
+    Draft, Json, NodeIdentity, SerdeJson, ValidationError, ValidationOptions,
 };
 use ahash::AHashMap;
 use serde_json::Value;
@@ -17,13 +17,13 @@ pub(crate) use crate::paths::LazyEvaluationPath;
 /// Validation state for cycle detection and memoization.
 #[derive(Default)]
 pub struct ValidationContext {
-    validating: Vec<(usize, usize)>,
+    validating: Vec<(usize, NodeIdentity)>,
     /// Stack of (validators, instance) pairs currently collecting evaluated properties/items,
     /// used to break cycles from self-referential `$dynamicRef`/`$recursiveRef` under
     /// `unevaluatedProperties`/`unevaluatedItems`.
-    marking: Vec<(usize, usize)>,
+    marking: Vec<(usize, NodeIdentity)>,
     /// Lazy-initialized cache for recursive schema validation.
-    is_valid_cache: Option<AHashMap<(usize, usize), bool>>,
+    is_valid_cache: Option<AHashMap<(usize, NodeIdentity), bool>>,
     /// Lazy-initialized cache for ECMA regex transformation results during format "regex" validation.
     ecma_regex_cache: Option<AHashMap<String, bool>>,
 }
@@ -35,7 +35,11 @@ impl ValidationContext {
 
     /// Returns `true` if cycle detected. `None` identity disables cycle tracking for this node.
     #[inline]
-    pub(crate) fn enter(&mut self, node_id: usize, instance_identity: Option<usize>) -> bool {
+    pub(crate) fn enter(
+        &mut self,
+        node_id: usize,
+        instance_identity: Option<NodeIdentity>,
+    ) -> bool {
         let Some(identity) = instance_identity else {
             return false;
         };
@@ -48,7 +52,7 @@ impl ValidationContext {
     }
 
     #[inline]
-    pub(crate) fn exit(&mut self, node_id: usize, instance_identity: Option<usize>) {
+    pub(crate) fn exit(&mut self, node_id: usize, instance_identity: Option<NodeIdentity>) {
         let Some(identity) = instance_identity else {
             return;
         };
@@ -65,7 +69,7 @@ impl ValidationContext {
     pub(crate) fn enter_marking(
         &mut self,
         validators_id: usize,
-        instance_identity: Option<usize>,
+        instance_identity: Option<NodeIdentity>,
     ) -> bool {
         let Some(identity) = instance_identity else {
             return false;
@@ -83,28 +87,33 @@ impl ValidationContext {
         self.marking.pop();
     }
 
-    /// Keyed by `Node::container_cache_key`: only containers, to avoid false hits from stack address
-    /// reuse.
+    /// Containers only: the cache outlives them, and only they promise an identity no later node
+    /// reuses.
     #[inline]
     pub(crate) fn get_cached_result(
         &self,
         node_id: usize,
-        cache_key: Option<usize>,
+        identity: Option<NodeIdentity>,
     ) -> Option<bool> {
         let cache = self.is_valid_cache.as_ref()?;
-        cache.get(&(node_id, cache_key?)).copied()
+        cache.get(&(node_id, identity?)).copied()
     }
 
-    /// Keyed by `Node::container_cache_key`: only containers, to avoid false hits from stack address
-    /// reuse.
+    /// Containers only: the cache outlives them, and only they promise an identity no later node
+    /// reuses.
     #[inline]
-    pub(crate) fn cache_result(&mut self, node_id: usize, cache_key: Option<usize>, result: bool) {
-        let Some(key) = cache_key else {
+    pub(crate) fn cache_result(
+        &mut self,
+        node_id: usize,
+        identity: Option<NodeIdentity>,
+        result: bool,
+    ) {
+        let Some(identity) = identity else {
             return;
         };
         self.is_valid_cache
             .get_or_insert_with(AHashMap::new)
-            .insert((node_id, key), result);
+            .insert((node_id, identity), result);
     }
     /// Check if an ECMA regex pattern is valid.
     pub(crate) fn is_valid_ecma_regex(&mut self, pattern: &str) -> bool {
