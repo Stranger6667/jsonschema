@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.48.5] - 2026-07-22
+
 ### Fixed
 
 - Packaging issue again.
@@ -1396,7 +1398,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.4...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.5...HEAD
+[0.48.5]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.4...rust-v0.48.5
 [0.48.4]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.3...rust-v0.48.4
 [0.48.3]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.2...rust-v0.48.3
 [0.48.2]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.1...rust-v0.48.2
