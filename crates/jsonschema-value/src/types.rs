@@ -193,7 +193,7 @@ impl JsonTypeSet {
         match value.json_type() {
             JsonType::Number => match value.as_number() {
                 // Integers satisfy both `integer` and `number`; non-integers only `number`.
-                Some(n) if number_is_integer(&n) => {
+                Some(n) if crate::JsonNumber::is_integer(&n) => {
                     self.contains(JsonType::Integer) || self.contains(JsonType::Number)
                 }
                 Some(_) => self.contains(JsonType::Number),

@@ -77,6 +77,8 @@ define_numeric_keywords!(
 
 #[cfg(feature = "arbitrary-precision")]
 pub(crate) mod bigint_validators {
+    use jsonschema_value::JsonNumber;
+
     use super::{
         numeric, Json, LazyLocation, Location, Node, RefTracker, Validate, ValidationContext,
         ValidationError, Value,
@@ -130,7 +132,7 @@ pub(crate) mod bigint_validators {
                     use fraction::BigFraction;
                     if let Some(item) = instance.as_number() {
                         // Try to parse instance as BigInt first
-                        if let Some(instance_bigint) = numeric::bignum::try_parse_bigint(&item) {
+                        if let Some(instance_bigint) = numeric::bignum::try_parse_bigint(&item.to_number()) {
                             // Both are BigInt - direct comparison
                             instance_bigint $bigint_op self.limit
                         } else if let Some(v) = item.as_u64() {
@@ -142,7 +144,7 @@ pub(crate) mod bigint_validators {
                         } else {
                             // Number doesn't fit in f64 (e.g., 1e1000)
                             // Since limit is BigInt, we need to compare with BigFraction
-                            if let Some(instance_bigfrac) = numeric::bignum::try_parse_bigfraction(&item) {
+                            if let Some(instance_bigfrac) = numeric::bignum::try_parse_bigfraction(&item.to_number()) {
                                 // Convert BigInt limit to BigFraction for comparison
                                 // Use clone to avoid truncation through i128
                                 let limit_frac = BigFraction::from(self.limit.clone());
@@ -242,7 +244,7 @@ pub(crate) mod bigint_validators {
                 fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut  ValidationContext) -> bool {
                     if let Some(item) = instance.as_number() {
                         // Try to parse instance as BigFraction for exact precision
-                        if let Some(instance_bigfrac) = try_parse_bigfraction(&item) {
+                        if let Some(instance_bigfrac) = try_parse_bigfraction(&item.to_number()) {
                             // Both are BigFraction - direct comparison
                             instance_bigfrac $bigfrac_op self.limit
                         } else if let Some(v) = item.as_u64() {

@@ -64,6 +64,7 @@ impl Json for SimpleJson {
 impl<'a> Node<'a, SimpleJson> for &'a Simple {
     type Object = &'a [(String, Simple)];
     type Array = &'a [Simple];
+    type Number = &'a Number;
 
     fn as_object(&self) -> Option<&'a [(String, Simple)]> {
         match self {
@@ -86,9 +87,9 @@ impl<'a> Node<'a, SimpleJson> for &'a Simple {
         }
     }
 
-    fn as_number(&self) -> Option<Cow<'a, Number>> {
+    fn as_number(&self) -> Option<&'a Number> {
         match self {
-            Simple::Number(number) => Some(Cow::Borrowed(number)),
+            Simple::Number(number) => Some(number),
             _ => None,
         }
     }

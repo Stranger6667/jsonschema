@@ -7,7 +7,7 @@ use crate::{
     validator::{Validate, ValidationContext},
     Json, Node,
 };
-use serde_json::{json, Map, Number, Value};
+use serde_json::{json, Map, Value};
 use std::{borrow::Cow, str::FromStr};
 
 pub(crate) struct MultipleTypesValidator {
@@ -131,8 +131,8 @@ impl<F: Json> Validate<F> for IntegerTypeValidator {
     }
 }
 
-pub(crate) fn is_integer(num: &Number) -> bool {
-    if num.is_u64() || num.is_i64() {
+pub(crate) fn is_integer<N: jsonschema_value::JsonNumber>(num: &N) -> bool {
+    if num.as_u64().is_some() || num.as_i64().is_some() {
         return true;
     }
     // Draft 4 is strict: numbers written with decimal points are NOT integers,
@@ -142,12 +142,11 @@ pub(crate) fn is_integer(num: &Number) -> bool {
     {
         use crate::numeric::bignum;
 
-        let s = num.as_str();
-        if s.contains('.') {
+        if num.as_str().contains('.') {
             return false;
         }
         // Plain integers or scientific notation without decimal point
-        bignum::try_parse_bigint(num).is_some()
+        bignum::try_parse_bigint(&num.to_number()).is_some()
     }
     #[cfg(not(feature = "arbitrary-precision"))]
     {

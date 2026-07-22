@@ -35,15 +35,34 @@ pub trait Json: Sized + Send + Sync + 'static {
     fn prepare_key(key: &str) -> Self::PreparedKey;
 }
 
+/// A JSON number, readable without constructing a [`::serde_json::Number`].
+pub trait JsonNumber {
+    fn as_u64(&self) -> Option<u64>;
+    fn as_i64(&self) -> Option<i64>;
+    fn as_f64(&self) -> Option<f64>;
+
+    /// Decimal digits; the only form that holds values outside the primitives.
+    fn as_str(&self) -> Cow<'_, str>;
+
+    /// For cold paths: error construction and annotations.
+    fn to_number(&self) -> Cow<'_, ::serde_json::Number>;
+
+    fn is_integer(&self) -> bool {
+        crate::types::number_is_integer(&self.to_number())
+    }
+}
+
 /// One JSON value; `Clone` must be cheap.
 pub trait Node<'a, F: Json>: Clone {
     type Object: Object<'a, F, Node = Self>;
     type Array: Array<'a, F, Node = Self>;
+    type Number: JsonNumber;
 
     fn as_object(&self) -> Option<Self::Object>;
     fn as_array(&self) -> Option<Self::Array>;
     fn as_string(&self) -> Option<Cow<'a, str>>;
-    fn as_number(&self) -> Option<Cow<'a, ::serde_json::Number>>;
+
+    fn as_number(&self) -> Option<Self::Number>;
     fn as_boolean(&self) -> Option<bool>;
     fn is_null(&self) -> bool;
 
