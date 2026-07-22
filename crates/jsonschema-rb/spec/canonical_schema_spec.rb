@@ -72,6 +72,87 @@ RSpec.describe "JSONSchema.canonicalize" do
     end
   end
 
+  it "view returns StringView with its length window and patterns" do
+    case JSONSchema.canonicalize({ "type" => "string", "minLength" => 2, "maxLength" => 5, "pattern" => "^a" }).view
+    in JSONSchema::Canonical::StringView[min_length:, max_length:, patterns:]
+      expect(min_length).to eq(2)
+      expect(max_length).to eq(5)
+      expect(patterns).to eq(["^a"])
+    end
+  end
+
+  it "view returns StringView with nil for an absent bound" do
+    case JSONSchema.canonicalize({ "type" => "string", "minLength" => 2 }).view
+    in JSONSchema::Canonical::StringView[min_length:, max_length:, patterns:]
+      expect(min_length).to eq(2)
+      expect(max_length).to be_nil
+      expect(patterns).to eq([])
+    end
+  end
+
+  it "view returns IntegerView with its interval" do
+    case JSONSchema.canonicalize({ "type" => "integer", "minimum" => 2, "maximum" => 9 }).view
+    in JSONSchema::Canonical::IntegerView[minimum:, maximum:]
+      expect(minimum).to eq(2)
+      expect(maximum).to eq(9)
+    end
+  end
+
+  it "view returns IntegerView with nil for an absent bound" do
+    case JSONSchema.canonicalize({ "type" => "integer", "minimum" => -3 }).view
+    in JSONSchema::Canonical::IntegerView[minimum:, maximum:]
+      expect(minimum).to eq(-3)
+      expect(maximum).to be_nil
+    end
+  end
+
+  it "view returns AnyOfView exposing each branch" do
+    case JSONSchema.canonicalize({ "anyOf" => [{ "type" => "string" }, { "const" => 1 }] }).view
+    in JSONSchema::Canonical::AnyOfView[branches:]
+      expect(branches.length).to eq(2)
+      expect(branches).to all(be_a(JSONSchema::Canonical::CanonicalSchema))
+      expect(branches.map(&:kind)).to contain_exactly(:multi_type, :const)
+    end
+  end
+
+  # `inspect` must render exactly what the reader returns, so the two cannot drift.
+  it "inspect renders CanonicalSchema readers" do
+    schema = JSONSchema.canonicalize({ "const" => 1 })
+    expect(schema.inspect).to eq(
+      "#<JSONSchema::Canonical::CanonicalSchema kind=#{schema.kind.inspect} draft=#{schema.draft.inspect}>"
+    )
+  end
+
+  it "inspect omits the object address for trivial views" do
+    expect(JSONSchema.canonicalize({}).view.inspect).to eq("#<JSONSchema::Canonical::TrueView>")
+    expect(JSONSchema.canonicalize(false).view.inspect).to eq("#<JSONSchema::Canonical::FalseView>")
+  end
+
+  {
+    "MultiTypeView" => [{ "type" => %w[integer string] }, %i[types]],
+    "TypedGroupView" => [{ "type" => "integer", "enum" => [1, 2] }, %i[type_name]],
+    "StringView" => [{ "type" => "string", "minLength" => 2, "pattern" => "^a" }, %i[min_length max_length patterns]],
+    "IntegerView" => [{ "type" => "integer", "minimum" => 2, "maximum" => 9 }, %i[minimum maximum]],
+    "ConstView" => [{ "const" => nil }, %i[value]],
+    "EnumView" => [{ "enum" => [1, 2] }, %i[values]],
+    "RawView" => [{ "not" => {} }, %i[schema]]
+  }.each do |name, (schema, readers)|
+    it "inspect renders #{name} readers" do
+      draft = name == "TypedGroupView" ? :draft4 : :draft202012
+      view = JSONSchema.canonicalize(schema, draft: draft).view
+      expect(view).to be_a(JSONSchema::Canonical.const_get(name))
+      rendered = readers.map { |reader| "#{reader}=#{view.public_send(reader).inspect}" }.join(" ")
+      expect(view.inspect).to eq("#<JSONSchema::Canonical::#{name} #{rendered}>")
+    end
+  end
+
+  it "inspect summarises AnyOfView branches by kind" do
+    view = JSONSchema.canonicalize({ "anyOf" => [{ "type" => "string" }, { "const" => 1 }] }).view
+    expect(view.inspect).to eq(
+      "#<JSONSchema::Canonical::AnyOfView branches=#{view.branches.map(&:kind).inspect}>"
+    )
+  end
+
   it "view returns RawView with the document payload" do
     case JSONSchema.canonicalize({ "not" => {} }).view
     in JSONSchema::Canonical::RawView[schema:]
@@ -86,6 +167,7 @@ RSpec.describe "JSONSchema.canonicalize" do
     [{}, :true], # rubocop:disable Lint/BooleanSymbol
     [false, :false], # rubocop:disable Lint/BooleanSymbol
     [{ "type" => "string", "minLength" => 3 }, :string],
+    [{ "type" => "integer", "minimum" => 0 }, :integer],
     [{ "pattern" => "a" }, :any_of]
   ].each do |schema, kind|
     it "kind of #{schema.inspect} is #{kind.inspect}" do

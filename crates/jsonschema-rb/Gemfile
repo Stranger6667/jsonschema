@@ -17,6 +17,7 @@ group :test do
 end
 
 group :lint do
+  gem "rbs", "~> 3.8"
   gem "rubocop", "~> 1.75"
 end
 

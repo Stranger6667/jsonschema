@@ -91,13 +91,13 @@ impl RbCanonicalSchema {
         rb_self.inner.is_satisfiable()
     }
 
-    fn inspect(rb_self: &Self) -> String {
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> String {
         // Bounded: `inspect` runs implicitly (IRB, error messages) and a full
         // `to_json_schema` re-emits the whole document.
         format!(
-            "#<JSONSchema::Canonical::CanonicalSchema kind={} draft={:?}>",
-            rb_self.inner.kind().as_str(),
-            rb_self.inner.draft()
+            "#<JSONSchema::Canonical::CanonicalSchema kind={} draft={}>",
+            Self::kind(ruby, rb_self).inspect(),
+            Self::draft(ruby, rb_self).inspect()
         )
     }
 
@@ -125,6 +125,20 @@ impl RbCanonicalSchema {
             CanonicalView::Enum(values) => ruby.obj_wrap(EnumView { values }).as_value(),
             CanonicalView::True => ruby.obj_wrap(TrueView).as_value(),
             CanonicalView::False => ruby.obj_wrap(FalseView).as_value(),
+            CanonicalView::String(view) => ruby
+                .obj_wrap(StringView {
+                    min_length: view.min_length,
+                    max_length: view.max_length,
+                    patterns: view.patterns,
+                })
+                .as_value(),
+            CanonicalView::Integer(view) => ruby
+                .obj_wrap(IntegerView {
+                    minimum: view.minimum,
+                    maximum: view.maximum,
+                })
+                .as_value(),
+            CanonicalView::AnyOf(branches) => ruby.obj_wrap(AnyOfView { branches }).as_value(),
             CanonicalView::Raw(schema) => ruby.obj_wrap(RawView { schema }).as_value(),
             // TODO(canonical): new `CanonicalView` variants need view classes here.
             other => unreachable!("unsupported canonical view: {other:?}"),
@@ -155,11 +169,11 @@ impl RawView {
         value_to_ruby(ruby, &rb_self.schema)
     }
 
-    fn inspect(rb_self: &Self) -> String {
-        format!(
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
+        Ok(format!(
             "#<JSONSchema::Canonical::RawView schema={}>",
-            rb_self.schema
-        )
+            Self::schema(ruby, rb_self)?.inspect()
+        ))
     }
 
     fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
@@ -177,12 +191,24 @@ impl RawView {
 #[magnus(class = "JSONSchema::Canonical::TrueView", free_immediately)]
 pub struct TrueView;
 
+impl TrueView {
+    fn inspect(_rb_self: &Self) -> String {
+        "#<JSONSchema::Canonical::TrueView>".to_string()
+    }
+}
+
 impl DataTypeFunctions for TrueView {}
 
 /// Matches no value.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::FalseView", free_immediately)]
 pub struct FalseView;
+
+impl FalseView {
+    fn inspect(_rb_self: &Self) -> String {
+        "#<JSONSchema::Canonical::FalseView>".to_string()
+    }
+}
 
 impl DataTypeFunctions for FalseView {}
 
@@ -204,11 +230,11 @@ impl MultiTypeView {
         Ok(array.as_value())
     }
 
-    fn inspect(rb_self: &Self) -> String {
-        format!(
-            "#<JSONSchema::Canonical::MultiTypeView types={:?}>",
-            rb_self.types
-        )
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
+        Ok(format!(
+            "#<JSONSchema::Canonical::MultiTypeView types={}>",
+            Self::types(ruby, rb_self)?.inspect()
+        ))
     }
 
     fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
@@ -240,10 +266,10 @@ impl TypedGroupView {
         .as_value()
     }
 
-    fn inspect(rb_self: &Self) -> String {
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> String {
         format!(
-            "#<JSONSchema::Canonical::TypedGroupView type_name={:?}>",
-            rb_self.type_name
+            "#<JSONSchema::Canonical::TypedGroupView type_name={}>",
+            Self::type_name(ruby, rb_self).inspect()
         )
     }
 
@@ -251,6 +277,136 @@ impl TypedGroupView {
         let hash = ruby.hash_new();
         hash.aset(ruby.sym_new("type_name"), Self::type_name(ruby, rb_self))?;
         hash.aset(ruby.sym_new("body"), Self::body(ruby, rb_self))?;
+        Ok(hash)
+    }
+}
+
+/// An absent bound is `nil`; a present one keeps its exact value.
+fn bound_to_ruby(ruby: &Ruby, bound: Option<&serde_json::Number>) -> Result<Value, Error> {
+    match bound {
+        Some(number) => value_to_ruby(ruby, &serde_json::Value::Number(number.clone())),
+        None => Ok(ruby.qnil().as_value()),
+    }
+}
+
+/// A string value within a length window, matching every pattern.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::StringView", free_immediately)]
+pub struct StringView {
+    min_length: Option<serde_json::Number>,
+    max_length: Option<serde_json::Number>,
+    patterns: Vec<String>,
+}
+
+impl DataTypeFunctions for StringView {}
+
+impl StringView {
+    fn min_length(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        bound_to_ruby(ruby, rb_self.min_length.as_ref())
+    }
+
+    fn max_length(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        bound_to_ruby(ruby, rb_self.max_length.as_ref())
+    }
+
+    fn patterns(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        let array = ruby.ary_new_capa(rb_self.patterns.len());
+        for pattern in &rb_self.patterns {
+            array.push(ruby.str_new(pattern).as_value())?;
+        }
+        Ok(array.as_value())
+    }
+
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
+        Ok(format!(
+            "#<JSONSchema::Canonical::StringView min_length={} max_length={} patterns={}>",
+            Self::min_length(ruby, rb_self)?.inspect(),
+            Self::max_length(ruby, rb_self)?.inspect(),
+            Self::patterns(ruby, rb_self)?.inspect()
+        ))
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("min_length"), Self::min_length(ruby, rb_self)?)?;
+        hash.aset(ruby.sym_new("max_length"), Self::max_length(ruby, rb_self)?)?;
+        hash.aset(ruby.sym_new("patterns"), Self::patterns(ruby, rb_self)?)?;
+        Ok(hash)
+    }
+}
+
+/// An integer value within a closed interval.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::IntegerView", free_immediately)]
+pub struct IntegerView {
+    minimum: Option<serde_json::Number>,
+    maximum: Option<serde_json::Number>,
+}
+
+impl DataTypeFunctions for IntegerView {}
+
+impl IntegerView {
+    fn minimum(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        bound_to_ruby(ruby, rb_self.minimum.as_ref())
+    }
+
+    fn maximum(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        bound_to_ruby(ruby, rb_self.maximum.as_ref())
+    }
+
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
+        Ok(format!(
+            "#<JSONSchema::Canonical::IntegerView minimum={} maximum={}>",
+            Self::minimum(ruby, rb_self)?.inspect(),
+            Self::maximum(ruby, rb_self)?.inspect()
+        ))
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("minimum"), Self::minimum(ruby, rb_self)?)?;
+        hash.aset(ruby.sym_new("maximum"), Self::maximum(ruby, rb_self)?)?;
+        Ok(hash)
+    }
+}
+
+/// A value matches iff at least one branch matches.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::AnyOfView", free_immediately)]
+pub struct AnyOfView {
+    branches: Vec<CanonicalSchema>,
+}
+
+impl DataTypeFunctions for AnyOfView {}
+
+impl AnyOfView {
+    fn branches(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        let array = ruby.ary_new_capa(rb_self.branches.len());
+        for branch in &rb_self.branches {
+            array.push(
+                ruby.obj_wrap(RbCanonicalSchema {
+                    inner: branch.clone(),
+                })
+                .as_value(),
+            )?;
+        }
+        Ok(array.as_value())
+    }
+
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
+        let kinds = ruby.ary_new_capa(rb_self.branches.len());
+        for branch in &rb_self.branches {
+            kinds.push(ruby.sym_new(branch.kind().as_str()).as_value())?;
+        }
+        Ok(format!(
+            "#<JSONSchema::Canonical::AnyOfView branches={}>",
+            kinds.as_value().inspect()
+        ))
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("branches"), Self::branches(ruby, rb_self)?)?;
         Ok(hash)
     }
 }
@@ -269,11 +425,11 @@ impl ConstView {
         value_to_ruby(ruby, &rb_self.value)
     }
 
-    fn inspect(rb_self: &Self) -> String {
-        format!(
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
+        Ok(format!(
             "#<JSONSchema::Canonical::ConstView value={}>",
-            rb_self.value
-        )
+            Self::value(ruby, rb_self)?.inspect()
+        ))
     }
 
     fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
@@ -301,11 +457,11 @@ impl EnumView {
         Ok(array.as_value())
     }
 
-    fn inspect(rb_self: &Self) -> String {
-        format!(
-            "#<JSONSchema::Canonical::EnumView values={:?}>",
-            rb_self.values
-        )
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
+        Ok(format!(
+            "#<JSONSchema::Canonical::EnumView values={}>",
+            Self::values(ruby, rb_self)?.inspect()
+        ))
     }
 
     fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
@@ -368,8 +524,10 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     canonical_schema.define_method("definitions", method!(RbCanonicalSchema::definitions, 0))?;
     canonical_schema.define_method("satisfiable?", method!(RbCanonicalSchema::satisfiable, 0))?;
 
-    canonical_module.define_class("TrueView", ruby.class_object())?;
-    canonical_module.define_class("FalseView", ruby.class_object())?;
+    let true_view = canonical_module.define_class("TrueView", ruby.class_object())?;
+    true_view.define_method("inspect", method!(TrueView::inspect, 0))?;
+    let false_view = canonical_module.define_class("FalseView", ruby.class_object())?;
+    false_view.define_method("inspect", method!(FalseView::inspect, 0))?;
 
     let multi_type_view = canonical_module.define_class("MultiTypeView", ruby.class_object())?;
     multi_type_view.define_method("types", method!(MultiTypeView::types, 0))?;
@@ -397,6 +555,27 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     enum_view.define_method("values", method!(EnumView::values, 0))?;
     enum_view.define_method("inspect", method!(EnumView::inspect, 0))?;
     enum_view.define_method("deconstruct_keys", method!(EnumView::deconstruct_keys, 1))?;
+
+    let string_view = canonical_module.define_class("StringView", ruby.class_object())?;
+    string_view.define_method("min_length", method!(StringView::min_length, 0))?;
+    string_view.define_method("max_length", method!(StringView::max_length, 0))?;
+    string_view.define_method("patterns", method!(StringView::patterns, 0))?;
+    string_view.define_method("inspect", method!(StringView::inspect, 0))?;
+    string_view.define_method("deconstruct_keys", method!(StringView::deconstruct_keys, 1))?;
+
+    let integer_view = canonical_module.define_class("IntegerView", ruby.class_object())?;
+    integer_view.define_method("minimum", method!(IntegerView::minimum, 0))?;
+    integer_view.define_method("maximum", method!(IntegerView::maximum, 0))?;
+    integer_view.define_method("inspect", method!(IntegerView::inspect, 0))?;
+    integer_view.define_method(
+        "deconstruct_keys",
+        method!(IntegerView::deconstruct_keys, 1),
+    )?;
+
+    let any_of_view = canonical_module.define_class("AnyOfView", ruby.class_object())?;
+    any_of_view.define_method("branches", method!(AnyOfView::branches, 0))?;
+    any_of_view.define_method("inspect", method!(AnyOfView::inspect, 0))?;
+    any_of_view.define_method("deconstruct_keys", method!(AnyOfView::deconstruct_keys, 1))?;
 
     let raw_view = canonical_module.define_class("RawView", ruby.class_object())?;
     raw_view.define_method("schema", method!(RawView::schema, 0))?;

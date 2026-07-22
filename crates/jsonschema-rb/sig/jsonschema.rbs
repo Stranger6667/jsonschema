@@ -14,7 +14,109 @@ module JSONSchema
       # Main use case: deduplicate equivalent JSON Schemas by using a stable string form.
       def self.to_string: (untyped object) -> String
     end
+
+    # Structural discriminant of a canonical schema, one per view class.
+    type kind = :multi_type | :typed_group | :string | :integer | :const | :enum
+              | :any_of | :true | :false | :raw
+
+    type view = TrueView | FalseView | MultiTypeView | TypedGroupView | StringView
+              | IntegerView | AnyOfView | ConstView | EnumView | RawView
+
+    class CanonicalizationError < StandardError
+    end
+
+    class InvalidSchemaType < CanonicalizationError
+    end
+
+    # A schema reduced to canonical form: schemas accepting the same values share one form.
+    class CanonicalSchema
+      def to_json_schema: () -> untyped
+      def draft: () -> JSONSchema::draft
+      def kind: () -> kind
+      def view: () -> view
+      def definitions: () -> Hash[String, CanonicalSchema]
+      def satisfiable?: () -> bool
+      def inspect: () -> String
+      def ==: (untyped other) -> bool
+      def eql?: (untyped other) -> bool
+      def hash: () -> Integer
+    end
+
+    # Matches any value.
+    class TrueView
+    end
+
+    # Matches no value.
+    class FalseView
+    end
+
+    # A value matches iff its JSON type is in the set.
+    class MultiTypeView
+      def types: () -> Array[Symbol]
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # A value matches iff its JSON type is `type_name` and it satisfies `body`.
+    class TypedGroupView
+      def type_name: () -> Symbol
+      def body: () -> CanonicalSchema
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # A string value within a length window, matching every pattern.
+    class StringView
+      def min_length: () -> Integer?
+      def max_length: () -> Integer?
+      def patterns: () -> Array[String]
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # An integer value within a closed interval.
+    class IntegerView
+      def minimum: () -> Integer?
+      def maximum: () -> Integer?
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # A value matches iff at least one branch matches.
+    class AnyOfView
+      def branches: () -> Array[CanonicalSchema]
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # Exactly one admitted value.
+    class ConstView
+      def value: () -> untyped
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # A sorted, deduplicated finite set of admitted values.
+    class EnumView
+      def values: () -> Array[untyped]
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # A schema the canonical form does not model structurally, kept verbatim.
+    class RawView
+      def schema: () -> untyped
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
   end
+
+  # Reduce a schema to its canonical form.
+  def self.canonicalize: (
+    untyped schema,
+    ?draft: draft?,
+    ?validate_formats: bool?
+  ) -> Canonical::CanonicalSchema
 
   # Create a validator with auto-detected draft version.
   #
