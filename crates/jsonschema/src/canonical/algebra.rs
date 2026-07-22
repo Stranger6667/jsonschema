@@ -102,14 +102,17 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
         (SchemaKind::MultiType(set), SchemaKind::String(leaf))
         | (SchemaKind::String(leaf), SchemaKind::MultiType(set)) => {
             if SchemaKind::semantic_cover(set).contains(JsonType::String) {
-                string_leaf(leaf.into_inner())
+                string_leaf(leaf.into_inner(), ctx)
             } else {
                 Schema::new(SchemaKind::False)
             }
         }
         // Two string leaves: keep the strings both accept by tightening to the narrower length window.
         (SchemaKind::String(first), SchemaKind::String(second)) => {
-            string_leaf(intersect_string_leaves(first.into_inner(), second.into_inner()))
+            string_leaf(
+                intersect_string_leaves(first.into_inner(), second.into_inner()),
+                ctx,
+            )
         }
         // An integer leaf constrains integer values. A type set keeps it only when the set covers
         // `integer`; otherwise the two share no value, so `False`.
@@ -263,7 +266,8 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         !spans_domain
     });
     strings.retain(|leaf| {
-        let spans_domain = leaf.lengths.is_unbounded() && leaf.patterns.is_empty();
+        let spans_domain =
+            leaf.lengths.is_unbounded() && leaf.patterns.is_empty() && leaf.formats.is_empty();
         if spans_domain {
             widened = union_type_sets(widened, JsonTypeSet::from(JsonType::String));
         }
@@ -332,7 +336,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     }
     // Each surviving string leaf becomes its own branch.
     for leaf in strings {
-        out.push(string_leaf(leaf));
+        out.push(string_leaf(leaf, ctx));
     }
     // Each surviving integer leaf becomes its own branch.
     for bounds in integers {
@@ -383,6 +387,7 @@ fn lift_degenerate_member(
                     maximum: Some(BoundCardinality::from(0)),
                 },
                 patterns: Vec::new(),
+                formats: Vec::new(),
             });
             true
         }
@@ -422,7 +427,7 @@ fn rerun(
             .into_iter()
             .map(|(ty, values)| typed_group(ty, parse::canonicalize_value_set(values))),
     );
-    rest.extend(strings.into_iter().map(string_leaf));
+    rest.extend(strings.into_iter().map(|leaf| string_leaf(leaf, ctx)));
     rest.extend(integers.into_iter().map(|bounds| integer_leaf(bounds, ctx)));
     union(rest, ctx)
 }
@@ -489,7 +494,9 @@ fn restrict_members(
                 .collect();
             let kept = members
                 .into_iter()
-                .filter(|member| string_leaf_admits(leaf.get(), &regexes, member))
+                .filter(|member| {
+                    string_leaf_admits(leaf.get(), &regexes, member, ctx, UncheckableFormat::Admits)
+                })
                 .collect();
             parse::canonicalize_value_set(kept)
         }
@@ -575,9 +582,9 @@ fn leaf_absorbs_member(
     ctx: &CanonicalizationContext,
 ) -> bool {
     match member.as_value() {
-        Value::String(_) => strings
-            .iter()
-            .any(|(leaf, regexes)| string_leaf_admits(leaf, regexes, member)),
+        Value::String(_) => strings.iter().any(|(leaf, regexes)| {
+            string_leaf_admits(leaf, regexes, member, ctx, UncheckableFormat::Rejects)
+        }),
         // Draft 4 keeps the value: `7` there also matches `7.0`, which an `integer` interval rejects.
         Value::Number(_) if !matches!(ctx.draft(), Draft::Draft4) => integers
             .iter()
@@ -592,13 +599,17 @@ fn union_type_sets(left: JsonTypeSet, right: JsonTypeSet) -> JsonTypeSet {
 }
 
 /// A `String` node, collapsed to `False` when its length window is empty.
-pub(crate) fn string_leaf(leaf: StringLeaf) -> Schema {
+pub(crate) fn string_leaf(leaf: StringLeaf, ctx: &CanonicalizationContext) -> Schema {
+    if formats_conflict(&leaf, ctx) {
+        return Schema::new(SchemaKind::False);
+    }
     let Some(leaf) = NonEmpty::new(leaf) else {
         return Schema::new(SchemaKind::False);
     };
     // `maxLength: 0` accepts the empty string and nothing else.
     // e.g.  {"type": "string", "maxLength": 0}  =>  {"const": ""}
     if leaf.get().patterns.is_empty()
+        && leaf.get().formats.is_empty()
         && leaf
             .get()
             .lengths
@@ -667,27 +678,69 @@ fn admits_out_of_range(_bounds: &IntegerBounds, _number: &serde_json::Number) ->
 }
 
 /// Tighten two string leaves to the strings both accept: the narrower length window and every
-/// pattern from both.
+/// pattern and format from both.
 fn intersect_string_leaves(first: StringLeaf, second: StringLeaf) -> StringLeaf {
     let mut patterns = first.patterns;
     patterns.extend(second.patterns);
     patterns.sort();
     patterns.dedup();
+    let mut formats = first.formats;
+    formats.extend(second.formats);
+    formats.sort();
+    formats.dedup();
     StringLeaf {
         lengths: first.lengths.intersect(second.lengths),
         patterns,
+        formats,
     }
 }
 
+/// Whether the leaf's formats and length window leave no string. A format whose grammar pins a
+/// length narrows the window; two such formats of different lengths admit nothing.
+/// e.g.  allOf [
+///         {"type": "string", "format": "date"},
+///         {"type": "string", "format": "uuid"}
+///       ]  =>  false
+fn formats_conflict(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> bool {
+    let mut window = leaf.lengths.clone();
+    for format in &leaf.formats {
+        let Some((minimum, maximum)) = crate::keywords::format::length_window(ctx.draft(), format)
+        else {
+            continue;
+        };
+        window = window.intersect(LengthBounds {
+            minimum: Some(BoundCardinality::from(minimum)),
+            maximum: Some(BoundCardinality::from(maximum)),
+        });
+    }
+    window.is_empty()
+}
+
 /// Whether the string `member` falls within the leaf's length window and matches every pattern.
+/// The verdict for a format the draft cannot check. Callers differ: dropping a member narrows the
+/// schema, so intersection assumes the value fits; absorbing one narrows it too, so union assumes it
+/// does not.
+#[derive(Clone, Copy)]
+pub(crate) enum UncheckableFormat {
+    Admits,
+    Rejects,
+}
+
 fn string_leaf_admits(
     leaf: &StringLeaf,
     regexes: &[Arc<CompiledMatcher>],
     member: &CanonicalJson,
+    ctx: &CanonicalizationContext,
+    uncheckable: UncheckableFormat,
 ) -> bool {
     let Value::String(text) = member.as_value() else {
         return false;
     };
     let length = BoundCardinality::from(bytecount::num_chars(text.as_bytes()) as u64);
-    leaf.lengths.contains(&length) && regexes.iter().all(|regex| regex.is_match(text))
+    leaf.lengths.contains(&length)
+        && regexes.iter().all(|regex| regex.is_match(text))
+        && leaf.formats.iter().all(|format| {
+            crate::keywords::format::is_valid(ctx.draft(), format, text)
+                .unwrap_or(matches!(uncheckable, UncheckableFormat::Admits))
+        })
 }

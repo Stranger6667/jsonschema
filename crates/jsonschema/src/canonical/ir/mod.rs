@@ -180,6 +180,8 @@ pub(crate) struct StringLeaf {
     pub(crate) lengths: LengthBounds,
     /// Sorted, deduplicated. A string must match every pattern.
     pub(crate) patterns: Vec<Arc<str>>,
+    /// Sorted, deduplicated. A string must satisfy every format. Empty unless formats assert.
+    pub(crate) formats: Vec<Arc<str>>,
 }
 
 /// Sorted, deduplicated, and holding at least two elements; fewer collapses to a simpler node.

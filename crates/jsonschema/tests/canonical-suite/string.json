@@ -288,5 +288,89 @@
     "description": "ir: invalid regex in pattern is rejected",
     "schema": {"pattern": "["},
     "error": "InvalidPattern"
+  },
+  {
+    "description": "ir: format is a string facet",
+    "schema": {"type": "string", "format": "email"},
+    "validate_formats": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "format": "email"},
+    "tests": [
+      {"data": "a@b.com", "valid": true},
+      {"data": "x", "valid": false},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: format survives beside a length window and a pattern",
+    "schema": {"type": "string", "format": "email", "minLength": 5, "pattern": "^a"},
+    "validate_formats": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "format": "email", "minLength": 5, "pattern": "^a"},
+    "tests": [
+      {"data": "aa@b.com", "valid": true},
+      {"data": "b@b.com", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: the same format on both sides of an allOf is kept once",
+    "schema": {"allOf": [{"type": "string", "format": "date"}, {"type": "string", "format": "date"}]},
+    "validate_formats": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "format": "date"},
+    "tests": [
+      {"data": "2020-01-01", "valid": true},
+      {"data": "nope", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an annotation-only format is dropped from the canonical form",
+    "schema": {"type": "string", "format": "email"},
+    "validate_formats": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string"},
+    "tests": [
+      {"data": "not-an-email", "valid": true}
+    ]
+  },
+  {
+    "description": "ir: two formats that both must hold are emitted as an allOf",
+    "schema": {"allOf": [{"type": "string", "format": "email"}, {"type": "string", "format": "idn-email"}]},
+    "validate_formats": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "allOf": [{"format": "email"}, {"format": "idn-email"}]},
+    "tests": [
+      {"data": "a@b.com", "valid": true},
+      {"data": "x", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a length window too short for the format admits nothing",
+    "schema": {"type": "string", "format": "ipv4", "maxLength": 5},
+    "validate_formats": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: formats whose lengths can overlap are not proven disjoint - date and ipv4",
+    "schema": {"allOf": [{"type": "string", "format": "date"}, {"type": "string", "format": "ipv4"}]},
+    "validate_formats": true,
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "allOf": [{"format": "date"}, {"format": "ipv4"}]}
+  },
+  {
+    "description": "ir: a value is not absorbed by a leaf whose format the draft cannot check",
+    "schema": {"anyOf": [{"type": "string", "format": "my-fmt"}, {"const": "xyz"}]},
+    "validate_formats": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"format": "my-fmt", "type": "string"}, {"const": "xyz"}]},
+    "tests": [
+      {"data": "xyz", "valid": true}
+    ]
+  },
+  {
+    "description": "ir: an unrecognized format leaves every value of an intersecting set in place",
+    "schema": {"allOf": [{"type": "string", "format": "my-fmt"}, {"enum": ["a", "b"]}]},
+    "validate_formats": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "enum": ["a", "b"]},
+    "tests": [
+      {"data": "a", "valid": true},
+      {"data": "b", "valid": true},
+      {"data": "c", "valid": false}
+    ]
   }
 ]

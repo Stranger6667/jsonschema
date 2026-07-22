@@ -100,7 +100,7 @@ fn build(
     let validate_formats =
         validate_formats.unwrap_or_else(|| formats_are_assertions_by_default(draft));
     validate_schema(draft, value)?;
-    let context = CanonicalizationContext::new(draft, pattern_options);
+    let context = CanonicalizationContext::new(draft, pattern_options, validate_formats);
     let inner = match parse::parse(value, &context)? {
         Some(schema) => schema,
         None => Schema::new(SchemaKind::Raw(RawJson::new(value.clone()))),
