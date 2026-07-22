@@ -8,7 +8,7 @@ use crate::{
     keywords::{custom::KeywordFactory, format::Format},
     paths::Location,
     retriever::DefaultRetriever,
-    Keyword, ValidationError, Validator,
+    Json, Keyword, SerdeJson, ValidationError, Validator,
 };
 use ahash::AHashMap;
 use email_address::Options as EmailAddressOptions;
@@ -17,8 +17,9 @@ use serde_json::Value;
 use std::{fmt, marker::PhantomData, sync::Arc};
 
 /// Configuration options for JSON Schema validation.
-#[derive(Clone)]
-pub struct ValidationOptions<'i, R = Arc<dyn Retrieve>> {
+///
+/// `F` selects the JSON representation the built validator accepts.
+pub struct ValidationOptions<'i, R = Arc<dyn Retrieve>, F: Json = SerdeJson> {
     pub(crate) draft: Option<Draft>,
     content_media_type_checks: AHashMap<&'static str, Option<ContentMediaTypeCheckType>>,
     content_encoding_checks_and_converters:
@@ -34,9 +35,34 @@ pub struct ValidationOptions<'i, R = Arc<dyn Retrieve>> {
     keywords: AHashMap<String, Arc<dyn KeywordFactory>>,
     pattern_options: PatternEngineOptions,
     email_options: Option<EmailAddressOptions>,
+    representation: PhantomData<F>,
 }
 
-impl Default for ValidationOptions<'_, Arc<dyn Retrieve>> {
+// Manual: deriving would demand `F: Clone`, and representations are marker types.
+impl<R: Clone, F: Json> Clone for ValidationOptions<'_, R, F> {
+    fn clone(&self) -> Self {
+        ValidationOptions {
+            draft: self.draft,
+            content_media_type_checks: self.content_media_type_checks.clone(),
+            content_encoding_checks_and_converters: self
+                .content_encoding_checks_and_converters
+                .clone(),
+            base_uri: self.base_uri.clone(),
+            retriever: self.retriever.clone(),
+            registry: self.registry,
+            formats: self.formats.clone(),
+            validate_formats: self.validate_formats,
+            validate_schema: self.validate_schema,
+            ignore_unknown_formats: self.ignore_unknown_formats,
+            keywords: self.keywords.clone(),
+            pattern_options: self.pattern_options,
+            email_options: self.email_options,
+            representation: PhantomData,
+        }
+    }
+}
+
+impl<F: Json> Default for ValidationOptions<'_, Arc<dyn Retrieve>, F> {
     fn default() -> Self {
         ValidationOptions {
             draft: None,
@@ -52,12 +78,13 @@ impl Default for ValidationOptions<'_, Arc<dyn Retrieve>> {
             keywords: AHashMap::default(),
             pattern_options: PatternEngineOptions::default(),
             email_options: None,
+            representation: PhantomData,
         }
     }
 }
 
 #[cfg(feature = "resolve-async")]
-impl Default for ValidationOptions<'_, Arc<dyn referencing::AsyncRetrieve>> {
+impl<F: Json> Default for ValidationOptions<'_, Arc<dyn referencing::AsyncRetrieve>, F> {
     fn default() -> Self {
         ValidationOptions {
             draft: None,
@@ -73,11 +100,12 @@ impl Default for ValidationOptions<'_, Arc<dyn referencing::AsyncRetrieve>> {
             keywords: AHashMap::default(),
             pattern_options: PatternEngineOptions::default(),
             email_options: None,
+            representation: PhantomData,
         }
     }
 }
 
-impl<'i, R> ValidationOptions<'i, R> {
+impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
     /// Return the draft version, or the default if not set.
     pub(crate) fn draft(&self) -> Draft {
         self.draft.unwrap_or_default()
@@ -320,10 +348,10 @@ impl<'i, R> ValidationOptions<'i, R> {
     /// # }
     /// ```
     #[must_use]
-    pub fn with_format<N, F>(mut self, name: N, format: F) -> Self
+    pub fn with_format<N, Check>(mut self, name: N, format: Check) -> Self
     where
         N: Into<String>,
-        F: Fn(&str) -> bool + Send + Sync + 'static,
+        Check: Fn(&str) -> bool + Send + Sync + 'static,
     {
         self.formats.insert(name.into(), Arc::new(format));
         self
@@ -407,10 +435,10 @@ impl<'i, R> ValidationOptions<'i, R> {
     /// assert!(validator.is_valid(&json!({ "a": "b"})));
     /// ```
     #[must_use]
-    pub fn with_keyword<N, F>(mut self, name: N, factory: F) -> Self
+    pub fn with_keyword<N, Factory>(mut self, name: N, factory: Factory) -> Self
     where
         N: Into<String>,
-        F: for<'a> Fn(
+        Factory: for<'a> Fn(
                 &'a serde_json::Map<String, Value>,
                 &'a Value,
                 Location,
@@ -428,7 +456,7 @@ impl<'i, R> ValidationOptions<'i, R> {
     }
 }
 
-impl ValidationOptions<'_, Arc<dyn referencing::Retrieve>> {
+impl<F: Json> ValidationOptions<'_, Arc<dyn referencing::Retrieve>, F> {
     /// Build a JSON Schema validator using the current options.
     ///
     /// If no draft is set via [`with_draft`](Self::with_draft), the draft is auto-detected
@@ -459,7 +487,7 @@ impl ValidationOptions<'_, Arc<dyn referencing::Retrieve>> {
     /// external references that require network requests, or it will panic when attempting to block.
     /// Use `async_options` and its async `build` method for async contexts, or run this
     /// in a separate blocking thread via `tokio::task::spawn_blocking`.
-    pub fn build(&self, schema: &Value) -> Result<Validator, ValidationError<'static>> {
+    pub fn build(&self, schema: &Value) -> Result<Validator<F>, ValidationError<'static>> {
         compiler::build_validator(self, schema)
     }
 
@@ -483,7 +511,7 @@ impl ValidationOptions<'_, Arc<dyn referencing::Retrieve>> {
     pub fn build_map(
         &self,
         schema: &Value,
-    ) -> Result<crate::ValidatorMap, ValidationError<'static>> {
+    ) -> Result<crate::ValidatorMap<F>, ValidationError<'static>> {
         compiler::build_validator_map(self, schema)
     }
 
@@ -730,6 +758,7 @@ impl<'i> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>> {
             keywords: self.keywords,
             pattern_options: self.pattern_options,
             email_options: self.email_options,
+            representation: PhantomData,
         }
     }
     #[allow(clippy::unused_async)]

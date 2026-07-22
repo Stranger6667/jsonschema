@@ -12,6 +12,7 @@ edition.workspace = true
 authors.workspace = true
 
 [features]
+conformance = ["jsonschema-value/conformance"]
 default = ["resolve-http", "resolve-file", "tls-aws-lc-rs"]
 resolve-http = ["reqwest", "dep:rustls"]
 resolve-file = []

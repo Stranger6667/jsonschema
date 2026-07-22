@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Generic JSON input: `options_for` builds a validator over any instance representation implementing `json::Json`, so instances validate without conversion to `serde_json::Value`. [#239](https://github.com/Stranger6667/jsonschema/issues/239)
+
 ## [0.48.5] - 2026-07-22
 
 ### Fixed

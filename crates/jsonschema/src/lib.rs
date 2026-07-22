@@ -920,6 +920,12 @@ pub(crate) mod dereferencer;
 pub mod error;
 mod evaluation;
 pub(crate) use jsonschema_value::{cmp, numeric, unique, Array, Json, Node, Object, SerdeJson};
+/// Implementing a JSON representation, so that [`options_for`] builds a validator accepting it.
+pub mod json {
+    #[cfg(feature = "conformance")]
+    pub use jsonschema_value::conformance;
+    pub use jsonschema_value::{cmp, unique, Array, Json, Node, Object, SerdeJson};
+}
 mod http;
 mod keywords;
 #[cfg(all(feature = "macros", not(target_family = "wasm")))]
@@ -1355,6 +1361,14 @@ pub fn canonicalize(value: &Value) -> Result<canonical::CanonicalSchema, Canonic
 #[must_use]
 pub fn options<'i>() -> ValidationOptions<'i> {
     Validator::options()
+}
+
+/// Create a builder whose validators accept instances in the JSON representation `F`.
+///
+/// Same configuration surface as [`options()`]; `build` yields a `Validator<F>`.
+#[must_use]
+pub fn options_for<'i, F: Json>() -> ValidationOptions<'i, std::sync::Arc<dyn Retrieve>, F> {
+    ValidationOptions::default()
 }
 
 /// Create a builder for configuring JSON Schema validation options.
