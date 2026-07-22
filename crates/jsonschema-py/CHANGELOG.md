@@ -14,6 +14,7 @@
 ### Performance
 
 - Up to 5x faster validation by working on Python objects directly instead of converting them to `serde_json`. [#239](https://github.com/Stranger6667/jsonschema/issues/239)
+- Up to 2x faster `meta.is_valid` / `meta.validate` by working on Python objects directly instead of converting them to `serde_json`.
 
 ## [0.48.5] - 2026-07-22
 
