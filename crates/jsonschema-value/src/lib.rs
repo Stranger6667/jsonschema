@@ -35,6 +35,27 @@ pub trait Json: Sized + Send + Sync + 'static {
     fn prepare_key(key: &str) -> Self::PreparedKey;
 }
 
+/// What tells one node from another within a validation call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NodeIdentity {
+    address: usize,
+    tag: u32,
+}
+
+impl NodeIdentity {
+    /// For representations where a live node's address is its own.
+    #[must_use]
+    pub fn new(address: usize) -> Self {
+        Self { address, tag: 0 }
+    }
+
+    /// For representations where nodes share an address, such as an arena addressed by index.
+    #[must_use]
+    pub fn tagged(address: usize, tag: u32) -> Self {
+        Self { address, tag }
+    }
+}
+
 /// A JSON number, readable without constructing a [`::serde_json::Number`].
 pub trait JsonNumber {
     fn as_u64(&self) -> Option<u64>;
@@ -93,14 +114,15 @@ pub trait Node<'a, F: Json>: Clone {
 
     /// Identity for `$ref` cycle detection and `is_valid` memoization.
     ///
-    /// Two nodes alive at once must never share a key, and a key must not change or be reused
-    /// during a call: a collision reports a cycle that is not there and accepts the node unchecked.
-    /// `None` opts out of both, leaving recursion bounded only by the stack.
-    fn cache_key(&self) -> Option<usize>;
+    /// Nodes alive at once must never share one, and two handles on a node must report the same
+    /// one, or a collision reports a cycle that is not there. A container's must never pass to a
+    /// later node: [`Node::container_identity`] keys a cache outliving it. `None` opts out,
+    /// leaving recursion bounded only by the stack.
+    fn identity(&self) -> Option<NodeIdentity>;
 
-    fn container_cache_key(&self) -> Option<usize> {
+    fn container_identity(&self) -> Option<NodeIdentity> {
         if matches!(self.json_type(), JsonType::Object | JsonType::Array) {
-            self.cache_key()
+            self.identity()
         } else {
             None
         }

@@ -30,7 +30,7 @@ use pyo3::{
 };
 use serde_json::{Map, Number, Value};
 
-use crate::{cmp, types::JsonType, Array, Json, JsonNumber, Node, Object};
+use crate::{cmp, types::JsonType, Array, Json, JsonNumber, Node, NodeIdentity, Object};
 
 type PyNode<'py> = Borrowed<'py, 'py, PyAny>;
 
@@ -579,8 +579,8 @@ impl<'py> Node<'py, Pyo3> for PyNode<'py> {
         Cow::Owned(py_to_value(*self, 0))
     }
 
-    fn cache_key(&self) -> Option<usize> {
-        Some(self.as_ptr() as usize)
+    fn identity(&self) -> Option<NodeIdentity> {
+        Some(NodeIdentity::new(self.as_ptr() as usize))
     }
 }
 

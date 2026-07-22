@@ -43,7 +43,7 @@ pub fn assert_conformance<F: Json>(root: &F::Node<'_>) {
     assert_numbers::<F>(&member);
     assert_containers::<F>(&member);
     assert_equality::<F>(&member);
-    assert_identity::<F>(root, &member("object"));
+    assert_identity::<F>(root, &member);
 }
 
 fn assert_types<'a, F: Json>(member: &impl Fn(&str) -> F::Node<'a>) {
@@ -193,20 +193,26 @@ fn assert_equality<'a, F: Json>(member: &impl Fn(&str) -> F::Node<'a>) {
     );
 }
 
-fn assert_identity<'a, F: Json>(root: &F::Node<'a>, child: &F::Node<'a>) {
-    let Some(root_key) = root.cache_key() else {
+fn assert_identity<'a, F: Json>(root: &F::Node<'a>, member: &impl Fn(&str) -> F::Node<'a>) {
+    let child = member("object");
+    let Some(root_identity) = root.identity() else {
         // Opting out is allowed, but then recursion is bounded only by the stack.
         return;
     };
-    assert_eq!(Some(root_key), root.cache_key(), "cache_key is stable");
+    assert_eq!(Some(root_identity), root.identity(), "identity is stable");
     assert_ne!(
-        Some(root_key),
-        child.cache_key(),
-        "distinct live nodes have distinct cache keys"
+        Some(root_identity),
+        child.identity(),
+        "distinct live nodes have distinct identities"
     );
     assert_eq!(
-        root.container_cache_key(),
-        Some(root_key),
-        "containers keep their cache key"
+        member("object").identity(),
+        child.identity(),
+        "one node reached through two handles has one identity"
+    );
+    assert_eq!(
+        root.container_identity(),
+        Some(root_identity),
+        "containers keep their identity"
     );
 }
