@@ -2,7 +2,7 @@ use crate::{
     error::ErrorIterator,
     paths::{LazyLocation, Location, RefTracker},
     validator::{Validate, ValidationContext},
-    Json, JsonNode, ValidationError,
+    Json, Node, ValidationError,
 };
 use serde_json::{Map, Value};
 

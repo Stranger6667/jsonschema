@@ -919,9 +919,7 @@ mod content_media_type;
 pub(crate) mod dereferencer;
 pub mod error;
 mod evaluation;
-#[doc(hidden)]
-pub use jsonschema_value::ext;
-pub(crate) use jsonschema_value::{Json, JsonArrayAccess, JsonNode, JsonObjectAccess, SerdeJson};
+pub(crate) use jsonschema_value::{cmp, numeric, unique, Array, Json, Node, Object, SerdeJson};
 mod http;
 mod keywords;
 #[cfg(all(feature = "macros", not(target_family = "wasm")))]
@@ -2868,10 +2866,10 @@ pub mod __private {
         pub use regex::{Regex, RegexBuilder};
     }
     pub mod unique_items {
-        pub use crate::ext::unique::is_unique;
+        pub use crate::unique::is_unique;
     }
     pub mod cmp {
-        pub use crate::ext::cmp::{equal, equal_numbers};
+        pub use crate::cmp::{equal, equal_numbers};
     }
     pub mod custom {
         use crate::paths::Location;
@@ -2979,7 +2977,7 @@ pub mod __private {
             i64: num_cmp::NumCmp<T>,
             f64: num_cmp::NumCmp<T>,
         {
-            crate::ext::numeric::ge(value, limit)
+            crate::numeric::ge(value, limit)
         }
 
         /// Compare `value` <= `limit` using runtime numeric semantics.
@@ -2990,7 +2988,7 @@ pub mod __private {
             i64: num_cmp::NumCmp<T>,
             f64: num_cmp::NumCmp<T>,
         {
-            crate::ext::numeric::le(value, limit)
+            crate::numeric::le(value, limit)
         }
 
         pub fn eq<T>(value: &serde_json::Number, limit: T) -> bool
@@ -3000,7 +2998,7 @@ pub mod __private {
             i64: num_cmp::NumCmp<T>,
             f64: num_cmp::NumCmp<T>,
         {
-            crate::ext::numeric::eq(value, limit)
+            crate::numeric::eq(value, limit)
         }
 
         /// Compare `value` > `limit` using runtime numeric semantics.
@@ -3011,7 +3009,7 @@ pub mod __private {
             i64: num_cmp::NumCmp<T>,
             f64: num_cmp::NumCmp<T>,
         {
-            crate::ext::numeric::gt(value, limit)
+            crate::numeric::gt(value, limit)
         }
 
         /// Compare `value` < `limit` using runtime numeric semantics.
@@ -3022,19 +3020,19 @@ pub mod __private {
             i64: num_cmp::NumCmp<T>,
             f64: num_cmp::NumCmp<T>,
         {
-            crate::ext::numeric::lt(value, limit)
+            crate::numeric::lt(value, limit)
         }
 
         /// Check `multipleOf` with integer divisors using runtime numeric semantics.
         #[must_use]
         pub fn is_multiple_of_integer(value: &serde_json::Number, multiple: f64) -> bool {
-            crate::ext::numeric::is_multiple_of_integer(value, multiple)
+            crate::numeric::is_multiple_of_integer(value, multiple)
         }
 
         /// Check `multipleOf` with fractional divisors using runtime numeric semantics.
         #[must_use]
         pub fn is_multiple_of_float(value: &serde_json::Number, multiple: f64) -> bool {
-            crate::ext::numeric::is_multiple_of_float(value, multiple)
+            crate::numeric::is_multiple_of_float(value, multiple)
         }
 
         /// Check numeric bounds with a compiled descriptor for arbitrary-precision schemas.
@@ -3045,7 +3043,9 @@ pub mod __private {
             op: u8,
             limit_literal: &'static str,
         ) -> bool {
-            use crate::ext::numeric_check::{check_bound, compile_bound, BoundOp, CompiledBound};
+            use jsonschema_value::numeric_check::{
+                check_bound, compile_bound, BoundOp, CompiledBound,
+            };
 
             #[inline]
             fn literal_key(literal: &'static str) -> (usize, usize) {
@@ -3082,7 +3082,7 @@ pub mod __private {
             value: &serde_json::Number,
             limit_literal: &'static str,
         ) -> bool {
-            use crate::ext::numeric_check::{
+            use jsonschema_value::numeric_check::{
                 check_multiple_of, compile_multiple_of, CompiledMultipleOf,
             };
 

@@ -5,7 +5,7 @@ use crate::{
     keywords::{BoxedValidator, Keyword},
     paths::{LazyLocation, Location, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
-    Json, JsonNode, SerdeJson, ValidationError,
+    Json, Node, SerdeJson, ValidationError,
 };
 use referencing::Uri;
 use serde_json::Value;

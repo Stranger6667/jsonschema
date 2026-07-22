@@ -7,7 +7,7 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
-    Draft, Json, JsonArrayAccess, JsonNode, SerdeJson, ValidationError,
+    Array, Draft, Json, Node, SerdeJson, ValidationError,
 };
 use referencing::{Uri, Vocabulary};
 use serde_json::{Map, Value};

@@ -9,7 +9,7 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
-    Json, JsonNode, SerdeJson,
+    Json, Node, SerdeJson,
 };
 use serde_json::{Map, Value};
 

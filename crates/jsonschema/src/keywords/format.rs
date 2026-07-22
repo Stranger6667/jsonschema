@@ -19,7 +19,7 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
-    Draft, Json, JsonNode,
+    Draft, Json, Node,
 };
 
 /// RFC 6570 Level 4 URI Template validator.

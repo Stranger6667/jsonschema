@@ -4,7 +4,7 @@ use crate::{
     error::ValidationError,
     keywords::CompilationResult,
     validator::{Validate, ValidationContext},
-    Json, JsonNode,
+    Json, Node,
 };
 
 pub(crate) struct FalseValidator {

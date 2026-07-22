@@ -11,7 +11,7 @@ use crate::{
     regex::{analyze_pattern, LiteralMatcher, PatternOptimization, RegexEngine},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
-    Json, JsonNode, JsonObjectAccess, SerdeJson,
+    Json, Node, Object, SerdeJson,
 };
 use serde_json::{Map, Value};
 

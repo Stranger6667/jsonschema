@@ -6,7 +6,7 @@ use crate::{
     paths::{LazyEvaluationPath, Location},
     regex::{analyze_pattern, is_ecma_whitespace, LiteralMatchError, PatternOptimization},
     validator::Validate as _,
-    Json, JsonObjectAccess, SerdeJson, ValidationContext,
+    Json, Object, SerdeJson, ValidationContext,
 };
 use ahash::AHashMap;
 use serde_json::{Map, Value};
@@ -136,7 +136,7 @@ pub(crate) fn are_properties_valid<'i, F, M, O, C>(
 where
     F: Json,
     M: PropertiesValidatorsMap<F>,
-    O: JsonObjectAccess<'i, F, Node = F::Node<'i>>,
+    O: Object<'i, F, Node = F::Node<'i>>,
     C: Fn(&F::Node<'i>, &mut ValidationContext) -> bool,
 {
     for (property, instance) in object.members() {

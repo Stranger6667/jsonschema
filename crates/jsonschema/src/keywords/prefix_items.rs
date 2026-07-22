@@ -6,7 +6,7 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
-    Json, JsonArrayAccess, JsonNode, SerdeJson,
+    Array, Json, Node, SerdeJson,
 };
 use serde_json::{Map, Value};
 use std::borrow::Cow;

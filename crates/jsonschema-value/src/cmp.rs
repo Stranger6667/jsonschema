@@ -10,7 +10,7 @@ macro_rules! num_cmp {
         } else {
             #[cfg(feature = "arbitrary-precision")]
             {
-                use crate::ext::numeric::bignum;
+                use crate::numeric::bignum;
                 use fraction::BigFraction;
 
                 let left_frac = BigFraction::from($left);
@@ -48,7 +48,7 @@ macro_rules! num_cmp {
 pub fn equal_numbers(left: &serde_json::Number, right: &serde_json::Number) -> bool {
     #[cfg(feature = "arbitrary-precision")]
     {
-        use crate::ext::numeric::bignum;
+        use crate::numeric::bignum;
         use fraction::BigFraction;
 
         // Check BigInt/BigFraction first to avoid precision loss from f64 conversion

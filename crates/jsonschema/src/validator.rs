@@ -83,7 +83,7 @@ impl ValidationContext {
         self.marking.pop();
     }
 
-    /// Keyed by `JsonNode::container_cache_key`: only containers, to avoid false hits from stack address
+    /// Keyed by `Node::container_cache_key`: only containers, to avoid false hits from stack address
     /// reuse.
     #[inline]
     pub(crate) fn get_cached_result(
@@ -95,7 +95,7 @@ impl ValidationContext {
         cache.get(&(node_id, cache_key?)).copied()
     }
 
-    /// Keyed by `JsonNode::container_cache_key`: only containers, to avoid false hits from stack address
+    /// Keyed by `Node::container_cache_key`: only containers, to avoid false hits from stack address
     /// reuse.
     #[inline]
     pub(crate) fn cache_result(&mut self, node_id: usize, cache_key: Option<usize>, result: bool) {

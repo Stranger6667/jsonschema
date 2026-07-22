@@ -8,7 +8,7 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
-    Json, JsonNode, JsonObjectAccess, SerdeJson,
+    Json, Node, Object, SerdeJson,
 };
 use serde_json::{Map, Value};
 
@@ -143,7 +143,7 @@ impl DependentRequiredValidator {
             for (key, subschema) in map {
                 let ictx = kctx.new_at_location(key.as_str());
                 if let Value::Array(dependency_array) = subschema {
-                    if !crate::ext::unique::is_unique(dependency_array) {
+                    if !crate::unique::is_unique(dependency_array) {
                         let location = ictx.location().clone();
                         return Err(ValidationError::unique_items(
                             location.clone(),

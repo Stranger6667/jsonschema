@@ -22,7 +22,7 @@ use crate::{
     node::SchemaNode,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
-    Json, JsonNode, JsonObjectAccess, SerdeJson, ValidationError,
+    Json, Node, Object, SerdeJson, ValidationError,
 };
 
 use super::CompilationResult;

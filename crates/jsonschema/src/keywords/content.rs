@@ -9,7 +9,7 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
-    Json, JsonNode,
+    Json, Node,
 };
 use serde_json::{Map, Value};
 use std::{borrow::Cow, sync::Arc};

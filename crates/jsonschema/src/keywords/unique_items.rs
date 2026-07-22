@@ -4,7 +4,7 @@ use crate::{
     keywords::CompilationResult,
     paths::{LazyLocation, Location, RefTracker},
     validator::{Validate, ValidationContext},
-    Json, JsonArrayAccess, JsonNode,
+    Array, Json, Node,
 };
 use serde_json::{Map, Value};
 

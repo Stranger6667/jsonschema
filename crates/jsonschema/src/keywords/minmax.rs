@@ -1,12 +1,12 @@
 use crate::{
     compiler,
     error::ValidationError,
-    ext::numeric,
     keywords::CompilationResult,
+    numeric,
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{Validate, ValidationContext},
-    Json, JsonNode,
+    Json, Node,
 };
 use num_cmp::NumCmp;
 use serde_json::{Map, Value};
@@ -78,10 +78,10 @@ define_numeric_keywords!(
 #[cfg(feature = "arbitrary-precision")]
 pub(crate) mod bigint_validators {
     use super::{
-        numeric, Json, JsonNode, LazyLocation, Location, RefTracker, Validate, ValidationContext,
+        numeric, Json, LazyLocation, Location, Node, RefTracker, Validate, ValidationContext,
         ValidationError, Value,
     };
-    use crate::ext::numeric::bignum::{
+    use crate::numeric::bignum::{
         f64_ge_bigfrac, f64_ge_bigint, f64_gt_bigfrac, f64_gt_bigint, f64_le_bigfrac,
         f64_le_bigint, f64_lt_bigfrac, f64_lt_bigint, i64_ge_bigfrac, i64_ge_bigint,
         i64_gt_bigfrac, i64_gt_bigint, i64_le_bigfrac, i64_le_bigint, i64_lt_bigfrac,

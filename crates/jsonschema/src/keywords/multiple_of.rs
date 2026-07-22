@@ -1,12 +1,12 @@
 use crate::{
     compiler,
     error::ValidationError,
-    ext::numeric,
     keywords::CompilationResult,
+    numeric,
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{Validate, ValidationContext},
-    Json, JsonNode,
+    Json, Node,
 };
 use serde_json::{Map, Value};
 use std::borrow::Cow;
