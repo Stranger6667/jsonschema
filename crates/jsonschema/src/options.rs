@@ -789,7 +789,7 @@ impl<'i> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>> {
     }
 }
 
-impl fmt::Debug for ValidationOptions<'_, Arc<dyn Retrieve>> {
+impl<R, F: Json> fmt::Debug for ValidationOptions<'_, R, F> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("CompilationConfig")
             .field("draft", &self.draft)

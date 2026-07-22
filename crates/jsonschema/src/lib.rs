@@ -8,6 +8,7 @@
 //! - 🌐 Blocking & non-blocking remote reference fetching (network/file)
 //! - 🎨 Structured Output v1 reports (flag/list/hierarchical)
 //! - ✨ Meta-schema validation for schema documents
+//! - 🧩 Validation of custom in-memory JSON representations
 //! - 🚀 WebAssembly support
 //!
 //! ## Supported drafts
@@ -846,6 +847,26 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
+//! # Custom JSON Representations
+//!
+//! Validators can accept instances in any in-memory JSON representation, not just
+//! `serde_json::Value`. Implement the traits in the [`json`] module for your representation and
+//! build validators with [`options_for`]:
+//!
+//! ```rust
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # type MyJson = jsonschema::json::SerdeJson;
+//! # let schema = serde_json::json!({"type": "string"});
+//! # let my_instance = &serde_json::json!("data");
+//! let validator = jsonschema::options_for::<MyJson>().build(&schema)?;
+//! assert!(validator.is_valid(my_instance));
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! See the [`json`] module for the full trait contract, a worked example, and how to verify an
+//! implementation. The Python bindings use this mechanism to validate Python objects directly.
+//!
 //! # WebAssembly support
 //!
 //! `jsonschema` supports WebAssembly with different capabilities based on the target platform:
@@ -920,11 +941,215 @@ pub(crate) mod dereferencer;
 pub mod error;
 mod evaluation;
 pub(crate) use jsonschema_value::{cmp, numeric, unique, Array, Json, Node, Object, SerdeJson};
-/// Implementing a JSON representation, so that [`options_for`] builds a validator accepting it.
+/// Validating instances in a custom in-memory JSON representation.
+///
+/// Implement [`Json`], [`Node`], [`Object`], [`Array`], and [`JsonNumber`](json::JsonNumber)
+/// for your representation, then build validators with [`options_for`]. Schemas are always
+/// `serde_json::Value`; only instances use the custom representation. [`SerdeJson`] is the
+/// built-in representation behind [`validator_for`] and the crate-level convenience functions.
+///
+/// # Example
+///
+/// ```rust
+/// use std::borrow::Cow;
+///
+/// use jsonschema::{
+///     json::{Array, Json, JsonNumber, Node, Object},
+///     JsonType,
+/// };
+/// use serde_json::Value;
+///
+/// enum ToyValue {
+///     Null,
+///     Boolean(bool),
+///     Number(f64),
+///     String(String),
+///     Array(Vec<ToyValue>),
+///     Object(Vec<(String, ToyValue)>),
+/// }
+///
+/// struct ToyJson;
+///
+/// impl Json for ToyJson {
+///     // A cheap-to-`Clone` handle; `&ToyValue` plays the role `&serde_json::Value` does
+///     // for the built-in representation.
+///     type Node<'a> = &'a ToyValue;
+///     // Property names are prepared once at schema compile time.
+///     type PreparedKey = String;
+///
+///     fn prepare_key(key: &str) -> String {
+///         key.to_owned()
+///     }
+/// }
+///
+/// struct ToyNumber(f64);
+///
+/// impl JsonNumber for ToyNumber {
+///     fn as_u64(&self) -> Option<u64> {
+///         (self.0.fract() == 0.0 && self.0 >= 0.0).then_some(self.0 as u64)
+///     }
+///     fn as_i64(&self) -> Option<i64> {
+///         (self.0.fract() == 0.0).then_some(self.0 as i64)
+///     }
+///     fn as_f64(&self) -> Option<f64> {
+///         Some(self.0)
+///     }
+///     fn as_str(&self) -> Cow<'_, str> {
+///         Cow::Owned(self.0.to_string())
+///     }
+///     fn to_number(&self) -> Cow<'_, serde_json::Number> {
+///         Cow::Owned(serde_json::Number::from_f64(self.0).expect("finite"))
+///     }
+/// }
+///
+/// impl<'a> Node<'a, ToyJson> for &'a ToyValue {
+///     type Object = &'a [(String, ToyValue)];
+///     type Array = &'a [ToyValue];
+///     type Number = ToyNumber;
+///
+///     fn as_object(&self) -> Option<&'a [(String, ToyValue)]> {
+///         match self {
+///             ToyValue::Object(members) => Some(members),
+///             _ => None,
+///         }
+///     }
+///     fn as_array(&self) -> Option<&'a [ToyValue]> {
+///         match self {
+///             ToyValue::Array(items) => Some(items),
+///             _ => None,
+///         }
+///     }
+///     fn as_string(&self) -> Option<Cow<'a, str>> {
+///         match self {
+///             ToyValue::String(string) => Some(Cow::Borrowed(string)),
+///             _ => None,
+///         }
+///     }
+///     fn as_number(&self) -> Option<ToyNumber> {
+///         match self {
+///             ToyValue::Number(number) => Some(ToyNumber(*number)),
+///             _ => None,
+///         }
+///     }
+///     fn as_boolean(&self) -> Option<bool> {
+///         match self {
+///             ToyValue::Boolean(boolean) => Some(*boolean),
+///             _ => None,
+///         }
+///     }
+///     fn is_null(&self) -> bool {
+///         matches!(self, ToyValue::Null)
+///     }
+///     fn json_type(&self) -> JsonType {
+///         match self {
+///             ToyValue::Null => JsonType::Null,
+///             ToyValue::Boolean(_) => JsonType::Boolean,
+///             ToyValue::Number(_) => JsonType::Number,
+///             ToyValue::String(_) => JsonType::String,
+///             ToyValue::Array(_) => JsonType::Array,
+///             ToyValue::Object(_) => JsonType::Object,
+///         }
+///     }
+///     // Cold paths only: error messages, `const`/`enum` comparisons, `uniqueItems`.
+///     fn to_value(&self) -> Cow<'a, Value> {
+///         Cow::Owned(match self {
+///             ToyValue::Null => Value::Null,
+///             ToyValue::Boolean(boolean) => Value::Bool(*boolean),
+///             ToyValue::Number(number) => serde_json::Number::from_f64(*number)
+///                 .map(Value::Number)
+///                 .expect("finite"),
+///             ToyValue::String(string) => Value::String(string.clone()),
+///             ToyValue::Array(items) => Value::Array(
+///                 items.iter().map(|item| item.to_value().into_owned()).collect(),
+///             ),
+///             ToyValue::Object(members) => Value::Object(
+///                 members
+///                     .iter()
+///                     .map(|(name, value)| (name.clone(), value.to_value().into_owned()))
+///                     .collect(),
+///             ),
+///         })
+///     }
+///     // Stable per live node; see the trait docs for the exact contract.
+///     fn cache_key(&self) -> Option<usize> {
+///         Some(std::ptr::from_ref::<ToyValue>(*self) as usize)
+///     }
+/// }
+///
+/// impl<'a> Object<'a, ToyJson> for &'a [(String, ToyValue)] {
+///     type Node = &'a ToyValue;
+///     type MemberName = &'a str;
+///     type MembersIter = ToyMembersIter<'a>;
+///
+///     fn len(&self) -> usize {
+///         <[(String, ToyValue)]>::len(self)
+///     }
+///     fn get(&self, key: &String) -> Option<&'a ToyValue> {
+///         self.iter().find(|(name, _)| name == key).map(|(_, value)| value)
+///     }
+///     fn members(&self) -> ToyMembersIter<'a> {
+///         ToyMembersIter(self.iter())
+///     }
+/// }
+///
+/// struct ToyMembersIter<'a>(std::slice::Iter<'a, (String, ToyValue)>);
+///
+/// impl<'a> Iterator for ToyMembersIter<'a> {
+///     type Item = (&'a str, &'a ToyValue);
+///     fn next(&mut self) -> Option<Self::Item> {
+///         self.0.next().map(|(name, value)| (name.as_str(), value))
+///     }
+/// }
+///
+/// impl<'a> Array<'a, ToyJson> for &'a [ToyValue] {
+///     type Node = &'a ToyValue;
+///     type ElementsIter = std::slice::Iter<'a, ToyValue>;
+///
+///     fn len(&self) -> usize {
+///         <[ToyValue]>::len(self)
+///     }
+///     fn elements(&self) -> std::slice::Iter<'a, ToyValue> {
+///         self.iter()
+///     }
+/// }
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let schema = serde_json::json!({
+///     "type": "object",
+///     "properties": {"name": {"type": "string", "minLength": 2}},
+///     "required": ["name"]
+/// });
+/// let validator = jsonschema::options_for::<ToyJson>().build(&schema)?;
+/// # let _ = format!("{:?}", jsonschema::options_for::<ToyJson>());
+///
+/// let valid = ToyValue::Object(vec![("name".into(), ToyValue::String("bob".into()))]);
+/// let invalid = ToyValue::Object(vec![]);
+/// assert!(validator.is_valid(&valid));
+/// let error = validator.validate(&invalid).expect_err("missing required");
+/// assert_eq!(error.to_string(), "\"name\" is a required property");
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Verifying an implementation
+///
+/// Enable the `conformance` feature, encode the `conformance::document()` JSON document in your
+/// representation, and run `conformance::assert_conformance` on it; it checks the accessor
+/// contract the validator relies on, including the subtle parts (code-point string lengths,
+/// mathematical number equality, `cache_key` stability).
+///
+/// # Limitations
+///
+/// - Custom keywords ([`Keyword`]) and `contentMediaType`/`contentEncoding` checks operate on
+///   `serde_json::Value`; under a custom representation every such call materializes the
+///   instance via [`Node::to_value`].
+/// - Async validator construction (`async_options`) supports only [`SerdeJson`].
 pub mod json {
     #[cfg(feature = "conformance")]
     pub use jsonschema_value::conformance;
-    pub use jsonschema_value::{cmp, unique, Array, Json, Node, Object, SerdeJson};
+    pub use jsonschema_value::{cmp, unique, Array, Json, JsonNumber, Node, Object, SerdeJson};
+    #[cfg(feature = "pyo3")]
+    pub use jsonschema_value::{probe_root, take_pending_error, PendingErrorScope, Pyo3};
 }
 mod http;
 mod keywords;

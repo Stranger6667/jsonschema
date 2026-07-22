@@ -79,6 +79,7 @@ If you'd like to try `jsonschema`, you can check the WebAssembly-powered [playgr
 - 🌐 Blocking & non-blocking remote reference fetching (network/file)
 - 🎨 Structured Output v1 reports (flag/list/hierarchical)
 - ✨ Meta-schema validation for schema documents, including custom metaschemas
+- 🧩 Validation of custom in-memory JSON representations (see the [`json` module](https://docs.rs/jsonschema/latest/jsonschema/json/index.html))
 - 🔗 Bindings for [Python](https://github.com/Stranger6667/jsonschema/tree/master/crates/jsonschema-py) and [Ruby](https://github.com/Stranger6667/jsonschema/tree/master/crates/jsonschema-rb)
 - 🚀 WebAssembly support
 - 💻 Command Line Interface
