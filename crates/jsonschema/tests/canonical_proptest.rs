@@ -27,6 +27,51 @@ fn small_int(tc: &TestCase) -> i32 {
     tc.draw(gs::integers::<i32>().min_value(-8).max_value(8))
 }
 
+// Divisors spanning each arithmetic `multipleOf` compiles to: exact modulo, rational division, and
+// the spellings on either side of the precision where they part ways.
+const DIVISORS: &[&str] = &[
+    "1",
+    "2",
+    "3",
+    "0.5",
+    "0.75",
+    "1.5",
+    "0.25",
+    "0.1",
+    "0.123456789",
+    // fractional divisors whose common multiple with a whole one is itself whole
+    "2.5",
+    "1.25",
+    "7.5",
+    "0.2",
+    "4503599627370496",
+    "9007199254740992",
+    "9007199254740993",
+    "3002399751580331",
+];
+
+fn divisor(tc: &TestCase) -> Value {
+    let text = tc.draw(gs::sampled_from(DIVISORS.to_vec()));
+    serde_json::from_str(text).expect("valid number literal")
+}
+
+// Integers on both sides of exact `f64` precision, where a rewritten divisor changes the verdict.
+const WIDE_INTEGERS: &[&str] = &[
+    "9007199254740992",
+    "9007199254740993",
+    "18014398509481986",
+    "27021597764222976",
+    "27021597764222977",
+    "12345678900000001",
+    "13510798882111488",
+    "1e30",
+];
+
+fn wide_number(tc: &TestCase) -> Value {
+    let text = tc.draw(gs::sampled_from(WIDE_INTEGERS.to_vec()));
+    serde_json::from_str(text).expect("valid number literal")
+}
+
 fn ordered<T: Ord>(a: T, b: T) -> (T, T) {
     if a <= b {
         (a, b)
@@ -73,7 +118,7 @@ fn arbitrary_scalar(tc: TestCase) -> Value {
 
 #[hegel::composite]
 fn arbitrary_instance(tc: TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(7)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(8)) {
         0 => Value::Null,
         1 => Value::Bool(tc.draw(gs::booleans())),
         2 => json!(tc.draw(gs::integers::<i32>().min_value(-8).max_value(8))),
@@ -83,14 +128,15 @@ fn arbitrary_instance(tc: TestCase) -> Value {
             tc.draw(gs::integers::<i32>().min_value(-4).max_value(4))
         )),
         5 => Value::String(tc.draw(gs::text().max_size(5))),
-        6 => json!([]),
+        6 => wide_number(&tc),
+        7 => json!([]),
         _ => json!({}),
     }
 }
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(28)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(32)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -148,6 +194,13 @@ fn draw_leaf(tc: &TestCase) -> Value {
         27 => {
             json!({ "type": "array", "uniqueItems": true, "maxItems": small_length(tc) })
         }
+        28 => json!({ "type": "number", "multipleOf": divisor(tc) }),
+        29 => json!({ "multipleOf": divisor(tc) }),
+        30 => json!({ "type": "integer", "multipleOf": divisor(tc) }),
+        31 => {
+            let (min, max) = ordered(small_int(tc), small_int(tc));
+            json!({ "type": "number", "minimum": min, "maximum": max, "multipleOf": divisor(tc) })
+        }
         _ => json!({ "type": ["string", "integer"] }),
     }
 }
@@ -178,15 +231,12 @@ fn draw_schema(tc: &TestCase, depth: u32) -> Value {
 
 // Meta-valid keywords the canonicaliser does not model; a document carrying one stays `Raw`.
 fn draw_unmodeled_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(6)) {
-        0 => {
-            json!({ "type": "integer", "multipleOf": tc.draw(gs::integers::<u8>().min_value(1).max_value(7)) })
-        }
-        1 => json!({ "type": "object", "properties": { "a": { "type": "integer" } } }),
-        2 => json!({ "type": "array", "items": { "type": "integer" } }),
-        3 => json!({ "not": { "type": "string" } }),
-        4 => json!({ "$defs": { "a": { "type": "null" } }, "$ref": "#/$defs/a" }),
-        5 => json!({ "format": "email" }),
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(5)) {
+        0 => json!({ "type": "object", "properties": { "a": { "type": "integer" } } }),
+        1 => json!({ "type": "array", "items": { "type": "integer" } }),
+        2 => json!({ "not": { "type": "string" } }),
+        3 => json!({ "$defs": { "a": { "type": "null" } }, "$ref": "#/$defs/a" }),
+        4 => json!({ "format": "email" }),
         _ => json!({ "oneOf": [{ "type": "string" }, { "type": "integer" }] }),
     }
 }
@@ -288,4 +338,100 @@ fn canonicalize_never_panics(tc: TestCase) {
     let _ = jsonschema::canonical::options()
         .with_draft(draft)
         .canonicalize(&schema);
+}
+
+// Divisors combined under `allOf`/`anyOf` keep validation, including on the integers where the
+// arithmetic the validator picks per spelling starts to disagree with exact rationals.
+#[hegel::test(test_cases = 10_000)]
+fn divisor_algebra_preserves_validation(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    let count = tc.draw(gs::integers::<usize>().min_value(1).max_value(3));
+    let branches: Vec<Value> = (0..count)
+        .map(|_| {
+            match tc.draw(gs::integers::<u8>().min_value(0).max_value(4)) {
+                0 => json!({ "type": "number", "multipleOf": divisor(&tc) }),
+                1 => json!({ "type": "integer", "multipleOf": divisor(&tc) }),
+                2 => json!({ "multipleOf": divisor(&tc) }),
+                // A value set beside a divisor: membership is decided by the same arithmetic.
+                3 => json!({ "const": wide_number(&tc) }),
+                _ => json!({ "enum": [wide_number(&tc), tc.draw(arbitrary_scalar())] }),
+            }
+        })
+        .collect();
+    let schema = if tc.draw(gs::booleans()) {
+        json!({ "allOf": branches })
+    } else {
+        json!({ "anyOf": branches })
+    };
+    let instance = if tc.draw(gs::booleans()) {
+        wide_number(&tc)
+    } else {
+        tc.draw(arbitrary_instance())
+    };
+    let Some(emitted) = canonicalize(&schema, draft) else {
+        return;
+    };
+    let build = |value: &Value| jsonschema::options().with_draft(draft).build(value);
+    let (Ok(raw), Ok(canonical)) = (build(&schema), build(&emitted)) else {
+        return;
+    };
+    assert_eq!(
+        raw.is_valid(&instance),
+        canonical.is_valid(&instance),
+        "{schema} vs {emitted} on {instance}"
+    );
+}
+
+// The order divisors arrive in is not part of the schema's meaning, so it cannot change the form.
+// An unmodeled document is kept as written, so only modeled ones carry the claim.
+#[hegel::test(test_cases = 10_000)]
+fn divisor_order_does_not_change_the_form(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    let count = tc.draw(gs::integers::<usize>().min_value(2).max_value(4));
+    let branches: Vec<Value> = (0..count)
+        .map(|_| json!({ "type": "number", "multipleOf": divisor(&tc) }))
+        .collect();
+    let reversed: Vec<Value> = branches.iter().rev().cloned().collect();
+    let schema = json!({ "allOf": branches });
+    let Ok(canonical) = jsonschema::canonical::options()
+        .with_draft(draft)
+        .canonicalize(&schema)
+    else {
+        return;
+    };
+    if canonical.kind() == jsonschema::canonical::CanonicalKind::Raw {
+        return;
+    }
+    assert_eq!(
+        Some(canonical.to_json_schema()),
+        canonicalize(&json!({ "allOf": reversed }), draft),
+        "{schema}"
+    );
+}
+
+// A divisor every other one already covers adds nothing, so the form cannot notice it.
+#[hegel::test(test_cases = 10_000)]
+fn a_redundant_divisor_does_not_change_the_form(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    let left = tc.draw(gs::integers::<u32>().min_value(1).max_value(64));
+    let right = tc.draw(gs::integers::<u32>().min_value(1).max_value(64));
+    let mut common = (left, right);
+    while common.1 != 0 {
+        common = (common.1, common.0 % common.1);
+    }
+    let pair = json!([
+        { "type": "number", "multipleOf": left },
+        { "type": "number", "multipleOf": right }
+    ]);
+    let with_common = json!([
+        { "type": "number", "multipleOf": left },
+        { "type": "number", "multipleOf": right },
+        { "type": "number", "multipleOf": common.0 }
+    ]);
+    assert_eq!(
+        canonicalize(&json!({ "allOf": pair }), draft),
+        canonicalize(&json!({ "allOf": with_common }), draft),
+        "gcd({left}, {right}) = {}",
+        common.0
+    );
 }

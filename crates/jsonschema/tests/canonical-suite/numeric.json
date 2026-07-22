@@ -519,14 +519,6 @@
     ]
   },
   {
-    "description": "ir: a divisor past f64 precision is not modeled",
-    "schema": {"type": "integer", "multipleOf": 4611686018427387903},
-    "expected": {"type": "integer", "multipleOf": 4611686018427387903},
-    "tests": [
-      {"data": 0, "valid": true}
-    ]
-  },
-  {
     "description": "ir: a number interval is a leaf",
     "schema": {"type": "number", "minimum": 2, "maximum": 5},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "minimum": 2, "maximum": 5},
@@ -813,12 +805,285 @@
     ]
   },
   {
-    "description": "ir: a divisor outside the integer domain keeps the document raw",
-    "schema": {"type": "number", "multipleOf": 2},
-    "expected": {"type": "number", "multipleOf": 2},
+    "description": "ir: a whole divisor admits only integers past draft 4",
+    "schemas": [
+      {"type": "number", "multipleOf": 2},
+      {"type": "integer", "multipleOf": 2}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer", "multipleOf": 2},
     "tests": [
       {"data": 4, "valid": true},
+      {"data": 4.0, "valid": true},
+      {"data": 3, "valid": false},
+      {"data": 2.5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a rational divisor is a number facet",
+    "schema": {"type": "number", "multipleOf": 0.5},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "multipleOf": 0.5},
+    "tests": [
+      {"data": 1.5, "valid": true},
+      {"data": 2, "valid": true},
+      {"data": 0, "valid": true},
+      {"data": 1.25, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an untyped divisor constrains only numbers",
+    "schema": {"multipleOf": 2},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": ["null", "boolean", "string", "array", "object"]}, {"type": "integer", "multipleOf": 2}]},
+    "tests": [
+      {"data": 4, "valid": true},
+      {"data": 3, "valid": false},
+      {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "ir: two rational divisors tighten to their least common multiple",
+    "schema": {"allOf": [{"type": "number", "multipleOf": 0.5}, {"type": "number", "multipleOf": 0.75}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "multipleOf": 1.5},
+    "tests": [
+      {"data": 1.5, "valid": true},
+      {"data": 3, "valid": true},
+      {"data": 0.5, "valid": false},
+      {"data": 0.75, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: the same rational divisor on both sides is kept once",
+    "schema": {"allOf": [{"type": "number", "multipleOf": 0.5}, {"type": "number", "multipleOf": 0.5}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "multipleOf": 0.5},
+    "tests": [
+      {"data": 1.5, "valid": true},
+      {"data": 1.25, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a fractional divisor over the integers is kept as written",
+    "schema": {"allOf": [{"type": "integer"}, {"multipleOf": 0.123456789}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer", "multipleOf": 0.123456789},
+    "tests": [
+      {"data": 123456789, "valid": true},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a divisor every integer already meets leaves no trace",
+    "schemas": [
+      {"type": "integer", "multipleOf": 0.5},
+      {"type": "integer"}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer"},
+    "tests": [
+      {"data": 3, "valid": true},
+      {"data": 3.5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: number branches with different divisors stay apart",
+    "schema": {"anyOf": [{"type": "number", "multipleOf": 0.5}, {"type": "number", "multipleOf": 0.75}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": "number", "multipleOf": 0.5}, {"type": "number", "multipleOf": 0.75}]},
+    "tests": [
+      {"data": 0.5, "valid": true},
+      {"data": 0.75, "valid": true},
+      {"data": 0.25, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a number branch whose divisor refines another is dropped",
+    "schemas": [
+      {"anyOf": [{"type": "number", "multipleOf": 0.5}, {"type": "number", "multipleOf": 1.5}]},
+      {"type": "number", "multipleOf": 0.5}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "multipleOf": 0.5},
+    "tests": [
+      {"data": 1.5, "valid": true},
+      {"data": 0.5, "valid": true},
+      {"data": 0.25, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: intervals folded under one divisor keep it",
+    "schema": {"anyOf": [{"type": "number", "multipleOf": 0.5, "maximum": 10}, {"type": "number", "multipleOf": 0.5, "minimum": 10}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "multipleOf": 0.5},
+    "tests": [
+      {"data": 1.5, "valid": true},
+      {"data": 20, "valid": true},
+      {"data": 1.25, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: divisors whose least common multiple needs more places than the denominator has digits",
+    "schema": {"allOf": [{"type": "number", "multipleOf": 0.125}, {"type": "number", "multipleOf": 0.25}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "multipleOf": 0.25},
+    "tests": [
+      {"data": 0.25, "valid": true},
+      {"data": 0.5, "valid": true},
+      {"data": 0.125, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: branches whose divisors take different arithmetic both survive",
+    "schema": {"anyOf": [{"type": "number", "multipleOf": 1.5}, {"type": "number", "multipleOf": 3}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": "integer", "multipleOf": 3}, {"type": "number", "multipleOf": 1.5}]},
+    "tests": [
+      {"data": 1.5, "valid": true},
+      {"data": 3, "valid": true},
+      {"data": 9007199254740993, "valid": true},
+      {"data": 2, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an interval holding no multiple admits nothing",
+    "schemas": [
+      {"type": "number", "minimum": 1, "maximum": 2, "multipleOf": 5},
+      {"type": "number", "minimum": 1, "maximum": 1.4, "multipleOf": 1.5}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": 1.5, "valid": false},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a member the validator admits survives a divisor past exact precision",
+    "schema": {"allOf": [{"const": 9007199254740993}, {"type": "number", "multipleOf": 3}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "const": 9007199254740993},
+    "tests": [
+      {"data": 9007199254740993, "valid": true},
       {"data": 3, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: draft 4 keeps integer members beside a real interval",
+    "draft": "draft4",
+    "schema": {"allOf": [{"type": "integer", "enum": [2, 3]}, {"minimum": 2}]},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "integer", "enum": [2, 3]},
+    "tests": [
+      {"data": 2, "valid": true},
+      {"data": 3, "valid": true},
+      {"data": 4, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an excluded end sitting on a multiple steps to the next one",
+    "schema": {"type": "number", "exclusiveMinimum": 3, "maximum": 4, "multipleOf": 1.5},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": 3, "valid": false},
+      {"data": 4.5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a branch a wider interval covers is dropped whatever its divisor",
+    "schemas": [
+      {"anyOf": [{"type": "number", "minimum": 0}, {"type": "number", "minimum": 1, "multipleOf": 1.5}]},
+      {"type": "number", "minimum": 0}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "minimum": 0},
+    "tests": [
+      {"data": 1.5, "valid": true},
+      {"data": 0.25, "valid": true},
+      {"data": -1, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a divisor-free branch is not covered by one carrying a divisor",
+    "schema": {"anyOf": [{"type": "number", "minimum": 0, "multipleOf": 1.5}, {"type": "number", "minimum": 1}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": "number", "minimum": 0, "multipleOf": 1.5}, {"type": "number", "minimum": 1}]},
+    "tests": [
+      {"data": 1.5, "valid": true},
+      {"data": 2.5, "valid": true},
+      {"data": 0.5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an interval open at the other end covers nothing",
+    "schema": {"anyOf": [{"type": "number", "maximum": 10, "multipleOf": 1.5}, {"type": "number", "minimum": 0}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": "number", "maximum": 9, "multipleOf": 1.5}, {"type": "number", "minimum": 0}]},
+    "tests": [
+      {"data": -1.5, "valid": true},
+      {"data": 0.25, "valid": true},
+      {"data": -0.25, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a fractional divisor pulls the interval onto its multiples",
+    "schemas": [
+      {"type": "number", "minimum": 1, "maximum": 4, "multipleOf": 1.5},
+      {"type": "number", "minimum": 1.5, "maximum": 3, "multipleOf": 1.5}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "minimum": 1.5, "maximum": 3, "multipleOf": 1.5},
+    "tests": [
+      {"data": 1.5, "valid": true},
+      {"data": 3, "valid": true},
+      {"data": 4.5, "valid": false},
+      {"data": 2, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an interval holding one multiple of a fractional divisor is that value",
+    "schema": {"type": "number", "minimum": 1.4, "maximum": 1.6, "multipleOf": 1.5},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "const": 1.5},
+    "tests": [
+      {"data": 1.5, "valid": true},
+      {"data": 1.4, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a negative end snaps onto the progression too",
+    "schema": {"type": "number", "minimum": -4, "maximum": -1, "multipleOf": 1.5},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "minimum": -3, "maximum": -1.5, "multipleOf": 1.5},
+    "tests": [
+      {"data": -3, "valid": true},
+      {"data": -1.5, "valid": true},
+      {"data": -4.5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a one-value interval its divisor rejects admits nothing",
+    "schema": {"type": "integer", "minimum": 1, "maximum": 1, "multipleOf": 1.5},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": 1.5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: branches sharing an end still subsume by divisor",
+    "schemas": [
+      {"anyOf": [{"type": "number", "minimum": 0, "multipleOf": 0.5}, {"type": "number", "minimum": 0, "multipleOf": 1.5}]},
+      {"type": "number", "minimum": 0, "multipleOf": 0.5}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "minimum": 0, "multipleOf": 0.5},
+    "tests": [
+      {"data": 1.5, "valid": true},
+      {"data": 0.5, "valid": true},
+      {"data": -0.5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an excluded upper end on a multiple steps down to the previous one",
+    "schema": {"type": "number", "minimum": 0, "exclusiveMaximum": 3, "multipleOf": 1.5},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "minimum": 0, "maximum": 1.5, "multipleOf": 1.5},
+    "tests": [
+      {"data": 1.5, "valid": true},
+      {"data": 0, "valid": true},
+      {"data": 3, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: divisors that cannot fold still see an excluded end on a multiple",
+    "schema": {"allOf": [{"type": "number", "multipleOf": 3, "exclusiveMinimum": 3, "maximum": 4}, {"type": "number", "multipleOf": 1.5}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": 3, "valid": false},
+      {"data": 4.5, "valid": false}
     ]
   }
 ]

@@ -5,8 +5,8 @@ use serde_json::{json, Map, Value};
 
 use crate::{
     canonical::ir::{
-        ArrayLeaf, CanonicalJson, IntegerLeaf, NumberLeaf, ObjectLeaf, Schema, SchemaKind,
-        StringLeaf,
+        ArrayLeaf, CanonicalJson, Divisors, IntegerLeaf, NumberLeaf, ObjectLeaf, Schema,
+        SchemaKind, StringLeaf,
     },
     JsonTypeSet,
 };
@@ -131,6 +131,7 @@ fn emit_number(leaf: &NumberLeaf, draft: Draft) -> Value {
             map.insert(exclusive_key.into(), limit);
         }
     }
+    emit_divisors(&mut map, &leaf.multiple_of);
     Value::Object(map)
 }
 
@@ -184,10 +185,30 @@ fn emit_integer(leaf: &IntegerLeaf) -> Value {
     if let Some(max) = &leaf.bounds.maximum {
         map.insert("maximum".into(), Value::Number(max.to_number()));
     }
-    if let Some(step) = &leaf.multiple_of {
-        map.insert("multipleOf".into(), Value::Number(step.to_number()));
-    }
+    emit_divisors(&mut map, &leaf.multiple_of);
     Value::Object(map)
+}
+
+/// A lone divisor sits beside the other facets; several are spelled as an `allOf`, since one
+/// `multipleOf` cannot carry them.
+fn emit_divisors(map: &mut Map<String, Value>, divisors: &Divisors) {
+    match divisors.as_slice() {
+        [] => {}
+        [step] => {
+            map.insert("multipleOf".into(), Value::Number(step.to_number()));
+        }
+        steps => {
+            let conjuncts = steps
+                .iter()
+                .map(|step| {
+                    let mut object = Map::new();
+                    object.insert("multipleOf".into(), Value::Number(step.to_number()));
+                    Value::Object(object)
+                })
+                .collect();
+            map.insert("allOf".into(), Value::Array(conjuncts));
+        }
+    }
 }
 
 /// Emit a standalone `Enum`; collapse to `type:[...]` when the value set saturates one or more JSON types.

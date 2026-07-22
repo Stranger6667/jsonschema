@@ -9,8 +9,8 @@ use crate::{
         algebra,
         context::CanonicalizationContext,
         ir::{
-            ArrayLeaf, AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber, CanonicalJson,
-            IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, Side,
+            ArrayLeaf, AtLeastTwo, BoundCardinality, BoundNumber, BoundRational, CanonicalJson,
+            Divisors, IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, Side,
             StringLeaf,
         },
         CanonicalizationError,
@@ -54,7 +54,7 @@ fn parse_schema(
     let mut max_properties: Option<BoundCardinality> = None;
     let mut patterns: Vec<Arc<str>> = Vec::new();
     let mut formats: Vec<Arc<str>> = Vec::new();
-    let mut multiple_of: Option<BoundInteger> = None;
+    let mut multiple_of = Divisors::default();
     // The number domain keeps each end as written: on the reals an excluded bound has no successor
     // to fold it into, unlike the integer path below.
     let mut real_minimum: Option<BoundNumber> = None;
@@ -178,16 +178,11 @@ fn parse_schema(
                     formats.push(Arc::from(name.as_str()));
                 }
             }
-            // Only a positive whole divisor `f64` holds exactly is modeled. A fractional one
-            // constrains integers in a way the interval algebra cannot express, and past `f64`
-            // precision the runtime's float division disagrees with exact arithmetic - both keep
-            // the document raw.
+            // Only a positive divisor whose spelling denotes an exact rational is modeled; without
+            // one the validator's own division is what decides membership.
             ("multipleOf", Value::Number(number)) if ctx.draft().is_known_keyword("multipleOf") => {
-                match BoundInteger::from_number(number)
-                    .filter(BoundInteger::is_positive)
-                    .filter(BoundInteger::is_exact_in_f64)
-                {
-                    Some(step) => multiple_of = Some(step),
+                match BoundRational::new(number) {
+                    Some(step) => multiple_of = Divisors::one(step),
                     None => return Ok(None),
                 }
             }
@@ -299,14 +294,11 @@ fn parse_schema(
         ));
     }
 
-    if real_minimum.is_some() || real_maximum.is_some() || multiple_of.is_some() {
-        // A divisor is modeled only on `integer`; on the reals it needs its own arithmetic.
-        if multiple_of.is_some() && type_set != Some(JsonTypeSet::from(JsonType::Integer)) {
-            return Ok(None);
-        }
+    if real_minimum.is_some() || real_maximum.is_some() || !multiple_of.is_empty() {
         let leaf = NumberLeaf {
             minimum: real_minimum,
             maximum: real_maximum,
+            multiple_of,
         };
         // The integers the interval admits must be representable: the interval may still meet
         // `integer` through an `allOf`, and there it is the only form left to express.
@@ -314,13 +306,10 @@ fn parse_schema(
             return Ok(None);
         };
         if type_set == Some(JsonTypeSet::from(JsonType::Integer)) {
-            // Every integer is a multiple of one, so the divisor leaves no trace here. It still had
-            // to reach this point: on `number` it means "whole", which the branch above keeps raw.
-            let multiple_of = multiple_of.filter(|step| !step.is_one());
             conjuncts.push(algebra::integer_leaf(
                 IntegerLeaf {
                     bounds,
-                    multiple_of,
+                    multiple_of: leaf.multiple_of,
                 },
                 ctx,
             ));
@@ -490,7 +479,7 @@ fn number_facet_schema(leaf: NumberLeaf, ctx: &CanonicalizationContext) -> Schem
             .remove(JsonType::Number)
             .remove(JsonType::Integer),
     ));
-    algebra::union(vec![non_number, algebra::number_leaf(leaf)], ctx)
+    algebra::union(vec![non_number, algebra::number_leaf(leaf, ctx)], ctx)
 }
 
 /// A string facet constrains only strings, so `{"minLength": 3}` becomes

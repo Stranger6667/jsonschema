@@ -286,3 +286,57 @@ pub fn check_multiple_of(compiled: &CompiledMultipleOf, value: &Number) -> bool 
         CompiledMultipleOf::Unsupported => true,
     }
 }
+
+/// Which arithmetic the validator uses for a `multipleOf` divisor. A rewrite that moves a divisor
+/// between kinds can change verdicts, so only same-kind rewrites preserve membership.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DivisorKind {
+    /// Integer instances take exact integer modulo.
+    Whole,
+    /// A whole divisor past the exact-modulo guard, where instances go through `f64` remainder.
+    WholeLossy,
+    /// Every instance goes through rational division.
+    Fractional,
+}
+
+/// The arithmetic `divisor` selects, mirroring how `multipleOf` compiles.
+pub fn divisor_kind(divisor: &Number) -> DivisorKind {
+    #[cfg(feature = "arbitrary-precision")]
+    {
+        if numeric::bignum::try_parse_bigint(divisor).is_some() {
+            return DivisorKind::Whole;
+        }
+        if numeric::bignum::try_parse_bigfraction(divisor).is_some() {
+            return DivisorKind::Fractional;
+        }
+    }
+    match divisor.as_f64() {
+        Some(value) if value.fract() != 0. => DivisorKind::Fractional,
+        // `is_multiple_of_integer` keeps exact modulo only while the divisor itself is exact.
+        Some(value) if value.abs() <= MAX_SAFE_INTEGER_F64 => DivisorKind::Whole,
+        // A divisor with no `f64` form only arises under arbitrary precision, where the exact
+        // parses above have already classified it.
+        _ => DivisorKind::WholeLossy,
+    }
+}
+
+const MAX_SAFE_INTEGER_F64: f64 = 9_007_199_254_740_992.0;
+
+/// Whether `value` satisfies `multipleOf: divisor`, deciding it the way the validator does.
+pub fn satisfies_multiple_of(divisor: &Number, value: &Number) -> bool {
+    #[cfg(feature = "arbitrary-precision")]
+    {
+        let compiled = compile_multiple_of(divisor);
+        if compiled != CompiledMultipleOf::Unsupported {
+            return check_multiple_of(&compiled, value);
+        }
+    }
+    // A divisor with no `f64` is one the validator skips, so every instance passes there.
+    divisor.as_f64().is_none_or(|limit| {
+        if limit.fract() == 0. {
+            numeric::is_multiple_of_integer(value, limit)
+        } else {
+            numeric::is_multiple_of_float(value, limit)
+        }
+    })
+}

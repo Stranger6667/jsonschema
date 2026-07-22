@@ -149,6 +149,14 @@ def test_view_object_sizes():
             pytest.fail(f"unexpected view: {other!r}")
 
 
+def test_view_number_multiple_of():
+    match canonicalize({"type": "number", "multipleOf": 0.5}).view():
+        case canonical.NumberView(multiple_of=multiple_of):
+            assert multiple_of == [0.5]
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
 def test_view_number_interval():
     match canonicalize({"type": "number", "minimum": 2, "exclusiveMaximum": 5}).view():
         case canonical.NumberView(
@@ -169,7 +177,7 @@ def test_view_integer_multiple_of():
     match canonicalize({"type": "integer", "multipleOf": 3}).view():
         case canonical.IntegerView(minimum=minimum, multiple_of=multiple_of):
             assert minimum is None
-            assert multiple_of == 3
+            assert multiple_of == [3]
         case other:
             pytest.fail(f"unexpected view: {other!r}")
 

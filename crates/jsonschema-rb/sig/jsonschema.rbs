@@ -82,6 +82,7 @@ module JSONSchema
       def exclusive_minimum: () -> bool
       def maximum: () -> (Integer | Float)?
       def exclusive_maximum: () -> bool
+      def multiple_of: () -> Array[Integer | Float]
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end
@@ -90,7 +91,7 @@ module JSONSchema
     class IntegerView
       def minimum: () -> Integer?
       def maximum: () -> Integer?
-      def multiple_of: () -> Integer?
+      def multiple_of: () -> Array[Integer | Float]
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end
