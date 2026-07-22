@@ -301,13 +301,30 @@ impl From<EvaluationNode> for EvaluationResult {
 /// This structure represents a JSON Schema that has been parsed and compiled into
 /// an efficient internal representation for validation. It contains the root node
 /// of the schema tree and the configuration options used during compilation.
-#[derive(Clone, Debug)]
-pub struct Validator {
-    pub(crate) root: SchemaNode,
+pub struct Validator<F: Json = SerdeJson> {
+    pub(crate) root: SchemaNode<F>,
     pub(crate) draft: Draft,
 }
 
-impl Validator {
+impl<F: Json> Clone for Validator<F> {
+    fn clone(&self) -> Self {
+        Self {
+            root: self.root.clone(),
+            draft: self.draft,
+        }
+    }
+}
+
+impl<F: Json> std::fmt::Debug for Validator<F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Validator")
+            .field("root", &self.root)
+            .field("draft", &self.draft)
+            .finish()
+    }
+}
+
+impl Validator<SerdeJson> {
     /// Create a default [`ValidationOptions`] for configuring JSON Schema validation.
     ///
     /// Use this to set the draft version and other validation parameters.
@@ -372,13 +389,19 @@ impl Validator {
     pub async fn async_new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         Self::async_options().build(schema).await
     }
+}
+
+// `F::Node` is a borrow handle (`&Value` for `serde_json`); taking it by value keeps the serde
+// call ergonomics (`&Value`, not `&&Value`) across every representation.
+#[allow(clippy::needless_pass_by_value)]
+impl<F: Json> Validator<F> {
     /// Validate `instance` against `schema` and return the first error if any.
     ///
     /// # Errors
     ///
     /// Returns the first [`ValidationError`] describing why `instance` does not satisfy the schema.
     #[inline]
-    pub fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+    pub fn validate<'i>(&self, instance: F::Node<'i>) -> Result<(), ValidationError<'i>> {
         let mut ctx = ValidationContext::new();
         self.root
             .validate(&instance, &LazyLocation::new(), None, &mut ctx)
@@ -386,7 +409,7 @@ impl Validator {
     /// Run validation against `instance` and return an iterator over [`ValidationError`] in the error case.
     #[inline]
     #[must_use]
-    pub fn iter_errors<'i>(&'i self, instance: &'i Value) -> ErrorIterator<'i> {
+    pub fn iter_errors<'i>(&'i self, instance: F::Node<'i>) -> ErrorIterator<'i> {
         let mut ctx = ValidationContext::new();
         self.root
             .iter_errors(&instance, &LazyLocation::new(), None, &mut ctx)
@@ -396,14 +419,14 @@ impl Validator {
     /// This approach is much faster, than [`Validator::validate`].
     #[must_use]
     #[inline]
-    pub fn is_valid(&self, instance: &Value) -> bool {
+    pub fn is_valid(&self, instance: F::Node<'_>) -> bool {
         let mut ctx = ValidationContext::new();
         self.root.is_valid(&instance, &mut ctx)
     }
     /// Evaluate the schema and expose structured output formats.
     #[must_use]
     #[inline]
-    pub fn evaluate(&self, instance: &Value) -> Evaluation {
+    pub fn evaluate(&self, instance: F::Node<'_>) -> Evaluation {
         let mut ctx = ValidationContext::new();
         let root = self
             .root
@@ -424,15 +447,22 @@ impl Validator {
 ///
 /// Each key is a URI-fragment JSON pointer (e.g. `"#"`, `"#/$defs/User"`).
 /// The root schema is always present under the key `"#"`.
-#[derive(Debug)]
-pub struct ValidatorMap {
-    pub(crate) validators: AHashMap<String, Validator>,
+pub struct ValidatorMap<F: Json = SerdeJson> {
+    pub(crate) validators: AHashMap<String, Validator<F>>,
 }
 
-impl ValidatorMap {
+impl<F: Json> std::fmt::Debug for ValidatorMap<F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ValidatorMap")
+            .field("validators", &self.validators)
+            .finish()
+    }
+}
+
+impl<F: Json> ValidatorMap<F> {
     /// Returns the validator for the given URI-fragment pointer, or `None` if not found.
     #[must_use]
-    pub fn get(&self, pointer: &str) -> Option<&Validator> {
+    pub fn get(&self, pointer: &str) -> Option<&Validator<F>> {
         self.validators.get(pointer)
     }
 
@@ -460,13 +490,13 @@ impl ValidatorMap {
     }
 }
 
-impl std::ops::Index<&str> for ValidatorMap {
-    type Output = Validator;
+impl<F: Json> std::ops::Index<&str> for ValidatorMap<F> {
+    type Output = Validator<F>;
 
     /// # Panics
     ///
     /// Panics if the pointer is not found in the map.
-    fn index(&self, pointer: &str) -> &Validator {
+    fn index(&self, pointer: &str) -> &Validator<F> {
         self.validators
             .get(pointer)
             .unwrap_or_else(|| panic!("JSON pointer '{pointer}' not found in ValidatorMap"))

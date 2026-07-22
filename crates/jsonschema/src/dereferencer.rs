@@ -1,5 +1,10 @@
+use std::sync::Arc;
+
 use ahash::AHashSet;
-use referencing::{Draft, Resolver};
+use jsonschema_value::Json;
+#[cfg(feature = "resolve-async")]
+use referencing::AsyncRetrieve;
+use referencing::{Draft, Resolver, Retrieve};
 use serde_json::{Map, Value};
 
 use crate::{compiler, options::ValidationOptions};
@@ -15,8 +20,8 @@ fn dereference_from_registry(
     walk(schema, draft, &resolver, &mut visited)
 }
 
-pub(crate) fn dereference_with_options(
-    config: &ValidationOptions<'_>,
+pub(crate) fn dereference_with_options<F: Json>(
+    config: &ValidationOptions<'_, Arc<dyn Retrieve>, F>,
     schema: &Value,
 ) -> Result<Value, referencing::Error> {
     let draft = config.draft_for(schema)?;
@@ -37,7 +42,7 @@ pub(crate) fn dereference_with_options(
 
 #[cfg(feature = "resolve-async")]
 pub(crate) async fn dereference_with_options_async(
-    config: &crate::options::ValidationOptions<'_, std::sync::Arc<dyn referencing::AsyncRetrieve>>,
+    config: &ValidationOptions<'_, Arc<dyn AsyncRetrieve>>,
     schema: &Value,
 ) -> Result<Value, referencing::Error> {
     let draft = config.draft_for(schema).await?;
