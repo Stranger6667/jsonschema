@@ -90,6 +90,23 @@ RSpec.describe "JSONSchema.canonicalize" do
     end
   end
 
+  it "view returns StringView carrying an asserted format" do
+    case JSONSchema.canonicalize({ "type" => "string", "format" => "email" }, validate_formats: true).view
+    in JSONSchema::Canonical::StringView[patterns:, formats:]
+      expect(patterns).to eq([])
+      expect(formats).to eq(["email"])
+    end
+  end
+
+  it "view returns IntegerView with its divisor" do
+    case JSONSchema.canonicalize({ "type" => "integer", "multipleOf" => 3 }).view
+    in JSONSchema::Canonical::IntegerView[minimum:, maximum:, multiple_of:]
+      expect(minimum).to be_nil
+      expect(maximum).to be_nil
+      expect(multiple_of).to eq(3)
+    end
+  end
+
   it "view returns IntegerView with its interval" do
     case JSONSchema.canonicalize({ "type" => "integer", "minimum" => 2, "maximum" => 9 }).view
     in JSONSchema::Canonical::IntegerView[minimum:, maximum:]
@@ -131,8 +148,8 @@ RSpec.describe "JSONSchema.canonicalize" do
   {
     "MultiTypeView" => [{ "type" => %w[integer string] }, %i[types]],
     "TypedGroupView" => [{ "type" => "integer", "enum" => [1, 2] }, %i[type_name]],
-    "StringView" => [{ "type" => "string", "minLength" => 2, "pattern" => "^a" }, %i[min_length max_length patterns]],
-    "IntegerView" => [{ "type" => "integer", "minimum" => 2, "maximum" => 9 }, %i[minimum maximum]],
+    "StringView" => [{ "type" => "string", "minLength" => 2, "pattern" => "^a" }, %i[min_length max_length patterns formats]],
+    "IntegerView" => [{ "type" => "integer", "minimum" => 2, "maximum" => 9 }, %i[minimum maximum multiple_of]],
     "ConstView" => [{ "const" => nil }, %i[value]],
     "EnumView" => [{ "enum" => [1, 2] }, %i[values]],
     "RawView" => [{ "not" => {} }, %i[schema]]

@@ -70,14 +70,16 @@ module JSONSchema
       def min_length: () -> Integer?
       def max_length: () -> Integer?
       def patterns: () -> Array[String]
+      def formats: () -> Array[String]
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end
 
-    # An integer value within a closed interval.
+    # An integer value within a closed interval, optionally a multiple of a divisor.
     class IntegerView
       def minimum: () -> Integer?
       def maximum: () -> Integer?
+      def multiple_of: () -> Integer?
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end

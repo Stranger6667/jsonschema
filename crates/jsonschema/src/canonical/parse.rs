@@ -10,7 +10,7 @@ use crate::{
         context::CanonicalizationContext,
         ir::{
             tighter, AtLeastTwo, BoundCardinality, BoundInteger, CanonicalJson, Discrete,
-            IntegerBounds, LengthBounds, Schema, SchemaKind, StringLeaf,
+            IntegerBounds, IntegerLeaf, LengthBounds, Schema, SchemaKind, StringLeaf,
         },
         CanonicalizationError,
     },
@@ -48,6 +48,7 @@ fn parse_schema(
     let mut patterns: Vec<Arc<str>> = Vec::new();
     let mut formats: Vec<Arc<str>> = Vec::new();
     let mut minimum: Option<BoundInteger> = None;
+    let mut multiple_of: Option<BoundInteger> = None;
     let mut maximum: Option<BoundInteger> = None;
     // Draft 4 spells exclusivity as a boolean modifier on `minimum`/`maximum`, which may be read
     // before the bound it modifies, so it is applied once the whole object has been read.
@@ -129,6 +130,19 @@ fn parse_schema(
             ("format", Value::String(name)) if ctx.draft().is_known_keyword("format") => {
                 if ctx.validate_formats() {
                     formats.push(Arc::from(name.as_str()));
+                }
+            }
+            // Only a positive whole divisor `f64` holds exactly is modeled. A fractional one
+            // constrains integers in a way the interval algebra cannot express, and past `f64`
+            // precision the runtime's float division disagrees with exact arithmetic - both keep
+            // the document raw.
+            ("multipleOf", Value::Number(number)) if ctx.draft().is_known_keyword("multipleOf") => {
+                match BoundInteger::from_number(number)
+                    .filter(BoundInteger::is_positive)
+                    .filter(BoundInteger::is_exact_in_f64)
+                {
+                    Some(step) => multiple_of = Some(step),
+                    None => return Ok(None),
                 }
             }
             // A fractional or (default build) out-of-`i64` bound has no modeled integer form; keep it raw.
@@ -224,11 +238,17 @@ fn parse_schema(
         conjuncts.push(string_facet_schema(leaf, ctx));
     }
 
-    if minimum.is_some() || maximum.is_some() {
+    if minimum.is_some() || maximum.is_some() || multiple_of.is_some() {
         // Only `type: integer` bounds are modeled yet; `number`/untyped numeric facets stay raw.
         if type_set == Some(JsonTypeSet::from(JsonType::Integer)) {
+            // Every integer is a multiple of one, so the divisor leaves no trace here. It still had
+            // to reach this point: on `number` it means "whole", which the gate below keeps raw.
+            let multiple_of = multiple_of.filter(|step| !step.is_one());
             conjuncts.push(algebra::integer_leaf(
-                IntegerBounds { minimum, maximum },
+                IntegerLeaf {
+                    bounds: IntegerBounds { minimum, maximum },
+                    multiple_of,
+                },
                 ctx,
             ));
         } else {

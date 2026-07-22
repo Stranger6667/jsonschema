@@ -99,6 +99,7 @@ impl PyCanonicalSchema {
                         })
                         .transpose()?,
                     patterns: view.patterns,
+                    formats: view.formats,
                 },
             )?
             .into_any(),
@@ -113,6 +114,12 @@ impl PyCanonicalSchema {
                         .transpose()?,
                     maximum: view
                         .maximum
+                        .map(|number| {
+                            crate::value_to_python(py, &serde_json::Value::Number(number))
+                        })
+                        .transpose()?,
+                    multiple_of: view
+                        .multiple_of
                         .map(|number| {
                             crate::value_to_python(py, &serde_json::Value::Number(number))
                         })
@@ -224,7 +231,7 @@ impl TypedGroupView {
     }
 }
 
-/// A string value within a length window matching every pattern.
+/// A string value within a length window matching every pattern and format.
 #[pyclass(frozen, name = "StringView", module = "jsonschema_rs.canonical")]
 pub(crate) struct StringView {
     #[pyo3(get)]
@@ -233,30 +240,34 @@ pub(crate) struct StringView {
     max_length: Option<Py<PyAny>>,
     #[pyo3(get)]
     patterns: Vec<String>,
+    #[pyo3(get)]
+    formats: Vec<String>,
 }
 
 #[pymethods]
 impl StringView {
     #[classattr]
-    fn __match_args__() -> (&'static str, &'static str, &'static str) {
-        ("min_length", "max_length", "patterns")
+    fn __match_args__() -> (&'static str, &'static str, &'static str, &'static str) {
+        ("min_length", "max_length", "patterns", "formats")
     }
 }
 
-/// An integer value within a range.
+/// An integer value within a range, optionally a multiple of a divisor.
 #[pyclass(frozen, name = "IntegerView", module = "jsonschema_rs.canonical")]
 pub(crate) struct IntegerView {
     #[pyo3(get)]
     minimum: Option<Py<PyAny>>,
     #[pyo3(get)]
     maximum: Option<Py<PyAny>>,
+    #[pyo3(get)]
+    multiple_of: Option<Py<PyAny>>,
 }
 
 #[pymethods]
 impl IntegerView {
     #[classattr]
-    fn __match_args__() -> (&'static str, &'static str) {
-        ("minimum", "maximum")
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("minimum", "maximum", "multiple_of")
     }
 }
 

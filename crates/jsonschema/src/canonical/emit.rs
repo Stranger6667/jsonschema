@@ -4,7 +4,7 @@ use referencing::Draft;
 use serde_json::{json, Map, Value};
 
 use crate::{
-    canonical::ir::{CanonicalJson, IntegerBounds, Schema, SchemaKind, StringLeaf},
+    canonical::ir::{CanonicalJson, IntegerLeaf, Schema, SchemaKind, StringLeaf},
     JsonTypeSet,
 };
 
@@ -101,14 +101,17 @@ fn emit_string(leaf: &StringLeaf) -> Value {
 }
 
 /// Emit an integer leaf as `{"type":"integer"}` plus its interval bounds.
-fn emit_integer(bounds: &IntegerBounds) -> Value {
+fn emit_integer(leaf: &IntegerLeaf) -> Value {
     let mut map = Map::new();
     map.insert("type".into(), Value::String("integer".into()));
-    if let Some(min) = &bounds.minimum {
+    if let Some(min) = &leaf.bounds.minimum {
         map.insert("minimum".into(), Value::Number(min.to_number()));
     }
-    if let Some(max) = &bounds.maximum {
+    if let Some(max) = &leaf.bounds.maximum {
         map.insert("maximum".into(), Value::Number(max.to_number()));
+    }
+    if let Some(step) = &leaf.multiple_of {
+        map.insert("multipleOf".into(), Value::Number(step.to_number()));
     }
     Value::Object(map)
 }

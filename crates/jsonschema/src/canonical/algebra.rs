@@ -8,8 +8,9 @@ use crate::{
     canonical::{
         context::{CanonicalizationContext, CompiledMatcher},
         ir::{
-            AtLeastTwo, BoundCardinality, BoundInteger, CanonicalJson, IntegerBounds, LengthBounds,
-            NonEmpty, Schema, SchemaKind, StringLeaf, StringLeaves, Windows,
+            AtLeastTwo, BoundCardinality, BoundInteger, CanonicalJson, IntegerBounds, IntegerLeaf,
+            IntegerLeaves, LengthBounds, NonEmpty, Round, Schema, SchemaKind, StringLeaf,
+            StringLeaves,
         },
         parse,
     },
@@ -126,14 +127,17 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
         }
         // Two integer leaves: keep the integers both accept by tightening to the narrower interval.
         (SchemaKind::Integer(first), SchemaKind::Integer(second)) => {
-            integer_leaf(first.into_inner().intersect(second.into_inner()), ctx)
+            integer_leaf(
+                intersect_integer_leaves(first.into_inner(), second.into_inner()),
+                ctx,
+            )
         }
         // A typed group holds `integer` values (Draft 4); keep the ones within the leaf's interval.
-        (SchemaKind::TypedGroup { ty, body }, SchemaKind::Integer(bounds))
-        | (SchemaKind::Integer(bounds), SchemaKind::TypedGroup { ty, body }) => {
+        (SchemaKind::TypedGroup { ty, body }, SchemaKind::Integer(leaf))
+        | (SchemaKind::Integer(leaf), SchemaKind::TypedGroup { ty, body }) => {
             let kept = into_members(body.into_kind())
                 .into_iter()
-                .filter(|member| integer_leaf_admits(bounds.get(), member))
+                .filter(|member| integer_leaf_admits(leaf.get(), member))
                 .collect();
             typed_group(ty, parse::canonicalize_value_set(kept))
         }
@@ -153,7 +157,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     let mut types = JsonTypeSet::empty();
     let mut groups: Vec<(JsonType, Vec<CanonicalJson>)> = Vec::new();
     let mut strings = StringLeaves::default();
-    let mut integers: Windows<BoundInteger> = Windows::default();
+    let mut integers = IntegerLeaves::default();
 
     let mut stack = branches;
     while let Some(branch) = stack.pop() {
@@ -184,7 +188,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             // A string leaf accepts a length window; collect it with the other string branches.
             SchemaKind::String(leaf) => strings.insert(leaf.into_inner()),
             // An integer leaf accepts an interval; collect it with the other integer branches.
-            SchemaKind::Integer(bounds) => integers.insert(bounds.into_inner()),
+            SchemaKind::Integer(leaf) => integers.insert(leaf.into_inner()),
             // `Raw` is whole-document and never nested in a combinator, so union never sees it.
             SchemaKind::Raw(_) => {
                 unreachable!("`Raw` is whole-document; combinators never contain it")
@@ -238,11 +242,9 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         let windows = integers.as_slice();
         groups.retain(|(ty, values)| {
             *ty != JsonType::Integer
-                || !values.iter().all(|member| {
-                    windows
-                        .iter()
-                        .any(|bounds| integer_leaf_admits(bounds, member))
-                })
+                || !values
+                    .iter()
+                    .all(|member| windows.iter().any(|leaf| integer_leaf_admits(leaf, member)))
         });
     }
 
@@ -258,8 +260,8 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     debug_assert!(integers.is_empty() || !cover.contains(JsonType::Integer));
     debug_assert!(strings.is_empty() || !cover.contains(JsonType::String));
     let mut widened = types;
-    integers.retain(|bounds| {
-        let spans_domain = bounds.is_unbounded();
+    integers.retain(|leaf| {
+        let spans_domain = leaf.bounds.is_unbounded() && leaf.multiple_of.is_none();
         if spans_domain {
             widened = union_type_sets(widened, JsonTypeSet::from(JsonType::Integer));
         }
@@ -373,7 +375,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
 #[allow(clippy::wildcard_enum_match_arm)]
 fn lift_degenerate_member(
     strings: &mut StringLeaves,
-    integers: &mut Windows<BoundInteger>,
+    integers: &mut IntegerLeaves,
     member: &CanonicalJson,
     ctx: &CanonicalizationContext,
 ) -> bool {
@@ -396,9 +398,12 @@ fn lift_degenerate_member(
         Value::Number(number) if !integers.is_empty() && !matches!(ctx.draft(), Draft::Draft4) => {
             match BoundInteger::from_number(number) {
                 Some(bound) => {
-                    integers.insert(IntegerBounds {
-                        minimum: Some(bound.clone()),
-                        maximum: Some(bound),
+                    integers.insert(IntegerLeaf {
+                        bounds: IntegerBounds {
+                            minimum: Some(bound.clone()),
+                            maximum: Some(bound),
+                        },
+                        multiple_of: None,
                     });
                     true
                 }
@@ -417,7 +422,7 @@ fn rerun(
     members: Vec<CanonicalJson>,
     groups: Vec<(JsonType, Vec<CanonicalJson>)>,
     strings: StringLeaves,
-    integers: Windows<BoundInteger>,
+    integers: IntegerLeaves,
     ctx: &CanonicalizationContext,
 ) -> Schema {
     let mut rest: Vec<Schema> = vec![Schema::new(SchemaKind::MultiType(types))];
@@ -428,7 +433,7 @@ fn rerun(
             .map(|(ty, values)| typed_group(ty, parse::canonicalize_value_set(values))),
     );
     rest.extend(strings.into_iter().map(|leaf| string_leaf(leaf, ctx)));
-    rest.extend(integers.into_iter().map(|bounds| integer_leaf(bounds, ctx)));
+    rest.extend(integers.into_iter().map(|leaf| integer_leaf(leaf, ctx)));
     union(rest, ctx)
 }
 
@@ -502,10 +507,10 @@ fn restrict_members(
         }
         // `other` is an integer leaf: keep the integer members within its interval. Draft 4 keeps the
         // integer type guard so `1.0` cannot match `1` through value equality.
-        SchemaKind::Integer(bounds) => {
+        SchemaKind::Integer(leaf) => {
             let kept = members
                 .into_iter()
-                .filter(|member| integer_leaf_admits(bounds.get(), member))
+                .filter(|member| integer_leaf_admits(leaf.get(), member))
                 .collect();
             let value_set = parse::canonicalize_value_set(kept);
             if matches!(ctx.draft(), Draft::Draft4) {
@@ -577,7 +582,7 @@ fn value_set_admits_group(value_set: &Schema, body: &Schema) -> bool {
 #[allow(clippy::wildcard_enum_match_arm)]
 fn leaf_absorbs_member(
     strings: &[(&StringLeaf, Vec<Arc<CompiledMatcher>>)],
-    integers: &[IntegerBounds],
+    integers: &[IntegerLeaf],
     member: &CanonicalJson,
     ctx: &CanonicalizationContext,
 ) -> bool {
@@ -588,7 +593,7 @@ fn leaf_absorbs_member(
         // Draft 4 keeps the value: `7` there also matches `7.0`, which an `integer` interval rejects.
         Value::Number(_) if !matches!(ctx.draft(), Draft::Draft4) => integers
             .iter()
-            .any(|bounds| integer_leaf_admits(bounds, member)),
+            .any(|leaf| integer_leaf_admits(leaf, member)),
         _ => false,
     }
 }
@@ -624,13 +629,49 @@ pub(crate) fn string_leaf(leaf: StringLeaf, ctx: &CanonicalizationContext) -> Sc
     Schema::new(SchemaKind::String(leaf))
 }
 
+/// Tighten two integer leaves to the values both admit: the narrower interval and a divisor every
+/// value of each must share. `None` when the least common multiple leaves the representable range,
+/// which keeps the document unmodeled rather than guessing.
+fn intersect_integer_leaves(first: IntegerLeaf, second: IntegerLeaf) -> IntegerLeaf {
+    let bounds = first.bounds.intersect(second.bounds);
+    match (first.multiple_of, second.multiple_of) {
+        (Some(left), Some(right)) => {
+            if let Some(step) = left.checked_lcm(&right) {
+                IntegerLeaf {
+                    bounds,
+                    multiple_of: Some(step),
+                }
+            } else {
+                // Every common multiple but zero is past the representable range, so zero is the
+                // only value left to admit.
+                let zero = BoundInteger::zero();
+                IntegerLeaf {
+                    bounds: bounds.intersect(IntegerBounds {
+                        minimum: Some(zero.clone()),
+                        maximum: Some(zero),
+                    }),
+                    multiple_of: None,
+                }
+            }
+        }
+        (Some(step), None) | (None, Some(step)) => IntegerLeaf {
+            bounds,
+            multiple_of: Some(step),
+        },
+        (None, None) => IntegerLeaf {
+            bounds,
+            multiple_of: None,
+        },
+    }
+}
+
 /// An `Integer` node, collapsed to `False` when its interval is empty and to the value itself when the
 /// interval holds exactly one. Draft 4 keeps the integer guard on that value, where `5.0` is not `5`.
-pub(crate) fn integer_leaf(bounds: IntegerBounds, ctx: &CanonicalizationContext) -> Schema {
-    let Some(bounds) = NonEmpty::new(bounds) else {
+pub(crate) fn integer_leaf(leaf: IntegerLeaf, ctx: &CanonicalizationContext) -> Schema {
+    let Some(leaf) = snap_to_multiples(leaf).and_then(NonEmpty::new) else {
         return Schema::new(SchemaKind::False);
     };
-    if let (Some(min), Some(max)) = (&bounds.get().minimum, &bounds.get().maximum) {
+    if let (Some(min), Some(max)) = (&leaf.get().bounds.minimum, &leaf.get().bounds.maximum) {
         if min == max {
             let value = Schema::new(SchemaKind::Const(CanonicalJson::from_value(
                 &Value::Number(min.to_number()),
@@ -642,17 +683,48 @@ pub(crate) fn integer_leaf(bounds: IntegerBounds, ctx: &CanonicalizationContext)
             };
         }
     }
-    Schema::new(SchemaKind::Integer(bounds))
+    Schema::new(SchemaKind::Integer(leaf))
+}
+
+/// Pull each present bound onto the progression, so an interval and its divisor have one spelling.
+/// e.g.  {"type": "integer", "minimum": 4, "maximum": 6, "multipleOf": 5}
+///         =>  {"const": 5}      (the interval holds exactly one multiple)
+/// `None` when the interval holds no multiple at all, which the caller collapses to `false`.
+fn snap_to_multiples(leaf: IntegerLeaf) -> Option<IntegerLeaf> {
+    let Some(step) = &leaf.multiple_of else {
+        return Some(leaf);
+    };
+    // A bound with no multiple beyond it is past the representable range, leaving nothing to admit.
+    let minimum = match leaf.bounds.minimum.as_ref() {
+        Some(min) => Some(step.multiple_beyond(min, Round::Up)?),
+        None => None,
+    };
+    let maximum = match leaf.bounds.maximum.as_ref() {
+        Some(max) => Some(step.multiple_beyond(max, Round::Down)?),
+        None => None,
+    };
+    Some(IntegerLeaf {
+        bounds: IntegerBounds { minimum, maximum },
+        multiple_of: leaf.multiple_of,
+    })
 }
 
 /// Whether `member` is an integer value within `bounds`.
-fn integer_leaf_admits(bounds: &IntegerBounds, member: &CanonicalJson) -> bool {
+fn integer_leaf_admits(leaf: &IntegerLeaf, member: &CanonicalJson) -> bool {
     let Value::Number(number) = member.as_value() else {
         return false;
     };
     match BoundInteger::from_number(number) {
-        Some(value) => bounds.contains(&value),
-        None => admits_out_of_range(bounds, number),
+        Some(value) => {
+            leaf.bounds.contains(&value)
+                && leaf
+                    .multiple_of
+                    .as_ref()
+                    .is_none_or(|step| step.divides(&value))
+        }
+        // A value past the representable range has no divisor to test, so a leaf carrying one
+        // cannot be shown to admit it.
+        None => leaf.multiple_of.is_none() && admits_out_of_range(&leaf.bounds, number),
     }
 }
 
