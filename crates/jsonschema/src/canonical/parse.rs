@@ -9,7 +9,7 @@ use crate::{
         algebra,
         context::CanonicalizationContext,
         ir::{
-            BoundCardinality, BoundInteger, CanonicalJson, IntegerBounds, IntegerLeaf, Schema,
+            BoundCardinality, BoundInteger, CanonicalJson, IntegerBounds, LengthBounds, Schema,
             SchemaKind, StringLeaf,
         },
         CanonicalizationError,
@@ -36,7 +36,8 @@ fn parse_schema(
         Value::Bool(true) => return Ok(Some(Schema::new(SchemaKind::True))),
         Value::Bool(false) => return Ok(Some(Schema::new(SchemaKind::False))),
         Value::Object(map) => map,
-        _ => unreachable!("meta-validation rejects a non-object, non-boolean schema document"),
+        // Not a schema document; the root is rejected earlier, a nested one keeps the document raw.
+        _ => return Ok(None),
     };
 
     let mut type_set = None;
@@ -49,27 +50,26 @@ fn parse_schema(
     let mut maximum: Option<BoundInteger> = None;
     let mut conjuncts: Vec<Schema> = Vec::new();
     for (key, entry) in map {
-        match key.as_str() {
+        match (key.as_str(), entry) {
             // TODO(canonical): not modeled yet - a nested `$schema` starts an embedded resource
             // with its own dialect.
-            "$schema" if !is_root => return Ok(None),
-            "$schema" => {
-                let uri = entry.as_str().expect("meta-valid $schema is a string");
+            ("$schema", _) if !is_root => return Ok(None),
+            ("$schema", Value::String(uri)) => {
                 if matches!(Draft::from_schema_uri(uri), Draft::Unknown) {
                     return Ok(None);
                 }
             }
-            "allOf" => {
-                for branch in entry.as_array().expect("meta-valid allOf is an array") {
+            ("allOf", Value::Array(branches)) => {
+                for branch in branches {
                     match parse_schema(branch, ctx, false)? {
                         Some(schema) => conjuncts.push(schema),
                         None => return Ok(None),
                     }
                 }
             }
-            "anyOf" => {
+            ("anyOf", Value::Array(items)) => {
                 let mut branches = Vec::new();
-                for branch in entry.as_array().expect("meta-valid anyOf is an array") {
+                for branch in items {
                     match parse_schema(branch, ctx, false)? {
                         Some(schema) => branches.push(schema),
                         None => return Ok(None),
@@ -77,33 +77,39 @@ fn parse_schema(
                 }
                 conjuncts.push(algebra::union(branches, ctx));
             }
-            "type" => type_set = Some(parse_type_set(entry)),
+            ("type", value) => match parse_type_set(value) {
+                Some(set) => type_set = Some(set),
+                None => return Ok(None),
+            },
             // TODO(canonical): not modeled yet - `const`/`enum` numbers without a plain spelling
             // have no exact runtime comparison; such documents stay raw.
-            "enum" if ctx.draft().is_known_keyword("enum") => {
-                if !finite_value_spelling_is_exact(entry) {
+            ("enum", Value::Array(values)) if ctx.draft().is_known_keyword("enum") => {
+                if !values.iter().all(finite_value_spelling_is_exact) {
                     return Ok(None);
                 }
-                enum_values = Some(entry.as_array().expect("meta-valid enum is an array"));
+                enum_values = Some(values);
             }
-            "const" if ctx.draft().is_known_keyword("const") => {
-                if !finite_value_spelling_is_exact(entry) {
+            ("const", value) if ctx.draft().is_known_keyword("const") => {
+                if !finite_value_spelling_is_exact(value) {
                     return Ok(None);
                 }
-                const_value = Some(entry);
+                const_value = Some(value);
             }
             // In the default build a length bound past `u64` has no modeled form; keep the document raw.
-            "minLength" if ctx.draft().is_known_keyword("minLength") => match length_bound(entry) {
-                Some(bound) => min_length = Some(bound),
-                None => return Ok(None),
-            },
-            "maxLength" if ctx.draft().is_known_keyword("maxLength") => match length_bound(entry) {
-                Some(bound) => max_length = Some(bound),
-                None => return Ok(None),
-            },
-            "pattern" if ctx.draft().is_known_keyword("pattern") => {
-                let pattern: Arc<str> =
-                    Arc::from(entry.as_str().expect("meta-valid pattern is a string"));
+            ("minLength", Value::Number(number)) if ctx.draft().is_known_keyword("minLength") => {
+                match BoundCardinality::from_number(number) {
+                    Some(bound) => min_length = Some(bound),
+                    None => return Ok(None),
+                }
+            }
+            ("maxLength", Value::Number(number)) if ctx.draft().is_known_keyword("maxLength") => {
+                match BoundCardinality::from_number(number) {
+                    Some(bound) => max_length = Some(bound),
+                    None => return Ok(None),
+                }
+            }
+            ("pattern", Value::String(text)) if ctx.draft().is_known_keyword("pattern") => {
+                let pattern: Arc<str> = Arc::from(text.as_str());
                 if ctx.compile_regex(&pattern).is_none() {
                     return Err(CanonicalizationError::InvalidPattern {
                         pattern: pattern.to_string(),
@@ -112,16 +118,20 @@ fn parse_schema(
                 patterns.push(pattern);
             }
             // A fractional or (default build) out-of-`i64` bound has no modeled integer form; keep it raw.
-            "minimum" if ctx.draft().is_known_keyword("minimum") => match numeric_bound(entry) {
-                Some(bound) => minimum = Some(bound),
-                None => return Ok(None),
-            },
-            "maximum" if ctx.draft().is_known_keyword("maximum") => match numeric_bound(entry) {
-                Some(bound) => maximum = Some(bound),
-                None => return Ok(None),
-            },
+            ("minimum", Value::Number(number)) if ctx.draft().is_known_keyword("minimum") => {
+                match BoundInteger::from_number(number) {
+                    Some(bound) => minimum = Some(bound),
+                    None => return Ok(None),
+                }
+            }
+            ("maximum", Value::Number(number)) if ctx.draft().is_known_keyword("maximum") => {
+                match BoundInteger::from_number(number) {
+                    Some(bound) => maximum = Some(bound),
+                    None => return Ok(None),
+                }
+            }
             // TODO(canonical): not modeled yet - every other known keyword keeps the document raw.
-            other if ctx.draft().is_known_keyword(other) => return Ok(None),
+            (other, _) if ctx.draft().is_known_keyword(other) => return Ok(None),
             _ => {}
         }
     }
@@ -145,8 +155,10 @@ fn parse_schema(
         patterns.sort();
         patterns.dedup();
         let leaf = StringLeaf {
-            min_length,
-            max_length,
+            lengths: LengthBounds {
+                minimum: min_length,
+                maximum: max_length,
+            },
             patterns,
         };
         conjuncts.push(string_facet_schema(leaf, ctx));
@@ -155,9 +167,7 @@ fn parse_schema(
     if minimum.is_some() || maximum.is_some() {
         // Only `type: integer` bounds are modeled yet; `number`/untyped numeric facets stay raw.
         if type_set == Some(JsonTypeSet::from(JsonType::Integer)) {
-            conjuncts.push(algebra::integer_leaf(IntegerLeaf {
-                bounds: IntegerBounds { minimum, maximum },
-            }));
+            conjuncts.push(algebra::integer_leaf(IntegerBounds { minimum, maximum }));
         } else {
             return Ok(None);
         }
@@ -175,22 +185,6 @@ fn parse_schema(
             algebra::intersect(result, conjunct, ctx)
         }),
     ))
-}
-
-/// A modeled length bound, or `None` (keep the document raw) when the count is not representable.
-fn length_bound(value: &Value) -> Option<BoundCardinality> {
-    let Value::Number(number) = value else {
-        unreachable!("meta-valid length bound is a number")
-    };
-    BoundCardinality::from_number(number)
-}
-
-/// A modeled integer bound, or `None` (keep the document raw) when the value is not an integer.
-fn numeric_bound(value: &Value) -> Option<BoundInteger> {
-    let Value::Number(number) = value else {
-        unreachable!("meta-valid numeric bound is a number")
-    };
-    BoundInteger::from_number(number)
 }
 
 /// The finite value set admitted by `const` and `enum` together: their conjunction.
@@ -268,17 +262,15 @@ fn finite_value_spelling_is_exact(_value: &Value) -> bool {
     true
 }
 
-/// Read a `type` keyword value - a single name or a list of names - into a [`JsonTypeSet`].
-fn parse_type_set(value: &Value) -> JsonTypeSet {
-    let name_to_type = |name: &str| name.parse().expect("meta-valid type name");
+/// Read a `type` keyword value - a single name or a list of names - into a [`JsonTypeSet`];
+/// `None` when it is not a type declaration this build understands.
+fn parse_type_set(value: &Value) -> Option<JsonTypeSet> {
     match value {
-        Value::String(name) => JsonTypeSet::from(name_to_type(name)),
-        Value::Array(names) => names.iter().fold(JsonTypeSet::empty(), |set, name| {
-            set.insert(name_to_type(
-                name.as_str().expect("meta-valid type entry is a string"),
-            ))
+        Value::String(name) => Some(JsonTypeSet::from(name.parse::<JsonType>().ok()?)),
+        Value::Array(names) => names.iter().try_fold(JsonTypeSet::empty(), |set, name| {
+            Some(set.insert(name.as_str()?.parse::<JsonType>().ok()?))
         }),
-        other => unreachable!("meta-valid type is a string or array: {other:?}"),
+        _ => None,
     }
 }
 

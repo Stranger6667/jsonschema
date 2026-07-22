@@ -157,7 +157,7 @@ pub(crate) enum SchemaKind {
     /// A string value within a length window; non-string values are matched by a surrounding union.
     String(StringLeaf),
     /// An integer value within a range; non-integer values are matched by a surrounding union.
-    Integer(IntegerLeaf),
+    Integer(IntegerBounds),
     /// Exactly one admitted value.
     Const(CanonicalJson),
     /// A sorted, deduplicated finite set of admitted values.
@@ -175,26 +175,48 @@ pub(crate) enum SchemaKind {
 /// The constraints a [`SchemaKind::String`] places on a string value.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub(crate) struct StringLeaf {
-    pub(crate) min_length: Option<BoundCardinality>,
-    pub(crate) max_length: Option<BoundCardinality>,
+    pub(crate) lengths: LengthBounds,
     /// Sorted, deduplicated. A string must match every pattern.
     pub(crate) patterns: Vec<Arc<str>>,
 }
 
 /// A closed interval; an absent side is unbounded.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub(crate) struct Bounds<T> {
     pub(crate) minimum: Option<T>,
     pub(crate) maximum: Option<T>,
 }
 
-pub(crate) type IntegerBounds = Bounds<BoundInteger>;
+impl<T: Ord> Bounds<T> {
+    /// The window both accept: the higher minimum, the lower maximum.
+    pub(crate) fn intersect(self, other: Self) -> Self {
+        Self {
+            minimum: tighter(self.minimum, other.minimum, Ord::max),
+            maximum: tighter(self.maximum, other.maximum, Ord::min),
+        }
+    }
 
-/// The constraints a [`SchemaKind::Integer`] places on an integer value.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct IntegerLeaf {
-    pub(crate) bounds: IntegerBounds,
+    pub(crate) fn contains(&self, value: &T) -> bool {
+        self.minimum.as_ref().is_none_or(|min| value >= min)
+            && self.maximum.as_ref().is_none_or(|max| value <= max)
+    }
+
+    /// Whether no value fits, i.e. `minimum > maximum`.
+    pub(crate) fn is_empty(&self) -> bool {
+        matches!((&self.minimum, &self.maximum), (Some(min), Some(max)) if min > max)
+    }
 }
+
+/// The bound present on both sides picked by `keep`; otherwise whichever side has one.
+fn tighter<T>(first: Option<T>, second: Option<T>, keep: impl FnOnce(T, T) -> T) -> Option<T> {
+    match (first, second) {
+        (Some(a), Some(b)) => Some(keep(a, b)),
+        (bound, None) | (None, bound) => bound,
+    }
+}
+
+pub(crate) type LengthBounds = Bounds<BoundCardinality>;
+pub(crate) type IntegerBounds = Bounds<BoundInteger>;
 
 impl SchemaKind {
     /// The admitted values when this node is a finite value set (`Const`/`Enum`), else `None`.

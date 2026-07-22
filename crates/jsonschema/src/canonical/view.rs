@@ -76,7 +76,7 @@ impl CanonicalSchema {
                 body: self.wrap_child(body),
             }),
             SchemaKind::String(leaf) => CanonicalView::String(string_view(leaf)),
-            SchemaKind::Integer(leaf) => CanonicalView::Integer(integer_view(&leaf.bounds)),
+            SchemaKind::Integer(bounds) => CanonicalView::Integer(integer_view(bounds)),
             SchemaKind::Const(value) => CanonicalView::Const(value.to_value()),
             SchemaKind::Enum(values) => {
                 CanonicalView::Enum(values.iter().map(CanonicalJson::to_value).collect())
@@ -109,8 +109,16 @@ fn integer_view(bounds: &IntegerBounds) -> IntegerView {
 
 fn string_view(leaf: &StringLeaf) -> StringView {
     StringView {
-        min_length: leaf.min_length.as_ref().map(BoundCardinality::to_number),
-        max_length: leaf.max_length.as_ref().map(BoundCardinality::to_number),
+        min_length: leaf
+            .lengths
+            .minimum
+            .as_ref()
+            .map(BoundCardinality::to_number),
+        max_length: leaf
+            .lengths
+            .maximum
+            .as_ref()
+            .map(BoundCardinality::to_number),
         patterns: leaf.patterns.iter().map(ToString::to_string).collect(),
     }
 }
