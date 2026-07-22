@@ -22,7 +22,7 @@ group :lint do
 end
 
 group :benchmark do
-  gem "json-schema", "~> 6.1"
+  gem "json-schema", "~> 6.2"
   gem "json_schemer", "~> 2.5"
   gem "rj_schema", "~> 1.0"
 end

@@ -15,13 +15,21 @@ mod ser;
 mod static_id;
 mod validator_map;
 
-use jsonschema::{paths::LocationSegment, ValidationOptions};
+use jsonschema::{
+    json::{
+        magnus_child, magnus_invalidate_members_cache, magnus_is_object, magnus_probe_root,
+        magnus_take_pending_error, Magnus, MagnusPendingErrorScope, PendingError, RbNode,
+    },
+    paths::LocationSegment,
+    ValidationOptions,
+};
 use magnus::{
     error::ErrorType,
     function,
     gc::{register_address, register_mark_object, unregister_address},
     method,
     prelude::*,
+    rb_sys::AsRawValue,
     scan_args::scan_args,
     value::{Lazy, ReprValue},
     DataTypeFunctions, Error, Exception, ExceptionClass, RClass, RHash, RModule, RObject, RString,
@@ -45,7 +53,7 @@ use crate::{
     },
     registry::Registry,
     retriever::{retriever_error_message, RubyRetriever},
-    ser::{to_canonical_string, to_schema_value, to_value},
+    ser::{to_canonical_string, to_schema_value},
     static_id::define_rb_intern,
 };
 
@@ -79,14 +87,14 @@ define_rb_intern!(static ID_SYM_EVALUATION_PATH_POINTER: "evaluation_path_pointe
 define_rb_intern!(static ID_SYM_ABSOLUTE_KEYWORD_LOCATION: "absolute_keyword_location");
 
 struct BuiltValidator {
-    validator: jsonschema::Validator,
+    validator: jsonschema::Validator<Magnus>,
     callback_roots: CallbackRoots,
     compilation_roots: CompilationRootsRef,
 }
 
 fn build_validator(
     ruby: &Ruby,
-    options: ValidationOptions,
+    options: ValidationOptions<'_, Arc<dyn jsonschema::Retrieve>, Magnus>,
     registry: Option<&jsonschema::Registry<'_>>,
     retriever: Option<RubyRetriever>,
     callback_roots: CallbackRoots,
@@ -279,7 +287,7 @@ fn build_verbose_message(
     mut message: String,
     schema_path: &jsonschema::paths::Location,
     instance_path: &jsonschema::paths::Location,
-    root_instance: Option<&serde_json::Value>,
+    root_instance: Option<RbNode<'_>>,
     failing_instance: &serde_json::Value,
     mask: Option<&str>,
 ) -> String {
@@ -347,21 +355,14 @@ fn build_verbose_message(
         let segment = unescape_segment(segment);
         let segment = segment.as_ref();
         let is_index = match current {
-            Some(serde_json::Value::Object(_)) => false,
+            Some(node) if magnus_is_object(node) => false,
             _ => is_index_segment(segment),
         };
         message.push('[');
         push_segment(&mut message, segment, is_index);
         message.push(']');
 
-        current = match (current, is_index) {
-            (Some(serde_json::Value::Array(values)), true) => segment
-                .parse::<usize>()
-                .ok()
-                .and_then(|idx| values.get(idx)),
-            (Some(serde_json::Value::Object(values)), false) => values.get(segment),
-            _ => None,
-        };
+        current = current.and_then(|node| magnus_child(node, segment, is_index));
     }
     message.push_str(":\n    ");
 
@@ -388,7 +389,7 @@ fn error_message(error: &jsonschema::ValidationError<'_>, mask: Option<&str>) ->
 fn into_ruby_error(
     ruby: &Ruby,
     error: jsonschema::ValidationError<'_>,
-    root_instance: Option<&serde_json::Value>,
+    root_instance: Option<RbNode<'_>>,
     message: &str,
     mask: Option<&str>,
 ) -> Result<Value, Error> {
@@ -470,7 +471,7 @@ fn into_ruby_error(
 fn to_ruby_error_value(
     ruby: &Ruby,
     error: jsonschema::ValidationError<'_>,
-    root_instance: Option<&serde_json::Value>,
+    root_instance: Option<RbNode<'_>>,
     mask: Option<&str>,
 ) -> Result<Value, Error> {
     let message = error_message(&error, mask);
@@ -485,7 +486,7 @@ pub(crate) fn referencing_error(ruby: &Ruby, message: String) -> Error {
 fn raise_validation_error(
     ruby: &Ruby,
     error: jsonschema::ValidationError<'_>,
-    root_instance: Option<&serde_json::Value>,
+    root_instance: Option<RbNode<'_>>,
     mask: Option<&str>,
 ) -> Error {
     let message = error_message(&error, mask);
@@ -547,60 +548,36 @@ fn handle_callback_panic(ruby: &Ruby, err: Box<dyn std::any::Any + Send>) -> Err
     })
 }
 
-#[allow(clippy::needless_pass_by_value)]
-fn handle_without_gvl_panic(ruby: &Ruby, err: Box<dyn std::any::Any + Send>) -> Error {
-    let msg = if let Some(s) = err.downcast_ref::<&str>() {
-        format!("Validation panicked: {s}")
-    } else if let Some(s) = err.downcast_ref::<String>() {
-        format!("Validation panicked: {s}")
-    } else {
-        "Validation panicked".to_string()
-    };
-    Error::new(ruby.exception_runtime_error(), msg)
+fn pending_error_to_ruby(ruby: &Ruby, error: PendingError) -> Error {
+    match error {
+        PendingError::Type(message) => Error::new(ruby.exception_type_error(), message),
+        PendingError::Encoding(message) => Error::new(ruby.exception_encoding_error(), message),
+        PendingError::Argument(message) => Error::new(ruby.exception_arg_error(), message),
+    }
 }
 
-/// Run a closure without holding the Ruby GVL.
+/// Run validation over `instance` in place, raising anything the representation could only record.
 ///
-/// The closure runs on the same thread, just without the GVL held,
-/// allowing other Ruby threads to proceed. The closure MUST NOT
-/// access any Ruby objects or call any Ruby API.
-///
-/// # Safety
-/// Caller must ensure the closure does not interact with Ruby.
-#[allow(unsafe_code)]
-unsafe fn without_gvl<F, R>(f: F) -> Result<R, Box<dyn std::any::Any + Send>>
-where
-    F: FnMut() -> R,
-{
-    struct Payload<F, R> {
-        f: F,
-        result: std::mem::MaybeUninit<Result<R, Box<dyn std::any::Any + Send>>>,
+/// Accessors cannot fail, so a value the representation cannot read is stashed and surfaced here.
+fn surface_pending_errors<T>(
+    ruby: &Ruby,
+    instance: Value,
+    run: impl FnOnce(RbNode<'_>) -> Result<T, Error>,
+) -> Result<T, Error> {
+    let _scope = MagnusPendingErrorScope::enter();
+    // Ruby is free to mutate the instance between calls, so no snapshot from an earlier one holds.
+    magnus_invalidate_members_cache();
+    #[allow(unsafe_code)]
+    let node = RbNode::new(instance.as_raw());
+    magnus_probe_root(node);
+    if let Some(error) = magnus_take_pending_error() {
+        return Err(pending_error_to_ruby(ruby, error));
     }
-
-    unsafe extern "C" fn call<F: FnMut() -> R, R>(
-        data: *mut std::ffi::c_void,
-    ) -> *mut std::ffi::c_void {
-        let payload = unsafe { &mut *data.cast::<Payload<F, R>>() };
-        let result = panic::catch_unwind(AssertUnwindSafe(|| (payload.f)()));
-        payload.result.write(result);
-        std::ptr::null_mut()
+    let result = run(node)?;
+    if let Some(error) = magnus_take_pending_error() {
+        return Err(pending_error_to_ruby(ruby, error));
     }
-
-    let mut payload = Payload {
-        f,
-        result: std::mem::MaybeUninit::uninit(),
-    };
-
-    unsafe {
-        rb_sys::rb_thread_call_without_gvl(
-            Some(call::<F, R>),
-            (&raw mut payload).cast::<std::ffi::c_void>(),
-            None,
-            std::ptr::null_mut(),
-        )
-    };
-
-    unsafe { payload.result.assume_init() }
+    Ok(result)
 }
 
 /// Wrapper around `jsonschema::Validator`.
@@ -611,9 +588,8 @@ where
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Validator", free_immediately, size, mark)]
 pub struct Validator {
-    validator: jsonschema::Validator,
+    validator: jsonschema::Validator<Magnus>,
     mask: Option<String>,
-    has_ruby_callbacks: bool,
     /// Marked during Ruby's GC mark phase to keep runtime callbacks alive.
     callback_roots: CallbackRoots,
     /// Protects callbacks via `register_address` during schema compilation —
@@ -630,16 +606,14 @@ impl DataTypeFunctions for Validator {
 
 impl Validator {
     pub(crate) fn from_jsonschema_with_roots(
-        validator: jsonschema::Validator,
+        validator: jsonschema::Validator<Magnus>,
         mask: Option<String>,
-        has_ruby_callbacks: bool,
         callback_roots: CallbackRoots,
         compilation_roots: CompilationRootsRef,
     ) -> Self {
         Self {
             validator,
             mask,
-            has_ruby_callbacks,
             callback_roots,
             _compilation_roots: compilation_roots,
         }
@@ -656,70 +630,37 @@ impl Validator {
         }
     }
 
-    #[allow(unsafe_code)]
     fn is_valid(ruby: &Ruby, rb_self: &Self, instance: Value) -> Result<bool, Error> {
-        let json_instance = to_value(ruby, instance)?;
-
-        if rb_self.has_ruby_callbacks {
-            let result = catch_unwind_silent(AssertUnwindSafe(|| {
-                rb_self.validator.is_valid(&json_instance)
-            }));
-            match result {
-                Ok(valid) => Ok(valid),
-                Err(err) => Err(handle_callback_panic(ruby, err)),
-            }
-        } else {
-            // SAFETY: validation is pure Rust with no Ruby callbacks
-            match unsafe { without_gvl(|| rb_self.validator.is_valid(&json_instance)) } {
-                Ok(valid) => Ok(valid),
-                Err(err) => Err(handle_without_gvl_panic(ruby, err)),
-            }
-        }
+        surface_pending_errors(ruby, instance, |node| {
+            let result = catch_unwind_silent(AssertUnwindSafe(|| rb_self.validator.is_valid(node)));
+            result.map_err(|err| handle_callback_panic(ruby, err))
+        })
     }
 
-    #[allow(unsafe_code)]
     fn validate(ruby: &Ruby, rb_self: &Self, instance: Value) -> Result<(), Error> {
-        let _scope = KeywordCauseScope::enter();
-        let json_instance = to_value(ruby, instance)?;
-
-        if rb_self.has_ruby_callbacks {
-            let result = catch_unwind_silent(AssertUnwindSafe(|| {
-                rb_self.validator.validate(&json_instance)
-            }));
+        surface_pending_errors(ruby, instance, |node| {
+            let _scope = KeywordCauseScope::enter();
+            let result = catch_unwind_silent(AssertUnwindSafe(|| rb_self.validator.validate(node)));
             match result {
                 Ok(Ok(())) => Ok(()),
                 Ok(Err(error)) => Err(raise_validation_error(
                     ruby,
                     error,
-                    Some(&json_instance),
+                    Some(node),
                     rb_self.mask.as_deref(),
                 )),
                 Err(err) => Err(handle_callback_panic(ruby, err)),
             }
-        } else {
-            // SAFETY: validation is pure Rust with no Ruby callbacks
-            match unsafe { without_gvl(|| rb_self.validator.validate(&json_instance)) } {
-                Ok(Ok(())) => Ok(()),
-                Ok(Err(error)) => Err(raise_validation_error(
-                    ruby,
-                    error,
-                    Some(&json_instance),
-                    rb_self.mask.as_deref(),
-                )),
-                Err(err) => Err(handle_without_gvl_panic(ruby, err)),
-            }
-        }
+        })
     }
 
-    #[allow(unsafe_code)]
     fn iter_errors(ruby: &Ruby, rb_self: &Self, instance: Value) -> Result<Value, Error> {
-        let _scope = KeywordCauseScope::enter();
-        let json_instance = to_value(ruby, instance)?;
+        surface_pending_errors(ruby, instance, |node| {
+            let _scope = KeywordCauseScope::enter();
 
-        if ruby.block_given() {
-            // Lazy path: yield errors one at a time to the block
-            if rb_self.has_ruby_callbacks {
-                let mut iter = rb_self.validator.iter_errors(&json_instance);
+            if ruby.block_given() {
+                // Lazy path: yield errors one at a time to the block
+                let mut iter = rb_self.validator.iter_errors(node);
                 loop {
                     let result = catch_unwind_silent(AssertUnwindSafe(|| iter.next()));
                     match result {
@@ -727,7 +668,7 @@ impl Validator {
                             let ruby_error = to_ruby_error_value(
                                 ruby,
                                 error,
-                                Some(&json_instance),
+                                Some(node),
                                 rb_self.mask.as_deref(),
                             )?;
                             ruby.yield_value::<Value, Value>(ruby_error)?;
@@ -736,34 +677,20 @@ impl Validator {
                         Err(err) => return Err(handle_callback_panic(ruby, err)),
                     }
                 }
-            } else {
-                for error in rb_self.validator.iter_errors(&json_instance) {
-                    let ruby_error = to_ruby_error_value(
-                        ruby,
-                        error,
-                        Some(&json_instance),
-                        rb_self.mask.as_deref(),
-                    )?;
-                    ruby.yield_value::<Value, Value>(ruby_error)?;
-                }
+                return Ok(ruby.qnil().as_value());
             }
-            Ok(ruby.qnil().as_value())
-        } else if rb_self.has_ruby_callbacks {
-            // Eager path with callbacks
+
             let result = catch_unwind_silent(AssertUnwindSafe(|| {
-                rb_self
-                    .validator
-                    .iter_errors(&json_instance)
-                    .collect::<Vec<_>>()
+                rb_self.validator.iter_errors(node).collect::<Vec<_>>()
             }));
             match result {
                 Ok(errors) => {
                     let arr = ruby.ary_new_capa(errors.len());
-                    for e in errors {
+                    for error in errors {
                         arr.push(to_ruby_error_value(
                             ruby,
-                            e,
-                            Some(&json_instance),
+                            error,
+                            Some(node),
                             rb_self.mask.as_deref(),
                         )?)?;
                     }
@@ -771,55 +698,18 @@ impl Validator {
                 }
                 Err(err) => Err(handle_callback_panic(ruby, err)),
             }
-        } else {
-            // Eager path without callbacks — release GVL
-            // SAFETY: validation is pure Rust with no Ruby callbacks
-            let errors = match unsafe {
-                without_gvl(|| {
-                    rb_self
-                        .validator
-                        .iter_errors(&json_instance)
-                        .collect::<Vec<_>>()
-                })
-            } {
-                Ok(errors) => errors,
-                Err(err) => return Err(handle_without_gvl_panic(ruby, err)),
-            };
-            let arr = ruby.ary_new_capa(errors.len());
-            for e in errors {
-                arr.push(to_ruby_error_value(
-                    ruby,
-                    e,
-                    Some(&json_instance),
-                    rb_self.mask.as_deref(),
-                )?)?;
-            }
-            Ok(arr.as_value())
-        }
+        })
     }
 
-    #[allow(unsafe_code)]
     fn evaluate(ruby: &Ruby, rb_self: &Self, instance: Value) -> Result<Evaluation, Error> {
-        let _scope = KeywordCauseScope::enter();
-        let json_instance = to_value(ruby, instance)?;
-
-        if rb_self.has_ruby_callbacks {
-            let result = catch_unwind_silent(AssertUnwindSafe(|| {
-                rb_self.validator.evaluate(&json_instance)
-            }));
+        surface_pending_errors(ruby, instance, |node| {
+            let _scope = KeywordCauseScope::enter();
+            let result = catch_unwind_silent(AssertUnwindSafe(|| rb_self.validator.evaluate(node)));
             match result {
                 Ok(output) => Ok(Evaluation::new(output)),
                 Err(err) => Err(handle_callback_panic(ruby, err)),
             }
-        } else {
-            // SAFETY: validation is pure Rust with no Ruby callbacks
-            let output = match unsafe { without_gvl(|| rb_self.validator.evaluate(&json_instance)) }
-            {
-                Ok(output) => output,
-                Err(err) => return Err(handle_without_gvl_panic(ruby, err)),
-            };
-            Ok(Evaluation::new(output))
-        }
+        })
     }
 
     fn inspect(&self) -> String {
@@ -892,7 +782,6 @@ fn validator_for(ruby: &Ruby, args: &[Value]) -> Result<Validator, Error> {
 
     let json_schema = to_schema_value(ruby, schema)?;
     let parsed = build_parsed_options(ruby, kw, None)?;
-    let has_ruby_callbacks = parsed.has_ruby_callbacks;
     let BuiltValidator {
         validator,
         callback_roots,
@@ -909,7 +798,6 @@ fn validator_for(ruby: &Ruby, args: &[Value]) -> Result<Validator, Error> {
     Ok(Validator {
         validator,
         mask: parsed.mask,
-        has_ruby_callbacks,
         callback_roots,
         _compilation_roots: compilation_roots,
     })
@@ -922,7 +810,6 @@ fn validator_map_for(ruby: &Ruby, args: &[Value]) -> Result<validator_map::Valid
 
     let json_schema = to_schema_value(ruby, schema)?;
     let parsed = build_parsed_options(ruby, kw, None)?;
-    let has_ruby_callbacks = parsed.has_ruby_callbacks;
     let callback_roots = parsed.callback_roots;
     let compilation_roots = parsed.compilation_roots;
     let mask = parsed.mask;
@@ -938,7 +825,6 @@ fn validator_map_for(ruby: &Ruby, args: &[Value]) -> Result<validator_map::Valid
     match options.build_map(&json_schema) {
         Ok(inner) => Ok(validator_map::ValidatorMap {
             inner,
-            has_ruby_callbacks,
             callback_roots,
             compilation_roots,
             mask,
@@ -1013,14 +899,12 @@ fn canonical_json_to_string(ruby: &Ruby, object: Value) -> Result<String, Error>
     to_canonical_string(ruby, object)
 }
 
-#[allow(unsafe_code)]
 fn is_valid(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
     let parsed_args = scan_args::<(Value, Value), (), (), (), _, ()>(args)?;
     let (schema, instance) = parsed_args.required;
     let kw = extract_kwargs(ruby, parsed_args.keywords)?;
 
     let json_schema = to_schema_value(ruby, schema)?;
-    let json_instance = to_value(ruby, instance)?;
     let parsed = build_parsed_options(ruby, kw, None)?;
     let has_ruby_callbacks = parsed.has_ruby_callbacks;
     let BuiltValidator {
@@ -1037,23 +921,14 @@ fn is_valid(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
         &json_schema,
     )?;
 
-    if has_ruby_callbacks {
-        let _callback_roots = CallbackRootGuard::new(ruby, &callback_roots);
-        let result = catch_unwind_silent(AssertUnwindSafe(|| validator.is_valid(&json_instance)));
-        match result {
-            Ok(valid) => Ok(valid),
-            Err(err) => Err(handle_callback_panic(ruby, err)),
-        }
-    } else {
-        // SAFETY: validation is pure Rust with no Ruby callbacks
-        match unsafe { without_gvl(|| validator.is_valid(&json_instance)) } {
-            Ok(valid) => Ok(valid),
-            Err(err) => Err(handle_without_gvl_panic(ruby, err)),
-        }
-    }
+    surface_pending_errors(ruby, instance, |node| {
+        let _callback_roots =
+            has_ruby_callbacks.then(|| CallbackRootGuard::new(ruby, &callback_roots));
+        catch_unwind_silent(AssertUnwindSafe(|| validator.is_valid(node)))
+            .map_err(|err| handle_callback_panic(ruby, err))
+    })
 }
 
-#[allow(unsafe_code)]
 fn validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
     let _scope = KeywordCauseScope::enter();
     let parsed_args = scan_args::<(Value, Value), (), (), (), _, ()>(args)?;
@@ -1061,7 +936,6 @@ fn validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
     let kw = extract_kwargs(ruby, parsed_args.keywords)?;
 
     let json_schema = to_schema_value(ruby, schema)?;
-    let json_instance = to_value(ruby, instance)?;
     let parsed = build_parsed_options(ruby, kw, None)?;
     let has_ruby_callbacks = parsed.has_ruby_callbacks;
     let BuiltValidator {
@@ -1078,35 +952,22 @@ fn validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
         &json_schema,
     )?;
 
-    if has_ruby_callbacks {
-        let _callback_roots = CallbackRootGuard::new(ruby, &callback_roots);
-        let result = catch_unwind_silent(AssertUnwindSafe(|| validator.validate(&json_instance)));
-        match result {
+    surface_pending_errors(ruby, instance, |node| {
+        let _callback_roots =
+            has_ruby_callbacks.then(|| CallbackRootGuard::new(ruby, &callback_roots));
+        match catch_unwind_silent(AssertUnwindSafe(|| validator.validate(node))) {
             Ok(Ok(())) => Ok(()),
             Ok(Err(error)) => Err(raise_validation_error(
                 ruby,
                 error,
-                Some(&json_instance),
+                Some(node),
                 parsed.mask.as_deref(),
             )),
             Err(err) => Err(handle_callback_panic(ruby, err)),
         }
-    } else {
-        // SAFETY: validation is pure Rust with no Ruby callbacks
-        match unsafe { without_gvl(|| validator.validate(&json_instance)) } {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(error)) => Err(raise_validation_error(
-                ruby,
-                error,
-                Some(&json_instance),
-                parsed.mask.as_deref(),
-            )),
-            Err(err) => Err(handle_without_gvl_panic(ruby, err)),
-        }
-    }
+    })
 }
 
-#[allow(unsafe_code)]
 fn each_error(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
     let _scope = KeywordCauseScope::enter();
     let parsed_args = scan_args::<(Value, Value), (), (), (), _, ()>(args)?;
@@ -1114,7 +975,6 @@ fn each_error(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
     let kw = extract_kwargs(ruby, parsed_args.keywords)?;
 
     let json_schema = to_schema_value(ruby, schema)?;
-    let json_instance = to_value(ruby, instance)?;
     let parsed = build_parsed_options(ruby, kw, None)?;
     let has_ruby_callbacks = parsed.has_ruby_callbacks;
     let BuiltValidator {
@@ -1131,49 +991,37 @@ fn each_error(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
         &json_schema,
     )?;
 
-    if ruby.block_given() {
-        // Lazy path: yield errors one at a time to the block
-        if has_ruby_callbacks {
-            let _callback_roots = CallbackRootGuard::new(ruby, &callback_roots);
-            let mut iter = validator.iter_errors(&json_instance);
+    surface_pending_errors(ruby, instance, |node| {
+        let _callback_roots =
+            has_ruby_callbacks.then(|| CallbackRootGuard::new(ruby, &callback_roots));
+
+        if ruby.block_given() {
+            // Lazy path: yield errors one at a time to the block
+            let mut iter = validator.iter_errors(node);
             loop {
-                let result = catch_unwind_silent(AssertUnwindSafe(|| iter.next()));
-                match result {
+                match catch_unwind_silent(AssertUnwindSafe(|| iter.next())) {
                     Ok(Some(error)) => {
-                        let ruby_error = to_ruby_error_value(
-                            ruby,
-                            error,
-                            Some(&json_instance),
-                            parsed.mask.as_deref(),
-                        )?;
+                        let ruby_error =
+                            to_ruby_error_value(ruby, error, Some(node), parsed.mask.as_deref())?;
                         ruby.yield_value::<Value, Value>(ruby_error)?;
                     }
                     Ok(None) => break,
                     Err(err) => return Err(handle_callback_panic(ruby, err)),
                 }
             }
-        } else {
-            for error in validator.iter_errors(&json_instance) {
-                let ruby_error =
-                    to_ruby_error_value(ruby, error, Some(&json_instance), parsed.mask.as_deref())?;
-                ruby.yield_value::<Value, Value>(ruby_error)?;
-            }
+            return Ok(ruby.qnil().as_value());
         }
-        Ok(ruby.qnil().as_value())
-    } else if has_ruby_callbacks {
-        // Eager path with callbacks
-        let _callback_roots = CallbackRootGuard::new(ruby, &callback_roots);
-        let result = catch_unwind_silent(AssertUnwindSafe(|| {
-            validator.iter_errors(&json_instance).collect::<Vec<_>>()
-        }));
-        match result {
+
+        match catch_unwind_silent(AssertUnwindSafe(|| {
+            validator.iter_errors(node).collect::<Vec<_>>()
+        })) {
             Ok(errors) => {
                 let arr = ruby.ary_new_capa(errors.len());
-                for e in errors {
+                for error in errors {
                     arr.push(to_ruby_error_value(
                         ruby,
-                        e,
-                        Some(&json_instance),
+                        error,
+                        Some(node),
                         parsed.mask.as_deref(),
                     )?)?;
                 }
@@ -1181,29 +1029,9 @@ fn each_error(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
             }
             Err(err) => Err(handle_callback_panic(ruby, err)),
         }
-    } else {
-        // Eager path without callbacks — release GVL
-        // SAFETY: validation is pure Rust with no Ruby callbacks
-        let errors = match unsafe {
-            without_gvl(|| validator.iter_errors(&json_instance).collect::<Vec<_>>())
-        } {
-            Ok(errors) => errors,
-            Err(err) => return Err(handle_without_gvl_panic(ruby, err)),
-        };
-        let arr = ruby.ary_new_capa(errors.len());
-        for e in errors {
-            arr.push(to_ruby_error_value(
-                ruby,
-                e,
-                Some(&json_instance),
-                parsed.mask.as_deref(),
-            )?)?;
-        }
-        Ok(arr.as_value())
-    }
+    })
 }
 
-#[allow(unsafe_code)]
 fn evaluate(ruby: &Ruby, args: &[Value]) -> Result<Evaluation, Error> {
     let _scope = KeywordCauseScope::enter();
     let parsed_args = scan_args::<(Value, Value), (), (), (), _, ()>(args)?;
@@ -1211,7 +1039,6 @@ fn evaluate(ruby: &Ruby, args: &[Value]) -> Result<Evaluation, Error> {
     let kw = extract_evaluate_kwargs(ruby, parsed_args.keywords)?;
 
     let json_schema = to_schema_value(ruby, schema)?;
-    let json_instance = to_value(ruby, instance)?;
     let parsed = build_parsed_options(ruby, kw, None)?;
     let has_ruby_callbacks = parsed.has_ruby_callbacks;
     let BuiltValidator {
@@ -1228,21 +1055,14 @@ fn evaluate(ruby: &Ruby, args: &[Value]) -> Result<Evaluation, Error> {
         &json_schema,
     )?;
 
-    if has_ruby_callbacks {
-        let _callback_roots = CallbackRootGuard::new(ruby, &callback_roots);
-        let result = catch_unwind_silent(AssertUnwindSafe(|| validator.evaluate(&json_instance)));
-        match result {
+    surface_pending_errors(ruby, instance, |node| {
+        let _callback_roots =
+            has_ruby_callbacks.then(|| CallbackRootGuard::new(ruby, &callback_roots));
+        match catch_unwind_silent(AssertUnwindSafe(|| validator.evaluate(node))) {
             Ok(output) => Ok(Evaluation::new(output)),
             Err(err) => Err(handle_callback_panic(ruby, err)),
         }
-    } else {
-        // SAFETY: validation is pure Rust with no Ruby callbacks
-        let output = match unsafe { without_gvl(|| validator.evaluate(&json_instance)) } {
-            Ok(output) => output,
-            Err(err) => return Err(handle_without_gvl_panic(ruby, err)),
-        };
-        Ok(Evaluation::new(output))
-    }
+    })
 }
 
 macro_rules! define_draft_validator {
@@ -1267,7 +1087,6 @@ macro_rules! define_draft_validator {
 
                 let json_schema = to_schema_value(ruby, schema)?;
                 let parsed = build_parsed_options(ruby, kw, Some($draft))?;
-                let has_ruby_callbacks = parsed.has_ruby_callbacks;
                 let BuiltValidator {
                     validator,
                     callback_roots,
@@ -1285,7 +1104,6 @@ macro_rules! define_draft_validator {
                     inner: Validator {
                         validator,
                         mask: parsed.mask,
-                        has_ruby_callbacks,
                         callback_roots,
                         _compilation_roots: compilation_roots,
                     },
@@ -1394,12 +1212,9 @@ fn meta_validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
             if let jsonschema::error::ValidationErrorKind::Referencing(err) = error.kind() {
                 return Err(referencing_error(ruby, err.to_string()));
             }
-            Err(raise_validation_error(
-                ruby,
-                error,
-                Some(&json_schema),
-                None,
-            ))
+            #[allow(unsafe_code)]
+            let node = RbNode::new(schema.as_raw());
+            Err(raise_validation_error(ruby, error, Some(node), None))
         }
     }
 }

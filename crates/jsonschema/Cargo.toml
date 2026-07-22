@@ -32,6 +32,8 @@ arbitrary-precision = ["serde_json/arbitrary_precision", "dep:num-bigint", "json
 # The `#[jsonschema::validator]` compile-time validator macro.
 # `float-roundtrip` keeps the macro's schema parsing bit-identical to the runtime's.
 macros = ["dep:jsonschema-macros", "jsonschema-macros/float-roundtrip", "jsonschema-value/macros"]
+# The `json::Magnus` instance representation used by the Ruby bindings.
+magnus = ["jsonschema-value/magnus"]
 # The `json::Pyo3` instance representation used by the Python bindings.
 pyo3 = ["jsonschema-value/pyo3"]
 

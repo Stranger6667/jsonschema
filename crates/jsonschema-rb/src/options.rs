@@ -15,6 +15,8 @@ use magnus::{
     Error, Exception, RArray, RHash, RModule, Ruby, TryConvert, Value,
 };
 
+use jsonschema::json::{magnus_invalidate_members_cache, Magnus, RbNode};
+
 use crate::{
     registry::Registry,
     retriever::{make_retriever, RubyRetriever},
@@ -58,7 +60,7 @@ define_rb_intern!(static SYM_VALIDATE: "validate");
 
 pub struct ParsedOptions<'i> {
     pub mask: Option<String>,
-    pub options: jsonschema::ValidationOptions<'i>,
+    pub options: jsonschema::ValidationOptions<'i, Arc<dyn jsonschema::Retrieve>, Magnus>,
     pub registry: Option<&'i jsonschema::Registry<'static>>,
     pub retriever: Option<RubyRetriever>,
     // Runtime callbacks invoked during `validator.*` calls (formats / custom keywords).
@@ -349,6 +351,7 @@ impl RubyFormatChecker {
         let ruby = Ruby::get().expect("Ruby VM should be initialized");
         let proc = ruby.get_inner(self.proc);
         let result: Result<bool, _> = proc.call((value,));
+        magnus_invalidate_members_cache();
         match result {
             Ok(v) => v,
             Err(e) => {
@@ -371,18 +374,21 @@ struct RubyKeyword {
     instance: Opaque<Value>,
 }
 
-impl<'i> jsonschema::Keyword<'i> for RubyKeyword {
-    fn validate(
-        &self,
-        instance: &'i serde_json::Value,
-    ) -> Result<(), jsonschema::ValidationError<'i>> {
+fn node_to_ruby(node: RbNode<'_>) -> Value {
+    #[allow(unsafe_code)]
+    unsafe {
+        magnus::rb_sys::FromRawValue::from_raw(node.raw())
+    }
+}
+
+impl<'i> jsonschema::Keyword<'i, Magnus> for RubyKeyword {
+    fn validate(&self, instance: RbNode<'i>) -> Result<(), jsonschema::ValidationError<'i>> {
         let ruby = Ruby::get().expect("Ruby VM should be initialized");
-        let rb_instance = value_to_ruby(&ruby, instance).map_err(|e| {
-            jsonschema::ValidationError::custom(format!("Failed to convert instance to Ruby: {e}"))
-        })?;
+        let rb_instance = node_to_ruby(instance);
 
         let keyword = ruby.get_inner(self.instance);
         let result: Result<Value, _> = keyword.funcall("validate", (rb_instance,));
+        magnus_invalidate_members_cache();
         match result {
             Ok(_) => Ok(()),
             Err(e) => {
@@ -395,19 +401,18 @@ impl<'i> jsonschema::Keyword<'i> for RubyKeyword {
         }
     }
 
-    fn is_valid(&self, instance: &'i serde_json::Value) -> bool {
+    fn is_valid(&self, instance: RbNode<'i>) -> bool {
         let ruby = Ruby::get().expect("Ruby VM should be initialized");
-        let Ok(rb_instance) = value_to_ruby(&ruby, instance) else {
-            return false;
-        };
+        let rb_instance = node_to_ruby(instance);
         let inst = ruby.get_inner(self.instance);
         let result: Result<Value, _> = inst.funcall("validate", (rb_instance,));
+        magnus_invalidate_members_cache();
         result.is_ok()
     }
 
     fn iter_errors(
         &self,
-        instance: &'i serde_json::Value,
+        instance: RbNode<'i>,
     ) -> Box<dyn Iterator<Item = jsonschema::ValidationError<'i>> + 'i> {
         let ruby = Ruby::get().expect("Ruby VM should be initialized");
         let keyword = ruby.get_inner(self.instance);
@@ -415,13 +420,11 @@ impl<'i> jsonschema::Keyword<'i> for RubyKeyword {
         if !keyword.respond_to("iter_errors", false).unwrap_or(false) {
             return Box::new(self.validate(instance).err().into_iter());
         }
-        let rb_instance = match value_to_ruby(&ruby, instance) {
-            Ok(rb_instance) => rb_instance,
-            Err(error) => return Box::new(std::iter::once(custom_error_from_ruby(error))),
-        };
+        let rb_instance = node_to_ruby(instance);
         let array = keyword
             .funcall::<_, _, Value>("iter_errors", (rb_instance,))
             .and_then(|result| result.funcall::<_, _, RArray>("to_a", ()));
+        magnus_invalidate_members_cache();
         let array = match array {
             Ok(array) => array,
             Err(error) => return Box::new(std::iter::once(custom_error_from_ruby(error))),
@@ -483,7 +486,7 @@ pub fn make_options_from_kwargs(
     email_options_val: Option<Value>,
     http_options_val: Option<Value>,
 ) -> Result<ParsedOptions<'_>, Error> {
-    let mut opts = jsonschema::options();
+    let mut opts = jsonschema::options_for::<Magnus>();
     let mut registry = None;
     let mut retriever = None;
     let retriever_was_provided = retriever_val.is_some();
@@ -726,7 +729,7 @@ pub fn make_options_from_kwargs(
                             Ok(Box::new(RubyKeyword {
                                 instance: opaque_inst,
                             })
-                                as Box<dyn for<'i> jsonschema::Keyword<'i>>)
+                                as Box<dyn for<'i> jsonschema::Keyword<'i, Magnus>>)
                         }
                         Err(e) => Err(jsonschema::ValidationError::custom(format!(
                             "Failed to instantiate keyword class '{name_err}': {e}"

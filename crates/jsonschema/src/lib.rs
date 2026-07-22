@@ -1168,6 +1168,11 @@ pub mod json {
     pub use jsonschema_value::{
         cmp, unique, Array, Json, JsonNumber, Node, NodeIdentity, Object, SerdeJson,
     };
+    #[cfg(all(feature = "magnus", unix))]
+    pub use jsonschema_value::{
+        magnus_child, magnus_invalidate_members_cache, magnus_is_object, magnus_probe_root,
+        magnus_take_pending_error, Magnus, MagnusPendingErrorScope, PendingError, RbNode,
+    };
     #[cfg(feature = "pyo3")]
     pub use jsonschema_value::{probe_root, take_pending_error, PendingErrorScope, Pyo3};
 }
