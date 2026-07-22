@@ -45,6 +45,20 @@ class StringView:
     def formats(self) -> list[str]: ...
 
 @final
+class NumberView:
+    """A number value within a real interval."""
+
+    __match_args__: tuple[str, ...]
+    @property
+    def minimum(self) -> int | float | None: ...
+    @property
+    def exclusive_minimum(self) -> bool: ...
+    @property
+    def maximum(self) -> int | float | None: ...
+    @property
+    def exclusive_maximum(self) -> bool: ...
+
+@final
 class IntegerView:
     """An integer value within a range, optionally a multiple of a divisor."""
 
@@ -94,6 +108,7 @@ CanonicalViewType: TypeAlias = (
     | MultiTypeView
     | TypedGroupView
     | StringView
+    | NumberView
     | IntegerView
     | AnyOfView
     | ConstView

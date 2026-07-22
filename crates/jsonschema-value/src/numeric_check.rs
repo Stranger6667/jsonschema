@@ -219,6 +219,7 @@ pub fn check_bound(compiled: &CompiledBound, value: &Number) -> bool {
     }
 }
 
+#[cfg(feature = "arbitrary-precision")]
 pub fn compile_multiple_of(multiple_of: &Number) -> CompiledMultipleOf {
     #[cfg(feature = "arbitrary-precision")]
     {
@@ -233,6 +234,7 @@ pub fn compile_multiple_of(multiple_of: &Number) -> CompiledMultipleOf {
     CompiledMultipleOf::Unsupported
 }
 
+#[cfg(feature = "arbitrary-precision")]
 pub fn check_multiple_of(compiled: &CompiledMultipleOf, value: &Number) -> bool {
     match compiled {
         #[cfg(feature = "arbitrary-precision")]

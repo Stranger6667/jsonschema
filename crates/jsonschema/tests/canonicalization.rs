@@ -7,7 +7,7 @@ use jsonschema::{
 use serde_json::{json, Map, Number, Value};
 use test_case::test_case;
 
-#[test_case(&json!({"allOf": [{"type": "integer"}, {"minimum": 0}]}); "allOf")]
+#[test_case(&json!({"properties": {"a": {"type": "string"}}}); "properties")]
 #[test_case(&json!({"$defs": {"a": {"type": "null"}}, "$ref": "#/$defs/a"}); "ref into defs")]
 fn unmodeled_document_round_trips_verbatim(schema: &Value) {
     let canonical = canonicalize(schema).expect("canonicalizes");
@@ -96,7 +96,8 @@ fn error_display(schema: &Value, message: &str) {
 #[test_case(&json!({}), CanonicalKind::True, "true"; "empty object")]
 #[test_case(&json!(false), CanonicalKind::False, "false"; "boolean false")]
 #[test_case(&json!({"type": "integer", "minimum": 0}), CanonicalKind::Integer, "integer"; "integer_leaf")]
-#[test_case(&json!({"type": "number", "minimum": 0}), CanonicalKind::Raw, "raw"; "raw")]
+#[test_case(&json!({"type": "number", "minimum": 0}), CanonicalKind::Number, "number"; "number_leaf")]
+#[test_case(&json!({"properties": {"a": {"type": "string"}}}), CanonicalKind::Raw, "raw"; "raw")]
 fn kind_reports_its_label(schema: &Value, kind: CanonicalKind, label: &str) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     assert_eq!(canonical.kind(), kind);

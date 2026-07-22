@@ -75,6 +75,16 @@ module JSONSchema
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end
 
+    # A number value within a real interval.
+    class NumberView
+      def minimum: () -> (Integer | Float)?
+      def exclusive_minimum: () -> bool
+      def maximum: () -> (Integer | Float)?
+      def exclusive_maximum: () -> bool
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
     # An integer value within a closed interval, optionally a multiple of a divisor.
     class IntegerView
       def minimum: () -> Integer?

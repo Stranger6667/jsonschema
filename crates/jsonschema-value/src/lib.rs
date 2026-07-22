@@ -4,7 +4,8 @@ pub mod cmp;
 #[cfg(feature = "conformance")]
 pub mod conformance;
 pub mod numeric;
-#[cfg(feature = "arbitrary-precision")]
+// The bound checks take a `serde_json::Number`, which only that feature makes a `JsonNumber`.
+#[cfg(feature = "serde_json")]
 pub mod numeric_check;
 pub mod types;
 pub mod unique;

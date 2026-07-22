@@ -11,13 +11,17 @@ use crate::{JsonType, JsonTypeSet};
 
 mod bound_cardinality;
 mod bound_integer;
+mod bound_number;
 mod integer_leaves;
+mod number_leaves;
 mod raw;
 mod string_leaves;
 
 pub(crate) use bound_cardinality::BoundCardinality;
 pub(crate) use bound_integer::{BoundInteger, Round};
+pub(crate) use bound_number::{BoundNumber, Side};
 pub(crate) use integer_leaves::IntegerLeaves;
+pub(crate) use number_leaves::NumberLeaves;
 pub(crate) use raw::RawJson;
 pub(crate) use string_leaves::StringLeaves;
 
@@ -94,7 +98,7 @@ fn normalized(value: &Value) -> Value {
 
 /// Rewrite an integer-valued float (`1.0`, `-0.0`) to its integer form so `Number` equality is value equality.
 #[cfg(not(feature = "arbitrary-precision"))]
-fn normalized_number(number: &Number) -> Number {
+pub(crate) fn normalized_number(number: &Number) -> Number {
     use crate::canonical::json::{integer_valued_i64, integer_valued_u64};
     let Some(float) = number
         .as_f64()
@@ -110,7 +114,7 @@ fn normalized_number(number: &Number) -> Number {
 
 /// Rewrite an integer-valued float (`1.0`, `-0.0`) to its integer form so `Number` equality is value equality.
 #[cfg(feature = "arbitrary-precision")]
-fn normalized_number(number: &Number) -> Number {
+pub(crate) fn normalized_number(number: &Number) -> Number {
     // The modeling gate admits only plain spellings, whose canonical texts are plain too.
     match crate::canonical::json::canonical_number(number.as_str()) {
         Some(text) => text.parse().expect("canonical number text parses"),
@@ -162,6 +166,8 @@ pub(crate) enum SchemaKind {
     String(NonEmpty<StringLeaf>),
     /// An integer value within a range; non-integer values are matched by a surrounding union.
     Integer(NonEmpty<IntegerLeaf>),
+    /// A number value within a real interval; other types are matched by a surrounding union.
+    Number(NonEmpty<NumberLeaf>),
     /// Exactly one admitted value.
     Const(CanonicalJson),
     /// A sorted, deduplicated finite set of admitted values.
@@ -174,6 +180,31 @@ pub(crate) enum SchemaKind {
     False,
     /// A schema the structural IR does not model, kept verbatim.
     Raw(RawJson),
+}
+
+/// The constraints a [`SchemaKind::Number`] places on a number value. The interval is over the
+/// reals, so each end carries its own inclusivity and no successor exists to fold it away.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub(crate) struct NumberLeaf {
+    pub(crate) minimum: Option<BoundNumber>,
+    pub(crate) maximum: Option<BoundNumber>,
+}
+
+impl NumberLeaf {
+    /// Whether no real value fits between the two ends.
+    pub(crate) fn is_vacant(&self) -> bool {
+        let (Some(min), Some(max)) = (&self.minimum, &self.maximum) else {
+            return false;
+        };
+        // The ends cross, or they meet on a limit at least one side excludes.
+        !min.admits(&max.to_number(), Side::Lower) || !max.admits(&min.to_number(), Side::Upper)
+    }
+}
+
+impl MaybeEmpty for NumberLeaf {
+    fn is_empty(&self) -> bool {
+        self.is_vacant()
+    }
 }
 
 /// The constraints a [`SchemaKind::Integer`] places on an integer value.
@@ -427,6 +458,7 @@ impl SchemaKind {
             | SchemaKind::TypedGroup { .. }
             | SchemaKind::String(_)
             | SchemaKind::Integer(_)
+            | SchemaKind::Number(_)
             | SchemaKind::AnyOf(_)
             | SchemaKind::True
             | SchemaKind::False
