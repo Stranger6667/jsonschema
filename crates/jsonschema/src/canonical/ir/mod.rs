@@ -11,11 +11,13 @@ use crate::{JsonType, JsonTypeSet};
 
 mod bound_cardinality;
 mod bound_integer;
+mod integer_leaves;
 mod raw;
 mod string_leaves;
 
 pub(crate) use bound_cardinality::BoundCardinality;
-pub(crate) use bound_integer::BoundInteger;
+pub(crate) use bound_integer::{BoundInteger, Round};
+pub(crate) use integer_leaves::IntegerLeaves;
 pub(crate) use raw::RawJson;
 pub(crate) use string_leaves::StringLeaves;
 
@@ -159,7 +161,7 @@ pub(crate) enum SchemaKind {
     /// A string value within a length window; non-string values are matched by a surrounding union.
     String(NonEmpty<StringLeaf>),
     /// An integer value within a range; non-integer values are matched by a surrounding union.
-    Integer(NonEmpty<IntegerBounds>),
+    Integer(NonEmpty<IntegerLeaf>),
     /// Exactly one admitted value.
     Const(CanonicalJson),
     /// A sorted, deduplicated finite set of admitted values.
@@ -172,6 +174,20 @@ pub(crate) enum SchemaKind {
     False,
     /// A schema the structural IR does not model, kept verbatim.
     Raw(RawJson),
+}
+
+/// The constraints a [`SchemaKind::Integer`] places on an integer value.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub(crate) struct IntegerLeaf {
+    pub(crate) bounds: IntegerBounds,
+    /// A positive divisor every admitted value is a multiple of.
+    pub(crate) multiple_of: Option<BoundInteger>,
+}
+
+impl MaybeEmpty for IntegerLeaf {
+    fn is_empty(&self) -> bool {
+        self.bounds.is_empty()
+    }
 }
 
 /// The constraints a [`SchemaKind::String`] places on a string value.
@@ -376,76 +392,6 @@ impl<T: Discrete> Bounds<T> {
         end.clone()
             .checked_increment()
             .is_none_or(|above| *start <= above)
-    }
-}
-
-/// Windows kept sorted by minimum and pairwise unmergeable. Inserts are batched; the form is
-/// restored before any read, so the order in which windows arrive cannot change the result.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Windows<T> {
-    windows: Vec<Bounds<T>>,
-    canonical: bool,
-}
-
-impl<T> Default for Windows<T> {
-    fn default() -> Self {
-        Self {
-            windows: Vec::new(),
-            canonical: true,
-        }
-    }
-}
-
-impl<T: Discrete> Windows<T> {
-    pub(crate) fn insert(&mut self, window: Bounds<T>) {
-        self.windows.push(window);
-        self.canonical = false;
-    }
-
-    fn canonicalize(&mut self) {
-        if self.canonical {
-            return;
-        }
-        let was_empty = self.windows.is_empty();
-        self.windows = Bounds::merge_all(std::mem::take(&mut self.windows));
-        self.canonical = true;
-        // `is_empty` reads the batch without canonicalizing, which relies on this.
-        debug_assert_eq!(
-            self.windows.is_empty(),
-            was_empty,
-            "merging emptied the windows"
-        );
-    }
-
-    pub(crate) fn clear(&mut self) {
-        self.windows.clear();
-        self.canonical = true;
-    }
-
-    /// Dropping windows can neither reorder the rest nor make two of them mergeable.
-    pub(crate) fn retain(&mut self, keep: impl FnMut(&Bounds<T>) -> bool) {
-        self.canonicalize();
-        self.windows.retain(keep);
-    }
-
-    /// Merging never removes the last window, so this reads the batch without canonicalizing.
-    pub(crate) fn is_empty(&self) -> bool {
-        self.windows.is_empty()
-    }
-
-    pub(crate) fn as_slice(&mut self) -> &[Bounds<T>] {
-        self.canonicalize();
-        &self.windows
-    }
-}
-
-impl<T: Discrete> IntoIterator for Windows<T> {
-    type Item = Bounds<T>;
-    type IntoIter = std::vec::IntoIter<Bounds<T>>;
-
-    fn into_iter(mut self) -> Self::IntoIter {
-        self.canonicalize();
-        self.windows.into_iter()
     }
 }
 

@@ -154,6 +154,7 @@
   {
     "description": "ir: integer minimum above maximum is unsatisfiable",
     "schema": {"type": "integer", "minimum": 5, "maximum": 2},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
     "satisfiable": false,
     "tests": [
       {"data": 3, "valid": false}
@@ -162,6 +163,7 @@
   {
     "description": "ir: a constant integer outside the bound is unsatisfiable",
     "schema": {"type": "integer", "const": 3, "minimum": 5},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
     "satisfiable": false,
     "tests": [
       {"data": 3, "valid": false}
@@ -279,6 +281,7 @@
   {
     "description": "ir: exclusive bounds meeting on adjacent integers are unsatisfiable",
     "schema": {"type": "integer", "exclusiveMinimum": 5, "exclusiveMaximum": 6},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
     "satisfiable": false,
     "tests": [
       {"data": 5, "valid": false},
@@ -387,6 +390,140 @@
       {"data": 5, "valid": true},
       {"data": 5.0, "valid": false},
       {"data": 6, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: multipleOf is an integer facet",
+    "schema": {"type": "integer", "multipleOf": 3},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer", "multipleOf": 3},
+    "tests": [
+      {"data": 9, "valid": true},
+      {"data": 0, "valid": true},
+      {"data": 4, "valid": false},
+      {"data": "x", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: two multipleOf constraints tighten to their least common multiple",
+    "schema": {"allOf": [{"type": "integer", "multipleOf": 2}, {"type": "integer", "multipleOf": 3}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer", "multipleOf": 6},
+    "tests": [
+      {"data": 6, "valid": true},
+      {"data": 12, "valid": true},
+      {"data": 2, "valid": false},
+      {"data": 3, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: the same multipleOf on both sides of an allOf is kept once",
+    "schema": {"allOf": [{"type": "integer", "multipleOf": 3}, {"type": "integer", "multipleOf": 3}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer", "multipleOf": 3},
+    "tests": [
+      {"data": 6, "valid": true},
+      {"data": 4, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an interval holding no multiple admits nothing",
+    "schema": {"type": "integer", "minimum": 1, "maximum": 4, "multipleOf": 5},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: an interval holding exactly one multiple is that value",
+    "schema": {"type": "integer", "minimum": 4, "maximum": 6, "multipleOf": 5},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "const": 5},
+    "tests": [
+      {"data": 5, "valid": true},
+      {"data": 4, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: multipleOf filters the members of an intersecting value set",
+    "schema": {"allOf": [{"type": "integer", "multipleOf": 3}, {"enum": [3, 4]}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "const": 3},
+    "tests": [
+      {"data": 3, "valid": true},
+      {"data": 4, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: progressions that share no residue stay separate union branches",
+    "schema": {"anyOf": [{"type": "integer", "multipleOf": 2}, {"type": "integer", "multipleOf": 3}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": "integer", "multipleOf": 2}, {"type": "integer", "multipleOf": 3}]},
+    "tests": [
+      {"data": 4, "valid": true},
+      {"data": 9, "valid": true},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a divisor of one constrains nothing and leaves no trace",
+    "schemas": [
+      {"type": "integer", "multipleOf": 1},
+      {"type": "integer"}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer"},
+    "tests": [
+      {"data": 7, "valid": true},
+      {"data": 1.5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a divisor of one leaves a surrounding interval untouched",
+    "schemas": [
+      {"type": "integer", "minimum": 0, "multipleOf": 1},
+      {"type": "integer", "minimum": 0}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer", "minimum": 0},
+    "tests": [
+      {"data": 3, "valid": true},
+      {"data": -1, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a negative interval snaps to the multiple inside it",
+    "schema": {"type": "integer", "minimum": -7, "maximum": -3, "multipleOf": 5},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "const": -5},
+    "tests": [
+      {"data": -5, "valid": true},
+      {"data": -4, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a negative interval holding no multiple admits nothing",
+    "schema": {"type": "integer", "minimum": -9, "maximum": -6, "multipleOf": 5},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: an interval straddling zero keeps zero, which every divisor divides",
+    "schema": {"type": "integer", "minimum": -3, "maximum": 3, "multipleOf": 5},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "const": 0},
+    "tests": [
+      {"data": 0, "valid": true},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a coarser progression absorbs a finer one over the same interval",
+    "schemas": [
+      {"anyOf": [{"type": "integer", "multipleOf": 2}, {"type": "integer", "multipleOf": 4}]},
+      {"anyOf": [{"type": "integer", "multipleOf": 4}, {"type": "integer", "multipleOf": 2}]}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer", "multipleOf": 2},
+    "tests": [
+      {"data": 4, "valid": true},
+      {"data": 6, "valid": true},
+      {"data": 3, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a divisor past f64 precision is not modeled",
+    "schema": {"type": "integer", "multipleOf": 4611686018427387903},
+    "expected": {"type": "integer", "multipleOf": 4611686018427387903},
+    "tests": [
+      {"data": 0, "valid": true}
     ]
   }
 ]

@@ -32,7 +32,7 @@ class TypedGroupView:
 
 @final
 class StringView:
-    """A string value within a length window matching every pattern."""
+    """A string value within a length window matching every pattern and format."""
 
     __match_args__: tuple[str, ...]
     @property
@@ -41,16 +41,20 @@ class StringView:
     def max_length(self) -> int | None: ...
     @property
     def patterns(self) -> list[str]: ...
+    @property
+    def formats(self) -> list[str]: ...
 
 @final
 class IntegerView:
-    """An integer value within a range."""
+    """An integer value within a range, optionally a multiple of a divisor."""
 
     __match_args__: tuple[str, ...]
     @property
     def minimum(self) -> int | None: ...
     @property
     def maximum(self) -> int | None: ...
+    @property
+    def multiple_of(self) -> int | None: ...
 
 @final
 class AnyOfView:

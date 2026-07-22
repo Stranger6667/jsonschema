@@ -308,3 +308,25 @@ fn draft_stamps_its_schema_uri(draft: Draft, uri: &str) {
         json!({"$schema": uri, "type": "string"})
     );
 }
+
+// Default build: a least common multiple past `i64` leaves zero as the only common multiple in
+// range. Arbitrary precision holds it exactly, so the leaf keeps its divisor instead.
+#[cfg(not(feature = "arbitrary-precision"))]
+#[test_case(
+    r#"{"allOf":[{"type":"integer","multipleOf":9007199254740992},{"type":"integer","multipleOf":9007199254740991}]}"#,
+    &json!({"const": 0});
+    "only zero survives"
+)]
+#[test_case(
+    r#"{"allOf":[{"type":"integer","multipleOf":9007199254740992,"minimum":1},{"type":"integer","multipleOf":9007199254740991}]}"#,
+    &json!({"not": {}});
+    "nothing survives once zero is excluded"
+)]
+fn oversized_common_multiple(text: &str, expected: &Value) {
+    let schema: Value = serde_json::from_str(text).expect("valid schema JSON");
+    let mut form = canonicalize(&schema)
+        .expect("canonicalizes")
+        .to_json_schema();
+    form.as_object_mut().expect("object").remove("$schema");
+    assert_eq!(&form, expected);
+}

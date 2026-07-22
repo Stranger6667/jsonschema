@@ -2,9 +2,7 @@ use serde_json::{Number, Value};
 
 use crate::{
     canonical::{
-        ir::{
-            BoundCardinality, BoundInteger, CanonicalJson, IntegerBounds, SchemaKind, StringLeaf,
-        },
+        ir::{BoundCardinality, BoundInteger, CanonicalJson, IntegerLeaf, SchemaKind, StringLeaf},
         CanonicalSchema,
     },
     JsonType, JsonTypeSet,
@@ -50,19 +48,22 @@ pub struct TypedGroupView {
     pub body: CanonicalSchema,
 }
 
-/// Payload of [`CanonicalView::String`]: the `minLength`/`maxLength` bounds and patterns on a string value.
+/// Payload of [`CanonicalView::String`]: the `minLength`/`maxLength` bounds, patterns and formats on
+/// a string value.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StringView {
     pub min_length: Option<Number>,
     pub max_length: Option<Number>,
     pub patterns: Vec<String>,
+    pub formats: Vec<String>,
 }
 
-/// Payload of [`CanonicalView::Integer`]: the interval bounds on an integer value.
+/// Payload of [`CanonicalView::Integer`]: the interval bounds and divisor on an integer value.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IntegerView {
     pub minimum: Option<Number>,
     pub maximum: Option<Number>,
+    pub multiple_of: Option<Number>,
 }
 
 impl CanonicalSchema {
@@ -105,10 +106,11 @@ impl CanonicalSchema {
     }
 }
 
-fn integer_view(bounds: &IntegerBounds) -> IntegerView {
+fn integer_view(leaf: &IntegerLeaf) -> IntegerView {
     IntegerView {
-        minimum: bounds.minimum.as_ref().map(BoundInteger::to_number),
-        maximum: bounds.maximum.as_ref().map(BoundInteger::to_number),
+        minimum: leaf.bounds.minimum.as_ref().map(BoundInteger::to_number),
+        maximum: leaf.bounds.maximum.as_ref().map(BoundInteger::to_number),
+        multiple_of: leaf.multiple_of.as_ref().map(BoundInteger::to_number),
     }
 }
 
@@ -125,5 +127,6 @@ fn string_view(leaf: &StringLeaf) -> StringView {
             .as_ref()
             .map(BoundCardinality::to_number),
         patterns: leaf.patterns.iter().map(ToString::to_string).collect(),
+        formats: leaf.formats.iter().map(ToString::to_string).collect(),
     }
 }

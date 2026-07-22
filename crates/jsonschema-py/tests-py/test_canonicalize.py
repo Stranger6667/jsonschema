@@ -114,6 +114,24 @@ def test_view_string_bound_past_u64(keyword, attribute):
             pytest.fail(f"unexpected view: {other!r}")
 
 
+def test_view_string_formats():
+    match canonicalize({"type": "string", "format": "email"}, validate_formats=True).view():
+        case canonical.StringView(patterns=patterns, formats=formats):
+            assert patterns == []
+            assert formats == ["email"]
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
+def test_view_integer_multiple_of():
+    match canonicalize({"type": "integer", "multipleOf": 3}).view():
+        case canonical.IntegerView(minimum=minimum, multiple_of=multiple_of):
+            assert minimum is None
+            assert multiple_of == 3
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
 def test_view_integer_bound_past_i64():
     huge = 10**23
     match canonicalize({"type": "integer", "minimum": huge}).view():

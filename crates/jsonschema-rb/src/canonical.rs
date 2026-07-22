@@ -130,12 +130,14 @@ impl RbCanonicalSchema {
                     min_length: view.min_length,
                     max_length: view.max_length,
                     patterns: view.patterns,
+                    formats: view.formats,
                 })
                 .as_value(),
             CanonicalView::Integer(view) => ruby
                 .obj_wrap(IntegerView {
                     minimum: view.minimum,
                     maximum: view.maximum,
+                    multiple_of: view.multiple_of,
                 })
                 .as_value(),
             CanonicalView::AnyOf(branches) => ruby.obj_wrap(AnyOfView { branches }).as_value(),
@@ -287,13 +289,22 @@ fn bound_to_ruby(ruby: &Ruby, bound: Option<&serde_json::Number>) -> Result<Valu
     }
 }
 
-/// A string value within a length window, matching every pattern.
+fn strings_to_ruby(ruby: &Ruby, values: &[String]) -> Result<Value, Error> {
+    let array = ruby.ary_new_capa(values.len());
+    for value in values {
+        array.push(ruby.str_new(value).as_value())?;
+    }
+    Ok(array.as_value())
+}
+
+/// A string value within a length window, matching every pattern and format.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::StringView", free_immediately)]
 pub struct StringView {
     min_length: Option<serde_json::Number>,
     max_length: Option<serde_json::Number>,
     patterns: Vec<String>,
+    formats: Vec<String>,
 }
 
 impl DataTypeFunctions for StringView {}
@@ -308,19 +319,20 @@ impl StringView {
     }
 
     fn patterns(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
-        let array = ruby.ary_new_capa(rb_self.patterns.len());
-        for pattern in &rb_self.patterns {
-            array.push(ruby.str_new(pattern).as_value())?;
-        }
-        Ok(array.as_value())
+        strings_to_ruby(ruby, &rb_self.patterns)
+    }
+
+    fn formats(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        strings_to_ruby(ruby, &rb_self.formats)
     }
 
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
-            "#<JSONSchema::Canonical::StringView min_length={} max_length={} patterns={}>",
+            "#<JSONSchema::Canonical::StringView min_length={} max_length={} patterns={} formats={}>",
             Self::min_length(ruby, rb_self)?.inspect(),
             Self::max_length(ruby, rb_self)?.inspect(),
-            Self::patterns(ruby, rb_self)?.inspect()
+            Self::patterns(ruby, rb_self)?.inspect(),
+            Self::formats(ruby, rb_self)?.inspect()
         ))
     }
 
@@ -329,16 +341,18 @@ impl StringView {
         hash.aset(ruby.sym_new("min_length"), Self::min_length(ruby, rb_self)?)?;
         hash.aset(ruby.sym_new("max_length"), Self::max_length(ruby, rb_self)?)?;
         hash.aset(ruby.sym_new("patterns"), Self::patterns(ruby, rb_self)?)?;
+        hash.aset(ruby.sym_new("formats"), Self::formats(ruby, rb_self)?)?;
         Ok(hash)
     }
 }
 
-/// An integer value within a closed interval.
+/// An integer value within a closed interval, optionally a multiple of a divisor.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::IntegerView", free_immediately)]
 pub struct IntegerView {
     minimum: Option<serde_json::Number>,
     maximum: Option<serde_json::Number>,
+    multiple_of: Option<serde_json::Number>,
 }
 
 impl DataTypeFunctions for IntegerView {}
@@ -352,11 +366,16 @@ impl IntegerView {
         bound_to_ruby(ruby, rb_self.maximum.as_ref())
     }
 
+    fn multiple_of(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        bound_to_ruby(ruby, rb_self.multiple_of.as_ref())
+    }
+
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
-            "#<JSONSchema::Canonical::IntegerView minimum={} maximum={}>",
+            "#<JSONSchema::Canonical::IntegerView minimum={} maximum={} multiple_of={}>",
             Self::minimum(ruby, rb_self)?.inspect(),
-            Self::maximum(ruby, rb_self)?.inspect()
+            Self::maximum(ruby, rb_self)?.inspect(),
+            Self::multiple_of(ruby, rb_self)?.inspect()
         ))
     }
 
@@ -364,6 +383,10 @@ impl IntegerView {
         let hash = ruby.hash_new();
         hash.aset(ruby.sym_new("minimum"), Self::minimum(ruby, rb_self)?)?;
         hash.aset(ruby.sym_new("maximum"), Self::maximum(ruby, rb_self)?)?;
+        hash.aset(
+            ruby.sym_new("multiple_of"),
+            Self::multiple_of(ruby, rb_self)?,
+        )?;
         Ok(hash)
     }
 }
@@ -558,12 +581,14 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     string_view.define_method("min_length", method!(StringView::min_length, 0))?;
     string_view.define_method("max_length", method!(StringView::max_length, 0))?;
     string_view.define_method("patterns", method!(StringView::patterns, 0))?;
+    string_view.define_method("formats", method!(StringView::formats, 0))?;
     string_view.define_method("inspect", method!(StringView::inspect, 0))?;
     string_view.define_method("deconstruct_keys", method!(StringView::deconstruct_keys, 1))?;
 
     let integer_view = canonical_module.define_class("IntegerView", ruby.class_object())?;
     integer_view.define_method("minimum", method!(IntegerView::minimum, 0))?;
     integer_view.define_method("maximum", method!(IntegerView::maximum, 0))?;
+    integer_view.define_method("multiple_of", method!(IntegerView::multiple_of, 0))?;
     integer_view.define_method("inspect", method!(IntegerView::inspect, 0))?;
     integer_view.define_method(
         "deconstruct_keys",
