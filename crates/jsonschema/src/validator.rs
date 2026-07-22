@@ -586,8 +586,8 @@ mod tests {
         // NOTE: This could be done with `propertyNames` + `pattern` but will be slower due to
         // regex usage.
         struct CustomObjectValidator;
-        impl Keyword for CustomObjectValidator {
-            fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+        impl<'i> Keyword<'i> for CustomObjectValidator {
+            fn validate(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
                 for key in instance.as_object().unwrap().keys() {
                     if !key.is_ascii() {
                         return Err(ValidationError::custom("Key is not ASCII"));
@@ -596,7 +596,7 @@ mod tests {
                 Ok(())
             }
 
-            fn is_valid(&self, instance: &Value) -> bool {
+            fn is_valid(&self, instance: &'i Value) -> bool {
                 for (key, _value) in instance.as_object().unwrap() {
                     if !key.is_ascii() {
                         return false;
@@ -610,7 +610,7 @@ mod tests {
             _: &'a Map<String, Value>,
             schema: &'a Value,
             _path: Location,
-        ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
+        ) -> Result<Box<dyn for<'i> Keyword<'i>>, ValidationError<'a>> {
             const EXPECTED: &str = "ascii-keys";
             if schema.as_str() == Some(EXPECTED) {
                 Ok(Box::new(CustomObjectValidator))
@@ -650,18 +650,18 @@ mod tests {
     fn custom_keyword_iter_errors() {
         // A custom keyword that reports every non-ASCII key at once via `iter_errors`.
         struct NonAsciiKeys;
-        impl Keyword for NonAsciiKeys {
-            fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+        impl<'i> Keyword<'i> for NonAsciiKeys {
+            fn validate(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
                 self.iter_errors(instance).next().map_or(Ok(()), Err)
             }
 
-            fn is_valid(&self, instance: &Value) -> bool {
+            fn is_valid(&self, instance: &'i Value) -> bool {
                 instance
                     .as_object()
                     .is_none_or(|obj| obj.keys().all(|key| key.is_ascii()))
             }
 
-            fn iter_errors<'i>(
+            fn iter_errors(
                 &self,
                 instance: &'i Value,
             ) -> Box<dyn Iterator<Item = ValidationError<'i>> + 'i> {
@@ -680,7 +680,7 @@ mod tests {
             _: &'a Map<String, Value>,
             _: &'a Value,
             _: Location,
-        ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
+        ) -> Result<Box<dyn for<'i> Keyword<'i>>, ValidationError<'a>> {
             Ok(Box::new(NonAsciiKeys))
         }
 
@@ -713,8 +713,8 @@ mod tests {
         // A keyword that does NOT override `iter_errors`, exercising the default
         // that yields at most one error from `validate`.
         struct NonEmpty;
-        impl Keyword for NonEmpty {
-            fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+        impl<'i> Keyword<'i> for NonEmpty {
+            fn validate(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
                 if self.is_valid(instance) {
                     Ok(())
                 } else {
@@ -722,7 +722,7 @@ mod tests {
                 }
             }
 
-            fn is_valid(&self, instance: &Value) -> bool {
+            fn is_valid(&self, instance: &'i Value) -> bool {
                 instance.as_object().is_none_or(|obj| !obj.is_empty())
             }
         }
@@ -731,7 +731,7 @@ mod tests {
             _: &'a Map<String, Value>,
             _: &'a Value,
             _: Location,
-        ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
+        ) -> Result<Box<dyn for<'i> Keyword<'i>>, ValidationError<'a>> {
             Ok(Box::new(NonEmpty))
         }
 
@@ -765,8 +765,8 @@ mod tests {
             with_currency_format: bool,
         }
 
-        impl Keyword for CustomMinimumValidator {
-            fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+        impl<'i> Keyword<'i> for CustomMinimumValidator {
+            fn validate(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
                 if self.is_valid(instance) {
                     Ok(())
                 } else {
@@ -777,7 +777,7 @@ mod tests {
                 }
             }
 
-            fn is_valid(&self, instance: &Value) -> bool {
+            fn is_valid(&self, instance: &'i Value) -> bool {
                 match instance {
                     // Numeric comparison should happen just like original behavior
                     Value::Number(instance) => {
@@ -811,7 +811,7 @@ mod tests {
             parent: &'a Map<String, Value>,
             schema: &'a Value,
             _path: Location,
-        ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
+        ) -> Result<Box<dyn for<'i> Keyword<'i>>, ValidationError<'a>> {
             let limit = if let Value::Number(limit) = schema {
                 limit.as_f64().expect("Always valid")
             } else {
@@ -887,11 +887,11 @@ mod tests {
     #[test]
     fn custom_keyword_validation_error_paths() {
         struct AlwaysFailValidator;
-        impl Keyword for AlwaysFailValidator {
-            fn validate<'i>(&self, _instance: &'i Value) -> Result<(), ValidationError<'i>> {
+        impl<'i> Keyword<'i> for AlwaysFailValidator {
+            fn validate(&self, _instance: &'i Value) -> Result<(), ValidationError<'i>> {
                 Err(ValidationError::custom("always fails"))
             }
-            fn is_valid(&self, _instance: &Value) -> bool {
+            fn is_valid(&self, _instance: &'i Value) -> bool {
                 false
             }
         }
@@ -900,7 +900,7 @@ mod tests {
             _: &'a Map<String, Value>,
             _: &'a Value,
             _: Location,
-        ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
+        ) -> Result<Box<dyn for<'i> Keyword<'i>>, ValidationError<'a>> {
             Ok(Box::new(AlwaysFailValidator))
         }
 
@@ -931,7 +931,7 @@ mod tests {
             _: &'a Map<String, Value>,
             _: &'a Value,
             _: Location,
-        ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
+        ) -> Result<Box<dyn for<'i> Keyword<'i>>, ValidationError<'a>> {
             Err(ValidationError::schema("invalid schema value"))
         }
 

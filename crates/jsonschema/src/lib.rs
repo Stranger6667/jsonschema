@@ -692,6 +692,7 @@
 //!
 //! `jsonschema` allows you to extend its functionality by implementing custom validation logic through custom keywords.
 //! This feature is particularly useful when you need to validate against domain-specific rules that aren't covered by the standard JSON Schema keywords.
+//! Keywords are generic over the instance representation ([`json`] module).
 //!
 //! To implement a custom keyword, you need to:
 //! 1. Create a struct that implements the [`Keyword`] trait
@@ -706,8 +707,8 @@
 //!
 //! struct EvenNumberValidator;
 //!
-//! impl Keyword for EvenNumberValidator {
-//!     fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+//! impl<'i> Keyword<'i> for EvenNumberValidator {
+//!     fn validate(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
 //!         if let Some(n) = instance.as_u64() {
 //!             if n % 2 == 0 {
 //!                 return Ok(());
@@ -716,7 +717,7 @@
 //!         Err(ValidationError::custom("value must be an even integer"))
 //!     }
 //!
-//!     fn is_valid(&self, instance: &Value) -> bool {
+//!     fn is_valid(&self, instance: &'i Value) -> bool {
 //!         instance.as_u64().map_or(false, |n| n % 2 == 0)
 //!     }
 //! }
@@ -725,7 +726,7 @@
 //!     _parent: &'a Map<String, Value>,
 //!     value: &'a Value,
 //!     _path: Location,
-//! ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
+//! ) -> Result<Box<dyn for<'i> Keyword<'i>>, ValidationError<'a>> {
 //!     if value.as_bool() == Some(true) {
 //!         Ok(Box::new(EvenNumberValidator))
 //!     } else {
@@ -756,12 +757,12 @@
 //! #
 //! # struct EvenNumberValidator;
 //! #
-//! # impl Keyword for EvenNumberValidator {
-//! #     fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+//! # impl<'i> Keyword<'i> for EvenNumberValidator {
+//! #     fn validate(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
 //! #         Ok(())
 //! #     }
 //! #
-//! #     fn is_valid(&self, instance: &Value) -> bool {
+//! #     fn is_valid(&self, instance: &'i Value) -> bool {
 //! #         true
 //! #     }
 //! # }
@@ -949,6 +950,10 @@ pub(crate) use jsonschema_value::{
 /// for your representation, then build validators with [`options_for`]. Schemas are always
 /// `serde_json::Value`; only instances use the custom representation. [`SerdeJson`] is the
 /// built-in representation behind [`validator_for`] and the crate-level convenience functions.
+///
+/// The accessors are infallible, so the representation must be total over JSON: reject nodes
+/// with no JSON meaning (tags, foreign objects) before validation, or track them on a side
+/// channel of the representation.
 ///
 /// # Example
 ///
@@ -1153,10 +1158,10 @@ pub(crate) use jsonschema_value::{
 /// contract the validator relies on, including the subtle parts (code-point string lengths,
 /// mathematical number equality, node identity stability).
 ///
-/// # Limitations
+/// # Custom keywords
 ///
-/// - Custom keywords ([`Keyword`]) operate on `serde_json::Value`; under a custom
-///   representation every call materializes the instance via [`Node::to_value`].
+/// [`Keyword`] is generic over the representation and operates on `F::Node` directly; register
+/// implementations with [`ValidationOptions::with_keyword`](crate::ValidationOptions::with_keyword).
 pub mod json {
     #[cfg(feature = "conformance")]
     pub use jsonschema_value::conformance;
@@ -3270,7 +3275,7 @@ pub mod __private {
 
         /// Run a custom keyword and fill in error context exactly like the runtime validator's `CustomKeyword` wrapper.
         pub fn validate<'i>(
-            keyword: &dyn crate::Keyword,
+            keyword: &dyn crate::Keyword<'i>,
             instance: &'i serde_json::Value,
             instance_path: Location,
             schema_path: &str,
@@ -3289,7 +3294,7 @@ pub mod __private {
 
         /// Run a custom keyword's `iter_errors`, filling in context exactly like [`validate`] does.
         pub fn collect_errors<'i>(
-            keyword: &dyn crate::Keyword,
+            keyword: &dyn crate::Keyword<'i>,
             instance: &'i serde_json::Value,
             instance_path: &Location,
             schema_path: &str,

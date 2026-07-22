@@ -22,7 +22,7 @@ pub(crate) fn compile(
     let schema_path = ctx.schema_path_for_keyword(name);
 
     let lazy = quote! {
-        static #static_ident: __Lazy<Box<dyn jsonschema::Keyword>> =
+        static #static_ident: __Lazy<Box<dyn for<'i> jsonschema::Keyword<'i>>> =
             __Lazy::new(|| {
                 let parent: serde_json::Value = serde_json::from_str(#parent_json)
                     .expect("Failed to parse parent schema");

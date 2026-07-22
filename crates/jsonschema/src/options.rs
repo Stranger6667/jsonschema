@@ -32,7 +32,7 @@ pub struct ValidationOptions<'i, R = Arc<dyn Retrieve>, F: Json = SerdeJson> {
     validate_formats: Option<bool>,
     pub(crate) validate_schema: bool,
     ignore_unknown_formats: bool,
-    keywords: AHashMap<String, Arc<dyn KeywordFactory>>,
+    keywords: AHashMap<String, Arc<dyn KeywordFactory<F>>>,
     pattern_options: PatternEngineOptions,
     email_options: Option<EmailAddressOptions>,
     representation: PhantomData<F>,
@@ -405,15 +405,15 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
     ///
     /// struct MyCustomValidator;
     ///
-    /// impl Keyword for MyCustomValidator {
-    ///     fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+    /// impl<'i> Keyword<'i> for MyCustomValidator {
+    ///     fn validate(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
     ///         if !instance.is_object() {
     ///             return Err(ValidationError::custom("expected an object"));
     ///         }
     ///         Ok(())
     ///     }
     ///
-    ///     fn is_valid(&self, instance: &Value) -> bool {
+    ///     fn is_valid(&self, instance: &'i Value) -> bool {
     ///         instance.is_object()
     ///     }
     /// }
@@ -422,7 +422,7 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
     ///     _parent: &'a Map<String, Value>,
     ///     _value: &'a Value,
     ///     _path: Location,
-    /// ) -> Result<Box<dyn Keyword>, ValidationError<'a>> {
+    /// ) -> Result<Box<dyn for<'i> Keyword<'i>>, ValidationError<'a>> {
     ///     Ok(Box::new(MyCustomValidator))
     /// }
     ///
@@ -442,7 +442,8 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
                 &'a serde_json::Map<String, Value>,
                 &'a Value,
                 Location,
-            ) -> Result<Box<dyn Keyword>, ValidationError<'a>>
+            )
+                -> Result<Box<dyn for<'instance> Keyword<'instance, F>>, ValidationError<'a>>
             + Send
             + Sync
             + 'static,
@@ -451,7 +452,7 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
         self
     }
 
-    pub(crate) fn get_keyword_factory(&self, name: &str) -> Option<&Arc<dyn KeywordFactory>> {
+    pub(crate) fn get_keyword_factory(&self, name: &str) -> Option<&Arc<dyn KeywordFactory<F>>> {
         self.keywords.get(name)
     }
 }
