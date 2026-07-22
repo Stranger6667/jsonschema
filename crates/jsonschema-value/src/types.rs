@@ -190,8 +190,13 @@ impl JsonTypeSet {
     /// Whether a JSON value's type is allowed by this set.
     #[must_use]
     pub fn contains_value_type<F: Json>(self, value: &F::Node<'_>) -> bool {
-        match value.json_type() {
-            JsonType::Number => match value.as_number() {
+        match value.view() {
+            crate::View::Null => self.contains(JsonType::Null),
+            crate::View::Boolean(_) => self.contains(JsonType::Boolean),
+            crate::View::String(_) => self.contains(JsonType::String),
+            crate::View::Array(_) => self.contains(JsonType::Array),
+            crate::View::Object(_) => self.contains(JsonType::Object),
+            crate::View::Number => match value.as_number() {
                 // Integers satisfy both `integer` and `number`; non-integers only `number`.
                 Some(n) if number_is_integer(&n) => {
                     self.contains(JsonType::Integer) || self.contains(JsonType::Number)
@@ -199,7 +204,7 @@ impl JsonTypeSet {
                 Some(_) => self.contains(JsonType::Number),
                 None => false,
             },
-            other => self.contains(other),
+            crate::View::Unsupported => false,
         }
     }
     /// Get an iterator over the types in this set.

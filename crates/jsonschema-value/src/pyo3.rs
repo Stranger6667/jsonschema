@@ -30,7 +30,7 @@ use pyo3::{
 };
 use serde_json::{Map, Number, Value};
 
-use crate::{cmp, types::JsonType, Array, Json, Node, Object};
+use crate::{cmp, types::JsonType, Array, Json, Node, Object, View};
 
 type PyNode<'py> = Borrowed<'py, 'py, PyAny>;
 
@@ -179,6 +179,20 @@ fn resolved<'py>(node: PyNode<'py>) -> PyNode<'py> {
         }
     }
     unsafe { Borrowed::from_ptr(current.py(), current.as_ptr()) }
+}
+
+fn int_view<'py, O, A>(ptr: *mut ffi::PyObject, node: PyNode<'py>) -> View<'py, O, A> {
+    let value = unsafe { ffi::PyLong_AsLongLong(ptr) };
+    if value == -1 && unsafe { !ffi::PyErr_Occurred().is_null() } {
+        unsafe { ffi::PyErr_Clear() };
+        // Beyond `i64`: only the string form can tell.
+        return if obj_str_number(node).is_some() {
+            View::Number
+        } else {
+            View::Unsupported
+        };
+    }
+    View::Number
 }
 
 // Stand-in for a node that could not be read; an error is pending, so the result is discarded.
@@ -392,9 +406,76 @@ fn key_is_usable(key: PyNode<'_>) -> bool {
     }
 }
 
+// Subclasses, `Decimal` and enum members: rare, so kept out of `view`'s fast path.
+#[cold]
+fn slow_view<'py>(node: PyNode<'py>) -> View<'py, Borrowed<'py, 'py, PyDict>, PyArray<'py>> {
+    {
+        match object_type(node) {
+            ObjType::Dict => View::Object(unsafe { node.cast_unchecked::<PyDict>() }),
+            ObjType::List => View::Array(PyArray::new(node, false)),
+            ObjType::Decimal => {
+                if number_of(node).is_some() {
+                    View::Number
+                } else {
+                    View::Unsupported
+                }
+            }
+            ObjType::Enum => resolved(node).view(),
+            ObjType::Unknown => {
+                record_unsupported(node);
+                View::Unsupported
+            }
+            ObjType::Null => View::Null,
+            ObjType::Bool => View::Boolean(node.as_ptr() == types(node.py()).true_),
+            ObjType::Str | ObjType::Int | ObjType::Float | ObjType::Tuple => {
+                unreachable!("handled by the fast path")
+            }
+        }
+    }
+}
+
 impl<'py> Node<'py, Pyo3> for PyNode<'py> {
     type Object = Borrowed<'py, 'py, PyDict>;
     type Array = PyArray<'py>;
+
+    fn view(&self) -> View<'py, Self::Object, Self::Array> {
+        let t = types(self.py());
+        let ptr = self.as_ptr();
+        if ptr == t.none {
+            return View::Null;
+        }
+        let ty = unsafe { ffi::Py_TYPE(ptr) };
+        if ty == t.dict {
+            return View::Object(unsafe { self.cast_unchecked::<PyDict>() });
+        }
+        if ty == t.str_ {
+            return match unsafe { str_ref_ptr(ptr) } {
+                Some(text) => View::String(Cow::Borrowed(text)),
+                None => View::Unsupported,
+            };
+        }
+        if ty == t.list {
+            return View::Array(PyArray::new(*self, false));
+        }
+        if ty == t.int {
+            return int_view(ptr, *self);
+        }
+        if ty == t.bool_ {
+            return View::Boolean(ptr == t.true_);
+        }
+        if ty == t.float {
+            // A non-finite float is not a JSON number.
+            return if unsafe { ffi::PyFloat_AsDouble(ptr) }.is_finite() {
+                View::Number
+            } else {
+                View::Unsupported
+            };
+        }
+        if ty == t.tuple {
+            return View::Array(PyArray::new(*self, true));
+        }
+        slow_view(*self)
+    }
 
     fn as_object(&self) -> Option<Self::Object> {
         match object_type(*self) {

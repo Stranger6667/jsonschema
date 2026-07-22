@@ -35,10 +35,41 @@ pub trait Json: Sized + Send + Sync + 'static {
     fn prepare_key(key: &str) -> Self::PreparedKey;
 }
 
+/// A node's type together with its payload, read in a single dispatch.
+pub enum View<'a, O, A> {
+    Null,
+    Boolean(bool),
+    /// Excludes non-finite floats, which are not JSON numbers.
+    Number,
+    String(Cow<'a, str>),
+    Array(A),
+    Object(O),
+    /// Not representable as JSON.
+    Unsupported,
+}
+
 /// One JSON value; `Clone` must be cheap.
 pub trait Node<'a, F: Json>: Clone {
     type Object: Object<'a, F, Node = Self>;
     type Array: Array<'a, F, Node = Self>;
+
+    /// Type and payload in one read; representations that classify by a single lookup override it.
+    fn view(&self) -> View<'a, Self::Object, Self::Array> {
+        match self.json_type() {
+            JsonType::Null => View::Null,
+            JsonType::Boolean => self.as_boolean().map_or(View::Unsupported, View::Boolean),
+            JsonType::Number | JsonType::Integer => {
+                if self.is_number() {
+                    View::Number
+                } else {
+                    View::Unsupported
+                }
+            }
+            JsonType::String => self.as_string().map_or(View::Unsupported, View::String),
+            JsonType::Array => self.as_array().map_or(View::Unsupported, View::Array),
+            JsonType::Object => self.as_object().map_or(View::Unsupported, View::Object),
+        }
+    }
 
     fn as_object(&self) -> Option<Self::Object>;
     fn as_array(&self) -> Option<Self::Array>;

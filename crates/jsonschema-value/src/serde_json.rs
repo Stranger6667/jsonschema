@@ -6,7 +6,7 @@ use serde_json::{Map, Value};
 
 use crate::{cmp, types::JsonType};
 
-use super::{Array, Json, Node, Object};
+use super::{Array, Json, Node, Object, View};
 
 pub struct SerdeJson;
 
@@ -22,6 +22,17 @@ impl Json for SerdeJson {
 impl<'a> Node<'a, SerdeJson> for &'a Value {
     type Object = &'a Map<String, Value>;
     type Array = &'a [Value];
+
+    fn view(&self) -> View<'a, Self::Object, Self::Array> {
+        match self {
+            Value::Null => View::Null,
+            Value::Bool(boolean) => View::Boolean(*boolean),
+            Value::Number(_) => View::Number,
+            Value::String(string) => View::String(Cow::Borrowed(string)),
+            Value::Array(items) => View::Array(items),
+            Value::Object(members) => View::Object(members),
+        }
+    }
 
     fn as_object(&self) -> Option<&'a Map<String, Value>> {
         match self {

@@ -161,7 +161,7 @@ impl BooleanTypeValidator {
 
 impl<F: Json> Validate<F> for BooleanTypeValidator {
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
-        instance.as_boolean().is_some()
+        matches!(instance.view(), jsonschema_value::View::Boolean(_))
     }
     fn validate<'i>(
         &self,
@@ -213,7 +213,7 @@ impl StringTypeValidator {
 
 impl<F: Json> Validate<F> for StringTypeValidator {
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
-        instance.is_string()
+        matches!(instance.view(), jsonschema_value::View::String(_))
     }
 
     fn validate<'i>(
@@ -266,7 +266,7 @@ impl ArrayTypeValidator {
 
 impl<F: Json> Validate<F> for ArrayTypeValidator {
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
-        instance.as_array().is_some()
+        matches!(instance.view(), jsonschema_value::View::Array(_))
     }
 
     fn validate<'i>(
@@ -319,7 +319,7 @@ impl ObjectTypeValidator {
 
 impl<F: Json> Validate<F> for ObjectTypeValidator {
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
-        instance.as_object().is_some()
+        matches!(instance.view(), jsonschema_value::View::Object(_))
     }
     fn validate<'i>(
         &self,
@@ -371,7 +371,7 @@ impl NumberTypeValidator {
 
 impl<F: Json> Validate<F> for NumberTypeValidator {
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
-        instance.is_number()
+        matches!(instance.view(), jsonschema_value::View::Number)
     }
     fn validate<'i>(
         &self,

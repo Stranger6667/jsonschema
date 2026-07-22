@@ -2,7 +2,7 @@
 
 use serde_json::{json, Value};
 
-use crate::{types::JsonType, Array, Json, Node, Object};
+use crate::{types::JsonType, Array, Json, Node, Object, View};
 
 /// The document to encode before calling [`assert_conformance`].
 #[must_use]
@@ -39,6 +39,7 @@ pub fn assert_conformance<F: Json>(root: &F::Node<'_>) {
     );
 
     assert_types::<F>(&member);
+    assert_view::<F>(&member);
     assert_scalars::<F>(&member);
     assert_containers::<F>(&member);
     assert_equality::<F>(&member);
@@ -83,6 +84,46 @@ fn assert_types<'a, F: Json>(member: &impl Fn(&str) -> F::Node<'a>) {
             expected == JsonType::Array,
             "as_array of {name}"
         );
+    }
+}
+
+// `view` must agree with the accessors it replaces
+fn assert_view<'a, F: Json>(member: &impl Fn(&str) -> F::Node<'a>) {
+    for (name, expected) in [
+        ("null", JsonType::Null),
+        ("boolean", JsonType::Boolean),
+        ("integer", JsonType::Number),
+        ("float", JsonType::Number),
+        ("string", JsonType::String),
+        ("array", JsonType::Array),
+        ("object", JsonType::Object),
+    ] {
+        let node = member(name);
+        match (node.view(), expected) {
+            (View::Null, JsonType::Null) => assert!(node.is_null(), "view Null of {name}"),
+            (View::Boolean(got), JsonType::Boolean) => {
+                assert_eq!(Some(got), node.as_boolean(), "view Boolean of {name}");
+            }
+            (View::Number, JsonType::Number) => assert!(node.is_number(), "view Number of {name}"),
+            (View::String(got), JsonType::String) => {
+                assert_eq!(Some(got), node.as_string(), "view String of {name}");
+            }
+            (View::Array(got), JsonType::Array) => {
+                assert_eq!(
+                    got.len(),
+                    node.as_array().expect("array").len(),
+                    "view Array of {name}"
+                );
+            }
+            (View::Object(got), JsonType::Object) => {
+                assert_eq!(
+                    got.len(),
+                    node.as_object().expect("object").len(),
+                    "view Object of {name}"
+                );
+            }
+            _ => panic!("view of {name} disagrees with json_type {expected:?}"),
+        }
     }
 }
 

@@ -1026,7 +1026,7 @@ fn absorbed_error_node(
 
 impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
-        let Some(array) = instance.as_array() else {
+        let jsonschema_value::View::Array(array) = instance.view() else {
             return false;
         };
         let count = array.len() as u64;
