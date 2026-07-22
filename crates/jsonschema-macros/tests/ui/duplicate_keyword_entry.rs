@@ -2,7 +2,7 @@ fn even_a<'a>(
     _parent: &'a serde_json::Map<String, serde_json::Value>,
     _value: &'a serde_json::Value,
     _path: jsonschema::paths::Location,
-) -> Result<Box<dyn jsonschema::Keyword>, jsonschema::ValidationError<'a>> {
+) -> Result<Box<dyn for<'i> jsonschema::Keyword<'i>>, jsonschema::ValidationError<'a>> {
     unimplemented!()
 }
 
@@ -10,7 +10,7 @@ fn even_b<'a>(
     _parent: &'a serde_json::Map<String, serde_json::Value>,
     _value: &'a serde_json::Value,
     _path: jsonschema::paths::Location,
-) -> Result<Box<dyn jsonschema::Keyword>, jsonschema::ValidationError<'a>> {
+) -> Result<Box<dyn for<'i> jsonschema::Keyword<'i>>, jsonschema::ValidationError<'a>> {
     unimplemented!()
 }
 

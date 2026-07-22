@@ -13,8 +13,8 @@ fn is_literal_x(value: &str) -> bool {
 
 struct EvenKeyword;
 
-impl jsonschema::Keyword for EvenKeyword {
-    fn validate<'i>(
+impl<'i> jsonschema::Keyword<'i> for EvenKeyword {
+    fn validate(
         &self,
         instance: &'i serde_json::Value,
     ) -> Result<(), jsonschema::ValidationError<'i>> {
@@ -25,7 +25,7 @@ impl jsonschema::Keyword for EvenKeyword {
         }
     }
 
-    fn is_valid(&self, instance: &serde_json::Value) -> bool {
+    fn is_valid(&self, instance: &'i serde_json::Value) -> bool {
         instance.as_u64().is_none_or(|n| n % 2 == 0)
     }
 }
@@ -34,7 +34,7 @@ fn even_factory<'a>(
     _parent: &'a serde_json::Map<String, serde_json::Value>,
     value: &'a serde_json::Value,
     _path: jsonschema::paths::Location,
-) -> Result<Box<dyn jsonschema::Keyword>, jsonschema::ValidationError<'a>> {
+) -> Result<Box<dyn for<'i> jsonschema::Keyword<'i>>, jsonschema::ValidationError<'a>> {
     if value.as_bool() == Some(true) {
         Ok(Box::new(EvenKeyword))
     } else {
@@ -44,8 +44,8 @@ fn even_factory<'a>(
 
 struct MultiErrorKeyword;
 
-impl jsonschema::Keyword for MultiErrorKeyword {
-    fn validate<'i>(
+impl<'i> jsonschema::Keyword<'i> for MultiErrorKeyword {
+    fn validate(
         &self,
         instance: &'i serde_json::Value,
     ) -> Result<(), jsonschema::ValidationError<'i>> {
@@ -56,11 +56,11 @@ impl jsonschema::Keyword for MultiErrorKeyword {
         }
     }
 
-    fn is_valid(&self, instance: &serde_json::Value) -> bool {
+    fn is_valid(&self, instance: &'i serde_json::Value) -> bool {
         instance.as_i64().is_none_or(|n| n > 100)
     }
 
-    fn iter_errors<'i>(
+    fn iter_errors(
         &self,
         instance: &'i serde_json::Value,
     ) -> Box<dyn Iterator<Item = jsonschema::ValidationError<'i>> + 'i> {
@@ -84,7 +84,7 @@ fn multi_error_factory<'a>(
     _parent: &'a serde_json::Map<String, serde_json::Value>,
     _value: &'a serde_json::Value,
     _path: jsonschema::paths::Location,
-) -> Result<Box<dyn jsonschema::Keyword>, jsonschema::ValidationError<'a>> {
+) -> Result<Box<dyn for<'i> jsonschema::Keyword<'i>>, jsonschema::ValidationError<'a>> {
     Ok(Box::new(MultiErrorKeyword))
 }
 
@@ -4347,8 +4347,8 @@ struct StringGateKeyword {
     allow_strings: bool,
 }
 
-impl jsonschema::Keyword for StringGateKeyword {
-    fn validate<'i>(
+impl<'i> jsonschema::Keyword<'i> for StringGateKeyword {
+    fn validate(
         &self,
         instance: &'i serde_json::Value,
     ) -> Result<(), jsonschema::ValidationError<'i>> {
@@ -4359,7 +4359,7 @@ impl jsonschema::Keyword for StringGateKeyword {
         }
     }
 
-    fn is_valid(&self, instance: &serde_json::Value) -> bool {
+    fn is_valid(&self, instance: &'i serde_json::Value) -> bool {
         !instance.is_string() || self.allow_strings
     }
 }
@@ -4370,7 +4370,7 @@ fn string_gate_factory<'a>(
     _parent: &'a serde_json::Map<String, serde_json::Value>,
     value: &'a serde_json::Value,
     _path: jsonschema::paths::Location,
-) -> Result<Box<dyn jsonschema::Keyword>, jsonschema::ValidationError<'a>> {
+) -> Result<Box<dyn for<'i> jsonschema::Keyword<'i>>, jsonschema::ValidationError<'a>> {
     Ok(Box::new(StringGateKeyword {
         allow_strings: value.as_str() == Some("strings-ok"),
     }))

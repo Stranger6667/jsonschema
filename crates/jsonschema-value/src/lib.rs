@@ -42,6 +42,9 @@ pub trait Json: Sized + Send + Sync + 'static {
     ///
     /// `propertyNames` validates each property name through this, so names run through the
     /// same subschema machinery as any other node of the representation.
+    ///
+    /// Representations whose nodes point into an encoded document have two options: a plain
+    /// string variant on the node type, or encoding a single-string document into `buffer`.
     fn with_string_node<T>(
         buffer: &mut Self::StringBuffer,
         string: &str,
@@ -82,6 +85,8 @@ pub trait JsonNumber {
     /// For cold paths: error construction and annotations.
     fn to_number(&self) -> Cow<'_, ::serde_json::Number>;
 
+    /// `type: integer` checks call this per number: override it where the default's
+    /// [`JsonNumber::to_number`] round-trip is not free (e.g. decimal representations).
     fn is_integer(&self) -> bool {
         crate::types::number_is_integer(&self.to_number())
     }
@@ -123,7 +128,8 @@ pub trait Node<'a, F: Json>: Clone {
         crate::cmp::equal(&self.to_value(), expected)
     }
 
-    /// For cold paths only: error construction and annotations.
+    /// For cold paths only: error construction, annotations, the `equals_value` and
+    /// `is_unique` defaults (`const`/`enum`/`uniqueItems`), and serde-only custom keywords.
     fn to_value(&self) -> Cow<'a, Value>;
 
     /// Identity for `$ref` cycle detection and `is_valid` memoization.

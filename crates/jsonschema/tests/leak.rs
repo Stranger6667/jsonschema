@@ -8,12 +8,12 @@ struct ProbeKeyword {
     _probe: Arc<DropProbe>,
 }
 
-impl Keyword for ProbeKeyword {
-    fn validate<'i>(&self, _instance: &'i Value) -> Result<(), ValidationError<'i>> {
+impl<'i> Keyword<'i> for ProbeKeyword {
+    fn validate(&self, _instance: &'i Value) -> Result<(), ValidationError<'i>> {
         Ok(())
     }
 
-    fn is_valid(&self, _instance: &Value) -> bool {
+    fn is_valid(&self, _instance: &'i Value) -> bool {
         true
     }
 }

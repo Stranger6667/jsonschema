@@ -4,7 +4,7 @@ use std::borrow::Cow;
 
 use jsonschema::{
     json::{Array, Json, JsonNumber, Node, NodeIdentity, Object},
-    AsyncRetrieve, JsonType, Uri,
+    AsyncRetrieve, JsonType, Keyword, Uri, ValidationError,
 };
 use serde_json::{json, Value};
 
@@ -216,6 +216,71 @@ async fn async_build_validates_custom_representation() {
     assert!(!validator.is_valid(&wrong_type));
     let error = validator.validate(&missing).expect_err("missing required");
     assert_eq!(error.to_string(), "\"name\" is a required property");
+}
+
+struct NonEmptyObject;
+
+impl<'i> Keyword<'i, ToyJson> for NonEmptyObject {
+    fn validate(&self, instance: &'i ToyValue) -> Result<(), ValidationError<'i>> {
+        if self.is_valid(instance) {
+            Ok(())
+        } else {
+            Err(ValidationError::custom("object is empty"))
+        }
+    }
+    fn is_valid(&self, instance: &'i ToyValue) -> bool {
+        instance
+            .as_object()
+            .is_none_or(|members| !members.is_empty())
+    }
+}
+
+#[test]
+fn custom_keyword_validates_custom_representation() {
+    let schema = json!({"type": "object", "nonEmpty": true});
+    let validator = jsonschema::options_for::<ToyJson>()
+        .with_keyword("nonEmpty", |_, _, _| Ok(Box::new(NonEmptyObject)))
+        .build(&schema)
+        .expect("valid schema");
+
+    assert!(validator.is_valid(&ToyValue::Object(vec![("a".into(), ToyValue::Null)])));
+    let empty = ToyValue::Object(vec![]);
+    assert!(!validator.is_valid(&empty));
+    let error = validator.validate(&empty).expect_err("empty object");
+    assert_eq!(error.to_string(), "object is empty");
+}
+
+// The `propertyNames` subschema receives property names as string nodes of the same
+// representation, so representation-specific keywords work there too.
+#[test]
+fn custom_keyword_inside_property_names_validates_names() {
+    struct ShortName;
+
+    impl<'i> Keyword<'i, ToyJson> for ShortName {
+        fn validate(&self, instance: &'i ToyValue) -> Result<(), ValidationError<'i>> {
+            if self.is_valid(instance) {
+                Ok(())
+            } else {
+                Err(ValidationError::custom("name too long"))
+            }
+        }
+        fn is_valid(&self, instance: &'i ToyValue) -> bool {
+            instance.as_string().is_none_or(|name| name.len() <= 3)
+        }
+    }
+
+    let schema = json!({"propertyNames": {"shortName": true}});
+    let validator = jsonschema::options_for::<ToyJson>()
+        .with_keyword("shortName", |_, _, _| Ok(Box::new(ShortName)))
+        .build(&schema)
+        .expect("valid schema");
+
+    let short = ToyValue::Object(vec![("abc".into(), ToyValue::Null)]);
+    let long = ToyValue::Object(vec![("abcdef".into(), ToyValue::Null)]);
+    assert!(validator.is_valid(&short));
+    assert!(!validator.is_valid(&long));
+    let error = validator.validate(&long).expect_err("name too long");
+    assert_eq!(error.to_string(), "name too long");
 }
 
 #[tokio::test]

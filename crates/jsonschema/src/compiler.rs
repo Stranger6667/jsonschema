@@ -36,7 +36,7 @@ type SharedCache<K, V> = Rc<RefCell<AHashMap<K, V>>>;
 /// Type alias for shared sets in compiler state.
 type SharedSet<T> = Rc<RefCell<AHashSet<T>>>;
 
-pub(crate) trait CompilationOptions {
+pub(crate) trait CompilationOptions<F: Json> {
     fn validate_formats(&self) -> Option<bool>;
     fn are_unknown_formats_ignored(&self) -> bool;
     fn get_content_media_type_check(&self, media_type: &str) -> Option<ContentMediaTypeCheckType>;
@@ -45,13 +45,13 @@ pub(crate) trait CompilationOptions {
         &self,
         content_encoding: &str,
     ) -> Option<ContentEncodingConverterType>;
-    fn get_keyword_factory(&self, name: &str) -> Option<&Arc<dyn KeywordFactory>>;
+    fn get_keyword_factory(&self, name: &str) -> Option<&Arc<dyn KeywordFactory<F>>>;
     fn get_format(&self, format: &str) -> Option<(&String, &Arc<dyn Format>)>;
     fn pattern_options(&self) -> PatternEngineOptions;
     fn email_options(&self) -> Option<&email_address::Options>;
 }
 
-impl<R, F: Json> CompilationOptions for ValidationOptions<'_, R, F> {
+impl<R, F: Json> CompilationOptions<F> for ValidationOptions<'_, R, F> {
     fn validate_formats(&self) -> Option<bool> {
         ValidationOptions::validate_formats(self)
     }
@@ -75,7 +75,7 @@ impl<R, F: Json> CompilationOptions for ValidationOptions<'_, R, F> {
         ValidationOptions::get_content_encoding_convert(self, content_encoding)
     }
 
-    fn get_keyword_factory(&self, name: &str) -> Option<&Arc<dyn KeywordFactory>> {
+    fn get_keyword_factory(&self, name: &str) -> Option<&Arc<dyn KeywordFactory<F>>> {
         ValidationOptions::get_keyword_factory(self, name)
     }
 
@@ -202,7 +202,7 @@ impl<F: Json> SharedContextState<F> {
 
 /// Per-location view used while compiling schemas into validators.
 pub(crate) struct Context<'a, F: Json = SerdeJson> {
-    config: &'a dyn CompilationOptions,
+    config: &'a dyn CompilationOptions<F>,
     resolver: Resolver<'a>,
     vocabularies: VocabularySet,
     location: Location,
@@ -242,7 +242,7 @@ impl<F: Json> Clone for Context<'_, F> {
 
 impl<'a, F: Json> Context<'a, F> {
     pub(crate) fn new(
-        config: &'a dyn CompilationOptions,
+        config: &'a dyn CompilationOptions<F>,
         resolver: Resolver<'a>,
         vocabularies: VocabularySet,
         draft: Draft,
@@ -262,7 +262,7 @@ impl<'a, F: Json> Context<'a, F> {
     pub(crate) fn draft(&self) -> Draft {
         self.draft
     }
-    pub(crate) fn config(&self) -> &dyn CompilationOptions {
+    pub(crate) fn config(&self) -> &dyn CompilationOptions<F> {
         self.config
     }
 
@@ -406,7 +406,7 @@ impl<'a, F: Json> Context<'a, F> {
     ) -> Option<ContentEncodingConverterType> {
         self.config.get_content_encoding_convert(content_encoding)
     }
-    pub(crate) fn get_keyword_factory(&self, name: &str) -> Option<&Arc<dyn KeywordFactory>> {
+    pub(crate) fn get_keyword_factory(&self, name: &str) -> Option<&Arc<dyn KeywordFactory<F>>> {
         self.config.get_keyword_factory(name)
     }
     pub(crate) fn get_format(&self, format: &str) -> Option<(&String, &Arc<dyn Format>)> {
@@ -1147,7 +1147,7 @@ fn compile_without_cache<'a, F: Json>(
 /// sibling compilations do not interfere. Nodes that fail to compile (e.g.
 /// unresolvable `$ref`) are silently skipped.
 fn collect_validators<'a, F: Json>(
-    config: &'a dyn CompilationOptions,
+    config: &'a dyn CompilationOptions<F>,
     resolver: &Resolver<'a>,
     vocabularies: &VocabularySet,
     schema: &'a Value,

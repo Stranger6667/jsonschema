@@ -574,15 +574,15 @@ mod tests {
 
     struct RejectOddValidator;
 
-    impl Keyword for RejectOddValidator {
-        fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+    impl<'i> Keyword<'i> for RejectOddValidator {
+        fn validate(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
             if instance.as_u64().is_some_and(|n| n % 2 != 0) {
                 return Err(ValidationError::custom("value must be even"));
             }
             Ok(())
         }
 
-        fn is_valid(&self, instance: &Value) -> bool {
+        fn is_valid(&self, instance: &'i Value) -> bool {
             instance.as_u64().is_none_or(|n| n % 2 == 0)
         }
     }
@@ -594,7 +594,7 @@ mod tests {
             .with_keyword(
                 "even-number",
                 |_: &Map<String, Value>, _: &Value, _: Location| {
-                    Ok(Box::new(RejectOddValidator) as Box<dyn Keyword>)
+                    Ok(Box::new(RejectOddValidator) as Box<dyn for<'i> Keyword<'i>>)
                 },
             )
             .build(&schema)

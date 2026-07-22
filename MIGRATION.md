@@ -1,5 +1,36 @@
 # Migration Guide
 
+## Upgrading from 0.48.x to 0.49.0
+
+`Keyword` is generic over the instance lifetime and representation (`Keyword<'i, F = SerdeJson>`),
+so custom keywords can validate any representation without conversion to `serde_json::Value`.
+Move the lifetime from the methods to the impl header; argument types and bodies are unaffected.
+
+```rust
+// Old (0.48.x)
+impl Keyword for MyValidator {
+    fn validate<'i>(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> { /* ... */ }
+    fn is_valid(&self, instance: &Value) -> bool { /* ... */ }
+}
+
+// New (0.49.0)
+impl<'i> Keyword<'i> for MyValidator {
+    fn validate(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> { /* ... */ }
+    fn is_valid(&self, instance: &'i Value) -> bool { /* ... */ }
+}
+```
+
+Named factory functions return the trait object with a higher-ranked lifetime; closures passed to
+`with_keyword` need no changes.
+
+```rust
+// Old (0.48.x)
+fn factory<'a>(/* ... */) -> Result<Box<dyn Keyword>, ValidationError<'a>> { /* ... */ }
+
+// New (0.49.0)
+fn factory<'a>(/* ... */) -> Result<Box<dyn for<'i> Keyword<'i>>, ValidationError<'a>> { /* ... */ }
+```
+
 ## Upgrading from 0.45.x to 0.46.0
 
 Registry construction is now explicit: add shared schemas first, then call

@@ -813,81 +813,67 @@ struct CustomKeyword {
     instance: Py<PyAny>,
 }
 
-impl jsonschema::Keyword for CustomKeyword {
-    fn validate<'i>(
+impl<'i> jsonschema::Keyword<'i, Pyo3> for CustomKeyword {
+    fn validate(
         &self,
-        instance: &'i serde_json::Value,
+        instance: Borrowed<'i, 'i, PyAny>,
     ) -> Result<(), jsonschema::ValidationError<'i>> {
-        Python::attach(|py| {
-            let py_instance = value_to_python(py, instance).map_err(|e| {
-                jsonschema::ValidationError::custom(format!(
-                    "Failed to convert instance to Python: {e}"
-                ))
-            })?;
-
-            match self.instance.call_method1(py, "validate", (py_instance,)) {
-                Ok(_) => Ok(()),
-                Err(e) => {
-                    let msg = e.value(py).to_string();
-                    CUSTOM_KEYWORD_CAUSE.with(|cell| {
-                        cell.borrow_mut().push_back(e);
-                    });
-                    Err(jsonschema::ValidationError::custom(msg))
-                }
+        let py = instance.py();
+        match self
+            .instance
+            .call_method1(py, "validate", (instance.to_owned(),))
+        {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                let msg = e.value(py).to_string();
+                CUSTOM_KEYWORD_CAUSE.with(|cell| {
+                    cell.borrow_mut().push_back(e);
+                });
+                Err(jsonschema::ValidationError::custom(msg))
             }
-        })
+        }
     }
 
-    fn is_valid(&self, instance: &serde_json::Value) -> bool {
-        Python::attach(|py| {
-            let Ok(py_instance) = value_to_python(py, instance) else {
-                return false;
-            };
-            self.instance
-                .call_method1(py, "validate", (py_instance,))
-                .is_ok()
-        })
+    fn is_valid(&self, instance: Borrowed<'i, 'i, PyAny>) -> bool {
+        self.instance
+            .call_method1(instance.py(), "validate", (instance.to_owned(),))
+            .is_ok()
     }
 
-    fn iter_errors<'i>(
+    fn iter_errors(
         &self,
-        instance: &'i serde_json::Value,
+        instance: Borrowed<'i, 'i, PyAny>,
     ) -> Box<dyn Iterator<Item = jsonschema::ValidationError<'i>> + 'i> {
-        Python::attach(|py| {
-            // Without an `iter_errors` method, fall back to the single-error `validate` path.
-            if !self
-                .instance
-                .bind(py)
-                .hasattr("iter_errors")
-                .unwrap_or(false)
-            {
-                return boxed_error_iter(self.validate(instance).err());
-            }
-            let py_instance = match value_to_python(py, instance) {
-                Ok(instance) => instance,
-                Err(error) => return boxed_error_iter(Some(custom_error_with_cause(py, error))),
+        let py = instance.py();
+        // Without an `iter_errors` method, fall back to the single-error `validate` path.
+        if !self
+            .instance
+            .bind(py)
+            .hasattr("iter_errors")
+            .unwrap_or(false)
+        {
+            return boxed_error_iter(self.validate(instance).err());
+        }
+        let iterable = match self
+            .instance
+            .call_method1(py, "iter_errors", (instance.to_owned(),))
+        {
+            Ok(iterable) => iterable,
+            Err(error) => return boxed_error_iter(Some(custom_error_with_cause(py, error))),
+        };
+        let iterator = match iterable.bind(py).try_iter() {
+            Ok(iterator) => iterator,
+            Err(error) => return boxed_error_iter(Some(custom_error_with_cause(py, error))),
+        };
+        let mut errors = Vec::new();
+        for item in iterator {
+            let error = match item {
+                Ok(item) => custom_error_with_cause(py, PyErr::from_value(item)),
+                Err(error) => custom_error_with_cause(py, error),
             };
-            let iterable = match self
-                .instance
-                .call_method1(py, "iter_errors", (py_instance,))
-            {
-                Ok(iterable) => iterable,
-                Err(error) => return boxed_error_iter(Some(custom_error_with_cause(py, error))),
-            };
-            let iterator = match iterable.bind(py).try_iter() {
-                Ok(iterator) => iterator,
-                Err(error) => return boxed_error_iter(Some(custom_error_with_cause(py, error))),
-            };
-            let mut errors = Vec::new();
-            for item in iterator {
-                let error = match item {
-                    Ok(item) => custom_error_with_cause(py, PyErr::from_value(item)),
-                    Err(error) => custom_error_with_cause(py, error),
-                };
-                errors.push(error);
-            }
-            Box::new(errors.into_iter())
-        })
+            errors.push(error);
+        }
+        Box::new(errors.into_iter())
     }
 }
 
@@ -1109,7 +1095,7 @@ fn make_options<'a>(
 
                         match callback.call1(py, (py_schema, py_value, py_path_list)) {
                             Ok(instance) => Ok(Box::new(CustomKeyword { instance })
-                                as Box<dyn jsonschema::Keyword>),
+                                as Box<dyn for<'i> jsonschema::Keyword<'i, Pyo3>>),
                             Err(e) => Err(jsonschema::ValidationError::custom(format!(
                                 "Failed to instantiate keyword class '{name_for_error}': {e}"
                             ))),

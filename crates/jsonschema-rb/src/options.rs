@@ -371,8 +371,8 @@ struct RubyKeyword {
     instance: Opaque<Value>,
 }
 
-impl jsonschema::Keyword for RubyKeyword {
-    fn validate<'i>(
+impl<'i> jsonschema::Keyword<'i> for RubyKeyword {
+    fn validate(
         &self,
         instance: &'i serde_json::Value,
     ) -> Result<(), jsonschema::ValidationError<'i>> {
@@ -395,7 +395,7 @@ impl jsonschema::Keyword for RubyKeyword {
         }
     }
 
-    fn is_valid(&self, instance: &serde_json::Value) -> bool {
+    fn is_valid(&self, instance: &'i serde_json::Value) -> bool {
         let ruby = Ruby::get().expect("Ruby VM should be initialized");
         let Ok(rb_instance) = value_to_ruby(&ruby, instance) else {
             return false;
@@ -405,7 +405,7 @@ impl jsonschema::Keyword for RubyKeyword {
         result.is_ok()
     }
 
-    fn iter_errors<'i>(
+    fn iter_errors(
         &self,
         instance: &'i serde_json::Value,
     ) -> Box<dyn Iterator<Item = jsonschema::ValidationError<'i>> + 'i> {
@@ -726,7 +726,7 @@ pub fn make_options_from_kwargs(
                             Ok(Box::new(RubyKeyword {
                                 instance: opaque_inst,
                             })
-                                as Box<dyn jsonschema::Keyword>)
+                                as Box<dyn for<'i> jsonschema::Keyword<'i>>)
                         }
                         Err(e) => Err(jsonschema::ValidationError::custom(format!(
                             "Failed to instantiate keyword class '{name_err}': {e}"
