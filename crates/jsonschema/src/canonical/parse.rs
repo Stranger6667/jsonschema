@@ -9,8 +9,8 @@ use crate::{
         algebra,
         context::CanonicalizationContext,
         ir::{
-            BoundCardinality, BoundInteger, CanonicalJson, IntegerBounds, LengthBounds, Schema,
-            SchemaKind, StringLeaf,
+            tighter, BoundCardinality, BoundInteger, CanonicalJson, IntegerBounds, LengthBounds,
+            Schema, SchemaKind, StringLeaf,
         },
         CanonicalizationError,
     },
@@ -48,6 +48,10 @@ fn parse_schema(
     let mut patterns: Vec<Arc<str>> = Vec::new();
     let mut minimum: Option<BoundInteger> = None;
     let mut maximum: Option<BoundInteger> = None;
+    // Draft 4 spells exclusivity as a boolean modifier on `minimum`/`maximum`, which may be read
+    // before the bound it modifies, so it is applied once the whole object has been read.
+    let mut draft4_exclusive_minimum = false;
+    let mut draft4_exclusive_maximum = false;
     let mut conjuncts: Vec<Schema> = Vec::new();
     for (key, entry) in map {
         match (key.as_str(), entry) {
@@ -120,19 +124,62 @@ fn parse_schema(
             // A fractional or (default build) out-of-`i64` bound has no modeled integer form; keep it raw.
             ("minimum", Value::Number(number)) if ctx.draft().is_known_keyword("minimum") => {
                 match BoundInteger::from_number(number) {
-                    Some(bound) => minimum = Some(bound),
+                    Some(bound) => minimum = tighter(minimum, Some(bound), Ord::max),
                     None => return Ok(None),
                 }
             }
             ("maximum", Value::Number(number)) if ctx.draft().is_known_keyword("maximum") => {
                 match BoundInteger::from_number(number) {
-                    Some(bound) => maximum = Some(bound),
+                    Some(bound) => maximum = tighter(maximum, Some(bound), Ord::min),
                     None => return Ok(None),
                 }
+            }
+            // Draft 6+ spells an exclusive bound as a number. On integers `> n` is `>= n + 1`, so it
+            // folds into the inclusive bound and the IR stays a closed interval.
+            ("exclusiveMinimum", Value::Number(number))
+                if !matches!(ctx.draft(), Draft::Draft4)
+                    && ctx.draft().is_known_keyword("exclusiveMinimum") =>
+            {
+                match BoundInteger::from_number(number).and_then(BoundInteger::checked_increment) {
+                    Some(bound) => minimum = tighter(minimum, Some(bound), Ord::max),
+                    None => return Ok(None),
+                }
+            }
+            ("exclusiveMaximum", Value::Number(number))
+                if !matches!(ctx.draft(), Draft::Draft4)
+                    && ctx.draft().is_known_keyword("exclusiveMaximum") =>
+            {
+                match BoundInteger::from_number(number).and_then(BoundInteger::checked_decrement) {
+                    Some(bound) => maximum = tighter(maximum, Some(bound), Ord::min),
+                    None => return Ok(None),
+                }
+            }
+            ("exclusiveMinimum", Value::Bool(flag)) if matches!(ctx.draft(), Draft::Draft4) => {
+                draft4_exclusive_minimum = *flag;
+            }
+            ("exclusiveMaximum", Value::Bool(flag)) if matches!(ctx.draft(), Draft::Draft4) => {
+                draft4_exclusive_maximum = *flag;
             }
             // TODO(canonical): not modeled yet - every other known keyword keeps the document raw.
             (other, _) if ctx.draft().is_known_keyword(other) => return Ok(None),
             _ => {}
+        }
+    }
+
+    if draft4_exclusive_minimum {
+        if let Some(bound) = minimum.take() {
+            match bound.checked_increment() {
+                Some(next) => minimum = Some(next),
+                None => return Ok(None),
+            }
+        }
+    }
+    if draft4_exclusive_maximum {
+        if let Some(bound) = maximum.take() {
+            match bound.checked_decrement() {
+                Some(next) => maximum = Some(next),
+                None => return Ok(None),
+            }
         }
     }
 
@@ -167,7 +214,10 @@ fn parse_schema(
     if minimum.is_some() || maximum.is_some() {
         // Only `type: integer` bounds are modeled yet; `number`/untyped numeric facets stay raw.
         if type_set == Some(JsonTypeSet::from(JsonType::Integer)) {
-            conjuncts.push(algebra::integer_leaf(IntegerBounds { minimum, maximum }));
+            conjuncts.push(algebra::integer_leaf(
+                IntegerBounds { minimum, maximum },
+                ctx,
+            ));
         } else {
             return Ok(None);
         }
