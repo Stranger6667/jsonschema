@@ -18,7 +18,11 @@ lint-py:
   uvx ruff check --select I --fix crates/jsonschema-py/python crates/jsonschema-py/tests-py crates/jsonschema-py/benches
   uvx mypy crates/jsonschema-py/python
 
-lint: lint-rs lint-py
+lint-rb:
+  cd crates/jsonschema-rb && bundle exec rubocop
+  cd crates/jsonschema-rb && bundle exec rbs -I sig validate
+
+lint: lint-rs lint-py lint-rb
 
 test-rs *FLAGS:
   cargo llvm-cov --html test {{FLAGS}}

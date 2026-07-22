@@ -103,6 +103,26 @@ def test_view_string():
             pytest.fail(f"unexpected view: {other!r}")
 
 
+# Bounds past `u64` stay exact under arbitrary precision.
+@pytest.mark.parametrize("keyword, attribute", [("minLength", "min_length"), ("maxLength", "max_length")])
+def test_view_string_bound_past_u64(keyword, attribute):
+    huge = 10**23
+    match canonicalize({"type": "string", keyword: huge}).view():
+        case canonical.StringView() as view:
+            assert getattr(view, attribute) == huge
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
+def test_view_integer_bound_past_i64():
+    huge = 10**23
+    match canonicalize({"type": "integer", "minimum": huge}).view():
+        case canonical.IntegerView(minimum=minimum):
+            assert minimum == huge
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
 def test_view_integer():
     match canonicalize({"type": "integer", "minimum": 2, "maximum": 9}).view():
         case canonical.IntegerView(minimum=minimum, maximum=maximum):

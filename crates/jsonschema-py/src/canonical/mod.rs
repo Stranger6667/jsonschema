@@ -88,12 +88,16 @@ impl PyCanonicalSchema {
                 StringView {
                     min_length: view
                         .min_length
-                        .as_ref()
-                        .and_then(serde_json::Number::as_u64),
+                        .map(|number| {
+                            crate::value_to_python(py, &serde_json::Value::Number(number))
+                        })
+                        .transpose()?,
                     max_length: view
                         .max_length
-                        .as_ref()
-                        .and_then(serde_json::Number::as_u64),
+                        .map(|number| {
+                            crate::value_to_python(py, &serde_json::Value::Number(number))
+                        })
+                        .transpose()?,
                     patterns: view.patterns,
                 },
             )?
@@ -226,9 +230,9 @@ impl TypedGroupView {
 #[pyclass(frozen, name = "StringView", module = "jsonschema_rs.canonical")]
 pub(crate) struct StringView {
     #[pyo3(get)]
-    min_length: Option<u64>,
+    min_length: Option<Py<PyAny>>,
     #[pyo3(get)]
-    max_length: Option<u64>,
+    max_length: Option<Py<PyAny>>,
     #[pyo3(get)]
     patterns: Vec<String>,
 }

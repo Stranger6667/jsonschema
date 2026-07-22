@@ -530,6 +530,9 @@ jobs:
       - run: bundle exec rubocop
         working-directory: crates/jsonschema-rb
 
+      - run: bundle exec rbs -I sig validate
+        working-directory: crates/jsonschema-rb
+
   lint-fmt:
     name: Lint formatting
     runs-on: ubuntu-24.04
