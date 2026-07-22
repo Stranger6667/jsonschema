@@ -5,7 +5,7 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::{JsonType, JsonTypeSet},
     validator::{Validate, ValidationContext},
-    Json, JsonNode,
+    Json, Node,
 };
 use serde_json::{json, Map, Number, Value};
 use std::{borrow::Cow, str::FromStr};
@@ -140,7 +140,7 @@ pub(crate) fn is_integer(num: &Number) -> bool {
     // See: tests/suite/tests/draft4/optional/zeroTerminatedFloats.json
     #[cfg(feature = "arbitrary-precision")]
     {
-        use crate::ext::numeric::bignum;
+        use crate::numeric::bignum;
 
         let s = num.as_str();
         if s.contains('.') {

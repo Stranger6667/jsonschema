@@ -12,6 +12,7 @@ license.workspace = true
 default = ["serde_json"]
 serde_json = ["dep:bytecount"]
 macros = []
+conformance = []
 arbitrary-precision = ["serde_json/arbitrary_precision", "dep:num-bigint"]
 
 [dependencies]

@@ -1,7 +1,10 @@
-use super::cmp;
+use crate::cmp;
 use ahash::{AHashSet, AHasher};
 use serde_json::Value;
-use std::hash::{Hash, Hasher};
+use std::{
+    borrow::Borrow,
+    hash::{Hash, Hasher},
+};
 
 // Based on implementation proposed by Sven Marnach:
 // https://stackoverflow.com/questions/60882381/what-is-the-fastest-correct-way-to-detect-that-there-are-no-duplicates-in-a-json
@@ -57,17 +60,21 @@ impl Hash for HashedValue<'_> {
 // case.
 pub(crate) const ITEMS_SIZE_THRESHOLD: usize = 15;
 
+// Generic over `Borrow<Value>` so both borrowed `serde_json` slices and the `Cow<Value>` handles
+// materialized from other representations run the same duplicate-detection algorithm.
 #[inline]
 #[must_use]
-pub fn is_unique(items: &[Value]) -> bool {
+pub fn is_unique<T: Borrow<Value>>(items: &[T]) -> bool {
     let size = items.len();
     if size <= 1 {
         // Empty arrays and one-element arrays always contain unique elements
         true
     } else if let [first, second] = items {
-        !cmp::equal(first, second)
+        !cmp::equal(first.borrow(), second.borrow())
     } else if let [first, second, third] = items {
-        !cmp::equal(first, second) && !cmp::equal(first, third) && !cmp::equal(second, third)
+        !cmp::equal(first.borrow(), second.borrow())
+            && !cmp::equal(first.borrow(), third.borrow())
+            && !cmp::equal(second.borrow(), third.borrow())
     } else if size <= ITEMS_SIZE_THRESHOLD {
         // If the array size is small enough we can compare all elements pairwise, which will
         // be faster than calculating hashes for each element, even if the algorithm is O(N^2)
@@ -75,7 +82,7 @@ pub fn is_unique(items: &[Value]) -> bool {
         while idx < items.len() {
             let mut inner_idx = idx + 1;
             while inner_idx < items.len() {
-                if cmp::equal(&items[idx], &items[inner_idx]) {
+                if cmp::equal(items[idx].borrow(), items[inner_idx].borrow()) {
                     return false;
                 }
                 inner_idx += 1;
@@ -85,7 +92,10 @@ pub fn is_unique(items: &[Value]) -> bool {
         true
     } else {
         let mut seen = AHashSet::with_capacity(size);
-        items.iter().map(HashedValue).all(move |x| seen.insert(x))
+        items
+            .iter()
+            .map(|item| HashedValue(item.borrow()))
+            .all(move |x| seen.insert(x))
     }
 }
 

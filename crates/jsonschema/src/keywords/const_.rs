@@ -4,7 +4,7 @@ use crate::{
     keywords::CompilationResult,
     paths::Location,
     validator::{Validate, ValidationContext},
-    Json, JsonArrayAccess, JsonNode,
+    Array, Json, Node,
 };
 use serde_json::{Map, Number, Value};
 
@@ -178,7 +178,7 @@ impl<F: Json> Validate<F> for ConstNumberValidator {
     #[inline]
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(item) = instance.as_number() {
-            crate::ext::cmp::equal_numbers(&item, &self.original_value)
+            crate::cmp::equal_numbers(&item, &self.original_value)
         } else {
             false
         }

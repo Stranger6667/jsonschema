@@ -6,7 +6,7 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
-    Draft, Json, JsonArrayAccess, JsonNode, SerdeJson,
+    Array, Draft, Json, Node, SerdeJson,
 };
 use serde_json::{Map, Value};
 

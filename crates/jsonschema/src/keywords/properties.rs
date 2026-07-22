@@ -10,7 +10,7 @@ use crate::{
     properties::HASHMAP_THRESHOLD,
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
-    Json, JsonNode, JsonObjectAccess, SerdeJson,
+    Json, Node, Object, SerdeJson,
 };
 use ahash::AHashMap;
 use referencing::Uri;

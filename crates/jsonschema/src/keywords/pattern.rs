@@ -12,7 +12,7 @@ use crate::{
     },
     types::JsonType,
     validator::{Validate, ValidationContext},
-    Json, JsonNode,
+    Json, Node,
 };
 use serde_json::{Map, Value};
 

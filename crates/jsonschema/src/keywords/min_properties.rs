@@ -6,7 +6,7 @@ use crate::{
     keywords::{helpers::fail_on_non_positive_integer, CompilationResult},
     paths::{LazyLocation, Location, RefTracker},
     validator::{Validate, ValidationContext},
-    Json, JsonNode, JsonObjectAccess,
+    Json, Node, Object,
 };
 use serde_json::{Map, Value};
 

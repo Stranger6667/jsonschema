@@ -8,7 +8,7 @@ use std::str::FromStr;
 
 use serde_json::Value;
 
-use crate::{Json, JsonNode};
+use crate::{Json, Node};
 
 /// Represents a JSON value type.
 ///
@@ -215,7 +215,7 @@ impl JsonTypeSet {
 pub fn number_is_integer(n: &serde_json::Number) -> bool {
     #[cfg(feature = "arbitrary-precision")]
     {
-        use crate::ext::numeric::bignum;
+        use crate::numeric::bignum;
         use num_traits::One;
 
         // Important: check BigFraction BEFORE as_f64() to avoid precision loss.

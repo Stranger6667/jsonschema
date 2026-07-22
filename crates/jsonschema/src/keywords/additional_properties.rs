@@ -22,7 +22,7 @@ use crate::{
     regex::RegexEngine,
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
-    Json, JsonNode, JsonObjectAccess, SerdeJson,
+    Json, Node, Object, SerdeJson,
 };
 use ahash::AHashMap;
 use referencing::Uri;

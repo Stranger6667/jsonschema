@@ -5,7 +5,7 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::{JsonType, JsonTypeSet},
     validator::{Validate, ValidationContext},
-    Json, JsonNode,
+    Json, Node,
 };
 use ahash::AHashSet;
 use serde_json::{Map, Value};

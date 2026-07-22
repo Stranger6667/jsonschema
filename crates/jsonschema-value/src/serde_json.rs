@@ -4,9 +4,9 @@ use std::borrow::Cow;
 
 use serde_json::{Map, Value};
 
-use crate::{ext::cmp, types::JsonType};
+use crate::{cmp, types::JsonType};
 
-use super::{Json, JsonArrayAccess, JsonNode, JsonObjectAccess};
+use super::{Array, Json, Node, Object};
 
 pub struct SerdeJson;
 
@@ -19,7 +19,7 @@ impl Json for SerdeJson {
     }
 }
 
-impl<'a> JsonNode<'a, SerdeJson> for &'a Value {
+impl<'a> Node<'a, SerdeJson> for &'a Value {
     type Object = &'a Map<String, Value>;
     type Array = &'a [Value];
 
@@ -104,7 +104,7 @@ impl<'a> Iterator for SerdeMembersIter<'a> {
     }
 }
 
-impl<'a> JsonObjectAccess<'a, SerdeJson> for &'a Map<String, Value> {
+impl<'a> Object<'a, SerdeJson> for &'a Map<String, Value> {
     type Node = &'a Value;
     type MemberName = &'a str;
     type MembersIter = SerdeMembersIter<'a>;
@@ -122,7 +122,7 @@ impl<'a> JsonObjectAccess<'a, SerdeJson> for &'a Map<String, Value> {
     }
 }
 
-impl<'a> JsonArrayAccess<'a, SerdeJson> for &'a [Value] {
+impl<'a> Array<'a, SerdeJson> for &'a [Value] {
     type Node = &'a Value;
     type ElementsIter = std::slice::Iter<'a, Value>;
 
@@ -135,7 +135,7 @@ impl<'a> JsonArrayAccess<'a, SerdeJson> for &'a [Value] {
     }
 
     fn is_unique(&self) -> bool {
-        crate::ext::unique::is_unique(self)
+        crate::unique::is_unique(self)
     }
 }
 
@@ -147,7 +147,7 @@ mod tests {
     use test_case::test_case;
 
     use super::{
-        super::{Json, JsonArrayAccess, JsonNode, JsonObjectAccess},
+        super::{Array, Json, Node, Object},
         SerdeJson,
     };
     use crate::types::JsonType;
