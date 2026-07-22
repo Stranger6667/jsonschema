@@ -9,8 +9,9 @@ use crate::{
         algebra,
         context::CanonicalizationContext,
         ir::{
-            tighter, AtLeastTwo, BoundCardinality, BoundInteger, CanonicalJson, Discrete,
-            IntegerBounds, IntegerLeaf, LengthBounds, Schema, SchemaKind, StringLeaf,
+            tighter, AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber, CanonicalJson,
+            Discrete, IntegerBounds, IntegerLeaf, LengthBounds, NumberLeaf, Schema, SchemaKind,
+            Side, StringLeaf,
         },
         CanonicalizationError,
     },
@@ -49,6 +50,10 @@ fn parse_schema(
     let mut formats: Vec<Arc<str>> = Vec::new();
     let mut minimum: Option<BoundInteger> = None;
     let mut multiple_of: Option<BoundInteger> = None;
+    // The number domain keeps each end as written: on the reals an excluded bound has no successor
+    // to fold it into, unlike the integer path below.
+    let mut real_minimum: Option<BoundNumber> = None;
+    let mut real_maximum: Option<BoundNumber> = None;
     let mut maximum: Option<BoundInteger> = None;
     // Draft 4 spells exclusivity as a boolean modifier on `minimum`/`maximum`, which may be read
     // before the bound it modifies, so it is applied once the whole object has been read.
@@ -148,13 +153,19 @@ fn parse_schema(
             // A fractional or (default build) out-of-`i64` bound has no modeled integer form; keep it raw.
             ("minimum", Value::Number(number)) if ctx.draft().is_known_keyword("minimum") => {
                 match BoundInteger::from_number(number) {
-                    Some(bound) => minimum = tighter(minimum, Some(bound), Ord::max),
+                    Some(bound) => {
+                        minimum = tighter(minimum, Some(bound), Ord::max);
+                        real_minimum = tighter_real(real_minimum, number, true, Side::Lower);
+                    }
                     None => return Ok(None),
                 }
             }
             ("maximum", Value::Number(number)) if ctx.draft().is_known_keyword("maximum") => {
                 match BoundInteger::from_number(number) {
-                    Some(bound) => maximum = tighter(maximum, Some(bound), Ord::min),
+                    Some(bound) => {
+                        maximum = tighter(maximum, Some(bound), Ord::min);
+                        real_maximum = tighter_real(real_maximum, number, true, Side::Upper);
+                    }
                     None => return Ok(None),
                 }
             }
@@ -165,7 +176,10 @@ fn parse_schema(
                     && ctx.draft().is_known_keyword("exclusiveMinimum") =>
             {
                 match BoundInteger::from_number(number).and_then(BoundInteger::checked_increment) {
-                    Some(bound) => minimum = tighter(minimum, Some(bound), Ord::max),
+                    Some(bound) => {
+                        minimum = tighter(minimum, Some(bound), Ord::max);
+                        real_minimum = tighter_real(real_minimum, number, false, Side::Lower);
+                    }
                     None => return Ok(None),
                 }
             }
@@ -174,7 +188,10 @@ fn parse_schema(
                     && ctx.draft().is_known_keyword("exclusiveMaximum") =>
             {
                 match BoundInteger::from_number(number).and_then(BoundInteger::checked_decrement) {
-                    Some(bound) => maximum = tighter(maximum, Some(bound), Ord::min),
+                    Some(bound) => {
+                        maximum = tighter(maximum, Some(bound), Ord::min);
+                        real_maximum = tighter_real(real_maximum, number, false, Side::Upper);
+                    }
                     None => return Ok(None),
                 }
             }
@@ -191,6 +208,7 @@ fn parse_schema(
     }
 
     if draft4_exclusive_minimum {
+        real_minimum = real_minimum.map(BoundNumber::excluded);
         if let Some(bound) = minimum.take() {
             match bound.checked_increment() {
                 Some(next) => minimum = Some(next),
@@ -199,6 +217,7 @@ fn parse_schema(
         }
     }
     if draft4_exclusive_maximum {
+        real_maximum = real_maximum.map(BoundNumber::excluded);
         if let Some(bound) = maximum.take() {
             match bound.checked_decrement() {
                 Some(next) => maximum = Some(next),
@@ -239,7 +258,10 @@ fn parse_schema(
     }
 
     if minimum.is_some() || maximum.is_some() || multiple_of.is_some() {
-        // Only `type: integer` bounds are modeled yet; `number`/untyped numeric facets stay raw.
+        // A divisor is modeled only on `integer`; on the reals it needs its own arithmetic.
+        if multiple_of.is_some() && type_set != Some(JsonTypeSet::from(JsonType::Integer)) {
+            return Ok(None);
+        }
         if type_set == Some(JsonTypeSet::from(JsonType::Integer)) {
             // Every integer is a multiple of one, so the divisor leaves no trace here. It still had
             // to reach this point: on `number` it means "whole", which the gate below keeps raw.
@@ -252,7 +274,13 @@ fn parse_schema(
                 ctx,
             ));
         } else {
-            return Ok(None);
+            conjuncts.push(number_facet_schema(
+                NumberLeaf {
+                    minimum: real_minimum,
+                    maximum: real_maximum,
+                },
+                ctx,
+            ));
         }
     }
 
@@ -393,6 +421,31 @@ pub(crate) fn canonicalize_value_set(members: Vec<CanonicalJson>) -> Schema {
             None => Schema::new(SchemaKind::False),
         },
     }
+}
+
+/// Keep whichever end admits fewer values.
+fn tighter_real(
+    current: Option<BoundNumber>,
+    limit: &serde_json::Number,
+    inclusive: bool,
+    side: Side,
+) -> Option<BoundNumber> {
+    let bound = BoundNumber::new(limit, inclusive);
+    match current {
+        Some(current) if current.is_tighter_than(&bound, side) => Some(current),
+        _ => Some(bound),
+    }
+}
+
+/// A numeric facet constrains only numbers, so `{"minimum": 3}` becomes
+/// `anyOf: [<non-number types>, {"type": "number", "minimum": 3}]`.
+fn number_facet_schema(leaf: NumberLeaf, ctx: &CanonicalizationContext) -> Schema {
+    let non_number = Schema::new(SchemaKind::MultiType(
+        JsonTypeSet::all()
+            .remove(JsonType::Number)
+            .remove(JsonType::Integer),
+    ));
+    algebra::union(vec![non_number, algebra::number_leaf(leaf)], ctx)
 }
 
 /// A string facet constrains only strings, so `{"minLength": 3}` becomes

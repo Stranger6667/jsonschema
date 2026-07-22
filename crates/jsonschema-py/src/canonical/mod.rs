@@ -103,6 +103,26 @@ impl PyCanonicalSchema {
                 },
             )?
             .into_any(),
+            CanonicalView::Number(view) => Py::new(
+                py,
+                NumberView {
+                    minimum: view
+                        .minimum
+                        .map(|number| {
+                            crate::value_to_python(py, &serde_json::Value::Number(number))
+                        })
+                        .transpose()?,
+                    exclusive_minimum: view.exclusive_minimum,
+                    maximum: view
+                        .maximum
+                        .map(|number| {
+                            crate::value_to_python(py, &serde_json::Value::Number(number))
+                        })
+                        .transpose()?,
+                    exclusive_maximum: view.exclusive_maximum,
+                },
+            )?
+            .into_any(),
             CanonicalView::Integer(view) => Py::new(
                 py,
                 IntegerView {
@@ -252,6 +272,32 @@ impl StringView {
     }
 }
 
+/// A number value within a real interval.
+#[pyclass(frozen, name = "NumberView", module = "jsonschema_rs.canonical")]
+pub(crate) struct NumberView {
+    #[pyo3(get)]
+    minimum: Option<Py<PyAny>>,
+    #[pyo3(get)]
+    exclusive_minimum: bool,
+    #[pyo3(get)]
+    maximum: Option<Py<PyAny>>,
+    #[pyo3(get)]
+    exclusive_maximum: bool,
+}
+
+#[pymethods]
+impl NumberView {
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str, &'static str, &'static str) {
+        (
+            "minimum",
+            "exclusive_minimum",
+            "maximum",
+            "exclusive_maximum",
+        )
+    }
+}
+
 /// An integer value within a range, optionally a multiple of a divisor.
 #[pyclass(frozen, name = "IntegerView", module = "jsonschema_rs.canonical")]
 pub(crate) struct IntegerView {
@@ -378,6 +424,7 @@ pub(crate) fn init_module(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyRes
     canonical_module.add_class::<TypedGroupView>()?;
     canonical_module.add_class::<StringView>()?;
     canonical_module.add_class::<IntegerView>()?;
+    canonical_module.add_class::<NumberView>()?;
     canonical_module.add_class::<AnyOfView>()?;
     canonical_module.add_class::<ConstView>()?;
     canonical_module.add_class::<EnumView>()?;

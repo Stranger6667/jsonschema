@@ -133,6 +133,14 @@ impl RbCanonicalSchema {
                     formats: view.formats,
                 })
                 .as_value(),
+            CanonicalView::Number(view) => ruby
+                .obj_wrap(NumberView {
+                    minimum: view.minimum,
+                    exclusive_minimum: view.exclusive_minimum,
+                    maximum: view.maximum,
+                    exclusive_maximum: view.exclusive_maximum,
+                })
+                .as_value(),
             CanonicalView::Integer(view) => ruby
                 .obj_wrap(IntegerView {
                     minimum: view.minimum,
@@ -342,6 +350,61 @@ impl StringView {
         hash.aset(ruby.sym_new("max_length"), Self::max_length(ruby, rb_self)?)?;
         hash.aset(ruby.sym_new("patterns"), Self::patterns(ruby, rb_self)?)?;
         hash.aset(ruby.sym_new("formats"), Self::formats(ruby, rb_self)?)?;
+        Ok(hash)
+    }
+}
+
+/// A number value within a real interval.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::NumberView", free_immediately)]
+pub struct NumberView {
+    minimum: Option<serde_json::Number>,
+    exclusive_minimum: bool,
+    maximum: Option<serde_json::Number>,
+    exclusive_maximum: bool,
+}
+
+impl DataTypeFunctions for NumberView {}
+
+impl NumberView {
+    fn minimum(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        bound_to_ruby(ruby, rb_self.minimum.as_ref())
+    }
+
+    fn exclusive_minimum(ruby: &Ruby, rb_self: &Self) -> Value {
+        ruby.into_value(rb_self.exclusive_minimum)
+    }
+
+    fn maximum(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        bound_to_ruby(ruby, rb_self.maximum.as_ref())
+    }
+
+    fn exclusive_maximum(ruby: &Ruby, rb_self: &Self) -> Value {
+        ruby.into_value(rb_self.exclusive_maximum)
+    }
+
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
+        Ok(format!(
+            "#<JSONSchema::Canonical::NumberView minimum={} exclusive_minimum={} maximum={} exclusive_maximum={}>",
+            Self::minimum(ruby, rb_self)?.inspect(),
+            Self::exclusive_minimum(ruby, rb_self).inspect(),
+            Self::maximum(ruby, rb_self)?.inspect(),
+            Self::exclusive_maximum(ruby, rb_self).inspect()
+        ))
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("minimum"), Self::minimum(ruby, rb_self)?)?;
+        hash.aset(
+            ruby.sym_new("exclusive_minimum"),
+            Self::exclusive_minimum(ruby, rb_self),
+        )?;
+        hash.aset(ruby.sym_new("maximum"), Self::maximum(ruby, rb_self)?)?;
+        hash.aset(
+            ruby.sym_new("exclusive_maximum"),
+            Self::exclusive_maximum(ruby, rb_self),
+        )?;
         Ok(hash)
     }
 }
@@ -584,6 +647,20 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     string_view.define_method("formats", method!(StringView::formats, 0))?;
     string_view.define_method("inspect", method!(StringView::inspect, 0))?;
     string_view.define_method("deconstruct_keys", method!(StringView::deconstruct_keys, 1))?;
+
+    let number_view = canonical_module.define_class("NumberView", ruby.class_object())?;
+    number_view.define_method("minimum", method!(NumberView::minimum, 0))?;
+    number_view.define_method(
+        "exclusive_minimum",
+        method!(NumberView::exclusive_minimum, 0),
+    )?;
+    number_view.define_method("maximum", method!(NumberView::maximum, 0))?;
+    number_view.define_method(
+        "exclusive_maximum",
+        method!(NumberView::exclusive_maximum, 0),
+    )?;
+    number_view.define_method("inspect", method!(NumberView::inspect, 0))?;
+    number_view.define_method("deconstruct_keys", method!(NumberView::deconstruct_keys, 1))?;
 
     let integer_view = canonical_module.define_class("IntegerView", ruby.class_object())?;
     integer_view.define_method("minimum", method!(IntegerView::minimum, 0))?;

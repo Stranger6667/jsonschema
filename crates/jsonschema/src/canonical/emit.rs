@@ -4,7 +4,7 @@ use referencing::Draft;
 use serde_json::{json, Map, Value};
 
 use crate::{
-    canonical::ir::{CanonicalJson, IntegerLeaf, Schema, SchemaKind, StringLeaf},
+    canonical::ir::{CanonicalJson, IntegerLeaf, NumberLeaf, Schema, SchemaKind, StringLeaf},
     JsonTypeSet,
 };
 
@@ -34,6 +34,7 @@ fn emit(kind: &SchemaKind, draft: Draft) -> Value {
         SchemaKind::Enum(values) => emit_enum(values.as_slice()),
         SchemaKind::String(leaf) => emit_string(leaf.get()),
         SchemaKind::Integer(leaf) => emit_integer(leaf.get()),
+        SchemaKind::Number(leaf) => emit_number(leaf.get(), draft),
         SchemaKind::MultiType(set) => emit_multi_type(*set),
         // The body emits a `const`/`enum` object without a `type` key, so adding `type` beside it
         // expresses "both must hold" and re-parses to the same IR.
@@ -96,6 +97,34 @@ fn emit_string(leaf: &StringLeaf) -> Value {
     }
     if !conjuncts.is_empty() {
         map.insert("allOf".into(), Value::Array(conjuncts));
+    }
+    Value::Object(map)
+}
+
+/// Emit a number leaf as `{"type":"number"}` plus its interval bounds, using the exclusive spelling
+/// for an endpoint the interval does not admit.
+fn emit_number(leaf: &NumberLeaf, draft: Draft) -> Value {
+    let mut map = Map::new();
+    map.insert("type".into(), Value::String("number".into()));
+    // Draft 4 spells exclusivity as a boolean flag beside the bound; later drafts give it its own
+    // numeric keyword.
+    let draft4 = matches!(draft, Draft::Draft4);
+    for (bound, inclusive_key, exclusive_key) in [
+        (leaf.minimum.as_ref(), "minimum", "exclusiveMinimum"),
+        (leaf.maximum.as_ref(), "maximum", "exclusiveMaximum"),
+    ] {
+        let Some(bound) = bound else {
+            continue;
+        };
+        let limit = Value::Number(bound.to_number());
+        if bound.is_inclusive() {
+            map.insert(inclusive_key.into(), limit);
+        } else if draft4 {
+            map.insert(inclusive_key.into(), limit);
+            map.insert(exclusive_key.into(), Value::Bool(true));
+        } else {
+            map.insert(exclusive_key.into(), limit);
+        }
     }
     Value::Object(map)
 }

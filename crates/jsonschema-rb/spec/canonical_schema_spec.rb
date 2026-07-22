@@ -6,7 +6,7 @@ DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
 
 RSpec.describe "JSONSchema.canonicalize" do
   [
-    { "allOf" => [{ "type" => "integer" }, { "minimum" => 0 }] },
+    { "properties" => { "a" => { "type" => "string" } } },
     { "$defs" => { "a" => { "type" => "null" } }, "$ref" => "#/$defs/a" }
   ].each do |schema|
     it "round-trips unmodeled #{schema.inspect} verbatim" do
@@ -98,6 +98,16 @@ RSpec.describe "JSONSchema.canonicalize" do
     end
   end
 
+  it "view returns NumberView with its real interval" do
+    case JSONSchema.canonicalize({ "type" => "number", "minimum" => 2, "exclusiveMaximum" => 5 }).view
+    in JSONSchema::Canonical::NumberView[minimum:, exclusive_minimum:, maximum:, exclusive_maximum:]
+      expect(minimum).to eq(2)
+      expect(exclusive_minimum).to be(false)
+      expect(maximum).to eq(5)
+      expect(exclusive_maximum).to be(true)
+    end
+  end
+
   it "view returns IntegerView with its divisor" do
     case JSONSchema.canonicalize({ "type" => "integer", "multipleOf" => 3 }).view
     in JSONSchema::Canonical::IntegerView[minimum:, maximum:, multiple_of:]
@@ -150,6 +160,7 @@ RSpec.describe "JSONSchema.canonicalize" do
     "TypedGroupView" => [{ "type" => "integer", "enum" => [1, 2] }, %i[type_name]],
     "StringView" => [{ "type" => "string", "minLength" => 2, "pattern" => "^a" }, %i[min_length max_length patterns formats]],
     "IntegerView" => [{ "type" => "integer", "minimum" => 2, "maximum" => 9 }, %i[minimum maximum multiple_of]],
+    "NumberView" => [{ "type" => "number", "minimum" => 2 }, %i[minimum exclusive_minimum maximum exclusive_maximum]],
     "ConstView" => [{ "const" => nil }, %i[value]],
     "EnumView" => [{ "enum" => [1, 2] }, %i[values]],
     "RawView" => [{ "not" => {} }, %i[schema]]

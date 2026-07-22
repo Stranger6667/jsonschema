@@ -8,7 +8,7 @@ DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
 @pytest.mark.parametrize(
     "schema",
     [
-        {"allOf": [{"type": "integer"}, {"minimum": 0}]},
+        {"properties": {"a": {"type": "string"}}},
         {"$defs": {"a": {"type": "null"}}, "$ref": "#/$defs/a"},
     ],
 )
@@ -119,6 +119,22 @@ def test_view_string_formats():
         case canonical.StringView(patterns=patterns, formats=formats):
             assert patterns == []
             assert formats == ["email"]
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
+def test_view_number_interval():
+    match canonicalize({"type": "number", "minimum": 2, "exclusiveMaximum": 5}).view():
+        case canonical.NumberView(
+            minimum=minimum,
+            exclusive_minimum=exclusive_minimum,
+            maximum=maximum,
+            exclusive_maximum=exclusive_maximum,
+        ):
+            assert minimum == 2
+            assert exclusive_minimum is False
+            assert maximum == 5
+            assert exclusive_maximum is True
         case other:
             pytest.fail(f"unexpected view: {other!r}")
 

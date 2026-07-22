@@ -2,7 +2,10 @@ use serde_json::{Number, Value};
 
 use crate::{
     canonical::{
-        ir::{BoundCardinality, BoundInteger, CanonicalJson, IntegerLeaf, SchemaKind, StringLeaf},
+        ir::{
+            BoundCardinality, BoundInteger, BoundNumber, CanonicalJson, IntegerLeaf, NumberLeaf,
+            SchemaKind, StringLeaf,
+        },
         CanonicalSchema,
     },
     JsonType, JsonTypeSet,
@@ -32,6 +35,8 @@ pub enum CanonicalView {
     String(StringView),
     /// An integer value within a range.
     Integer(IntegerView),
+    /// A number value within a real interval.
+    Number(NumberView),
     Const(Value),
     Enum(Vec<Value>),
     /// A value matches iff at least one branch matches.
@@ -58,6 +63,16 @@ pub struct StringView {
     pub formats: Vec<String>,
 }
 
+/// Payload of [`CanonicalView::Number`]: the interval bounds on a number value, each with whether
+/// the bound itself is admitted.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NumberView {
+    pub minimum: Option<Number>,
+    pub exclusive_minimum: bool,
+    pub maximum: Option<Number>,
+    pub exclusive_maximum: bool,
+}
+
 /// Payload of [`CanonicalView::Integer`]: the interval bounds and divisor on an integer value.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IntegerView {
@@ -78,6 +93,7 @@ impl CanonicalSchema {
             }),
             SchemaKind::String(leaf) => CanonicalView::String(string_view(leaf.get())),
             SchemaKind::Integer(bounds) => CanonicalView::Integer(integer_view(bounds.get())),
+            SchemaKind::Number(leaf) => CanonicalView::Number(number_view(leaf.get())),
             SchemaKind::Const(value) => CanonicalView::Const(value.to_value()),
             SchemaKind::Enum(values) => CanonicalView::Enum(
                 values
@@ -103,6 +119,15 @@ impl CanonicalSchema {
     #[must_use]
     pub fn kind(&self) -> CanonicalKind {
         self.schema_kind().into()
+    }
+}
+
+fn number_view(leaf: &NumberLeaf) -> NumberView {
+    NumberView {
+        minimum: leaf.minimum.as_ref().map(BoundNumber::to_number),
+        exclusive_minimum: leaf.minimum.as_ref().is_some_and(|b| !b.is_inclusive()),
+        maximum: leaf.maximum.as_ref().map(BoundNumber::to_number),
+        exclusive_maximum: leaf.maximum.as_ref().is_some_and(|b| !b.is_inclusive()),
     }
 }
 

@@ -7,6 +7,7 @@ FalseView = _canonical.FalseView
 MultiTypeView = _canonical.MultiTypeView
 TypedGroupView = _canonical.TypedGroupView
 StringView = _canonical.StringView
+NumberView = _canonical.NumberView
 IntegerView = _canonical.IntegerView
 AnyOfView = _canonical.AnyOfView
 ConstView = _canonical.ConstView
@@ -19,6 +20,7 @@ CanonicalViewType = (
     | MultiTypeView
     | TypedGroupView
     | StringView
+    | NumberView
     | IntegerView
     | AnyOfView
     | ConstView
@@ -64,6 +66,7 @@ __all__ = [
     "MultiTypeView",
     "RawView",
     "StringView",
+    "NumberView",
     "TrueView",
     "TypedGroupView",
     "json",
