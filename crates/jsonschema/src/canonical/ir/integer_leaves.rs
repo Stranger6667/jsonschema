@@ -1,4 +1,4 @@
-use crate::canonical::ir::{BoundInteger, Bounds, IntegerBounds, IntegerLeaf};
+use crate::canonical::ir::{drop_subsumed, Bounds, Divisors, IntegerBounds, IntegerLeaf};
 
 /// Integer leaves merged per divisor and free of subsumed intervals. Inserts are batched; the form
 /// is restored before any read, so the order in which leaves arrive cannot change the result.
@@ -29,7 +29,14 @@ impl IntegerLeaves {
         }
         let was_empty = self.leaves.is_empty();
         self.leaves = merge(std::mem::take(&mut self.leaves));
-        drop_subsumed(&mut self.leaves);
+        // A coarser progression over a wider interval admits every value of a finer one.
+        // e.g.  anyOf [
+        //         {"type": "integer", "multipleOf": 2},
+        //         {"type": "integer", "multipleOf": 4}
+        //       ]  =>  {"type": "integer", "multipleOf": 2}
+        drop_subsumed(&mut self.leaves, |outer, inner| {
+            outer.bounds.covers(&inner.bounds) && outer.multiple_of.divide_all(&inner.multiple_of)
+        });
         self.canonical = true;
         // `is_empty` reads the batch without canonicalizing, which relies on this.
         debug_assert_eq!(
@@ -73,7 +80,7 @@ impl IntoIterator for IntegerLeaves {
 
 /// The divisor shared by a merge group; only the interval differs within one.
 struct Group {
-    divisor: Option<BoundInteger>,
+    divisor: Divisors,
 }
 
 /// Fold the intervals of leaves carrying the same divisor.
@@ -129,49 +136,5 @@ fn flush_group(
             bounds,
             multiple_of: multiple_of.clone(),
         });
-    }
-}
-
-/// Drop a leaf whose values another leaf already admits: an interval that contains it, under a
-/// divisor that divides its own. A coarser progression admits every value of a finer one.
-/// e.g.  anyOf [
-///         {"type": "integer", "multipleOf": 2},
-///         {"type": "integer", "multipleOf": 4}
-///       ]  =>  {"type": "integer", "multipleOf": 2}
-fn drop_subsumed(leaves: &mut Vec<IntegerLeaf>) {
-    if leaves.len() < 2 {
-        return;
-    }
-    let mut keep = vec![true; leaves.len()];
-    for (index, leaf) in leaves.iter().enumerate() {
-        for (other_index, other) in leaves.iter().enumerate() {
-            if index == other_index || !keep[other_index] || !keep[index] {
-                continue;
-            }
-            // `merge` sorted by divisor, and a divisor that divides another is smaller than it, so
-            // the coarser leaf always comes first.
-            if other.bounds.covers(&leaf.bounds)
-                && divides(other.multiple_of.as_ref(), leaf.multiple_of.as_ref())
-                && index > other_index
-            {
-                keep[index] = false;
-            }
-        }
-    }
-    let mut index = 0;
-    leaves.retain(|_| {
-        let keeps = keep[index];
-        index += 1;
-        keeps
-    });
-}
-
-/// Whether every multiple of `finer` is a multiple of `coarser`; absent means "no divisor", which
-/// every progression refines.
-fn divides(coarser: Option<&BoundInteger>, finer: Option<&BoundInteger>) -> bool {
-    match (coarser, finer) {
-        (None, _) => true,
-        (Some(_), None) => false,
-        (Some(coarser), Some(finer)) => coarser.divides(finer),
     }
 }

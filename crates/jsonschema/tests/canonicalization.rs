@@ -394,20 +394,191 @@ fn draft_stamps_its_schema_uri(draft: Draft, uri: &str) {
     );
 }
 
-// Default build: a least common multiple past `i64` leaves zero as the only common multiple in
-// range. Arbitrary precision holds it exactly, so the leaf keeps its divisor instead.
+// Past `f64` precision a whole divisor keeps exact modulo only under arbitrary precision, so the
+// forms below are default-build behaviour.
 #[cfg(not(feature = "arbitrary-precision"))]
 #[test_case(
+    r#"{"type": "integer", "multipleOf": 9007199254740993}"#,
+    &json!({"type": "integer", "multipleOf": 9_007_199_254_740_993_u64});
+    "a divisor no decimal spells is kept as written"
+)]
+#[test_case(
+    r#"{"type": "integer", "multipleOf": 4611686018427387903}"#,
+    &json!({"type": "integer", "multipleOf": 4_611_686_018_427_387_903_u64});
+    "a divisor past f64 precision is kept as written"
+)]
+#[test_case(
+    r#"{"type": "integer", "multipleOf": 1e30}"#,
+    &json!({"type": "integer", "multipleOf": 1e30});
+    "a divisor past the integer range is kept as written"
+)]
+#[test_case(
     r#"{"allOf":[{"type":"integer","multipleOf":9007199254740992},{"type":"integer","multipleOf":9007199254740991}]}"#,
-    &json!({"const": 0});
-    "only zero survives"
+    &json!({"type": "integer", "allOf": [{"multipleOf": 9_007_199_254_740_991_u64}, {"multipleOf": 9_007_199_254_740_992_u64}]});
+    "divisors with no exact common multiple stay apart"
 )]
 #[test_case(
     r#"{"allOf":[{"type":"integer","multipleOf":9007199254740992,"minimum":1},{"type":"integer","multipleOf":9007199254740991}]}"#,
-    &json!({"not": {}});
-    "nothing survives once zero is excluded"
+    &json!({"type": "integer", "minimum": 9_007_199_254_740_992_u64, "allOf": [{"multipleOf": 9_007_199_254_740_991_u64}, {"multipleOf": 9_007_199_254_740_992_u64}]});
+    "divisors with no exact common multiple keep a snapped bound"
 )]
-fn oversized_common_multiple(text: &str, expected: &Value) {
+#[test_case(
+    r#"{"allOf":[{"type":"number","multipleOf":3},{"type":"number","multipleOf":3002399751580331}]}"#,
+    &json!({"type": "integer", "allOf": [{"multipleOf": 3}, {"multipleOf": 3_002_399_751_580_331_u64}]});
+    "divisors whose common multiple no decimal spells stay apart"
+)]
+fn divisors_past_exact_precision(text: &str, expected: &Value) {
+    let schema: Value = serde_json::from_str(text).expect("valid schema JSON");
+    let mut form = canonicalize(&schema)
+        .expect("canonicalizes")
+        .to_json_schema();
+    form.as_object_mut().expect("object").remove("$schema");
+    assert_eq!(&form, expected);
+}
+
+// A member the divisor admits survives even where the integer type cannot hold it.
+#[cfg(not(feature = "arbitrary-precision"))]
+#[test]
+fn divisor_keeps_member_past_representable_range() {
+    let schema = json!({"allOf": [{"type": "integer", "multipleOf": 2}, {"const": 1e30}]});
+    let mut form = canonicalize(&schema)
+        .expect("canonicalizes")
+        .to_json_schema();
+    form.as_object_mut().expect("object").remove("$schema");
+    assert_eq!(form, json!({"const": 1e30}));
+}
+
+// Membership for a divisor is decided by the validator's own arithmetic, so every rewrite the
+// algebra makes rests on this agreeing with a compiled `multipleOf`.
+#[test_case("2")]
+#[test_case("3")]
+#[test_case("1")]
+#[test_case("0.5")]
+#[test_case("0.75")]
+#[test_case("1.5")]
+#[test_case("0.123456789")]
+#[test_case("9007199254740992")]
+#[test_case("9007199254740993")]
+#[test_case("4503599627370496")]
+#[test_case("1e300")]
+#[test_case("1e-7")]
+fn divisor_oracle_matches_the_validator(divisor: &str) {
+    const INSTANCES: &[&str] = &[
+        "0",
+        "1",
+        "2",
+        "3",
+        "6",
+        "-4",
+        "1.5",
+        "2.5",
+        "0.25",
+        "9007199254740993",
+        "12345678900000001",
+        "27021597764222977",
+        "1e30",
+        "-9007199254740993",
+    ];
+    let divisor: serde_json::Number = divisor.parse().expect("divisor");
+    let validator = jsonschema::validator_for(&json!({"multipleOf": divisor})).expect("compiles");
+    for instance in INSTANCES {
+        let instance: serde_json::Number = instance.parse().expect("instance");
+        assert_eq!(
+            jsonschema_value::numeric_check::satisfies_multiple_of(&divisor, &instance),
+            validator.is_valid(&Value::Number(instance.clone())),
+            "multipleOf {divisor} on {instance}"
+        );
+    }
+}
+
+// A divisor no `f64` spells still constrains, so the leaf carries it instead of the document staying
+// raw; only the arithmetic that would need its exact value is skipped.
+#[cfg(not(feature = "arbitrary-precision"))]
+#[test]
+fn divisor_no_decimal_spells_is_modeled() {
+    let schema = json!({"type": "number", "multipleOf": 9_007_199_254_740_993_u64});
+    let canonical = canonicalize(&schema).expect("canonicalizes");
+    assert_ne!(canonical.kind(), jsonschema::canonical::CanonicalKind::Raw);
+    let mut form = canonical.to_json_schema();
+    form.as_object_mut().expect("object").remove("$schema");
+    // The validator reads the divisor as 2^53, whose multiples are all whole.
+    assert_eq!(
+        form,
+        json!({"type": "integer", "multipleOf": 9_007_199_254_740_993_u64})
+    );
+}
+
+// Bounds past `f64` precision: snapping must not move an end onto a value the validator reads
+// differently, and a progression whose next multiple is unrepresentable is not empty.
+#[cfg(not(feature = "arbitrary-precision"))]
+#[test_case(
+    r#"{"type":"number","minimum":9223372036854775807,"multipleOf":1}"#,
+    &["9223372036854775807", "9223372036854775808"];
+    "a bound with no representable multiple"
+)]
+#[test_case(
+    r#"{"type":"number","minimum":-4,"maximum":9223372036854775807,"multipleOf":0.5}"#,
+    &["9223372036854775808", "-4", "0.5"];
+    "an upper end past exact precision"
+)]
+#[test_case(
+    r#"{"type":"number","exclusiveMinimum":9007199254740992,"multipleOf":0.5}"#,
+    &["9007199254740992", "9007199254740993"];
+    "an excluded end past exact precision"
+)]
+#[test_case(
+    r#"{"type":"integer","minimum":9223372036854775807,"multipleOf":2}"#,
+    &["9223372036854775808", "1e30", "9223372036854775807"];
+    "an integer bound with no representable multiple"
+)]
+fn wide_bounds_keep_validation(text: &str, instances: &[&str]) {
+    let schema: Value = serde_json::from_str(text).expect("valid schema JSON");
+    let emitted = canonicalize(&schema)
+        .expect("canonicalizes")
+        .to_json_schema();
+    for instance in instances {
+        let instance: Value = serde_json::from_str(instance).expect("instance");
+        assert_eq!(
+            jsonschema::is_valid(&schema, &instance),
+            jsonschema::is_valid(&emitted, &instance),
+            "{instance} against {emitted}"
+        );
+    }
+}
+
+// A divisor of one adds nothing beside a whole one, whose multiples are already whole. The wide
+// divisor keeps its spelling only in the default build.
+#[cfg(not(feature = "arbitrary-precision"))]
+#[test]
+fn identity_divisor_drops_beside_a_whole_one() {
+    let schema = json!({"allOf": [
+        {"type": "number", "multipleOf": 2},
+        {"type": "number", "minimum": 0, "multipleOf": 1e30}
+    ]});
+    let mut form = canonicalize(&schema)
+        .expect("canonicalizes")
+        .to_json_schema();
+    form.as_object_mut().expect("object").remove("$schema");
+    assert_eq!(
+        form,
+        json!({"type": "integer", "minimum": 0, "multipleOf": 1e30})
+    );
+}
+
+// Arbitrary precision decides every divisor exactly, so divisors the default build reads with
+// different arithmetic still fold there.
+#[cfg(feature = "arbitrary-precision")]
+#[test_case(
+    r#"{"allOf":[{"type":"number","multipleOf":3},{"type":"number","multipleOf":1.5}]}"#,
+    &json!({"type": "integer", "multipleOf": 3});
+    "a whole divisor stands for a fractional one it covers"
+)]
+#[test_case(
+    r#"{"allOf":[{"type":"number","multipleOf":2},{"type":"number","multipleOf":2.5}]}"#,
+    &json!({"type": "integer", "multipleOf": 10});
+    "unlike divisors fold to their common multiple"
+)]
+fn unlike_divisors_fold_under_arbitrary_precision(text: &str, expected: &Value) {
     let schema: Value = serde_json::from_str(text).expect("valid schema JSON");
     let mut form = canonicalize(&schema)
         .expect("canonicalizes")

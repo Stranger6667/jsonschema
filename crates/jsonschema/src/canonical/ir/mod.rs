@@ -13,6 +13,8 @@ mod array_leaves;
 mod bound_cardinality;
 mod bound_integer;
 mod bound_number;
+mod bound_rational;
+mod divisors;
 mod integer_leaves;
 mod number_leaves;
 mod object_leaves;
@@ -23,6 +25,8 @@ pub(crate) use array_leaves::ArrayLeaves;
 pub(crate) use bound_cardinality::BoundCardinality;
 pub(crate) use bound_integer::{BoundInteger, Round};
 pub(crate) use bound_number::{BoundNumber, Side};
+pub(crate) use bound_rational::BoundRational;
+pub(crate) use divisors::Divisors;
 pub(crate) use integer_leaves::IntegerLeaves;
 pub(crate) use number_leaves::NumberLeaves;
 pub(crate) use object_leaves::ObjectLeaves;
@@ -198,11 +202,20 @@ pub(crate) enum SchemaKind {
 pub(crate) struct NumberLeaf {
     pub(crate) minimum: Option<BoundNumber>,
     pub(crate) maximum: Option<BoundNumber>,
+    /// Divisors every admitted value is a multiple of.
+    pub(crate) multiple_of: Divisors,
 }
 
 impl NumberLeaf {
     /// Whether no real value fits between the two ends.
     pub(crate) fn is_vacant(&self) -> bool {
+        // An interval holding no multiple of the divisor admits nothing either.
+        if !self
+            .multiple_of
+            .admit_between(self.minimum.as_ref(), self.maximum.as_ref())
+        {
+            return true;
+        }
         let (Some(min), Some(max)) = (&self.minimum, &self.maximum) else {
             return false;
         };
@@ -221,8 +234,8 @@ impl MaybeEmpty for NumberLeaf {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub(crate) struct IntegerLeaf {
     pub(crate) bounds: IntegerBounds,
-    /// A positive divisor every admitted value is a multiple of.
-    pub(crate) multiple_of: Option<BoundInteger>,
+    /// Divisors every admitted value is a multiple of.
+    pub(crate) multiple_of: Divisors,
 }
 
 impl MaybeEmpty for IntegerLeaf {
@@ -493,6 +506,31 @@ pub(crate) fn tighter<T>(
         (Some(a), Some(b)) => Some(keep(a, b)),
         (bound, None) | (None, bound) => bound,
     }
+}
+
+/// Drop every leaf whose values another already admits, where `subsumes(outer, inner)` says the
+/// values of `inner` all lie in `outer`. A leaf already dropped neither drops nor saves another.
+pub(crate) fn drop_subsumed<T>(leaves: &mut Vec<T>, subsumes: impl Fn(&T, &T) -> bool) {
+    if leaves.len() < 2 {
+        return;
+    }
+    let mut keep = vec![true; leaves.len()];
+    for (index, leaf) in leaves.iter().enumerate() {
+        for (other_index, other) in leaves.iter().enumerate() {
+            if index == other_index || !keep[other_index] || !keep[index] {
+                continue;
+            }
+            if subsumes(other, leaf) {
+                keep[index] = false;
+            }
+        }
+    }
+    let mut index = 0;
+    leaves.retain(|_| {
+        let keeps = keep[index];
+        index += 1;
+        keeps
+    });
 }
 
 pub(crate) type LengthBounds = Bounds<BoundCardinality>;

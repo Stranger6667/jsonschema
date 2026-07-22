@@ -139,6 +139,7 @@ impl RbCanonicalSchema {
                     exclusive_minimum: view.exclusive_minimum,
                     maximum: view.maximum,
                     exclusive_maximum: view.exclusive_maximum,
+                    multiple_of: view.multiple_of,
                 })
                 .as_value(),
             CanonicalView::Integer(view) => ruby
@@ -311,6 +312,17 @@ fn bound_to_ruby(ruby: &Ruby, bound: Option<&serde_json::Number>) -> Result<Valu
     }
 }
 
+fn divisors_to_ruby(ruby: &Ruby, divisors: &[serde_json::Number]) -> Result<Value, Error> {
+    let array = ruby.ary_new_capa(divisors.len());
+    for divisor in divisors {
+        array.push(value_to_ruby(
+            ruby,
+            &serde_json::Value::Number(divisor.clone()),
+        )?)?;
+    }
+    Ok(array.as_value())
+}
+
 fn strings_to_ruby(ruby: &Ruby, values: &[String]) -> Result<Value, Error> {
     let array = ruby.ary_new_capa(values.len());
     for value in values {
@@ -376,6 +388,7 @@ pub struct NumberView {
     exclusive_minimum: bool,
     maximum: Option<serde_json::Number>,
     exclusive_maximum: bool,
+    multiple_of: Vec<serde_json::Number>,
 }
 
 impl DataTypeFunctions for NumberView {}
@@ -397,13 +410,18 @@ impl NumberView {
         ruby.into_value(rb_self.exclusive_maximum)
     }
 
+    fn multiple_of(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        divisors_to_ruby(ruby, &rb_self.multiple_of)
+    }
+
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
-            "#<JSONSchema::Canonical::NumberView minimum={} exclusive_minimum={} maximum={} exclusive_maximum={}>",
+            "#<JSONSchema::Canonical::NumberView minimum={} exclusive_minimum={} maximum={} exclusive_maximum={} multiple_of={}>",
             Self::minimum(ruby, rb_self)?.inspect(),
             Self::exclusive_minimum(ruby, rb_self).inspect(),
             Self::maximum(ruby, rb_self)?.inspect(),
-            Self::exclusive_maximum(ruby, rb_self).inspect()
+            Self::exclusive_maximum(ruby, rb_self).inspect(),
+            Self::multiple_of(ruby, rb_self)?.inspect()
         ))
     }
 
@@ -419,6 +437,10 @@ impl NumberView {
             ruby.sym_new("exclusive_maximum"),
             Self::exclusive_maximum(ruby, rb_self),
         )?;
+        hash.aset(
+            ruby.sym_new("multiple_of"),
+            Self::multiple_of(ruby, rb_self)?,
+        )?;
         Ok(hash)
     }
 }
@@ -429,7 +451,7 @@ impl NumberView {
 pub struct IntegerView {
     minimum: Option<serde_json::Number>,
     maximum: Option<serde_json::Number>,
-    multiple_of: Option<serde_json::Number>,
+    multiple_of: Vec<serde_json::Number>,
 }
 
 impl DataTypeFunctions for IntegerView {}
@@ -444,7 +466,7 @@ impl IntegerView {
     }
 
     fn multiple_of(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
-        bound_to_ruby(ruby, rb_self.multiple_of.as_ref())
+        divisors_to_ruby(ruby, &rb_self.multiple_of)
     }
 
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
@@ -771,6 +793,7 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
         "exclusive_maximum",
         method!(NumberView::exclusive_maximum, 0),
     )?;
+    number_view.define_method("multiple_of", method!(NumberView::multiple_of, 0))?;
     number_view.define_method("inspect", method!(NumberView::inspect, 0))?;
     number_view.define_method("deconstruct_keys", method!(NumberView::deconstruct_keys, 1))?;
 

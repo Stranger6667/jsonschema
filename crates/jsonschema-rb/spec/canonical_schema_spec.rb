@@ -128,12 +128,19 @@ RSpec.describe "JSONSchema.canonicalize" do
     end
   end
 
+  it "view exposes the divisor of a number leaf" do
+    case JSONSchema.canonicalize({ "type" => "number", "multipleOf" => 0.5 }).view
+    in JSONSchema::Canonical::NumberView[multiple_of:]
+      expect(multiple_of).to eq([0.5])
+    end
+  end
+
   it "view returns IntegerView with its divisor" do
     case JSONSchema.canonicalize({ "type" => "integer", "multipleOf" => 3 }).view
     in JSONSchema::Canonical::IntegerView[minimum:, maximum:, multiple_of:]
       expect(minimum).to be_nil
       expect(maximum).to be_nil
-      expect(multiple_of).to eq(3)
+      expect(multiple_of).to eq([3])
     end
   end
 
@@ -180,7 +187,7 @@ RSpec.describe "JSONSchema.canonicalize" do
     "TypedGroupView" => [{ "type" => "integer", "enum" => [1, 2] }, %i[type_name]],
     "StringView" => [{ "type" => "string", "minLength" => 2, "pattern" => "^a" }, %i[min_length max_length patterns formats]],
     "IntegerView" => [{ "type" => "integer", "minimum" => 2, "maximum" => 9 }, %i[minimum maximum multiple_of]],
-    "NumberView" => [{ "type" => "number", "minimum" => 2 }, %i[minimum exclusive_minimum maximum exclusive_maximum]],
+    "NumberView" => [{ "type" => "number", "minimum" => 2 }, %i[minimum exclusive_minimum maximum exclusive_maximum multiple_of]],
     "ArrayView" => [{ "type" => "array", "minItems" => 1 }, %i[min_items max_items unique_items]],
     "ObjectView" => [{ "type" => "object", "minProperties" => 1 }, %i[min_properties max_properties required]],
     "ConstView" => [{ "const" => nil }, %i[value]],

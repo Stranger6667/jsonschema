@@ -41,10 +41,6 @@ impl BoundInteger {
         }
     }
 
-    pub(crate) fn zero() -> Self {
-        Self(InnerInteger::from(0))
-    }
-
     pub(crate) fn is_one(&self) -> bool {
         self.0.is_one()
     }
@@ -106,33 +102,9 @@ impl BoundInteger {
         }
     }
 
-    /// Whether `self` divides `value` exactly. `self` is a positive divisor.
-    pub(crate) fn divides(&self, value: &Self) -> bool {
-        (&value.0 % &self.0).is_zero()
-    }
-
-    /// The least common multiple of two positive divisors, or `None` when it is not representable.
-    pub(crate) fn checked_lcm(&self, other: &Self) -> Option<Self> {
-        #[cfg(not(feature = "arbitrary-precision"))]
-        {
-            self.0
-                .checked_div(gcd(&self.0, &other.0))?
-                .checked_mul(other.0)
-                .map(Self)
-        }
-        #[cfg(feature = "arbitrary-precision")]
-        {
-            Some(Self(&self.0 / gcd(&self.0, &other.0) * &other.0))
-        }
-    }
-
     /// The multiple of `self` nearest `value` in `direction`, or `None` when it is not representable.
     pub(crate) fn multiple_beyond(&self, value: &Self, direction: Round) -> Option<Self> {
         Some(Self(snap(&self.0, &value.0, direction)?))
-    }
-
-    pub(crate) fn is_positive(&self) -> bool {
-        self.0.is_positive()
     }
 
     /// This bound minus one, or `None` when that leaves the representable range.
@@ -215,18 +187,6 @@ fn snap(step: &InnerInteger, value: &InnerInteger, direction: Round) -> Option<I
             Round::Down => value - rest,
         })
     }
-}
-
-/// The greatest common divisor of two positive values.
-fn gcd(left: &InnerInteger, right: &InnerInteger) -> InnerInteger {
-    let mut a = left.clone();
-    let mut b = right.clone();
-    while !b.is_zero() {
-        let rest = &a % &b;
-        a = b;
-        b = rest;
-    }
-    a
 }
 
 #[cfg(test)]

@@ -3,8 +3,8 @@ use serde_json::{Number, Value};
 use crate::{
     canonical::{
         ir::{
-            ArrayLeaf, BoundCardinality, BoundInteger, BoundNumber, CanonicalJson, IntegerLeaf,
-            NumberLeaf, ObjectLeaf, SchemaKind, StringLeaf,
+            ArrayLeaf, BoundCardinality, BoundInteger, BoundNumber, BoundRational, CanonicalJson,
+            Divisors, IntegerLeaf, NumberLeaf, ObjectLeaf, SchemaKind, StringLeaf,
         },
         CanonicalSchema,
     },
@@ -68,13 +68,14 @@ pub struct StringView {
 }
 
 /// Payload of [`CanonicalView::Number`]: the interval bounds on a number value, each with whether
-/// the bound itself is admitted.
+/// the bound itself is admitted, and the divisor every admitted value is a multiple of.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NumberView {
     pub minimum: Option<Number>,
     pub exclusive_minimum: bool,
     pub maximum: Option<Number>,
     pub exclusive_maximum: bool,
+    pub multiple_of: Vec<Number>,
 }
 
 /// Payload of [`CanonicalView::Array`]: the `minItems`/`maxItems` bounds and uniqueness of an array value.
@@ -101,7 +102,7 @@ pub struct ObjectView {
 pub struct IntegerView {
     pub minimum: Option<Number>,
     pub maximum: Option<Number>,
-    pub multiple_of: Option<Number>,
+    pub multiple_of: Vec<Number>,
 }
 
 impl CanonicalSchema {
@@ -153,6 +154,7 @@ fn number_view(leaf: &NumberLeaf) -> NumberView {
         exclusive_minimum: leaf.minimum.as_ref().is_some_and(|b| !b.is_inclusive()),
         maximum: leaf.maximum.as_ref().map(BoundNumber::to_number),
         exclusive_maximum: leaf.maximum.as_ref().is_some_and(|b| !b.is_inclusive()),
+        multiple_of: divisor_numbers(&leaf.multiple_of),
     }
 }
 
@@ -160,7 +162,7 @@ fn integer_view(leaf: &IntegerLeaf) -> IntegerView {
     IntegerView {
         minimum: leaf.bounds.minimum.as_ref().map(BoundInteger::to_number),
         maximum: leaf.bounds.maximum.as_ref().map(BoundInteger::to_number),
-        multiple_of: leaf.multiple_of.as_ref().map(BoundInteger::to_number),
+        multiple_of: divisor_numbers(&leaf.multiple_of),
     }
 }
 
@@ -203,4 +205,12 @@ fn string_view(leaf: &StringLeaf) -> StringView {
         patterns: leaf.patterns.iter().map(ToString::to_string).collect(),
         formats: leaf.formats.iter().map(ToString::to_string).collect(),
     }
+}
+
+fn divisor_numbers(divisors: &Divisors) -> Vec<Number> {
+    divisors
+        .as_slice()
+        .iter()
+        .map(BoundRational::to_number)
+        .collect()
 }

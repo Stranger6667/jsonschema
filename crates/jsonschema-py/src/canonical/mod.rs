@@ -120,6 +120,7 @@ impl PyCanonicalSchema {
                         })
                         .transpose()?,
                     exclusive_maximum: view.exclusive_maximum,
+                    multiple_of: divisors_to_python(py, view.multiple_of)?,
                 },
             )?
             .into_any(),
@@ -138,12 +139,7 @@ impl PyCanonicalSchema {
                             crate::value_to_python(py, &serde_json::Value::Number(number))
                         })
                         .transpose()?,
-                    multiple_of: view
-                        .multiple_of
-                        .map(|number| {
-                            crate::value_to_python(py, &serde_json::Value::Number(number))
-                        })
-                        .transpose()?,
+                    multiple_of: divisors_to_python(py, view.multiple_of)?,
                 },
             )?
             .into_any(),
@@ -361,17 +357,26 @@ pub(crate) struct NumberView {
     maximum: Option<Py<PyAny>>,
     #[pyo3(get)]
     exclusive_maximum: bool,
+    #[pyo3(get)]
+    multiple_of: Vec<Py<PyAny>>,
 }
 
 #[pymethods]
 impl NumberView {
     #[classattr]
-    fn __match_args__() -> (&'static str, &'static str, &'static str, &'static str) {
+    fn __match_args__() -> (
+        &'static str,
+        &'static str,
+        &'static str,
+        &'static str,
+        &'static str,
+    ) {
         (
             "minimum",
             "exclusive_minimum",
             "maximum",
             "exclusive_maximum",
+            "multiple_of",
         )
     }
 }
@@ -384,7 +389,7 @@ pub(crate) struct IntegerView {
     #[pyo3(get)]
     maximum: Option<Py<PyAny>>,
     #[pyo3(get)]
-    multiple_of: Option<Py<PyAny>>,
+    multiple_of: Vec<Py<PyAny>>,
 }
 
 #[pymethods]
@@ -526,4 +531,14 @@ pub(crate) fn init_module(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyRes
 
     module.add_submodule(&canonical_module)?;
     Ok(())
+}
+
+fn divisors_to_python(
+    py: Python<'_>,
+    divisors: Vec<serde_json::Number>,
+) -> PyResult<Vec<Py<PyAny>>> {
+    divisors
+        .into_iter()
+        .map(|number| crate::value_to_python(py, &serde_json::Value::Number(number)))
+        .collect()
 }
