@@ -1,6 +1,6 @@
 [package]
 name = "jsonschema-rb-ext"
-version = "0.48.2"
+version = "0.48.5"
 edition = "2021"
 publish = false
 

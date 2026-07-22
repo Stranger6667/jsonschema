@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.48.5] - 2026-07-22
+
 ### Performance
 
 - Avoid map lookups in some `properties` validators.
@@ -197,7 +199,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.2...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.5...HEAD
+[0.48.5]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.2...ruby-v0.48.5
 [0.48.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.1...ruby-v0.48.2
 [0.48.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.0...ruby-v0.48.1
 [0.48.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.47.0...ruby-v0.48.0
