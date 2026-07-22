@@ -961,7 +961,9 @@ pub(crate) use jsonschema_value::{
 /// };
 /// use serde_json::Value;
 ///
+/// #[derive(Default)]
 /// enum ToyValue {
+///     #[default]
 ///     Null,
 ///     Boolean(bool),
 ///     Number(f64),
@@ -978,9 +980,20 @@ pub(crate) use jsonschema_value::{
 ///     type Node<'a> = &'a ToyValue;
 ///     // Property names are prepared once at schema compile time.
 ///     type PreparedKey = String;
+///     // Scratch storage for nodes made from property names (`propertyNames`).
+///     type StringBuffer = ToyValue;
 ///
 ///     fn prepare_key(key: &str) -> String {
 ///         key.to_owned()
+///     }
+///
+///     fn with_string_node<T>(
+///         buffer: &mut ToyValue,
+///         string: &str,
+///         f: impl FnOnce(&ToyValue) -> T,
+///     ) -> T {
+///         *buffer = ToyValue::String(string.to_owned());
+///         f(buffer)
 ///     }
 /// }
 ///

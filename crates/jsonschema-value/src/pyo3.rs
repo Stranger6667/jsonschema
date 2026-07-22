@@ -39,9 +39,17 @@ pub struct Pyo3;
 impl Json for Pyo3 {
     type Node<'py> = PyNode<'py>;
     type PreparedKey = Py<PyString>;
+    type StringBuffer = ();
 
     fn prepare_key(key: &str) -> Py<PyString> {
         Python::attach(|py| PyString::intern(py, key).unbind())
+    }
+
+    fn with_string_node<T>((): &mut (), string: &str, f: impl FnOnce(PyNode<'_>) -> T) -> T {
+        Python::attach(|py| {
+            let object = PyString::new(py, string).into_any();
+            f(object.as_borrowed())
+        })
     }
 }
 

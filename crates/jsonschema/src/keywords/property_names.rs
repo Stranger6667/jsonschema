@@ -5,23 +5,20 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
-    Json, Node, Object, SerdeJson,
+    Json, Node, Object,
 };
 use serde_json::{Map, Value};
 
-pub(crate) struct PropertyNamesObjectValidator {
-    // Property names are always strings, validated via a materialized `Value::String`, so the names
-    // subschema is compiled against `serde_json` regardless of the instance representation.
-    node: SchemaNode<SerdeJson>,
+pub(crate) struct PropertyNamesObjectValidator<F: Json> {
+    node: SchemaNode<F>,
 }
 
-impl PropertyNamesObjectValidator {
+impl<F: Json> PropertyNamesObjectValidator<F> {
     #[inline]
-    pub(crate) fn compile<'a, F: Json>(
+    pub(crate) fn compile<'a>(
         ctx: &compiler::Context<F>,
         schema: &'a Value,
     ) -> CompilationResult<'a, F> {
-        let ctx = ctx.to_representation::<SerdeJson>();
         let ctx = ctx.new_at_location("propertyNames");
         Ok(Box::new(PropertyNamesObjectValidator {
             node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
@@ -29,23 +26,15 @@ impl PropertyNamesObjectValidator {
     }
 }
 
-// The names subschema takes a `&Value`, so each key is written into one reusable buffer instead of
-// allocating a fresh `String` per key.
-#[inline]
-fn write_member_name(wrapper: &mut Value, name: &str) {
-    if let Value::String(buffer) = wrapper {
-        buffer.clear();
-        buffer.push_str(name);
-    }
-}
-
-impl<F: Json> Validate<F> for PropertyNamesObjectValidator {
+impl<F: Json> Validate<F> for PropertyNamesObjectValidator<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
-            let mut wrapper = Value::String(String::new());
+            let mut buffer = F::StringBuffer::default();
             for (name, _) in object.members() {
-                write_member_name(&mut wrapper, name.as_ref());
-                if !self.node.is_valid(&&wrapper, ctx) {
+                let valid = F::with_string_node(&mut buffer, name.as_ref(), |node| {
+                    self.node.is_valid(&node, ctx)
+                });
+                if !valid {
                     return false;
                 }
             }
@@ -61,17 +50,21 @@ impl<F: Json> Validate<F> for PropertyNamesObjectValidator {
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Some(object) = instance.as_object() {
-            let mut wrapper = Value::String(String::new());
+            let mut buffer = F::StringBuffer::default();
             for (name, _) in object.members() {
-                write_member_name(&mut wrapper, name.as_ref());
-                if let Err(error) = self.node.validate(&&wrapper, location, tracker, ctx) {
+                let result = F::with_string_node(&mut buffer, name.as_ref(), |node| {
+                    self.node
+                        .validate(&node, location, tracker, ctx)
+                        .map_err(ValidationError::to_owned)
+                });
+                if let Err(error) = result {
                     let schema_path = error.schema_path().clone();
                     return Err(ValidationError::property_names(
                         schema_path.clone(),
                         crate::paths::capture_evaluation_path(tracker, &schema_path),
                         location.into(),
                         instance.to_value(),
-                        error.to_owned(),
+                        error,
                     ));
                 }
             }
@@ -88,17 +81,22 @@ impl<F: Json> Validate<F> for PropertyNamesObjectValidator {
     ) -> ErrorIterator<'i> {
         if let Some(object) = instance.as_object() {
             let mut errors = Vec::new();
-            let mut wrapper = Value::String(String::new());
+            let mut buffer = F::StringBuffer::default();
             for (name, _) in object.members() {
-                write_member_name(&mut wrapper, name.as_ref());
-                for error in self.node.iter_errors(&&wrapper, location, tracker, ctx) {
+                let name_errors: Vec<_> = F::with_string_node(&mut buffer, name.as_ref(), |node| {
+                    self.node
+                        .iter_errors(&node, location, tracker, ctx)
+                        .map(ValidationError::to_owned)
+                        .collect()
+                });
+                for error in name_errors {
                     let schema_path = error.schema_path().clone();
                     errors.push(ValidationError::property_names(
                         schema_path.clone(),
                         crate::paths::capture_evaluation_path(tracker, &schema_path),
                         location.into(),
                         instance.to_value(),
-                        error.to_owned(),
+                        error,
                     ));
                 }
             }
@@ -117,13 +115,11 @@ impl<F: Json> Validate<F> for PropertyNamesObjectValidator {
     ) -> EvaluationResult {
         if let Some(object) = instance.as_object() {
             let mut children = Vec::with_capacity(object.len());
-            let mut wrapper = Value::String(String::new());
+            let mut buffer = F::StringBuffer::default();
             for (name, _) in object.members() {
-                write_member_name(&mut wrapper, name.as_ref());
-                children.push(
-                    self.node
-                        .evaluate_instance(&&wrapper, location, tracker, ctx),
-                );
+                children.push(F::with_string_node(&mut buffer, name.as_ref(), |node| {
+                    self.node.evaluate_instance(&node, location, tracker, ctx)
+                }));
             }
             EvaluationResult::from_children(children)
         } else {

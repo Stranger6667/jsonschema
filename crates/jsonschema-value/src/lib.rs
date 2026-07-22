@@ -33,7 +33,20 @@ pub trait Json: Sized + Send + Sync + 'static {
     /// Property name prepared once at compile time, for repeated object lookups.
     type PreparedKey: Send + Sync;
 
+    /// Scratch storage for [`Json::with_string_node`], reusable across calls.
+    type StringBuffer: Default;
+
     fn prepare_key(key: &str) -> Self::PreparedKey;
+
+    /// Call `f` with a node holding `string`, backed by `buffer`.
+    ///
+    /// `propertyNames` validates each property name through this, so names run through the
+    /// same subschema machinery as any other node of the representation.
+    fn with_string_node<T>(
+        buffer: &mut Self::StringBuffer,
+        string: &str,
+        f: impl FnOnce(Self::Node<'_>) -> T,
+    ) -> T;
 }
 
 /// What tells one node from another within a validation call.
