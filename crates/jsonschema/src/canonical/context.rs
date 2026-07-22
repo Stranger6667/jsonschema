@@ -24,21 +24,32 @@ impl CompiledMatcher {
 pub(crate) struct CanonicalizationContext {
     draft: Draft,
     pattern_options: PatternEngineOptions,
+    /// When false `format` is an annotation, constrains nothing, and is dropped.
+    validate_formats: bool,
     /// `None` caches a rejected pattern so callers don't recompile it.
     regex_cache: RefCell<HashMap<Arc<str>, Option<Arc<CompiledMatcher>>>>,
 }
 
 impl CanonicalizationContext {
-    pub(crate) fn new(draft: Draft, pattern_options: PatternEngineOptions) -> Self {
+    pub(crate) fn new(
+        draft: Draft,
+        pattern_options: PatternEngineOptions,
+        validate_formats: bool,
+    ) -> Self {
         Self {
             draft,
             pattern_options,
+            validate_formats,
             regex_cache: RefCell::new(HashMap::new()),
         }
     }
 
     pub(crate) fn draft(&self) -> Draft {
         self.draft
+    }
+
+    pub(crate) fn validate_formats(&self) -> bool {
+        self.validate_formats
     }
 
     /// The pattern compiled under the configured engine, or `None` if the engine rejects it. Compiled

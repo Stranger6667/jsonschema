@@ -2001,5 +2001,19 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "not": {}
     }
+  },
+  {
+    "description": "two rigid formats that share no value collapse under assertions - date and uuid",
+    "draft": "draft2020-12",
+    "validate_formats": true,
+    "schema": {"allOf": [{"type": "string", "format": "date"}, {"type": "string", "format": "uuid"}]},
+    "satisfiable": false
+  },
+  {
+    "description": "the same rigid formats stay satisfiable when formats are annotations only",
+    "draft": "draft2020-12",
+    "validate_formats": false,
+    "schema": {"allOf": [{"type": "string", "format": "date"}, {"type": "string", "format": "uuid"}]},
+    "satisfiable": true
   }
 ]

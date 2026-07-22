@@ -71,18 +71,31 @@ fn emit_string(leaf: &StringLeaf) -> Value {
     if let Some(max) = &leaf.lengths.maximum {
         map.insert("maxLength".into(), Value::Number(max.to_number()));
     }
+    let mut conjuncts: Vec<Value> = Vec::new();
     match leaf.patterns.as_slice() {
         [] => {}
         [pattern] => {
             map.insert("pattern".into(), Value::String(pattern.to_string()));
         }
-        patterns => {
-            let conjuncts = patterns
+        patterns => conjuncts.extend(
+            patterns
                 .iter()
-                .map(|pattern| json!({ "pattern": pattern.as_ref() }))
-                .collect();
-            map.insert("allOf".into(), Value::Array(conjuncts));
+                .map(|pattern| json!({ "pattern": pattern.as_ref() })),
+        ),
+    }
+    match leaf.formats.as_slice() {
+        [] => {}
+        [format] => {
+            map.insert("format".into(), Value::String(format.to_string()));
         }
+        formats => conjuncts.extend(
+            formats
+                .iter()
+                .map(|format| json!({ "format": format.as_ref() })),
+        ),
+    }
+    if !conjuncts.is_empty() {
+        map.insert("allOf".into(), Value::Array(conjuncts));
     }
     Value::Object(map)
 }

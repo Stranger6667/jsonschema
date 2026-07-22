@@ -46,6 +46,7 @@ fn parse_schema(
     let mut min_length: Option<BoundCardinality> = None;
     let mut max_length: Option<BoundCardinality> = None;
     let mut patterns: Vec<Arc<str>> = Vec::new();
+    let mut formats: Vec<Arc<str>> = Vec::new();
     let mut minimum: Option<BoundInteger> = None;
     let mut maximum: Option<BoundInteger> = None;
     // Draft 4 spells exclusivity as a boolean modifier on `minimum`/`maximum`, which may be read
@@ -122,6 +123,12 @@ fn parse_schema(
                 // `pattern` matches anywhere in the string, so an empty one matches every string.
                 if !pattern.is_empty() {
                     patterns.push(pattern);
+                }
+            }
+            // An annotation-only `format` constrains nothing, so it leaves no trace in the IR.
+            ("format", Value::String(name)) if ctx.draft().is_known_keyword("format") => {
+                if ctx.validate_formats() {
+                    formats.push(Arc::from(name.as_str()));
                 }
             }
             // A fractional or (default build) out-of-`i64` bound has no modeled integer form; keep it raw.
@@ -201,15 +208,18 @@ fn parse_schema(
     if min_length.as_ref().is_some_and(BoundCardinality::is_zero) {
         min_length = None;
     }
-    if min_length.is_some() || max_length.is_some() || !patterns.is_empty() {
+    if min_length.is_some() || max_length.is_some() || !patterns.is_empty() || !formats.is_empty() {
         patterns.sort();
         patterns.dedup();
+        formats.sort();
+        formats.dedup();
         let leaf = StringLeaf {
             lengths: LengthBounds {
                 minimum: min_length,
                 maximum: max_length,
             },
             patterns,
+            formats,
         };
         conjuncts.push(string_facet_schema(leaf, ctx));
     }
@@ -371,7 +381,7 @@ fn string_facet_schema(leaf: StringLeaf, ctx: &CanonicalizationContext) -> Schem
     let non_string = Schema::new(SchemaKind::MultiType(
         JsonTypeSet::all().remove(JsonType::String),
     ));
-    algebra::union(vec![non_string, algebra::string_leaf(leaf)], ctx)
+    algebra::union(vec![non_string, algebra::string_leaf(leaf, ctx)], ctx)
 }
 
 /// Draft 4 says `1.0` is not an integer, so its `integer` check cannot fold into value equality.
