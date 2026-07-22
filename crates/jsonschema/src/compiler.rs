@@ -282,20 +282,6 @@ impl<'a, F: Json> Context<'a, F> {
             shared: self.shared.clone(),
         })
     }
-    /// A context over a different JSON representation at the same location, with fresh caches.
-    /// Used by keywords that compile a subschema against `serde_json` regardless of `F` (e.g.
-    /// `propertyNames`, which validates materialized property-name strings).
-    pub(crate) fn to_representation<G: Json>(&self) -> Context<'a, G> {
-        Context {
-            config: self.config,
-            resolver: self.resolver.clone(),
-            vocabularies: self.vocabularies.clone(),
-            draft: self.draft,
-            resource_base: self.resource_base.clone(),
-            location: self.location.clone(),
-            shared: SharedContextState::new(0),
-        }
-    }
     pub(crate) fn as_resource_ref<'r>(&'a self, contents: &'r Value) -> ResourceRef<'r> {
         self.draft.detect(contents).create_resource_ref(contents)
     }

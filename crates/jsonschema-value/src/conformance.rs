@@ -44,6 +44,22 @@ pub fn assert_conformance<F: Json>(root: &F::Node<'_>) {
     assert_containers::<F>(&member);
     assert_equality::<F>(&member);
     assert_identity::<F>(root, &member);
+    assert_string_nodes::<F>();
+}
+
+// `propertyNames` runs property names through `with_string_node`.
+fn assert_string_nodes<F: Json>() {
+    let mut buffer = F::StringBuffer::default();
+    for expected in ["héllo", "", "second"] {
+        F::with_string_node(&mut buffer, expected, |node| {
+            assert_eq!(node.json_type(), JsonType::String, "string node type");
+            assert_eq!(
+                node.as_string().as_deref(),
+                Some(expected),
+                "string node content"
+            );
+        });
+    }
 }
 
 fn assert_types<'a, F: Json>(member: &impl Fn(&str) -> F::Node<'a>) {

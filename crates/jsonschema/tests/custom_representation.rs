@@ -8,7 +8,9 @@ use jsonschema::{
 };
 use serde_json::{json, Value};
 
+#[derive(Default)]
 enum ToyValue {
+    #[default]
     Null,
     Boolean(bool),
     Number(f64),
@@ -22,9 +24,19 @@ struct ToyJson;
 impl Json for ToyJson {
     type Node<'a> = &'a ToyValue;
     type PreparedKey = String;
+    type StringBuffer = ToyValue;
 
     fn prepare_key(key: &str) -> String {
         key.to_owned()
+    }
+
+    fn with_string_node<T>(
+        buffer: &mut ToyValue,
+        string: &str,
+        f: impl FnOnce(&ToyValue) -> T,
+    ) -> T {
+        *buffer = ToyValue::String(string.to_owned());
+        f(buffer)
     }
 }
 
@@ -233,4 +245,23 @@ async fn async_build_map_validates_custom_representation() {
         ToyValue::Boolean(true),
         ToyValue::Null,
     ])));
+}
+
+// Property names run through the toy representation's own string nodes.
+#[test]
+fn property_names_validate_custom_representation() {
+    let schema = json!({"propertyNames": {"minLength": 2, "pattern": "^[a-z]+$"}});
+    let validator = jsonschema::options_for::<ToyJson>()
+        .build(&schema)
+        .expect("valid schema");
+
+    let valid = ToyValue::Object(vec![("abc".into(), ToyValue::Null)]);
+    let short = ToyValue::Object(vec![("a".into(), ToyValue::Null)]);
+    let digits = ToyValue::Object(vec![("123".into(), ToyValue::Null)]);
+
+    assert!(validator.is_valid(&valid));
+    assert!(!validator.is_valid(&short));
+    assert!(!validator.is_valid(&digits));
+    let error = validator.validate(&short).expect_err("short name");
+    assert_eq!(error.to_string(), "\"a\" is shorter than 2 characters");
 }

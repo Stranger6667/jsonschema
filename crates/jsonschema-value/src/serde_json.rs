@@ -13,9 +13,21 @@ pub struct SerdeJson;
 impl Json for SerdeJson {
     type Node<'a> = &'a Value;
     type PreparedKey = String;
+    type StringBuffer = Value;
 
     fn prepare_key(key: &str) -> String {
         key.to_owned()
+    }
+
+    fn with_string_node<T>(buffer: &mut Value, string: &str, f: impl FnOnce(&Value) -> T) -> T {
+        // Reuses the buffer's allocation across calls instead of building a fresh `String` per name.
+        if let Value::String(existing) = buffer {
+            existing.clear();
+            existing.push_str(string);
+        } else {
+            *buffer = Value::String(string.to_owned());
+        }
+        f(buffer)
     }
 }
 

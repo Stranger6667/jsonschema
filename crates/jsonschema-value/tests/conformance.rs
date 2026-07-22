@@ -7,7 +7,9 @@ use serde_json::{Number, Value};
 
 // A second representation, owning its data instead of borrowing `serde_json`. It implements only
 // the methods without a default, so the defaults stay exercised.
+#[derive(Default)]
 enum Simple {
+    #[default]
     Null,
     Bool(bool),
     Number(Number),
@@ -55,9 +57,15 @@ struct SimpleJson;
 impl Json for SimpleJson {
     type Node<'a> = &'a Simple;
     type PreparedKey = String;
+    type StringBuffer = Simple;
 
     fn prepare_key(key: &str) -> String {
         key.to_owned()
+    }
+
+    fn with_string_node<T>(buffer: &mut Simple, string: &str, f: impl FnOnce(&Simple) -> T) -> T {
+        *buffer = Simple::String(string.to_owned());
+        f(buffer)
     }
 }
 
@@ -258,9 +266,23 @@ struct ArenaJson;
 impl Json for ArenaJson {
     type Node<'a> = ArenaRef<'a>;
     type PreparedKey = String;
+    type StringBuffer = Arena;
 
     fn prepare_key(key: &str) -> String {
         key.to_owned()
+    }
+
+    fn with_string_node<T>(
+        buffer: &mut Arena,
+        string: &str,
+        f: impl FnOnce(ArenaRef<'_>) -> T,
+    ) -> T {
+        buffer.slots.clear();
+        buffer.slots.push(Slot::String(string.to_owned()));
+        f(ArenaRef {
+            arena: buffer,
+            index: 0,
+        })
     }
 }
 
