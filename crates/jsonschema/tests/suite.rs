@@ -1,7 +1,7 @@
 #![allow(clippy::large_stack_arrays, clippy::needless_pass_by_value)]
 
 mod tests {
-    use jsonschema::{Draft, PatternOptions};
+    use jsonschema::{canonical::CanonicalKind, Draft, PatternOptions};
     #[cfg(not(target_arch = "wasm32"))]
     use std::env;
     #[cfg(not(target_arch = "wasm32"))]
@@ -62,6 +62,74 @@ mod tests {
             let validator = options
                 .build(&test.schema)
                 .expect("Failed to build a schema");
+
+            // Canonicalization must not change what a schema accepts. A `Raw` document round-trips
+            // verbatim, so only the modeled subset is worth comparing.
+            let mut canonicalize_options = jsonschema::canonical::options().with_draft(draft);
+            match engine {
+                RegexEngine::Regex => {
+                    canonicalize_options =
+                        canonicalize_options.with_pattern_options(PatternOptions::regex());
+                }
+                RegexEngine::FancyRegex => {
+                    canonicalize_options =
+                        canonicalize_options.with_pattern_options(PatternOptions::fancy_regex());
+                }
+            }
+            if test.is_optional {
+                canonicalize_options = canonicalize_options.should_validate_formats(true);
+            }
+            // Unmodeled constructs come back as `Raw`, never as an error, so any error is a regression.
+            let canonical = canonicalize_options
+                .canonicalize(&test.schema)
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "Canonicalization failed:\nCase: {}\nTest: {}\nSchema: {}\nError: {error}",
+                        test.case,
+                        test.description,
+                        pretty_json(&test.schema),
+                    )
+                });
+            if canonical.kind() != CanonicalKind::Raw {
+                let canonical_value = canonical.to_json_schema();
+                let mut canonical_options = jsonschema::options()
+                    .with_draft(canonical.draft())
+                    .with_retriever(testsuite_retriever());
+                if test.is_optional {
+                    canonical_options = canonical_options.should_validate_formats(true);
+                }
+                match engine {
+                    RegexEngine::Regex => {
+                        canonical_options =
+                            canonical_options.with_pattern_options(PatternOptions::regex());
+                    }
+                    RegexEngine::FancyRegex => {
+                        canonical_options =
+                            canonical_options.with_pattern_options(PatternOptions::fancy_regex());
+                    }
+                }
+                let canonical_validator = canonical_options
+                    .build(&canonical_value)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "Canonical schema failed to compile:\nCase: {}\nTest: {}\nSchema: {}\nCanonical: {}\nError: {error}",
+                            test.case,
+                            test.description,
+                            pretty_json(&test.schema),
+                            pretty_json(&canonical_value),
+                        )
+                    });
+                assert_eq!(
+                    validator.is_valid(&test.data),
+                    canonical_validator.is_valid(&test.data),
+                    "Canonicalization changed validation:\nCase: {}\nTest: {}\nSchema: {}\nCanonical: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&canonical_value),
+                    pretty_json(&test.data),
+                );
+            }
 
             if test.valid {
                 if let Some(first) = validator.iter_errors(&test.data).next() {

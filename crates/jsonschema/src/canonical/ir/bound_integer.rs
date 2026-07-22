@@ -23,18 +23,6 @@ impl BoundInteger {
         }
     }
 
-    /// This bound plus one, or `None` when that leaves the representable range.
-    pub(crate) fn checked_increment(self) -> Option<Self> {
-        #[cfg(not(feature = "arbitrary-precision"))]
-        {
-            self.0.checked_add(1).map(Self)
-        }
-        #[cfg(feature = "arbitrary-precision")]
-        {
-            Some(Self(self.0 + 1))
-        }
-    }
-
     /// This bound minus one, or `None` when that leaves the representable range.
     pub(crate) fn checked_decrement(self) -> Option<Self> {
         #[cfg(not(feature = "arbitrary-precision"))]
@@ -68,6 +56,20 @@ impl BoundInteger {
             } else {
                 None
             }
+        }
+    }
+}
+
+impl super::Discrete for BoundInteger {
+    /// This bound plus one, or `None` when that leaves the representable range.
+    fn checked_increment(self) -> Option<Self> {
+        #[cfg(not(feature = "arbitrary-precision"))]
+        {
+            self.0.checked_add(1).map(Self)
+        }
+        #[cfg(feature = "arbitrary-precision")]
+        {
+            Some(Self(self.0 + 1))
         }
     }
 }

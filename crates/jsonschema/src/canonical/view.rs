@@ -20,10 +20,10 @@ impl CanonicalKind {
     }
 }
 
-/// A canonical node: one arm per IR variant.
-// TODO(canonical): not modeled yet - constructs beyond value sets surface as `Raw`; new variants
-// arrive here as they become modeled.
-#[non_exhaustive]
+/// A canonical node: one arm per IR variant. Constructs beyond value sets surface as `Raw`.
+///
+/// Exhaustive on purpose: a new variant must break every consumer that maps views, the bindings
+/// included, rather than reaching a runtime fallback.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CanonicalView {
     /// A value matches iff its JSON type is in the set.
@@ -75,14 +75,19 @@ impl CanonicalSchema {
                 ty: *ty,
                 body: self.wrap_child(body),
             }),
-            SchemaKind::String(leaf) => CanonicalView::String(string_view(leaf)),
-            SchemaKind::Integer(bounds) => CanonicalView::Integer(integer_view(bounds)),
+            SchemaKind::String(leaf) => CanonicalView::String(string_view(leaf.get())),
+            SchemaKind::Integer(bounds) => CanonicalView::Integer(integer_view(bounds.get())),
             SchemaKind::Const(value) => CanonicalView::Const(value.to_value()),
-            SchemaKind::Enum(values) => {
-                CanonicalView::Enum(values.iter().map(CanonicalJson::to_value).collect())
-            }
+            SchemaKind::Enum(values) => CanonicalView::Enum(
+                values
+                    .as_slice()
+                    .iter()
+                    .map(CanonicalJson::to_value)
+                    .collect(),
+            ),
             SchemaKind::AnyOf(branches) => CanonicalView::AnyOf(
                 branches
+                    .as_slice()
                     .iter()
                     .map(|branch| self.wrap_child(branch))
                     .collect(),

@@ -31,22 +31,27 @@ fn emit(kind: &SchemaKind, draft: Draft) -> Value {
             json!({"enum": [value.to_value()]})
         }
         SchemaKind::Const(value) => json!({"const": value.to_value()}),
-        SchemaKind::Enum(values) => emit_enum(values),
-        SchemaKind::String(leaf) => emit_string(leaf),
-        SchemaKind::Integer(leaf) => emit_integer(leaf),
+        SchemaKind::Enum(values) => emit_enum(values.as_slice()),
+        SchemaKind::String(leaf) => emit_string(leaf.get()),
+        SchemaKind::Integer(leaf) => emit_integer(leaf.get()),
         SchemaKind::MultiType(set) => emit_multi_type(*set),
         // The body emits a `const`/`enum` object without a `type` key, so adding `type` beside it
         // expresses "both must hold" and re-parses to the same IR.
         SchemaKind::TypedGroup { ty, body } => {
             let mut map = match emit(body.kind(), draft) {
                 Value::Object(map) => map,
-                other => unreachable!("value-set body emits an object: {other:?}"),
+                other @ (Value::Null
+                | Value::Bool(_)
+                | Value::Number(_)
+                | Value::String(_)
+                | Value::Array(_)) => unreachable!("value-set body emits an object: {other:?}"),
             };
             map.insert("type".into(), Value::String(ty.to_string()));
             Value::Object(map)
         }
         SchemaKind::AnyOf(branches) => json!({
             "anyOf": branches
+                .as_slice()
                 .iter()
                 .map(|branch| emit(branch.kind(), draft))
                 .collect::<Vec<_>>()
@@ -145,7 +150,9 @@ fn with_schema_uri(value: Value, uri: &'static str) -> Value {
             map.insert("not".into(), Value::Object(Map::new()));
             map
         }
-        other => unreachable!("emit yields only objects or booleans: {other:?}"),
+        other @ (Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_)) => {
+            unreachable!("emit yields only objects or booleans: {other:?}")
+        }
     };
     map.insert("$schema".into(), Value::String(uri.into()));
     Value::Object(map)

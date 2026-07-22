@@ -62,3 +62,16 @@ impl From<u64> for BoundCardinality {
         Self(InnerCardinality::from(value))
     }
 }
+
+impl super::Discrete for BoundCardinality {
+    fn checked_increment(self) -> Option<Self> {
+        #[cfg(not(feature = "arbitrary-precision"))]
+        {
+            self.0.checked_add(1).map(Self)
+        }
+        #[cfg(feature = "arbitrary-precision")]
+        {
+            Some(Self(self.0 + 1))
+        }
+    }
+}

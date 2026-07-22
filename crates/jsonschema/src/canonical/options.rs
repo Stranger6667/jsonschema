@@ -92,7 +92,9 @@ fn build(
     // Only a boolean or object is a schema document.
     match value {
         Value::Bool(_) | Value::Object(_) => {}
-        other => return Err(CanonicalizationError::InvalidSchemaType(other.to_string())),
+        other @ (Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_)) => {
+            return Err(CanonicalizationError::InvalidSchemaType(other.to_string()))
+        }
     }
     let draft = detect_draft(value, draft, registry)?;
     let validate_formats =

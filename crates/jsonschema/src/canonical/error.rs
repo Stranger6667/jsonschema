@@ -33,7 +33,7 @@ impl std::error::Error for CanonicalizationError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::ValidationError(error) => Some(error),
-            _ => None,
+            Self::InvalidSchemaType(_) | Self::InvalidPattern { .. } => None,
         }
     }
 }

@@ -421,5 +421,148 @@
         9
       ]
     }
+  },
+  {
+    "description": "ir: overlapping integer intervals merge into one",
+    "schema": {"anyOf": [{"type": "integer", "minimum": 0, "maximum": 5}, {"type": "integer", "minimum": 3, "maximum": 9}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer", "minimum": 0, "maximum": 9},
+    "tests": [
+      {"data": 0, "valid": true},
+      {"data": 7, "valid": true},
+      {"data": 9, "valid": true},
+      {"data": -1, "valid": false},
+      {"data": 10, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: adjacent integer intervals merge because integers are discrete",
+    "schema": {"anyOf": [{"type": "integer", "minimum": 0, "maximum": 5}, {"type": "integer", "minimum": 6, "maximum": 9}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer", "minimum": 0, "maximum": 9},
+    "tests": [
+      {"data": 5, "valid": true},
+      {"data": 6, "valid": true},
+      {"data": 10, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: integer intervals with a gap stay separate branches",
+    "schema": {"anyOf": [{"type": "integer", "maximum": 2}, {"type": "integer", "minimum": 5}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": "integer", "maximum": 2}, {"type": "integer", "minimum": 5}]},
+    "tests": [
+      {"data": 2, "valid": true},
+      {"data": 5, "valid": true},
+      {"data": 3, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: complementary integer rays cover every integer",
+    "schema": {"anyOf": [{"type": "integer", "maximum": 5}, {"type": "integer", "minimum": 3}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer"},
+    "tests": [
+      {"data": -100, "valid": true},
+      {"data": 4, "valid": true},
+      {"data": 100, "valid": true},
+      {"data": 1.5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: overlapping string length windows merge when the patterns match",
+    "schema": {"anyOf": [{"type": "string", "maxLength": 5}, {"type": "string", "minLength": 3, "maxLength": 9}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "maxLength": 9},
+    "tests": [
+      {"data": "", "valid": true},
+      {"data": "abcdefghi", "valid": true},
+      {"data": "abcdefghij", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an integer interval absorbs a value it already admits",
+    "schema": {"anyOf": [{"type": "integer", "minimum": 2}, {"const": 7}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer", "minimum": 2},
+    "tests": [
+      {"data": 7, "valid": true},
+      {"data": 2, "valid": true},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an integer interval keeps a value a gap separates from it",
+    "schema": {"anyOf": [{"type": "integer", "minimum": 2}, {"const": 0}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": "integer", "minimum": 2}, {"const": 0}]},
+    "tests": [
+      {"data": 0, "valid": true},
+      {"data": 2, "valid": true},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an integer interval swallows the value adjacent to it",
+    "schema": {"anyOf": [{"type": "integer", "minimum": 2}, {"const": 1}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer", "minimum": 1},
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": 2, "valid": true},
+      {"data": 0, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: draft 4 keeps a value beside an integer interval that admits it",
+    "draft": "draft4",
+    "schema": {"anyOf": [{"type": "integer", "minimum": 2}, {"enum": [7]}]},
+    "tests": [
+      {"data": 7, "valid": true},
+      {"data": 7.0, "valid": true},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a string window absorbs a value it already admits",
+    "schema": {"anyOf": [{"type": "string", "minLength": 2}, {"const": "abc"}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "minLength": 2},
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": "ab", "valid": true},
+      {"data": "a", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a merged string window spanning every length keeps its pattern",
+    "schema": {"anyOf": [{"type": "string", "pattern": "^a", "maxLength": 3}, {"type": "string", "pattern": "^a", "minLength": 2}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "pattern": "^a"},
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": "abcdefgh", "valid": true},
+      {"data": "zzz", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: windows unbounded on one side merge when they overlap",
+    "schema": {"anyOf": [{"type": "integer", "maximum": 2}, {"type": "integer", "maximum": 5}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer", "maximum": 5},
+    "tests": [
+      {"data": 5, "valid": true},
+      {"data": -100, "valid": true},
+      {"data": 6, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a window reaching the representable maximum meets the ray above it",
+    "schema": {"anyOf": [{"type": "integer", "maximum": 9223372036854775807}, {"type": "integer", "minimum": 0}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer"},
+    "tests": [
+      {"data": -5, "valid": true},
+      {"data": 9223372036854775807, "valid": true},
+      {"data": 1.5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: string windows with different patterns stay separate branches",
+    "schema": {"anyOf": [{"type": "string", "maxLength": 5, "pattern": "^a"}, {"type": "string", "minLength": 3, "maxLength": 9}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": "string", "maxLength": 5, "pattern": "^a"}, {"type": "string", "minLength": 3, "maxLength": 9}]},
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": "zzzz", "valid": true},
+      {"data": "zz", "valid": false}
+    ]
   }
 ]

@@ -129,8 +129,6 @@ impl PyCanonicalSchema {
                 },
             )?
             .into_any(),
-            // TODO(canonical): new `CanonicalView` variants need view classes here.
-            other => unreachable!("unsupported canonical view: {other:?}"),
         })
     }
 

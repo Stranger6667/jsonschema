@@ -12,10 +12,12 @@ use crate::{JsonType, JsonTypeSet};
 mod bound_cardinality;
 mod bound_integer;
 mod raw;
+mod string_leaves;
 
 pub(crate) use bound_cardinality::BoundCardinality;
 pub(crate) use bound_integer::BoundInteger;
 pub(crate) use raw::RawJson;
+pub(crate) use string_leaves::StringLeaves;
 
 /// A `Const`/`Enum` member normalized at construction (`1.0` becomes `1`) so `Value` equality is value equality.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,7 +86,7 @@ fn normalized(value: &Value) -> Value {
                 .map(|(key, item)| (key.clone(), normalized(item)))
                 .collect(),
         ),
-        other => other.clone(),
+        other @ (Value::Null | Value::Bool(_) | Value::String(_)) => other.clone(),
     }
 }
 
@@ -155,15 +157,15 @@ pub(crate) enum SchemaKind {
     /// A value matches iff its JSON type is `ty` *and* it satisfies `body` (Draft 4 `integer`, where `1.0` is not an integer).
     TypedGroup { ty: JsonType, body: Schema },
     /// A string value within a length window; non-string values are matched by a surrounding union.
-    String(StringLeaf),
+    String(NonEmpty<StringLeaf>),
     /// An integer value within a range; non-integer values are matched by a surrounding union.
-    Integer(IntegerBounds),
+    Integer(NonEmpty<IntegerBounds>),
     /// Exactly one admitted value.
     Const(CanonicalJson),
     /// A sorted, deduplicated finite set of admitted values.
-    Enum(Vec<CanonicalJson>),
+    Enum(AtLeastTwo<CanonicalJson>),
     /// A value matches iff at least one of the sorted, mutually unmergeable branches matches.
-    AnyOf(Vec<Schema>),
+    AnyOf(AtLeastTwo<Schema>),
     /// Matches any value.
     True,
     /// Matches no value.
@@ -180,11 +182,101 @@ pub(crate) struct StringLeaf {
     pub(crate) patterns: Vec<Arc<str>>,
 }
 
+/// Sorted, deduplicated, and holding at least two elements; fewer collapses to a simpler node.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct AtLeastTwo<T>(Vec<T>);
+
+impl<T: Ord> AtLeastTwo<T> {
+    /// Sorts and deduplicates; the survivors come back in `Err` when fewer than two remain.
+    pub(crate) fn new(mut items: Vec<T>) -> Result<Self, Vec<T>> {
+        items.sort();
+        items.dedup();
+        if items.len() < 2 {
+            return Err(items);
+        }
+        debug_assert!(
+            items.windows(2).all(|pair| pair[0] < pair[1]),
+            "items left unsorted or duplicated"
+        );
+        Ok(Self(items))
+    }
+}
+
+impl<T> AtLeastTwo<T> {
+    pub(crate) fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+
+    pub(crate) fn into_vec(self) -> Vec<T> {
+        self.0
+    }
+
+    /// Split the last element off; the remainder still holds at least one.
+    pub(crate) fn split_last(self) -> (Vec<T>, T) {
+        let mut items = self.0;
+        let last = items.pop().expect("at least two elements");
+        (items, last)
+    }
+}
+
+impl<T> IntoIterator for AtLeastTwo<T> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+/// A facet set admitting at least one value; the only way to build one is [`NonEmpty::new`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct NonEmpty<T>(T);
+
+pub(crate) trait MaybeEmpty {
+    fn is_empty(&self) -> bool;
+}
+
+impl<T: MaybeEmpty> NonEmpty<T> {
+    pub(crate) fn new(inner: T) -> Option<Self> {
+        (!inner.is_empty()).then_some(Self(inner))
+    }
+
+    pub(crate) fn get(&self) -> &T {
+        &self.0
+    }
+
+    pub(crate) fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T: Ord> MaybeEmpty for Bounds<T> {
+    fn is_empty(&self) -> bool {
+        Bounds::is_empty(self)
+    }
+}
+
+impl MaybeEmpty for StringLeaf {
+    fn is_empty(&self) -> bool {
+        self.lengths.is_empty()
+    }
+}
+
 /// A closed interval; an absent side is unbounded.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct Bounds<T> {
     pub(crate) minimum: Option<T>,
     pub(crate) maximum: Option<T>,
+}
+
+// Hand-written to avoid a spurious `T: Default` bound; an unbounded window needs none.
+impl<T> Default for Bounds<T> {
+    fn default() -> Self {
+        Self {
+            minimum: None,
+            maximum: None,
+        }
+    }
 }
 
 impl<T: Ord> Bounds<T> {
@@ -205,6 +297,160 @@ impl<T: Ord> Bounds<T> {
     pub(crate) fn is_empty(&self) -> bool {
         matches!((&self.minimum, &self.maximum), (Some(min), Some(max)) if min > max)
     }
+
+    /// Whether every value `other` admits also fits here.
+    pub(crate) fn covers(&self, other: &Self) -> bool {
+        self.minimum
+            .as_ref()
+            .is_none_or(|min| other.minimum.as_ref().is_some_and(|start| start >= min))
+            && self
+                .maximum
+                .as_ref()
+                .is_none_or(|max| other.maximum.as_ref().is_some_and(|end| end <= max))
+    }
+
+    /// Whether every value in the domain fits.
+    pub(crate) fn is_unbounded(&self) -> bool {
+        self.minimum.is_none() && self.maximum.is_none()
+    }
+
+    /// The narrowest window holding both: the lower minimum, the higher maximum. An absent bound is
+    /// unbounded on that side, so it swallows the present one.
+    fn hull(self, other: Self) -> Self {
+        Self {
+            minimum: self.minimum.zip(other.minimum).map(|(a, b)| a.min(b)),
+            maximum: self.maximum.zip(other.maximum).map(|(a, b)| a.max(b)),
+        }
+    }
+}
+
+impl<T: Discrete> Bounds<T> {
+    /// Fold windows that overlap or touch into one; windows with a value between them stay apart.
+    pub(crate) fn merge_all(mut windows: Vec<Self>) -> Vec<Self> {
+        if windows.len() < 2 {
+            return windows;
+        }
+        let count = windows.len();
+        windows.sort_by(|left, right| left.minimum.cmp(&right.minimum));
+        // `reaches` only holds left-to-right, so order the windows before folding.
+
+        let mut merged: Vec<Self> = Vec::with_capacity(windows.len());
+        for window in windows {
+            match merged.last_mut() {
+                Some(last) if last.reaches(&window) => {
+                    *last = std::mem::take(last).hull(window);
+                }
+                _ => merged.push(window),
+            }
+        }
+        debug_assert!(
+            Self::is_canonical(&merged),
+            "windows left unsorted or mergeable"
+        );
+        debug_assert!(merged.len() <= count, "merging invented a window");
+        debug_assert!(!merged.is_empty(), "merging dropped every window");
+        merged
+    }
+
+    /// Sorted by minimum, with no two neighbours left to merge.
+    fn is_canonical(windows: &[Self]) -> bool {
+        windows
+            .windows(2)
+            .all(|pair| pair[0].minimum <= pair[1].minimum && !pair[0].reaches(&pair[1]))
+    }
+
+    /// Whether `self` and a window starting no lower than it leave no value between them. The domain
+    /// is discrete, so windows that merely touch (`..=5` and `6..`) also have nothing between.
+    fn reaches(&self, next: &Self) -> bool {
+        // Merging the pair takes their hull, which would invent values between two windows compared
+        // the wrong way round.
+        debug_assert!(
+            self.minimum <= next.minimum,
+            "windows compared out of order"
+        );
+        let (Some(end), Some(start)) = (self.maximum.as_ref(), next.minimum.as_ref()) else {
+            return true;
+        };
+        end.clone()
+            .checked_increment()
+            .is_none_or(|above| *start <= above)
+    }
+}
+
+/// Windows kept sorted by minimum and pairwise unmergeable. Inserts are batched; the form is
+/// restored before any read, so the order in which windows arrive cannot change the result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Windows<T> {
+    windows: Vec<Bounds<T>>,
+    canonical: bool,
+}
+
+impl<T> Default for Windows<T> {
+    fn default() -> Self {
+        Self {
+            windows: Vec::new(),
+            canonical: true,
+        }
+    }
+}
+
+impl<T: Discrete> Windows<T> {
+    pub(crate) fn insert(&mut self, window: Bounds<T>) {
+        self.windows.push(window);
+        self.canonical = false;
+    }
+
+    fn canonicalize(&mut self) {
+        if self.canonical {
+            return;
+        }
+        let was_empty = self.windows.is_empty();
+        self.windows = Bounds::merge_all(std::mem::take(&mut self.windows));
+        self.canonical = true;
+        // `is_empty` reads the batch without canonicalizing, which relies on this.
+        debug_assert_eq!(
+            self.windows.is_empty(),
+            was_empty,
+            "merging emptied the windows"
+        );
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.windows.clear();
+        self.canonical = true;
+    }
+
+    /// Dropping windows can neither reorder the rest nor make two of them mergeable.
+    pub(crate) fn retain(&mut self, keep: impl FnMut(&Bounds<T>) -> bool) {
+        self.canonicalize();
+        self.windows.retain(keep);
+    }
+
+    /// Merging never removes the last window, so this reads the batch without canonicalizing.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.windows.is_empty()
+    }
+
+    pub(crate) fn as_slice(&mut self) -> &[Bounds<T>] {
+        self.canonicalize();
+        &self.windows
+    }
+}
+
+impl<T: Discrete> IntoIterator for Windows<T> {
+    type Item = Bounds<T>;
+    type IntoIter = std::vec::IntoIter<Bounds<T>>;
+
+    fn into_iter(mut self) -> Self::IntoIter {
+        self.canonicalize();
+        self.windows.into_iter()
+    }
+}
+
+/// A domain where each value has an immediate successor, so adjacent windows are contiguous.
+pub(crate) trait Discrete: Ord + Clone {
+    /// The next value up, or `None` at the top of the representable range.
+    fn checked_increment(self) -> Option<Self>;
 }
 
 /// The bound present on both sides picked by `keep`; otherwise whichever side has one.
@@ -228,8 +474,15 @@ impl SchemaKind {
     pub(crate) fn finite_values(&self) -> Option<&[CanonicalJson]> {
         match self {
             SchemaKind::Const(value) => Some(std::slice::from_ref(value)),
-            SchemaKind::Enum(values) => Some(values),
-            _ => None,
+            SchemaKind::Enum(values) => Some(values.as_slice()),
+            SchemaKind::MultiType(_)
+            | SchemaKind::TypedGroup { .. }
+            | SchemaKind::String(_)
+            | SchemaKind::Integer(_)
+            | SchemaKind::AnyOf(_)
+            | SchemaKind::True
+            | SchemaKind::False
+            | SchemaKind::Raw(_) => None,
         }
     }
 
@@ -267,7 +520,9 @@ impl SchemaKind {
                 Value::Null => NULL,
                 Value::Bool(false) => FALSE,
                 Value::Bool(true) => TRUE,
-                _ => return None,
+                Value::Number(_) | Value::String(_) | Value::Array(_) | Value::Object(_) => {
+                    return None
+                }
             };
         }
         match bits {
