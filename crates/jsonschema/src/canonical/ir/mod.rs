@@ -208,7 +208,11 @@ impl<T: Ord> Bounds<T> {
 }
 
 /// The bound present on both sides picked by `keep`; otherwise whichever side has one.
-fn tighter<T>(first: Option<T>, second: Option<T>, keep: impl FnOnce(T, T) -> T) -> Option<T> {
+pub(crate) fn tighter<T>(
+    first: Option<T>,
+    second: Option<T>,
+    keep: impl FnOnce(T, T) -> T,
+) -> Option<T> {
     match (first, second) {
         (Some(a), Some(b)) => Some(keep(a, b)),
         (bound, None) | (None, bound) => bound,

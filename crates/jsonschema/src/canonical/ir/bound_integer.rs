@@ -23,6 +23,30 @@ impl BoundInteger {
         }
     }
 
+    /// This bound plus one, or `None` when that leaves the representable range.
+    pub(crate) fn checked_increment(self) -> Option<Self> {
+        #[cfg(not(feature = "arbitrary-precision"))]
+        {
+            self.0.checked_add(1).map(Self)
+        }
+        #[cfg(feature = "arbitrary-precision")]
+        {
+            Some(Self(self.0 + 1))
+        }
+    }
+
+    /// This bound minus one, or `None` when that leaves the representable range.
+    pub(crate) fn checked_decrement(self) -> Option<Self> {
+        #[cfg(not(feature = "arbitrary-precision"))]
+        {
+            self.0.checked_sub(1).map(Self)
+        }
+        #[cfg(feature = "arbitrary-precision")]
+        {
+            Some(Self(self.0 - 1))
+        }
+    }
+
     /// A signed integer from a JSON number, reading integer-valued floats; `None` for fractional values
     /// or (default build) magnitudes past `i64`.
     pub(crate) fn from_number(number: &serde_json::Number) -> Option<Self> {

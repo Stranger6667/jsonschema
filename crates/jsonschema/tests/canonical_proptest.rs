@@ -90,7 +90,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, and integer interval bounds.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(14)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(18)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -117,6 +117,16 @@ fn draw_leaf(tc: &TestCase) -> Value {
         13 => {
             let (min, max) = ordered(small_int(tc), small_int(tc));
             json!({ "type": "integer", "minimum": min, "maximum": max })
+        }
+        // Draft 6+ spells exclusivity as a number; Draft 4 as a boolean modifier. Each is meta-invalid
+        // under the other dialect, where the drawn document is simply rejected before modeling.
+        14 => json!({ "type": "integer", "exclusiveMinimum": small_int(tc) }),
+        15 => json!({ "type": "integer", "exclusiveMaximum": small_int(tc) }),
+        16 => {
+            json!({ "type": "integer", "minimum": small_int(tc), "exclusiveMinimum": tc.draw(gs::booleans()) })
+        }
+        17 => {
+            json!({ "type": "integer", "maximum": small_int(tc), "exclusiveMaximum": tc.draw(gs::booleans()) })
         }
         _ => json!({ "type": ["string", "integer"] }),
     }

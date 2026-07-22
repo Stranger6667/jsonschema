@@ -116,14 +116,14 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
         (SchemaKind::MultiType(set), SchemaKind::Integer(bounds))
         | (SchemaKind::Integer(bounds), SchemaKind::MultiType(set)) => {
             if SchemaKind::semantic_cover(set).contains(JsonType::Integer) {
-                integer_leaf(bounds)
+                integer_leaf(bounds, ctx)
             } else {
                 Schema::new(SchemaKind::False)
             }
         }
         // Two integer leaves: keep the integers both accept by tightening to the narrower interval.
         (SchemaKind::Integer(first), SchemaKind::Integer(second)) => {
-            integer_leaf(first.intersect(second))
+            integer_leaf(first.intersect(second), ctx)
         }
         // A typed group holds `integer` values (Draft 4); keep the ones within the leaf's interval.
         (SchemaKind::TypedGroup { ty, body }, SchemaKind::Integer(bounds))
@@ -418,10 +418,23 @@ pub(crate) fn string_leaf(leaf: StringLeaf) -> Schema {
     Schema::new(SchemaKind::String(leaf))
 }
 
-/// An `Integer` node, collapsed to `False` when its interval is empty.
-pub(crate) fn integer_leaf(bounds: IntegerBounds) -> Schema {
+/// An `Integer` node, collapsed to `False` when its interval is empty and to the value itself when the
+/// interval holds exactly one. Draft 4 keeps the integer guard on that value, where `5.0` is not `5`.
+pub(crate) fn integer_leaf(bounds: IntegerBounds, ctx: &CanonicalizationContext) -> Schema {
     if bounds.is_empty() {
         return Schema::new(SchemaKind::False);
+    }
+    if let (Some(min), Some(max)) = (&bounds.minimum, &bounds.maximum) {
+        if min == max {
+            let value = Schema::new(SchemaKind::Const(CanonicalJson::from_value(
+                &Value::Number(min.to_number()),
+            )));
+            return if matches!(ctx.draft(), Draft::Draft4) {
+                typed_group(JsonType::Integer, value)
+            } else {
+                value
+            };
+        }
     }
     Schema::new(SchemaKind::Integer(bounds))
 }
