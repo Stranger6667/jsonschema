@@ -164,6 +164,36 @@ def test_recursive_dict_reports_nested_error():
     assert not is_valid(schema, instance)
 
 
+def cyclic_dict():
+    instance = {}
+    instance["foo"] = instance
+    return instance
+
+
+def cyclic_list():
+    instance = []
+    instance.append(instance)
+    return instance
+
+
+# Building the error materializes the instance, which walks the cycle
+@pytest.mark.parametrize(
+    ("schema", "build"),
+    (
+        ({"type": "object", "minProperties": 5}, cyclic_dict),
+        ({"type": "array", "minItems": 5}, cyclic_list),
+    ),
+)
+def test_error_at_cyclic_container(schema, build):
+    with pytest.raises(ValueError, match="Recursion limit reached"):
+        validate(schema, build())
+
+
+def test_unique_items_with_cyclic_elements():
+    with pytest.raises(ValueError, match="Recursion limit reached"):
+        validate({"uniqueItems": True}, [cyclic_list(), cyclic_list()])
+
+
 class Opaque:
     pass
 

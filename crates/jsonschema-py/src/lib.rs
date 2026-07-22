@@ -1129,11 +1129,13 @@ fn surface_pending_errors<T>(
     if let Some(error) = take_pending_error() {
         return Err(error);
     }
-    let result = run()?;
+    // A recorded error outranks whatever `run` produced: building a validation error can itself hit
+    // an unreadable part of the instance, and that error is the accurate one.
+    let result = run();
     if let Some(error) = take_pending_error() {
         return Err(error);
     }
-    Ok(result)
+    result
 }
 
 fn iter_on_error(

@@ -314,7 +314,14 @@ fn number_of(node: PyNode<'_>) -> Option<Number> {
     }
 }
 
-fn py_to_value(node: PyNode<'_>) -> Value {
+// Instances may be self-referential, so every traversal that descends into containers is capped.
+const RECURSION_LIMIT: u8 = 255;
+
+fn record_recursion_limit() {
+    record_value_error("Recursion limit reached");
+}
+
+fn py_to_value(node: PyNode<'_>, depth: u8) -> Value {
     match object_type(node) {
         ObjType::Null => Value::Null,
         ObjType::Unknown => {
@@ -327,18 +334,31 @@ fn py_to_value(node: PyNode<'_>) -> Value {
         }
         ObjType::Str => Value::String(str_ref(node).unwrap_or_default().to_owned()),
         ty @ (ObjType::List | ObjType::Tuple) => {
+            if depth == RECURSION_LIMIT {
+                record_recursion_limit();
+                return Value::Null;
+            }
             let array = PyArray::new(node, ty == ObjType::Tuple);
-            Value::Array(array.elements().map(py_to_value).collect())
+            Value::Array(
+                array
+                    .elements()
+                    .map(|element| py_to_value(element, depth + 1))
+                    .collect(),
+            )
         }
         ObjType::Dict => {
+            if depth == RECURSION_LIMIT {
+                record_recursion_limit();
+                return Value::Null;
+            }
             let dict = unsafe { node.cast_unchecked::<PyDict>() };
             let mut map = Map::new();
             for (key, value) in dict.members() {
-                map.insert(key.into_owned(), py_to_value(value));
+                map.insert(key.into_owned(), py_to_value(value, depth + 1));
             }
             Value::Object(map)
         }
-        ObjType::Enum => py_to_value(resolved(node)),
+        ObjType::Enum => py_to_value(resolved(node), depth),
     }
 }
 
@@ -539,7 +559,7 @@ impl<'py> Node<'py, Pyo3> for PyNode<'py> {
     }
 
     fn to_value(&self) -> Cow<'py, Value> {
-        Cow::Owned(py_to_value(*self))
+        Cow::Owned(py_to_value(*self, 0))
     }
 
     fn cache_key(&self) -> Option<usize> {
@@ -661,7 +681,7 @@ impl<'py> Array<'py, Pyo3> for PyArray<'py> {
             while idx < size {
                 let mut inner_idx = idx + 1;
                 while inner_idx < size {
-                    if equal_nodes(items[idx], items[inner_idx]) {
+                    if equal_nodes(items[idx], items[inner_idx], 0) {
                         return false;
                     }
                     inner_idx += 1;
@@ -677,11 +697,15 @@ impl<'py> Array<'py, Pyo3> for PyArray<'py> {
 }
 
 /// JSON equality between two Python nodes: numbers compare mathematically, objects ignore key order.
-fn equal_nodes(left: PyNode<'_>, right: PyNode<'_>) -> bool {
+fn equal_nodes(left: PyNode<'_>, right: PyNode<'_>, depth: u8) -> bool {
+    // Also resolves cycles that reach the same object, and skips shared subtrees.
+    if left.as_ptr() == right.as_ptr() {
+        return true;
+    }
     let (left_type, right_type) = (object_type(left), object_type(right));
     match (left_type, right_type) {
-        (ObjType::Enum, _) => equal_nodes(resolved(left), right),
-        (_, ObjType::Enum) => equal_nodes(left, resolved(right)),
+        (ObjType::Enum, _) => equal_nodes(resolved(left), right, depth),
+        (_, ObjType::Enum) => equal_nodes(left, resolved(right), depth),
         (ObjType::Unknown, _) => {
             record_unsupported(left);
             false
@@ -704,15 +728,23 @@ fn equal_nodes(left: PyNode<'_>, right: PyNode<'_>) -> bool {
             _ => false,
         },
         (ObjType::List | ObjType::Tuple, ObjType::List | ObjType::Tuple) => {
+            if depth == RECURSION_LIMIT {
+                record_recursion_limit();
+                return false;
+            }
             let left = PyArray::new(left, left_type == ObjType::Tuple);
             let right = PyArray::new(right, right_type == ObjType::Tuple);
             left.len() == right.len()
                 && left
                     .elements()
                     .zip(right.elements())
-                    .all(|(left, right)| equal_nodes(left, right))
+                    .all(|(left, right)| equal_nodes(left, right, depth + 1))
         }
         (ObjType::Dict, ObjType::Dict) => {
+            if depth == RECURSION_LIMIT {
+                record_recursion_limit();
+                return false;
+            }
             let (left_ptr, right_ptr) = (left.as_ptr(), right.as_ptr());
             if unsafe { ffi::PyDict_Size(left_ptr) != ffi::PyDict_Size(right_ptr) } {
                 return false;
@@ -740,7 +772,7 @@ fn equal_nodes(left: PyNode<'_>, right: PyNode<'_>) -> bool {
                         Borrowed::from_ptr(left.py(), other),
                     )
                 };
-                if !equal_nodes(value, other) {
+                if !equal_nodes(value, other, depth + 1) {
                     return false;
                 }
             }
@@ -751,9 +783,9 @@ fn equal_nodes(left: PyNode<'_>, right: PyNode<'_>) -> bool {
 }
 
 /// Mirrors `unique::HashedValue` so equal nodes always hash equal.
-fn hash_node<H: Hasher>(node: PyNode<'_>, state: &mut H) {
+fn hash_node<H: Hasher>(node: PyNode<'_>, state: &mut H, depth: u8) {
     match object_type(node) {
-        ObjType::Enum => hash_node(resolved(node), state),
+        ObjType::Enum => hash_node(resolved(node), state, depth),
         ObjType::Unknown => record_unsupported(node),
         ObjType::Null => state.write_u32(3_221_225_473),
         ObjType::Bool => (node.as_ptr() == types(node.py()).true_).hash(state),
@@ -770,18 +802,26 @@ fn hash_node<H: Hasher>(node: PyNode<'_>, state: &mut H) {
         }
         ObjType::Str => str_ref(node).unwrap_or_default().hash(state),
         ty @ (ObjType::List | ObjType::Tuple) => {
+            if depth == RECURSION_LIMIT {
+                record_recursion_limit();
+                return;
+            }
             let array = PyArray::new(node, ty == ObjType::Tuple);
             for item in array.elements() {
-                hash_node(item, state);
+                hash_node(item, state, depth + 1);
             }
         }
         ObjType::Dict => {
+            if depth == RECURSION_LIMIT {
+                record_recursion_limit();
+                return;
+            }
             let dict = unsafe { node.cast_unchecked::<PyDict>() };
             let mut hash = 0;
             for (key, value) in dict.members() {
                 let mut item_hasher = AHasher::default();
                 key.as_ref().hash(&mut item_hasher);
-                hash_node(value, &mut item_hasher);
+                hash_node(value, &mut item_hasher, depth + 1);
                 hash ^= item_hasher.finish();
             }
             state.write_u64(hash);
@@ -793,7 +833,7 @@ struct HashedNode<'py>(PyNode<'py>);
 
 impl PartialEq for HashedNode<'_> {
     fn eq(&self, other: &Self) -> bool {
-        equal_nodes(self.0, other.0)
+        equal_nodes(self.0, other.0, 0)
     }
 }
 
@@ -801,7 +841,7 @@ impl Eq for HashedNode<'_> {}
 
 impl Hash for HashedNode<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        hash_node(self.0, state);
+        hash_node(self.0, state, 0);
     }
 }
 
@@ -1040,6 +1080,83 @@ mod tests {
             let owned = eval("'abc'");
             let node = unsafe { Borrowed::from_ptr(py, owned.as_ptr()) };
             assert_eq!(node.as_string().as_deref(), Some("abc"));
+            assert!(take_pending_error().is_none());
+        });
+    }
+
+    fn cyclic_dict(py: Python<'_>) -> Bound<'_, PyAny> {
+        let dict = PyDict::new(py);
+        dict.set_item("foo", &dict).expect("set_item");
+        dict.into_any()
+    }
+
+    fn cyclic_list(py: Python<'_>) -> Bound<'_, PyAny> {
+        let list = pyo3::types::PyList::empty(py);
+        list.append(&list).expect("append");
+        list.into_any()
+    }
+
+    #[test_case(cyclic_dict; "dict")]
+    #[test_case(cyclic_list; "list")]
+    fn to_value_bounds_cycles(build: fn(Python<'_>) -> Bound<'_, PyAny>) {
+        Python::attach(|py| {
+            let _ = take_pending_error();
+            let owned = build(py);
+            let node = unsafe { Borrowed::from_ptr(py, owned.as_ptr()) };
+            let _ = node.to_value();
+            assert_eq!(
+                take_pending_error().map(|e| e.to_string()),
+                Some("ValueError: Recursion limit reached".to_string())
+            );
+        });
+    }
+
+    // Two distinct cycles, so the pointer short-circuit cannot resolve them.
+    #[test_case(0; "pairwise")]
+    #[test_case(crate::unique::ITEMS_SIZE_THRESHOLD; "hashed")]
+    fn is_unique_bounds_cycles(padding: usize) {
+        Python::attach(|py| {
+            let _ = take_pending_error();
+            let items = pyo3::types::PyList::empty(py);
+            for index in 0..padding {
+                items.append(index).expect("append");
+            }
+            items.append(cyclic_list(py)).expect("append");
+            items.append(cyclic_list(py)).expect("append");
+            let owned = items.into_any();
+            let node = unsafe { Borrowed::from_ptr(py, owned.as_ptr()) };
+            let _ = node.as_array().expect("array").is_unique();
+            assert_eq!(
+                take_pending_error().map(|e| e.to_string()),
+                Some("ValueError: Recursion limit reached".to_string())
+            );
+        });
+    }
+
+    // The expected value is finite, so it alone bounds the descent into a cyclic instance.
+    #[test]
+    fn equals_value_terminates_on_cycles() {
+        Python::attach(|py| {
+            let _ = take_pending_error();
+            let owned = cyclic_dict(py);
+            let node = unsafe { Borrowed::from_ptr(py, owned.as_ptr()) };
+            assert!(!node.equals_value(&json!({"foo": {"foo": {}}})));
+            assert!(take_pending_error().is_none());
+        });
+    }
+
+    // A self-referential element is equal to itself, so `uniqueItems` sees a duplicate.
+    #[test]
+    fn is_unique_pointer_short_circuit() {
+        Python::attach(|py| {
+            let _ = take_pending_error();
+            let element = cyclic_list(py);
+            let items = pyo3::types::PyList::empty(py);
+            items.append(&element).expect("append");
+            items.append(&element).expect("append");
+            let owned = items.into_any();
+            let node = unsafe { Borrowed::from_ptr(py, owned.as_ptr()) };
+            assert!(!node.as_array().expect("array").is_unique());
             assert!(take_pending_error().is_none());
         });
     }
