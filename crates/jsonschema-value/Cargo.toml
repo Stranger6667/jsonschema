@@ -15,7 +15,8 @@ macros = []
 arbitrary-precision = ["serde_json/arbitrary_precision", "dep:num-bigint"]
 
 [dependencies]
-bytecount = { version = "0.6", features = ["runtime-dispatch-simd"], optional = true }
+ahash.workspace = true
+bytecount ={ version = "0.6", features = ["runtime-dispatch-simd"], optional = true }
 fraction = { version = "0.15", default-features = false, features = [
   "with-bigint",
 ] }

@@ -103,7 +103,6 @@ pub trait JsonArrayAccess<'a, F: Json> {
     fn len(&self) -> usize;
     fn elements(&self) -> Self::ElementsIter;
 
-    /// The backing `serde_json::Value` slice when the representation stores elements contiguously as
-    /// `Value`, enabling zero-copy algorithms such as `uniqueItems`; `None` otherwise.
-    fn as_value_slice(&self) -> Option<&'a [Value]>;
+    /// Whether every element is distinct under JSON equality (`uniqueItems`).
+    fn is_unique(&self) -> bool;
 }

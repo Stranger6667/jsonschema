@@ -134,8 +134,8 @@ impl<'a> JsonArrayAccess<'a, SerdeJson> for &'a [Value] {
         (*self).iter()
     }
 
-    fn as_value_slice(&self) -> Option<&'a [Value]> {
-        Some(self)
+    fn is_unique(&self) -> bool {
+        crate::ext::unique::is_unique(self)
     }
 }
 
