@@ -120,7 +120,8 @@ jobs:
           CROSS_CONTAINER_OPTS: >-
             --env XDG_CACHE_HOME=/tmp/.cache
             --env XDG_DATA_HOME=/tmp/.local/share
-        run: cross test --target ${{ matrix.target }} --no-fail-fast --all-features -p jsonschema
+        # Everything except `pyo3`: the cross image has no libpython to link test binaries against.
+        run: cross test --target ${{ matrix.target }} --no-fail-fast --features conformance,resolve-http,resolve-file,resolve-async,tls-aws-lc-rs,tls-ring,arbitrary-precision,macros,reqwest -p jsonschema
 
   test-wasm:
     strategy:
@@ -710,10 +711,10 @@ jobs:
             flags: "--feature-powerset --exclude-features resolve-http"
           - target: wasm32-unknown-unknown
             name: wasm32-unknown-unknown
-            flags: "--feature-powerset --exclude-features default,resolve-http,resolve-file,resolve-async,retrieve-async"
+            flags: "--feature-powerset --exclude-features default,resolve-http,resolve-file,resolve-async,retrieve-async,pyo3"
           - target: wasm32-wasip1
             name: wasm32-wasip1
-            flags: "--feature-powerset --exclude-features retrieve-async"
+            flags: "--feature-powerset --exclude-features retrieve-async,pyo3"
     name: Check features on ${{ matrix.name }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30

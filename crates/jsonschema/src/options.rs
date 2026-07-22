@@ -690,14 +690,14 @@ impl<F: Json> ValidationOptions<'_, Arc<dyn referencing::Retrieve>, F> {
 }
 
 #[cfg(feature = "resolve-async")]
-impl<'i> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>> {
+impl<'i, F: Json> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>, F> {
     /// Build a JSON Schema validator using the current async options.
     ///
     /// # Errors
     ///
     /// Returns an error if `schema` is invalid for the selected draft or if referenced resources
     /// cannot be retrieved or resolved.
-    pub async fn build(&self, schema: &Value) -> Result<Validator, ValidationError<'static>> {
+    pub async fn build(&self, schema: &Value) -> Result<Validator<F>, ValidationError<'static>> {
         compiler::build_validator_async(self, schema).await
     }
 
@@ -712,7 +712,7 @@ impl<'i> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>> {
     pub async fn build_map(
         &self,
         schema: &Value,
-    ) -> Result<crate::ValidatorMap, ValidationError<'static>> {
+    ) -> Result<crate::ValidatorMap<F>, ValidationError<'static>> {
         compiler::build_validator_map_async(self, schema).await
     }
 
@@ -743,7 +743,7 @@ impl<'i> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>> {
     pub fn with_retriever(
         self,
         retriever: impl referencing::AsyncRetrieve + 'static,
-    ) -> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>> {
+    ) -> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>, F> {
         ValidationOptions {
             draft: self.draft,
             retriever: Arc::new(retriever),
@@ -789,7 +789,7 @@ impl<'i> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>> {
     }
 }
 
-impl fmt::Debug for ValidationOptions<'_, Arc<dyn Retrieve>> {
+impl<R, F: Json> fmt::Debug for ValidationOptions<'_, R, F> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("CompilationConfig")
             .field("draft", &self.draft)

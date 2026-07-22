@@ -849,8 +849,8 @@ pub(crate) fn build_validator<F: Json>(
 }
 
 #[cfg(feature = "resolve-async")]
-pub(crate) async fn build_registry_async<'a>(
-    config: &'a ValidationOptions<'a, Arc<dyn referencing::AsyncRetrieve>>,
+pub(crate) async fn build_registry_async<'a, F: Json>(
+    config: &'a ValidationOptions<'a, Arc<dyn referencing::AsyncRetrieve>, F>,
     draft: Draft,
     resource: ResourceRef<'a>,
     schema_id: Option<&'a str>,
@@ -866,10 +866,10 @@ pub(crate) async fn build_registry_async<'a>(
 }
 
 #[cfg(feature = "resolve-async")]
-pub(crate) async fn build_validator_async(
-    config: &ValidationOptions<'_, Arc<dyn referencing::AsyncRetrieve>>,
+pub(crate) async fn build_validator_async<F: Json>(
+    config: &ValidationOptions<'_, Arc<dyn referencing::AsyncRetrieve>, F>,
     schema: &Value,
-) -> Result<Validator, ValidationError<'static>> {
+) -> Result<Validator<F>, ValidationError<'static>> {
     let draft = config.draft_for(schema).await?;
     let resource_ref = draft.create_resource_ref(schema); // single computation
 
@@ -1242,10 +1242,10 @@ pub(crate) fn build_validator_map<F: Json>(
 }
 
 #[cfg(feature = "resolve-async")]
-pub(crate) async fn build_validator_map_async(
-    config: &ValidationOptions<'_, Arc<dyn referencing::AsyncRetrieve>>,
+pub(crate) async fn build_validator_map_async<F: Json>(
+    config: &ValidationOptions<'_, Arc<dyn referencing::AsyncRetrieve>, F>,
     schema: &Value,
-) -> Result<ValidatorMap, ValidationError<'static>> {
+) -> Result<ValidatorMap<F>, ValidationError<'static>> {
     let draft = config.draft_for(schema).await?;
     let resource = draft.create_resource_ref(schema);
 
