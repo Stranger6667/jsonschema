@@ -41,8 +41,8 @@ pub(crate) fn dereference_with_options<F: Json>(
 }
 
 #[cfg(feature = "resolve-async")]
-pub(crate) async fn dereference_with_options_async(
-    config: &ValidationOptions<'_, Arc<dyn AsyncRetrieve>>,
+pub(crate) async fn dereference_with_options_async<F: Json>(
+    config: &ValidationOptions<'_, Arc<dyn AsyncRetrieve>, F>,
     schema: &Value,
 ) -> Result<Value, referencing::Error> {
     let draft = config.draft_for(schema).await?;

@@ -17,8 +17,11 @@ use std::{
 use email::EmailOptions;
 #[cfg(not(target_arch = "wasm32"))]
 use http::HttpOptions;
-use jsonschema::{paths::LocationSegment, Draft, Retrieve, ValidationOptions};
-use jsonschema_value::{probe_root, take_pending_error, PendingErrorScope, Pyo3};
+use jsonschema::{
+    json::{probe_root, take_pending_error, PendingErrorScope, Pyo3},
+    paths::LocationSegment,
+    Draft, Retrieve, ValidationOptions,
+};
 use pyo3::{
     exceptions::{self, PyKeyError, PyValueError},
     ffi::{PyList_New, PyList_SetItem, PyUnicode_AsUTF8AndSize, Py_DECREF},
@@ -2238,7 +2241,7 @@ mod build {
 /// Meta-schema validation
 mod meta {
     use super::referencing_error_pyerr;
-    use jsonschema_value::Pyo3;
+    use jsonschema::json::Pyo3;
     use pyo3::prelude::*;
 
     /// is_valid(schema, registry=None)
