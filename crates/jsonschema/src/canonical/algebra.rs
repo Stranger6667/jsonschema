@@ -767,42 +767,44 @@ fn intersect_number_leaves(first: NumberLeaf, second: NumberLeaf) -> NumberLeaf 
 
 /// The integers a number interval admits. Endpoints are whole here, so an excluded one steps by one.
 fn integer_within(leaf: &NumberLeaf, ctx: &CanonicalizationContext) -> Schema {
-    let step = |bound: &BoundNumber, inward: &dyn Fn(BoundInteger) -> Option<BoundInteger>| {
-        // Parse only builds whole endpoints, so a fractional one would need rounding here rather
-        // than the stepping below, and dropping it would narrow the schema.
-        debug_assert!(
-            BoundInteger::from_number(&bound.to_number()).is_some(),
-            "number endpoint is not whole"
-        );
-        let value = BoundInteger::from_number(&bound.to_number())?;
-        if bound.is_inclusive() {
-            Some(value)
-        } else {
-            inward(value)
-        }
-    };
-    let minimum = match &leaf.minimum {
-        Some(bound) => match step(bound, &|value: BoundInteger| value.checked_increment()) {
-            Some(value) => Some(value),
-            // Past the representable range there is no integer left to admit.
-            None => return Schema::new(SchemaKind::False),
-        },
-        None => None,
-    };
-    let maximum = match &leaf.maximum {
-        Some(bound) => match step(bound, &BoundInteger::checked_decrement) {
-            Some(value) => Some(value),
-            None => return Schema::new(SchemaKind::False),
-        },
-        None => None,
-    };
+    let bounds = integer_bounds_within(leaf)
+        .expect("interval bounds hold representable integers, checked during parsing");
     integer_leaf(
         IntegerLeaf {
-            bounds: IntegerBounds { minimum, maximum },
+            bounds,
             multiple_of: None,
         },
         ctx,
     )
+}
+
+/// The integers a number interval admits, or `None` when its ends leave the representable range.
+pub(crate) fn integer_bounds_within(leaf: &NumberLeaf) -> Option<IntegerBounds> {
+    // A fractional end rounds inward to the first integer the interval holds; a whole end is that
+    // integer already, unless excluded, in which case it steps one further in.
+    let step = |bound: &BoundNumber,
+                direction: Round,
+                inward: &dyn Fn(BoundInteger) -> Option<BoundInteger>| {
+        let limit = bound.to_number();
+        let rounded = BoundInteger::round_from_number(&limit, direction)?;
+        if bound.is_inclusive() || BoundInteger::from_number(&limit).is_none() {
+            Some(rounded)
+        } else {
+            inward(rounded)
+        }
+    };
+    // Past the representable range there is no integer left to admit.
+    let minimum = match &leaf.minimum {
+        Some(bound) => Some(step(bound, Round::Up, &|value: BoundInteger| {
+            value.checked_increment()
+        })?),
+        None => None,
+    };
+    let maximum = match &leaf.maximum {
+        Some(bound) => Some(step(bound, Round::Down, &BoundInteger::checked_decrement)?),
+        None => None,
+    };
+    Some(IntegerBounds { minimum, maximum })
 }
 
 /// Whether `member` is a number the interval admits.

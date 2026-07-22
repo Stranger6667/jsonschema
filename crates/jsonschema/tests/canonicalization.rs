@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, collections::HashSet};
 
 use jsonschema::{
     canonical::{options, CanonicalKind, CanonicalSchema, CanonicalView},
@@ -42,6 +42,41 @@ fn integer_view_exposes_bounds() {
     assert_eq!(view.maximum, Some(Number::from(9)));
 }
 
+// An unmodeled document keeps document identity, where `1` and `1.0` are distinct - unlike JSON
+// value equality, which reads them as the same number.
+#[test]
+fn unmodeled_documents_hash_by_document_identity() {
+    let canonical = |text: &str| {
+        canonicalize(&serde_json::from_str::<Value>(text).expect("valid schema JSON"))
+            .expect("canonicalizes")
+    };
+    let integer =
+        canonical(r#"{"properties": {"a": {"enum": [1, null, true, "x", [2], {"b": 3}]}}}"#);
+    let float =
+        canonical(r#"{"properties": {"a": {"enum": [1.0, null, true, "x", [2], {"b": 3}]}}}"#);
+    assert_eq!(integer.kind(), CanonicalKind::Raw);
+    let distinct: HashSet<CanonicalSchema> =
+        [integer.clone(), float, integer].into_iter().collect();
+    assert_eq!(distinct.len(), 2);
+}
+
+#[test]
+fn number_view_exposes_bounds() {
+    let CanonicalView::Number(view) = canonicalize(&json!({
+        "type": "number",
+        "exclusiveMinimum": 1.5,
+        "maximum": 9.5
+    }))
+    .unwrap()
+    .view() else {
+        panic!("expected a Number view");
+    };
+    assert_eq!(view.minimum, Number::from_f64(1.5));
+    assert!(view.exclusive_minimum);
+    assert_eq!(view.maximum, Number::from_f64(9.5));
+    assert!(!view.exclusive_maximum);
+}
+
 // Arbitrary precision models a bound past `u64`/`i64` as a big integer and emits it back exactly;
 // the default build keeps such a document raw.
 #[cfg(feature = "arbitrary-precision")]
@@ -65,6 +100,20 @@ fn huge_length_bound_stays_raw(keyword: &str) {
         r#"{{"type": "string", "{keyword}": 99999999999999999999999}}"#
     ))
     .unwrap();
+    assert_eq!(canonicalize(&schema).unwrap().kind(), CanonicalKind::Raw);
+}
+
+// Default build: the integers past `i64` that such a bound admits have no modeled form. They still
+// satisfy the schema, so the document stays raw rather than collapsing to "nothing matches". A
+// `number` interval carries the same bound, and an `allOf` may put it against `integer` later.
+#[cfg(not(feature = "arbitrary-precision"))]
+#[test_case(r#"{"type": "integer", "minimum": 99999999999999999999999}"#; "integer minimum")]
+#[test_case(r#"{"type": "integer", "maximum": 99999999999999999999999}"#; "integer maximum")]
+#[test_case(r#"{"type": "number", "minimum": 99999999999999999999999}"#; "number minimum")]
+#[test_case(r#"{"type": "number", "maximum": 99999999999999999999999}"#; "number maximum")]
+#[test_case(r#"{"allOf": [{"type": "integer"}, {"minimum": 99999999999999999999999}]}"#; "interval meeting integer")]
+fn huge_numeric_bound_stays_raw(text: &str) {
+    let schema: Value = serde_json::from_str(text).expect("valid schema JSON");
     assert_eq!(canonicalize(&schema).unwrap().kind(), CanonicalKind::Raw);
 }
 

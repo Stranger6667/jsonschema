@@ -9,9 +9,8 @@ use crate::{
         algebra,
         context::CanonicalizationContext,
         ir::{
-            tighter, AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber, CanonicalJson,
-            Discrete, IntegerBounds, IntegerLeaf, LengthBounds, NumberLeaf, Schema, SchemaKind,
-            Side, StringLeaf,
+            AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber, CanonicalJson, IntegerLeaf,
+            LengthBounds, NumberLeaf, Schema, SchemaKind, Side, StringLeaf,
         },
         CanonicalizationError,
     },
@@ -48,13 +47,11 @@ fn parse_schema(
     let mut max_length: Option<BoundCardinality> = None;
     let mut patterns: Vec<Arc<str>> = Vec::new();
     let mut formats: Vec<Arc<str>> = Vec::new();
-    let mut minimum: Option<BoundInteger> = None;
     let mut multiple_of: Option<BoundInteger> = None;
     // The number domain keeps each end as written: on the reals an excluded bound has no successor
     // to fold it into, unlike the integer path below.
     let mut real_minimum: Option<BoundNumber> = None;
     let mut real_maximum: Option<BoundNumber> = None;
-    let mut maximum: Option<BoundInteger> = None;
     // Draft 4 spells exclusivity as a boolean modifier on `minimum`/`maximum`, which may be read
     // before the bound it modifies, so it is applied once the whole object has been read.
     let mut draft4_exclusive_minimum = false;
@@ -150,50 +147,24 @@ fn parse_schema(
                     None => return Ok(None),
                 }
             }
-            // A fractional or (default build) out-of-`i64` bound has no modeled integer form; keep it raw.
             ("minimum", Value::Number(number)) if ctx.draft().is_known_keyword("minimum") => {
-                match BoundInteger::from_number(number) {
-                    Some(bound) => {
-                        minimum = tighter(minimum, Some(bound), Ord::max);
-                        real_minimum = tighter_real(real_minimum, number, true, Side::Lower);
-                    }
-                    None => return Ok(None),
-                }
+                real_minimum = tighter_real(real_minimum, number, true, Side::Lower);
             }
             ("maximum", Value::Number(number)) if ctx.draft().is_known_keyword("maximum") => {
-                match BoundInteger::from_number(number) {
-                    Some(bound) => {
-                        maximum = tighter(maximum, Some(bound), Ord::min);
-                        real_maximum = tighter_real(real_maximum, number, true, Side::Upper);
-                    }
-                    None => return Ok(None),
-                }
+                real_maximum = tighter_real(real_maximum, number, true, Side::Upper);
             }
-            // Draft 6+ spells an exclusive bound as a number. On integers `> n` is `>= n + 1`, so it
-            // folds into the inclusive bound and the IR stays a closed interval.
+            // Draft 6+ spells an exclusive bound as its own numeric keyword.
             ("exclusiveMinimum", Value::Number(number))
                 if !matches!(ctx.draft(), Draft::Draft4)
                     && ctx.draft().is_known_keyword("exclusiveMinimum") =>
             {
-                match BoundInteger::from_number(number).and_then(BoundInteger::checked_increment) {
-                    Some(bound) => {
-                        minimum = tighter(minimum, Some(bound), Ord::max);
-                        real_minimum = tighter_real(real_minimum, number, false, Side::Lower);
-                    }
-                    None => return Ok(None),
-                }
+                real_minimum = tighter_real(real_minimum, number, false, Side::Lower);
             }
             ("exclusiveMaximum", Value::Number(number))
                 if !matches!(ctx.draft(), Draft::Draft4)
                     && ctx.draft().is_known_keyword("exclusiveMaximum") =>
             {
-                match BoundInteger::from_number(number).and_then(BoundInteger::checked_decrement) {
-                    Some(bound) => {
-                        maximum = tighter(maximum, Some(bound), Ord::min);
-                        real_maximum = tighter_real(real_maximum, number, false, Side::Upper);
-                    }
-                    None => return Ok(None),
-                }
+                real_maximum = tighter_real(real_maximum, number, false, Side::Upper);
             }
             ("exclusiveMinimum", Value::Bool(flag)) if matches!(ctx.draft(), Draft::Draft4) => {
                 draft4_exclusive_minimum = *flag;
@@ -209,21 +180,9 @@ fn parse_schema(
 
     if draft4_exclusive_minimum {
         real_minimum = real_minimum.map(BoundNumber::excluded);
-        if let Some(bound) = minimum.take() {
-            match bound.checked_increment() {
-                Some(next) => minimum = Some(next),
-                None => return Ok(None),
-            }
-        }
     }
     if draft4_exclusive_maximum {
         real_maximum = real_maximum.map(BoundNumber::excluded);
-        if let Some(bound) = maximum.take() {
-            match bound.checked_decrement() {
-                Some(next) => maximum = Some(next),
-                None => return Ok(None),
-            }
-        }
     }
 
     // TODO(canonical): not modeled yet - Draft 4 `integer` mixed with other types in a type list
@@ -257,30 +216,33 @@ fn parse_schema(
         conjuncts.push(string_facet_schema(leaf, ctx));
     }
 
-    if minimum.is_some() || maximum.is_some() || multiple_of.is_some() {
+    if real_minimum.is_some() || real_maximum.is_some() || multiple_of.is_some() {
         // A divisor is modeled only on `integer`; on the reals it needs its own arithmetic.
         if multiple_of.is_some() && type_set != Some(JsonTypeSet::from(JsonType::Integer)) {
             return Ok(None);
         }
+        let leaf = NumberLeaf {
+            minimum: real_minimum,
+            maximum: real_maximum,
+        };
+        // The integers the interval admits must be representable: the interval may still meet
+        // `integer` through an `allOf`, and there it is the only form left to express.
+        let Some(bounds) = algebra::integer_bounds_within(&leaf) else {
+            return Ok(None);
+        };
         if type_set == Some(JsonTypeSet::from(JsonType::Integer)) {
             // Every integer is a multiple of one, so the divisor leaves no trace here. It still had
-            // to reach this point: on `number` it means "whole", which the gate below keeps raw.
+            // to reach this point: on `number` it means "whole", which the branch above keeps raw.
             let multiple_of = multiple_of.filter(|step| !step.is_one());
             conjuncts.push(algebra::integer_leaf(
                 IntegerLeaf {
-                    bounds: IntegerBounds { minimum, maximum },
+                    bounds,
                     multiple_of,
                 },
                 ctx,
             ));
         } else {
-            conjuncts.push(number_facet_schema(
-                NumberLeaf {
-                    minimum: real_minimum,
-                    maximum: real_maximum,
-                },
-                ctx,
-            ));
+            conjuncts.push(number_facet_schema(leaf, ctx));
         }
     }
 

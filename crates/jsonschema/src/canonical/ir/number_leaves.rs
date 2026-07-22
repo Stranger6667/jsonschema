@@ -118,15 +118,18 @@ fn reaches(last: &NumberLeaf, next: &NumberLeaf) -> bool {
 
 /// The narrowest interval holding both. An absent bound is unbounded, so it swallows the present one.
 fn hull(last: NumberLeaf, next: NumberLeaf) -> NumberLeaf {
+    // Sorting put the wider minimum first, which is what lets `last` keep it unexamined.
+    debug_assert!(
+        !(last.minimum.is_some() && next.minimum.is_none()),
+        "an unbounded minimum sorted after a bounded one"
+    );
+    debug_assert!(
+        !matches!((&last.minimum, &next.minimum), (Some(left), Some(right))
+            if left.is_tighter_than(right, Side::Lower)),
+        "the tighter minimum sorted first"
+    );
     NumberLeaf {
-        minimum: match (last.minimum, next.minimum) {
-            (Some(left), Some(right)) => Some(if left.is_tighter_than(&right, Side::Lower) {
-                right
-            } else {
-                left
-            }),
-            _ => None,
-        },
+        minimum: last.minimum,
         maximum: match (last.maximum, next.maximum) {
             (Some(left), Some(right)) => Some(if left.is_tighter_than(&right, Side::Upper) {
                 right
