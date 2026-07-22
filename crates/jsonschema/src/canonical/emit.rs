@@ -4,7 +4,7 @@ use referencing::Draft;
 use serde_json::{json, Map, Value};
 
 use crate::{
-    canonical::ir::{CanonicalJson, IntegerLeaf, Schema, SchemaKind, StringLeaf},
+    canonical::ir::{CanonicalJson, IntegerBounds, Schema, SchemaKind, StringLeaf},
     JsonTypeSet,
 };
 
@@ -60,10 +60,10 @@ fn emit(kind: &SchemaKind, draft: Draft) -> Value {
 fn emit_string(leaf: &StringLeaf) -> Value {
     let mut map = Map::new();
     map.insert("type".into(), Value::String("string".into()));
-    if let Some(min) = &leaf.min_length {
+    if let Some(min) = &leaf.lengths.minimum {
         map.insert("minLength".into(), Value::Number(min.to_number()));
     }
-    if let Some(max) = &leaf.max_length {
+    if let Some(max) = &leaf.lengths.maximum {
         map.insert("maxLength".into(), Value::Number(max.to_number()));
     }
     match leaf.patterns.as_slice() {
@@ -83,13 +83,13 @@ fn emit_string(leaf: &StringLeaf) -> Value {
 }
 
 /// Emit an integer leaf as `{"type":"integer"}` plus its interval bounds.
-fn emit_integer(leaf: &IntegerLeaf) -> Value {
+fn emit_integer(bounds: &IntegerBounds) -> Value {
     let mut map = Map::new();
     map.insert("type".into(), Value::String("integer".into()));
-    if let Some(min) = &leaf.bounds.minimum {
+    if let Some(min) = &bounds.minimum {
         map.insert("minimum".into(), Value::Number(min.to_number()));
     }
-    if let Some(max) = &leaf.bounds.maximum {
+    if let Some(max) = &bounds.maximum {
         map.insert("maximum".into(), Value::Number(max.to_number()));
     }
     Value::Object(map)
