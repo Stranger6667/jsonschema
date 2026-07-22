@@ -83,6 +83,25 @@ def test_type_errors(invalid_input):
         meta.validate(invalid_input)
 
 
+def test_unsupported_type_in_read_position():
+    schema = {"minimum": object()}
+    assert meta.is_valid(schema) is False
+    with pytest.raises(ValueError, match="Unsupported type: 'object'"):
+        meta.validate(schema)
+
+
+def test_unsupported_type_in_unread_position():
+    # Keywords the meta-schema does not constrain are never converted
+    schema = {"type": "string", "customKeyword": object()}
+    assert meta.is_valid(schema)
+    meta.validate(schema)
+
+
+def test_non_string_keys():
+    with pytest.raises(ValueError, match="Dict key must be str or str enum. Got 'int'"):
+        meta.is_valid({1: "x"})
+
+
 @pytest.mark.parametrize(
     ["custom_meta", "schema", "valid"],
     [

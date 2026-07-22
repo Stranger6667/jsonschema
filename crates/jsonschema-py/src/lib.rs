@@ -2238,6 +2238,7 @@ mod build {
 /// Meta-schema validation
 mod meta {
     use super::referencing_error_pyerr;
+    use jsonschema_value::Pyo3;
     use pyo3::prelude::*;
 
     /// is_valid(schema, registry=None)
@@ -2265,24 +2266,39 @@ mod meta {
         schema: &Bound<'_, PyAny>,
         registry: Option<&crate::registry::Registry>,
     ) -> PyResult<bool> {
-        let schema = crate::ser::to_value(schema)?;
-        let result = if let Some(registry) = registry {
-            jsonschema::meta::options()
-                .with_registry(registry.inner.as_ref())
-                .validate(&schema)
-        } else {
-            jsonschema::meta::validate(&schema)
+        let Some(registry) = registry else {
+            return crate::surface_pending_errors(
+                schema,
+                || match jsonschema::meta::is_valid_for::<Pyo3>(schema.as_borrowed()) {
+                    Ok(valid) => Ok(valid),
+                    Err(error) => {
+                        raise_if_unresolvable(py, &error)?;
+                        Ok(false)
+                    }
+                },
+            );
         };
-
-        match result {
+        let schema = crate::ser::to_value(schema)?;
+        match jsonschema::meta::options()
+            .with_registry(registry.inner.as_ref())
+            .validate(&schema)
+        {
             Ok(()) => Ok(true),
             Err(error) => {
-                if let jsonschema::error::ValidationErrorKind::Referencing(err) = error.kind() {
-                    return Err(referencing_error_pyerr(py, err.to_string())?);
-                }
+                raise_if_unresolvable(py, &error)?;
                 Ok(false)
             }
         }
+    }
+
+    fn raise_if_unresolvable(
+        py: Python<'_>,
+        error: &jsonschema::ValidationError<'_>,
+    ) -> PyResult<()> {
+        if let jsonschema::error::ValidationErrorKind::Referencing(err) = error.kind() {
+            return Err(referencing_error_pyerr(py, err.to_string())?);
+        }
+        Ok(())
     }
 
     /// validate(schema, registry=None)
@@ -2314,21 +2330,26 @@ mod meta {
         schema: &Bound<'_, PyAny>,
         registry: Option<&crate::registry::Registry>,
     ) -> PyResult<()> {
-        let schema = crate::ser::to_value(schema)?;
-        let result = if let Some(registry) = registry {
-            jsonschema::meta::options()
-                .with_registry(registry.inner.as_ref())
-                .validate(&schema)
-        } else {
-            jsonschema::meta::validate(&schema)
+        let Some(registry) = registry else {
+            return crate::surface_pending_errors(
+                schema,
+                || match jsonschema::meta::validate_for::<Pyo3>(schema.as_borrowed()) {
+                    Ok(()) => Ok(()),
+                    Err(error) => {
+                        raise_if_unresolvable(py, &error)?;
+                        Err(crate::into_py_err(py, error, None)?)
+                    }
+                },
+            );
         };
-
-        match result {
+        let schema = crate::ser::to_value(schema)?;
+        match jsonschema::meta::options()
+            .with_registry(registry.inner.as_ref())
+            .validate(&schema)
+        {
             Ok(()) => Ok(()),
             Err(error) => {
-                if let jsonschema::error::ValidationErrorKind::Referencing(err) = error.kind() {
-                    return Err(referencing_error_pyerr(py, err.to_string())?);
-                }
+                raise_if_unresolvable(py, &error)?;
                 Err(crate::into_py_err(py, error, None)?)
             }
         }

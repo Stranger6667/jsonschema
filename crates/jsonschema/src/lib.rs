@@ -1439,10 +1439,15 @@ pub fn async_options<'i>() -> ValidationOptions<'i, std::sync::Arc<dyn AsyncRetr
 
 /// Functionality for validating JSON Schema documents against their meta-schemas.
 pub mod meta {
-    use crate::{error::ValidationError, Draft, Registry};
+    use crate::{error::ValidationError, Draft, Json, Node, Object, Registry, Validator};
     use ahash::AHashSet;
     use referencing::Retrieve;
     use serde_json::Value;
+    use std::{
+        any::{Any, TypeId},
+        borrow::Cow,
+        sync::{OnceLock, RwLock},
+    };
 
     pub use validator_handle::MetaValidator;
 
@@ -1858,6 +1863,125 @@ pub mod meta {
         schema: &Value,
     ) -> Result<MetaValidator<'static>, ValidationError<'static>> {
         try_meta_validator_for(schema, None)
+    }
+
+    /// Validate a schema document held in a foreign representation against its meta-schema.
+    /// Draft version is detected automatically.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`ValidationError`], or a referencing error if the meta-schema cannot be
+    /// resolved.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a bundled meta-schema fails to build.
+    pub fn validate_for<F: Json>(schema: F::Node<'_>) -> Result<(), ValidationError<'_>> {
+        let cache = meta_cache::<F>();
+        match cache.draft_of(&schema) {
+            Draft::Unknown => custom_meta_validator(cache, &schema)?.validate(schema),
+            draft => cache.validator(draft).validate(schema),
+        }
+    }
+
+    /// Check a schema document held in a foreign representation against its meta-schema.
+    /// Draft version is detected automatically.
+    ///
+    /// # Errors
+    ///
+    /// Returns a referencing error if the meta-schema cannot be resolved.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a bundled meta-schema fails to build.
+    pub fn is_valid_for<F: Json>(schema: F::Node<'_>) -> Result<bool, ValidationError<'static>> {
+        let cache = meta_cache::<F>();
+        Ok(match cache.draft_of(&schema) {
+            Draft::Unknown => custom_meta_validator(cache, &schema)?.is_valid(schema),
+            draft => cache.validator(draft).is_valid(schema),
+        })
+    }
+
+    /// Meta-schemas outside the bundled drafts are resolved through the `$schema` chain.
+    fn custom_meta_validator<F: Json>(
+        cache: &MetaCache<F>,
+        schema: &F::Node<'_>,
+    ) -> Result<Validator<F>, ValidationError<'static>> {
+        let uri = cache
+            .meta_schema_uri(schema)
+            .expect("`$schema` must exist when draft is Unknown")
+            .into_owned();
+        let (custom_meta_schema, resolved_draft) = resolve_meta_schema_chain(&uri)?;
+        crate::options_for::<F>()
+            .with_draft(resolved_draft)
+            .without_schema_validation()
+            .build(&custom_meta_schema)
+    }
+
+    /// A `Validator<F>` only accepts nodes of the representation it was built for, so meta-schema
+    /// state is shared per `F` rather than globally.
+    struct MetaCache<F: Json> {
+        schema_key: F::PreparedKey,
+        validators: [OnceLock<Validator<F>>; 5],
+    }
+
+    impl<F: Json> MetaCache<F> {
+        fn meta_schema_uri<'a>(&self, schema: &F::Node<'a>) -> Option<Cow<'a, str>> {
+            schema.as_object()?.get(&self.schema_key)?.as_string()
+        }
+
+        fn draft_of(&self, schema: &F::Node<'_>) -> Draft {
+            self.meta_schema_uri(schema)
+                .map_or_else(Draft::default, |uri| Draft::from_schema_uri(&uri))
+        }
+
+        fn validator(&self, draft: Draft) -> &Validator<F> {
+            let (index, meta_schema) = match draft {
+                Draft::Draft4 => (0, &referencing::meta::DRAFT4),
+                Draft::Draft6 => (1, &referencing::meta::DRAFT6),
+                Draft::Draft7 => (2, &referencing::meta::DRAFT7),
+                Draft::Draft201909 => (3, &referencing::meta::DRAFT201909),
+                // Draft202012, Unknown, or any future draft variants
+                _ => (4, &referencing::meta::DRAFT202012),
+            };
+            self.validators[index].get_or_init(|| {
+                crate::options_for::<F>()
+                    .without_schema_validation()
+                    .build(meta_schema)
+                    .expect("Meta-schema should be valid")
+            })
+        }
+    }
+
+    /// Statics cannot be generic over `F`, so entries are found by type. There is one per
+    /// representation reaching this code, which a linear scan covers.
+    fn meta_cache<F: Json>() -> &'static MetaCache<F> {
+        static CACHE: RwLock<Vec<(TypeId, &'static (dyn Any + Send + Sync))>> =
+            RwLock::new(Vec::new());
+
+        fn find<F: Json>(
+            entries: &[(TypeId, &'static (dyn Any + Send + Sync))],
+        ) -> Option<&'static MetaCache<F>> {
+            let type_id = TypeId::of::<F>();
+            entries.iter().find(|(id, _)| *id == type_id).map(|(_, e)| {
+                e.downcast_ref()
+                    .expect("Entries are found by representation type")
+            })
+        }
+
+        if let Some(cache) = find::<F>(&CACHE.read().expect("Meta-validator cache is poisoned")) {
+            return cache;
+        }
+        let mut entries = CACHE.write().expect("Meta-validator cache is poisoned");
+        if let Some(cache) = find::<F>(&entries) {
+            return cache;
+        }
+        let cache: &'static MetaCache<F> = Box::leak(Box::new(MetaCache {
+            schema_key: F::prepare_key("$schema"),
+            validators: Default::default(),
+        }));
+        entries.push((TypeId::of::<F>(), cache));
+        cache
     }
 
     fn try_meta_validator_for<'a>(
@@ -3877,7 +4001,7 @@ pub(crate) mod tests_util {
 
 #[cfg(test)]
 mod tests {
-    use crate::{validator_for, Registry, ValidationError};
+    use crate::{validator_for, Registry, SerdeJson, ValidationError};
 
     use super::Draft;
     use serde_json::json;
@@ -4004,6 +4128,39 @@ mod tests {
         assert!(validate_fn(&invalid).is_err());
         assert!(is_valid_fn(&valid));
         assert!(!is_valid_fn(&invalid));
+    }
+
+    #[test_case(&json!({"type": "object", "required": ["name"]}), true ; "valid")]
+    #[test_case(&json!({"type": "invalid_type", "required": true}), false ; "invalid")]
+    #[test_case(&json!(true), true ; "boolean schema")]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "minimum": 5, "exclusiveMinimum": true}), true ; "draft4 boolean exclusive minimum")]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "exclusiveMinimum": 5}), false ; "draft4 numeric exclusive minimum")]
+    #[test_case(&json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "exclusiveMinimum": 5}), true ; "draft2020-12 numeric exclusive minimum")]
+    fn test_meta_validate_for(schema: &serde_json::Value, expected: bool) {
+        let result = crate::meta::validate_for::<SerdeJson>(schema);
+        assert_eq!(result.is_ok(), expected);
+        assert_eq!(result.is_ok(), crate::meta::validate(schema).is_ok());
+        assert_eq!(
+            crate::meta::is_valid_for::<SerdeJson>(schema).expect("Meta-schema is resolvable"),
+            expected
+        );
+    }
+
+    #[test]
+    fn test_meta_validate_for_unresolvable_meta_schema() {
+        let schema = json!({"$schema": "htt://json-schema.org/draft-07/schema"});
+        let error = crate::meta::validate_for::<SerdeJson>(&schema)
+            .expect_err("Unresolvable meta-schema should fail");
+        assert!(matches!(
+            error.kind(),
+            crate::error::ValidationErrorKind::Referencing(_)
+        ));
+        let error = crate::meta::is_valid_for::<SerdeJson>(&schema)
+            .expect_err("Unresolvable meta-schema should fail");
+        assert!(matches!(
+            error.kind(),
+            crate::error::ValidationErrorKind::Referencing(_)
+        ));
     }
 
     #[test]
