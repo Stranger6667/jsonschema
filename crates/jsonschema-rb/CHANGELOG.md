@@ -5,6 +5,16 @@
 ### Added
 
 - Experimental schema canonicalization: `JSONSchema.canonicalize` and the `JSONSchema::Canonical` module reduce a schema to a normal form. Incomplete keyword coverage; API may change.
+- Validation of recursive Ruby objects.
+
+### Changed
+
+- Invalid UTF-8, unsupported types, and nesting past the depth limit are reported only where a keyword reads the value.
+- A hash keyed by both `:name` and `"name"` counts two properties (it previously collapsed them into one).
+
+### Performance
+
+- Up to 3x faster validation by working on Ruby objects directly instead of converting them to `serde_json`. [#239](https://github.com/Stranger6667/jsonschema/issues/239)
 
 ## [0.48.5] - 2026-07-22
 

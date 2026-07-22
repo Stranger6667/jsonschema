@@ -2198,3 +2198,139 @@ RSpec.describe "Masking" do
     end
   end
 end
+
+RSpec.describe "Native instance validation" do
+  it "validates self-referential hashes" do
+    schema = {
+      "$defs" => { "node" => { "type" => "object", "additionalProperties" => { "$ref" => "#/$defs/node" } } },
+      "$ref" => "#/$defs/node"
+    }
+    instance = {}
+    instance["foo"] = instance
+    expect(JSONSchema.valid?(schema, instance)).to be true
+  end
+
+  it "validates self-referential arrays" do
+    schema = {
+      "$defs" => { "node" => { "type" => "array", "items" => { "$ref" => "#/$defs/node" } } },
+      "$ref" => "#/$defs/node"
+    }
+    instance = []
+    instance << instance
+    expect(JSONSchema.valid?(schema, instance)).to be true
+  end
+
+  it "reports errors for self-referential hashes without materializing them" do
+    schema = {
+      "$defs" => {
+        "node" => {
+          "type" => "object",
+          "additionalProperties" => { "$ref" => "#/$defs/node" },
+          "propertyNames" => { "maxLength" => 3 }
+        }
+      },
+      "$ref" => "#/$defs/node"
+    }
+    instance = {}
+    instance["foo"] = instance
+    expect(JSONSchema.valid?(schema, instance)).to be true
+
+    instance["toolong"] = {}
+    expect(JSONSchema.valid?(schema, instance)).to be false
+  end
+
+  it "validates symbol-keyed instances" do
+    schema = { "type" => "object", "properties" => { "name" => { "type" => "string" } }, "required" => ["name"] }
+    expect(JSONSchema.valid?(schema, { name: "Alice" })).to be true
+    expect(JSONSchema.valid?(schema, { name: 42 })).to be false
+    expect(JSONSchema.valid?(schema, {})).to be false
+  end
+end
+
+RSpec.describe "GC compaction", compaction: true do
+  it "keeps validators working across GC.compact" do
+    schema = {
+      "type" => "object",
+      "properties" => { "name" => { "type" => "string" }, "años" => { "type" => "integer" } },
+      "required" => ["name"]
+    }
+    validator = JSONSchema.validator_for(schema)
+    expect(validator.valid?({ "name" => "Alice", "años" => 1 })).to be true
+
+    GC.verify_compaction_references(expand_heap: false, toward: :empty)
+
+    expect(validator.valid?({ "name" => "Alice", "años" => 1 })).to be true
+    expect(validator.valid?({ "name" => "Alice", "años" => "x" })).to be false
+    expect(validator.valid?({ "años" => 1 })).to be false
+    expect(validator.valid?({ name: "Alice", años: 1 })).to be true
+  end
+
+  it "keeps BigDecimal instances valid across GC.compact" do
+    require "bigdecimal"
+    validator = JSONSchema.validator_for({ "type" => "number", "minimum" => 1 })
+    expect(validator.valid?(BigDecimal("1.5"))).to be true
+
+    GC.verify_compaction_references(expand_heap: false, toward: :empty)
+
+    expect(validator.valid?(BigDecimal("1.5"))).to be true
+    expect(validator.valid?(BigDecimal("0.5"))).to be false
+  end
+end
+
+# Detection needs repeated movement, so this is a count, not a single compaction.
+COMPACTION_KEYS = 8
+
+RSpec.describe "GC compaction during validation", compaction: true do
+  it "survives object movement triggered from inside a format checker" do
+    schema = {
+      "type" => "object",
+      "additionalProperties" => { "type" => "string", "format" => "compactor" }
+    }
+    instance = (1..COMPACTION_KEYS).to_h { |i| ["key#{i}", "value#{i}"] }
+    compactor = lambda do |_value|
+      GC.verify_compaction_references(expand_heap: false, toward: :empty)
+      true
+    end
+
+    expect(JSONSchema.valid?(schema, instance, formats: { "compactor" => compactor },
+                                               validate_formats: true)).to be true
+  end
+end
+
+RSpec.describe "GC compaction with borrowed property names", compaction: true do
+  it "survives movement while evaluated names are retained" do
+    schema = {
+      "allOf" => [{ "properties" => { "aa" => true, "bb" => true } }],
+      "unevaluatedProperties" => { "type" => "string", "format" => "compactor" }
+    }
+    instance = { "aa" => "x", "bb" => "y" }
+    (1..COMPACTION_KEYS).each { |i| instance["k#{i}"] = "v#{i}" }
+    compactor = lambda do |_value|
+      GC.verify_compaction_references(expand_heap: false, toward: :empty)
+      true
+    end
+
+    expect(JSONSchema.valid?(schema, instance, formats: { "compactor" => compactor },
+                                               validate_formats: true)).to be true
+  end
+end
+
+RSpec.describe "Instance mutation between validations" do
+  it "sees a replaced value" do
+    validator = JSONSchema.validator_for({ "type" => "object", "additionalProperties" => { "type" => "string" } })
+    instance = { "a" => "x" }
+    expect(validator.valid?(instance)).to be true
+
+    instance["a"] = 42
+    expect(validator.valid?(instance)).to be false
+  end
+
+  it "sees a replaced value in a repeated element" do
+    validator = JSONSchema.validator_for({ "type" => "array", "items" => { "type" => "object", "additionalProperties" => { "type" => "string" } } })
+    inner = { "k" => "v" }
+    expect(validator.valid?([inner, inner])).to be true
+
+    inner["k"] = 1
+    expect(validator.valid?([inner, inner])).to be false
+  end
+end

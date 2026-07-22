@@ -6,7 +6,7 @@ A benchmarking suite for comparing different Ruby JSON Schema implementations.
 
 - `jsonschema_rs` (latest version in this repo)
 - [json_schemer](https://rubygems.org/gems/json_schemer) (v2.5.0)
-- [json-schema](https://rubygems.org/gems/json-schema) (v6.1.0)
+- [json-schema](https://rubygems.org/gems/json-schema) (v6.2.0)
 - [rj_schema](https://rubygems.org/gems/rj_schema) (v1.0.5) - RapidJSON-based (C++)
 
 ## Usage
@@ -57,14 +57,14 @@ Not all libraries support the same compile-once, validate-many pattern, which af
 
 | Benchmark        | json-schema                    | rj_schema                      | json_schemer                   | jsonschema_rs |
 |------------------|--------------------------------|--------------------------------|--------------------------------|---------------|
-| OpenAPI          | 2.16 s (**x246.94**)           | 564.14 ms (**x64.42**)         | 382.34 ms (**x43.66**)         | 8.76 ms       |
-| Swagger          | 3.07 s (**x478.18**)           | - (4)                          | - (2)                          | 6.41 ms       |
-| Canada (GeoJSON) | - (1)                          | 74.52 ms (**x11.39**)          | 868.24 ms (**x132.69**)        | 6.54 ms       |
-| CITM Catalog     | - (1)                          | 17.95 ms (**x7.29**)           | 70.28 ms (**x28.54**)          | 2.46 ms       |
-| Fast (Valid)     | - (1)                          | 75.16 µs (**x97.20**)          | 30.70 µs (**x39.69**)          | 773.33 ns     |
-| Fast (Invalid)   | - (1)                          | - (3)                          | 30.24 µs (**x41.99**)          | 720.25 ns     |
-| FHIR             | 921.59 ms (**x127000.27**)     | 2.20 s (**x303007.15**)        | 8.37 ms (**x1153.63**)         | 7.26 µs       |
-| Recursive        | - (1)                          | 3.58 ms (**x206.26**)          | 20.08 s (**x1157471.27**)      | 17.34 µs      |
+| OpenAPI          | 2.46 s (**x897.40**)           | 450.43 ms (**x164.04**)        | 435.99 ms (**x158.78**)        | 2.75 ms       |
+| Swagger          | 3.59 s (**x919.17**)           | - (4)                          | - (2)                          | 3.90 ms       |
+| Canada (GeoJSON) | - (1)                          | 78.77 ms (**x154.26**)         | 1.16 s (**x2279.91**)          | 510.62 µs     |
+| CITM Catalog     | - (1)                          | 17.62 ms (**x23.34**)          | 70.06 ms (**x92.82**)          | 754.81 µs     |
+| Fast (Valid)     | - (1)                          | 66.49 µs (**x277.43**)         | 30.03 µs (**x125.30**)         | 239.67 ns     |
+| Fast (Invalid)   | - (1)                          | - (3)                          | 30.59 µs (**x516.18**)         | 59.26 ns      |
+| FHIR             | 437.54 ms (**x66979.36**)      | 2.10 s (**x320719.22**)        | 8.41 ms (**x1287.26**)         | 6.53 µs       |
+| Recursive        | - (1)                          | 3.05 ms (**x238.10**)          | 21.44 s (**x1673140.33**)      | 12.82 µs      |
 
 Notes:
 
@@ -76,7 +76,7 @@ Notes:
 
 4. `rj_schema` fails to resolve the Draft 4 meta-schema `$ref` in the Swagger schema.
 
-You can find benchmark code in [bench/](bench/), Ruby version `4.0.5`, Rust version `1.96.1`.
+You can find benchmark code in [bench/](bench/), Ruby version `4.0.1`, Rust version `1.97.1`.
 
 ## Contributing
 

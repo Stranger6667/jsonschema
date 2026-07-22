@@ -10,8 +10,7 @@ use crate::{
 #[derive(TypedData)]
 #[magnus(class = "JSONSchema::ValidatorMap", free_immediately, size, mark)]
 pub struct ValidatorMap {
-    pub(crate) inner: jsonschema::ValidatorMap,
-    pub(crate) has_ruby_callbacks: bool,
+    pub(crate) inner: jsonschema::ValidatorMap<jsonschema::json::Magnus>,
     pub(crate) callback_roots: CallbackRoots,
     pub(crate) compilation_roots: CompilationRootsRef,
     pub(crate) mask: Option<String>,
@@ -38,7 +37,6 @@ impl ValidatorMap {
             Validator::from_jsonschema_with_roots(
                 v.clone(),
                 self.mask.clone(),
-                self.has_ruby_callbacks,
                 self.callback_roots.clone(),
                 self.compilation_roots.clone(),
             )
@@ -52,7 +50,6 @@ impl ValidatorMap {
             Some(v) => Ok(Validator::from_jsonschema_with_roots(
                 v.clone(),
                 rb_self.mask.clone(),
-                rb_self.has_ruby_callbacks,
                 rb_self.callback_roots.clone(),
                 rb_self.compilation_roots.clone(),
             )),

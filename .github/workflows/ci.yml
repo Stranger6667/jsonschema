@@ -87,7 +87,11 @@ jobs:
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         if: runner.os == 'Windows'
 
-      - run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py --exclude jsonschema-rb
+      # `jsonschema-value` is excluded here because `--all-features` runs its pyo3 and magnus test
+      # binaries, which link an interpreter. They run per-representation instead: pyo3 below, and
+      # magnus in the Ruby job, where a matching Ruby is set up.
+      - run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value
+      - run: cargo test --no-fail-fast -p jsonschema-value --features "pyo3-tests,conformance,arbitrary-precision,macros"
 
   test-cross:
     strategy:
@@ -399,7 +403,7 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           cache-all-crates: "true"
-          key: ruby-${{ matrix.os }}
+          key: ruby-${{ matrix.os }}-${{ matrix.ruby-version }}
 
       - uses: ruby/setup-ruby@003a5c4d8d6321bd302e38f6f0ec593f77f06600 # v1.319.0
         with:
@@ -412,10 +416,21 @@ jobs:
           RB_SYS_CARGO_PROFILE: dev
         working-directory: crates/jsonschema-rb
 
-      - run: bundle exec rspec
+      # The test binary links libruby, which `setup-ruby` installs outside the loader's search path.
+      - run: |
+          libdir="$(ruby -e 'print RbConfig::CONFIG["libdir"]')"
+          export LD_LIBRARY_PATH="$libdir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export DYLD_FALLBACK_LIBRARY_PATH="$libdir${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}"
+          cargo test --no-fail-fast -p jsonschema-value --features "magnus-tests,conformance,arbitrary-precision,macros"
+
+      - run: bundle exec rspec --tag '~compaction'
         env:
           JSONSCHEMA_RB_LIFETIME_STRESS_ITERATIONS: "10"
           JSONSCHEMA_RB_LIFETIME_GC_ROUNDS: "3"
+        working-directory: crates/jsonschema-rb
+
+      # Forcing every object to move is proportional to heap size, so these run against a fresh one.
+      - run: bundle exec rspec spec/jsonschema_spec.rb --tag compaction
         working-directory: crates/jsonschema-rb
 
   test-ruby-gem-install:
@@ -438,7 +453,7 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           cache-all-crates: "true"
-          key: ruby-gem-install-${{ matrix.os }}
+          key: ruby-gem-install-${{ matrix.os }}-${{ matrix.ruby-version }}
 
       - uses: ruby/setup-ruby@003a5c4d8d6321bd302e38f6f0ec593f77f06600 # v1.319.0
         with:

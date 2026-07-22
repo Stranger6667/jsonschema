@@ -10,11 +10,20 @@ pub mod numeric_check;
 pub mod types;
 pub mod unique;
 
+#[cfg(all(feature = "magnus", unix))]
+mod magnus;
 #[cfg(feature = "pyo3")]
 mod pyo3;
 #[cfg(feature = "serde_json")]
 mod serde_json;
 
+#[cfg(all(feature = "magnus", unix))]
+pub use magnus::{
+    child as magnus_child, invalidate_members_cache as magnus_invalidate_members_cache,
+    is_object as magnus_is_object, probe_root as magnus_probe_root,
+    take_pending_error as magnus_take_pending_error, Magnus, PendingError,
+    PendingErrorScope as MagnusPendingErrorScope, RbNode,
+};
 #[cfg(feature = "pyo3")]
 pub use pyo3::{probe_root, take_pending_error, PendingErrorScope, Pyo3};
 #[cfg(feature = "serde_json")]
