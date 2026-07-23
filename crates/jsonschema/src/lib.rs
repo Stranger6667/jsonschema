@@ -8,6 +8,7 @@
 //! - 🌐 Blocking & non-blocking remote reference fetching (network/file)
 //! - 🎨 Structured Output v1 reports (flag/list/hierarchical)
 //! - ✨ Meta-schema validation for schema documents
+//! - 🧮 Schema canonicalization (experimental; see the [`canonical`] module)
 //! - 🧩 Validation of custom in-memory JSON representations
 //! - 🚀 WebAssembly support
 //!
@@ -933,7 +934,6 @@ compile_error!(
 );
 
 pub(crate) mod bundler;
-#[doc(hidden)]
 pub mod canonical;
 pub(crate) mod compiler;
 mod content_encoding;
@@ -1187,7 +1187,6 @@ pub mod types {
 }
 mod validator;
 
-#[doc(hidden)]
 pub use canonical::CanonicalizationError;
 pub use error::{
     ErrorIterator, MaskedValidationError, ValidationError, ValidationErrorParts, ValidationErrors,
@@ -1541,13 +1540,17 @@ pub async fn async_validator_map_for(
 
 /// Reduce a JSON Schema to its canonical IR form.
 ///
+/// Experimental: keyword coverage is incomplete and the API may change in minor releases.
+///
 /// Use [`canonical::options`](fn@canonical::options) to configure canonicalization.
+///
+/// Inputs the canonical form cannot model exactly succeed as an opaque `Raw` pass-through of the original document;
+/// see the [`canonical`] module's Coverage section.
 ///
 /// # Errors
 ///
 /// Returns [`CanonicalizationError`] when the input is not a valid JSON Schema document or cannot be represented in
 /// canonical form.
-#[doc(hidden)]
 pub fn canonicalize(value: &Value) -> Result<canonical::CanonicalSchema, CanonicalizationError> {
     canonical::options().canonicalize(value)
 }

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Experimental schema canonicalization: `JSONSchema.canonicalize` and the `JSONSchema::Canonical` module reduce a schema to a normal form. Incomplete keyword coverage; API may change.
+
 ## [0.48.5] - 2026-07-22
 
 ### Performance

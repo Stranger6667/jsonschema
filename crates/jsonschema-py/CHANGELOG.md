@@ -5,6 +5,7 @@
 ### Added
 
 - Validation of recursive Python objects. [#945](https://github.com/Stranger6667/jsonschema/issues/945)
+- Experimental schema canonicalization: `canonicalize` and the `canonical` submodule reduce a schema to a normal form. Incomplete keyword coverage; API may change.
 
 ### Fixed
 
