@@ -7,7 +7,7 @@ use jsonschema::{
 use serde_json::{json, Map, Number, Value};
 use test_case::test_case;
 
-#[test_case(&json!({"patternProperties": {"^a$": {"type": "string"}}}); "pattern properties")]
+#[test_case(&json!({"unevaluatedProperties": false}); "unevaluated properties")]
 #[test_case(&json!({"$defs": {"a": {"type": "null"}}, "$ref": "#/$defs/a"}); "ref into defs")]
 fn unmodeled_document_round_trips_verbatim(schema: &Value) {
     let canonical = canonicalize(schema).expect("canonicalizes");
@@ -169,12 +169,10 @@ fn unmodeled_documents_hash_by_document_identity() {
         canonicalize(&serde_json::from_str::<Value>(text).expect("valid schema JSON"))
             .expect("canonicalizes")
     };
-    let integer = canonical(
-        r#"{"patternProperties": {"^a$": {"enum": [1, null, true, "x", [2], {"b": 3}]}}}"#,
-    );
-    let float = canonical(
-        r#"{"patternProperties": {"^a$": {"enum": [1.0, null, true, "x", [2], {"b": 3}]}}}"#,
-    );
+    let integer =
+        canonical(r#"{"unevaluatedProperties": {"enum": [1, null, true, "x", [2], {"b": 3}]}}"#);
+    let float =
+        canonical(r#"{"unevaluatedProperties": {"enum": [1.0, null, true, "x", [2], {"b": 3}]}}"#);
     assert_eq!(integer.kind(), CanonicalKind::Raw);
     let distinct: HashSet<CanonicalSchema> =
         [integer.clone(), float, integer].into_iter().collect();
@@ -273,7 +271,7 @@ fn error_display(schema: &Value, message: &str) {
 #[test_case(&json!(false), CanonicalKind::False, "false"; "boolean false")]
 #[test_case(&json!({"type": "integer", "minimum": 0}), CanonicalKind::Integer, "integer"; "integer_leaf")]
 #[test_case(&json!({"type": "number", "minimum": 0}), CanonicalKind::Number, "number"; "number_leaf")]
-#[test_case(&json!({"patternProperties": {"^a$": {"type": "string"}}}), CanonicalKind::Raw, "raw"; "raw")]
+#[test_case(&json!({"unevaluatedProperties": false}), CanonicalKind::Raw, "raw"; "raw")]
 fn kind_reports_its_label(schema: &Value, kind: CanonicalKind, label: &str) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     assert_eq!(canonical.kind(), kind);

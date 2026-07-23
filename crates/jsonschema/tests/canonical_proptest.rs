@@ -147,7 +147,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(45)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(50)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -239,6 +239,27 @@ fn draw_leaf(tc: &TestCase) -> Value {
         }
         // Array-valued members collide with the item leaves above.
         44 => json!({ "enum": [[tc.draw(arbitrary_scalar())]] }),
+        45 => json!({ "type": "object", "patternProperties": { "^a": { "type": draw_type(tc) } } }),
+        // The pattern reaches a named key, so the two schemas fold together on it.
+        46 => json!({
+            "type": "object",
+            "properties": { "ab": { "type": "string" } },
+            "patternProperties": { "^a": { "type": "string", "minLength": small_length(tc) } }
+        }),
+        47 => json!({ "type": "object", "patternProperties": { "^a": false } }),
+        // A finite key set leaves no key outside it, so the patterns move onto the keys they match.
+        48 => {
+            let keys = draw_keys(tc);
+            json!({
+                "type": "object",
+                "propertyNames": { "enum": keys },
+                "patternProperties": { "^a": { "type": "integer" } }
+            })
+        }
+        49 => json!({
+            "type": "object",
+            "patternProperties": { "^a": { "type": "string", "format": "unknown-fmt" } }
+        }),
         _ => json!({ "type": ["string", "integer"] }),
     }
 }
@@ -247,7 +268,7 @@ fn draw_leaf(tc: &TestCase) -> Value {
 fn draw_keys(tc: &TestCase) -> Vec<&'static str> {
     let count = tc.draw(gs::integers::<usize>().min_value(0).max_value(2));
     let mut keys: Vec<&'static str> = (0..count)
-        .map(|_| tc.draw(gs::sampled_from(vec!["a", "b", "c"])))
+        .map(|_| tc.draw(gs::sampled_from(vec!["a", "b", "c", "ab"])))
         .collect();
     keys.sort_unstable();
     keys.dedup();
@@ -270,7 +291,7 @@ fn draw_schema(tc: &TestCase, depth: u32) -> Value {
 // Meta-valid keywords the canonicaliser does not model; a document carrying one stays `Raw`.
 fn draw_unmodeled_leaf(tc: &TestCase) -> Value {
     match tc.draw(gs::integers::<u8>().min_value(0).max_value(4)) {
-        0 => json!({ "patternProperties": { "^a": { "type": "integer" } } }),
+        0 => json!({ "additionalProperties": { "type": "integer" } }),
         1 => json!({ "not": { "type": "string" } }),
         2 => json!({ "$defs": { "a": { "type": "null" } }, "$ref": "#/$defs/a" }),
         3 => json!({ "format": "email" }),

@@ -45,7 +45,7 @@
 //! }
 //!
 //! // Unsupported constructs keep the whole document as an opaque `Raw` pass-through.
-//! let raw = canonicalize(&json!({"patternProperties": {"^name$": {"type": "string"}}})).unwrap();
+//! let raw = canonicalize(&json!({"unevaluatedProperties": false})).unwrap();
 //! assert_eq!(raw.kind(), CanonicalKind::Raw);
 //! ```
 //!
@@ -63,7 +63,9 @@
 //! `description`, and keywords the draft does not define, leave no trace in the canonical form.
 //! `format` follows the validator's draft policy: Draft 4/6/7 assert known formats and keep them,
 //! while Draft 2019-09/2020-12 treat them as annotations and drop them;
-//! [`CanonicalizeOptions::should_validate_formats`] overrides the default.
+//! [`CanonicalizeOptions::should_validate_formats`] overrides the default. Regular expressions are
+//! matched with the configured engine, so a canonical form holds under the engine that produced it;
+//! validate it with the same [`CanonicalizeOptions::with_pattern_options`] configuration.
 //!
 //! # Coverage
 //!

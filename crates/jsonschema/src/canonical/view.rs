@@ -41,7 +41,7 @@ pub enum CanonicalView {
     Number(NumberView),
     /// An array value whose length is within a window.
     Array(ArrayView),
-    /// An object value whose property count is within a window.
+    /// An object value within its constraints.
     Object(ObjectView),
     Const(Value),
     Enum(Vec<Value>),
@@ -102,6 +102,8 @@ pub struct ObjectView {
     pub property_names: Option<CanonicalSchema>,
     /// The schema each named key satisfies when the object carries it.
     pub properties: BTreeMap<String, CanonicalSchema>,
+    /// The schema every key matching the pattern satisfies when the object carries it.
+    pub pattern_properties: BTreeMap<String, CanonicalSchema>,
 }
 
 /// Payload of [`CanonicalView::Integer`]: the interval bounds and divisor on an integer value.
@@ -142,6 +144,11 @@ impl CanonicalSchema {
                     .properties
                     .iter()
                     .map(|(key, schema)| (key.to_string(), self.wrap_child(schema)))
+                    .collect(),
+                leaf.get()
+                    .pattern_properties
+                    .iter()
+                    .map(|(pattern, schema)| (pattern.to_string(), self.wrap_child(schema)))
                     .collect(),
             )),
             SchemaKind::Const(value) => CanonicalView::Const(value.to_value()),
@@ -215,6 +222,7 @@ fn object_view(
     leaf: &ObjectLeaf,
     property_names: Option<CanonicalSchema>,
     properties: BTreeMap<String, CanonicalSchema>,
+    pattern_properties: BTreeMap<String, CanonicalSchema>,
 ) -> ObjectView {
     ObjectView {
         min_properties: leaf.sizes.minimum.as_ref().map(BoundCardinality::to_number),
@@ -222,6 +230,7 @@ fn object_view(
         required: leaf.required.iter().map(ToString::to_string).collect(),
         property_names,
         properties,
+        pattern_properties,
     }
 }
 

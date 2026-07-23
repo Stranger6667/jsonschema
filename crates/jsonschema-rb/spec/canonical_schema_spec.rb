@@ -6,7 +6,7 @@ DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
 
 RSpec.describe "JSONSchema.canonicalize" do
   [
-    { "patternProperties" => { "^a" => { "type" => "string" } } },
+    { "unevaluatedProperties" => false },
     { "$defs" => { "a" => { "type" => "null" } }, "$ref" => "#/$defs/a" }
   ].each do |schema|
     it "round-trips unmodeled #{schema.inspect} verbatim" do
@@ -145,6 +145,17 @@ RSpec.describe "JSONSchema.canonicalize" do
     end
   end
 
+  it "view returns ObjectView with its pattern schemas" do
+    schema = { "type" => "object", "patternProperties" => { "^a" => { "type" => "integer" } } }
+    case JSONSchema.canonicalize(schema).view
+    in JSONSchema::Canonical::ObjectView[pattern_properties:]
+      expect(pattern_properties.keys).to eq(["^a"])
+      expect(pattern_properties["^a"].to_json_schema).to eq(
+        { "$schema" => "https://json-schema.org/draft/2020-12/schema", "type" => "integer" }
+      )
+    end
+  end
+
   it "view exposes the divisor of a number leaf" do
     case JSONSchema.canonicalize({ "type" => "number", "multipleOf" => 0.5 }).view
     in JSONSchema::Canonical::NumberView[multiple_of:]
@@ -206,10 +217,11 @@ RSpec.describe "JSONSchema.canonicalize" do
     "IntegerView" => [{ "type" => "integer", "minimum" => 2, "maximum" => 9 }, %i[minimum maximum multiple_of]],
     "NumberView" => [{ "type" => "number", "minimum" => 2 }, %i[minimum exclusive_minimum maximum exclusive_maximum multiple_of]],
     "ArrayView" => [{ "type" => "array", "minItems" => 1 }, %i[min_items max_items unique_items items]],
-    "ObjectView" => [{ "type" => "object", "minProperties" => 1 }, %i[min_properties max_properties required property_names properties]],
+    "ObjectView" => [{ "type" => "object", "minProperties" => 1 },
+                     %i[min_properties max_properties required property_names properties pattern_properties]],
     "ConstView" => [{ "const" => nil }, %i[value]],
     "EnumView" => [{ "enum" => [1, 2] }, %i[values]],
-    "RawView" => [{ "patternProperties" => { "^a" => { "type" => "integer" } } }, %i[schema]]
+    "RawView" => [{ "unevaluatedProperties" => false }, %i[schema]]
   }.each do |name, (schema, readers)|
     it "inspect renders #{name} readers" do
       draft = name == "TypedGroupView" ? :draft4 : :draft202012
@@ -228,9 +240,9 @@ RSpec.describe "JSONSchema.canonicalize" do
   end
 
   it "view returns RawView with the document payload" do
-    case JSONSchema.canonicalize({ "patternProperties" => { "^a" => { "type" => "integer" } } }).view
+    case JSONSchema.canonicalize({ "unevaluatedProperties" => false }).view
     in JSONSchema::Canonical::RawView[schema:]
-      expect(schema).to eq({ "patternProperties" => { "^a" => { "type" => "integer" } } })
+      expect(schema).to eq({ "unevaluatedProperties" => false })
     end
   end
 

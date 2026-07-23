@@ -169,6 +169,14 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
             .collect();
         map.insert("properties".into(), Value::Object(entries));
     }
+    if !leaf.pattern_properties.is_empty() {
+        let entries: Map<String, Value> = leaf
+            .pattern_properties
+            .iter()
+            .map(|(pattern, schema)| (pattern.to_string(), emit(schema.kind(), draft)))
+            .collect();
+        map.insert("patternProperties".into(), Value::Object(entries));
+    }
     if !leaf.required.is_empty() {
         map.insert(
             "required".into(),
