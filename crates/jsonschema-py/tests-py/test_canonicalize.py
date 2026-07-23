@@ -135,16 +135,29 @@ def test_view_array_lengths():
 
 
 def test_view_object_sizes():
-    schema = {"type": "object", "minProperties": 1, "maxProperties": 3, "required": ["a"]}
+    schema = {
+        "type": "object",
+        "minProperties": 1,
+        "maxProperties": 3,
+        "required": ["a"],
+        "propertyNames": {"maxLength": 4},
+    }
     match canonicalize(schema).view():
         case canonical.ObjectView(
             min_properties=min_properties,
             max_properties=max_properties,
             required=required,
+            property_names=property_names,
         ):
             assert min_properties is None
             assert max_properties == 3
             assert required == ["a"]
+            assert property_names is not None
+            assert property_names.to_json_schema() == {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "string",
+                "maxLength": 4,
+            }
         case other:
             pytest.fail(f"unexpected view: {other!r}")
 

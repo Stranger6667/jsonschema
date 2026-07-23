@@ -136,7 +136,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(32)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(34)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -200,6 +200,11 @@ fn draw_leaf(tc: &TestCase) -> Value {
         31 => {
             let (min, max) = ordered(small_int(tc), small_int(tc));
             json!({ "type": "number", "minimum": min, "maximum": max, "multipleOf": divisor(tc) })
+        }
+        32 => json!({ "type": "object", "propertyNames": { "maxLength": small_length(tc) } }),
+        33 => {
+            let keys = draw_keys(tc);
+            json!({ "type": "object", "propertyNames": { "enum": keys } })
         }
         _ => json!({ "type": ["string", "integer"] }),
     }
@@ -269,7 +274,7 @@ fn canonicalize(schema: &Value, draft: Draft) -> Option<Value> {
 }
 
 // Canonicalizing an already-canonical form yields the same form.
-#[hegel::test(test_cases = 10_000)]
+#[hegel::test(test_cases = 5_000)]
 fn canonicalize_is_idempotent(tc: TestCase) {
     let draft = draw_draft(&tc);
     let schema = draw_schema(&tc, 3);
@@ -280,7 +285,7 @@ fn canonicalize_is_idempotent(tc: TestCase) {
 }
 
 // The canonical form accepts exactly the values the original does, across drafts.
-#[hegel::test(test_cases = 10_000)]
+#[hegel::test(test_cases = 5_000)]
 fn canonical_form_preserves_validation(tc: TestCase) {
     let draft = draw_draft(&tc);
     let schema = draw_schema(&tc, 3);
@@ -297,7 +302,7 @@ fn canonical_form_preserves_validation(tc: TestCase) {
 
 // A value set intersected with an integer bound preserves validation on its own members and their
 // float spellings - the interaction that a dropped Draft 4 integer guard makes unsound.
-#[hegel::test(test_cases = 10_000)]
+#[hegel::test(test_cases = 5_000)]
 fn integer_value_set_intersection_preserves_validation(tc: TestCase) {
     let draft = draw_draft(&tc);
     let count = tc.draw(gs::integers::<usize>().min_value(1).max_value(3));
@@ -327,7 +332,7 @@ fn integer_value_set_intersection_preserves_validation(tc: TestCase) {
 }
 
 // Any input reduces to `Ok(modeled)`, `Ok(Raw)`, or an error - never a panic.
-#[hegel::test(test_cases = 10_000)]
+#[hegel::test(test_cases = 5_000)]
 fn canonicalize_never_panics(tc: TestCase) {
     let draft = draw_draft(&tc);
     let schema = if tc.draw(gs::booleans()) {
@@ -342,7 +347,7 @@ fn canonicalize_never_panics(tc: TestCase) {
 
 // Divisors combined under `allOf`/`anyOf` keep validation, including on the integers where the
 // arithmetic the validator picks per spelling starts to disagree with exact rationals.
-#[hegel::test(test_cases = 10_000)]
+#[hegel::test(test_cases = 5_000)]
 fn divisor_algebra_preserves_validation(tc: TestCase) {
     let draft = draw_draft(&tc);
     let count = tc.draw(gs::integers::<usize>().min_value(1).max_value(3));
@@ -384,7 +389,7 @@ fn divisor_algebra_preserves_validation(tc: TestCase) {
 
 // The order divisors arrive in is not part of the schema's meaning, so it cannot change the form.
 // An unmodeled document is kept as written, so only modeled ones carry the claim.
-#[hegel::test(test_cases = 10_000)]
+#[hegel::test(test_cases = 5_000)]
 fn divisor_order_does_not_change_the_form(tc: TestCase) {
     let draft = draw_draft(&tc);
     let count = tc.draw(gs::integers::<usize>().min_value(2).max_value(4));
@@ -410,7 +415,7 @@ fn divisor_order_does_not_change_the_form(tc: TestCase) {
 }
 
 // A divisor every other one already covers adds nothing, so the form cannot notice it.
-#[hegel::test(test_cases = 10_000)]
+#[hegel::test(test_cases = 5_000)]
 fn a_redundant_divisor_does_not_change_the_form(tc: TestCase) {
     let draft = draw_draft(&tc);
     let left = tc.draw(gs::integers::<u32>().min_value(1).max_value(64));

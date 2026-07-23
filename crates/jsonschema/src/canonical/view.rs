@@ -88,13 +88,15 @@ pub struct ArrayView {
     pub unique_items: bool,
 }
 
-/// Payload of [`CanonicalView::Object`]: the `minProperties`/`maxProperties` bounds and required
-/// keys on an object value.
+/// Payload of [`CanonicalView::Object`]: the `minProperties`/`maxProperties` bounds, required keys
+/// and key constraint on an object value.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObjectView {
     pub min_properties: Option<Number>,
     pub max_properties: Option<Number>,
     pub required: Vec<String>,
+    /// The schema every key satisfies, narrowed to the string domain.
+    pub property_names: Option<CanonicalSchema>,
 }
 
 /// Payload of [`CanonicalView::Integer`]: the interval bounds and divisor on an integer value.
@@ -119,7 +121,14 @@ impl CanonicalSchema {
             SchemaKind::Integer(bounds) => CanonicalView::Integer(integer_view(bounds.get())),
             SchemaKind::Number(leaf) => CanonicalView::Number(number_view(leaf.get())),
             SchemaKind::Array(leaf) => CanonicalView::Array(array_view(leaf.get())),
-            SchemaKind::Object(leaf) => CanonicalView::Object(object_view(leaf.get())),
+            SchemaKind::Object(leaf) => CanonicalView::Object(ObjectView {
+                property_names: leaf
+                    .get()
+                    .property_names
+                    .as_ref()
+                    .map(|names| self.wrap_child(names)),
+                ..object_view(leaf.get())
+            }),
             SchemaKind::Const(value) => CanonicalView::Const(value.to_value()),
             SchemaKind::Enum(values) => CanonicalView::Enum(
                 values
@@ -187,6 +196,7 @@ fn object_view(leaf: &ObjectLeaf) -> ObjectView {
         min_properties: leaf.sizes.minimum.as_ref().map(BoundCardinality::to_number),
         max_properties: leaf.sizes.maximum.as_ref().map(BoundCardinality::to_number),
         required: leaf.required.iter().map(ToString::to_string).collect(),
+        property_names: None,
     }
 }
 

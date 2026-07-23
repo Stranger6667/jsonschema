@@ -50,6 +50,7 @@ fn parse_schema(
     let mut min_items: Option<BoundCardinality> = None;
     let mut max_items: Option<BoundCardinality> = None;
     let mut required: Vec<Arc<str>> = Vec::new();
+    let mut property_names: Option<Schema> = None;
     let mut min_properties: Option<BoundCardinality> = None;
     let mut max_properties: Option<BoundCardinality> = None;
     let mut patterns: Vec<Arc<str>> = Vec::new();
@@ -143,6 +144,12 @@ fn parse_schema(
                     && names.iter().all(Value::is_string) =>
             {
                 required.extend(names.iter().filter_map(Value::as_str).map(Arc::from));
+            }
+            ("propertyNames", value) if ctx.draft().is_known_keyword("propertyNames") => {
+                match parse_schema(value, ctx, false)? {
+                    Some(schema) => property_names = Some(schema),
+                    None => return Ok(None),
+                }
             }
             ("minProperties", Value::Number(number))
                 if ctx.draft().is_known_keyword("minProperties") =>
@@ -279,7 +286,11 @@ fn parse_schema(
     {
         min_properties = None;
     }
-    if min_properties.is_some() || max_properties.is_some() || !required.is_empty() {
+    if min_properties.is_some()
+        || max_properties.is_some()
+        || !required.is_empty()
+        || property_names.is_some()
+    {
         // Every draft marks `required` as unique, so the meta-validated list only needs ordering.
         required.sort();
         conjuncts.push(object_facet_schema(
@@ -289,6 +300,7 @@ fn parse_schema(
                     maximum: max_properties,
                 },
                 required,
+                property_names,
             },
             ctx,
         ));
@@ -506,7 +518,7 @@ fn object_facet_schema(leaf: ObjectLeaf, ctx: &CanonicalizationContext) -> Schem
     let non_object = Schema::new(SchemaKind::MultiType(
         JsonTypeSet::all().remove(JsonType::Object),
     ));
-    algebra::union(vec![non_object, algebra::object_leaf(leaf)], ctx)
+    algebra::union(vec![non_object, algebra::object_leaf(leaf, ctx)], ctx)
 }
 
 /// Draft 4 says `1.0` is not an integer, so its `integer` check cannot fold into value equality.

@@ -218,17 +218,17 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
         (SchemaKind::MultiType(set), SchemaKind::Object(leaf))
         | (SchemaKind::Object(leaf), SchemaKind::MultiType(set)) => {
             if set.contains(JsonType::Object) {
-                object_leaf(leaf.into_inner())
+                object_leaf(leaf.into_inner(), ctx)
             } else {
                 Schema::new(SchemaKind::False)
             }
         }
         // Two object leaves: keep the objects both accept - the narrower window, every required key.
         (SchemaKind::Object(first), SchemaKind::Object(second)) => {
-            object_leaf(intersect_object_leaves(
-                first.into_inner(),
-                second.into_inner(),
-            ))
+            object_leaf(
+                intersect_object_leaves(first.into_inner(), second.into_inner(), ctx),
+                ctx,
+            )
         }
         // An integer leaf inside a number interval keeps the integers the interval admits.
         (SchemaKind::Integer(integers), SchemaKind::Number(numbers))
@@ -419,7 +419,8 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         !spans_domain
     });
     objects.retain(|leaf| {
-        let spans_domain = leaf.sizes.is_unbounded() && leaf.required.is_empty();
+        let spans_domain =
+            leaf.sizes.is_unbounded() && leaf.required.is_empty() && leaf.property_names.is_none();
         if spans_domain {
             widened = union_type_sets(widened, JsonTypeSet::from(JsonType::Object));
         }
@@ -535,7 +536,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     }
     // Each surviving object leaf becomes its own branch.
     for leaf in objects {
-        out.push(object_leaf(leaf));
+        out.push(object_leaf(leaf, ctx));
     }
     // The loose value set becomes a branch, unless it collapsed to empty.
     if !matches!(value_set.kind(), SchemaKind::False) {
@@ -596,6 +597,7 @@ fn lift_degenerate_member(
                     maximum: Some(BoundCardinality::from(0)),
                 },
                 required: Vec::new(),
+                property_names: None,
             });
             true
         }
@@ -658,7 +660,7 @@ fn rerun(
     rest.extend(integers.into_iter().map(|leaf| integer_leaf(leaf, ctx)));
     rest.extend(numbers.into_iter().map(|leaf| number_leaf(leaf, ctx)));
     rest.extend(arrays.into_iter().map(array_leaf));
-    rest.extend(objects.into_iter().map(object_leaf));
+    rest.extend(objects.into_iter().map(|leaf| object_leaf(leaf, ctx)));
     union(rest, ctx)
 }
 
@@ -777,7 +779,7 @@ fn restrict_members(
         SchemaKind::Object(leaf) => {
             let kept = members
                 .into_iter()
-                .filter(|member| object_leaf_admits(leaf.get(), member))
+                .filter(|member| object_leaf_admits(leaf.get(), member, ctx))
                 .collect();
             parse::canonicalize_value_set(kept)
         }
@@ -843,7 +845,9 @@ fn leaf_absorbs_member(
 ) -> bool {
     match member.as_value() {
         Value::Array(_) => arrays.iter().any(|leaf| array_leaf_admits(leaf, member)),
-        Value::Object(_) => objects.iter().any(|leaf| object_leaf_admits(leaf, member)),
+        Value::Object(_) => objects
+            .iter()
+            .any(|leaf| object_leaf_admits(leaf, member, ctx)),
         Value::String(_) => strings.iter().any(|(leaf, regexes)| {
             string_leaf_admits(leaf, regexes, member, ctx, UncheckableFormat::Rejects)
         }),
@@ -1005,11 +1009,28 @@ fn array_leaf_admits(leaf: &ArrayLeaf, member: &CanonicalJson) -> bool {
 }
 
 /// Pack an object facet set into a node, collapsing the leaves that say something simpler.
-pub(crate) fn object_leaf(mut leaf: ObjectLeaf) -> Schema {
+pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -> Schema {
+    normalize_property_names(&mut leaf, ctx);
+    // A stored key constraint says something about the keys: one admitting every string or none at
+    // all was folded into the facets above, and leaving it here would spell those two another way.
+    debug_assert!(
+        !leaf.property_names.as_ref().is_some_and(|names| {
+            matches!(names.kind(), SchemaKind::False)
+                || matches!(names.kind(), SchemaKind::MultiType(set) if *set == JsonTypeSet::from(JsonType::String))
+        }),
+        "a key constraint survived normalization without constraining keys"
+    );
+    // A key the property names reject can never be present, so demanding it admits nothing.
+    // e.g.  {"type": "object", "propertyNames": {"const": "foo"}, "required": ["bar"]}
+    //       =>  {"not": {}}
+    if let Some(names) = &leaf.property_names {
+        if leaf.required.iter().any(|key| !admits_key(names, key, ctx)) {
+            return Schema::new(SchemaKind::False);
+        }
+    }
     // A required key already demands a property, so a minimum it covers says nothing more.
     // e.g.  {"type": "object", "required": ["a", "b"], "minProperties": 2}
     //       =>  {"type": "object", "required": ["a", "b"]}
-
     if leaf
         .sizes
         .minimum
@@ -1018,11 +1039,24 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf) -> Schema {
     {
         leaf.sizes.minimum = None;
     }
+    // A finite set of admitted keys caps the property count, so a maximum it covers says nothing more.
+    // e.g.  {"type": "object", "propertyNames": {"const": "foo"}, "maxProperties": 1}
+    //       =>  {"type": "object", "propertyNames": {"const": "foo"}}
+    if let Some(admitted) = leaf.admitted_key_count() {
+        if leaf
+            .sizes
+            .maximum
+            .as_ref()
+            .is_some_and(|max| *max >= admitted)
+        {
+            leaf.sizes.maximum = None;
+        }
+    }
     let Some(leaf) = NonEmpty::new(leaf) else {
         return Schema::new(SchemaKind::False);
     };
-    // `maxProperties: 0` accepts the empty object and nothing else; a required key would have
-    // emptied the leaf above.
+    // `maxProperties: 0` accepts the empty object and nothing else, whose keys satisfy any
+    // constraint vacuously; a required key would have emptied the leaf above.
     // e.g.  {"type": "object", "maxProperties": 0}  =>  {"const": {}}
     if leaf
         .get()
@@ -1038,26 +1072,90 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf) -> Schema {
     Schema::new(SchemaKind::Object(leaf))
 }
 
+/// Bring a key constraint into normal form: dropped when it admits every string, and read as an
+/// empty object when it admits none.
+fn normalize_property_names(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext) {
+    let Some(names) = leaf.property_names.take() else {
+        return;
+    };
+    // Narrowing first is what lets one pass reach normal form: a constraint admitting no string,
+    // such as `{"type": "integer"}`, only becomes `False` once the other types are cut away.
+    let names = narrow_to_strings(names, ctx);
+    // Every key is a string, so a constraint admitting all of them constrains nothing.
+    if matches!(names.kind(), SchemaKind::MultiType(set) if *set == JsonTypeSet::from(JsonType::String))
+    {
+        return;
+    }
+    // No key can be present, which is what an empty object says.
+    // e.g.  {"type": "object", "propertyNames": false}  =>  {"const": {}}
+    if matches!(names.kind(), SchemaKind::False) {
+        leaf.sizes = leaf.sizes.clone().intersect(LengthBounds {
+            minimum: None,
+            maximum: Some(BoundCardinality::from(0)),
+        });
+        return;
+    }
+    leaf.property_names = Some(names);
+}
+
+/// Restrict a key constraint to the string domain: keys are always strings, so the branches a bare
+/// facet keeps for other types say nothing about them.
+fn narrow_to_strings(names: Schema, ctx: &CanonicalizationContext) -> Schema {
+    let strings = Schema::new(SchemaKind::MultiType(JsonTypeSet::from(JsonType::String)));
+    intersect(names, strings, ctx)
+}
+
+/// Whether the key constraint admits `key`.
+fn admits_key(names: &Schema, key: &str, ctx: &CanonicalizationContext) -> bool {
+    let value = Schema::new(SchemaKind::Const(CanonicalJson::from_value(
+        &Value::String(key.to_string()),
+    )));
+    !matches!(
+        intersect(names.clone(), value, ctx).kind(),
+        SchemaKind::False
+    )
+}
+
 /// Keep the objects both leaves accept: the narrower window, and every key either demands.
-fn intersect_object_leaves(first: ObjectLeaf, second: ObjectLeaf) -> ObjectLeaf {
+fn intersect_object_leaves(
+    first: ObjectLeaf,
+    second: ObjectLeaf,
+    ctx: &CanonicalizationContext,
+) -> ObjectLeaf {
     let mut required = first.required;
     required.extend(second.required);
     required.sort();
     required.dedup();
+    let property_names = match (first.property_names, second.property_names) {
+        (Some(left), Some(right)) => Some(intersect(left, right, ctx)),
+        (names, None) | (None, names) => names,
+    };
     ObjectLeaf {
         sizes: first.sizes.intersect(second.sizes),
         required,
+        property_names,
     }
 }
 
 /// Whether `member` is an object carrying every required key with its property count in the window.
-fn object_leaf_admits(leaf: &ObjectLeaf, member: &CanonicalJson) -> bool {
+fn object_leaf_admits(
+    leaf: &ObjectLeaf,
+    member: &CanonicalJson,
+    ctx: &CanonicalizationContext,
+) -> bool {
     let Value::Object(map) = member.as_value() else {
         return false;
     };
-    leaf.sizes
+    if !leaf
+        .sizes
         .contains(&BoundCardinality::from(map.len() as u64))
-        && leaf.required.iter().all(|key| map.contains_key(&**key))
+        || !leaf.required.iter().all(|key| map.contains_key(&**key))
+    {
+        return false;
+    }
+    leaf.property_names
+        .as_ref()
+        .is_none_or(|names| map.keys().all(|key| admits_key(names, key, ctx)))
 }
 
 /// The number leaf admitting exactly the values both admit.

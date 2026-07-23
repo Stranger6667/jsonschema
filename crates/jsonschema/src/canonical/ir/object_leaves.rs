@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::canonical::ir::{Bounds, LengthBounds, ObjectLeaf};
+use crate::canonical::ir::{Bounds, LengthBounds, ObjectLeaf, Schema};
 
 /// Object leaves merged per required-key set and free of subsumed windows. Inserts are batched; the
 /// form is restored before any read, so the order in which leaves arrive cannot change the result.
@@ -73,7 +73,13 @@ impl IntoIterator for ObjectLeaves {
     }
 }
 
-/// Fold the size windows of leaves demanding the same keys.
+/// The facets shared by a merge group; only the size window differs within one.
+struct Facets {
+    required: Vec<Arc<str>>,
+    property_names: Option<Schema>,
+}
+
+/// Fold the size windows of leaves demanding the same keys under the same key constraint.
 /// ```text
 /// e.g.  anyOf [
 ///         {"type": "object", "required": ["a"], "maxProperties": 2},
@@ -92,28 +98,39 @@ fn merge(mut leaves: Vec<ObjectLeaf>) -> Vec<ObjectLeaf> {
     if leaves.len() < 2 {
         return leaves;
     }
-    leaves.sort_by(|left, right| left.required.cmp(&right.required));
+    leaves.sort_by(|left, right| {
+        (&left.required, &left.property_names).cmp(&(&right.required, &right.property_names))
+    });
     let mut merged: Vec<ObjectLeaf> = Vec::with_capacity(leaves.len());
     let mut windows: Vec<LengthBounds> = Vec::new();
-    let mut required: Option<Vec<Arc<str>>> = None;
+    let mut facets: Option<Facets> = None;
     for leaf in leaves {
-        if required.as_ref().is_none_or(|keys| *keys != leaf.required) {
-            flush_group(&mut merged, required.take(), &mut windows);
-            required = Some(leaf.required);
+        if facets.as_ref().is_none_or(|group| {
+            group.required != leaf.required || group.property_names != leaf.property_names
+        }) {
+            flush_group(&mut merged, facets.take(), &mut windows);
+            facets = Some(Facets {
+                required: leaf.required,
+                property_names: leaf.property_names,
+            });
         }
         windows.push(leaf.sizes);
     }
-    flush_group(&mut merged, required, &mut windows);
+    flush_group(&mut merged, facets, &mut windows);
     merged
 }
 
 /// Emit one leaf per merged window, cloning the keys onto each and moving them into the last.
 fn flush_group(
     merged: &mut Vec<ObjectLeaf>,
-    required: Option<Vec<Arc<str>>>,
+    facets: Option<Facets>,
     windows: &mut Vec<LengthBounds>,
 ) {
-    let Some(required) = required else {
+    let Some(Facets {
+        required,
+        property_names,
+    }) = facets
+    else {
         return;
     };
     let mut sizes = Bounds::merge_all(std::mem::take(windows));
@@ -122,11 +139,13 @@ fn flush_group(
         merged.push(ObjectLeaf {
             sizes: window,
             required: required.clone(),
+            property_names: property_names.clone(),
         });
     }
     merged.push(ObjectLeaf {
         sizes: last,
         required,
+        property_names,
     });
 }
 
@@ -148,15 +167,21 @@ fn drop_subsumed(leaves: &mut Vec<ObjectLeaf>) {
             if index == other_index || !keep[other_index] || !keep[index] {
                 continue;
             }
+            // A key constraint is compared only against itself: deciding that one schema admits
+            // every key another does needs a subsumption test the algebra does not have.
+            let looser_keys = other.property_names.is_none() && leaf.property_names.is_some();
             let wider = other.sizes.covers(&leaf.sizes)
-                && other.required.iter().all(|key| leaf.required.contains(key));
-            // Equal key counts under `wider` mean equal key sets, and merging already folded those
-            // into one leaf, so the counts decide which leaf goes without a tie to break.
+                && other.required.iter().all(|key| leaf.required.contains(key))
+                && (looser_keys || other.property_names == leaf.property_names);
+            // Leaves agreeing on every facet but the window were folded by merging, so one of the
+            // facets is strictly looser here and decides which leaf goes.
             debug_assert!(
-                !wider || other.required.len() != leaf.required.len(),
-                "merging left two leaves demanding the same keys"
+                !wider
+                    || other.required.len() != leaf.required.len()
+                    || other.property_names != leaf.property_names,
+                "merging left two leaves carrying the same facets"
             );
-            if wider && other.required.len() < leaf.required.len() {
+            if wider && (other.required.len() < leaf.required.len() || looser_keys) {
                 keep[index] = false;
             }
         }

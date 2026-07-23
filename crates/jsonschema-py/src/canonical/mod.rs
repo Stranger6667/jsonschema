@@ -178,6 +178,10 @@ impl PyCanonicalSchema {
                         })
                         .transpose()?,
                     required: view.required,
+                    property_names: view
+                        .property_names
+                        .map(|names| Py::new(py, PyCanonicalSchema { inner: names }))
+                        .transpose()?,
                 },
             )?
             .into_any(),
@@ -336,13 +340,20 @@ pub(crate) struct ObjectView {
     max_properties: Option<Py<PyAny>>,
     #[pyo3(get)]
     required: Vec<String>,
+    #[pyo3(get)]
+    property_names: Option<Py<PyCanonicalSchema>>,
 }
 
 #[pymethods]
 impl ObjectView {
     #[classattr]
-    fn __match_args__() -> (&'static str, &'static str, &'static str) {
-        ("min_properties", "max_properties", "required")
+    fn __match_args__() -> (&'static str, &'static str, &'static str, &'static str) {
+        (
+            "min_properties",
+            "max_properties",
+            "required",
+            "property_names",
+        )
     }
 }
 
