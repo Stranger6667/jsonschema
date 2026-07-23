@@ -118,7 +118,7 @@ fn arbitrary_scalar(tc: TestCase) -> Value {
 
 #[hegel::composite]
 fn arbitrary_instance(tc: TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(8)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(9)) {
         0 => Value::Null,
         1 => Value::Bool(tc.draw(gs::booleans())),
         2 => json!(tc.draw(gs::integers::<i32>().min_value(-8).max_value(8))),
@@ -130,13 +130,20 @@ fn arbitrary_instance(tc: TestCase) -> Value {
         5 => Value::String(tc.draw(gs::text().max_size(5))),
         6 => wide_number(&tc),
         7 => json!([]),
+        8 => {
+            let mut object = serde_json::Map::new();
+            for key in draw_keys(&tc) {
+                object.insert(key.to_string(), tc.draw(arbitrary_scalar()));
+            }
+            Value::Object(object)
+        }
         _ => json!({}),
     }
 }
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(34)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(41)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -206,6 +213,21 @@ fn draw_leaf(tc: &TestCase) -> Value {
             let keys = draw_keys(tc);
             json!({ "type": "object", "propertyNames": { "enum": keys } })
         }
+        34 => json!({ "type": "object", "properties": { "a": { "type": draw_type(tc) } } }),
+        35 => {
+            json!({ "type": "object", "properties": { "a": true, "b": { "type": "integer" } } })
+        }
+        36 => json!({ "type": "object", "properties": { "a": false } }),
+        37 => {
+            json!({ "type": "object", "properties": { "a": { "type": "string", "format": "email" } } })
+        }
+        38 => {
+            json!({ "type": "object", "properties": { "a": { "type": "string", "format": "unknown-fmt" } } })
+        }
+        // Object-valued members collide with the property leaves above, where Draft 4 aliases the
+        // nested number spellings apart.
+        39 => json!({ "enum": [{ "a": small_int(tc) }] }),
+        40 => json!({ "const": { "a": tc.draw(arbitrary_scalar()) } }),
         _ => json!({ "type": ["string", "integer"] }),
     }
 }
@@ -236,12 +258,11 @@ fn draw_schema(tc: &TestCase, depth: u32) -> Value {
 
 // Meta-valid keywords the canonicaliser does not model; a document carrying one stays `Raw`.
 fn draw_unmodeled_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(5)) {
-        0 => json!({ "type": "object", "properties": { "a": { "type": "integer" } } }),
-        1 => json!({ "type": "array", "items": { "type": "integer" } }),
-        2 => json!({ "not": { "type": "string" } }),
-        3 => json!({ "$defs": { "a": { "type": "null" } }, "$ref": "#/$defs/a" }),
-        4 => json!({ "format": "email" }),
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(4)) {
+        0 => json!({ "type": "array", "items": { "type": "integer" } }),
+        1 => json!({ "not": { "type": "string" } }),
+        2 => json!({ "$defs": { "a": { "type": "null" } }, "$ref": "#/$defs/a" }),
+        3 => json!({ "format": "email" }),
         _ => json!({ "oneOf": [{ "type": "string" }, { "type": "integer" }] }),
     }
 }
@@ -265,21 +286,32 @@ fn draw_broad_schema(tc: &TestCase, depth: u32) -> Value {
     }
 }
 
-fn canonicalize(schema: &Value, draft: Draft) -> Option<Value> {
+fn canonicalize_with_formats(
+    schema: &Value,
+    draft: Draft,
+    validate_formats: bool,
+) -> Option<Value> {
     jsonschema::canonical::options()
         .with_draft(draft)
+        .should_validate_formats(validate_formats)
         .canonicalize(schema)
         .ok()
         .map(|canonical| canonical.to_json_schema())
+}
+
+fn canonicalize(schema: &Value, draft: Draft) -> Option<Value> {
+    canonicalize_with_formats(schema, draft, false)
 }
 
 // Canonicalizing an already-canonical form yields the same form.
 #[hegel::test(test_cases = 5_000)]
 fn canonicalize_is_idempotent(tc: TestCase) {
     let draft = draw_draft(&tc);
+    let validate_formats = tc.draw(gs::booleans());
     let schema = draw_schema(&tc, 3);
-    if let Some(once) = canonicalize(&schema, draft) {
-        let twice = canonicalize(&once, draft).expect("a canonical form re-canonicalizes");
+    if let Some(once) = canonicalize_with_formats(&schema, draft, validate_formats) {
+        let twice = canonicalize_with_formats(&once, draft, validate_formats)
+            .expect("a canonical form re-canonicalizes");
         assert_eq!(once, twice);
     }
 }
@@ -288,16 +320,26 @@ fn canonicalize_is_idempotent(tc: TestCase) {
 #[hegel::test(test_cases = 5_000)]
 fn canonical_form_preserves_validation(tc: TestCase) {
     let draft = draw_draft(&tc);
+    let validate_formats = tc.draw(gs::booleans());
     let schema = draw_schema(&tc, 3);
     let instance = tc.draw(arbitrary_instance());
-    let Some(emitted) = canonicalize(&schema, draft) else {
+    let Some(emitted) = canonicalize_with_formats(&schema, draft, validate_formats) else {
         return;
     };
-    let build = |value: &Value| jsonschema::options().with_draft(draft).build(value);
+    let build = |value: &Value| {
+        jsonschema::options()
+            .with_draft(draft)
+            .should_validate_formats(validate_formats)
+            .build(value)
+    };
     let (Ok(raw), Ok(canonical)) = (build(&schema), build(&emitted)) else {
         return;
     };
-    assert_eq!(raw.is_valid(&instance), canonical.is_valid(&instance));
+    assert_eq!(
+        raw.is_valid(&instance),
+        canonical.is_valid(&instance),
+        "{schema} vs {emitted} on {instance}"
+    );
 }
 
 // A value set intersected with an integer bound preserves validation on its own members and their
@@ -329,6 +371,42 @@ fn integer_value_set_intersection_preserves_validation(tc: TestCase) {
         return;
     };
     assert_eq!(raw.is_valid(&instance), canonical.is_valid(&instance));
+}
+
+// An object value set beside per-property schemas preserves validation on its members and the
+// float spellings of their numbers - the interaction a dropped Draft 4 guard makes unsound.
+#[hegel::test(test_cases = 5_000)]
+fn object_member_intersection_preserves_validation(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    let chosen = small_int(&tc);
+    let child = tc.draw(gs::sampled_from(vec!["integer", "number", "string"]));
+    let branches = vec![
+        json!({ "enum": [{ "a": chosen }] }),
+        json!({ "type": "object", "properties": { "a": { "type": child } } }),
+    ];
+    let schema = if tc.draw(gs::booleans()) {
+        json!({ "allOf": branches })
+    } else {
+        json!({ "anyOf": branches })
+    };
+    // The member itself, spelled with the integer or its float alias.
+    let instance = if tc.draw(gs::booleans()) {
+        json!({ "a": chosen })
+    } else {
+        json!({ "a": f64::from(chosen) })
+    };
+    let Some(emitted) = canonicalize(&schema, draft) else {
+        return;
+    };
+    let build = |value: &Value| jsonschema::options().with_draft(draft).build(value);
+    let (Ok(raw), Ok(canonical)) = (build(&schema), build(&emitted)) else {
+        return;
+    };
+    assert_eq!(
+        raw.is_valid(&instance),
+        canonical.is_valid(&instance),
+        "{schema} vs {emitted} on {instance}"
+    );
 }
 
 // Any input reduces to `Ok(modeled)`, `Ok(Raw)`, or an error - never a panic.

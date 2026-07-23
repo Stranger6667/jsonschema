@@ -1,5 +1,5 @@
 //! Set algebra over canonical IR nodes.
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use referencing::Draft;
 use serde_json::Value;
@@ -419,8 +419,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         !spans_domain
     });
     objects.retain(|leaf| {
-        let spans_domain =
-            leaf.sizes.is_unbounded() && leaf.required.is_empty() && leaf.property_names.is_none();
+        let spans_domain = leaf.spans_domain();
         if spans_domain {
             widened = union_type_sets(widened, JsonTypeSet::from(JsonType::Object));
         }
@@ -598,6 +597,7 @@ fn lift_degenerate_member(
                 },
                 required: Vec::new(),
                 property_names: None,
+                properties: BTreeMap::new(),
             });
             true
         }
@@ -775,15 +775,21 @@ fn restrict_members(
                 .collect();
             parse::canonicalize_value_set(kept)
         }
-        // `other` is an object leaf: keep the object members whose property count fits its window.
+        // `other` is an object leaf: keep the object members it fully admits, and pin a member a
+        // property schema only partially admits to the admitted part of its equality class.
         SchemaKind::Object(leaf) => {
-            let kept = members
-                .into_iter()
-                .filter(|member| {
-                    object_leaf_admits(leaf.get(), member, ctx, UncheckableFormat::Admits)
-                })
-                .collect();
-            parse::canonicalize_value_set(kept)
+            let mut kept = Vec::new();
+            let mut partial = Vec::new();
+            for member in members {
+                match restrict_object_member(leaf.get(), &member, ctx) {
+                    MemberRestriction::Full => kept.push(member),
+                    MemberRestriction::Empty => {}
+                    MemberRestriction::Partial(schema) => partial.push(schema),
+                }
+            }
+            let mut branches = vec![parse::canonicalize_value_set(kept)];
+            branches.extend(partial);
+            union(branches, ctx)
         }
         other @ (SchemaKind::True
         | SchemaKind::False
@@ -1022,6 +1028,15 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
         }),
         "a key constraint survived normalization without constraining keys"
     );
+    // A key whose schema admits no value can never be present, so demanding it admits nothing.
+    // e.g.  {"type": "object", "properties": {"a": false}, "required": ["a"]}  =>  {"not": {}}
+    if leaf.required.iter().any(|key| {
+        leaf.properties
+            .get(key)
+            .is_some_and(|schema| matches!(schema.kind(), SchemaKind::False))
+    }) {
+        return Schema::new(SchemaKind::False);
+    }
     // A key the property names reject can never be present, so demanding it admits nothing.
     // Collapsing to `False` narrows the schema, so a format no checker covers counts as admitting.
     // e.g.  {"type": "object", "propertyNames": {"const": "foo"}, "required": ["bar"]}
@@ -1035,6 +1050,7 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
             return Schema::new(SchemaKind::False);
         }
     }
+    normalize_properties(&mut leaf, ctx);
     // A required key already demands a property, so a minimum it covers says nothing more.
     // e.g.  {"type": "object", "required": ["a", "b"], "minProperties": 2}
     //       =>  {"type": "object", "required": ["a", "b"]}
@@ -1062,12 +1078,15 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
     let Some(leaf) = NonEmpty::new(leaf) else {
         return Schema::new(SchemaKind::False);
     };
-    // `maxProperties: 0` accepts the empty object and nothing else, whose keys satisfy any
-    // constraint vacuously; a required key would have emptied the leaf above.
+    // A ceiling of zero present keys accepts the empty object and nothing else, whether spelled as
+    // `maxProperties: 0` or as a finite key set whose every key is forbidden; a required key would
+    // have emptied the leaf above.
     // e.g.  {"type": "object", "maxProperties": 0}  =>  {"const": {}}
+    // e.g.  {"type": "object", "propertyNames": {"const": "a"}, "properties": {"a": false}}
+    //       =>  {"const": {}}
     if leaf
         .get()
-        .sizes
+        .effective_sizes()
         .maximum
         .as_ref()
         .is_some_and(BoundCardinality::is_zero)
@@ -1109,6 +1128,20 @@ fn normalize_property_names(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext
         return;
     }
     leaf.property_names = Some(names);
+}
+
+/// Drop the property schemas that say nothing: one accepting every value, and one whose key the
+/// key constraint rejects, since that key can never be present to be checked.
+fn normalize_properties(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext) {
+    let names = leaf.property_names.clone();
+    leaf.properties.retain(|key, schema| {
+        // Dropping the entry loses what it says about the key, so a format no checker covers counts
+        // as admitting and the entry stays.
+        !matches!(schema.kind(), SchemaKind::True)
+            && names
+                .as_ref()
+                .is_none_or(|names| admits_key(names, key, ctx, UncheckableFormat::Admits))
+    });
 }
 
 /// Restrict a key constraint to the string domain: keys are always strings, so the branches a bare
@@ -1191,6 +1224,58 @@ fn admits_key(
     }
 }
 
+/// Whether `schema` admits every value in `value`'s equality class; `uncheckable` decides for a
+/// format no checker covers.
+fn admits_value(
+    schema: &Schema,
+    value: &Value,
+    ctx: &CanonicalizationContext,
+    uncheckable: UncheckableFormat,
+) -> bool {
+    // Intersection reads an uncheckable format as admitting, so a caller wanting the other verdict
+    // declines rather than trusting it.
+    if matches!(uncheckable, UncheckableFormat::Rejects) && has_uncheckable_format(schema, ctx) {
+        return false;
+    }
+    let member = Schema::new(SchemaKind::Const(CanonicalJson::from_value(value)));
+    // Non-`False` is not enough: under Draft 4 the intersection can pin a nested whole number to
+    // its integer spelling (a typed group), a strict subset of the member's equality class - the
+    // member `1` also matches `1.0`, which an integer-typed property schema rejects.
+    intersect(schema.clone(), member.clone(), ctx) == member
+}
+
+/// Whether `schema` asserts a format this draft has no checker for.
+fn has_uncheckable_format(schema: &Schema, ctx: &CanonicalizationContext) -> bool {
+    match schema.kind() {
+        SchemaKind::String(leaf) => leaf
+            .get()
+            .formats
+            .iter()
+            .any(|format| crate::keywords::format::is_valid(ctx.draft(), format, "").is_none()),
+        SchemaKind::AnyOf(branches) => branches
+            .as_slice()
+            .iter()
+            .any(|branch| has_uncheckable_format(branch, ctx)),
+        SchemaKind::Object(leaf) => leaf
+            .get()
+            .property_names
+            .iter()
+            .chain(leaf.get().properties.values())
+            .any(|nested| has_uncheckable_format(nested, ctx)),
+        // A typed group's body is a value set, which carries no format.
+        SchemaKind::TypedGroup { .. }
+        | SchemaKind::MultiType(_)
+        | SchemaKind::Integer(_)
+        | SchemaKind::Number(_)
+        | SchemaKind::Array(_)
+        | SchemaKind::Const(_)
+        | SchemaKind::Enum(_)
+        | SchemaKind::True
+        | SchemaKind::False
+        | SchemaKind::Raw(_) => false,
+    }
+}
+
 /// Keep the objects both leaves accept: the narrower window, and every key either demands.
 fn intersect_object_leaves(
     first: ObjectLeaf,
@@ -1205,11 +1290,92 @@ fn intersect_object_leaves(
         (Some(left), Some(right)) => Some(intersect(left, right, ctx)),
         (names, None) | (None, names) => names,
     };
+    let mut properties = first.properties;
+    for (key, schema) in second.properties {
+        match properties.remove(&key) {
+            Some(existing) => properties.insert(key, intersect(existing, schema, ctx)),
+            None => properties.insert(key, schema),
+        };
+    }
     ObjectLeaf {
         sizes: first.sizes.intersect(second.sizes),
         required,
         property_names,
+        properties,
     }
+}
+
+/// How an object leaf restricts a candidate object member: kept whole, emptied, or pinned to the
+/// part of its equality class the property schemas admit.
+enum MemberRestriction {
+    Full,
+    Empty,
+    Partial(Schema),
+}
+
+/// Restrict `member` to the objects the leaf admits. `Partial` arises only under Draft 4, where a
+/// property schema pins a nested whole number to its integer spelling - a strict subset of the
+/// member's equality class that only an object leaf demanding exactly the member's keys can spell.
+// e.g.  Draft 4, allOf [
+//         {"enum": [{"a": 1}]},
+//         {"type": "object", "properties": {"a": {"type": "integer"}}}
+//       ]  =>  {"type": "object", "required": ["a"], "maxProperties": 1,
+//              "properties": {"a": {"type": "integer", "enum": [1]}}}
+fn restrict_object_member(
+    leaf: &ObjectLeaf,
+    member: &CanonicalJson,
+    ctx: &CanonicalizationContext,
+) -> MemberRestriction {
+    let Value::Object(map) = member.as_value() else {
+        return MemberRestriction::Empty;
+    };
+    if !leaf
+        .sizes
+        .contains(&BoundCardinality::from(map.len() as u64))
+        || !leaf.required.iter().all(|key| map.contains_key(&**key))
+    {
+        return MemberRestriction::Empty;
+    }
+    if !leaf.property_names.as_ref().is_none_or(|names| {
+        map.keys()
+            .all(|key| admits_key(names, key, ctx, UncheckableFormat::Admits))
+    }) {
+        return MemberRestriction::Empty;
+    }
+    let mut full = true;
+    let mut restricted: BTreeMap<Arc<str>, Schema> = BTreeMap::new();
+    for (key, value) in map {
+        let pin = Schema::new(SchemaKind::Const(CanonicalJson::from_value(value)));
+        let entry = match leaf.properties.get(key.as_str()) {
+            None => pin,
+            Some(child) => {
+                let entry = intersect(child.clone(), pin.clone(), ctx);
+                if matches!(entry.kind(), SchemaKind::False) {
+                    return MemberRestriction::Empty;
+                }
+                if entry != pin {
+                    full = false;
+                }
+                entry
+            }
+        };
+        restricted.insert(Arc::from(key.as_str()), entry);
+    }
+    if full {
+        return MemberRestriction::Full;
+    }
+    MemberRestriction::Partial(object_leaf(
+        ObjectLeaf {
+            sizes: LengthBounds {
+                minimum: None,
+                maximum: Some(BoundCardinality::from(map.len() as u64)),
+            },
+            required: restricted.keys().cloned().collect(),
+            property_names: None,
+            properties: restricted,
+        },
+        ctx,
+    ))
 }
 
 /// Whether `member` is an object carrying every required key, every key admitted by the key
@@ -1230,9 +1396,16 @@ fn object_leaf_admits(
     {
         return false;
     }
-    leaf.property_names.as_ref().is_none_or(|names| {
+    if !leaf.property_names.as_ref().is_none_or(|names| {
         map.keys()
             .all(|key| admits_key(names, key, ctx, uncheckable))
+    }) {
+        return false;
+    }
+    map.iter().all(|(key, value)| {
+        leaf.properties
+            .get(key.as_str())
+            .is_none_or(|schema| admits_value(schema, value, ctx, uncheckable))
     })
 }
 

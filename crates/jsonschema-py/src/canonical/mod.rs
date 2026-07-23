@@ -182,6 +182,13 @@ impl PyCanonicalSchema {
                         .property_names
                         .map(|names| Py::new(py, PyCanonicalSchema { inner: names }))
                         .transpose()?,
+                    properties: view
+                        .properties
+                        .into_iter()
+                        .map(|(key, schema)| {
+                            Ok((key, Py::new(py, PyCanonicalSchema { inner: schema })?))
+                        })
+                        .collect::<PyResult<_>>()?,
                 },
             )?
             .into_any(),
@@ -331,7 +338,7 @@ impl ArrayView {
     }
 }
 
-/// An object value whose property count is within a window and which carries every required key.
+/// An object value's constraints.
 #[pyclass(frozen, name = "ObjectView", module = "jsonschema_rs.canonical")]
 pub(crate) struct ObjectView {
     #[pyo3(get)]
@@ -342,17 +349,26 @@ pub(crate) struct ObjectView {
     required: Vec<String>,
     #[pyo3(get)]
     property_names: Option<Py<PyCanonicalSchema>>,
+    #[pyo3(get)]
+    properties: std::collections::BTreeMap<String, Py<PyCanonicalSchema>>,
 }
 
 #[pymethods]
 impl ObjectView {
     #[classattr]
-    fn __match_args__() -> (&'static str, &'static str, &'static str, &'static str) {
+    fn __match_args__() -> (
+        &'static str,
+        &'static str,
+        &'static str,
+        &'static str,
+        &'static str,
+    ) {
         (
             "min_properties",
             "max_properties",
             "required",
             "property_names",
+            "properties",
         )
     }
 }

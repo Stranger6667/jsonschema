@@ -162,6 +162,7 @@ impl RbCanonicalSchema {
                     max_properties: view.max_properties,
                     required: view.required,
                     property_names: view.property_names,
+                    properties: view.properties,
                 })
                 .as_value(),
             CanonicalView::AnyOf(branches) => ruby.obj_wrap(AnyOfView { branches }).as_value(),
@@ -537,7 +538,7 @@ impl ArrayView {
     }
 }
 
-/// An object value whose property count is within a window and which carries every required key.
+/// An object value's constraints.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::ObjectView", free_immediately)]
 pub struct ObjectView {
@@ -545,6 +546,7 @@ pub struct ObjectView {
     max_properties: Option<serde_json::Number>,
     required: Vec<String>,
     property_names: Option<CanonicalSchema>,
+    properties: std::collections::BTreeMap<String, CanonicalSchema>,
 }
 
 impl DataTypeFunctions for ObjectView {}
@@ -577,13 +579,25 @@ impl ObjectView {
         }
     }
 
+    fn properties(ruby: &Ruby, rb_self: &Self) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        for (key, schema) in &rb_self.properties {
+            let wrapped = ruby.obj_wrap(RbCanonicalSchema {
+                inner: schema.clone(),
+            });
+            hash.aset(key.as_str(), wrapped)?;
+        }
+        Ok(hash)
+    }
+
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
-            "#<JSONSchema::Canonical::ObjectView min_properties={} max_properties={} required={} property_names={}>",
+            "#<JSONSchema::Canonical::ObjectView min_properties={} max_properties={} required={} property_names={} properties={}>",
             Self::min_properties(ruby, rb_self)?.inspect(),
             Self::max_properties(ruby, rb_self)?.inspect(),
             Self::required(ruby, rb_self)?.inspect(),
-            Self::property_names(ruby, rb_self).inspect()
+            Self::property_names(ruby, rb_self).inspect(),
+            Self::properties(ruby, rb_self)?.inspect()
         ))
     }
 
@@ -602,6 +616,7 @@ impl ObjectView {
             ruby.sym_new("property_names"),
             Self::property_names(ruby, rb_self),
         )?;
+        hash.aset(ruby.sym_new("properties"), Self::properties(ruby, rb_self)?)?;
         Ok(hash)
     }
 }
@@ -837,6 +852,7 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     object_view.define_method("max_properties", method!(ObjectView::max_properties, 0))?;
     object_view.define_method("required", method!(ObjectView::required, 0))?;
     object_view.define_method("property_names", method!(ObjectView::property_names, 0))?;
+    object_view.define_method("properties", method!(ObjectView::properties, 0))?;
     object_view.define_method("inspect", method!(ObjectView::inspect, 0))?;
     object_view.define_method("deconstruct_keys", method!(ObjectView::deconstruct_keys, 1))?;
 

@@ -1,0 +1,634 @@
+[
+  {
+    "description": "ir: a property schema preserves validation",
+    "schema": {"type": "object", "properties": {"a": {"type": "integer"}}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": {"type": "integer"}}
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {"b": "x"}, "valid": true},
+      {"data": {}, "valid": true},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a property schema accepting everything constrains nothing",
+    "schemas": [
+      {"type": "object", "properties": {"a": true}},
+      {"type": "object", "properties": {"a": {}}},
+      {"type": "object", "properties": {}},
+      {"type": "object"}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    },
+    "tests": [
+      {"data": {"a": 123}, "valid": true},
+      {"data": {}, "valid": true},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a property schema accepting nothing forbids the key",
+    "schema": {"type": "object", "properties": {"a": false}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": false}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"b": 1}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: demanding a key no value can fill is unsatisfiable",
+    "schema": {"type": "object", "properties": {"a": false}, "required": ["a"]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": {"a": 1}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a property the key constraint rejects leaves no trace",
+    "schemas": [
+      {
+        "type": "object",
+        "propertyNames": {"const": "x"},
+        "properties": {"a": {"type": "integer"}}
+      },
+      {"type": "object", "propertyNames": {"const": "x"}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"const": "x"}
+    },
+    "tests": [
+      {"data": {"x": "anything"}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: allOf intersects the schema of a shared key",
+    "schema": {
+      "allOf": [
+        {"type": "object", "properties": {"a": {"type": "integer", "minimum": 2}}},
+        {"type": "object", "properties": {"a": {"type": "integer", "maximum": 5}}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": {"type": "integer", "minimum": 2, "maximum": 5}}
+    },
+    "tests": [
+      {"data": {"a": 3}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": 6}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: allOf keeps every declared key",
+    "schema": {
+      "allOf": [
+        {"type": "object", "properties": {"a": {"type": "integer"}}},
+        {"type": "object", "properties": {"b": {"type": "string"}}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": {"type": "integer"}, "b": {"type": "string"}}
+    },
+    "tests": [
+      {"data": {"a": 1, "b": "x"}, "valid": true},
+      {"data": {"a": 1, "b": 2}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a property schema is canonicalized in place",
+    "schemas": [
+      {
+        "type": "object",
+        "properties": {"a": {"allOf": [{"type": "integer"}, {"type": "integer", "minimum": 2}]}}
+      },
+      {"type": "object", "properties": {"a": {"type": "integer", "minimum": 2}}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": {"type": "integer", "minimum": 2}}
+    },
+    "tests": [
+      {"data": {"a": 2}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: bare properties constrain only objects",
+    "schema": {"properties": {"a": {"type": "integer"}}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "properties": {"a": {"type": "integer"}}}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": [1], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: union windows under the same property schemas merge",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "properties": {"a": {"type": "integer"}}, "maxProperties": 2},
+        {"type": "object", "properties": {"a": {"type": "integer"}}, "minProperties": 3}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": {"type": "integer"}}
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: union branches with different property schemas stay apart",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "properties": {"a": {"type": "integer"}}},
+        {"type": "object", "properties": {"a": {"type": "string"}}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "properties": {"a": {"type": "integer"}}},
+        {"type": "object", "properties": {"a": {"type": "string"}}}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": true},
+      {"data": {"a": null}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a branch constraining a property is dropped by one that does not",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "properties": {"a": {"type": "integer"}}, "minProperties": 2, "maxProperties": 3},
+        {"type": "object", "minProperties": 1, "maxProperties": 5}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 5
+    },
+    "tests": [
+      {"data": {"a": "x"}, "valid": true},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a constant object whose property fails its schema is unsatisfiable",
+    "schema": {
+      "allOf": [
+        {"const": {"a": "x"}},
+        {"properties": {"a": {"type": "integer"}}}
+      ]
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a constant object whose property fits its schema survives",
+    "schema": {
+      "allOf": [
+        {"const": {"a": 1}},
+        {"properties": {"a": {"type": "integer"}}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": {"a": 1}
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a property schema absent from the object is not applied",
+    "schema": {
+      "allOf": [
+        {"const": {"b": "x"}},
+        {"properties": {"a": {"type": "integer"}}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": {"b": "x"}
+    },
+    "tests": [
+      {"data": {"b": "x"}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an unmodeled property schema keeps the document raw",
+    "schema": {"type": "object", "properties": {"a": {"$ref": "#"}}},
+    "expected": {"type": "object", "properties": {"a": {"$ref": "#"}}},
+    "tests": [
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a branch demanding fewer keys does not swallow different property schemas",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "properties": {"a": {"type": "integer"}}, "required": ["a"]},
+        {"type": "object", "properties": {"a": {"type": "string"}}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "properties": {"a": {"type": "string"}}},
+        {"type": "object", "properties": {"a": {"type": "integer"}}, "required": ["a"]}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": true},
+      {"data": {"a": null}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: the empty object widens a touching window carrying property schemas",
+    "schema": {
+      "anyOf": [
+        {"const": {}},
+        {"type": "object", "properties": {"a": {"type": "integer"}}, "minProperties": 1}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": {"type": "integer"}}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {"b": "x"}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: property schemas under draft 4",
+    "schema": {"type": "object", "properties": {"a": {"type": "integer"}}},
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "object",
+      "properties": {"a": {"type": "integer"}}
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a constant object folds into a branch whose property admits it",
+    "schema": {
+      "anyOf": [
+        {"const": {"a": 1}},
+        {"type": "object", "properties": {"a": {"type": "integer"}}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": {"type": "integer"}}
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 1.0}, "valid": true},
+      {"data": {"a": "x"}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: draft 4 keeps an object member whose number the property aliases apart",
+    "schema": {
+      "anyOf": [
+        {"enum": [{"a": 1}]},
+        {"type": "object", "properties": {"a": {"type": "integer"}}}
+      ]
+    },
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {"type": "object", "properties": {"a": {"type": "integer"}}},
+        {"enum": [{"a": 1}]}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 1.0}, "valid": true},
+      {"data": {"a": "x"}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: draft 4 keeps an object member beside a typed-group property",
+    "schema": {
+      "anyOf": [
+        {"enum": [{"a": 1}]},
+        {"type": "object", "properties": {"a": {"type": "integer", "enum": [1, 2]}}}
+      ]
+    },
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {"type": "object", "properties": {"a": {"type": "integer", "enum": [1, 2]}}},
+        {"enum": [{"a": 1}]}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 1.0}, "valid": true},
+      {"data": {"a": 2}, "valid": true},
+      {"data": {"a": 3}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: draft 4 pins an intersected object member to its integer spelling",
+    "schema": {
+      "allOf": [
+        {"enum": [{"a": 1}]},
+        {"type": "object", "properties": {"a": {"type": "integer"}}}
+      ]
+    },
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "object",
+      "required": ["a"],
+      "maxProperties": 1,
+      "properties": {"a": {"type": "integer", "enum": [1]}}
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 1.0}, "valid": false},
+      {"data": {"a": 2}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a forbidden admitted key leaves only the empty object",
+    "schemas": [
+      {"type": "object", "propertyNames": {"const": "a"}, "properties": {"a": false}},
+      {"type": "object", "maxProperties": 0},
+      {"const": {}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": {}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"b": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a forbidden admitted key beside a property minimum is unsatisfiable",
+    "schema": {
+      "type": "object",
+      "propertyNames": {"const": "a"},
+      "properties": {"a": false},
+      "minProperties": 1
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: forbidden keys lower the admitted-key cap on the property count",
+    "schemas": [
+      {"type": "object", "propertyNames": {"enum": ["a", "b"]}, "properties": {"a": false}, "maxProperties": 1},
+      {"type": "object", "propertyNames": {"enum": ["a", "b"]}, "properties": {"a": false}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"enum": ["a", "b"]},
+      "properties": {"a": false}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"b": 1}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: draft 4 spells a forbidden key the parser reads back",
+    "schemas": [
+      {"type": "object", "properties": {"a": {"not": {}}}},
+      {"type": "object", "properties": {"a": {"type": "string", "minLength": 2, "maxLength": 1}}}
+    ],
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "object",
+      "properties": {"a": {"not": {}}}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"b": 1}, "valid": true},
+      {"data": {"a": "xx"}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a property map extending another with equal shared keys is subsumed",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "properties": {"a": {"type": "integer"}}},
+        {"type": "object", "properties": {"a": {"type": "integer"}, "b": false}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": {"type": "integer"}}
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"b": 2}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a checkable format keeps a constant object its property rejects",
+    "schema": {
+      "anyOf": [
+        {"const": {"a": "not-an-email"}},
+        {"type": "object", "properties": {"a": {"type": "string", "format": "email"}}}
+      ]
+    },
+    "validate_formats": true,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "properties": {"a": {"type": "string", "format": "email"}}},
+        {"const": {"a": "not-an-email"}}
+      ]
+    },
+    "tests": [
+      {"data": {"a": "not-an-email"}, "valid": true},
+      {"data": {"a": "user@example.com"}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a checkable format folds a constant object its property admits",
+    "schema": {
+      "anyOf": [
+        {"const": {"a": "user@example.com"}},
+        {"type": "object", "properties": {"a": {"type": "string", "format": "email"}}}
+      ]
+    },
+    "validate_formats": true,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": {"type": "string", "format": "email"}}
+    },
+    "tests": [
+      {"data": {"a": "user@example.com"}, "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a property schema admitting no value converges with the forbidden key",
+    "schemas": [
+      {"type": "object", "properties": {"a": {"allOf": [{"type": "string"}, {"type": "integer"}]}}},
+      {"type": "object", "properties": {"a": false}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": false}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"b": 1}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: demanding a key whose schema admits no value is unsatisfiable without a literal false",
+    "schema": {
+      "type": "object",
+      "properties": {"a": {"allOf": [{"type": "string"}, {"type": "integer"}]}},
+      "required": ["a"]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {"data": {"a": 1}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a union-shaped property schema converges with its type-set spelling",
+    "schemas": [
+      {"type": "object", "properties": {"a": {"anyOf": [{"type": "string"}, {"type": "integer"}]}}},
+      {"type": "object", "properties": {"a": {"type": ["string", "integer"]}}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": {"type": ["integer", "string"]}}
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": true},
+      {"data": {"a": null}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: the key constraint filters the property map key by key",
+    "schema": {
+      "type": "object",
+      "propertyNames": {"maxLength": 1},
+      "properties": {"a": {"type": "integer"}, "ab": {"type": "string"}}
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"type": "string", "maxLength": 1},
+      "properties": {"a": {"type": "integer"}}
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {"ab": "x"}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a gap between the empty object and a property-carrying window keeps them apart",
+    "schema": {
+      "anyOf": [
+        {"const": {}},
+        {"type": "object", "properties": {"a": {"type": "integer"}}, "minProperties": 2}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "properties": {"a": {"type": "integer"}}, "minProperties": 2},
+        {"const": {}}
+      ]
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"a": "x", "b": 2}, "valid": false}
+    ]
+  }
+]

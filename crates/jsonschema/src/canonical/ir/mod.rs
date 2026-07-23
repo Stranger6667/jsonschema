@@ -1,5 +1,6 @@
 use std::{
     cmp::Ordering,
+    collections::BTreeMap,
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -267,14 +268,28 @@ pub(crate) struct ObjectLeaf {
     pub(crate) required: Vec<Arc<str>>,
     /// Every key must satisfy this schema, which is narrowed to the string domain.
     pub(crate) property_names: Option<Schema>,
+    /// The schema each named key must satisfy when the object carries it.
+    pub(crate) properties: BTreeMap<Arc<str>, Schema>,
 }
 
 impl ObjectLeaf {
-    /// The number of keys the property-name schema admits, when it admits a finite set.
+    /// The number of keys that can actually be present, when the property-name schema admits a
+    /// finite set: a key whose property schema admits no value can never appear, so it does not
+    /// count.
     #[must_use]
     pub(crate) fn admitted_key_count(&self) -> Option<BoundCardinality> {
         let values = self.property_names.as_ref()?.kind().finite_values()?;
-        Some(BoundCardinality::from(values.len() as u64))
+        let present = values
+            .iter()
+            .filter(|value| {
+                !matches!(value.as_value(), serde_json::Value::String(key)
+                    if self
+                        .properties
+                        .get(key.as_str())
+                        .is_some_and(|child| matches!(child.kind(), SchemaKind::False)))
+            })
+            .count();
+        Some(BoundCardinality::from(present as u64))
     }
 
     /// The size window with a finite set of admitted keys folded in as a ceiling: those keys are
@@ -289,6 +304,15 @@ impl ObjectLeaf {
                 Ord::min,
             ),
         }
+    }
+
+    /// Whether every object satisfies this leaf, which makes it the `object` type written longhand.
+    /// Every facet has to be listed here, or a union folds the leaf into the type set and drops it.
+    pub(crate) fn spans_domain(&self) -> bool {
+        self.sizes.is_unbounded()
+            && self.required.is_empty()
+            && self.property_names.is_none()
+            && self.properties.is_empty()
     }
 
     /// The keys an object must carry, as a count bound.

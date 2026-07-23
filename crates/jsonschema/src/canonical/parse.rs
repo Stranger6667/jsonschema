@@ -1,5 +1,5 @@
 //! Parsing schema documents into structural IR; anything not modeled stays `Raw`.
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use referencing::Draft;
 use serde_json::Value;
@@ -51,6 +51,7 @@ fn parse_schema(
     let mut max_items: Option<BoundCardinality> = None;
     let mut required: Vec<Arc<str>> = Vec::new();
     let mut property_names: Option<Schema> = None;
+    let mut properties: BTreeMap<Arc<str>, Schema> = BTreeMap::new();
     let mut min_properties: Option<BoundCardinality> = None;
     let mut max_properties: Option<BoundCardinality> = None;
     let mut patterns: Vec<Arc<str>> = Vec::new();
@@ -145,6 +146,18 @@ fn parse_schema(
             {
                 required.extend(names.iter().filter_map(Value::as_str).map(Arc::from));
             }
+            ("properties", Value::Object(entries))
+                if ctx.draft().is_known_keyword("properties") =>
+            {
+                for (key, value) in entries {
+                    match parse_schema(value, ctx, false)? {
+                        Some(schema) => {
+                            properties.insert(Arc::from(key.as_str()), schema);
+                        }
+                        None => return Ok(None),
+                    }
+                }
+            }
             ("propertyNames", value) if ctx.draft().is_known_keyword("propertyNames") => {
                 match parse_schema(value, ctx, false)? {
                     Some(schema) => property_names = Some(schema),
@@ -218,6 +231,16 @@ fn parse_schema(
             ("exclusiveMaximum", Value::Bool(flag)) if matches!(ctx.draft(), Draft::Draft4) => {
                 draft4_exclusive_maximum = *flag;
             }
+            // `not` of a schema admitting everything admits nothing, which is also how emit spells
+            // `false` where a boolean schema cannot appear; other `not` forms stay unmodeled.
+            ("not", Value::Bool(true)) if ctx.draft().is_known_keyword("not") => {
+                conjuncts.push(Schema::new(SchemaKind::False));
+            }
+            ("not", Value::Object(entries))
+                if entries.is_empty() && ctx.draft().is_known_keyword("not") =>
+            {
+                conjuncts.push(Schema::new(SchemaKind::False));
+            }
             // TODO(canonical): not modeled yet - every other known keyword keeps the document raw.
             (other, _) if ctx.draft().is_known_keyword(other) => return Ok(None),
             _ => {}
@@ -290,6 +313,7 @@ fn parse_schema(
         || max_properties.is_some()
         || !required.is_empty()
         || property_names.is_some()
+        || !properties.is_empty()
     {
         // Every draft marks `required` as unique, so the meta-validated list only needs ordering.
         required.sort();
@@ -301,6 +325,7 @@ fn parse_schema(
                 },
                 required,
                 property_names,
+                properties,
             },
             ctx,
         ));

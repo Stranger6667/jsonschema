@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use std::collections::BTreeMap;
+
 use crate::canonical::ir::{BoundCardinality, Bounds, LengthBounds, ObjectLeaf, Schema};
 
 /// Object leaves merged per required-key set and free of subsumed windows. Inserts are batched; the
@@ -78,6 +80,7 @@ impl IntoIterator for ObjectLeaves {
 struct Facets {
     required: Vec<Arc<str>>,
     property_names: Option<Schema>,
+    properties: BTreeMap<Arc<str>, Schema>,
 }
 
 /// Fold the size windows of leaves demanding the same keys under the same key constraint.
@@ -100,19 +103,26 @@ fn merge(mut leaves: Vec<ObjectLeaf>) -> Vec<ObjectLeaf> {
         return leaves;
     }
     leaves.sort_by(|left, right| {
-        (&left.required, &left.property_names).cmp(&(&right.required, &right.property_names))
+        (&left.required, &left.property_names, &left.properties).cmp(&(
+            &right.required,
+            &right.property_names,
+            &right.properties,
+        ))
     });
     let mut merged: Vec<ObjectLeaf> = Vec::with_capacity(leaves.len());
     let mut windows: Vec<LengthBounds> = Vec::new();
     let mut facets: Option<Facets> = None;
     for leaf in leaves {
         if facets.as_ref().is_none_or(|group| {
-            group.required != leaf.required || group.property_names != leaf.property_names
+            group.required != leaf.required
+                || group.property_names != leaf.property_names
+                || group.properties != leaf.properties
         }) {
             flush_group(&mut merged, facets.take(), &mut windows);
             facets = Some(Facets {
                 required: leaf.required,
                 property_names: leaf.property_names,
+                properties: leaf.properties,
             });
         }
         windows.push(leaf.sizes);
@@ -130,6 +140,7 @@ fn flush_group(
     let Some(Facets {
         required,
         property_names,
+        properties,
     }) = facets
     else {
         return;
@@ -141,18 +152,21 @@ fn flush_group(
             sizes: window,
             required: required.clone(),
             property_names: property_names.clone(),
+            properties: properties.clone(),
         });
     }
     merged.push(ObjectLeaf {
         sizes: last,
         required,
         property_names,
+        properties,
     });
 }
 
-/// A window of no properties holds only the empty object, whose keys satisfy any constraint
-/// vacuously: widen a neighbouring key-constrained leaf over it. Only a leaf demanding no key can
-/// absorb it, since a required key rejects the empty object whatever the window says.
+/// A window of no properties holds only the empty object, which carries no key for a key constraint
+/// or a property schema to reject: widen a neighbouring leaf carrying either over it. Only a leaf
+/// demanding no key can absorb it, since a required key rejects the empty object whatever the
+/// window says.
 /// ```text
 /// e.g.  anyOf [
 ///         {"const": {}},
@@ -170,22 +184,29 @@ fn flush_group(
 /// ```
 fn absorb_trivially_admitted(leaves: &mut Vec<ObjectLeaf>) {
     let Some(trivial) = leaves.iter().position(|leaf| {
-        leaf.property_names.is_none()
-            && leaf.required.is_empty()
-            && leaf
-                .sizes
-                .maximum
-                .as_ref()
-                .is_some_and(BoundCardinality::is_zero)
+        leaf.sizes
+            .maximum
+            .as_ref()
+            .is_some_and(BoundCardinality::is_zero)
     }) else {
         return;
     };
+    // A leaf admitting no property becomes `{"const": {}}` before it can reach the pool, so the one
+    // found here is the empty object lifted in beside the other branches, which carries no facet.
+    debug_assert!(
+        leaves[trivial].property_names.is_none()
+            && leaves[trivial].properties.is_empty()
+            && leaves[trivial].required.is_empty(),
+        "a leaf admitting only the empty object carries a facet"
+    );
     let window = leaves[trivial].sizes.clone();
     // Merging the pair yields one window exactly when they overlap or touch. Leaves sharing the
     // absent key constraint sit in the trivial leaf's own merge group, so only a key-constrained
     // leaf can be the target.
     let Some((target, widened)) = leaves.iter().enumerate().find_map(|(index, leaf)| {
-        if leaf.property_names.is_none() || !leaf.required.is_empty() {
+        if (leaf.property_names.is_none() && leaf.properties.is_empty())
+            || !leaf.required.is_empty()
+        {
             return None;
         }
         let mut merged = Bounds::merge_all(vec![leaf.sizes.clone(), window.clone()]);
@@ -215,23 +236,34 @@ fn drop_subsumed(leaves: &mut Vec<ObjectLeaf>) {
             if index == other_index || !keep[other_index] || !keep[index] {
                 continue;
             }
-            // A key constraint is compared only against itself: deciding that one schema admits
-            // every key another does needs a subsumption test the algebra does not have. The
-            // windows compare with a finite set of admitted keys folded in, since such a leaf
-            // admits no object larger than that set.
+            // A nested schema is compared only against itself: deciding that one admits everything
+            // another does needs a subsumption test the algebra does not have. The windows compare
+            // with a finite set of admitted keys folded in, since such a leaf admits no object
+            // larger than that set.
             let looser_keys = other.property_names.is_none() && leaf.property_names.is_some();
+            // A strict submap with equal schemas on the shared keys constrains strictly less: the
+            // extra entries only remove objects. Equality per key needs no schema subsumption.
+            let looser_properties = other.properties.len() < leaf.properties.len()
+                && other
+                    .properties
+                    .iter()
+                    .all(|(key, schema)| leaf.properties.get(key) == Some(schema));
             let wider = other.effective_sizes().covers(&leaf.effective_sizes())
                 && other.required.iter().all(|key| leaf.required.contains(key))
-                && (looser_keys || other.property_names == leaf.property_names);
+                && (looser_keys || other.property_names == leaf.property_names)
+                && (looser_properties || other.properties == leaf.properties);
             // Leaves agreeing on every facet but the window were folded by merging, so one of the
             // facets is strictly looser here and decides which leaf goes.
             debug_assert!(
                 !wider
                     || other.required.len() != leaf.required.len()
-                    || other.property_names != leaf.property_names,
+                    || other.property_names != leaf.property_names
+                    || other.properties != leaf.properties,
                 "merging left two leaves carrying the same facets"
             );
-            if wider && (other.required.len() < leaf.required.len() || looser_keys) {
+            if wider
+                && (other.required.len() < leaf.required.len() || looser_keys || looser_properties)
+            {
                 keep[index] = false;
             }
         }
