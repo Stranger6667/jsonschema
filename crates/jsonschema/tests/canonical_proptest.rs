@@ -90,7 +90,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(24)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(26)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -140,8 +140,23 @@ fn draw_leaf(tc: &TestCase) -> Value {
             let (min, max) = ordered(small_length(tc), small_length(tc));
             json!({ "type": "array", "minItems": min, "maxItems": max })
         }
+        24 => json!({ "type": "object", "required": draw_keys(tc) }),
+        25 => {
+            json!({ "type": "object", "required": draw_keys(tc), "maxProperties": small_length(tc) })
+        }
         _ => json!({ "type": ["string", "integer"] }),
     }
+}
+
+// Keys drawn from a small pool so different leaves overlap often enough to exercise merging.
+fn draw_keys(tc: &TestCase) -> Vec<&'static str> {
+    let count = tc.draw(gs::integers::<usize>().min_value(0).max_value(2));
+    let mut keys: Vec<&'static str> = (0..count)
+        .map(|_| tc.draw(gs::sampled_from(vec!["a", "b", "c"])))
+        .collect();
+    keys.sort_unstable();
+    keys.dedup();
+    keys
 }
 
 fn draw_schema(tc: &TestCase, depth: u32) -> Value {
@@ -159,17 +174,16 @@ fn draw_schema(tc: &TestCase, depth: u32) -> Value {
 
 // Meta-valid keywords the canonicaliser does not model; a document carrying one stays `Raw`.
 fn draw_unmodeled_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(8)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(7)) {
         0 => {
             json!({ "type": "integer", "multipleOf": tc.draw(gs::integers::<u8>().min_value(1).max_value(7)) })
         }
-        1 => json!({ "type": "object", "required": ["a"] }),
-        2 => json!({ "type": "object", "properties": { "a": { "type": "integer" } } }),
-        3 => json!({ "type": "array", "items": { "type": "integer" } }),
-        4 => json!({ "type": "array", "uniqueItems": true }),
-        5 => json!({ "not": { "type": "string" } }),
-        6 => json!({ "$defs": { "a": { "type": "null" } }, "$ref": "#/$defs/a" }),
-        7 => json!({ "format": "email" }),
+        1 => json!({ "type": "object", "properties": { "a": { "type": "integer" } } }),
+        2 => json!({ "type": "array", "items": { "type": "integer" } }),
+        3 => json!({ "type": "array", "uniqueItems": true }),
+        4 => json!({ "not": { "type": "string" } }),
+        5 => json!({ "$defs": { "a": { "type": "null" } }, "$ref": "#/$defs/a" }),
+        6 => json!({ "format": "email" }),
         _ => json!({ "oneOf": [{ "type": "string" }, { "type": "integer" }] }),
     }
 }

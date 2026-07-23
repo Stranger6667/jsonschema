@@ -133,10 +133,16 @@ def test_view_array_lengths():
 
 
 def test_view_object_sizes():
-    match canonicalize({"type": "object", "minProperties": 1, "maxProperties": 3}).view():
-        case canonical.ObjectView(min_properties=min_properties, max_properties=max_properties):
-            assert min_properties == 1
+    schema = {"type": "object", "minProperties": 1, "maxProperties": 3, "required": ["a"]}
+    match canonicalize(schema).view():
+        case canonical.ObjectView(
+            min_properties=min_properties,
+            max_properties=max_properties,
+            required=required,
+        ):
+            assert min_properties is None
             assert max_properties == 3
+            assert required == ["a"]
         case other:
             pytest.fail(f"unexpected view: {other!r}")
 

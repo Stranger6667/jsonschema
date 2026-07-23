@@ -82,13 +82,15 @@ class ArrayView:
 
 @final
 class ObjectView:
-    """An object value whose property count is within a window."""
+    """An object value whose property count is within a window and which carries every required key."""
 
     __match_args__: tuple[str, ...]
     @property
     def min_properties(self) -> int | None: ...
     @property
     def max_properties(self) -> int | None: ...
+    @property
+    def required(self) -> list[str]: ...
 
 @final
 class AnyOfView:

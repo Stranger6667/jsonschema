@@ -107,6 +107,7 @@ module JSONSchema
     class ObjectView
       def min_properties: () -> Integer?
       def max_properties: () -> Integer?
+      def required: () -> Array[String]
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end
