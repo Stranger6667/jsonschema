@@ -118,7 +118,7 @@ fn arbitrary_scalar(tc: TestCase) -> Value {
 
 #[hegel::composite]
 fn arbitrary_instance(tc: TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(9)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(10)) {
         0 => Value::Null,
         1 => Value::Bool(tc.draw(gs::booleans())),
         2 => json!(tc.draw(gs::integers::<i32>().min_value(-8).max_value(8))),
@@ -137,13 +137,17 @@ fn arbitrary_instance(tc: TestCase) -> Value {
             }
             Value::Object(object)
         }
+        9 => {
+            let count = tc.draw(gs::integers::<usize>().min_value(0).max_value(2));
+            Value::Array((0..count).map(|_| tc.draw(arbitrary_scalar())).collect())
+        }
         _ => json!({}),
     }
 }
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(41)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(45)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -228,6 +232,13 @@ fn draw_leaf(tc: &TestCase) -> Value {
         // nested number spellings apart.
         39 => json!({ "enum": [{ "a": small_int(tc) }] }),
         40 => json!({ "const": { "a": tc.draw(arbitrary_scalar()) } }),
+        41 => json!({ "type": "array", "items": { "type": draw_type(tc) } }),
+        42 => json!({ "type": "array", "items": false }),
+        43 => {
+            json!({ "type": "array", "items": { "type": "string", "format": "unknown-fmt" } })
+        }
+        // Array-valued members collide with the item leaves above.
+        44 => json!({ "enum": [[tc.draw(arbitrary_scalar())]] }),
         _ => json!({ "type": ["string", "integer"] }),
     }
 }
@@ -259,7 +270,7 @@ fn draw_schema(tc: &TestCase, depth: u32) -> Value {
 // Meta-valid keywords the canonicaliser does not model; a document carrying one stays `Raw`.
 fn draw_unmodeled_leaf(tc: &TestCase) -> Value {
     match tc.draw(gs::integers::<u8>().min_value(0).max_value(4)) {
-        0 => json!({ "type": "array", "items": { "type": "integer" } }),
+        0 => json!({ "patternProperties": { "^a": { "type": "integer" } } }),
         1 => json!({ "not": { "type": "string" } }),
         2 => json!({ "$defs": { "a": { "type": "null" } }, "$ref": "#/$defs/a" }),
         3 => json!({ "format": "email" }),

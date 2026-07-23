@@ -38,7 +38,7 @@ fn emit(kind: &SchemaKind, draft: Draft) -> Value {
         SchemaKind::String(leaf) => emit_string(leaf.get()),
         SchemaKind::Integer(leaf) => emit_integer(leaf.get()),
         SchemaKind::Number(leaf) => emit_number(leaf.get(), draft),
-        SchemaKind::Array(leaf) => emit_array(leaf.get()),
+        SchemaKind::Array(leaf) => emit_array(leaf.get(), draft),
         SchemaKind::Object(leaf) => emit_object(leaf.get(), draft),
         SchemaKind::MultiType(set) => emit_multi_type(*set),
         // The body emits a `const`/`enum` object without a `type` key, so adding `type` beside it
@@ -135,10 +135,13 @@ fn emit_number(leaf: &NumberLeaf, draft: Draft) -> Value {
     Value::Object(map)
 }
 
-/// Emit an array leaf as `{"type":"array"}` plus its length bounds and uniqueness.
-fn emit_array(leaf: &ArrayLeaf) -> Value {
+/// Emit an array leaf as `{"type":"array"}` plus its length bounds, uniqueness and item schema.
+fn emit_array(leaf: &ArrayLeaf, draft: Draft) -> Value {
     let mut map = Map::new();
     map.insert("type".into(), Value::String("array".into()));
+    if let Some(items) = &leaf.items {
+        map.insert("items".into(), emit(items.kind(), draft));
+    }
     if leaf.unique {
         map.insert("uniqueItems".into(), Value::Bool(true));
     }

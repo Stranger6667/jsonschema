@@ -1,0 +1,587 @@
+[
+  {
+    "description": "ir: an item schema preserves validation",
+    "schema": {"type": "array", "items": {"type": "integer"}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"type": "integer"}
+    },
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": ["x"], "valid": false},
+      {"data": [], "valid": true},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an item schema accepting everything constrains nothing",
+    "schemas": [
+      {"type": "array", "items": true},
+      {"type": "array", "items": {}},
+      {"type": "array"}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array"
+    },
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an item schema accepting nothing leaves only the empty array",
+    "schemas": [
+      {"type": "array", "items": false},
+      {"type": "array", "maxItems": 0},
+      {"const": []}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": []
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an item schema accepting nothing beside a minimum is unsatisfiable",
+    "schema": {"type": "array", "items": false, "minItems": 1},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an item schema admitting no value converges with the false spelling",
+    "schemas": [
+      {"type": "array", "items": {"allOf": [{"type": "string"}, {"type": "integer"}]}},
+      {"type": "array", "items": false}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": []
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: bare items constrain only arrays",
+    "schema": {"items": {"type": "integer"}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "object"]},
+        {"type": "array", "items": {"type": "integer"}}
+      ]
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": false},
+      {"data": {}, "valid": true},
+      {"data": "s", "valid": true}
+    ]
+  },
+  {
+    "description": "ir: an item schema is canonicalized in place",
+    "schemas": [
+      {"type": "array", "items": {"allOf": [{"type": "integer"}, {"type": "integer", "minimum": 2}]}},
+      {"type": "array", "items": {"type": "integer", "minimum": 2}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"type": "integer", "minimum": 2}
+    },
+    "tests": [
+      {"data": [2], "valid": true},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: allOf intersects the item schemas",
+    "schema": {
+      "allOf": [
+        {"type": "array", "items": {"type": "integer", "minimum": 2}},
+        {"type": "array", "items": {"type": "integer", "maximum": 5}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"type": "integer", "minimum": 2, "maximum": 5}
+    },
+    "tests": [
+      {"data": [2, 5], "valid": true},
+      {"data": [1], "valid": false},
+      {"data": [6], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: union windows under the same item schema merge",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "items": {"type": "integer"}, "maxItems": 2},
+        {"type": "array", "items": {"type": "integer"}, "minItems": 3}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"type": "integer"}
+    },
+    "tests": [
+      {"data": [1, 2, 3], "valid": true},
+      {"data": ["x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: union branches with different item schemas stay apart",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "items": {"type": "integer"}},
+        {"type": "array", "items": {"type": "string"}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "array", "items": {"type": "integer"}},
+        {"type": "array", "items": {"type": "string"}}
+      ]
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": true},
+      {"data": [1, "x"], "valid": false},
+      {"data": [], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a branch constraining items is dropped by one that does not",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "items": {"type": "integer"}},
+        {"type": "array"}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array"
+    },
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an item schema survives beside another type",
+    "schema": {
+      "anyOf": [
+        {"type": "string"},
+        {"type": "array", "items": {"type": "integer"}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "string"},
+        {"type": "array", "items": {"type": "integer"}}
+      ]
+    },
+    "tests": [
+      {"data": "s", "valid": true},
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a constant array folds into a branch whose items admit it",
+    "schema": {
+      "anyOf": [
+        {"const": [1]},
+        {"type": "array", "items": {"type": "integer"}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"type": "integer"}
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [2], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a constant array with a rejected element stays apart",
+    "schema": {
+      "anyOf": [
+        {"const": ["x"]},
+        {"type": "array", "items": {"type": "integer"}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "array", "items": {"type": "integer"}},
+        {"const": ["x"]}
+      ]
+    },
+    "tests": [
+      {"data": ["x"], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": ["y"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: the empty array widens a touching item-constrained window",
+    "schema": {
+      "anyOf": [
+        {"const": []},
+        {"type": "array", "items": {"type": "integer"}, "minItems": 1}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"type": "integer"}
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a gap between the empty array and an item-constrained window keeps them apart",
+    "schema": {
+      "anyOf": [
+        {"const": []},
+        {"type": "array", "items": {"type": "integer"}, "minItems": 2}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "array", "items": {"type": "integer"}, "minItems": 2},
+        {"const": []}
+      ]
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1], "valid": false},
+      {"data": [1, 2], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a constant array whose elements fit the item schema survives intersection",
+    "schema": {
+      "allOf": [
+        {"const": [1, 2]},
+        {"items": {"type": "integer"}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": [1, 2]
+    },
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a constant array with an element the item schema rejects is unsatisfiable",
+    "schema": {
+      "allOf": [
+        {"const": [1, "x"]},
+        {"items": {"type": "integer"}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {"data": [1, "x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: the empty array satisfies any item schema vacuously",
+    "schema": {
+      "allOf": [
+        {"const": []},
+        {"items": {"type": "integer"}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": []
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: union windows under the same item schema and uniqueness merge",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "items": {"type": "integer"}, "uniqueItems": true, "maxItems": 3},
+        {"type": "array", "items": {"type": "integer"}, "uniqueItems": true, "minItems": 4}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"type": "integer"},
+      "uniqueItems": true
+    },
+    "tests": [
+      {"data": [1, 2, 3, 4], "valid": true},
+      {"data": [1, 1], "valid": false},
+      {"data": ["x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an uncheckable format keeps a constant array beside the item schema",
+    "schema": {
+      "anyOf": [
+        {"const": ["x"]},
+        {"type": "array", "items": {"type": "string", "format": "unknown"}}
+      ]
+    },
+    "validate_formats": true,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "array", "items": {"type": "string", "format": "unknown"}},
+        {"const": ["x"]}
+      ]
+    },
+    "tests": [
+      {"data": ["x"], "valid": true},
+      {"data": [], "valid": true},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an uncheckable format nested in items of items keeps the constant apart",
+    "schema": {
+      "anyOf": [
+        {"const": [["x"]]},
+        {"type": "array", "items": {"type": "array", "items": {"type": "string", "format": "unknown"}}}
+      ]
+    },
+    "validate_formats": true,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "array", "items": {"type": "array", "items": {"type": "string", "format": "unknown"}}},
+        {"const": [["x"]]}
+      ]
+    },
+    "tests": [
+      {"data": [["x"]], "valid": true},
+      {"data": [], "valid": true},
+      {"data": [[]], "valid": true},
+      {"data": [[1]], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a checkable format keeps a constant array its item schema rejects",
+    "schema": {
+      "anyOf": [
+        {"const": ["not-an-email"]},
+        {"type": "array", "items": {"type": "string", "format": "email"}}
+      ]
+    },
+    "validate_formats": true,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "array", "items": {"type": "string", "format": "email"}},
+        {"const": ["not-an-email"]}
+      ]
+    },
+    "tests": [
+      {"data": ["not-an-email"], "valid": true},
+      {"data": ["user@example.com"], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a checkable format folds a constant array its item schema admits",
+    "schema": {
+      "anyOf": [
+        {"const": ["user@example.com"]},
+        {"type": "array", "items": {"type": "string", "format": "email"}}
+      ]
+    },
+    "validate_formats": true,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"type": "string", "format": "email"}
+    },
+    "tests": [
+      {"data": ["user@example.com"], "valid": true},
+      {"data": [], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: draft 4 does not model item schemas",
+    "schema": {"type": "array", "items": {"type": "integer"}},
+    "draft": "draft4",
+    "expected": {"type": "array", "items": {"type": "integer"}},
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: tuple-form items stay unmodeled",
+    "schema": {"items": [{"type": "integer"}]},
+    "draft": "draft7",
+    "expected": {"items": [{"type": "integer"}]},
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: tuple-form items are meta-invalid under draft 2020-12",
+    "schema": {"items": [{"type": "integer"}]},
+    "error": "ValidationError"
+  },
+  {
+    "description": "ir: item schemas under draft 2019-09",
+    "schema": {"type": "array", "items": {"type": "integer"}, "minItems": 1},
+    "draft": "draft2019-09",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "type": "array",
+      "items": {"type": "integer"},
+      "minItems": 1
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": false},
+      {"data": [], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: additionalItems beside items keeps the document raw",
+    "schema": {"type": "array", "items": {"type": "integer"}, "additionalItems": false},
+    "draft": "draft2019-09",
+    "expected": {"type": "array", "items": {"type": "integer"}, "additionalItems": false},
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: bare items accepting everything constrain nothing",
+    "schemas": [
+      {"items": true},
+      {}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a union-shaped item schema converges with its type-set spelling",
+    "schemas": [
+      {"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "integer"}]}},
+      {"type": "array", "items": {"type": ["string", "integer"]}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"type": ["integer", "string"]}
+    },
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": [null], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a window a bare sibling covers hands its boundary to the item schema",
+    "schemas": [
+      {"anyOf": [{"type": "array", "maxItems": 1}, {"type": "array", "items": {"type": "integer"}, "minItems": 2}]},
+      {"anyOf": [{"type": "array", "maxItems": 1}, {"type": "array", "items": {"type": "integer"}, "minItems": 1}]},
+      {"anyOf": [{"type": "array", "maxItems": 1}, {"type": "array", "items": {"type": "integer"}}]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "array", "items": {"type": "integer"}},
+        {"type": "array", "maxItems": 1}
+      ]
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": ["x"], "valid": true},
+      {"data": [1, 2], "valid": true},
+      {"data": ["x", "y"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: the empty array hands off to every branch that admits it",
+    "schemas": [
+      {"anyOf": [{"const": []}, {"type": "array", "uniqueItems": true, "minItems": 1}, {"type": "array", "items": {"type": "integer"}, "minItems": 1}]},
+      {"anyOf": [{"type": "array", "uniqueItems": true, "minItems": 1}, {"type": "array", "items": {"type": "integer"}}]},
+      {"anyOf": [{"type": "array", "uniqueItems": true}, {"type": "array", "items": {"type": "integer"}, "minItems": 1}]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "array", "items": {"type": "integer"}},
+        {"type": "array", "uniqueItems": true}
+      ]
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1, 1], "valid": true},
+      {"data": ["x", "y"], "valid": true},
+      {"data": ["x", "x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a covered window does not vanish into a unique item-constrained branch",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "maxItems": 1},
+        {"type": "array", "uniqueItems": true, "items": {"type": "integer"}, "minItems": 2}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "array", "items": {"type": "integer"}, "uniqueItems": true},
+        {"type": "array", "maxItems": 1}
+      ]
+    },
+    "tests": [
+      {"data": ["x"], "valid": true},
+      {"data": [1, 2], "valid": true},
+      {"data": [1, 1], "valid": false},
+      {"data": ["x", "y"], "valid": false}
+    ]
+  }
+]

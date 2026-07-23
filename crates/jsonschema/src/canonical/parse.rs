@@ -49,6 +49,7 @@ fn parse_schema(
     let mut unique_items = false;
     let mut min_items: Option<BoundCardinality> = None;
     let mut max_items: Option<BoundCardinality> = None;
+    let mut items: Option<Schema> = None;
     let mut required: Vec<Arc<str>> = Vec::new();
     let mut property_names: Option<Schema> = None;
     let mut properties: BTreeMap<Arc<str>, Schema> = BTreeMap::new();
@@ -137,6 +138,18 @@ fn parse_schema(
             ("maxItems", Value::Number(number)) if ctx.draft().is_known_keyword("maxItems") => {
                 match BoundCardinality::from_number(number) {
                     Some(bound) => max_items = Some(bound),
+                    None => return Ok(None),
+                }
+            }
+            // Only the uniform schema form; the tuple form stays unmodeled. Draft 4 stays unmodeled
+            // too: a value set intersected with an item schema can pin a nested number to its
+            // integer spelling, which per element only `prefixItems` could express.
+            ("items", value @ (Value::Object(_) | Value::Bool(_)))
+                if ctx.draft().is_known_keyword("items")
+                    && !matches!(ctx.draft(), Draft::Draft4) =>
+            {
+                match parse_schema(value, ctx, false)? {
+                    Some(schema) => items = Some(schema),
                     None => return Ok(None),
                 }
             }
@@ -289,7 +302,7 @@ fn parse_schema(
     if min_items.as_ref().is_some_and(BoundCardinality::is_zero) {
         min_items = None;
     }
-    if min_items.is_some() || max_items.is_some() || unique_items {
+    if min_items.is_some() || max_items.is_some() || unique_items || items.is_some() {
         conjuncts.push(array_facet_schema(
             ArrayLeaf {
                 lengths: LengthBounds {
@@ -297,6 +310,7 @@ fn parse_schema(
                     maximum: max_items,
                 },
                 unique: unique_items,
+                items,
             },
             ctx,
         ));

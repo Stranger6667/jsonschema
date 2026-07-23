@@ -33,6 +33,10 @@ impl ObjectLeaves {
         }
         let was_empty = self.leaves.is_empty();
         self.leaves = merge(std::mem::take(&mut self.leaves));
+        extend_over_bare_windows(&mut self.leaves);
+        hand_off_empty(&mut self.leaves);
+        // Extending can overlap the windows of leaves sharing their facets; fold those again.
+        self.leaves = merge(std::mem::take(&mut self.leaves));
         absorb_trivially_admitted(&mut self.leaves);
         drop_subsumed(&mut self.leaves);
         self.canonical = true;
@@ -161,6 +165,83 @@ fn flush_group(
         property_names,
         properties,
     });
+}
+
+/// Widen a facet-carrying window over a bare sibling window it touches: the sizes gained lie
+/// inside the bare window, which admits those objects with any content, so the union is unchanged.
+/// The boundary between the two then has one spelling, whatever the facet leaf's window said.
+/// ```text
+/// e.g.  anyOf [
+///         {"type": "object", "maxProperties": 1},
+///         {"type": "object", "properties": {"a": {"type": "integer"}}, "minProperties": 2}
+///       ]  =>  anyOf [
+///         {"type": "object", "maxProperties": 1},
+///         {"type": "object", "properties": {"a": {"type": "integer"}}}
+///       ]
+/// ```
+fn extend_over_bare_windows(leaves: &mut [ObjectLeaf]) {
+    let bare: Vec<LengthBounds> = leaves
+        .iter()
+        .filter(|leaf| {
+            leaf.required.is_empty() && leaf.property_names.is_none() && leaf.properties.is_empty()
+        })
+        .map(|leaf| leaf.sizes.clone())
+        .collect();
+    if bare.is_empty() {
+        return;
+    }
+    for leaf in leaves.iter_mut() {
+        if leaf.required.is_empty() && leaf.property_names.is_none() && leaf.properties.is_empty() {
+            continue;
+        }
+        // A grown window can reach the next bare window, so retry until none applies.
+        loop {
+            let mut grown = false;
+            for window in &bare {
+                let merged = Bounds::merge_all(vec![leaf.sizes.clone(), window.clone()]);
+                if let Ok([merged]) = <[_; 1]>::try_from(merged) {
+                    if merged != leaf.sizes {
+                        leaf.sizes = merged;
+                        grown = true;
+                    }
+                }
+            }
+            if !grown {
+                break;
+            }
+        }
+    }
+}
+
+/// Drop a `minProperties: 1` when another branch admits the empty object: the drop adds only `{}`,
+/// which that branch accepts and whose keys satisfy any constraint vacuously. A leaf demanding a
+/// key never carries that minimum, since it folds into the required count.
+/// ```text
+/// e.g.  anyOf [
+///         {"type": "object", "properties": {"a": {"type": "integer"}}},
+///         {"type": "object", "propertyNames": {"maxLength": 3}, "minProperties": 1}
+///       ]  =>  anyOf [
+///         {"type": "object", "properties": {"a": {"type": "integer"}}},
+///         {"type": "object", "propertyNames": {"maxLength": 3}}
+///       ]
+/// ```
+fn hand_off_empty(leaves: &mut [ObjectLeaf]) {
+    if !leaves.iter().any(|leaf| {
+        leaf.required.is_empty()
+            && leaf
+                .sizes
+                .minimum
+                .as_ref()
+                .is_none_or(BoundCardinality::is_zero)
+    }) {
+        return;
+    }
+    let one = BoundCardinality::from(1);
+    for leaf in leaves.iter_mut() {
+        if leaf.sizes.minimum.as_ref() == Some(&one) {
+            leaf.sizes.minimum = None;
+        }
+    }
 }
 
 /// A window of no properties holds only the empty object, which carries no key for a key constraint

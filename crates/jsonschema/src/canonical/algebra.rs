@@ -211,6 +211,7 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
             array_leaf(intersect_array_leaves(
                 first.into_inner(),
                 second.into_inner(),
+                ctx,
             ))
         }
         // An object leaf constrains object values. A type set keeps it only when the set covers
@@ -412,7 +413,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         !spans_domain
     });
     arrays.retain(|leaf| {
-        let spans_domain = leaf.lengths.is_unbounded() && !leaf.unique;
+        let spans_domain = leaf.spans_domain();
         if spans_domain {
             widened = union_type_sets(widened, JsonTypeSet::from(JsonType::Array));
         }
@@ -584,6 +585,7 @@ fn lift_degenerate_member(
                     maximum: Some(BoundCardinality::from(0)),
                 },
                 unique: false,
+                items: None,
             });
             true
         }
@@ -771,7 +773,9 @@ fn restrict_members(
         SchemaKind::Array(leaf) => {
             let kept = members
                 .into_iter()
-                .filter(|member| array_leaf_admits(leaf.get(), member))
+                .filter(|member| {
+                    array_leaf_admits(leaf.get(), member, ctx, UncheckableFormat::Admits)
+                })
                 .collect();
             parse::canonicalize_value_set(kept)
         }
@@ -852,7 +856,9 @@ fn leaf_absorbs_member(
     ctx: &CanonicalizationContext,
 ) -> bool {
     match member.as_value() {
-        Value::Array(_) => arrays.iter().any(|leaf| array_leaf_admits(leaf, member)),
+        Value::Array(_) => arrays
+            .iter()
+            .any(|leaf| array_leaf_admits(leaf, member, ctx, UncheckableFormat::Rejects)),
         Value::Object(_) => objects
             .iter()
             .any(|leaf| object_leaf_admits(leaf, member, ctx, UncheckableFormat::Rejects)),
@@ -959,6 +965,7 @@ pub(crate) fn number_leaf(leaf: NumberLeaf, ctx: &CanonicalizationContext) -> Sc
 
 /// Pack an array facet set into a node, collapsing the leaves that say something simpler.
 pub(crate) fn array_leaf(mut leaf: ArrayLeaf) -> Schema {
+    normalize_items(&mut leaf);
     // An array of at most one item has nothing to repeat, so uniqueness says nothing more.
     // e.g.  {"type": "array", "maxItems": 1, "uniqueItems": true}
     //       =>  {"type": "array", "maxItems": 1}
@@ -989,16 +996,52 @@ pub(crate) fn array_leaf(mut leaf: ArrayLeaf) -> Schema {
     Schema::new(SchemaKind::Array(leaf))
 }
 
-/// Keep the arrays both leaves accept: the narrower window, and distinct items when either asks.
-fn intersect_array_leaves(first: ArrayLeaf, second: ArrayLeaf) -> ArrayLeaf {
+/// Drop an item schema that says nothing: one accepting every value constrains no element.
+fn normalize_items(leaf: &mut ArrayLeaf) {
+    let Some(items) = leaf.items.take() else {
+        return;
+    };
+    if matches!(items.kind(), SchemaKind::True) {
+        return;
+    }
+    // No element can be present, which is what an empty array says.
+    // e.g.  {"type": "array", "items": false}  =>  {"const": []}
+    if matches!(items.kind(), SchemaKind::False) {
+        leaf.lengths = leaf.lengths.clone().intersect(LengthBounds {
+            minimum: None,
+            maximum: Some(BoundCardinality::from(0)),
+        });
+        return;
+    }
+    leaf.items = Some(items);
+}
+
+/// Keep the arrays both leaves accept: the narrower window, distinct items when either asks, and
+/// elements both item schemas admit.
+fn intersect_array_leaves(
+    first: ArrayLeaf,
+    second: ArrayLeaf,
+    ctx: &CanonicalizationContext,
+) -> ArrayLeaf {
+    let items = match (first.items, second.items) {
+        (Some(left), Some(right)) => Some(intersect(left, right, ctx)),
+        (items, None) | (None, items) => items,
+    };
     ArrayLeaf {
         lengths: first.lengths.intersect(second.lengths),
         unique: first.unique || second.unique,
+        items,
     }
 }
 
-/// Whether `member` is an array whose length sits in the window, with distinct items when asked.
-fn array_leaf_admits(leaf: &ArrayLeaf, member: &CanonicalJson) -> bool {
+/// Whether `member` is an array whose length sits in the window, whose every element the item
+/// schema admits, and with distinct items when asked.
+fn array_leaf_admits(
+    leaf: &ArrayLeaf,
+    member: &CanonicalJson,
+    ctx: &CanonicalizationContext,
+    uncheckable: UncheckableFormat,
+) -> bool {
     let Value::Array(items) = member.as_value() else {
         return false;
     };
@@ -1006,6 +1049,13 @@ fn array_leaf_admits(leaf: &ArrayLeaf, member: &CanonicalJson) -> bool {
         .lengths
         .contains(&BoundCardinality::from(items.len() as u64))
     {
+        return false;
+    }
+    if !leaf.items.as_ref().is_none_or(|schema| {
+        items
+            .iter()
+            .all(|element| admits_value(schema, element, ctx, uncheckable))
+    }) {
         return false;
     }
     // Members are normalized, so `1` and `1.0` compare equal here just as they do at validation.
@@ -1262,12 +1312,17 @@ fn has_uncheckable_format(schema: &Schema, ctx: &CanonicalizationContext) -> boo
             .iter()
             .chain(leaf.get().properties.values())
             .any(|nested| has_uncheckable_format(nested, ctx)),
+        SchemaKind::Array(leaf) => leaf
+            .get()
+            .items
+            .iter()
+            .any(|items| has_uncheckable_format(items, ctx)),
+
         // A typed group's body is a value set, which carries no format.
         SchemaKind::TypedGroup { .. }
         | SchemaKind::MultiType(_)
         | SchemaKind::Integer(_)
         | SchemaKind::Number(_)
-        | SchemaKind::Array(_)
         | SchemaKind::Const(_)
         | SchemaKind::Enum(_)
         | SchemaKind::True

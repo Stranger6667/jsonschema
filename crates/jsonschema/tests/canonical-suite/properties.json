@@ -630,5 +630,66 @@
       {"data": {"a": 1, "b": 2}, "valid": true},
       {"data": {"a": "x", "b": 2}, "valid": false}
     ]
+  },
+  {
+    "description": "ir: a window a bare sibling covers hands its boundary to the property schemas",
+    "schemas": [
+      {"anyOf": [{"type": "object", "maxProperties": 1}, {"type": "object", "properties": {"a": {"type": "integer"}}, "minProperties": 2}]},
+      {"anyOf": [{"type": "object", "maxProperties": 1}, {"type": "object", "properties": {"a": {"type": "integer"}}, "minProperties": 1}]},
+      {"anyOf": [{"type": "object", "maxProperties": 1}, {"type": "object", "properties": {"a": {"type": "integer"}}}]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "properties": {"a": {"type": "integer"}}},
+        {"type": "object", "maxProperties": 1}
+      ]
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"b": "x"}, "valid": true},
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"a": "x", "b": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a window a bare sibling covers hands its boundary to the key constraint",
+    "schemas": [
+      {"anyOf": [{"type": "object", "maxProperties": 1}, {"type": "object", "propertyNames": {"maxLength": 3}, "minProperties": 2}]},
+      {"anyOf": [{"type": "object", "maxProperties": 1}, {"type": "object", "propertyNames": {"maxLength": 3}}]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "propertyNames": {"type": "string", "maxLength": 3}},
+        {"type": "object", "maxProperties": 1}
+      ]
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"toolong": 1}, "valid": true},
+      {"data": {"ab": 1, "cd": 2}, "valid": true},
+      {"data": {"toolong": 1, "x": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: the empty object hands off to a branch that admits it",
+    "schemas": [
+      {"anyOf": [{"type": "object", "properties": {"a": {"type": "integer"}}}, {"type": "object", "propertyNames": {"maxLength": 3}, "minProperties": 1}]},
+      {"anyOf": [{"type": "object", "properties": {"a": {"type": "integer"}}}, {"type": "object", "propertyNames": {"maxLength": 3}}]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "properties": {"a": {"type": "integer"}}},
+        {"type": "object", "propertyNames": {"type": "string", "maxLength": 3}}
+      ]
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"ab": "x"}, "valid": true},
+      {"data": {"a": "x"}, "valid": true},
+      {"data": {"a": "x", "toolong": 1}, "valid": false}
+    ]
   }
 ]

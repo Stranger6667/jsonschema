@@ -1,7 +1,8 @@
-use crate::canonical::ir::{ArrayLeaf, BoundCardinality, Bounds, LengthBounds};
+use crate::canonical::ir::{ArrayLeaf, BoundCardinality, Bounds, LengthBounds, Schema};
 
-/// Array leaves merged per uniqueness flag and free of subsumed windows. Inserts are batched; the
-/// form is restored before any read, so the order in which leaves arrive cannot change the result.
+/// Array leaves merged per uniqueness flag and item schema, free of subsumed windows. Inserts are
+/// batched; the form is restored before any read, so the order in which leaves arrive cannot
+/// change the result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ArrayLeaves {
     leaves: Vec<ArrayLeaf>,
@@ -29,7 +30,12 @@ impl ArrayLeaves {
         }
         let was_empty = self.leaves.is_empty();
         self.leaves = merge(std::mem::take(&mut self.leaves));
+        extend_over_bare_windows(&mut self.leaves);
+        hand_off_empty(&mut self.leaves);
+        // Extending can overlap the windows of leaves sharing their facets; fold those again.
+        self.leaves = merge(std::mem::take(&mut self.leaves));
         absorb_trivially_distinct(&mut self.leaves);
+        absorb_trivially_conforming(&mut self.leaves);
         drop_subsumed(&mut self.leaves);
         self.canonical = true;
         // `is_empty` reads the batch without canonicalizing, which relies on this.
@@ -72,7 +78,7 @@ impl IntoIterator for ArrayLeaves {
     }
 }
 
-/// Fold the length windows of leaves that agree on uniqueness.
+/// Fold the length windows of leaves that agree on uniqueness and the item schema.
 /// e.g.  anyOf [
 ///         {"type": "array", "uniqueItems": true, "maxItems": 2},
 ///         {"type": "array", "uniqueItems": true, "minItems": 3}
@@ -87,31 +93,127 @@ fn merge(mut leaves: Vec<ArrayLeaf>) -> Vec<ArrayLeaf> {
     if leaves.len() < 2 {
         return leaves;
     }
-    leaves.sort_by_key(|leaf| leaf.unique);
+    leaves.sort_by(|left, right| (left.unique, &left.items).cmp(&(right.unique, &right.items)));
     let mut merged: Vec<ArrayLeaf> = Vec::with_capacity(leaves.len());
     let mut windows: Vec<LengthBounds> = Vec::new();
-    let mut unique: Option<bool> = None;
+    let mut facets: Option<Facets> = None;
     for leaf in leaves {
-        if unique.is_none_or(|flag| flag != leaf.unique) {
-            flush_group(&mut merged, unique.take(), &mut windows);
-            unique = Some(leaf.unique);
+        if facets
+            .as_ref()
+            .is_none_or(|group| group.unique != leaf.unique || group.items != leaf.items)
+        {
+            flush_group(&mut merged, facets.take(), &mut windows);
+            facets = Some(Facets {
+                unique: leaf.unique,
+                items: leaf.items,
+            });
         }
         windows.push(leaf.lengths);
     }
-    flush_group(&mut merged, unique, &mut windows);
+    flush_group(&mut merged, facets, &mut windows);
     merged
 }
 
-/// Emit one leaf per merged window, all carrying the group's uniqueness.
-fn flush_group(merged: &mut Vec<ArrayLeaf>, unique: Option<bool>, windows: &mut Vec<LengthBounds>) {
-    let Some(unique) = unique else {
+/// The facets shared by a merge group; only the length window differs within one.
+struct Facets {
+    unique: bool,
+    items: Option<Schema>,
+}
+
+/// Emit one leaf per merged window, all carrying the group's facets.
+fn flush_group(
+    merged: &mut Vec<ArrayLeaf>,
+    facets: Option<Facets>,
+    windows: &mut Vec<LengthBounds>,
+) {
+    let Some(Facets { unique, items }) = facets else {
         return;
     };
-    for window in Bounds::merge_all(std::mem::take(windows)) {
+    let mut lengths = Bounds::merge_all(std::mem::take(windows));
+    let last = lengths.pop().expect("a group holds at least one window");
+    for window in lengths {
         merged.push(ArrayLeaf {
             lengths: window,
             unique,
+            items: items.clone(),
         });
+    }
+    merged.push(ArrayLeaf {
+        lengths: last,
+        unique,
+        items,
+    });
+}
+
+/// Widen a facet-carrying window over a bare sibling window it touches: the lengths gained lie
+/// inside the bare window, which admits those arrays with any content, so the union is unchanged.
+/// The boundary between the two then has one spelling, whatever the facet leaf's window said.
+/// ```text
+/// e.g.  anyOf [
+///         {"type": "array", "maxItems": 1},
+///         {"type": "array", "items": {"type": "integer"}, "minItems": 2}
+///       ]  =>  anyOf [
+///         {"type": "array", "maxItems": 1},
+///         {"type": "array", "items": {"type": "integer"}}
+///       ]
+/// ```
+fn extend_over_bare_windows(leaves: &mut [ArrayLeaf]) {
+    let bare: Vec<LengthBounds> = leaves
+        .iter()
+        .filter(|leaf| !leaf.unique && leaf.items.is_none())
+        .map(|leaf| leaf.lengths.clone())
+        .collect();
+    if bare.is_empty() {
+        return;
+    }
+    for leaf in leaves.iter_mut() {
+        if !leaf.unique && leaf.items.is_none() {
+            continue;
+        }
+        // A grown window can reach the next bare window, so retry until none applies.
+        loop {
+            let mut grown = false;
+            for window in &bare {
+                let merged = Bounds::merge_all(vec![leaf.lengths.clone(), window.clone()]);
+                if let Ok([merged]) = <[_; 1]>::try_from(merged) {
+                    if merged != leaf.lengths {
+                        leaf.lengths = merged;
+                        grown = true;
+                    }
+                }
+            }
+            if !grown {
+                break;
+            }
+        }
+    }
+}
+
+/// Drop a `minItems: 1` when another branch admits the empty array: the drop adds only `[]`, which
+/// that branch accepts and which satisfies any item schema and distinctness vacuously.
+/// ```text
+/// e.g.  anyOf [
+///         {"type": "array", "uniqueItems": true, "minItems": 1},
+///         {"type": "array", "items": {"type": "integer"}}
+///       ]  =>  anyOf [
+///         {"type": "array", "uniqueItems": true},
+///         {"type": "array", "items": {"type": "integer"}}
+///       ]
+/// ```
+fn hand_off_empty(leaves: &mut [ArrayLeaf]) {
+    if !leaves.iter().any(|leaf| {
+        leaf.lengths
+            .minimum
+            .as_ref()
+            .is_none_or(BoundCardinality::is_zero)
+    }) {
+        return;
+    }
+    let one = BoundCardinality::from(1);
+    for leaf in leaves.iter_mut() {
+        if leaf.lengths.minimum.as_ref() == Some(&one) {
+            leaf.lengths.minimum = None;
+        }
     }
 }
 
@@ -130,6 +232,7 @@ fn flush_group(merged: &mut Vec<ArrayLeaf>, unique: Option<bool>, windows: &mut 
 fn absorb_trivially_distinct(leaves: &mut Vec<ArrayLeaf>) {
     let Some(trivial) = leaves.iter().position(|leaf| {
         !leaf.unique
+            && leaf.items.is_none()
             && leaf
                 .lengths
                 .maximum
@@ -139,14 +242,63 @@ fn absorb_trivially_distinct(leaves: &mut Vec<ArrayLeaf>) {
         return;
     };
     let window = leaves[trivial].lengths.clone();
-    // Merging the pair yields one window exactly when they overlap or touch.
+    // Merging the pair yields one window exactly when they overlap or touch. An item-constrained
+    // leaf cannot widen over arrays of one item, whose element it never checked.
     let Some((target, widened)) = leaves.iter().enumerate().find_map(|(index, leaf)| {
-        if !leaf.unique {
+        if !leaf.unique || leaf.items.is_some() {
             return None;
         }
         let mut merged = Bounds::merge_all(vec![leaf.lengths.clone(), window.clone()]);
         (merged.len() == 1).then(|| (index, merged.pop().expect("a merged window")))
     }) else {
+        return;
+    };
+    leaves[target].lengths = widened;
+    leaves.remove(trivial);
+}
+
+/// A window of no items holds only the empty array, whose elements satisfy any item schema
+/// vacuously: widen a neighbouring item-constrained leaf over it.
+/// ```text
+/// e.g.  anyOf [
+///         {"const": []},
+///         {"type": "array", "items": {"type": "integer"}, "minItems": 1}
+///       ]  =>  {"type": "array", "items": {"type": "integer"}}
+/// ```
+///
+/// A gap between the two windows keeps them apart: widening would admit the lengths between them.
+/// ```text
+/// e.g.  anyOf [
+///         {"const": []},
+///         {"type": "array", "items": {"type": "integer"}, "minItems": 2}
+///       ]  =>  unchanged
+/// ```
+fn absorb_trivially_conforming(leaves: &mut Vec<ArrayLeaf>) {
+    let Some(trivial) = leaves.iter().position(|leaf| {
+        !leaf.unique
+            && leaf.items.is_none()
+            && leaf
+                .lengths
+                .maximum
+                .as_ref()
+                .is_some_and(BoundCardinality::is_zero)
+    }) else {
+        return;
+    };
+    let window = leaves[trivial].lengths.clone();
+    // Merging the pair yields one window exactly when they overlap or touch.
+    let Some((target, widened)) = leaves
+        .iter()
+        .enumerate()
+        .filter(|(_, leaf)| leaf.items.is_some())
+        .find_map(|(index, leaf)| {
+            let merged = Bounds::merge_all(vec![leaf.lengths.clone(), window.clone()]);
+            match <[_; 1]>::try_from(merged) {
+                Ok([widened]) => Some((index, widened)),
+                Err(_) => None,
+            }
+        })
+    else {
         return;
     };
     leaves[target].lengths = widened;
@@ -169,14 +321,19 @@ fn drop_subsumed(leaves: &mut Vec<ArrayLeaf>) {
             if index == other_index || !keep[other_index] || !keep[index] {
                 continue;
             }
-            let wider = other.lengths.covers(&leaf.lengths) && (!other.unique || leaf.unique);
-            // Equal flags under `wider` mean merging already folded the two into one leaf, so the
-            // flags decide which leaf goes without a tie to break.
+            // An item schema is compared only against itself: deciding that one admits every
+            // element another does needs a subsumption test the algebra does not have.
+            let looser_items = other.items.is_none() && leaf.items.is_some();
+            let wider = other.lengths.covers(&leaf.lengths)
+                && (!other.unique || leaf.unique)
+                && (looser_items || other.items == leaf.items);
+            // Leaves agreeing on every facet but the window were folded by merging, so one of the
+            // facets is strictly looser here and decides which leaf goes.
             debug_assert!(
-                !wider || other.unique != leaf.unique,
-                "merging left two leaves agreeing on uniqueness"
+                !wider || other.unique != leaf.unique || other.items != leaf.items,
+                "merging left two leaves carrying the same facets"
             );
-            if wider && !other.unique {
+            if wider && ((leaf.unique && !other.unique) || looser_items) {
                 keep[index] = false;
             }
         }

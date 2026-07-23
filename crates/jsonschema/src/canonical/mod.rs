@@ -68,9 +68,9 @@
 //! # Coverage
 //!
 //! Canonicalization models a growing subset of JSON Schema - currently the type system,
-//! `const`/`enum` value sets, the `allOf`/`anyOf` combinators, and numeric, string, and object
-//! constraints. Rather than relying on any keyword list, detect support per document: a schema
-//! using anything outside the modeled subset (references, array keywords, ...) canonicalizes
+//! `const`/`enum` value sets, the `allOf`/`anyOf` combinators, and numeric, string, array, and
+//! object constraints. Rather than relying on any keyword list, detect support per document: a
+//! schema using anything outside the modeled subset (references, `contains`, ...) canonicalizes
 //! *successfully* to an opaque pass-through of the whole document, [`CanonicalView::Raw`]. A `Raw`
 //! schema is the original verbatim - equivalent but inert: nothing folds, and
 //! [`is_satisfiable`](CanonicalSchema::is_satisfiable) stays conservatively `true`. Match on

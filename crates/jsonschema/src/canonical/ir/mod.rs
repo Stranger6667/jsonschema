@@ -177,8 +177,8 @@ pub(crate) enum SchemaKind {
     Integer(NonEmpty<IntegerLeaf>),
     /// A number value within a real interval; other types are matched by a surrounding union.
     Number(NonEmpty<NumberLeaf>),
-    /// An array value whose length is within a window and whose items may have to be distinct;
-    /// other types are matched by a surrounding union.
+    /// An array value within the leaf's constraints; other types are matched by a surrounding
+    /// union.
     Array(NonEmpty<ArrayLeaf>),
     /// An object value whose property count is within a window and which carries every required key;
     /// other types are matched by a surrounding union.
@@ -251,6 +251,16 @@ impl MaybeEmpty for IntegerLeaf {
 pub(crate) struct ArrayLeaf {
     pub(crate) lengths: LengthBounds,
     pub(crate) unique: bool,
+    /// The schema every element must satisfy.
+    pub(crate) items: Option<Schema>,
+}
+
+impl ArrayLeaf {
+    /// Whether every array satisfies this leaf, which makes it the `array` type written longhand.
+    /// Every facet has to be listed here, or a union folds the leaf into the type set and drops it.
+    pub(crate) fn spans_domain(&self) -> bool {
+        self.lengths.is_unbounded() && !self.unique && self.items.is_none()
+    }
 }
 
 impl MaybeEmpty for ArrayLeaf {
