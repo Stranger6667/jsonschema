@@ -129,7 +129,9 @@ jobs:
             --env XDG_CACHE_HOME=/tmp/.cache
             --env XDG_DATA_HOME=/tmp/.local/share
         # Everything except `pyo3`: the cross image has no libpython to link test binaries against.
-        run: cross test --target ${{ matrix.target }} --no-fail-fast --features conformance,resolve-http,resolve-file,resolve-async,tls-aws-lc-rs,tls-ring,arbitrary-precision,macros,reqwest -p jsonschema
+        # `--tests` skips doctests: each needs its own `rustc` invocation, which under emulation
+        # costs more than the whole rest of the suite, and they cover no endianness-specific code.
+        run: cross test --target ${{ matrix.target }} --tests --no-fail-fast --features conformance,resolve-http,resolve-file,resolve-async,tls-aws-lc-rs,tls-ring,arbitrary-precision,macros,reqwest -p jsonschema
 
   test-wasm:
     strategy:
