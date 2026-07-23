@@ -3,7 +3,7 @@ use serde_json::{Number, Value};
 use crate::{
     canonical::{
         ir::{
-            BoundCardinality, BoundInteger, BoundNumber, CanonicalJson, IntegerLeaf, LengthBounds,
+            ArrayLeaf, BoundCardinality, BoundInteger, BoundNumber, CanonicalJson, IntegerLeaf,
             NumberLeaf, ObjectLeaf, SchemaKind, StringLeaf,
         },
         CanonicalSchema,
@@ -77,11 +77,14 @@ pub struct NumberView {
     pub exclusive_maximum: bool,
 }
 
-/// Payload of [`CanonicalView::Array`]: the `minItems`/`maxItems` bounds on an array value.
+/// Payload of [`CanonicalView::Array`]: the `minItems`/`maxItems` bounds and uniqueness of an array value.
+// The fields carry the keywords they came from, whose names share the suffix.
+#[allow(clippy::struct_field_names)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArrayView {
     pub min_items: Option<Number>,
     pub max_items: Option<Number>,
+    pub unique_items: bool,
 }
 
 /// Payload of [`CanonicalView::Object`]: the `minProperties`/`maxProperties` bounds and required
@@ -114,7 +117,7 @@ impl CanonicalSchema {
             SchemaKind::String(leaf) => CanonicalView::String(string_view(leaf.get())),
             SchemaKind::Integer(bounds) => CanonicalView::Integer(integer_view(bounds.get())),
             SchemaKind::Number(leaf) => CanonicalView::Number(number_view(leaf.get())),
-            SchemaKind::Array(lengths) => CanonicalView::Array(array_view(lengths.get())),
+            SchemaKind::Array(leaf) => CanonicalView::Array(array_view(leaf.get())),
             SchemaKind::Object(leaf) => CanonicalView::Object(object_view(leaf.get())),
             SchemaKind::Const(value) => CanonicalView::Const(value.to_value()),
             SchemaKind::Enum(values) => CanonicalView::Enum(
@@ -161,10 +164,19 @@ fn integer_view(leaf: &IntegerLeaf) -> IntegerView {
     }
 }
 
-fn array_view(lengths: &LengthBounds) -> ArrayView {
+fn array_view(leaf: &ArrayLeaf) -> ArrayView {
     ArrayView {
-        min_items: lengths.minimum.as_ref().map(BoundCardinality::to_number),
-        max_items: lengths.maximum.as_ref().map(BoundCardinality::to_number),
+        min_items: leaf
+            .lengths
+            .minimum
+            .as_ref()
+            .map(BoundCardinality::to_number),
+        max_items: leaf
+            .lengths
+            .maximum
+            .as_ref()
+            .map(BoundCardinality::to_number),
+        unique_items: leaf.unique,
     }
 }
 

@@ -1,0 +1,383 @@
+[
+  {
+    "description": "ir: unique items preserve validation",
+    "schema": {"type": "array", "uniqueItems": true},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "uniqueItems": true
+    },
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [], "valid": true},
+      {"data": [1, 1], "valid": false},
+      {"data": [1, 1.0], "valid": false},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: uniqueItems false constrains nothing",
+    "schemas": [
+      {"type": "array", "uniqueItems": false},
+      {"type": "array"}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array"
+    }
+  },
+  {
+    "description": "ir: bare uniqueItems constrains only arrays",
+    "schema": {"uniqueItems": true},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "object"]},
+        {"type": "array", "uniqueItems": true}
+      ]
+    },
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [1, 1], "valid": false},
+      {"data": {"a": 1}, "valid": true},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: allOf keeps uniqueness demanded by either side",
+    "schema": {
+      "allOf": [
+        {"type": "array", "uniqueItems": true},
+        {"type": "array", "uniqueItems": false}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "uniqueItems": true
+    },
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [1, 1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: allOf tightens the window under uniqueness",
+    "schema": {
+      "allOf": [
+        {"type": "array", "uniqueItems": true, "minItems": 2},
+        {"type": "array", "maxItems": 4}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 2,
+      "maxItems": 4
+    },
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [1, 1], "valid": false},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a window holding at most one item makes uniqueness redundant",
+    "schemas": [
+      {"type": "array", "maxItems": 1, "uniqueItems": true},
+      {"type": "array", "maxItems": 1}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "maxItems": 1
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": [1, 2], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: maxItems zero converges to the empty array under uniqueness",
+    "schemas": [
+      {"type": "array", "maxItems": 0, "uniqueItems": true},
+      {"const": []}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": []
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a constant array with duplicates is unsatisfiable under uniqueness",
+    "schema": {
+      "allOf": [
+        {"const": [1, 1]},
+        {"uniqueItems": true}
+      ]
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: a constant array whose duplicate differs only in spelling is unsatisfiable",
+    "schema": {
+      "allOf": [
+        {"const": [1, 1.0]},
+        {"uniqueItems": true}
+      ]
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: a constant array of distinct items survives uniqueness",
+    "schema": {
+      "allOf": [
+        {"const": [1, 2]},
+        {"uniqueItems": true}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": [1, 2]
+    },
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [2, 1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: union windows under the same uniqueness merge",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "uniqueItems": true, "maxItems": 2},
+        {"type": "array", "uniqueItems": true, "minItems": 3}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "uniqueItems": true
+    },
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [1, 2, 3, 4], "valid": true},
+      {"data": [1, 1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a branch demanding uniqueness is dropped by one that does not",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "uniqueItems": true},
+        {"type": "array"}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array"
+    },
+    "tests": [
+      {"data": [1, 1], "valid": true},
+      {"data": [1, 2], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: union branches with different uniqueness and disjoint windows stay apart",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "uniqueItems": true, "minItems": 5},
+        {"type": "array", "maxItems": 2}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "array", "maxItems": 2},
+        {"type": "array", "uniqueItems": true, "minItems": 5}
+      ]
+    },
+    "tests": [
+      {"data": [1, 1], "valid": true},
+      {"data": [1, 2, 3], "valid": false},
+      {"data": [1, 2, 3, 4, 5], "valid": true},
+      {"data": [1, 1, 2, 3, 4], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a unique leaf absorbs a constant array it admits",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "uniqueItems": true},
+        {"const": [1, 2]}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "uniqueItems": true
+    },
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [1, 1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a unique leaf keeps a constant array it rejects",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "uniqueItems": true},
+        {"const": [1, 1]}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "array", "uniqueItems": true},
+        {"const": [1, 1]}
+      ]
+    },
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [1, 1], "valid": true},
+      {"data": [2, 2], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: uniqueness and a property-count facet split the untyped domain",
+    "schema": {"uniqueItems": true, "minProperties": 1},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string"]},
+        {"type": "array", "uniqueItems": true},
+        {"type": "object", "minProperties": 1}
+      ]
+    },
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [1, 1], "valid": false},
+      {"data": {"a": 1}, "valid": true},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: allOf picks up uniqueness demanded only by the later branch",
+    "schema": {
+      "allOf": [
+        {"type": "array", "minItems": 2},
+        {"type": "array", "uniqueItems": true}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 2
+    },
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [1, 1], "valid": false},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a unique window is dropped by a wider one that does not demand distinctness",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "uniqueItems": true, "minItems": 2, "maxItems": 3},
+        {"type": "array", "minItems": 1, "maxItems": 5}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5
+    },
+    "tests": [
+      {"data": [1, 1], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": [], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a window of at most one item folds into a leaf demanding distinctness",
+    "schemas": [
+      {
+        "anyOf": [
+          {"type": "array", "maxItems": 1},
+          {"type": "array", "uniqueItems": true}
+        ]
+      },
+      {
+        "anyOf": [
+          {"type": "array", "maxItems": 1},
+          {"type": "array", "uniqueItems": true, "minItems": 2}
+        ]
+      },
+      {
+        "anyOf": [
+          {"const": []},
+          {"type": "array", "uniqueItems": true, "minItems": 1}
+        ]
+      },
+      {"type": "array", "uniqueItems": true}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "uniqueItems": true
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": [1, 2], "valid": true},
+      {"data": [1, 1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a window of at most one item stays apart from a distant unique window",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "maxItems": 1},
+        {"type": "array", "uniqueItems": true, "minItems": 4}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "array", "maxItems": 1},
+        {"type": "array", "uniqueItems": true, "minItems": 4}
+      ]
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1, 2], "valid": false},
+      {"data": [1, 2, 3, 4], "valid": true},
+      {"data": [1, 1, 2, 3], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: unique items under draft 4",
+    "schema": {"type": "array", "uniqueItems": true, "minItems": 2},
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 2
+    },
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [1, 1], "valid": false}
+    ]
+  }
+]
