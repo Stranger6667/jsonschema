@@ -93,7 +93,9 @@ jobs:
       # `jsonschema-value` is excluded here because `--all-features` runs its pyo3 and magnus test
       # binaries, which link an interpreter. They run per-representation instead: pyo3 below, and
       # magnus in the Ruby job, where a matching Ruby is set up.
-      - run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value
+      # `benchmark-suite` only carries benchmarks for other validators (valico, jsonschema-valid,
+      # boon) and has no tests, so building it here costs ~30 extra dependency crates for nothing.
+      - run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite
       - run: cargo test --no-fail-fast -p jsonschema-value --features "pyo3-tests,conformance,arbitrary-precision,macros"
 
   test-cross:
