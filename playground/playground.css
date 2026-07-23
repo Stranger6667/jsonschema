@@ -101,6 +101,7 @@ kbd {
 /* action tabs */
 .actions { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 18px; }
 .action {
+  position: relative;
   appearance: none; cursor: pointer; text-align: center;
   background: var(--color-surface-1); color: var(--color-text-secondary);
   border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md);
@@ -123,6 +124,14 @@ kbd {
   color: var(--color-text-tertiary); letter-spacing: 0;
 }
 .action.active .action-meta { color: var(--color-brand-success); }
+.exp-badge {
+  position: absolute; top: -8px; right: -8px;
+  font-family: var(--font-mono); font-size: 0.58rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em; line-height: 1;
+  color: var(--color-brand-warning); background: var(--color-background);
+  border: 1px solid var(--color-warning-border); border-radius: 999px;
+  padding: 3px 7px;
+}
 
 /* config toolbar */
 .toolbar {
@@ -137,6 +146,10 @@ kbd {
   font-size: 0.82rem; color: var(--color-text-tertiary); line-height: 1.4;
   border-left: 1px solid var(--color-border-dark); margin-left: 2px; padding-left: 14px;
   white-space: nowrap;
+}
+.action-hint.warn {
+  color: var(--color-brand-warning);
+  border-left-color: var(--color-warning-border);
 }
 .ctl { display: inline-flex; align-items: center; gap: 8px; }
 .ctl-label { font-size: 0.82rem; color: var(--color-text-secondary); font-weight: 500; white-space: nowrap; }

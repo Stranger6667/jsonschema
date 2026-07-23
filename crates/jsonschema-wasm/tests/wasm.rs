@@ -2,7 +2,7 @@
 use wasm_bindgen_test::*;
 wasm_bindgen_test_configure!(run_in_browser);
 
-use jsonschema_wasm::{bundle, dereference, meta_validate, validate};
+use jsonschema_wasm::{bundle, canonicalize, dereference, meta_validate, validate};
 use serde::Serialize;
 use serde_json::json;
 use wasm_bindgen::JsValue;
@@ -234,6 +234,72 @@ fn meta_validate_unknown_draft_rejects() {
         .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
         .unwrap();
     let err = meta_validate("{}".into(), opts).expect_err("unknown draft id must reject");
+    assert_eq!(
+        err.as_string(),
+        Some("unknown draft `not-a-real-draft`".to_string())
+    );
+}
+
+#[wasm_bindgen_test]
+fn canonicalize_reduces_schema() {
+    let schema = r#"{
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "allOf": [
+            {"type": "integer", "minimum": 0},
+            {"minimum": 2, "maximum": 10}
+        ]
+    }"#;
+    let res = canonicalize(schema.into(), JsValue::UNDEFINED).unwrap();
+    assert_eq!(
+        without_ms(res),
+        json!({
+            "output": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "integer",
+                "minimum": 2,
+                "maximum": 10
+            }
+        })
+    );
+}
+
+#[wasm_bindgen_test]
+fn canonicalize_selected_draft_sets_output_dialect() {
+    let opts = json!({"draft": "draft7"})
+        .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+        .unwrap();
+    let res = canonicalize(r#"{"type":"integer","minimum":0}"#.into(), opts).unwrap();
+    assert_eq!(
+        without_ms(res),
+        json!({
+            "output": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "integer",
+                "minimum": 0
+            }
+        })
+    );
+}
+
+#[wasm_bindgen_test]
+fn canonicalize_invalid_schema_rejects() {
+    let err = canonicalize(r#"{"type":123}"#.into(), JsValue::UNDEFINED)
+        .expect_err("schema failing its metaschema must reject");
+    assert_eq!(
+        err.as_string(),
+        Some(
+            "schema validation failed: 123 is not valid under any of the schemas listed in the 'anyOf' keyword"
+                .to_string()
+        )
+    );
+}
+
+#[wasm_bindgen_test]
+fn canonicalize_unknown_draft_rejects() {
+    let opts = json!({"draft": "not-a-real-draft"})
+        .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+        .unwrap();
+    let err = canonicalize("{}".into(), opts).expect_err("unknown draft id must reject");
     assert_eq!(
         err.as_string(),
         Some("unknown draft `not-a-real-draft`".to_string())
