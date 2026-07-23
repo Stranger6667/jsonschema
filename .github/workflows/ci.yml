@@ -755,6 +755,11 @@ jobs:
     name: Check features on ${{ matrix.name }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    # The full powerset grows exponentially with the feature count. Pull requests check every
+    # feature alone and every pair, which is where gating mistakes show up; pushes to master
+    # run the exhaustive set.
+    env:
+      DEPTH: ${{ github.event_name == 'pull_request' && '--depth 2' || '' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -774,10 +779,10 @@ jobs:
           tool: cargo-hack
 
       - name: Check features for jsonschema
-        run: cargo hack check --target ${{ matrix.target }} ${{ matrix.flags }} -p jsonschema
+        run: cargo hack check --target ${{ matrix.target }} ${{ matrix.flags }} $DEPTH -p jsonschema
 
       - name: Check features for referencing
-        run: cargo hack check --target ${{ matrix.target }} ${{ matrix.flags }} -p referencing
+        run: cargo hack check --target ${{ matrix.target }} ${{ matrix.flags }} $DEPTH -p referencing
 
   fuzz:
     strategy:
