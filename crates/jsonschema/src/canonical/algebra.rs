@@ -8,10 +8,10 @@ use crate::{
     canonical::{
         context::{CanonicalizationContext, CompiledMatcher},
         ir::{
-            tighter, AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber, CanonicalJson,
-            Discrete, IntegerBounds, IntegerLeaf, IntegerLeaves, LengthBounds, NonEmpty,
-            NumberLeaf, NumberLeaves, ObjectLeaf, ObjectLeaves, Round, Schema, SchemaKind, Side,
-            StringLeaf, StringLeaves,
+            tighter, ArrayLeaf, ArrayLeaves, AtLeastTwo, BoundCardinality, BoundInteger,
+            BoundNumber, CanonicalJson, Discrete, IntegerBounds, IntegerLeaf, IntegerLeaves,
+            LengthBounds, NonEmpty, NumberLeaf, NumberLeaves, ObjectLeaf, ObjectLeaves, Round,
+            Schema, SchemaKind, Side, StringLeaf, StringLeaves,
         },
         parse,
     },
@@ -181,17 +181,21 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
         }
         // An array leaf constrains array values. A type set keeps it only when the set covers
         // `array`; otherwise the two share no value, so `False`.
-        (SchemaKind::MultiType(set), SchemaKind::Array(lengths))
-        | (SchemaKind::Array(lengths), SchemaKind::MultiType(set)) => {
+        (SchemaKind::MultiType(set), SchemaKind::Array(leaf))
+        | (SchemaKind::Array(leaf), SchemaKind::MultiType(set)) => {
             if set.contains(JsonType::Array) {
-                array_leaf(lengths.into_inner())
+                array_leaf(leaf.into_inner())
             } else {
                 Schema::new(SchemaKind::False)
             }
         }
-        // Two array leaves: keep the arrays both accept by tightening to the narrower window.
+        // Two array leaves: keep the arrays both accept - the narrower window, and distinct items
+        // when either side asks for them.
         (SchemaKind::Array(first), SchemaKind::Array(second)) => {
-            array_leaf(first.into_inner().intersect(second.into_inner()))
+            array_leaf(intersect_array_leaves(
+                first.into_inner(),
+                second.into_inner(),
+            ))
         }
         // An object leaf constrains object values. A type set keeps it only when the set covers
         // `object`; otherwise the two share no value, so `False`.
@@ -234,7 +238,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     let mut strings = StringLeaves::default();
     let mut integers = IntegerLeaves::default();
     let mut numbers = NumberLeaves::default();
-    let mut arrays: Vec<LengthBounds> = Vec::new();
+    let mut arrays = ArrayLeaves::default();
     let mut objects = ObjectLeaves::default();
 
     let mut stack = branches;
@@ -270,7 +274,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             // A number leaf accepts a real interval; collect it with the other number branches.
             SchemaKind::Number(leaf) => numbers.insert(leaf.into_inner()),
             // An array leaf accepts a length window; collect it with the other array branches.
-            SchemaKind::Array(lengths) => arrays.push(lengths.into_inner()),
+            SchemaKind::Array(leaf) => arrays.insert(leaf.into_inner()),
             // An object leaf accepts a property-count window; collect it with the other object branches.
             SchemaKind::Object(leaf) => objects.insert(leaf.into_inner()),
             // `Raw` is whole-document and never nested in a combinator, so union never sees it.
@@ -334,7 +338,6 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             )
         });
     }
-    arrays = LengthBounds::merge_all(arrays);
 
     // A Draft 4 `integer` group and an `integer` interval both reject `7.0`, so an interval holding
     // every value of the group makes it redundant.
@@ -391,8 +394,8 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         }
         !spans_domain
     });
-    arrays.retain(|lengths| {
-        let spans_domain = lengths.is_unbounded();
+    arrays.retain(|leaf| {
+        let spans_domain = leaf.lengths.is_unbounded() && !leaf.unique;
         if spans_domain {
             widened = union_type_sets(widened, JsonTypeSet::from(JsonType::Array));
         }
@@ -441,9 +444,18 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             .collect();
         let windows = integers.as_slice();
         let intervals = numbers.as_slice();
-        let leaves = objects.as_slice();
+        let array_leaves = arrays.as_slice();
+        let object_leaves = objects.as_slice();
         members.retain(|member| {
-            !leaf_absorbs_member(&compiled, windows, intervals, &arrays, leaves, member, ctx)
+            !leaf_absorbs_member(
+                &compiled,
+                windows,
+                intervals,
+                array_leaves,
+                object_leaves,
+                member,
+                ctx,
+            )
         });
     }
 
@@ -501,8 +513,8 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         out.push(integer_leaf(bounds, ctx));
     }
     // Each surviving array leaf becomes its own branch.
-    for lengths in arrays {
-        out.push(array_leaf(lengths));
+    for leaf in arrays {
+        out.push(array_leaf(leaf));
     }
     // Each surviving object leaf becomes its own branch.
     for leaf in objects {
@@ -540,7 +552,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
 fn lift_degenerate_member(
     strings: &mut StringLeaves,
     integers: &mut IntegerLeaves,
-    arrays: &mut Vec<LengthBounds>,
+    arrays: &mut ArrayLeaves,
     objects: &mut ObjectLeaves,
     member: &CanonicalJson,
     ctx: &CanonicalizationContext,
@@ -549,9 +561,12 @@ fn lift_degenerate_member(
         // `maxItems: 0` accepts the empty array and nothing else, so `{"const": []}` is that window
         // written another way.
         Value::Array(items) if items.is_empty() && !arrays.is_empty() => {
-            arrays.push(LengthBounds {
-                minimum: None,
-                maximum: Some(BoundCardinality::from(0)),
+            arrays.insert(ArrayLeaf {
+                lengths: LengthBounds {
+                    minimum: None,
+                    maximum: Some(BoundCardinality::from(0)),
+                },
+                unique: false,
             });
             true
         }
@@ -611,7 +626,7 @@ fn rerun(
     strings: StringLeaves,
     integers: IntegerLeaves,
     numbers: NumberLeaves,
-    arrays: Vec<LengthBounds>,
+    arrays: ArrayLeaves,
     objects: ObjectLeaves,
     ctx: &CanonicalizationContext,
 ) -> Schema {
@@ -734,10 +749,10 @@ fn restrict_members(
             parse::canonicalize_value_set(kept)
         }
         // `other` is an array leaf: keep the array members whose length fits its window.
-        SchemaKind::Array(lengths) => {
+        SchemaKind::Array(leaf) => {
             let kept = members
                 .into_iter()
-                .filter(|member| array_leaf_admits(lengths.get(), member))
+                .filter(|member| array_leaf_admits(leaf.get(), member))
                 .collect();
             parse::canonicalize_value_set(kept)
         }
@@ -804,15 +819,13 @@ fn leaf_absorbs_member(
     strings: &[(&StringLeaf, Vec<Arc<CompiledMatcher>>)],
     integers: &[IntegerLeaf],
     numbers: &[NumberLeaf],
-    arrays: &[LengthBounds],
+    arrays: &[ArrayLeaf],
     objects: &[ObjectLeaf],
     member: &CanonicalJson,
     ctx: &CanonicalizationContext,
 ) -> bool {
     match member.as_value() {
-        Value::Array(_) => arrays
-            .iter()
-            .any(|lengths| array_leaf_admits(lengths, member)),
+        Value::Array(_) => arrays.iter().any(|leaf| array_leaf_admits(leaf, member)),
         Value::Object(_) => objects.iter().any(|leaf| object_leaf_admits(leaf, member)),
         Value::String(_) => strings.iter().any(|(leaf, regexes)| {
             string_leaf_admits(leaf, regexes, member, ctx, UncheckableFormat::Rejects)
@@ -915,15 +928,27 @@ pub(crate) fn number_leaf(leaf: NumberLeaf) -> Schema {
     Schema::new(SchemaKind::Number(leaf))
 }
 
-/// Pack a length window into a node, collapsing the windows that say something simpler.
-pub(crate) fn array_leaf(lengths: LengthBounds) -> Schema {
-    let Some(lengths) = NonEmpty::new(lengths) else {
+/// Pack an array facet set into a node, collapsing the leaves that say something simpler.
+pub(crate) fn array_leaf(mut leaf: ArrayLeaf) -> Schema {
+    // An array of at most one item has nothing to repeat, so uniqueness says nothing more.
+    // e.g.  {"type": "array", "maxItems": 1, "uniqueItems": true}
+    //       =>  {"type": "array", "maxItems": 1}
+    if leaf
+        .lengths
+        .maximum
+        .as_ref()
+        .is_some_and(|max| *max <= BoundCardinality::from(1))
+    {
+        leaf.unique = false;
+    }
+    let Some(leaf) = NonEmpty::new(leaf) else {
         return Schema::new(SchemaKind::False);
     };
     // `maxItems: 0` accepts the empty array and nothing else.
     // e.g.  {"type": "array", "maxItems": 0}  =>  {"const": []}
-    if lengths
+    if leaf
         .get()
+        .lengths
         .maximum
         .as_ref()
         .is_some_and(BoundCardinality::is_zero)
@@ -932,15 +957,34 @@ pub(crate) fn array_leaf(lengths: LengthBounds) -> Schema {
             Vec::new(),
         ))));
     }
-    Schema::new(SchemaKind::Array(lengths))
+    Schema::new(SchemaKind::Array(leaf))
 }
 
-/// Whether `member` is an array whose length sits in the window.
-fn array_leaf_admits(lengths: &LengthBounds, member: &CanonicalJson) -> bool {
+/// Keep the arrays both leaves accept: the narrower window, and distinct items when either asks.
+fn intersect_array_leaves(first: ArrayLeaf, second: ArrayLeaf) -> ArrayLeaf {
+    ArrayLeaf {
+        lengths: first.lengths.intersect(second.lengths),
+        unique: first.unique || second.unique,
+    }
+}
+
+/// Whether `member` is an array whose length sits in the window, with distinct items when asked.
+fn array_leaf_admits(leaf: &ArrayLeaf, member: &CanonicalJson) -> bool {
     let Value::Array(items) = member.as_value() else {
         return false;
     };
-    lengths.contains(&BoundCardinality::from(items.len() as u64))
+    if !leaf
+        .lengths
+        .contains(&BoundCardinality::from(items.len() as u64))
+    {
+        return false;
+    }
+    // Members are normalized, so `1` and `1.0` compare equal here just as they do at validation.
+    !leaf.unique
+        || items
+            .iter()
+            .enumerate()
+            .all(|(index, item)| !items[..index].contains(item))
 }
 
 /// Pack an object facet set into a node, collapsing the leaves that say something simpler.

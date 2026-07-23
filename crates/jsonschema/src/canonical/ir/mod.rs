@@ -9,6 +9,7 @@ use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::{JsonType, JsonTypeSet};
 
+mod array_leaves;
 mod bound_cardinality;
 mod bound_integer;
 mod bound_number;
@@ -18,6 +19,7 @@ mod object_leaves;
 mod raw;
 mod string_leaves;
 
+pub(crate) use array_leaves::ArrayLeaves;
 pub(crate) use bound_cardinality::BoundCardinality;
 pub(crate) use bound_integer::{BoundInteger, Round};
 pub(crate) use bound_number::{BoundNumber, Side};
@@ -170,8 +172,9 @@ pub(crate) enum SchemaKind {
     Integer(NonEmpty<IntegerLeaf>),
     /// A number value within a real interval; other types are matched by a surrounding union.
     Number(NonEmpty<NumberLeaf>),
-    /// An array value whose length is within a window; other types are matched by a surrounding union.
-    Array(NonEmpty<LengthBounds>),
+    /// An array value whose length is within a window and whose items may have to be distinct;
+    /// other types are matched by a surrounding union.
+    Array(NonEmpty<ArrayLeaf>),
     /// An object value whose property count is within a window and which carries every required key;
     /// other types are matched by a surrounding union.
     Object(NonEmpty<ObjectLeaf>),
@@ -225,6 +228,20 @@ pub(crate) struct IntegerLeaf {
 impl MaybeEmpty for IntegerLeaf {
     fn is_empty(&self) -> bool {
         self.bounds.is_empty()
+    }
+}
+
+/// The constraints a [`SchemaKind::Array`] places on an array value. An array of at most one item
+/// is distinct on its own, so `unique` is set only when the window admits a second item.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub(crate) struct ArrayLeaf {
+    pub(crate) lengths: LengthBounds,
+    pub(crate) unique: bool,
+}
+
+impl MaybeEmpty for ArrayLeaf {
+    fn is_empty(&self) -> bool {
+        self.lengths.is_empty()
     }
 }
 

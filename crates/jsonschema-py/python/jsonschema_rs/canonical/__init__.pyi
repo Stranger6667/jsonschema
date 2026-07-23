@@ -72,13 +72,15 @@ class IntegerView:
 
 @final
 class ArrayView:
-    """An array value whose length is within a window."""
+    """An array value whose length is within a window and whose items may have to be distinct."""
 
     __match_args__: tuple[str, ...]
     @property
     def min_items(self) -> int | None: ...
     @property
     def max_items(self) -> int | None: ...
+    @property
+    def unique_items(self) -> bool: ...
 
 @final
 class ObjectView:

@@ -45,7 +45,7 @@ fn integer_view_exposes_bounds() {
 #[test]
 fn array_view_exposes_bounds() {
     let CanonicalView::Array(view) =
-        canonicalize(&json!({"type": "array", "minItems": 1, "maxItems": 3}))
+        canonicalize(&json!({"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true}))
             .unwrap()
             .view()
     else {
@@ -53,6 +53,7 @@ fn array_view_exposes_bounds() {
     };
     assert_eq!(view.min_items, Some(Number::from(1u64)));
     assert_eq!(view.max_items, Some(Number::from(3u64)));
+    assert!(view.unique_items);
 }
 
 #[test]

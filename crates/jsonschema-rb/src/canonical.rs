@@ -152,6 +152,7 @@ impl RbCanonicalSchema {
                 .obj_wrap(ArrayView {
                     min_items: view.min_items,
                     max_items: view.max_items,
+                    unique_items: view.unique_items,
                 })
                 .as_value(),
             CanonicalView::Object(view) => ruby
@@ -467,12 +468,14 @@ impl IntegerView {
     }
 }
 
-/// An array value whose length is within a window.
+/// An array value whose length is within a window and whose items may have to be distinct.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::ArrayView", free_immediately)]
+#[allow(clippy::struct_field_names)]
 pub struct ArrayView {
     min_items: Option<serde_json::Number>,
     max_items: Option<serde_json::Number>,
+    unique_items: bool,
 }
 
 impl DataTypeFunctions for ArrayView {}
@@ -486,11 +489,16 @@ impl ArrayView {
         bound_to_ruby(ruby, rb_self.max_items.as_ref())
     }
 
+    fn unique_items(ruby: &Ruby, rb_self: &Self) -> Value {
+        ruby.into_value(rb_self.unique_items)
+    }
+
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
-            "#<JSONSchema::Canonical::ArrayView min_items={} max_items={}>",
+            "#<JSONSchema::Canonical::ArrayView min_items={} max_items={} unique_items={}>",
             Self::min_items(ruby, rb_self)?.inspect(),
-            Self::max_items(ruby, rb_self)?.inspect()
+            Self::max_items(ruby, rb_self)?.inspect(),
+            Self::unique_items(ruby, rb_self).inspect()
         ))
     }
 
@@ -498,6 +506,10 @@ impl ArrayView {
         let hash = ruby.hash_new();
         hash.aset(ruby.sym_new("min_items"), Self::min_items(ruby, rb_self)?)?;
         hash.aset(ruby.sym_new("max_items"), Self::max_items(ruby, rb_self)?)?;
+        hash.aset(
+            ruby.sym_new("unique_items"),
+            Self::unique_items(ruby, rb_self),
+        )?;
         Ok(hash)
     }
 }
@@ -775,6 +787,7 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     let array_view = canonical_module.define_class("ArrayView", ruby.class_object())?;
     array_view.define_method("min_items", method!(ArrayView::min_items, 0))?;
     array_view.define_method("max_items", method!(ArrayView::max_items, 0))?;
+    array_view.define_method("unique_items", method!(ArrayView::unique_items, 0))?;
     array_view.define_method("inspect", method!(ArrayView::inspect, 0))?;
     array_view.define_method("deconstruct_keys", method!(ArrayView::deconstruct_keys, 1))?;
 

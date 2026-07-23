@@ -90,7 +90,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(26)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(28)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -144,6 +144,10 @@ fn draw_leaf(tc: &TestCase) -> Value {
         25 => {
             json!({ "type": "object", "required": draw_keys(tc), "maxProperties": small_length(tc) })
         }
+        26 => json!({ "type": "array", "uniqueItems": tc.draw(gs::booleans()) }),
+        27 => {
+            json!({ "type": "array", "uniqueItems": true, "maxItems": small_length(tc) })
+        }
         _ => json!({ "type": ["string", "integer"] }),
     }
 }
@@ -174,16 +178,15 @@ fn draw_schema(tc: &TestCase, depth: u32) -> Value {
 
 // Meta-valid keywords the canonicaliser does not model; a document carrying one stays `Raw`.
 fn draw_unmodeled_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(7)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(6)) {
         0 => {
             json!({ "type": "integer", "multipleOf": tc.draw(gs::integers::<u8>().min_value(1).max_value(7)) })
         }
         1 => json!({ "type": "object", "properties": { "a": { "type": "integer" } } }),
         2 => json!({ "type": "array", "items": { "type": "integer" } }),
-        3 => json!({ "type": "array", "uniqueItems": true }),
-        4 => json!({ "not": { "type": "string" } }),
-        5 => json!({ "$defs": { "a": { "type": "null" } }, "$ref": "#/$defs/a" }),
-        6 => json!({ "format": "email" }),
+        3 => json!({ "not": { "type": "string" } }),
+        4 => json!({ "$defs": { "a": { "type": "null" } }, "$ref": "#/$defs/a" }),
+        5 => json!({ "format": "email" }),
         _ => json!({ "oneOf": [{ "type": "string" }, { "type": "integer" }] }),
     }
 }

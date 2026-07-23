@@ -9,8 +9,9 @@ use crate::{
         algebra,
         context::CanonicalizationContext,
         ir::{
-            AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber, CanonicalJson, IntegerLeaf,
-            LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, Side, StringLeaf,
+            ArrayLeaf, AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber, CanonicalJson,
+            IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, Side,
+            StringLeaf,
         },
         CanonicalizationError,
     },
@@ -45,6 +46,7 @@ fn parse_schema(
     let mut const_value = None;
     let mut min_length: Option<BoundCardinality> = None;
     let mut max_length: Option<BoundCardinality> = None;
+    let mut unique_items = false;
     let mut min_items: Option<BoundCardinality> = None;
     let mut max_items: Option<BoundCardinality> = None;
     let mut required: Vec<Arc<str>> = Vec::new();
@@ -120,6 +122,9 @@ fn parse_schema(
                     Some(bound) => max_length = Some(bound),
                     None => return Ok(None),
                 }
+            }
+            ("uniqueItems", Value::Bool(flag)) if ctx.draft().is_known_keyword("uniqueItems") => {
+                unique_items = *flag;
             }
             ("minItems", Value::Number(number)) if ctx.draft().is_known_keyword("minItems") => {
                 match BoundCardinality::from_number(number) {
@@ -259,11 +264,14 @@ fn parse_schema(
     if min_items.as_ref().is_some_and(BoundCardinality::is_zero) {
         min_items = None;
     }
-    if min_items.is_some() || max_items.is_some() {
+    if min_items.is_some() || max_items.is_some() || unique_items {
         conjuncts.push(array_facet_schema(
-            LengthBounds {
-                minimum: min_items,
-                maximum: max_items,
+            ArrayLeaf {
+                lengths: LengthBounds {
+                    minimum: min_items,
+                    maximum: max_items,
+                },
+                unique: unique_items,
             },
             ctx,
         ));
@@ -494,13 +502,13 @@ fn string_facet_schema(leaf: StringLeaf, ctx: &CanonicalizationContext) -> Schem
     algebra::union(vec![non_string, algebra::string_leaf(leaf, ctx)], ctx)
 }
 
-/// A length facet constrains only arrays, so `{"minItems": 1}` becomes
+/// An array facet constrains only arrays, so `{"minItems": 1}` becomes
 /// `anyOf: [<non-array types>, {"type": "array", "minItems": 1}]`.
-fn array_facet_schema(lengths: LengthBounds, ctx: &CanonicalizationContext) -> Schema {
+fn array_facet_schema(leaf: ArrayLeaf, ctx: &CanonicalizationContext) -> Schema {
     let non_array = Schema::new(SchemaKind::MultiType(
         JsonTypeSet::all().remove(JsonType::Array),
     ));
-    algebra::union(vec![non_array, algebra::array_leaf(lengths)], ctx)
+    algebra::union(vec![non_array, algebra::array_leaf(leaf)], ctx)
 }
 
 /// An object facet constrains only objects, so `{"minProperties": 1}` becomes

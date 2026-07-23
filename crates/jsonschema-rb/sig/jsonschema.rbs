@@ -99,6 +99,7 @@ module JSONSchema
     class ArrayView
       def min_items: () -> Integer?
       def max_items: () -> Integer?
+      def unique_items: () -> bool
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end

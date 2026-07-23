@@ -5,7 +5,7 @@ use serde_json::{json, Map, Value};
 
 use crate::{
     canonical::ir::{
-        CanonicalJson, IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind,
+        ArrayLeaf, CanonicalJson, IntegerLeaf, NumberLeaf, ObjectLeaf, Schema, SchemaKind,
         StringLeaf,
     },
     JsonTypeSet,
@@ -38,7 +38,7 @@ fn emit(kind: &SchemaKind, draft: Draft) -> Value {
         SchemaKind::String(leaf) => emit_string(leaf.get()),
         SchemaKind::Integer(leaf) => emit_integer(leaf.get()),
         SchemaKind::Number(leaf) => emit_number(leaf.get(), draft),
-        SchemaKind::Array(lengths) => emit_array(lengths.get()),
+        SchemaKind::Array(leaf) => emit_array(leaf.get()),
         SchemaKind::Object(leaf) => emit_object(leaf.get()),
         SchemaKind::MultiType(set) => emit_multi_type(*set),
         // The body emits a `const`/`enum` object without a `type` key, so adding `type` beside it
@@ -134,14 +134,17 @@ fn emit_number(leaf: &NumberLeaf, draft: Draft) -> Value {
     Value::Object(map)
 }
 
-/// Emit an array leaf as `{"type":"array"}` plus its length bounds.
-fn emit_array(lengths: &LengthBounds) -> Value {
+/// Emit an array leaf as `{"type":"array"}` plus its length bounds and uniqueness.
+fn emit_array(leaf: &ArrayLeaf) -> Value {
     let mut map = Map::new();
     map.insert("type".into(), Value::String("array".into()));
-    if let Some(min) = &lengths.minimum {
+    if leaf.unique {
+        map.insert("uniqueItems".into(), Value::Bool(true));
+    }
+    if let Some(min) = &leaf.lengths.minimum {
         map.insert("minItems".into(), Value::Number(min.to_number()));
     }
-    if let Some(max) = &lengths.maximum {
+    if let Some(max) = &leaf.lengths.maximum {
         map.insert("maxItems".into(), Value::Number(max.to_number()));
     }
     Value::Object(map)
