@@ -124,12 +124,13 @@ def test_view_string_formats():
 
 
 def test_view_array_lengths():
-    schema = {"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": True}
+    schema = {"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": True, "items": {"type": "integer"}}
     match canonicalize(schema).view():
-        case canonical.ArrayView(min_items=min_items, max_items=max_items, unique_items=unique_items):
+        case canonical.ArrayView(min_items=min_items, max_items=max_items, unique_items=unique_items, items=items):
             assert min_items == 1
             assert max_items == 3
             assert unique_items is True
+            assert items.to_json_schema() == {"$schema": DRAFT202012, "type": "integer"}
         case other:
             pytest.fail(f"unexpected view: {other!r}")
 

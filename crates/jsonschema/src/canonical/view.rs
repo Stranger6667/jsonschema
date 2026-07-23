@@ -80,7 +80,7 @@ pub struct NumberView {
     pub multiple_of: Vec<Number>,
 }
 
-/// Payload of [`CanonicalView::Array`]: the `minItems`/`maxItems` bounds and uniqueness of an array value.
+/// Payload of [`CanonicalView::Array`]: the constraints on an array value.
 // The fields carry the keywords they came from, whose names share the suffix.
 #[allow(clippy::struct_field_names)]
 #[derive(Debug, Clone, PartialEq)]
@@ -88,6 +88,8 @@ pub struct ArrayView {
     pub min_items: Option<Number>,
     pub max_items: Option<Number>,
     pub unique_items: bool,
+    /// The schema every element satisfies.
+    pub items: Option<CanonicalSchema>,
 }
 
 /// Payload of [`CanonicalView::Object`]: the constraints on an object value.
@@ -123,7 +125,13 @@ impl CanonicalSchema {
             SchemaKind::String(leaf) => CanonicalView::String(string_view(leaf.get())),
             SchemaKind::Integer(bounds) => CanonicalView::Integer(integer_view(bounds.get())),
             SchemaKind::Number(leaf) => CanonicalView::Number(number_view(leaf.get())),
-            SchemaKind::Array(leaf) => CanonicalView::Array(array_view(leaf.get())),
+            SchemaKind::Array(leaf) => CanonicalView::Array(array_view(
+                leaf.get(),
+                leaf.get()
+                    .items
+                    .as_ref()
+                    .map(|items| self.wrap_child(items)),
+            )),
             SchemaKind::Object(leaf) => CanonicalView::Object(object_view(
                 leaf.get(),
                 leaf.get()
@@ -182,8 +190,11 @@ fn integer_view(leaf: &IntegerLeaf) -> IntegerView {
     }
 }
 
-fn array_view(leaf: &ArrayLeaf) -> ArrayView {
+// The item-schema child needs the schema-level wrapping only the caller can do, so it arrives
+// already wrapped instead of being read off the leaf.
+fn array_view(leaf: &ArrayLeaf, items: Option<CanonicalSchema>) -> ArrayView {
     ArrayView {
+        items,
         min_items: leaf
             .lengths
             .minimum

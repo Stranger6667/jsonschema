@@ -109,12 +109,18 @@ RSpec.describe "JSONSchema.canonicalize" do
   end
 
   it "view returns ArrayView with its length window" do
-    schema = { "type" => "array", "minItems" => 1, "maxItems" => 3, "uniqueItems" => true }
+    schema = {
+      "type" => "array", "minItems" => 1, "maxItems" => 3, "uniqueItems" => true,
+      "items" => { "type" => "integer" }
+    }
     case JSONSchema.canonicalize(schema).view
-    in JSONSchema::Canonical::ArrayView[min_items:, max_items:, unique_items:]
+    in JSONSchema::Canonical::ArrayView[min_items:, max_items:, unique_items:, items:]
       expect(min_items).to eq(1)
       expect(max_items).to eq(3)
       expect(unique_items).to be(true)
+      expect(items.to_json_schema).to eq(
+        { "$schema" => "https://json-schema.org/draft/2020-12/schema", "type" => "integer" }
+      )
     end
   end
 
@@ -199,7 +205,7 @@ RSpec.describe "JSONSchema.canonicalize" do
     "StringView" => [{ "type" => "string", "minLength" => 2, "pattern" => "^a" }, %i[min_length max_length patterns formats]],
     "IntegerView" => [{ "type" => "integer", "minimum" => 2, "maximum" => 9 }, %i[minimum maximum multiple_of]],
     "NumberView" => [{ "type" => "number", "minimum" => 2 }, %i[minimum exclusive_minimum maximum exclusive_maximum multiple_of]],
-    "ArrayView" => [{ "type" => "array", "minItems" => 1 }, %i[min_items max_items unique_items]],
+    "ArrayView" => [{ "type" => "array", "minItems" => 1 }, %i[min_items max_items unique_items items]],
     "ObjectView" => [{ "type" => "object", "minProperties" => 1 }, %i[min_properties max_properties required property_names properties]],
     "ConstView" => [{ "const" => nil }, %i[value]],
     "EnumView" => [{ "enum" => [1, 2] }, %i[values]],

@@ -159,6 +159,10 @@ impl PyCanonicalSchema {
                         })
                         .transpose()?,
                     unique_items: view.unique_items,
+                    items: view
+                        .items
+                        .map(|items| Py::new(py, PyCanonicalSchema { inner: items }))
+                        .transpose()?,
                 },
             )?
             .into_any(),
@@ -317,7 +321,7 @@ impl StringView {
     }
 }
 
-/// An array value whose length is within a window and whose items may have to be distinct.
+/// An array value's constraints.
 // The fields carry the keywords they came from, whose names share the suffix.
 #[allow(clippy::struct_field_names)]
 #[pyclass(frozen, name = "ArrayView", module = "jsonschema_rs.canonical")]
@@ -328,13 +332,15 @@ pub(crate) struct ArrayView {
     max_items: Option<Py<PyAny>>,
     #[pyo3(get)]
     unique_items: bool,
+    #[pyo3(get)]
+    items: Option<Py<PyCanonicalSchema>>,
 }
 
 #[pymethods]
 impl ArrayView {
     #[classattr]
-    fn __match_args__() -> (&'static str, &'static str, &'static str) {
-        ("min_items", "max_items", "unique_items")
+    fn __match_args__() -> (&'static str, &'static str, &'static str, &'static str) {
+        ("min_items", "max_items", "unique_items", "items")
     }
 }
 
