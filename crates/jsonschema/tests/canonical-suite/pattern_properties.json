@@ -1,0 +1,872 @@
+[
+  {
+    "description": "ir: a pattern schema preserves validation",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^a": {
+          "type": "integer"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "patternProperties": {
+        "^a": {
+          "type": "integer"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "ab": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "ab": "x"
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "b": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "ir: a pattern schema accepting everything constrains nothing",
+    "schemas": [
+      {
+        "type": "object",
+        "patternProperties": {
+          "^a": true
+        }
+      },
+      {
+        "type": "object",
+        "patternProperties": {
+          "^a": {}
+        }
+      },
+      {
+        "type": "object",
+        "patternProperties": {}
+      },
+      {
+        "type": "object"
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    },
+    "tests": [
+      {
+        "data": {
+          "ab": 123
+        },
+        "valid": true
+      },
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "ir: a pattern schema accepting nothing forbids every key it matches",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^a": false
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "patternProperties": {
+        "^a": false
+      }
+    },
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "ab": 1
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "ir: a required key a pattern forbids admits nothing",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^a": false
+      },
+      "required": [
+        "ab"
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {
+        "data": {
+          "ab": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "ir: a pattern schema folds into the property schema of a key it matches",
+    "schemas": [
+      {
+        "type": "object",
+        "properties": {
+          "ab": {
+            "type": "string"
+          }
+        },
+        "patternProperties": {
+          "^a": {
+            "type": "string",
+            "minLength": 2
+          }
+        }
+      },
+      {
+        "type": "object",
+        "properties": {
+          "ab": {
+            "type": "string",
+            "minLength": 2
+          }
+        },
+        "patternProperties": {
+          "^a": {
+            "type": "string",
+            "minLength": 2
+          }
+        }
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ab": {
+          "type": "string",
+          "minLength": 2
+        }
+      },
+      "patternProperties": {
+        "^a": {
+          "type": "string",
+          "minLength": 2
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "ab": "xy"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "ab": "x"
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "ac": "x"
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "ir: a pattern no admitted key matches says nothing",
+    "schemas": [
+      {
+        "type": "object",
+        "propertyNames": {
+          "const": "b"
+        },
+        "patternProperties": {
+          "^a": {
+            "type": "integer"
+          }
+        }
+      },
+      {
+        "type": "object",
+        "propertyNames": {
+          "const": "b"
+        }
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {
+        "const": "b"
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "ir: several patterns matching one key all apply",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^a": {
+          "type": "string"
+        },
+        "b$": {
+          "type": "integer"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "patternProperties": {
+        "^a": {
+          "type": "string"
+        },
+        "b$": {
+          "type": "integer"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "ac": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "cb": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "ab": "x"
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "ab": 1
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "intersect: pattern maps merge and a shared pattern intersects",
+    "schema": {
+      "allOf": [
+        {
+          "type": "object",
+          "patternProperties": {
+            "^a": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "patternProperties": {
+            "^a": {
+              "type": "string",
+              "minLength": 2
+            },
+            "^b": {
+              "type": "integer"
+            }
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "patternProperties": {
+        "^a": {
+          "type": "string",
+          "minLength": 2
+        },
+        "^b": {
+          "type": "integer"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "ac": "xy"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "ac": "x"
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "bc": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "bc": "x"
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "union: a leaf without patterns swallows one carrying them",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "object",
+          "patternProperties": {
+            "^a": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    },
+    "tests": [
+      {
+        "data": {
+          "ab": 1
+        },
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "union: leaves carrying different patterns stay apart",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object",
+          "patternProperties": {
+            "^a": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "patternProperties": {
+            "^b": {
+              "type": "integer"
+            }
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "object",
+          "patternProperties": {
+            "^a": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "patternProperties": {
+            "^b": {
+              "type": "integer"
+            }
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "ab": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "ab": 1
+        },
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "ir: an empty pattern matches every key",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "": {
+          "type": "string"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "patternProperties": {
+        "": {
+          "type": "string"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "z": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "z": 1
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "ir: pattern schemas under draft 4",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^a": {
+          "type": "integer"
+        }
+      }
+    },
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "object",
+      "patternProperties": {
+        "^a": {
+          "type": "integer"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "ab": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "ab": "x"
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "union: fewer patterns with the same schemas swallow the leaf carrying more",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object",
+          "patternProperties": {
+            "^a": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "patternProperties": {
+            "^a": {
+              "type": "string"
+            },
+            "^b": {
+              "type": "integer"
+            }
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "patternProperties": {
+        "^a": {
+          "type": "string"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "ba": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "ab": "x"
+        },
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "ir: a pattern schema the canonical form does not model keeps the document raw",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "^a": {
+          "type": "array",
+          "contains": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "expected": {
+      "type": "object",
+      "patternProperties": {
+        "^a": {
+          "type": "array",
+          "contains": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "ab": [
+            1
+          ]
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "ab": [
+            "x"
+          ]
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "error: an invalid pattern is rejected",
+    "schema": {
+      "type": "object",
+      "patternProperties": {
+        "(": {
+          "type": "integer"
+        }
+      }
+    },
+    "error": "InvalidPattern"
+  },
+  {
+    "description": "union: a pattern-carrying window is not a bare window",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "patternProperties": {"^a": {"type": "integer"}}, "maxProperties": 1},
+        {"type": "object", "properties": {"b": {"type": "boolean"}}, "minProperties": 2}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "patternProperties": {"^a": {"type": "integer"}}, "maxProperties": 1},
+        {"type": "object", "properties": {"b": {"type": "boolean"}}, "minProperties": 2}
+      ]
+    },
+    "tests": [
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": true, "c": 1}, "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "union: a pattern-carrying window widens over a bare sibling it touches",
+    "schemas": [
+      {"anyOf": [{"type": "object", "maxProperties": 1}, {"type": "object", "patternProperties": {"^a": {"type": "string"}}, "minProperties": 2}]},
+      {"anyOf": [{"type": "object", "maxProperties": 1}, {"type": "object", "patternProperties": {"^a": {"type": "string"}}}]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "patternProperties": {"^a": {"type": "string"}}},
+        {"type": "object", "maxProperties": 1}
+      ]
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x", "b": 1}, "valid": true},
+      {"data": {"a": 1, "b": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a vacuous named key is no fold target",
+    "schemas": [
+      {"type": "object", "properties": {"a": true}, "patternProperties": {"^a$": {"type": "integer"}}},
+      {"type": "object", "patternProperties": {"^a$": {"type": "integer"}}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "patternProperties": {"^a$": {"type": "integer"}}
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {"ab": "x"}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: patterns fold onto every admitted key of a finite key constraint",
+    "schemas": [
+      {"type": "object", "propertyNames": {"const": "a"}, "patternProperties": {"^a": {"type": "integer"}}},
+      {"type": "object", "propertyNames": {"const": "a"}, "properties": {"a": {"type": "integer"}}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"const": "a"},
+      "properties": {"a": {"type": "integer"}}
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "union: a constant object folds into a branch whose pattern admits it",
+    "schema": {
+      "anyOf": [
+        {"const": {"ab": 5}},
+        {"type": "object", "patternProperties": {"^a": {"type": "integer"}}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "patternProperties": {"^a": {"type": "integer"}}
+    },
+    "tests": [
+      {"data": {"ab": 5}, "valid": true},
+      {"data": {"ab": "x"}, "valid": false}
+    ]
+  },
+  {
+    "description": "union: a constant object a pattern rejects stays apart",
+    "schema": {
+      "anyOf": [
+        {"const": {"ab": "x"}},
+        {"type": "object", "patternProperties": {"^a": {"type": "integer"}}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "patternProperties": {"^a": {"type": "integer"}}},
+        {"const": {"ab": "x"}}
+      ]
+    },
+    "tests": [
+      {"data": {"ab": "x"}, "valid": true},
+      {"data": {"ab": 1}, "valid": true},
+      {"data": {"ab": "y"}, "valid": false}
+    ]
+  },
+  {
+    "description": "union: draft 4 keeps an object member whose number a pattern aliases apart",
+    "schema": {
+      "anyOf": [
+        {"enum": [{"ab": 1}]},
+        {"type": "object", "patternProperties": {"^a": {"type": "integer"}}}
+      ]
+    },
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {"type": "object", "patternProperties": {"^a": {"type": "integer"}}},
+        {"enum": [{"ab": 1}]}
+      ]
+    },
+    "tests": [
+      {"data": {"ab": 1}, "valid": true},
+      {"data": {"ab": 1.0}, "valid": true},
+      {"data": {"ab": "x"}, "valid": false}
+    ]
+  },
+  {
+    "description": "union: a checkable format keeps a constant object its pattern rejects",
+    "schema": {
+      "anyOf": [
+        {"const": {"ab": "not-an-email"}},
+        {"type": "object", "patternProperties": {"^a": {"type": "string", "format": "email"}}}
+      ]
+    },
+    "validate_formats": true,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "patternProperties": {"^a": {"type": "string", "format": "email"}}},
+        {"const": {"ab": "not-an-email"}}
+      ]
+    },
+    "tests": [
+      {"data": {"ab": "not-an-email"}, "valid": true},
+      {"data": {"ab": "user@example.com"}, "valid": true}
+    ]
+  },
+  {
+    "description": "union: an uncheckable format keeps a constant object beside the pattern",
+    "schema": {
+      "anyOf": [
+        {"const": {"ab": "x"}},
+        {"type": "object", "patternProperties": {"^a": {"type": "string", "format": "unknown"}}}
+      ]
+    },
+    "validate_formats": true,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "patternProperties": {"^a": {"type": "string", "format": "unknown"}}},
+        {"const": {"ab": "x"}}
+      ]
+    },
+    "tests": [
+      {"data": {"ab": "x"}, "valid": true},
+      {"data": {}, "valid": true},
+      {"data": {"ab": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an anchored single-key pattern keeps its spelling",
+    "schema": {"type": "object", "patternProperties": {"^a$": {"type": "integer"}}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "patternProperties": {"^a$": {"type": "integer"}}
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {"ab": "x"}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a named single key keeps its spelling",
+    "schema": {"type": "object", "properties": {"a": {"type": "integer"}}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": {"type": "integer"}}
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a reference in a pattern child keeps the document raw",
+    "schema": {
+      "type": "object",
+      "patternProperties": {"^a": {"$ref": "#/$defs/child"}},
+      "$defs": {"child": {"type": "integer"}}
+    },
+    "expected": {
+      "type": "object",
+      "patternProperties": {"^a": {"$ref": "#/$defs/child"}},
+      "$defs": {"child": {"type": "integer"}}
+    },
+    "tests": [
+      {"data": {"ab": 1}, "valid": true},
+      {"data": {"ab": "x"}, "valid": false}
+    ]
+  }
+]

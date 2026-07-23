@@ -280,6 +280,8 @@ pub(crate) struct ObjectLeaf {
     pub(crate) property_names: Option<Schema>,
     /// The schema each named key must satisfy when the object carries it.
     pub(crate) properties: BTreeMap<Arc<str>, Schema>,
+    /// The schema every key matching the pattern must satisfy when the object carries it.
+    pub(crate) pattern_properties: BTreeMap<Arc<str>, Schema>,
 }
 
 impl ObjectLeaf {
@@ -323,6 +325,7 @@ impl ObjectLeaf {
             && self.required.is_empty()
             && self.property_names.is_none()
             && self.properties.is_empty()
+            && self.pattern_properties.is_empty()
     }
 
     /// The keys an object must carry, as a count bound.

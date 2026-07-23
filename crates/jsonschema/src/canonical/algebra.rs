@@ -600,6 +600,7 @@ fn lift_degenerate_member(
                 required: Vec::new(),
                 property_names: None,
                 properties: BTreeMap::new(),
+                pattern_properties: BTreeMap::new(),
             });
             true
         }
@@ -1078,13 +1079,17 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
         }),
         "a key constraint survived normalization without constraining keys"
     );
-    // A key whose schema admits no value can never be present, so demanding it admits nothing.
+    // A key no applicable schema leaves a value for can never be present, so demanding it admits
+    // nothing. Several schemas can apply to one key, and each alone may still admit something.
     // e.g.  {"type": "object", "properties": {"a": false}, "required": ["a"]}  =>  {"not": {}}
-    if leaf.required.iter().any(|key| {
-        leaf.properties
-            .get(key)
-            .is_some_and(|schema| matches!(schema.kind(), SchemaKind::False))
-    }) {
+    // e.g.  {"type": "object", "required": ["ab"],
+    //        "patternProperties": {"^a": {"type": "string"}, "b$": {"type": "integer"}}}
+    //       =>  {"not": {}}
+    if leaf
+        .required
+        .iter()
+        .any(|key| matches!(key_schema(&leaf, key, ctx).kind(), SchemaKind::False))
+    {
         return Schema::new(SchemaKind::False);
     }
     // A key the property names reject can never be present, so demanding it admits nothing.
@@ -1100,7 +1105,10 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
             return Schema::new(SchemaKind::False);
         }
     }
+    // Property entries saying nothing go first, or a vacuous named key becomes a fold target and
+    // carries the pattern schema as a permanent entry the pattern-only spelling lacks.
     normalize_properties(&mut leaf, ctx);
+    normalize_pattern_properties(&mut leaf, ctx);
     // A required key already demands a property, so a minimum it covers says nothing more.
     // e.g.  {"type": "object", "required": ["a", "b"], "minProperties": 2}
     //       =>  {"type": "object", "required": ["a", "b"]}
@@ -1192,6 +1200,97 @@ fn normalize_properties(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext) {
                 .as_ref()
                 .is_none_or(|names| admits_key(names, key, ctx, UncheckableFormat::Admits))
     });
+}
+
+/// Fold the pattern map into the facets able to hold what it says: an entry saying nothing goes,
+/// and a pattern matching a named key moves onto that key's schema.
+fn normalize_pattern_properties(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext) {
+    leaf.pattern_properties
+        .retain(|_, schema| !matches!(schema.kind(), SchemaKind::True));
+    if leaf.pattern_properties.is_empty() {
+        return;
+    }
+    // A key constraint admitting a finite set leaves no key outside it for a pattern to reach, so
+    // the pattern schemas move onto the keys they match and the patterns themselves go.
+    // e.g.  {"type": "object", "propertyNames": {"const": "b"},
+    //        "patternProperties": {"^a": {"type": "integer"}}}
+    //       =>  {"type": "object", "propertyNames": {"const": "b"}}
+    if let Some(keys) = admitted_keys(leaf) {
+        let patterns = std::mem::take(&mut leaf.pattern_properties);
+        for key in keys {
+            merge_matching_patterns(&mut leaf.properties, &patterns, &key, ctx);
+        }
+        return;
+    }
+    // A named key is checked by its own schema and by every pattern matching it, so the two fold
+    // together. The pattern stays: it still reaches the keys the property map does not name.
+    // e.g.  {"type": "object", "properties": {"ab": {"type": "string"}},
+    //        "patternProperties": {"^a": {"minLength": 2}}}
+    //       =>  properties `ab` carries both, and `^a` still governs `ac`
+    let patterns = leaf.pattern_properties.clone();
+    let keys: Vec<Arc<str>> = leaf.properties.keys().cloned().collect();
+    for key in keys {
+        merge_matching_patterns(&mut leaf.properties, &patterns, &key, ctx);
+    }
+}
+
+/// Intersect into `properties` what every pattern matching `key` demands of it.
+fn merge_matching_patterns(
+    properties: &mut BTreeMap<Arc<str>, Schema>,
+    patterns: &BTreeMap<Arc<str>, Schema>,
+    key: &Arc<str>,
+    ctx: &CanonicalizationContext,
+) {
+    for (pattern, schema) in patterns {
+        if !matches_key(pattern, key, ctx) {
+            continue;
+        }
+        let merged = match properties.remove(key) {
+            Some(existing) => intersect(existing, schema.clone(), ctx),
+            None => schema.clone(),
+        };
+        properties.insert(Arc::clone(key), merged);
+    }
+}
+
+/// The keys a finite key constraint admits, when the leaf carries one.
+fn admitted_keys(leaf: &ObjectLeaf) -> Option<Vec<Arc<str>>> {
+    let values = leaf.property_names.as_ref()?.kind().finite_values()?;
+    Some(
+        values
+            .iter()
+            .map(|value| {
+                let Value::String(key) = value.as_value() else {
+                    unreachable!(
+                        "a key constraint survives normalization only in the string domain"
+                    )
+                };
+                Arc::from(key.as_str())
+            })
+            .collect(),
+    )
+}
+
+/// What the leaf demands of `key`: its property schema met with every pattern schema matching it.
+fn key_schema(leaf: &ObjectLeaf, key: &str, ctx: &CanonicalizationContext) -> Schema {
+    let mut schema = leaf
+        .properties
+        .get(key)
+        .cloned()
+        .unwrap_or_else(|| Schema::new(SchemaKind::True));
+    for (pattern, pattern_schema) in &leaf.pattern_properties {
+        if matches_key(pattern, key, ctx) {
+            schema = intersect(schema, pattern_schema.clone(), ctx);
+        }
+    }
+    schema
+}
+
+/// Whether the pattern reaches `key`; a pattern matches anywhere in it, as `pattern` does.
+fn matches_key(pattern: &Arc<str>, key: &str, ctx: &CanonicalizationContext) -> bool {
+    ctx.compile_regex(pattern)
+        .expect("pattern validated during parsing")
+        .is_match(key)
 }
 
 /// Restrict a key constraint to the string domain: keys are always strings, so the branches a bare
@@ -1311,6 +1410,7 @@ fn has_uncheckable_format(schema: &Schema, ctx: &CanonicalizationContext) -> boo
             .property_names
             .iter()
             .chain(leaf.get().properties.values())
+            .chain(leaf.get().pattern_properties.values())
             .any(|nested| has_uncheckable_format(nested, ctx)),
         SchemaKind::Array(leaf) => leaf
             .get()
@@ -1352,11 +1452,19 @@ fn intersect_object_leaves(
             None => properties.insert(key, schema),
         };
     }
+    let mut pattern_properties = first.pattern_properties;
+    for (pattern, schema) in second.pattern_properties {
+        match pattern_properties.remove(&pattern) {
+            Some(existing) => pattern_properties.insert(pattern, intersect(existing, schema, ctx)),
+            None => pattern_properties.insert(pattern, schema),
+        };
+    }
     ObjectLeaf {
         sizes: first.sizes.intersect(second.sizes),
         required,
         property_names,
         properties,
+        pattern_properties,
     }
 }
 
@@ -1401,18 +1509,18 @@ fn restrict_object_member(
     let mut restricted: BTreeMap<Arc<str>, Schema> = BTreeMap::new();
     for (key, value) in map {
         let pin = Schema::new(SchemaKind::Const(CanonicalJson::from_value(value)));
-        let entry = match leaf.properties.get(key.as_str()) {
-            None => pin,
-            Some(child) => {
-                let entry = intersect(child.clone(), pin.clone(), ctx);
-                if matches!(entry.kind(), SchemaKind::False) {
-                    return MemberRestriction::Empty;
-                }
-                if entry != pin {
-                    full = false;
-                }
-                entry
+        let applicable = key_schema(leaf, key, ctx);
+        let entry = if matches!(applicable.kind(), SchemaKind::True) {
+            pin
+        } else {
+            let entry = intersect(applicable, pin.clone(), ctx);
+            if matches!(entry.kind(), SchemaKind::False) {
+                return MemberRestriction::Empty;
             }
+            if entry != pin {
+                full = false;
+            }
+            entry
         };
         restricted.insert(Arc::from(key.as_str()), entry);
     }
@@ -1428,6 +1536,7 @@ fn restrict_object_member(
             required: restricted.keys().cloned().collect(),
             property_names: None,
             properties: restricted,
+            pattern_properties: BTreeMap::new(),
         },
         ctx,
     ))
@@ -1461,6 +1570,9 @@ fn object_leaf_admits(
         leaf.properties
             .get(key.as_str())
             .is_none_or(|schema| admits_value(schema, value, ctx, uncheckable))
+            && leaf.pattern_properties.iter().all(|(pattern, schema)| {
+                !matches_key(pattern, key, ctx) || admits_value(schema, value, ctx, uncheckable)
+            })
     })
 }
 

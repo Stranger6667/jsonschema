@@ -8,7 +8,7 @@ DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
 @pytest.mark.parametrize(
     "schema",
     [
-        {"patternProperties": {"^a$": {"type": "string"}}},
+        {"unevaluatedProperties": False},
         {"$defs": {"a": {"type": "null"}}, "$ref": "#/$defs/a"},
     ],
 )
@@ -170,6 +170,19 @@ def test_view_object_sizes():
             pytest.fail(f"unexpected view: {other!r}")
 
 
+def test_view_object_pattern_properties():
+    schema = {"type": "object", "patternProperties": {"^a": {"type": "integer"}}}
+    match canonicalize(schema).view():
+        case canonical.ObjectView(pattern_properties=pattern_properties):
+            assert list(pattern_properties) == ["^a"]
+            assert pattern_properties["^a"].to_json_schema() == {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "integer",
+            }
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
 def test_view_number_multiple_of():
     match canonicalize({"type": "number", "multipleOf": 0.5}).view():
         case canonical.NumberView(multiple_of=multiple_of):
@@ -231,9 +244,9 @@ def test_view_any_of():
 
 
 def test_view_raw():
-    match canonicalize({"patternProperties": {"^a": {"type": "integer"}}}).view():
+    match canonicalize({"unevaluatedProperties": False}).view():
         case canonical.RawView(schema=payload):
-            assert payload == {"patternProperties": {"^a": {"type": "integer"}}}
+            assert payload == {"unevaluatedProperties": False}
         case other:
             pytest.fail(f"unexpected view: {other!r}")
 

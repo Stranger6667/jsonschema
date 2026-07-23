@@ -55,6 +55,7 @@ fn parse_schema(
     let mut required: Vec<Arc<str>> = Vec::new();
     let mut property_names: Option<Schema> = None;
     let mut properties: BTreeMap<Arc<str>, Schema> = BTreeMap::new();
+    let mut pattern_properties: BTreeMap<Arc<str>, Schema> = BTreeMap::new();
     let mut min_properties: Option<BoundCardinality> = None;
     let mut max_properties: Option<BoundCardinality> = None;
     let mut patterns: Vec<Arc<str>> = Vec::new();
@@ -185,6 +186,24 @@ fn parse_schema(
                     match parse_schema(value, ctx, false)? {
                         Some(schema) => {
                             properties.insert(Arc::from(key.as_str()), schema);
+                        }
+                        None => return Ok(None),
+                    }
+                }
+            }
+            ("patternProperties", Value::Object(entries))
+                if ctx.draft().is_known_keyword("patternProperties") =>
+            {
+                for (pattern, value) in entries {
+                    let pattern: Arc<str> = Arc::from(pattern.as_str());
+                    if ctx.compile_regex(&pattern).is_none() {
+                        return Err(CanonicalizationError::InvalidPattern {
+                            pattern: pattern.to_string(),
+                        });
+                    }
+                    match parse_schema(value, ctx, false)? {
+                        Some(schema) => {
+                            pattern_properties.insert(pattern, schema);
                         }
                         None => return Ok(None),
                     }
@@ -347,6 +366,7 @@ fn parse_schema(
         || !required.is_empty()
         || property_names.is_some()
         || !properties.is_empty()
+        || !pattern_properties.is_empty()
     {
         // Every draft marks `required` as unique, so the meta-validated list only needs ordering.
         required.sort();
@@ -359,6 +379,7 @@ fn parse_schema(
                 required,
                 property_names,
                 properties,
+                pattern_properties,
             },
             ctx,
         ));

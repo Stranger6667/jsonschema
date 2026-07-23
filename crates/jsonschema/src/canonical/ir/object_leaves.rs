@@ -85,6 +85,7 @@ struct Facets {
     required: Vec<Arc<str>>,
     property_names: Option<Schema>,
     properties: BTreeMap<Arc<str>, Schema>,
+    pattern_properties: BTreeMap<Arc<str>, Schema>,
 }
 
 /// Fold the size windows of leaves demanding the same keys under the same key constraint.
@@ -107,11 +108,18 @@ fn merge(mut leaves: Vec<ObjectLeaf>) -> Vec<ObjectLeaf> {
         return leaves;
     }
     leaves.sort_by(|left, right| {
-        (&left.required, &left.property_names, &left.properties).cmp(&(
-            &right.required,
-            &right.property_names,
-            &right.properties,
-        ))
+        (
+            &left.required,
+            &left.property_names,
+            &left.properties,
+            &left.pattern_properties,
+        )
+            .cmp(&(
+                &right.required,
+                &right.property_names,
+                &right.properties,
+                &right.pattern_properties,
+            ))
     });
     let mut merged: Vec<ObjectLeaf> = Vec::with_capacity(leaves.len());
     let mut windows: Vec<LengthBounds> = Vec::new();
@@ -121,12 +129,14 @@ fn merge(mut leaves: Vec<ObjectLeaf>) -> Vec<ObjectLeaf> {
             group.required != leaf.required
                 || group.property_names != leaf.property_names
                 || group.properties != leaf.properties
+                || group.pattern_properties != leaf.pattern_properties
         }) {
             flush_group(&mut merged, facets.take(), &mut windows);
             facets = Some(Facets {
                 required: leaf.required,
                 property_names: leaf.property_names,
                 properties: leaf.properties,
+                pattern_properties: leaf.pattern_properties,
             });
         }
         windows.push(leaf.sizes);
@@ -145,6 +155,7 @@ fn flush_group(
         required,
         property_names,
         properties,
+        pattern_properties,
     }) = facets
     else {
         return;
@@ -157,6 +168,7 @@ fn flush_group(
             required: required.clone(),
             property_names: property_names.clone(),
             properties: properties.clone(),
+            pattern_properties: pattern_properties.clone(),
         });
     }
     merged.push(ObjectLeaf {
@@ -164,6 +176,7 @@ fn flush_group(
         required,
         property_names,
         properties,
+        pattern_properties,
     });
 }
 
@@ -183,7 +196,10 @@ fn extend_over_bare_windows(leaves: &mut [ObjectLeaf]) {
     let bare: Vec<LengthBounds> = leaves
         .iter()
         .filter(|leaf| {
-            leaf.required.is_empty() && leaf.property_names.is_none() && leaf.properties.is_empty()
+            leaf.required.is_empty()
+                && leaf.property_names.is_none()
+                && leaf.properties.is_empty()
+                && leaf.pattern_properties.is_empty()
         })
         .map(|leaf| leaf.sizes.clone())
         .collect();
@@ -191,7 +207,11 @@ fn extend_over_bare_windows(leaves: &mut [ObjectLeaf]) {
         return;
     }
     for leaf in leaves.iter_mut() {
-        if leaf.required.is_empty() && leaf.property_names.is_none() && leaf.properties.is_empty() {
+        if leaf.required.is_empty()
+            && leaf.property_names.is_none()
+            && leaf.properties.is_empty()
+            && leaf.pattern_properties.is_empty()
+        {
             continue;
         }
         // A grown window can reach the next bare window, so retry until none applies.
@@ -277,6 +297,7 @@ fn absorb_trivially_admitted(leaves: &mut Vec<ObjectLeaf>) {
     debug_assert!(
         leaves[trivial].property_names.is_none()
             && leaves[trivial].properties.is_empty()
+            && leaves[trivial].pattern_properties.is_empty()
             && leaves[trivial].required.is_empty(),
         "a leaf admitting only the empty object carries a facet"
     );
@@ -285,7 +306,9 @@ fn absorb_trivially_admitted(leaves: &mut Vec<ObjectLeaf>) {
     // absent key constraint sit in the trivial leaf's own merge group, so only a key-constrained
     // leaf can be the target.
     let Some((target, widened)) = leaves.iter().enumerate().find_map(|(index, leaf)| {
-        if (leaf.property_names.is_none() && leaf.properties.is_empty())
+        if (leaf.property_names.is_none()
+            && leaf.properties.is_empty()
+            && leaf.pattern_properties.is_empty())
             || !leaf.required.is_empty()
         {
             return None;
@@ -329,21 +352,31 @@ fn drop_subsumed(leaves: &mut Vec<ObjectLeaf>) {
                     .properties
                     .iter()
                     .all(|(key, schema)| leaf.properties.get(key) == Some(schema));
+            let looser_patterns = other.pattern_properties.len() < leaf.pattern_properties.len()
+                && other
+                    .pattern_properties
+                    .iter()
+                    .all(|(pattern, schema)| leaf.pattern_properties.get(pattern) == Some(schema));
             let wider = other.effective_sizes().covers(&leaf.effective_sizes())
                 && other.required.iter().all(|key| leaf.required.contains(key))
                 && (looser_keys || other.property_names == leaf.property_names)
-                && (looser_properties || other.properties == leaf.properties);
+                && (looser_properties || other.properties == leaf.properties)
+                && (looser_patterns || other.pattern_properties == leaf.pattern_properties);
             // Leaves agreeing on every facet but the window were folded by merging, so one of the
             // facets is strictly looser here and decides which leaf goes.
             debug_assert!(
                 !wider
                     || other.required.len() != leaf.required.len()
                     || other.property_names != leaf.property_names
-                    || other.properties != leaf.properties,
+                    || other.properties != leaf.properties
+                    || other.pattern_properties != leaf.pattern_properties,
                 "merging left two leaves carrying the same facets"
             );
             if wider
-                && (other.required.len() < leaf.required.len() || looser_keys || looser_properties)
+                && (other.required.len() < leaf.required.len()
+                    || looser_keys
+                    || looser_properties
+                    || looser_patterns)
             {
                 keep[index] = false;
             }

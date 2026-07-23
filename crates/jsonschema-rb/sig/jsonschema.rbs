@@ -113,6 +113,7 @@ module JSONSchema
       def required: () -> Array[String]
       def property_names: () -> CanonicalSchema?
       def properties: () -> Hash[String, CanonicalSchema]
+      def pattern_properties: () -> Hash[String, CanonicalSchema]
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end

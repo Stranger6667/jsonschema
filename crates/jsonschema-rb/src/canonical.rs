@@ -164,6 +164,7 @@ impl RbCanonicalSchema {
                     required: view.required,
                     property_names: view.property_names,
                     properties: view.properties,
+                    pattern_properties: view.pattern_properties,
                 })
                 .as_value(),
             CanonicalView::AnyOf(branches) => ruby.obj_wrap(AnyOfView { branches }).as_value(),
@@ -562,6 +563,7 @@ pub struct ObjectView {
     required: Vec<String>,
     property_names: Option<CanonicalSchema>,
     properties: std::collections::BTreeMap<String, CanonicalSchema>,
+    pattern_properties: std::collections::BTreeMap<String, CanonicalSchema>,
 }
 
 impl DataTypeFunctions for ObjectView {}
@@ -605,14 +607,26 @@ impl ObjectView {
         Ok(hash)
     }
 
+    fn pattern_properties(ruby: &Ruby, rb_self: &Self) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        for (pattern, schema) in &rb_self.pattern_properties {
+            let wrapped = ruby.obj_wrap(RbCanonicalSchema {
+                inner: schema.clone(),
+            });
+            hash.aset(pattern.as_str(), wrapped)?;
+        }
+        Ok(hash)
+    }
+
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
-            "#<JSONSchema::Canonical::ObjectView min_properties={} max_properties={} required={} property_names={} properties={}>",
+            "#<JSONSchema::Canonical::ObjectView min_properties={} max_properties={} required={} property_names={} properties={} pattern_properties={}>",
             Self::min_properties(ruby, rb_self)?.inspect(),
             Self::max_properties(ruby, rb_self)?.inspect(),
             Self::required(ruby, rb_self)?.inspect(),
             Self::property_names(ruby, rb_self).inspect(),
-            Self::properties(ruby, rb_self)?.inspect()
+            Self::properties(ruby, rb_self)?.inspect(),
+            Self::pattern_properties(ruby, rb_self)?.inspect()
         ))
     }
 
@@ -632,6 +646,10 @@ impl ObjectView {
             Self::property_names(ruby, rb_self),
         )?;
         hash.aset(ruby.sym_new("properties"), Self::properties(ruby, rb_self)?)?;
+        hash.aset(
+            ruby.sym_new("pattern_properties"),
+            Self::pattern_properties(ruby, rb_self)?,
+        )?;
         Ok(hash)
     }
 }
@@ -869,6 +887,10 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     object_view.define_method("required", method!(ObjectView::required, 0))?;
     object_view.define_method("property_names", method!(ObjectView::property_names, 0))?;
     object_view.define_method("properties", method!(ObjectView::properties, 0))?;
+    object_view.define_method(
+        "pattern_properties",
+        method!(ObjectView::pattern_properties, 0),
+    )?;
     object_view.define_method("inspect", method!(ObjectView::inspect, 0))?;
     object_view.define_method("deconstruct_keys", method!(ObjectView::deconstruct_keys, 1))?;
 

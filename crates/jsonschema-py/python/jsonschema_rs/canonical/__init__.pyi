@@ -88,7 +88,7 @@ class ArrayView:
 
 @final
 class ObjectView:
-    """An object value whose property count is within a window and which carries every required key."""
+    """An object value's constraints."""
 
     __match_args__: tuple[str, ...]
     @property
@@ -101,6 +101,8 @@ class ObjectView:
     def property_names(self) -> CanonicalSchema | None: ...
     @property
     def properties(self) -> dict[str, CanonicalSchema]: ...
+    @property
+    def pattern_properties(self) -> dict[str, CanonicalSchema]: ...
 
 @final
 class AnyOfView:
