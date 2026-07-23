@@ -88,9 +88,9 @@ fn arbitrary_instance(tc: TestCase) -> Value {
     }
 }
 
-// A modeled leaf: value sets, type sets, string facets, and integer interval bounds.
+// A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(18)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(24)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -127,6 +127,18 @@ fn draw_leaf(tc: &TestCase) -> Value {
         }
         17 => {
             json!({ "type": "integer", "maximum": small_int(tc), "exclusiveMaximum": tc.draw(gs::booleans()) })
+        }
+        18 => json!({ "type": "object", "minProperties": small_length(tc) }),
+        19 => json!({ "type": "object", "maxProperties": small_length(tc) }),
+        20 => {
+            let (min, max) = ordered(small_length(tc), small_length(tc));
+            json!({ "type": "object", "minProperties": min, "maxProperties": max })
+        }
+        21 => json!({ "type": "array", "minItems": small_length(tc) }),
+        22 => json!({ "type": "array", "maxItems": small_length(tc) }),
+        23 => {
+            let (min, max) = ordered(small_length(tc), small_length(tc));
+            json!({ "type": "array", "minItems": min, "maxItems": max })
         }
         _ => json!({ "type": ["string", "integer"] }),
     }

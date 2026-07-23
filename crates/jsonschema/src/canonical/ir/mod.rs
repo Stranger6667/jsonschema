@@ -168,6 +168,10 @@ pub(crate) enum SchemaKind {
     Integer(NonEmpty<IntegerLeaf>),
     /// A number value within a real interval; other types are matched by a surrounding union.
     Number(NonEmpty<NumberLeaf>),
+    /// An array value whose length is within a window; other types are matched by a surrounding union.
+    Array(NonEmpty<LengthBounds>),
+    /// An object value whose property count is within a window; other types are matched by a surrounding union.
+    Object(NonEmpty<LengthBounds>),
     /// Exactly one admitted value.
     Const(CanonicalJson),
     /// A sorted, deduplicated finite set of admitted values.
@@ -459,6 +463,8 @@ impl SchemaKind {
             | SchemaKind::String(_)
             | SchemaKind::Integer(_)
             | SchemaKind::Number(_)
+            | SchemaKind::Array(_)
+            | SchemaKind::Object(_)
             | SchemaKind::AnyOf(_)
             | SchemaKind::True
             | SchemaKind::False

@@ -42,6 +42,32 @@ fn integer_view_exposes_bounds() {
     assert_eq!(view.maximum, Some(Number::from(9)));
 }
 
+#[test]
+fn array_view_exposes_bounds() {
+    let CanonicalView::Array(view) =
+        canonicalize(&json!({"type": "array", "minItems": 1, "maxItems": 3}))
+            .unwrap()
+            .view()
+    else {
+        panic!("expected an Array view");
+    };
+    assert_eq!(view.min_items, Some(Number::from(1u64)));
+    assert_eq!(view.max_items, Some(Number::from(3u64)));
+}
+
+#[test]
+fn object_view_exposes_bounds() {
+    let CanonicalView::Object(view) =
+        canonicalize(&json!({"type": "object", "minProperties": 1, "maxProperties": 3}))
+            .unwrap()
+            .view()
+    else {
+        panic!("expected an Object view");
+    };
+    assert_eq!(view.min_properties, Some(Number::from(1u64)));
+    assert_eq!(view.max_properties, Some(Number::from(3u64)));
+}
+
 // An unmodeled document keeps document identity, where `1` and `1.0` are distinct - unlike JSON
 // value equality, which reads them as the same number.
 #[test]
@@ -82,6 +108,8 @@ fn number_view_exposes_bounds() {
 #[cfg(feature = "arbitrary-precision")]
 #[test_case(r#"{"type": "string", "minLength": 99999999999999999999999}"#, CanonicalKind::String, "minLength"; "length bound")]
 #[test_case(r#"{"type": "integer", "minimum": 99999999999999999999999}"#, CanonicalKind::Integer, "minimum"; "integer bound")]
+#[test_case(r#"{"type": "array", "minItems": 99999999999999999999999}"#, CanonicalKind::Array, "minItems"; "array length bound")]
+#[test_case(r#"{"type": "object", "minProperties": 99999999999999999999999}"#, CanonicalKind::Object, "minProperties"; "object size bound")]
 fn past_range_bound_round_trips(text: &str, kind: CanonicalKind, keyword: &str) {
     let schema: Value = serde_json::from_str(text).expect("valid schema JSON");
     let canonical = canonicalize(&schema).expect("canonicalizes");
@@ -93,11 +121,15 @@ fn past_range_bound_round_trips(text: &str, kind: CanonicalKind, keyword: &str) 
 }
 
 #[cfg(not(feature = "arbitrary-precision"))]
-#[test_case("minLength")]
-#[test_case("maxLength")]
-fn huge_length_bound_stays_raw(keyword: &str) {
+#[test_case("string", "minLength")]
+#[test_case("string", "maxLength")]
+#[test_case("array", "minItems")]
+#[test_case("array", "maxItems")]
+#[test_case("object", "minProperties")]
+#[test_case("object", "maxProperties")]
+fn huge_count_bound_stays_raw(ty: &str, keyword: &str) {
     let schema: Value = serde_json::from_str(&format!(
-        r#"{{"type": "string", "{keyword}": 99999999999999999999999}}"#
+        r#"{{"type": "{ty}", "{keyword}": 99999999999999999999999}}"#
     ))
     .unwrap();
     assert_eq!(canonicalize(&schema).unwrap().kind(), CanonicalKind::Raw);

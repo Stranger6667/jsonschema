@@ -16,11 +16,12 @@ module JSONSchema
     end
 
     # Structural discriminant of a canonical schema, one per view class.
-    type kind = :multi_type | :typed_group | :string | :integer | :const | :enum
-              | :any_of | :true | :false | :raw
+    type kind = :multi_type | :typed_group | :string | :integer | :number | :array
+              | :object | :const | :enum | :any_of | :true | :false | :raw
 
     type view = TrueView | FalseView | MultiTypeView | TypedGroupView | StringView
-              | IntegerView | AnyOfView | ConstView | EnumView | RawView
+              | IntegerView | NumberView | ArrayView | ObjectView | AnyOfView
+              | ConstView | EnumView | RawView
 
     class CanonicalizationError < StandardError
     end
@@ -90,6 +91,22 @@ module JSONSchema
       def minimum: () -> Integer?
       def maximum: () -> Integer?
       def multiple_of: () -> Integer?
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # An array value whose length is within a window.
+    class ArrayView
+      def min_items: () -> Integer?
+      def max_items: () -> Integer?
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # An object value whose property count is within a window.
+    class ObjectView
+      def min_properties: () -> Integer?
+      def max_properties: () -> Integer?
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end

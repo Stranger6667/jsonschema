@@ -4,7 +4,9 @@ use referencing::Draft;
 use serde_json::{json, Map, Value};
 
 use crate::{
-    canonical::ir::{CanonicalJson, IntegerLeaf, NumberLeaf, Schema, SchemaKind, StringLeaf},
+    canonical::ir::{
+        CanonicalJson, IntegerLeaf, LengthBounds, NumberLeaf, Schema, SchemaKind, StringLeaf,
+    },
     JsonTypeSet,
 };
 
@@ -35,6 +37,8 @@ fn emit(kind: &SchemaKind, draft: Draft) -> Value {
         SchemaKind::String(leaf) => emit_string(leaf.get()),
         SchemaKind::Integer(leaf) => emit_integer(leaf.get()),
         SchemaKind::Number(leaf) => emit_number(leaf.get(), draft),
+        SchemaKind::Array(lengths) => emit_array(lengths.get()),
+        SchemaKind::Object(sizes) => emit_object(sizes.get()),
         SchemaKind::MultiType(set) => emit_multi_type(*set),
         // The body emits a `const`/`enum` object without a `type` key, so adding `type` beside it
         // expresses "both must hold" and re-parses to the same IR.
@@ -125,6 +129,32 @@ fn emit_number(leaf: &NumberLeaf, draft: Draft) -> Value {
         } else {
             map.insert(exclusive_key.into(), limit);
         }
+    }
+    Value::Object(map)
+}
+
+/// Emit an array leaf as `{"type":"array"}` plus its length bounds.
+fn emit_array(lengths: &LengthBounds) -> Value {
+    let mut map = Map::new();
+    map.insert("type".into(), Value::String("array".into()));
+    if let Some(min) = &lengths.minimum {
+        map.insert("minItems".into(), Value::Number(min.to_number()));
+    }
+    if let Some(max) = &lengths.maximum {
+        map.insert("maxItems".into(), Value::Number(max.to_number()));
+    }
+    Value::Object(map)
+}
+
+/// Emit an object leaf as `{"type":"object"}` plus its property-count bounds.
+fn emit_object(sizes: &LengthBounds) -> Value {
+    let mut map = Map::new();
+    map.insert("type".into(), Value::String("object".into()));
+    if let Some(min) = &sizes.minimum {
+        map.insert("minProperties".into(), Value::Number(min.to_number()));
+    }
+    if let Some(max) = &sizes.maximum {
+        map.insert("maxProperties".into(), Value::Number(max.to_number()));
     }
     Value::Object(map)
 }

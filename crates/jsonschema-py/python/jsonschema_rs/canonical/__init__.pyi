@@ -71,6 +71,26 @@ class IntegerView:
     def multiple_of(self) -> int | None: ...
 
 @final
+class ArrayView:
+    """An array value whose length is within a window."""
+
+    __match_args__: tuple[str, ...]
+    @property
+    def min_items(self) -> int | None: ...
+    @property
+    def max_items(self) -> int | None: ...
+
+@final
+class ObjectView:
+    """An object value whose property count is within a window."""
+
+    __match_args__: tuple[str, ...]
+    @property
+    def min_properties(self) -> int | None: ...
+    @property
+    def max_properties(self) -> int | None: ...
+
+@final
 class AnyOfView:
     """A value matches iff at least one branch matches."""
 
@@ -110,6 +130,8 @@ CanonicalViewType: TypeAlias = (
     | StringView
     | NumberView
     | IntegerView
+    | ArrayView
+    | ObjectView
     | AnyOfView
     | ConstView
     | EnumView

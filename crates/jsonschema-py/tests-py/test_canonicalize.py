@@ -123,6 +123,24 @@ def test_view_string_formats():
             pytest.fail(f"unexpected view: {other!r}")
 
 
+def test_view_array_lengths():
+    match canonicalize({"type": "array", "minItems": 1, "maxItems": 3}).view():
+        case canonical.ArrayView(min_items=min_items, max_items=max_items):
+            assert min_items == 1
+            assert max_items == 3
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
+def test_view_object_sizes():
+    match canonicalize({"type": "object", "minProperties": 1, "maxProperties": 3}).view():
+        case canonical.ObjectView(min_properties=min_properties, max_properties=max_properties):
+            assert min_properties == 1
+            assert max_properties == 3
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
 def test_view_number_interval():
     match canonicalize({"type": "number", "minimum": 2, "exclusiveMaximum": 5}).view():
         case canonical.NumberView(

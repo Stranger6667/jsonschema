@@ -45,6 +45,10 @@ fn parse_schema(
     let mut const_value = None;
     let mut min_length: Option<BoundCardinality> = None;
     let mut max_length: Option<BoundCardinality> = None;
+    let mut min_items: Option<BoundCardinality> = None;
+    let mut max_items: Option<BoundCardinality> = None;
+    let mut min_properties: Option<BoundCardinality> = None;
+    let mut max_properties: Option<BoundCardinality> = None;
     let mut patterns: Vec<Arc<str>> = Vec::new();
     let mut formats: Vec<Arc<str>> = Vec::new();
     let mut multiple_of: Option<BoundInteger> = None;
@@ -113,6 +117,34 @@ fn parse_schema(
             ("maxLength", Value::Number(number)) if ctx.draft().is_known_keyword("maxLength") => {
                 match BoundCardinality::from_number(number) {
                     Some(bound) => max_length = Some(bound),
+                    None => return Ok(None),
+                }
+            }
+            ("minItems", Value::Number(number)) if ctx.draft().is_known_keyword("minItems") => {
+                match BoundCardinality::from_number(number) {
+                    Some(bound) => min_items = Some(bound),
+                    None => return Ok(None),
+                }
+            }
+            ("maxItems", Value::Number(number)) if ctx.draft().is_known_keyword("maxItems") => {
+                match BoundCardinality::from_number(number) {
+                    Some(bound) => max_items = Some(bound),
+                    None => return Ok(None),
+                }
+            }
+            ("minProperties", Value::Number(number))
+                if ctx.draft().is_known_keyword("minProperties") =>
+            {
+                match BoundCardinality::from_number(number) {
+                    Some(bound) => min_properties = Some(bound),
+                    None => return Ok(None),
+                }
+            }
+            ("maxProperties", Value::Number(number))
+                if ctx.draft().is_known_keyword("maxProperties") =>
+            {
+                match BoundCardinality::from_number(number) {
+                    Some(bound) => max_properties = Some(bound),
                     None => return Ok(None),
                 }
             }
@@ -214,6 +246,37 @@ fn parse_schema(
             formats,
         };
         conjuncts.push(string_facet_schema(leaf, ctx));
+    }
+
+    // `minItems: 0` is the type-default, so drop it: the window then compares equal to one without it.
+    if min_items.as_ref().is_some_and(BoundCardinality::is_zero) {
+        min_items = None;
+    }
+    if min_items.is_some() || max_items.is_some() {
+        conjuncts.push(array_facet_schema(
+            LengthBounds {
+                minimum: min_items,
+                maximum: max_items,
+            },
+            ctx,
+        ));
+    }
+
+    // `minProperties: 0` is the type-default, so drop it: the window then compares equal to one without it.
+    if min_properties
+        .as_ref()
+        .is_some_and(BoundCardinality::is_zero)
+    {
+        min_properties = None;
+    }
+    if min_properties.is_some() || max_properties.is_some() {
+        conjuncts.push(object_facet_schema(
+            LengthBounds {
+                minimum: min_properties,
+                maximum: max_properties,
+            },
+            ctx,
+        ));
     }
 
     if real_minimum.is_some() || real_maximum.is_some() || multiple_of.is_some() {
@@ -417,6 +480,24 @@ fn string_facet_schema(leaf: StringLeaf, ctx: &CanonicalizationContext) -> Schem
         JsonTypeSet::all().remove(JsonType::String),
     ));
     algebra::union(vec![non_string, algebra::string_leaf(leaf, ctx)], ctx)
+}
+
+/// A length facet constrains only arrays, so `{"minItems": 1}` becomes
+/// `anyOf: [<non-array types>, {"type": "array", "minItems": 1}]`.
+fn array_facet_schema(lengths: LengthBounds, ctx: &CanonicalizationContext) -> Schema {
+    let non_array = Schema::new(SchemaKind::MultiType(
+        JsonTypeSet::all().remove(JsonType::Array),
+    ));
+    algebra::union(vec![non_array, algebra::array_leaf(lengths)], ctx)
+}
+
+/// A property-count facet constrains only objects, so `{"minProperties": 1}` becomes
+/// `anyOf: [<non-object types>, {"type": "object", "minProperties": 1}]`.
+fn object_facet_schema(sizes: LengthBounds, ctx: &CanonicalizationContext) -> Schema {
+    let non_object = Schema::new(SchemaKind::MultiType(
+        JsonTypeSet::all().remove(JsonType::Object),
+    ));
+    algebra::union(vec![non_object, algebra::object_leaf(sizes)], ctx)
 }
 
 /// Draft 4 says `1.0` is not an integer, so its `integer` check cannot fold into value equality.
