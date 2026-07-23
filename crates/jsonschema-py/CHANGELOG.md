@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- `multipleOf` incorrectly accepted integers past `u64` that are not multiples of the divisor.
 - `list` subclasses incorrectly rejected as unsupported types.
 - Segmentation fault on enum members whose `value` resolves back to the member.
 

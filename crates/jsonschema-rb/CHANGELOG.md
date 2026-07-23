@@ -12,6 +12,10 @@
 - Invalid UTF-8, unsupported types, and nesting past the depth limit are reported only where a keyword reads the value.
 - A hash keyed by both `:name` and `"name"` counts two properties (it previously collapsed them into one).
 
+### Fixed
+
+- `multipleOf` incorrectly accepted integers past `u64` that are not multiples of the divisor.
+
 ### Performance
 
 - Up to 3x faster validation by working on Ruby objects directly instead of converting them to `serde_json`. [#239](https://github.com/Stranger6667/jsonschema/issues/239)

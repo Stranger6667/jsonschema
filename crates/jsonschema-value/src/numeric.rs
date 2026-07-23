@@ -150,6 +150,13 @@ pub fn is_multiple_of_integer<N: crate::JsonNumber>(value: &N, multiple: f64) ->
         if let Some(v) = value.as_i64() {
             return (v % (multiple as i64)) == 0;
         }
+        // An integer past `u64` still divides exactly, and `as_f64` below would answer about the
+        // value it rounds to instead.
+        #[cfg(feature = "arbitrary-precision")]
+        if let Some(big_value) = bignum::try_parse_bigint(&value.to_number()) {
+            let divisor = num_bigint::BigInt::from(multiple as i64);
+            return bignum::is_multiple_of_bigint(&big_value, &divisor);
+        }
     }
 
     if let Some(value_f64) = value.as_f64() {
@@ -685,5 +692,32 @@ mod tests {
     fn bigfraction_skips_scientific_integer() {
         let num = number_from_str("3e4");
         assert!(bignum::try_parse_bigfraction(&num).is_none());
+    }
+}
+
+#[cfg(all(test, feature = "arbitrary-precision"))]
+mod exact_multiple_of_tests {
+    use super::is_multiple_of_integer;
+    use serde_json::{Number, Value};
+    use test_case::test_case;
+
+    fn number(raw: &str) -> Number {
+        match serde_json::from_str::<Value>(raw).expect("valid JSON number") {
+            Value::Number(num) => num,
+            _ => unreachable!(),
+        }
+    }
+
+    // Integers past `u64` still divide exactly; rounding them into `f64` first answers about a
+    // different number.
+    #[test_case("135107988821114880000000000000", 3.0, true; "multiple of three")]
+    #[test_case("135107988821114880000000000001", 3.0, false; "one past a multiple of three")]
+    #[test_case("135107988821114880000000000002", 3.0, false; "two past a multiple of three")]
+    #[test_case("18446744073709551617", 2.0, false; "odd just past u64")]
+    #[test_case("18446744073709551618", 2.0, true; "even just past u64")]
+    #[test_case("1e30", 3.0, false; "scientific not a multiple")]
+    #[test_case("1e30", 2.0, true; "scientific is a multiple")]
+    fn exact_beyond_u64(value: &str, divisor: f64, expected: bool) {
+        assert_eq!(is_multiple_of_integer(&number(value), divisor), expected);
     }
 }

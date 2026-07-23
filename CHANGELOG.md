@@ -8,6 +8,10 @@
 - `meta::validate_for` and `meta::is_valid_for` for checking a schema document held in any representation implementing `json::Json` against its meta-schema.
 - Experimental schema canonicalization: `canonicalize` and the `canonical` module reduce a schema to a normal form. Incomplete keyword coverage; API may change.
 
+### Fixed
+
+- `multipleOf` incorrectly accepted integers past `u64` that are not multiples of the divisor.
+
 ## [0.48.5] - 2026-07-22
 
 ### Fixed
