@@ -29,7 +29,25 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
         | (SchemaKind::String(_), SchemaKind::TypedGroup { .. } | SchemaKind::Integer(_))
         // Nothing is both a string and a number, and a typed group carries a non-number type.
         | (SchemaKind::Number(_), SchemaKind::String(_) | SchemaKind::TypedGroup { .. })
-        | (SchemaKind::String(_) | SchemaKind::TypedGroup { .. }, SchemaKind::Number(_)) => {
+        | (SchemaKind::String(_) | SchemaKind::TypedGroup { .. }, SchemaKind::Number(_))
+        // An array or object leaf shares no value with a leaf of any other type, nor with a typed
+        // group (whose type is never `array` or `object`).
+        | (
+            SchemaKind::Array(_) | SchemaKind::Object(_),
+            SchemaKind::String(_)
+            | SchemaKind::Integer(_)
+            | SchemaKind::Number(_)
+            | SchemaKind::TypedGroup { .. },
+        )
+        | (
+            SchemaKind::String(_)
+            | SchemaKind::Integer(_)
+            | SchemaKind::Number(_)
+            | SchemaKind::TypedGroup { .. },
+            SchemaKind::Array(_) | SchemaKind::Object(_),
+        )
+        | (SchemaKind::Array(_), SchemaKind::Object(_))
+        | (SchemaKind::Object(_), SchemaKind::Array(_)) => {
             Schema::new(SchemaKind::False)
         }
         // `True` accepts every value, so "must satisfy both" collapses to just the other side.
@@ -160,6 +178,34 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
                 Schema::new(SchemaKind::False)
             }
         }
+        // An array leaf constrains array values. A type set keeps it only when the set covers
+        // `array`; otherwise the two share no value, so `False`.
+        (SchemaKind::MultiType(set), SchemaKind::Array(lengths))
+        | (SchemaKind::Array(lengths), SchemaKind::MultiType(set)) => {
+            if set.contains(JsonType::Array) {
+                array_leaf(lengths.into_inner())
+            } else {
+                Schema::new(SchemaKind::False)
+            }
+        }
+        // Two array leaves: keep the arrays both accept by tightening to the narrower window.
+        (SchemaKind::Array(first), SchemaKind::Array(second)) => {
+            array_leaf(first.into_inner().intersect(second.into_inner()))
+        }
+        // An object leaf constrains object values. A type set keeps it only when the set covers
+        // `object`; otherwise the two share no value, so `False`.
+        (SchemaKind::MultiType(set), SchemaKind::Object(sizes))
+        | (SchemaKind::Object(sizes), SchemaKind::MultiType(set)) => {
+            if set.contains(JsonType::Object) {
+                object_leaf(sizes.into_inner())
+            } else {
+                Schema::new(SchemaKind::False)
+            }
+        }
+        // Two object leaves: keep the objects both accept by tightening to the narrower window.
+        (SchemaKind::Object(first), SchemaKind::Object(second)) => {
+            object_leaf(first.into_inner().intersect(second.into_inner()))
+        }
         // An integer leaf inside a number interval keeps the integers the interval admits.
         (SchemaKind::Integer(integers), SchemaKind::Number(numbers))
         | (SchemaKind::Number(numbers), SchemaKind::Integer(integers)) => {
@@ -184,6 +230,8 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     let mut strings = StringLeaves::default();
     let mut integers = IntegerLeaves::default();
     let mut numbers = NumberLeaves::default();
+    let mut arrays: Vec<LengthBounds> = Vec::new();
+    let mut objects: Vec<LengthBounds> = Vec::new();
 
     let mut stack = branches;
     while let Some(branch) = stack.pop() {
@@ -217,6 +265,10 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             SchemaKind::Integer(leaf) => integers.insert(leaf.into_inner()),
             // A number leaf accepts a real interval; collect it with the other number branches.
             SchemaKind::Number(leaf) => numbers.insert(leaf.into_inner()),
+            // An array leaf accepts a length window; collect it with the other array branches.
+            SchemaKind::Array(lengths) => arrays.push(lengths.into_inner()),
+            // An object leaf accepts a property-count window; collect it with the other object branches.
+            SchemaKind::Object(sizes) => objects.push(sizes.into_inner()),
             // `Raw` is whole-document and never nested in a combinator, so union never sees it.
             SchemaKind::Raw(_) => {
                 unreachable!("`Raw` is whole-document; combinators never contain it")
@@ -251,6 +303,14 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     if cover.contains(JsonType::Number) {
         numbers.clear();
     }
+    // An array leaf is redundant once the type set covers `array`.
+    if cover.contains(JsonType::Array) {
+        arrays.clear();
+    }
+    // An object leaf is redundant once the type set covers `object`.
+    if cover.contains(JsonType::Object) {
+        objects.clear();
+    }
 
     // A single value is a one-value window spelled differently, so move it in beside the windows and
     // let it merge with a neighbour it touches.
@@ -258,9 +318,20 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     //         {"type": "integer", "minimum": 6},
     //         {"const": 5}
     //       ]  =>  {"type": "integer", "minimum": 5}
-    if !strings.is_empty() || !integers.is_empty() {
-        members.retain(|member| !lift_degenerate_member(&mut strings, &mut integers, member, ctx));
+    if !strings.is_empty() || !integers.is_empty() || !arrays.is_empty() || !objects.is_empty() {
+        members.retain(|member| {
+            !lift_degenerate_member(
+                &mut strings,
+                &mut integers,
+                &mut arrays,
+                &mut objects,
+                member,
+                ctx,
+            )
+        });
     }
+    arrays = LengthBounds::merge_all(arrays);
+    objects = LengthBounds::merge_all(objects);
 
     // A Draft 4 `integer` group and an `integer` interval both reject `7.0`, so an interval holding
     // every value of the group makes it redundant.
@@ -292,6 +363,8 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     debug_assert!(integers.is_empty() || !cover.contains(JsonType::Integer));
     debug_assert!(strings.is_empty() || !cover.contains(JsonType::String));
     debug_assert!(numbers.is_empty() || !cover.contains(JsonType::Number));
+    debug_assert!(arrays.is_empty() || !cover.contains(JsonType::Array));
+    debug_assert!(objects.is_empty() || !cover.contains(JsonType::Object));
     let mut widened = types;
     integers.retain(|leaf| {
         let spans_domain = leaf.bounds.is_unbounded() && leaf.multiple_of.is_none();
@@ -315,9 +388,25 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         }
         !spans_domain
     });
+    arrays.retain(|lengths| {
+        let spans_domain = lengths.is_unbounded();
+        if spans_domain {
+            widened = union_type_sets(widened, JsonTypeSet::from(JsonType::Array));
+        }
+        !spans_domain
+    });
+    objects.retain(|sizes| {
+        let spans_domain = sizes.is_unbounded();
+        if spans_domain {
+            widened = union_type_sets(widened, JsonTypeSet::from(JsonType::Object));
+        }
+        !spans_domain
+    });
     if widened != types {
         debug_assert!(widened.union(types) == widened, "type set lost a member");
-        return rerun(widened, members, groups, strings, integers, numbers, ctx);
+        return rerun(
+            widened, members, groups, strings, integers, numbers, arrays, objects, ctx,
+        );
     }
 
     // A value one of the surviving windows already accepts adds nothing beside it.
@@ -325,7 +414,13 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     //         {"type": "string", "minLength": 1},
     //         {"const": "abc"}
     //       ]  =>  {"type": "string", "minLength": 1}
-    if !members.is_empty() && (!strings.is_empty() || !integers.is_empty() || !numbers.is_empty()) {
+    if !members.is_empty()
+        && (!strings.is_empty()
+            || !integers.is_empty()
+            || !numbers.is_empty()
+            || !arrays.is_empty()
+            || !objects.is_empty())
+    {
         let compiled: Vec<(&StringLeaf, Vec<Arc<CompiledMatcher>>)> = strings
             .as_slice()
             .iter()
@@ -343,7 +438,11 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             .collect();
         let windows = integers.as_slice();
         let intervals = numbers.as_slice();
-        members.retain(|member| !leaf_absorbs_member(&compiled, windows, intervals, member, ctx));
+        members.retain(|member| {
+            !leaf_absorbs_member(
+                &compiled, windows, intervals, &arrays, &objects, member, ctx,
+            )
+        });
     }
 
     let value_set = parse::canonicalize_value_set(members);
@@ -358,7 +457,17 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         let widened = union_type_sets(types, *saturated);
         debug_assert!(widened.union(types) == widened, "type set lost a member");
         debug_assert!(widened != types, "re-run without a wider type set");
-        return rerun(widened, Vec::new(), groups, strings, integers, numbers, ctx);
+        return rerun(
+            widened,
+            Vec::new(),
+            groups,
+            strings,
+            integers,
+            numbers,
+            arrays,
+            objects,
+            ctx,
+        );
     }
 
     // Assemble the surviving branches. The collected types become one branch.
@@ -388,6 +497,14 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     // Each surviving integer leaf becomes its own branch.
     for bounds in integers {
         out.push(integer_leaf(bounds, ctx));
+    }
+    // Each surviving array leaf becomes its own branch.
+    for lengths in arrays {
+        out.push(array_leaf(lengths));
+    }
+    // Each surviving object leaf becomes its own branch.
+    for sizes in objects {
+        out.push(object_leaf(sizes));
     }
     // The loose value set becomes a branch, unless it collapsed to empty.
     if !matches!(value_set.kind(), SchemaKind::False) {
@@ -421,10 +538,30 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
 fn lift_degenerate_member(
     strings: &mut StringLeaves,
     integers: &mut IntegerLeaves,
+    arrays: &mut Vec<LengthBounds>,
+    objects: &mut Vec<LengthBounds>,
     member: &CanonicalJson,
     ctx: &CanonicalizationContext,
 ) -> bool {
     match member.as_value() {
+        // `maxItems: 0` accepts the empty array and nothing else, so `{"const": []}` is that window
+        // written another way.
+        Value::Array(items) if items.is_empty() && !arrays.is_empty() => {
+            arrays.push(LengthBounds {
+                minimum: None,
+                maximum: Some(BoundCardinality::from(0)),
+            });
+            true
+        }
+        // `maxProperties: 0` accepts the empty object and nothing else, so `{"const": {}}` is that
+        // window written another way.
+        Value::Object(map) if map.is_empty() && !objects.is_empty() => {
+            objects.push(LengthBounds {
+                minimum: None,
+                maximum: Some(BoundCardinality::from(0)),
+            });
+            true
+        }
         // `maxLength: 0` accepts the empty string and nothing else, so `{"const": ""}` is that
         // window written another way.
         Value::String(text) if text.is_empty() && !strings.is_empty() => {
@@ -469,6 +606,8 @@ fn rerun(
     strings: StringLeaves,
     integers: IntegerLeaves,
     numbers: NumberLeaves,
+    arrays: Vec<LengthBounds>,
+    objects: Vec<LengthBounds>,
     ctx: &CanonicalizationContext,
 ) -> Schema {
     let mut rest: Vec<Schema> = vec![Schema::new(SchemaKind::MultiType(types))];
@@ -481,6 +620,8 @@ fn rerun(
     rest.extend(strings.into_iter().map(|leaf| string_leaf(leaf, ctx)));
     rest.extend(integers.into_iter().map(|leaf| integer_leaf(leaf, ctx)));
     rest.extend(numbers.into_iter().map(number_leaf));
+    rest.extend(arrays.into_iter().map(array_leaf));
+    rest.extend(objects.into_iter().map(object_leaf));
     union(rest, ctx)
 }
 
@@ -508,6 +649,8 @@ fn into_members(kind: SchemaKind) -> Vec<CanonicalJson> {
         | SchemaKind::String(_)
         | SchemaKind::Integer(_)
         | SchemaKind::Number(_)
+        | SchemaKind::Array(_)
+        | SchemaKind::Object(_)
         | SchemaKind::AnyOf(_)
         | SchemaKind::True
         | SchemaKind::False
@@ -585,6 +728,22 @@ fn restrict_members(
                 .collect();
             parse::canonicalize_value_set(kept)
         }
+        // `other` is an array leaf: keep the array members whose length fits its window.
+        SchemaKind::Array(lengths) => {
+            let kept = members
+                .into_iter()
+                .filter(|member| array_leaf_admits(lengths.get(), member))
+                .collect();
+            parse::canonicalize_value_set(kept)
+        }
+        // `other` is an object leaf: keep the object members whose property count fits its window.
+        SchemaKind::Object(sizes) => {
+            let kept = members
+                .into_iter()
+                .filter(|member| object_leaf_admits(sizes.get(), member))
+                .collect();
+            parse::canonicalize_value_set(kept)
+        }
         other @ (SchemaKind::True
         | SchemaKind::False
         | SchemaKind::AnyOf(_)
@@ -640,10 +799,18 @@ fn leaf_absorbs_member(
     strings: &[(&StringLeaf, Vec<Arc<CompiledMatcher>>)],
     integers: &[IntegerLeaf],
     numbers: &[NumberLeaf],
+    arrays: &[LengthBounds],
+    objects: &[LengthBounds],
     member: &CanonicalJson,
     ctx: &CanonicalizationContext,
 ) -> bool {
     match member.as_value() {
+        Value::Array(_) => arrays
+            .iter()
+            .any(|lengths| array_leaf_admits(lengths, member)),
+        Value::Object(_) => objects
+            .iter()
+            .any(|sizes| object_leaf_admits(sizes, member)),
         Value::String(_) => strings.iter().any(|(leaf, regexes)| {
             string_leaf_admits(leaf, regexes, member, ctx, UncheckableFormat::Rejects)
         }),
@@ -743,6 +910,62 @@ pub(crate) fn number_leaf(leaf: NumberLeaf) -> Schema {
         }
     }
     Schema::new(SchemaKind::Number(leaf))
+}
+
+/// Pack a length window into a node, collapsing the windows that say something simpler.
+pub(crate) fn array_leaf(lengths: LengthBounds) -> Schema {
+    let Some(lengths) = NonEmpty::new(lengths) else {
+        return Schema::new(SchemaKind::False);
+    };
+    // `maxItems: 0` accepts the empty array and nothing else.
+    // e.g.  {"type": "array", "maxItems": 0}  =>  {"const": []}
+    if lengths
+        .get()
+        .maximum
+        .as_ref()
+        .is_some_and(BoundCardinality::is_zero)
+    {
+        return Schema::new(SchemaKind::Const(CanonicalJson::from_value(&Value::Array(
+            Vec::new(),
+        ))));
+    }
+    Schema::new(SchemaKind::Array(lengths))
+}
+
+/// Whether `member` is an array whose length sits in the window.
+fn array_leaf_admits(lengths: &LengthBounds, member: &CanonicalJson) -> bool {
+    let Value::Array(items) = member.as_value() else {
+        return false;
+    };
+    lengths.contains(&BoundCardinality::from(items.len() as u64))
+}
+
+/// Pack a property-count window into a node, collapsing the windows that say something simpler.
+pub(crate) fn object_leaf(sizes: LengthBounds) -> Schema {
+    let Some(sizes) = NonEmpty::new(sizes) else {
+        return Schema::new(SchemaKind::False);
+    };
+    // `maxProperties: 0` accepts the empty object and nothing else.
+    // e.g.  {"type": "object", "maxProperties": 0}  =>  {"const": {}}
+    if sizes
+        .get()
+        .maximum
+        .as_ref()
+        .is_some_and(BoundCardinality::is_zero)
+    {
+        return Schema::new(SchemaKind::Const(CanonicalJson::from_value(
+            &Value::Object(serde_json::Map::new()),
+        )));
+    }
+    Schema::new(SchemaKind::Object(sizes))
+}
+
+/// Whether `member` is an object whose property count sits in the window.
+fn object_leaf_admits(sizes: &LengthBounds, member: &CanonicalJson) -> bool {
+    let Value::Object(map) = member.as_value() else {
+        return false;
+    };
+    sizes.contains(&BoundCardinality::from(map.len() as u64))
 }
 
 /// Tighten two number intervals to the values both admit: the higher minimum, the lower maximum.

@@ -3,8 +3,8 @@ use serde_json::{Number, Value};
 use crate::{
     canonical::{
         ir::{
-            BoundCardinality, BoundInteger, BoundNumber, CanonicalJson, IntegerLeaf, NumberLeaf,
-            SchemaKind, StringLeaf,
+            BoundCardinality, BoundInteger, BoundNumber, CanonicalJson, IntegerLeaf, LengthBounds,
+            NumberLeaf, SchemaKind, StringLeaf,
         },
         CanonicalSchema,
     },
@@ -37,6 +37,10 @@ pub enum CanonicalView {
     Integer(IntegerView),
     /// A number value within a real interval.
     Number(NumberView),
+    /// An array value whose length is within a window.
+    Array(ArrayView),
+    /// An object value whose property count is within a window.
+    Object(ObjectView),
     Const(Value),
     Enum(Vec<Value>),
     /// A value matches iff at least one branch matches.
@@ -73,6 +77,20 @@ pub struct NumberView {
     pub exclusive_maximum: bool,
 }
 
+/// Payload of [`CanonicalView::Array`]: the `minItems`/`maxItems` bounds on an array value.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArrayView {
+    pub min_items: Option<Number>,
+    pub max_items: Option<Number>,
+}
+
+/// Payload of [`CanonicalView::Object`]: the `minProperties`/`maxProperties` bounds on an object value.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObjectView {
+    pub min_properties: Option<Number>,
+    pub max_properties: Option<Number>,
+}
+
 /// Payload of [`CanonicalView::Integer`]: the interval bounds and divisor on an integer value.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IntegerView {
@@ -94,6 +112,8 @@ impl CanonicalSchema {
             SchemaKind::String(leaf) => CanonicalView::String(string_view(leaf.get())),
             SchemaKind::Integer(bounds) => CanonicalView::Integer(integer_view(bounds.get())),
             SchemaKind::Number(leaf) => CanonicalView::Number(number_view(leaf.get())),
+            SchemaKind::Array(lengths) => CanonicalView::Array(array_view(lengths.get())),
+            SchemaKind::Object(sizes) => CanonicalView::Object(object_view(sizes.get())),
             SchemaKind::Const(value) => CanonicalView::Const(value.to_value()),
             SchemaKind::Enum(values) => CanonicalView::Enum(
                 values
@@ -136,6 +156,20 @@ fn integer_view(leaf: &IntegerLeaf) -> IntegerView {
         minimum: leaf.bounds.minimum.as_ref().map(BoundInteger::to_number),
         maximum: leaf.bounds.maximum.as_ref().map(BoundInteger::to_number),
         multiple_of: leaf.multiple_of.as_ref().map(BoundInteger::to_number),
+    }
+}
+
+fn array_view(lengths: &LengthBounds) -> ArrayView {
+    ArrayView {
+        min_items: lengths.minimum.as_ref().map(BoundCardinality::to_number),
+        max_items: lengths.maximum.as_ref().map(BoundCardinality::to_number),
+    }
+}
+
+fn object_view(sizes: &LengthBounds) -> ObjectView {
+    ObjectView {
+        min_properties: sizes.minimum.as_ref().map(BoundCardinality::to_number),
+        max_properties: sizes.maximum.as_ref().map(BoundCardinality::to_number),
     }
 }
 

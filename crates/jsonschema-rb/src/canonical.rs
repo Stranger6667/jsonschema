@@ -148,6 +148,18 @@ impl RbCanonicalSchema {
                     multiple_of: view.multiple_of,
                 })
                 .as_value(),
+            CanonicalView::Array(view) => ruby
+                .obj_wrap(ArrayView {
+                    min_items: view.min_items,
+                    max_items: view.max_items,
+                })
+                .as_value(),
+            CanonicalView::Object(view) => ruby
+                .obj_wrap(ObjectView {
+                    min_properties: view.min_properties,
+                    max_properties: view.max_properties,
+                })
+                .as_value(),
             CanonicalView::AnyOf(branches) => ruby.obj_wrap(AnyOfView { branches }).as_value(),
             CanonicalView::Raw(schema) => ruby.obj_wrap(RawView { schema }).as_value(),
         }
@@ -454,6 +466,82 @@ impl IntegerView {
     }
 }
 
+/// An array value whose length is within a window.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::ArrayView", free_immediately)]
+pub struct ArrayView {
+    min_items: Option<serde_json::Number>,
+    max_items: Option<serde_json::Number>,
+}
+
+impl DataTypeFunctions for ArrayView {}
+
+impl ArrayView {
+    fn min_items(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        bound_to_ruby(ruby, rb_self.min_items.as_ref())
+    }
+
+    fn max_items(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        bound_to_ruby(ruby, rb_self.max_items.as_ref())
+    }
+
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
+        Ok(format!(
+            "#<JSONSchema::Canonical::ArrayView min_items={} max_items={}>",
+            Self::min_items(ruby, rb_self)?.inspect(),
+            Self::max_items(ruby, rb_self)?.inspect()
+        ))
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("min_items"), Self::min_items(ruby, rb_self)?)?;
+        hash.aset(ruby.sym_new("max_items"), Self::max_items(ruby, rb_self)?)?;
+        Ok(hash)
+    }
+}
+
+/// An object value whose property count is within a window.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::ObjectView", free_immediately)]
+pub struct ObjectView {
+    min_properties: Option<serde_json::Number>,
+    max_properties: Option<serde_json::Number>,
+}
+
+impl DataTypeFunctions for ObjectView {}
+
+impl ObjectView {
+    fn min_properties(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        bound_to_ruby(ruby, rb_self.min_properties.as_ref())
+    }
+
+    fn max_properties(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        bound_to_ruby(ruby, rb_self.max_properties.as_ref())
+    }
+
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
+        Ok(format!(
+            "#<JSONSchema::Canonical::ObjectView min_properties={} max_properties={}>",
+            Self::min_properties(ruby, rb_self)?.inspect(),
+            Self::max_properties(ruby, rb_self)?.inspect()
+        ))
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(
+            ruby.sym_new("min_properties"),
+            Self::min_properties(ruby, rb_self)?,
+        )?;
+        hash.aset(
+            ruby.sym_new("max_properties"),
+            Self::max_properties(ruby, rb_self)?,
+        )?;
+        Ok(hash)
+    }
+}
+
 /// A value matches iff at least one branch matches.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::AnyOfView", free_immediately)]
@@ -671,6 +759,18 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
         "deconstruct_keys",
         method!(IntegerView::deconstruct_keys, 1),
     )?;
+
+    let array_view = canonical_module.define_class("ArrayView", ruby.class_object())?;
+    array_view.define_method("min_items", method!(ArrayView::min_items, 0))?;
+    array_view.define_method("max_items", method!(ArrayView::max_items, 0))?;
+    array_view.define_method("inspect", method!(ArrayView::inspect, 0))?;
+    array_view.define_method("deconstruct_keys", method!(ArrayView::deconstruct_keys, 1))?;
+
+    let object_view = canonical_module.define_class("ObjectView", ruby.class_object())?;
+    object_view.define_method("min_properties", method!(ObjectView::min_properties, 0))?;
+    object_view.define_method("max_properties", method!(ObjectView::max_properties, 0))?;
+    object_view.define_method("inspect", method!(ObjectView::inspect, 0))?;
+    object_view.define_method("deconstruct_keys", method!(ObjectView::deconstruct_keys, 1))?;
 
     let any_of_view = canonical_module.define_class("AnyOfView", ruby.class_object())?;
     any_of_view.define_method("branches", method!(AnyOfView::branches, 0))?;

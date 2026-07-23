@@ -1,0 +1,334 @@
+[
+  {
+    "description": "ir: object size window preserves validation",
+    "schema": {"type": "object", "minProperties": 1, "maxProperties": 3},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 3
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 1, "b": 2, "c": 3}, "valid": true},
+      {"data": {}, "valid": false},
+      {"data": {"a": 1, "b": 2, "c": 3, "d": 4}, "valid": false},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: minProperties zero converges to the bare type",
+    "schemas": [
+      {"type": "object", "minProperties": 0},
+      {"type": "object"}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    }
+  },
+  {
+    "description": "ir: bare minProperties constrains only objects",
+    "schema": {"minProperties": 1},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "minProperties": 1}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {}, "valid": false},
+      {"data": [], "valid": true},
+      {"data": "", "valid": true}
+    ]
+  },
+  {
+    "description": "ir: allOf of object size windows tightens to one leaf",
+    "schema": {
+      "allOf": [
+        {"type": "object", "minProperties": 2},
+        {"type": "object", "minProperties": 3, "maxProperties": 5}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "minProperties": 3,
+      "maxProperties": 5
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 2, "c": 3}, "valid": true},
+      {"data": {"a": 1, "b": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: crossed object size bounds are unsatisfiable",
+    "schema": {"type": "object", "minProperties": 3, "maxProperties": 2},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: an object window and a disjoint type are unsatisfiable",
+    "schema": {
+      "allOf": [
+        {"type": "string"},
+        {"type": "object", "minProperties": 1}
+      ]
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: adjacent object size windows merge into the bare type",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "maxProperties": 2},
+        {"type": "object", "minProperties": 3}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1, "b": 2, "c": 3, "d": 4}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: object size windows with a gap stay separate branches",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "maxProperties": 1},
+        {"type": "object", "minProperties": 5}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "maxProperties": 1},
+        {"type": "object", "minProperties": 5}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 1, "b": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an object window subsumed by a wider one drops",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "minProperties": 2, "maxProperties": 4},
+        {"type": "object", "minProperties": 1, "maxProperties": 6}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 6
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a constant object outside the size window is unsatisfiable",
+    "schema": {
+      "allOf": [
+        {"const": {"a": 1}},
+        {"minProperties": 2}
+      ]
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: a constant object inside the size window survives",
+    "schema": {
+      "allOf": [
+        {"const": {"a": 1}},
+        {"minProperties": 1, "maxProperties": 2}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": {"a": 1}
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an object window absorbs a constant object it admits",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "minProperties": 1},
+        {"const": {"a": 1}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "minProperties": 1
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: maxProperties zero converges to the empty object",
+    "schemas": [
+      {"type": "object", "maxProperties": 0},
+      {"const": {}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": {}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": [], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: maxProperties zero converges to the empty object under draft 4",
+    "schemas": [
+      {"type": "object", "maxProperties": 0},
+      {"enum": [{}]}
+    ],
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "enum": [{}]
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: the empty object joins an object window it touches",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "minProperties": 1},
+        {"const": {}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": true},
+      {"data": [], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: the empty object stays beside an object window with a gap",
+    "schemas": [
+      {
+        "anyOf": [
+          {"type": "object", "minProperties": 3},
+          {"const": {}}
+        ]
+      },
+      {
+        "anyOf": [
+          {"type": "object", "minProperties": 3},
+          {"type": "object", "maxProperties": 0}
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "minProperties": 3},
+        {"const": {}}
+      ]
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": 1, "b": 2, "c": 3}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: bare minProperties zero constrains nothing",
+    "schemas": [
+      {"minProperties": 0},
+      {}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a property-count window filters only the object members of an enum",
+    "schema": {"enum": [{}, {"a": 1}, [1]], "minProperties": 1},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [[1], {"a": 1}]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": [1], "valid": true},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a property-count window pinned above zero stays a window",
+    "schema": {"type": "object", "minProperties": 2, "maxProperties": 2},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "minProperties": 2,
+      "maxProperties": 2
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an integer-valued float size bound converges with its integer spelling",
+    "schemas": [
+      {"type": "object", "maxProperties": 2.0},
+      {"type": "object", "maxProperties": 2}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "maxProperties": 2
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"a": 1, "b": 2, "c": 3}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: object size window under draft 4",
+    "schema": {"type": "object", "minProperties": 1, "maxProperties": 2},
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 2
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {}, "valid": false}
+    ]
+  }
+]

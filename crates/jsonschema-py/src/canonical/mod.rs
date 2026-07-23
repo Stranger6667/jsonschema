@@ -147,6 +147,42 @@ impl PyCanonicalSchema {
                 },
             )?
             .into_any(),
+            CanonicalView::Array(view) => Py::new(
+                py,
+                ArrayView {
+                    min_items: view
+                        .min_items
+                        .map(|number| {
+                            crate::value_to_python(py, &serde_json::Value::Number(number))
+                        })
+                        .transpose()?,
+                    max_items: view
+                        .max_items
+                        .map(|number| {
+                            crate::value_to_python(py, &serde_json::Value::Number(number))
+                        })
+                        .transpose()?,
+                },
+            )?
+            .into_any(),
+            CanonicalView::Object(view) => Py::new(
+                py,
+                ObjectView {
+                    min_properties: view
+                        .min_properties
+                        .map(|number| {
+                            crate::value_to_python(py, &serde_json::Value::Number(number))
+                        })
+                        .transpose()?,
+                    max_properties: view
+                        .max_properties
+                        .map(|number| {
+                            crate::value_to_python(py, &serde_json::Value::Number(number))
+                        })
+                        .transpose()?,
+                },
+            )?
+            .into_any(),
             CanonicalView::True => Py::new(py, TrueView)?.into_any(),
             CanonicalView::False => Py::new(py, FalseView)?.into_any(),
             CanonicalView::Raw(schema) => Py::new(
@@ -269,6 +305,40 @@ impl StringView {
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str, &'static str, &'static str) {
         ("min_length", "max_length", "patterns", "formats")
+    }
+}
+
+/// An array value whose length is within a window.
+#[pyclass(frozen, name = "ArrayView", module = "jsonschema_rs.canonical")]
+pub(crate) struct ArrayView {
+    #[pyo3(get)]
+    min_items: Option<Py<PyAny>>,
+    #[pyo3(get)]
+    max_items: Option<Py<PyAny>>,
+}
+
+#[pymethods]
+impl ArrayView {
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("min_items", "max_items")
+    }
+}
+
+/// An object value whose property count is within a window.
+#[pyclass(frozen, name = "ObjectView", module = "jsonschema_rs.canonical")]
+pub(crate) struct ObjectView {
+    #[pyo3(get)]
+    min_properties: Option<Py<PyAny>>,
+    #[pyo3(get)]
+    max_properties: Option<Py<PyAny>>,
+}
+
+#[pymethods]
+impl ObjectView {
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("min_properties", "max_properties")
     }
 }
 
@@ -424,6 +494,8 @@ pub(crate) fn init_module(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyRes
     canonical_module.add_class::<TypedGroupView>()?;
     canonical_module.add_class::<StringView>()?;
     canonical_module.add_class::<IntegerView>()?;
+    canonical_module.add_class::<ArrayView>()?;
+    canonical_module.add_class::<ObjectView>()?;
     canonical_module.add_class::<NumberView>()?;
     canonical_module.add_class::<AnyOfView>()?;
     canonical_module.add_class::<ConstView>()?;
