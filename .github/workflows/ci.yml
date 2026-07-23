@@ -34,6 +34,8 @@ jobs:
           toolchain: "1.85.0"
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - run: cargo build -p jsonschema
       # Expand the validator macro at MSRV: generated code is not covered by a
@@ -81,6 +83,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
           cache-all-crates: "true"
           key: ${{ matrix.os }}
 
@@ -112,6 +115,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
           cache-all-crates: "true"
           key: ${{ matrix.target }}
 
@@ -161,6 +165,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
           cache-all-crates: "true"
 
       - name: Setup `wasmtime`
@@ -213,6 +218,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
           cache-all-crates: "true"
           key: ${{ matrix.target }}-${{ matrix.feature }}
 
@@ -240,6 +246,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
           cache-all-crates: "true"
 
       - name: Install cargo-llvm-cov
@@ -291,6 +298,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
           cache-all-crates: "true"
 
       - name: Run tests with Miri
@@ -402,6 +410,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
           cache-all-crates: "true"
           key: ruby-${{ matrix.os }}-${{ matrix.ruby-version }}
 
@@ -452,6 +461,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
           cache-all-crates: "true"
           key: ruby-gem-install-${{ matrix.os }}-${{ matrix.ruby-version }}
 
@@ -577,6 +587,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
           cache-all-crates: "true"
 
       - run: cargo clippy --all-targets --all-features -- -D warnings
@@ -606,6 +617,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
           cache-all-crates: "true"
           key: ${{ matrix.target }}
 
@@ -625,6 +637,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
           cache-all-crates: "true"
 
       - uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2.83.2
@@ -646,6 +659,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
           cache-all-crates: "true"
 
       # One invocation: separate dry-runs would need every dependency version already on crates.io.
@@ -663,6 +677,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
 
@@ -700,6 +716,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
 
@@ -744,6 +762,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
           key: ${{ matrix.target }}
 
       - uses: taiki-e/install-action@ed67fa35ac944f3a9b33f12c4dd43b6f31a47e20 # v2.83.3
@@ -772,6 +791,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - run: cargo install cargo-fuzz --force
 
@@ -827,6 +848,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
           cache-all-crates: "true"
 
       - run: cargo doc --workspace --no-deps --all-features --document-private-items
