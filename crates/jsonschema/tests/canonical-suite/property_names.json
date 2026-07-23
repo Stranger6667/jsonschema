@@ -1,0 +1,339 @@
+[
+  {
+    "description": "ir: property names carry a string facet",
+    "schema": {"type": "object", "propertyNames": {"maxLength": 3}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"type": "string", "maxLength": 3}
+    },
+    "tests": [
+      {"data": {"ab": 1}, "valid": true},
+      {"data": {}, "valid": true},
+      {"data": {"abcd": 1}, "valid": false},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a key constraint narrows to the string domain",
+    "schemas": [
+      {"type": "object", "propertyNames": {"maxLength": 3}},
+      {"type": "object", "propertyNames": {"type": "string", "maxLength": 3}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"type": "string", "maxLength": 3}
+    }
+  },
+  {
+    "description": "ir: property names accepting every string constrain nothing",
+    "schemas": [
+      {"type": "object", "propertyNames": true},
+      {"type": "object", "propertyNames": {"type": "string"}},
+      {"type": "object"}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    }
+  },
+  {
+    "description": "ir: property names accepting nothing leave only the empty object",
+    "schemas": [
+      {"type": "object", "propertyNames": false},
+      {"type": "object", "maxProperties": 0},
+      {"const": {}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": {}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: property names accepting nothing beside a required key are unsatisfiable",
+    "schema": {"type": "object", "propertyNames": false, "required": ["a"]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: a single admitted key bounds the property count",
+    "schemas": [
+      {"type": "object", "propertyNames": {"const": "foo"}},
+      {"type": "object", "propertyNames": {"const": "foo"}, "maxProperties": 1},
+      {"type": "object", "propertyNames": {"const": "foo"}, "maxProperties": 5}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"const": "foo"}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"foo": 1}, "valid": true},
+      {"data": {"bar": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a property count below the admitted key count survives",
+    "schema": {
+      "type": "object",
+      "propertyNames": {"enum": ["a", "b"]},
+      "maxProperties": 1
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"enum": ["a", "b"]},
+      "maxProperties": 1
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 1, "b": 2}, "valid": false},
+      {"data": {"c": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: demanding a key the property names reject is unsatisfiable",
+    "schema": {
+      "type": "object",
+      "propertyNames": {"const": "foo"},
+      "required": ["bar"]
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: demanding a key the property names admit keeps both",
+    "schema": {
+      "type": "object",
+      "propertyNames": {"enum": ["a", "b"]},
+      "required": ["a"]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"enum": ["a", "b"]},
+      "required": ["a"]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"b": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: more required keys than the property names admit is unsatisfiable",
+    "schema": {
+      "type": "object",
+      "propertyNames": {"const": "a"},
+      "minProperties": 2
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: allOf intersects the key constraints",
+    "schema": {
+      "allOf": [
+        {"type": "object", "propertyNames": {"maxLength": 3}},
+        {"type": "object", "propertyNames": {"minLength": 2}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"type": "string", "minLength": 2, "maxLength": 3}
+    },
+    "tests": [
+      {"data": {"ab": 1}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"abcd": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: bare property names constrain only objects",
+    "schema": {"propertyNames": {"maxLength": 3}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "propertyNames": {"type": "string", "maxLength": 3}}
+      ]
+    },
+    "tests": [
+      {"data": {"ab": 1}, "valid": true},
+      {"data": {"abcd": 1}, "valid": false},
+      {"data": [1], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: union windows under the same key constraint merge",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "propertyNames": {"maxLength": 3}, "maxProperties": 2},
+        {"type": "object", "propertyNames": {"maxLength": 3}, "minProperties": 3}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"type": "string", "maxLength": 3}
+    },
+    "tests": [
+      {"data": {"ab": 1}, "valid": true},
+      {"data": {"abcd": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: union branches with different key constraints stay apart",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "propertyNames": {"maxLength": 3}},
+        {"type": "object", "propertyNames": {"pattern": "^a"}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "propertyNames": {"type": "string", "pattern": "^a"}},
+        {"type": "object", "propertyNames": {"type": "string", "maxLength": 3}}
+      ]
+    },
+    "tests": [
+      {"data": {"ab": 1}, "valid": true},
+      {"data": {"abcde": 1}, "valid": true},
+      {"data": {"zzzzz": 1}, "valid": false},
+      {"data": {"zz": 1}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a branch constraining keys is dropped by one that does not",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "propertyNames": {"maxLength": 3}, "minProperties": 2, "maxProperties": 3},
+        {"type": "object", "minProperties": 1, "maxProperties": 5}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 5
+    },
+    "tests": [
+      {"data": {"abcdef": 1}, "valid": true},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a constant object with a rejected key is unsatisfiable",
+    "schema": {
+      "allOf": [
+        {"const": {"abcd": 1}},
+        {"propertyNames": {"maxLength": 3}}
+      ]
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: a constant object whose keys are admitted survives",
+    "schema": {
+      "allOf": [
+        {"const": {"ab": 1}},
+        {"propertyNames": {"maxLength": 3}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": {"ab": 1}
+    },
+    "tests": [
+      {"data": {"ab": 1}, "valid": true},
+      {"data": {"ab": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a branch demanding fewer keys does not swallow a different key constraint",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "propertyNames": {"maxLength": 3}, "required": ["a"]},
+        {"type": "object", "propertyNames": {"pattern": "^z"}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "propertyNames": {"type": "string", "pattern": "^z"}},
+        {"type": "object", "propertyNames": {"type": "string", "maxLength": 3}, "required": ["a"]}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"zz": 1}, "valid": true},
+      {"data": {"ab": 1}, "valid": false},
+      {"data": {"abcd": 1}, "valid": false},
+      {"data": {"a": 1, "zz": 2}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: an unmodeled key constraint keeps the document raw",
+    "schema": {"type": "object", "propertyNames": {"not": {"type": "string"}}},
+    "expected": {"type": "object", "propertyNames": {"not": {"type": "string"}}},
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: key constraints admitting no string converge on the empty object",
+    "schemas": [
+      {"type": "object", "propertyNames": false},
+      {"type": "object", "propertyNames": {"type": "integer"}},
+      {"type": "object", "propertyNames": {"minLength": 2, "maxLength": 1}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": {}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a key constraint that only other types could fail admits every key",
+    "schemas": [
+      {"type": "object", "propertyNames": {"type": ["string", "integer"]}},
+      {"type": "object", "propertyNames": {"propertyNames": {"maxLength": 2}}},
+      {"type": "object"}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    },
+    "tests": [
+      {"data": {"anything": 1}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: draft 4 does not define property names",
+    "schemas": [
+      {"type": "object", "propertyNames": {"maxLength": 3}},
+      {"type": "object"}
+    ],
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "object"
+    },
+    "tests": [
+      {"data": {"abcd": 1}, "valid": true}
+    ]
+  }
+]

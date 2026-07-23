@@ -39,7 +39,7 @@ fn emit(kind: &SchemaKind, draft: Draft) -> Value {
         SchemaKind::Integer(leaf) => emit_integer(leaf.get()),
         SchemaKind::Number(leaf) => emit_number(leaf.get(), draft),
         SchemaKind::Array(leaf) => emit_array(leaf.get()),
-        SchemaKind::Object(leaf) => emit_object(leaf.get()),
+        SchemaKind::Object(leaf) => emit_object(leaf.get(), draft),
         SchemaKind::MultiType(set) => emit_multi_type(*set),
         // The body emits a `const`/`enum` object without a `type` key, so adding `type` beside it
         // expresses "both must hold" and re-parses to the same IR.
@@ -151,10 +151,13 @@ fn emit_array(leaf: &ArrayLeaf) -> Value {
     Value::Object(map)
 }
 
-/// Emit an object leaf as `{"type":"object"}` plus its required keys and property-count bounds.
-fn emit_object(leaf: &ObjectLeaf) -> Value {
+/// Emit an object leaf as `{"type":"object"}` plus its key constraint, required keys and bounds.
+fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
     let mut map = Map::new();
     map.insert("type".into(), Value::String("object".into()));
+    if let Some(names) = &leaf.property_names {
+        map.insert("propertyNames".into(), emit(names.kind(), draft));
+    }
     if !leaf.required.is_empty() {
         map.insert(
             "required".into(),

@@ -69,6 +69,27 @@ fn object_view_exposes_bounds() {
     assert_eq!(view.min_properties, None);
     assert_eq!(view.max_properties, Some(Number::from(3u64)));
     assert_eq!(view.required, vec!["a".to_string()]);
+    assert!(view.property_names.is_none());
+}
+
+#[test]
+fn object_view_exposes_property_names() {
+    let CanonicalView::Object(view) =
+        canonicalize(&json!({"type": "object", "propertyNames": {"maxLength": 4}}))
+            .unwrap()
+            .view()
+    else {
+        panic!("expected an Object view");
+    };
+    let names = view.property_names.expect("a key constraint");
+    assert_eq!(
+        names.to_json_schema(),
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "maxLength": 4
+        })
+    );
 }
 
 // An unmodeled document keeps document identity, where `1` and `1.0` are distinct - unlike JSON

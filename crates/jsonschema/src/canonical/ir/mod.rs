@@ -265,10 +265,21 @@ pub(crate) struct ObjectLeaf {
     pub(crate) sizes: LengthBounds,
     /// Sorted, deduplicated. An object must carry every one of these keys.
     pub(crate) required: Vec<Arc<str>>,
+    /// Every key must satisfy this schema, which is narrowed to the string domain.
+    pub(crate) property_names: Option<Schema>,
+}
+
+impl ObjectLeaf {
+    /// The number of keys the property-name schema admits, when it admits a finite set.
+    pub(crate) fn admitted_key_count(&self) -> Option<BoundCardinality> {
+        let values = self.property_names.as_ref()?.kind().finite_values()?;
+        Some(BoundCardinality::from(values.len() as u64))
+    }
 }
 
 impl ObjectLeaf {
     /// The keys an object must carry, as a count bound.
+    #[must_use]
     pub(crate) fn required_count(&self) -> BoundCardinality {
         BoundCardinality::from(self.required.len() as u64)
     }
@@ -276,12 +287,24 @@ impl ObjectLeaf {
 
 impl MaybeEmpty for ObjectLeaf {
     fn is_empty(&self) -> bool {
-        self.sizes.is_empty()
+        if self.sizes.is_empty() {
+            return true;
+        }
+        // A finite set of admitted keys caps the property count just as `maxProperties` does.
+        let ceiling = tighter(
+            self.sizes.maximum.clone(),
+            self.admitted_key_count(),
+            Ord::min,
+        );
+        let Some(ceiling) = ceiling else {
+            return false;
+        };
+        ceiling < self.required_count()
             || self
                 .sizes
-                .maximum
+                .minimum
                 .as_ref()
-                .is_some_and(|max| *max < self.required_count())
+                .is_some_and(|min| ceiling < *min)
     }
 }
 
