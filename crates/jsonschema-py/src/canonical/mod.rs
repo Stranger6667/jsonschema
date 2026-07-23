@@ -180,6 +180,7 @@ impl PyCanonicalSchema {
                             crate::value_to_python(py, &serde_json::Value::Number(number))
                         })
                         .transpose()?,
+                    required: view.required,
                 },
             )?
             .into_any(),
@@ -325,20 +326,22 @@ impl ArrayView {
     }
 }
 
-/// An object value whose property count is within a window.
+/// An object value whose property count is within a window and which carries every required key.
 #[pyclass(frozen, name = "ObjectView", module = "jsonschema_rs.canonical")]
 pub(crate) struct ObjectView {
     #[pyo3(get)]
     min_properties: Option<Py<PyAny>>,
     #[pyo3(get)]
     max_properties: Option<Py<PyAny>>,
+    #[pyo3(get)]
+    required: Vec<String>,
 }
 
 #[pymethods]
 impl ObjectView {
     #[classattr]
-    fn __match_args__() -> (&'static str, &'static str) {
-        ("min_properties", "max_properties")
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("min_properties", "max_properties", "required")
     }
 }
 

@@ -4,7 +4,7 @@ use crate::{
     canonical::{
         ir::{
             BoundCardinality, BoundInteger, BoundNumber, CanonicalJson, IntegerLeaf, LengthBounds,
-            NumberLeaf, SchemaKind, StringLeaf,
+            NumberLeaf, ObjectLeaf, SchemaKind, StringLeaf,
         },
         CanonicalSchema,
     },
@@ -84,11 +84,13 @@ pub struct ArrayView {
     pub max_items: Option<Number>,
 }
 
-/// Payload of [`CanonicalView::Object`]: the `minProperties`/`maxProperties` bounds on an object value.
+/// Payload of [`CanonicalView::Object`]: the `minProperties`/`maxProperties` bounds and required
+/// keys on an object value.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObjectView {
     pub min_properties: Option<Number>,
     pub max_properties: Option<Number>,
+    pub required: Vec<String>,
 }
 
 /// Payload of [`CanonicalView::Integer`]: the interval bounds and divisor on an integer value.
@@ -113,7 +115,7 @@ impl CanonicalSchema {
             SchemaKind::Integer(bounds) => CanonicalView::Integer(integer_view(bounds.get())),
             SchemaKind::Number(leaf) => CanonicalView::Number(number_view(leaf.get())),
             SchemaKind::Array(lengths) => CanonicalView::Array(array_view(lengths.get())),
-            SchemaKind::Object(sizes) => CanonicalView::Object(object_view(sizes.get())),
+            SchemaKind::Object(leaf) => CanonicalView::Object(object_view(leaf.get())),
             SchemaKind::Const(value) => CanonicalView::Const(value.to_value()),
             SchemaKind::Enum(values) => CanonicalView::Enum(
                 values
@@ -166,10 +168,11 @@ fn array_view(lengths: &LengthBounds) -> ArrayView {
     }
 }
 
-fn object_view(sizes: &LengthBounds) -> ObjectView {
+fn object_view(leaf: &ObjectLeaf) -> ObjectView {
     ObjectView {
-        min_properties: sizes.minimum.as_ref().map(BoundCardinality::to_number),
-        max_properties: sizes.maximum.as_ref().map(BoundCardinality::to_number),
+        min_properties: leaf.sizes.minimum.as_ref().map(BoundCardinality::to_number),
+        max_properties: leaf.sizes.maximum.as_ref().map(BoundCardinality::to_number),
+        required: leaf.required.iter().map(ToString::to_string).collect(),
     }
 }
 

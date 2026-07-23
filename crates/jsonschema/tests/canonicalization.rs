@@ -57,15 +57,17 @@ fn array_view_exposes_bounds() {
 
 #[test]
 fn object_view_exposes_bounds() {
-    let CanonicalView::Object(view) =
-        canonicalize(&json!({"type": "object", "minProperties": 1, "maxProperties": 3}))
-            .unwrap()
-            .view()
-    else {
+    let CanonicalView::Object(view) = canonicalize(
+        &json!({"type": "object", "minProperties": 1, "maxProperties": 3, "required": ["a"]}),
+    )
+    .unwrap()
+    .view() else {
         panic!("expected an Object view");
     };
-    assert_eq!(view.min_properties, Some(Number::from(1u64)));
+    // A required key already demands the one property `minProperties` asked for.
+    assert_eq!(view.min_properties, None);
     assert_eq!(view.max_properties, Some(Number::from(3u64)));
+    assert_eq!(view.required, vec!["a".to_string()]);
 }
 
 // An unmodeled document keeps document identity, where `1` and `1.0` are distinct - unlike JSON

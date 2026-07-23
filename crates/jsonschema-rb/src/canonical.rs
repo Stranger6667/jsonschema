@@ -158,6 +158,7 @@ impl RbCanonicalSchema {
                 .obj_wrap(ObjectView {
                     min_properties: view.min_properties,
                     max_properties: view.max_properties,
+                    required: view.required,
                 })
                 .as_value(),
             CanonicalView::AnyOf(branches) => ruby.obj_wrap(AnyOfView { branches }).as_value(),
@@ -501,12 +502,13 @@ impl ArrayView {
     }
 }
 
-/// An object value whose property count is within a window.
+/// An object value whose property count is within a window and which carries every required key.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::ObjectView", free_immediately)]
 pub struct ObjectView {
     min_properties: Option<serde_json::Number>,
     max_properties: Option<serde_json::Number>,
+    required: Vec<String>,
 }
 
 impl DataTypeFunctions for ObjectView {}
@@ -520,11 +522,20 @@ impl ObjectView {
         bound_to_ruby(ruby, rb_self.max_properties.as_ref())
     }
 
+    fn required(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        let array = ruby.ary_new_capa(rb_self.required.len());
+        for key in &rb_self.required {
+            array.push(ruby.str_new(key))?;
+        }
+        Ok(array.as_value())
+    }
+
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
-            "#<JSONSchema::Canonical::ObjectView min_properties={} max_properties={}>",
+            "#<JSONSchema::Canonical::ObjectView min_properties={} max_properties={} required={}>",
             Self::min_properties(ruby, rb_self)?.inspect(),
-            Self::max_properties(ruby, rb_self)?.inspect()
+            Self::max_properties(ruby, rb_self)?.inspect(),
+            Self::required(ruby, rb_self)?.inspect()
         ))
     }
 
@@ -538,6 +549,7 @@ impl ObjectView {
             ruby.sym_new("max_properties"),
             Self::max_properties(ruby, rb_self)?,
         )?;
+        hash.aset(ruby.sym_new("required"), Self::required(ruby, rb_self)?)?;
         Ok(hash)
     }
 }
@@ -769,6 +781,7 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     let object_view = canonical_module.define_class("ObjectView", ruby.class_object())?;
     object_view.define_method("min_properties", method!(ObjectView::min_properties, 0))?;
     object_view.define_method("max_properties", method!(ObjectView::max_properties, 0))?;
+    object_view.define_method("required", method!(ObjectView::required, 0))?;
     object_view.define_method("inspect", method!(ObjectView::inspect, 0))?;
     object_view.define_method("deconstruct_keys", method!(ObjectView::deconstruct_keys, 1))?;
 

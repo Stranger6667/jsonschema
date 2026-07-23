@@ -10,7 +10,8 @@ use crate::{
         ir::{
             tighter, AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber, CanonicalJson,
             Discrete, IntegerBounds, IntegerLeaf, IntegerLeaves, LengthBounds, NonEmpty,
-            NumberLeaf, NumberLeaves, Round, Schema, SchemaKind, Side, StringLeaf, StringLeaves,
+            NumberLeaf, NumberLeaves, ObjectLeaf, ObjectLeaves, Round, Schema, SchemaKind, Side,
+            StringLeaf, StringLeaves,
         },
         parse,
     },
@@ -194,17 +195,20 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
         }
         // An object leaf constrains object values. A type set keeps it only when the set covers
         // `object`; otherwise the two share no value, so `False`.
-        (SchemaKind::MultiType(set), SchemaKind::Object(sizes))
-        | (SchemaKind::Object(sizes), SchemaKind::MultiType(set)) => {
+        (SchemaKind::MultiType(set), SchemaKind::Object(leaf))
+        | (SchemaKind::Object(leaf), SchemaKind::MultiType(set)) => {
             if set.contains(JsonType::Object) {
-                object_leaf(sizes.into_inner())
+                object_leaf(leaf.into_inner())
             } else {
                 Schema::new(SchemaKind::False)
             }
         }
-        // Two object leaves: keep the objects both accept by tightening to the narrower window.
+        // Two object leaves: keep the objects both accept - the narrower window, every required key.
         (SchemaKind::Object(first), SchemaKind::Object(second)) => {
-            object_leaf(first.into_inner().intersect(second.into_inner()))
+            object_leaf(intersect_object_leaves(
+                first.into_inner(),
+                second.into_inner(),
+            ))
         }
         // An integer leaf inside a number interval keeps the integers the interval admits.
         (SchemaKind::Integer(integers), SchemaKind::Number(numbers))
@@ -231,7 +235,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     let mut integers = IntegerLeaves::default();
     let mut numbers = NumberLeaves::default();
     let mut arrays: Vec<LengthBounds> = Vec::new();
-    let mut objects: Vec<LengthBounds> = Vec::new();
+    let mut objects = ObjectLeaves::default();
 
     let mut stack = branches;
     while let Some(branch) = stack.pop() {
@@ -268,7 +272,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             // An array leaf accepts a length window; collect it with the other array branches.
             SchemaKind::Array(lengths) => arrays.push(lengths.into_inner()),
             // An object leaf accepts a property-count window; collect it with the other object branches.
-            SchemaKind::Object(sizes) => objects.push(sizes.into_inner()),
+            SchemaKind::Object(leaf) => objects.insert(leaf.into_inner()),
             // `Raw` is whole-document and never nested in a combinator, so union never sees it.
             SchemaKind::Raw(_) => {
                 unreachable!("`Raw` is whole-document; combinators never contain it")
@@ -331,7 +335,6 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         });
     }
     arrays = LengthBounds::merge_all(arrays);
-    objects = LengthBounds::merge_all(objects);
 
     // A Draft 4 `integer` group and an `integer` interval both reject `7.0`, so an interval holding
     // every value of the group makes it redundant.
@@ -395,8 +398,8 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         }
         !spans_domain
     });
-    objects.retain(|sizes| {
-        let spans_domain = sizes.is_unbounded();
+    objects.retain(|leaf| {
+        let spans_domain = leaf.sizes.is_unbounded() && leaf.required.is_empty();
         if spans_domain {
             widened = union_type_sets(widened, JsonTypeSet::from(JsonType::Object));
         }
@@ -438,10 +441,9 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             .collect();
         let windows = integers.as_slice();
         let intervals = numbers.as_slice();
+        let leaves = objects.as_slice();
         members.retain(|member| {
-            !leaf_absorbs_member(
-                &compiled, windows, intervals, &arrays, &objects, member, ctx,
-            )
+            !leaf_absorbs_member(&compiled, windows, intervals, &arrays, leaves, member, ctx)
         });
     }
 
@@ -503,8 +505,8 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         out.push(array_leaf(lengths));
     }
     // Each surviving object leaf becomes its own branch.
-    for sizes in objects {
-        out.push(object_leaf(sizes));
+    for leaf in objects {
+        out.push(object_leaf(leaf));
     }
     // The loose value set becomes a branch, unless it collapsed to empty.
     if !matches!(value_set.kind(), SchemaKind::False) {
@@ -539,7 +541,7 @@ fn lift_degenerate_member(
     strings: &mut StringLeaves,
     integers: &mut IntegerLeaves,
     arrays: &mut Vec<LengthBounds>,
-    objects: &mut Vec<LengthBounds>,
+    objects: &mut ObjectLeaves,
     member: &CanonicalJson,
     ctx: &CanonicalizationContext,
 ) -> bool {
@@ -556,9 +558,12 @@ fn lift_degenerate_member(
         // `maxProperties: 0` accepts the empty object and nothing else, so `{"const": {}}` is that
         // window written another way.
         Value::Object(map) if map.is_empty() && !objects.is_empty() => {
-            objects.push(LengthBounds {
-                minimum: None,
-                maximum: Some(BoundCardinality::from(0)),
+            objects.insert(ObjectLeaf {
+                sizes: LengthBounds {
+                    minimum: None,
+                    maximum: Some(BoundCardinality::from(0)),
+                },
+                required: Vec::new(),
             });
             true
         }
@@ -607,7 +612,7 @@ fn rerun(
     integers: IntegerLeaves,
     numbers: NumberLeaves,
     arrays: Vec<LengthBounds>,
-    objects: Vec<LengthBounds>,
+    objects: ObjectLeaves,
     ctx: &CanonicalizationContext,
 ) -> Schema {
     let mut rest: Vec<Schema> = vec![Schema::new(SchemaKind::MultiType(types))];
@@ -737,10 +742,10 @@ fn restrict_members(
             parse::canonicalize_value_set(kept)
         }
         // `other` is an object leaf: keep the object members whose property count fits its window.
-        SchemaKind::Object(sizes) => {
+        SchemaKind::Object(leaf) => {
             let kept = members
                 .into_iter()
-                .filter(|member| object_leaf_admits(sizes.get(), member))
+                .filter(|member| object_leaf_admits(leaf.get(), member))
                 .collect();
             parse::canonicalize_value_set(kept)
         }
@@ -800,7 +805,7 @@ fn leaf_absorbs_member(
     integers: &[IntegerLeaf],
     numbers: &[NumberLeaf],
     arrays: &[LengthBounds],
-    objects: &[LengthBounds],
+    objects: &[ObjectLeaf],
     member: &CanonicalJson,
     ctx: &CanonicalizationContext,
 ) -> bool {
@@ -808,9 +813,7 @@ fn leaf_absorbs_member(
         Value::Array(_) => arrays
             .iter()
             .any(|lengths| array_leaf_admits(lengths, member)),
-        Value::Object(_) => objects
-            .iter()
-            .any(|sizes| object_leaf_admits(sizes, member)),
+        Value::Object(_) => objects.iter().any(|leaf| object_leaf_admits(leaf, member)),
         Value::String(_) => strings.iter().any(|(leaf, regexes)| {
             string_leaf_admits(leaf, regexes, member, ctx, UncheckableFormat::Rejects)
         }),
@@ -940,15 +943,29 @@ fn array_leaf_admits(lengths: &LengthBounds, member: &CanonicalJson) -> bool {
     lengths.contains(&BoundCardinality::from(items.len() as u64))
 }
 
-/// Pack a property-count window into a node, collapsing the windows that say something simpler.
-pub(crate) fn object_leaf(sizes: LengthBounds) -> Schema {
-    let Some(sizes) = NonEmpty::new(sizes) else {
+/// Pack an object facet set into a node, collapsing the leaves that say something simpler.
+pub(crate) fn object_leaf(mut leaf: ObjectLeaf) -> Schema {
+    // A required key already demands a property, so a minimum it covers says nothing more.
+    // e.g.  {"type": "object", "required": ["a", "b"], "minProperties": 2}
+    //       =>  {"type": "object", "required": ["a", "b"]}
+
+    if leaf
+        .sizes
+        .minimum
+        .as_ref()
+        .is_some_and(|min| *min <= leaf.required_count())
+    {
+        leaf.sizes.minimum = None;
+    }
+    let Some(leaf) = NonEmpty::new(leaf) else {
         return Schema::new(SchemaKind::False);
     };
-    // `maxProperties: 0` accepts the empty object and nothing else.
+    // `maxProperties: 0` accepts the empty object and nothing else; a required key would have
+    // emptied the leaf above.
     // e.g.  {"type": "object", "maxProperties": 0}  =>  {"const": {}}
-    if sizes
+    if leaf
         .get()
+        .sizes
         .maximum
         .as_ref()
         .is_some_and(BoundCardinality::is_zero)
@@ -957,15 +974,29 @@ pub(crate) fn object_leaf(sizes: LengthBounds) -> Schema {
             &Value::Object(serde_json::Map::new()),
         )));
     }
-    Schema::new(SchemaKind::Object(sizes))
+    Schema::new(SchemaKind::Object(leaf))
 }
 
-/// Whether `member` is an object whose property count sits in the window.
-fn object_leaf_admits(sizes: &LengthBounds, member: &CanonicalJson) -> bool {
+/// Keep the objects both leaves accept: the narrower window, and every key either demands.
+fn intersect_object_leaves(first: ObjectLeaf, second: ObjectLeaf) -> ObjectLeaf {
+    let mut required = first.required;
+    required.extend(second.required);
+    required.sort();
+    required.dedup();
+    ObjectLeaf {
+        sizes: first.sizes.intersect(second.sizes),
+        required,
+    }
+}
+
+/// Whether `member` is an object carrying every required key with its property count in the window.
+fn object_leaf_admits(leaf: &ObjectLeaf, member: &CanonicalJson) -> bool {
     let Value::Object(map) = member.as_value() else {
         return false;
     };
-    sizes.contains(&BoundCardinality::from(map.len() as u64))
+    leaf.sizes
+        .contains(&BoundCardinality::from(map.len() as u64))
+        && leaf.required.iter().all(|key| map.contains_key(&**key))
 }
 
 /// Tighten two number intervals to the values both admit: the higher minimum, the lower maximum.

@@ -1,0 +1,289 @@
+[
+  {
+    "description": "ir: required keys preserve validation",
+    "schema": {"type": "object", "required": ["a", "b"]},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "required": ["a", "b"]
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"a": 1, "b": 2, "c": 3}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {}, "valid": false},
+      {"data": [1, 2], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: required keys sort",
+    "schemas": [
+      {"type": "object", "required": ["b", "a"]},
+      {"type": "object", "required": ["a", "b"]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "required": ["a", "b"]
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"b": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an empty required list constrains nothing",
+    "schemas": [
+      {"type": "object", "required": []},
+      {"type": "object"}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    }
+  },
+  {
+    "description": "ir: bare required constrains only objects",
+    "schema": {"required": ["a"]},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "required": ["a"]}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": 2}, "valid": false},
+      {"data": [], "valid": true},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: allOf of required lists unions the keys",
+    "schema": {
+      "allOf": [
+        {"type": "object", "required": ["a"]},
+        {"type": "object", "required": ["b"]}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "required": ["a", "b"]
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a property count implied by required leaves no trace",
+    "schemas": [
+      {"type": "object", "required": ["a", "b"], "minProperties": 2},
+      {"type": "object", "required": ["a", "b"], "minProperties": 1},
+      {"type": "object", "required": ["a", "b"]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "required": ["a", "b"]
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a property count above the required keys survives",
+    "schema": {"type": "object", "required": ["a", "b"], "minProperties": 3},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "required": ["a", "b"],
+      "minProperties": 3
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 2, "c": 3}, "valid": true},
+      {"data": {"a": 1, "b": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: more required keys than the size window admits is unsatisfiable",
+    "schema": {"type": "object", "required": ["a", "b", "c"], "maxProperties": 2},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: a required key with an empty object window is unsatisfiable",
+    "schema": {"type": "object", "required": ["a"], "maxProperties": 0},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: required keys exactly filling the window keep both",
+    "schema": {"type": "object", "required": ["a", "b"], "maxProperties": 2},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "required": ["a", "b"],
+      "maxProperties": 2
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"a": 1, "b": 2, "c": 3}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an object leaf and a required leaf are unsatisfiable with a disjoint type",
+    "schema": {
+      "allOf": [
+        {"type": "array"},
+        {"type": "object", "required": ["a"]}
+      ]
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: union windows under the same required keys merge",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "required": ["a"], "maxProperties": 2},
+        {"type": "object", "required": ["a"], "minProperties": 3}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "required": ["a"]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 1, "b": 2, "c": 3, "d": 4}, "valid": true},
+      {"data": {"b": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: union branches with different required keys stay apart",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "required": ["a"]},
+        {"type": "object", "required": ["b"]}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "required": ["a"]},
+        {"type": "object", "required": ["b"]}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": 2}, "valid": true},
+      {"data": {"c": 3}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a branch requiring more keys is dropped by a wider one",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "required": ["a", "b"]},
+        {"type": "object", "required": ["a"]}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "required": ["a"]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"b": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a constant object missing a required key is unsatisfiable",
+    "schema": {
+      "allOf": [
+        {"const": {"a": 1}},
+        {"required": ["b"]}
+      ]
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: a constant object carrying every required key survives",
+    "schema": {
+      "allOf": [
+        {"const": {"a": 1, "b": 2}},
+        {"required": ["b"]}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": {"a": 1, "b": 2}
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"b": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a required leaf absorbs a constant object it admits",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "required": ["a"]},
+        {"const": {"a": 1, "b": 2}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "required": ["a"]
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"b": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a required leaf keeps a constant object it rejects",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "required": ["a"]},
+        {"const": {"b": 2}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "required": ["a"]},
+        {"const": {"b": 2}}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": 2}, "valid": true},
+      {"data": {"c": 3}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: required keys under draft 4",
+    "schema": {"type": "object", "required": ["a"], "minProperties": 2},
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "object",
+      "required": ["a"],
+      "minProperties": 2
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  }
+]

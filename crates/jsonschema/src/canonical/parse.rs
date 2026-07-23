@@ -10,7 +10,7 @@ use crate::{
         context::CanonicalizationContext,
         ir::{
             AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber, CanonicalJson, IntegerLeaf,
-            LengthBounds, NumberLeaf, Schema, SchemaKind, Side, StringLeaf,
+            LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, Side, StringLeaf,
         },
         CanonicalizationError,
     },
@@ -47,6 +47,7 @@ fn parse_schema(
     let mut max_length: Option<BoundCardinality> = None;
     let mut min_items: Option<BoundCardinality> = None;
     let mut max_items: Option<BoundCardinality> = None;
+    let mut required: Vec<Arc<str>> = Vec::new();
     let mut min_properties: Option<BoundCardinality> = None;
     let mut max_properties: Option<BoundCardinality> = None;
     let mut patterns: Vec<Arc<str>> = Vec::new();
@@ -131,6 +132,12 @@ fn parse_schema(
                     Some(bound) => max_items = Some(bound),
                     None => return Ok(None),
                 }
+            }
+            ("required", Value::Array(names))
+                if ctx.draft().is_known_keyword("required")
+                    && names.iter().all(Value::is_string) =>
+            {
+                required.extend(names.iter().filter_map(Value::as_str).map(Arc::from));
             }
             ("minProperties", Value::Number(number))
                 if ctx.draft().is_known_keyword("minProperties") =>
@@ -269,11 +276,16 @@ fn parse_schema(
     {
         min_properties = None;
     }
-    if min_properties.is_some() || max_properties.is_some() {
+    if min_properties.is_some() || max_properties.is_some() || !required.is_empty() {
+        // Every draft marks `required` as unique, so the meta-validated list only needs ordering.
+        required.sort();
         conjuncts.push(object_facet_schema(
-            LengthBounds {
-                minimum: min_properties,
-                maximum: max_properties,
+            ObjectLeaf {
+                sizes: LengthBounds {
+                    minimum: min_properties,
+                    maximum: max_properties,
+                },
+                required,
             },
             ctx,
         ));
@@ -491,13 +503,13 @@ fn array_facet_schema(lengths: LengthBounds, ctx: &CanonicalizationContext) -> S
     algebra::union(vec![non_array, algebra::array_leaf(lengths)], ctx)
 }
 
-/// A property-count facet constrains only objects, so `{"minProperties": 1}` becomes
+/// An object facet constrains only objects, so `{"minProperties": 1}` becomes
 /// `anyOf: [<non-object types>, {"type": "object", "minProperties": 1}]`.
-fn object_facet_schema(sizes: LengthBounds, ctx: &CanonicalizationContext) -> Schema {
+fn object_facet_schema(leaf: ObjectLeaf, ctx: &CanonicalizationContext) -> Schema {
     let non_object = Schema::new(SchemaKind::MultiType(
         JsonTypeSet::all().remove(JsonType::Object),
     ));
-    algebra::union(vec![non_object, algebra::object_leaf(sizes)], ctx)
+    algebra::union(vec![non_object, algebra::object_leaf(leaf)], ctx)
 }
 
 /// Draft 4 says `1.0` is not an integer, so its `integer` check cannot fold into value equality.

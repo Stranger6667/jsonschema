@@ -14,6 +14,7 @@ mod bound_integer;
 mod bound_number;
 mod integer_leaves;
 mod number_leaves;
+mod object_leaves;
 mod raw;
 mod string_leaves;
 
@@ -22,6 +23,7 @@ pub(crate) use bound_integer::{BoundInteger, Round};
 pub(crate) use bound_number::{BoundNumber, Side};
 pub(crate) use integer_leaves::IntegerLeaves;
 pub(crate) use number_leaves::NumberLeaves;
+pub(crate) use object_leaves::ObjectLeaves;
 pub(crate) use raw::RawJson;
 pub(crate) use string_leaves::StringLeaves;
 
@@ -170,8 +172,9 @@ pub(crate) enum SchemaKind {
     Number(NonEmpty<NumberLeaf>),
     /// An array value whose length is within a window; other types are matched by a surrounding union.
     Array(NonEmpty<LengthBounds>),
-    /// An object value whose property count is within a window; other types are matched by a surrounding union.
-    Object(NonEmpty<LengthBounds>),
+    /// An object value whose property count is within a window and which carries every required key;
+    /// other types are matched by a surrounding union.
+    Object(NonEmpty<ObjectLeaf>),
     /// Exactly one admitted value.
     Const(CanonicalJson),
     /// A sorted, deduplicated finite set of admitted values.
@@ -222,6 +225,33 @@ pub(crate) struct IntegerLeaf {
 impl MaybeEmpty for IntegerLeaf {
     fn is_empty(&self) -> bool {
         self.bounds.is_empty()
+    }
+}
+
+/// The constraints a [`SchemaKind::Object`] places on an object value. A required key implies a
+/// property, so `sizes.minimum` is kept above `required.len()` or absent - never a repeat of it.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub(crate) struct ObjectLeaf {
+    pub(crate) sizes: LengthBounds,
+    /// Sorted, deduplicated. An object must carry every one of these keys.
+    pub(crate) required: Vec<Arc<str>>,
+}
+
+impl ObjectLeaf {
+    /// The keys an object must carry, as a count bound.
+    pub(crate) fn required_count(&self) -> BoundCardinality {
+        BoundCardinality::from(self.required.len() as u64)
+    }
+}
+
+impl MaybeEmpty for ObjectLeaf {
+    fn is_empty(&self) -> bool {
+        self.sizes.is_empty()
+            || self
+                .sizes
+                .maximum
+                .as_ref()
+                .is_some_and(|max| *max < self.required_count())
     }
 }
 
