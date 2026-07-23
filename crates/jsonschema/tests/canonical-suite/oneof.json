@@ -1,0 +1,756 @@
+[
+  {
+    "description": "single_branch_oneof_collapses_to_the_branch",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "minLength": 1
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": true
+      },
+      {
+        "data": "",
+        "valid": false
+      },
+      {
+        "data": 5,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "single_branch_oneof_conjoins_with_allof_and_anyof",
+    "schema": {
+      "allOf": [
+        {
+          "multipleOf": 2
+        }
+      ],
+      "anyOf": [
+        {
+          "multipleOf": 3
+        }
+      ],
+      "oneOf": [
+        {
+          "multipleOf": 5
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "string",
+            "array",
+            "object"
+          ]
+        },
+        {
+          "type": "integer",
+          "multipleOf": 30
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 30,
+        "valid": true
+      },
+      {
+        "data": 10,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "oneof_of_true_and_false_branches_is_true",
+    "schema": {
+      "oneOf": [
+        true,
+        false,
+        false
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": "a",
+        "valid": true
+      },
+      {
+        "data": null,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "oneof_of_only_false_branches_is_unsatisfiable",
+    "schema": {
+      "oneOf": [
+        false,
+        false,
+        false
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": null,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "disjoint_typed_branches_converge_with_the_equivalent_anyof",
+    "schemas": [
+      {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "integer",
+        "string"
+      ]
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 1.5,
+        "valid": false
+      },
+      {
+        "data": null,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "branches_disjoint_by_value_fold_into_one_enum",
+    "schema": {
+      "oneOf": [
+        {
+          "enum": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "enum": [
+            1,
+            2
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        1,
+        2,
+        "a",
+        "b"
+      ]
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 3,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "branches_disjoint_by_integer_window_merge_when_adjacent",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "maximum": 0
+        },
+        {
+          "type": "integer",
+          "minimum": 1
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    },
+    "tests": [
+      {
+        "data": 0,
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 1.5,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "overlapping_branches_keep_the_document_raw",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "minLength": 1
+        }
+      ]
+    },
+    "expected": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "minLength": 1
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": "",
+        "valid": true
+      },
+      {
+        "data": "a",
+        "valid": false
+      },
+      {
+        "data": 5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "a_raw_branch_keeps_the_document_raw",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "contains": {
+            "type": "number"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "contains": {
+            "type": "number"
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": false
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          ""
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "one_overlapping_pair_among_disjoint_pairs_keeps_the_document_raw",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": null,
+        "valid": true
+      },
+      {
+        "data": "a",
+        "valid": false
+      },
+      {
+        "data": 1,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "draft4_branches_disjoint_by_enum_value_fold_into_one_enum",
+    "draft": "draft4",
+    "schema": {
+      "oneOf": [
+        {
+          "enum": [
+            "a"
+          ]
+        },
+        {
+          "enum": [
+            1
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "enum": [
+        1,
+        "a"
+      ]
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": true
+      },
+      1.0,
+      {
+        "data": 2,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "duplicate_branches_overlap_and_stay_raw",
+    "schema": {
+      "oneOf": [
+        {
+          "const": 1
+        },
+        {
+          "const": 1
+        }
+      ]
+    },
+    "expected": {
+      "oneOf": [
+        {
+          "const": 1
+        },
+        {
+          "const": 1
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": 2,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a_true_branch_overlaps_every_satisfiable_branch",
+    "schema": {
+      "oneOf": [
+        true,
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "expected": {
+      "oneOf": [
+        true,
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": false
+      },
+      {
+        "data": 5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "a_false_branch_beside_a_real_branch_is_dropped",
+    "schema": {
+      "oneOf": [
+        false,
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string"
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": true
+      },
+      {
+        "data": 5,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "branches_sharing_one_value_stay_raw",
+    "schema": {
+      "oneOf": [
+        {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        {
+          "enum": [
+            2,
+            3
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "oneOf": [
+        {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        {
+          "enum": [
+            2,
+            3
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 2,
+        "valid": false
+      },
+      {
+        "data": 3,
+        "valid": true
+      },
+      {
+        "data": 4,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "an_overlapping_oneof_inside_properties_keeps_the_document_raw",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "minLength": 1
+            }
+          ]
+        }
+      }
+    },
+    "expected": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "minLength": 1
+            }
+          ]
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "a": ""
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": "x"
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "a": 5
+        },
+        "valid": true
+      },
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "an_asserted_format_makes_length_disjoint_branches_fold",
+    "validate_formats": true,
+    "schema": {
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "uuid"
+        },
+        {
+          "type": "string",
+          "maxLength": 10
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "maxLength": 10,
+          "type": "string"
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": "550e8400-e29b-41d4-a716-446655440000",
+        "valid": true
+      },
+      {
+        "data": "abc",
+        "valid": true
+      },
+      {
+        "data": "this-is-not-a-uuid",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "an_unasserted_format_leaves_the_branches_overlapping",
+    "validate_formats": false,
+    "schema": {
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "uuid"
+        },
+        {
+          "type": "string",
+          "maxLength": 10
+        }
+      ]
+    },
+    "expected": {
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "uuid"
+        },
+        {
+          "type": "string",
+          "maxLength": 10
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": "abc",
+        "valid": false
+      },
+      {
+        "data": "550e8400-e29b-41d4-a716-446655440000",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "draft4_aliased_number_overlaps_the_integer_branch",
+    "draft": "draft4",
+    "schema": {
+      "oneOf": [
+        {
+          "enum": [
+            1.0
+          ]
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "expected": {
+      "oneOf": [
+        {
+          "enum": [
+            1.0
+          ]
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": 1.0,
+        "valid": true
+      },
+      {
+        "data": 2,
+        "valid": true
+      },
+      {
+        "data": 1.5,
+        "valid": false
+      }
+    ]
+  }
+]
