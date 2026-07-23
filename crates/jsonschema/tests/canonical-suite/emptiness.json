@@ -131,5 +131,34 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "not": {}
     }
+  },
+  {
+    "description": "ir: an empty not converges with the false schema",
+    "schemas": [
+      {"not": {}},
+      false
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an empty not is the false schema under draft 4",
+    "schema": {"not": {}},
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {"data": 1, "valid": false}
+    ]
   }
 ]

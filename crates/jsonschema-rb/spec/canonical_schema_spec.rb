@@ -6,7 +6,7 @@ DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
 
 RSpec.describe "JSONSchema.canonicalize" do
   [
-    { "properties" => { "a" => { "type" => "string" } } },
+    { "patternProperties" => { "^a" => { "type" => "string" } } },
     { "$defs" => { "a" => { "type" => "null" } }, "$ref" => "#/$defs/a" }
   ].each do |schema|
     it "round-trips unmodeled #{schema.inspect} verbatim" do
@@ -121,15 +121,20 @@ RSpec.describe "JSONSchema.canonicalize" do
   it "view returns ObjectView with its property-count window" do
     schema = {
       "type" => "object", "minProperties" => 1, "maxProperties" => 3,
-      "required" => ["a"], "propertyNames" => { "maxLength" => 4 }
+      "required" => ["a"], "propertyNames" => { "maxLength" => 4 },
+      "properties" => { "a" => { "type" => "integer" } }
     }
     case JSONSchema.canonicalize(schema).view
-    in JSONSchema::Canonical::ObjectView[min_properties:, max_properties:, required:, property_names:]
+    in JSONSchema::Canonical::ObjectView[min_properties:, max_properties:, required:, property_names:, properties:]
       expect(min_properties).to be_nil
       expect(max_properties).to eq(3)
       expect(required).to eq(["a"])
       expect(property_names.to_json_schema).to eq(
         { "$schema" => "https://json-schema.org/draft/2020-12/schema", "type" => "string", "maxLength" => 4 }
+      )
+      expect(properties.keys).to eq(["a"])
+      expect(properties["a"].to_json_schema).to eq(
+        { "$schema" => "https://json-schema.org/draft/2020-12/schema", "type" => "integer" }
       )
     end
   end
@@ -195,10 +200,10 @@ RSpec.describe "JSONSchema.canonicalize" do
     "IntegerView" => [{ "type" => "integer", "minimum" => 2, "maximum" => 9 }, %i[minimum maximum multiple_of]],
     "NumberView" => [{ "type" => "number", "minimum" => 2 }, %i[minimum exclusive_minimum maximum exclusive_maximum multiple_of]],
     "ArrayView" => [{ "type" => "array", "minItems" => 1 }, %i[min_items max_items unique_items]],
-    "ObjectView" => [{ "type" => "object", "minProperties" => 1 }, %i[min_properties max_properties required property_names]],
+    "ObjectView" => [{ "type" => "object", "minProperties" => 1 }, %i[min_properties max_properties required property_names properties]],
     "ConstView" => [{ "const" => nil }, %i[value]],
     "EnumView" => [{ "enum" => [1, 2] }, %i[values]],
-    "RawView" => [{ "not" => {} }, %i[schema]]
+    "RawView" => [{ "patternProperties" => { "^a" => { "type" => "integer" } } }, %i[schema]]
   }.each do |name, (schema, readers)|
     it "inspect renders #{name} readers" do
       draft = name == "TypedGroupView" ? :draft4 : :draft202012
@@ -217,9 +222,9 @@ RSpec.describe "JSONSchema.canonicalize" do
   end
 
   it "view returns RawView with the document payload" do
-    case JSONSchema.canonicalize({ "not" => {} }).view
+    case JSONSchema.canonicalize({ "patternProperties" => { "^a" => { "type" => "integer" } } }).view
     in JSONSchema::Canonical::RawView[schema:]
-      expect(schema).to eq({ "not" => {} })
+      expect(schema).to eq({ "patternProperties" => { "^a" => { "type" => "integer" } } })
     end
   end
 

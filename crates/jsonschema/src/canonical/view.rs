@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde_json::{Number, Value};
 
 use crate::{
@@ -88,8 +90,7 @@ pub struct ArrayView {
     pub unique_items: bool,
 }
 
-/// Payload of [`CanonicalView::Object`]: the `minProperties`/`maxProperties` bounds, required keys
-/// and key constraint on an object value.
+/// Payload of [`CanonicalView::Object`]: the constraints on an object value.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObjectView {
     pub min_properties: Option<Number>,
@@ -97,6 +98,8 @@ pub struct ObjectView {
     pub required: Vec<String>,
     /// The schema every key satisfies, narrowed to the string domain.
     pub property_names: Option<CanonicalSchema>,
+    /// The schema each named key satisfies when the object carries it.
+    pub properties: BTreeMap<String, CanonicalSchema>,
 }
 
 /// Payload of [`CanonicalView::Integer`]: the interval bounds and divisor on an integer value.
@@ -127,6 +130,11 @@ impl CanonicalSchema {
                     .property_names
                     .as_ref()
                     .map(|names| self.wrap_child(names)),
+                leaf.get()
+                    .properties
+                    .iter()
+                    .map(|(key, schema)| (key.to_string(), self.wrap_child(schema)))
+                    .collect(),
             )),
             SchemaKind::Const(value) => CanonicalView::Const(value.to_value()),
             SchemaKind::Enum(values) => CanonicalView::Enum(
@@ -190,14 +198,19 @@ fn array_view(leaf: &ArrayLeaf) -> ArrayView {
     }
 }
 
-// The key-constraint child needs the schema-level wrapping only the caller can do, so it arrives
-// already wrapped instead of being read off the leaf.
-fn object_view(leaf: &ObjectLeaf, property_names: Option<CanonicalSchema>) -> ObjectView {
+// The nested children need the schema-level wrapping only the caller can do, so they arrive already
+// wrapped instead of being read off the leaf.
+fn object_view(
+    leaf: &ObjectLeaf,
+    property_names: Option<CanonicalSchema>,
+    properties: BTreeMap<String, CanonicalSchema>,
+) -> ObjectView {
     ObjectView {
         min_properties: leaf.sizes.minimum.as_ref().map(BoundCardinality::to_number),
         max_properties: leaf.sizes.maximum.as_ref().map(BoundCardinality::to_number),
         required: leaf.required.iter().map(ToString::to_string).collect(),
         property_names,
+        properties,
     }
 }
 

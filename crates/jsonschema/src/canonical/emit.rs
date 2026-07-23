@@ -158,6 +158,14 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
     if let Some(names) = &leaf.property_names {
         map.insert("propertyNames".into(), emit(names.kind(), draft));
     }
+    if !leaf.properties.is_empty() {
+        let entries: Map<String, Value> = leaf
+            .properties
+            .iter()
+            .map(|(key, schema)| (key.to_string(), emit(schema.kind(), draft)))
+            .collect();
+        map.insert("properties".into(), Value::Object(entries));
+    }
     if !leaf.required.is_empty() {
         map.insert(
             "required".into(),

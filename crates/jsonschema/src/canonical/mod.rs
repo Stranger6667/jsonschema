@@ -45,7 +45,7 @@
 //! }
 //!
 //! // Unsupported constructs keep the whole document as an opaque `Raw` pass-through.
-//! let raw = canonicalize(&json!({"properties": {"name": {"type": "string"}}})).unwrap();
+//! let raw = canonicalize(&json!({"patternProperties": {"^name$": {"type": "string"}}})).unwrap();
 //! assert_eq!(raw.kind(), CanonicalKind::Raw);
 //! ```
 //!
@@ -68,9 +68,9 @@
 //! # Coverage
 //!
 //! Canonicalization models a growing subset of JSON Schema - currently the type system,
-//! `const`/`enum` value sets, the `allOf`/`anyOf` combinators, and numeric and string constraints.
-//! Rather than relying on any keyword list, detect support per document: a schema using anything
-//! outside the modeled subset (references, object or array keywords, ...) canonicalizes
+//! `const`/`enum` value sets, the `allOf`/`anyOf` combinators, and numeric, string, and object
+//! constraints. Rather than relying on any keyword list, detect support per document: a schema
+//! using anything outside the modeled subset (references, array keywords, ...) canonicalizes
 //! *successfully* to an opaque pass-through of the whole document, [`CanonicalView::Raw`]. A `Raw`
 //! schema is the original verbatim - equivalent but inert: nothing folds, and
 //! [`is_satisfiable`](CanonicalSchema::is_satisfiable) stays conservatively `true`. Match on

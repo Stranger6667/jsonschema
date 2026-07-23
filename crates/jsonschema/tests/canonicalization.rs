@@ -7,7 +7,7 @@ use jsonschema::{
 use serde_json::{json, Map, Number, Value};
 use test_case::test_case;
 
-#[test_case(&json!({"properties": {"a": {"type": "string"}}}); "properties")]
+#[test_case(&json!({"patternProperties": {"^a$": {"type": "string"}}}); "pattern properties")]
 #[test_case(&json!({"$defs": {"a": {"type": "null"}}, "$ref": "#/$defs/a"}); "ref into defs")]
 fn unmodeled_document_round_trips_verbatim(schema: &Value) {
     let canonical = canonicalize(schema).expect("canonicalizes");
@@ -70,6 +70,23 @@ fn object_view_exposes_bounds() {
     assert_eq!(view.max_properties, Some(Number::from(3u64)));
     assert_eq!(view.required, vec!["a".to_string()]);
     assert!(view.property_names.is_none());
+    assert!(view.properties.is_empty());
+}
+
+#[test]
+fn object_view_exposes_properties() {
+    let CanonicalView::Object(view) =
+        canonicalize(&json!({"type": "object", "properties": {"a": {"type": "integer"}}}))
+            .unwrap()
+            .view()
+    else {
+        panic!("expected an Object view");
+    };
+    let schema = view.properties.get("a").expect("a property schema");
+    assert_eq!(
+        schema.to_json_schema(),
+        json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer"})
+    );
 }
 
 #[test]
@@ -92,6 +109,58 @@ fn object_view_exposes_property_names() {
     );
 }
 
+// A format the canonicalizer cannot check may still be checked at validation, so a union must not
+// absorb a value into a leaf carrying one.
+#[test_case(&json!({"type": "object", "propertyNames": {"format": "only-ok"}}), &json!({"nope": 1}); "key constraint")]
+#[test_case(&json!({"type": "object", "properties": {"a": {"type": "string", "format": "only-ok"}}}), &json!({"a": "nope"}); "property schema")]
+#[test_case(&json!({"type": "object", "properties": {"a": {"format": "only-ok"}}}), &json!({"a": "nope"}); "untyped property schema")]
+#[test_case(&json!({"type": "object", "properties": {"a": {"type": "object", "propertyNames": {"format": "only-ok"}}}}), &json!({"a": {"nope": 1}}); "nested object")]
+fn uncheckable_format_keeps_the_value_beside_the_leaf(leaf: &Value, instance: &Value) {
+    let schema = json!({"anyOf": [{"const": instance}, leaf]});
+    let canonical = options()
+        .should_validate_formats(true)
+        .canonicalize(&schema)
+        .expect("canonicalizes");
+    let build = |value: &Value| {
+        ::jsonschema::options()
+            .with_format("only-ok", |text: &str| text == "ok")
+            .should_validate_formats(true)
+            .build(value)
+            .expect("builds")
+    };
+    assert!(build(&schema).is_valid(instance));
+    assert!(build(&canonical.to_json_schema()).is_valid(instance));
+}
+
+// A Draft 4 integer property schema is a typed group, which the format scan walks past to reach the
+// key whose format it cannot check.
+#[test]
+fn uncheckable_format_scan_walks_a_typed_group() {
+    let instance = json!({"b": "nope"});
+    let schema = json!({"anyOf": [
+        {"enum": [instance]},
+        {"type": "object", "properties": {
+            "a": {"type": "integer", "enum": [1, 2]},
+            "b": {"type": "string", "format": "only-ok"}
+        }}
+    ]});
+    let canonical = options()
+        .with_draft(Draft::Draft4)
+        .should_validate_formats(true)
+        .canonicalize(&schema)
+        .expect("canonicalizes");
+    let build = |value: &Value| {
+        ::jsonschema::options()
+            .with_draft(Draft::Draft4)
+            .with_format("only-ok", |text: &str| text == "ok")
+            .should_validate_formats(true)
+            .build(value)
+            .expect("builds")
+    };
+    assert!(build(&schema).is_valid(&instance));
+    assert!(build(&canonical.to_json_schema()).is_valid(&instance));
+}
+
 // An unmodeled document keeps document identity, where `1` and `1.0` are distinct - unlike JSON
 // value equality, which reads them as the same number.
 #[test]
@@ -100,10 +169,12 @@ fn unmodeled_documents_hash_by_document_identity() {
         canonicalize(&serde_json::from_str::<Value>(text).expect("valid schema JSON"))
             .expect("canonicalizes")
     };
-    let integer =
-        canonical(r#"{"properties": {"a": {"enum": [1, null, true, "x", [2], {"b": 3}]}}}"#);
-    let float =
-        canonical(r#"{"properties": {"a": {"enum": [1.0, null, true, "x", [2], {"b": 3}]}}}"#);
+    let integer = canonical(
+        r#"{"patternProperties": {"^a$": {"enum": [1, null, true, "x", [2], {"b": 3}]}}}"#,
+    );
+    let float = canonical(
+        r#"{"patternProperties": {"^a$": {"enum": [1.0, null, true, "x", [2], {"b": 3}]}}}"#,
+    );
     assert_eq!(integer.kind(), CanonicalKind::Raw);
     let distinct: HashSet<CanonicalSchema> =
         [integer.clone(), float, integer].into_iter().collect();
@@ -202,7 +273,7 @@ fn error_display(schema: &Value, message: &str) {
 #[test_case(&json!(false), CanonicalKind::False, "false"; "boolean false")]
 #[test_case(&json!({"type": "integer", "minimum": 0}), CanonicalKind::Integer, "integer"; "integer_leaf")]
 #[test_case(&json!({"type": "number", "minimum": 0}), CanonicalKind::Number, "number"; "number_leaf")]
-#[test_case(&json!({"properties": {"a": {"type": "string"}}}), CanonicalKind::Raw, "raw"; "raw")]
+#[test_case(&json!({"patternProperties": {"^a$": {"type": "string"}}}), CanonicalKind::Raw, "raw"; "raw")]
 fn kind_reports_its_label(schema: &Value, kind: CanonicalKind, label: &str) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     assert_eq!(canonical.kind(), kind);
