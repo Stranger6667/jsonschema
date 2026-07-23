@@ -140,6 +140,26 @@ pub async fn dereference(schema: String, options: JsValue) -> Result<JsValue, Js
     to_js(&TransformResult { output, ms })
 }
 
+// Sync like `meta_validate`: canonicalization never resolves remote references.
+#[allow(clippy::needless_pass_by_value)]
+#[wasm_bindgen(skip_typescript)]
+pub fn canonicalize(schema: String, options: JsValue) -> Result<JsValue, JsValue> {
+    let options = parse_options(options)?;
+    let schema: Value = serde_json::from_str(&schema).map_err(to_js_err)?;
+    let mut builder = jsonschema::canonical::options();
+    if let Some(id) = options.draft.as_deref() {
+        let draft = draft_from_id(id).ok_or_else(|| to_js_err(format!("unknown draft `{id}`")))?;
+        builder = builder.with_draft(draft);
+    }
+    let t0 = js_sys::Date::now();
+    let canonical = builder.canonicalize(&schema).map_err(to_js_err)?;
+    let ms = js_sys::Date::now() - t0;
+    to_js(&TransformResult {
+        output: canonical.to_json_schema(),
+        ms,
+    })
+}
+
 fn meta_validator_for_id(id: &str) -> Option<jsonschema::meta::MetaValidator<'static>> {
     Some(match id {
         "draft2020-12" => jsonschema::draft202012::meta::validator(),
@@ -215,5 +235,6 @@ export function drafts(): DraftEntry[];
 export function validate(schema: string, instance: string, options?: Options): Promise<ValidateResult>;
 export function bundle(schema: string, options?: Options): Promise<TransformResult>;
 export function dereference(schema: string, options?: Options): Promise<TransformResult>;
+export function canonicalize(schema: string, options?: Options): TransformResult;
 export function meta_validate(schema: string, options?: Options): ValidateResult;
 "#;

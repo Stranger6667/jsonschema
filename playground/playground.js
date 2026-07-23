@@ -122,6 +122,38 @@
           }
         }
       }
+    ],
+    canonicalize: [
+      {
+        name: "allOf merge",
+        note: "bounds intersect",
+        schema: {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "allOf": [
+            { "type": "integer", "minimum": 0 },
+            { "minimum": 2, "maximum": 10 }
+          ]
+        }
+      },
+      {
+        name: "Contradiction",
+        note: "collapses to not: {}",
+        schema: {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 2
+        }
+      },
+      {
+        name: "Enum narrowing",
+        note: "enum meets type",
+        schema: {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "enum": [1, "a", true],
+          "type": "string"
+        }
+      }
     ]
   };
 
@@ -406,6 +438,7 @@
       let result;
       if (action === "bundle") result = await api.bundle(schemaEditor.value, config);
       else if (action === "dereference") result = await api.dereference(schemaEditor.value, config);
+      else if (action === "canonicalize") result = await api.canonicalize(schemaEditor.value, config);
       renderTransform(outBody, result);
       setTiming(result.ms);
     } catch (error) {
@@ -576,7 +609,7 @@
 
   // render: transforms (bundle / dereference)
   function renderTransform(outBody, result) {
-    const titles = { bundle: "Bundled schema", dereference: "Dereferenced schema" };
+    const titles = { bundle: "Bundled schema", dereference: "Dereferenced schema", canonicalize: "Canonical schema" };
     $("#outTitle").textContent = titles[action] || "Result";
     if (result.error) {
       hideOutTools();
@@ -628,8 +661,10 @@
     const HINTS = {
       bundle: "Fetches remote $refs and embeds them into one self-contained schema.",
       dereference: "Inlines every $ref, expanding the schema in place (cycle-safe).",
+      canonicalize: "Experimental and incomplete: reduces the schema to a canonical form.",
     };
     const hintEl = $("#actionHint");
+    hintEl.classList.toggle("warn", next === "canonicalize");
     if (HINTS[next]) { hintEl.textContent = HINTS[next]; hintEl.hidden = false; }
     else hintEl.hidden = true;
     // reset output
