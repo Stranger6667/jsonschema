@@ -1,6 +1,8 @@
 //! Parsing schema documents into structural IR; anything not modeled stays `Raw`.
 use std::{collections::BTreeMap, sync::Arc};
 
+use ahash::AHashSet;
+
 use referencing::Draft;
 use serde_json::Value;
 
@@ -92,6 +94,23 @@ fn parse_schema(
                         Some(schema) => branches.push(schema),
                         None => return Ok(None),
                     }
+                }
+                conjuncts.push(algebra::union(branches, ctx));
+            }
+            // When no two branches share a value, "exactly one matches" is "at least one
+            // matches", so a pairwise-disjoint `oneOf` is its `anyOf`. Overlapping branches
+            // would need negation, which the algebra does not have, so they keep the
+            // document raw.
+            ("oneOf", Value::Array(items)) => {
+                let mut branches = Vec::new();
+                for branch in items {
+                    match parse_schema(branch, ctx, false)? {
+                        Some(schema) => branches.push(schema),
+                        None => return Ok(None),
+                    }
+                }
+                if !branches_are_pairwise_disjoint(&branches, ctx) {
+                    return Ok(None);
                 }
                 conjuncts.push(algebra::union(branches, ctx));
             }
@@ -381,6 +400,55 @@ fn parse_schema(
             algebra::intersect(result, conjunct, ctx)
         }),
     ))
+}
+
+/// Whether no two branches admit a common value, so `oneOf` degrades to `anyOf`.
+///
+/// Finite-value branches are disjoint exactly when no member repeats across them, so one
+/// hash set replaces their share of the quadratic sweep; only the remaining branches pay a
+/// pairwise `intersect`, plus one `intersect` against each finite-value branch.
+fn branches_are_pairwise_disjoint(branches: &[Schema], ctx: &CanonicalizationContext) -> bool {
+    let mut seen: AHashSet<&CanonicalJson> = AHashSet::new();
+    let mut finite: Vec<&Schema> = Vec::new();
+    let mut structural: Vec<&Schema> = Vec::new();
+    for branch in branches {
+        match branch.kind() {
+            SchemaKind::Const(value) => {
+                if !seen.insert(value) {
+                    return false;
+                }
+                finite.push(branch);
+            }
+            SchemaKind::Enum(values) => {
+                for value in values.as_slice() {
+                    if !seen.insert(value) {
+                        return false;
+                    }
+                }
+                finite.push(branch);
+            }
+            SchemaKind::MultiType(_)
+            | SchemaKind::TypedGroup { .. }
+            | SchemaKind::String(_)
+            | SchemaKind::Integer(_)
+            | SchemaKind::Number(_)
+            | SchemaKind::Array(_)
+            | SchemaKind::Object(_)
+            | SchemaKind::AnyOf(_)
+            | SchemaKind::True
+            | SchemaKind::False
+            | SchemaKind::Raw(_) => structural.push(branch),
+        }
+    }
+    for (index, left) in structural.iter().enumerate() {
+        for right in structural[index + 1..].iter().chain(&finite) {
+            let shared = algebra::intersect((*left).clone(), (*right).clone(), ctx);
+            if !matches!(shared.kind(), SchemaKind::False) {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// The finite value set admitted by `const` and `enum` together: their conjunction.

@@ -274,7 +274,7 @@ fn draw_unmodeled_leaf(tc: &TestCase) -> Value {
         1 => json!({ "not": { "type": "string" } }),
         2 => json!({ "$defs": { "a": { "type": "null" } }, "$ref": "#/$defs/a" }),
         3 => json!({ "format": "email" }),
-        _ => json!({ "oneOf": [{ "type": "string" }, { "type": "integer" }] }),
+        _ => json!({ "oneOf": [{ "type": "string" }, { "minLength": 1 }] }),
     }
 }
 
