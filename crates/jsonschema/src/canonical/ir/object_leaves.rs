@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::canonical::ir::{Bounds, LengthBounds, ObjectLeaf, Schema};
+use crate::canonical::ir::{BoundCardinality, Bounds, LengthBounds, ObjectLeaf, Schema};
 
 /// Object leaves merged per required-key set and free of subsumed windows. Inserts are batched; the
 /// form is restored before any read, so the order in which leaves arrive cannot change the result.
@@ -31,6 +31,7 @@ impl ObjectLeaves {
         }
         let was_empty = self.leaves.is_empty();
         self.leaves = merge(std::mem::take(&mut self.leaves));
+        absorb_trivially_admitted(&mut self.leaves);
         drop_subsumed(&mut self.leaves);
         self.canonical = true;
         // `is_empty` reads the batch without canonicalizing, which relies on this.
@@ -149,6 +150,53 @@ fn flush_group(
     });
 }
 
+/// A window of no properties holds only the empty object, whose keys satisfy any constraint
+/// vacuously: widen a neighbouring key-constrained leaf over it. Only a leaf demanding no key can
+/// absorb it, since a required key rejects the empty object whatever the window says.
+/// ```text
+/// e.g.  anyOf [
+///         {"const": {}},
+///         {"type": "object", "propertyNames": {"const": "a"}, "minProperties": 1}
+///       ]  =>  {"type": "object", "propertyNames": {"const": "a"}}
+/// ```
+///
+/// A gap between the two windows keeps them apart: widening would admit the property counts
+/// between them.
+/// ```text
+/// e.g.  anyOf [
+///         {"const": {}},
+///         {"type": "object", "propertyNames": {"enum": ["a", "b"]}, "minProperties": 2}
+///       ]  =>  unchanged
+/// ```
+fn absorb_trivially_admitted(leaves: &mut Vec<ObjectLeaf>) {
+    let Some(trivial) = leaves.iter().position(|leaf| {
+        leaf.property_names.is_none()
+            && leaf.required.is_empty()
+            && leaf
+                .sizes
+                .maximum
+                .as_ref()
+                .is_some_and(BoundCardinality::is_zero)
+    }) else {
+        return;
+    };
+    let window = leaves[trivial].sizes.clone();
+    // Merging the pair yields one window exactly when they overlap or touch. Leaves sharing the
+    // absent key constraint sit in the trivial leaf's own merge group, so only a key-constrained
+    // leaf can be the target.
+    let Some((target, widened)) = leaves.iter().enumerate().find_map(|(index, leaf)| {
+        if leaf.property_names.is_none() || !leaf.required.is_empty() {
+            return None;
+        }
+        let mut merged = Bounds::merge_all(vec![leaf.sizes.clone(), window.clone()]);
+        (merged.len() == 1).then(|| (index, merged.pop().expect("a merged window")))
+    }) else {
+        return;
+    };
+    leaves[target].sizes = widened;
+    leaves.remove(trivial);
+}
+
 /// Drop a leaf whose objects another leaf already admits: a window that contains it, demanding no
 /// key it does not. Extra keys only narrow, so the leaf demanding fewer swallows the other.
 /// ```text
@@ -168,9 +216,11 @@ fn drop_subsumed(leaves: &mut Vec<ObjectLeaf>) {
                 continue;
             }
             // A key constraint is compared only against itself: deciding that one schema admits
-            // every key another does needs a subsumption test the algebra does not have.
+            // every key another does needs a subsumption test the algebra does not have. The
+            // windows compare with a finite set of admitted keys folded in, since such a leaf
+            // admits no object larger than that set.
             let looser_keys = other.property_names.is_none() && leaf.property_names.is_some();
-            let wider = other.sizes.covers(&leaf.sizes)
+            let wider = other.effective_sizes().covers(&leaf.effective_sizes())
                 && other.required.iter().all(|key| leaf.required.contains(key))
                 && (looser_keys || other.property_names == leaf.property_names);
             // Leaves agreeing on every facet but the window were folded by merging, so one of the

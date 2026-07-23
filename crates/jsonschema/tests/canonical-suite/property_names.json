@@ -335,5 +335,149 @@
     "tests": [
       {"data": {"abcd": 1}, "valid": true}
     ]
+  },
+  {
+    "description": "ir: an uncheckable format keeps a constant object beside the key constraint",
+    "schema": {
+      "anyOf": [
+        {"const": {"ab": 1}},
+        {"type": "object", "propertyNames": {"format": "unknown", "minLength": 1}}
+      ]
+    },
+    "validate_formats": true,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "propertyNames": {"type": "string", "minLength": 1, "format": "unknown"}},
+        {"const": {"ab": 1}}
+      ]
+    },
+    "tests": [
+      {"data": {"ab": 1}, "valid": true},
+      {"data": {}, "valid": true},
+      {"data": {"x": 1}, "valid": true},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a constant empty object folds into a key-constrained branch",
+    "schemas": [
+      {"anyOf": [{"const": {}}, {"type": "object", "propertyNames": {"const": "a"}}]},
+      {"type": "object", "propertyNames": {"const": "a"}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"const": "a"}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: the empty object widens a touching key-constrained window",
+    "schema": {
+      "anyOf": [{"const": {}}, {"type": "object", "propertyNames": {"const": "a"}, "minProperties": 1}]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"const": "a"}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a gap between the empty object and a key-constrained window keeps them apart",
+    "schema": {
+      "anyOf": [{"const": {}}, {"type": "object", "propertyNames": {"enum": ["a", "b"]}, "minProperties": 2}]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "propertyNames": {"enum": ["a", "b"]}, "minProperties": 2},
+        {"const": {}}
+      ]
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"a": 1, "c": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: demanding a key every branch of the property names rejects is unsatisfiable",
+    "schema": {
+      "type": "object",
+      "propertyNames": {"anyOf": [{"const": "a"}, {"minLength": 3}]},
+      "required": ["bc"]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false
+  },
+  {
+    "description": "ir: demanding a key one branch of the property names admits keeps both",
+    "schema": {
+      "type": "object",
+      "propertyNames": {"anyOf": [{"const": "a"}, {"minLength": 3}]},
+      "required": ["abc"]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"anyOf": [{"type": "string", "minLength": 3}, {"const": "a"}]},
+      "required": ["abc"]
+    },
+    "tests": [
+      {"data": {"abc": 1}, "valid": true},
+      {"data": {"abc": 1, "a": 2}, "valid": true},
+      {"data": {"abc": 1, "bc": 2}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a constant object with every key admitted by a branch folds into the leaf",
+    "schema": {
+      "anyOf": [
+        {"const": {"a": 1, "xyz": 2}},
+        {"type": "object", "propertyNames": {"anyOf": [{"const": "a"}, {"minLength": 3}]}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"anyOf": [{"type": "string", "minLength": 3}, {"const": "a"}]}
+    },
+    "tests": [
+      {"data": {"a": 1, "xyz": 2}, "valid": true},
+      {"data": {"b": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a finite key set is subsumed by a window at its key count",
+    "schemas": [
+      {"anyOf": [{"type": "object", "propertyNames": {"enum": ["a", "b"]}}, {"type": "object", "maxProperties": 2}]},
+      {"type": "object", "maxProperties": 2}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "maxProperties": 2
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"c": 1, "d": 2}, "valid": true},
+      {"data": {"a": 1, "b": 2, "c": 3}, "valid": false}
+    ]
   }
 ]

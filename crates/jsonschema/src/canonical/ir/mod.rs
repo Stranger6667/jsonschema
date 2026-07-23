@@ -271,13 +271,26 @@ pub(crate) struct ObjectLeaf {
 
 impl ObjectLeaf {
     /// The number of keys the property-name schema admits, when it admits a finite set.
+    #[must_use]
     pub(crate) fn admitted_key_count(&self) -> Option<BoundCardinality> {
         let values = self.property_names.as_ref()?.kind().finite_values()?;
         Some(BoundCardinality::from(values.len() as u64))
     }
-}
 
-impl ObjectLeaf {
+    /// The size window with a finite set of admitted keys folded in as a ceiling: those keys are
+    /// distinct, so they cap the property count just as `maxProperties` does.
+    #[must_use]
+    pub(crate) fn effective_sizes(&self) -> LengthBounds {
+        LengthBounds {
+            minimum: self.sizes.minimum.clone(),
+            maximum: tighter(
+                self.sizes.maximum.clone(),
+                self.admitted_key_count(),
+                Ord::min,
+            ),
+        }
+    }
+
     /// The keys an object must carry, as a count bound.
     #[must_use]
     pub(crate) fn required_count(&self) -> BoundCardinality {
@@ -290,13 +303,7 @@ impl MaybeEmpty for ObjectLeaf {
         if self.sizes.is_empty() {
             return true;
         }
-        // A finite set of admitted keys caps the property count just as `maxProperties` does.
-        let ceiling = tighter(
-            self.sizes.maximum.clone(),
-            self.admitted_key_count(),
-            Ord::min,
-        );
-        let Some(ceiling) = ceiling else {
+        let Some(ceiling) = self.effective_sizes().maximum else {
             return false;
         };
         ceiling < self.required_count()

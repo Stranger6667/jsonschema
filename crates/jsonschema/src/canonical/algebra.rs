@@ -779,7 +779,9 @@ fn restrict_members(
         SchemaKind::Object(leaf) => {
             let kept = members
                 .into_iter()
-                .filter(|member| object_leaf_admits(leaf.get(), member, ctx))
+                .filter(|member| {
+                    object_leaf_admits(leaf.get(), member, ctx, UncheckableFormat::Admits)
+                })
                 .collect();
             parse::canonicalize_value_set(kept)
         }
@@ -847,7 +849,7 @@ fn leaf_absorbs_member(
         Value::Array(_) => arrays.iter().any(|leaf| array_leaf_admits(leaf, member)),
         Value::Object(_) => objects
             .iter()
-            .any(|leaf| object_leaf_admits(leaf, member, ctx)),
+            .any(|leaf| object_leaf_admits(leaf, member, ctx, UncheckableFormat::Rejects)),
         Value::String(_) => strings.iter().any(|(leaf, regexes)| {
             string_leaf_admits(leaf, regexes, member, ctx, UncheckableFormat::Rejects)
         }),
@@ -1021,10 +1023,15 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
         "a key constraint survived normalization without constraining keys"
     );
     // A key the property names reject can never be present, so demanding it admits nothing.
+    // Collapsing to `False` narrows the schema, so a format no checker covers counts as admitting.
     // e.g.  {"type": "object", "propertyNames": {"const": "foo"}, "required": ["bar"]}
     //       =>  {"not": {}}
     if let Some(names) = &leaf.property_names {
-        if leaf.required.iter().any(|key| !admits_key(names, key, ctx)) {
+        if leaf
+            .required
+            .iter()
+            .any(|key| !admits_key(names, key, ctx, UncheckableFormat::Admits))
+        {
             return Schema::new(SchemaKind::False);
         }
     }
@@ -1080,7 +1087,13 @@ fn normalize_property_names(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext
     };
     // Narrowing first is what lets one pass reach normal form: a constraint admitting no string,
     // such as `{"type": "integer"}`, only becomes `False` once the other types are cut away.
-    let names = narrow_to_strings(names, ctx);
+    // A constraint already in the string domain skips the intersection it would be an identity of;
+    // every stored constraint passes through here again on each union or intersection.
+    let names = if is_string_domain(names.kind()) {
+        names
+    } else {
+        narrow_to_strings(names, ctx)
+    };
     // Every key is a string, so a constraint admitting all of them constrains nothing.
     if matches!(names.kind(), SchemaKind::MultiType(set) if *set == JsonTypeSet::from(JsonType::String))
     {
@@ -1105,15 +1118,77 @@ fn narrow_to_strings(names: Schema, ctx: &CanonicalizationContext) -> Schema {
     intersect(names, strings, ctx)
 }
 
-/// Whether the key constraint admits `key`.
-fn admits_key(names: &Schema, key: &str, ctx: &CanonicalizationContext) -> bool {
-    let value = Schema::new(SchemaKind::Const(CanonicalJson::from_value(
-        &Value::String(key.to_string()),
-    )));
-    !matches!(
-        intersect(names.clone(), value, ctx).kind(),
-        SchemaKind::False
-    )
+/// Whether every value the schema admits is a string, making a narrowing intersection an identity.
+fn is_string_domain(kind: &SchemaKind) -> bool {
+    match kind {
+        SchemaKind::Const(value) => value.as_value().is_string(),
+        SchemaKind::Enum(values) => values
+            .as_slice()
+            .iter()
+            .all(|value| value.as_value().is_string()),
+        SchemaKind::String(_) | SchemaKind::False => true,
+        SchemaKind::MultiType(set) => *set == JsonTypeSet::from(JsonType::String),
+        SchemaKind::AnyOf(branches) => branches
+            .as_slice()
+            .iter()
+            .all(|branch| is_string_domain(branch.kind())),
+        // A typed group exists only under Draft 4, which has no `propertyNames`; grouping it here
+        // keeps the answer conservative, and narrowing is the identity on any string-domain schema.
+        SchemaKind::True
+        | SchemaKind::TypedGroup { .. }
+        | SchemaKind::Integer(_)
+        | SchemaKind::Number(_)
+        | SchemaKind::Array(_)
+        | SchemaKind::Object(_)
+        | SchemaKind::Raw(_) => false,
+    }
+}
+
+/// Whether the key constraint admits `key`; `uncheckable` decides for a format no checker covers.
+fn admits_key(
+    names: &Schema,
+    key: &str,
+    ctx: &CanonicalizationContext,
+    uncheckable: UncheckableFormat,
+) -> bool {
+    match names.kind() {
+        SchemaKind::Const(value) => {
+            matches!(value.as_value(), Value::String(text) if text == key)
+        }
+        SchemaKind::Enum(values) => values
+            .as_slice()
+            .iter()
+            .any(|value| matches!(value.as_value(), Value::String(text) if text == key)),
+        SchemaKind::String(leaf) => {
+            let regexes: Vec<_> = leaf
+                .get()
+                .patterns
+                .iter()
+                .map(|pattern| {
+                    ctx.compile_regex(pattern)
+                        .expect("pattern validated during parsing")
+                })
+                .collect();
+            string_leaf_admits_text(leaf.get(), &regexes, key, ctx, uncheckable)
+        }
+        SchemaKind::AnyOf(branches) => branches
+            .as_slice()
+            .iter()
+            .any(|branch| admits_key(branch, key, ctx, uncheckable)),
+        // Normalization stores a key constraint only as a string value set, a string leaf, or a
+        // union of those: everything else was narrowed or folded away.
+        SchemaKind::MultiType(_)
+        | SchemaKind::TypedGroup { .. }
+        | SchemaKind::True
+        | SchemaKind::False
+        | SchemaKind::Integer(_)
+        | SchemaKind::Number(_)
+        | SchemaKind::Array(_)
+        | SchemaKind::Object(_)
+        | SchemaKind::Raw(_) => {
+            unreachable!("a key constraint survives normalization only in the string domain")
+        }
+    }
 }
 
 /// Keep the objects both leaves accept: the narrower window, and every key either demands.
@@ -1137,11 +1212,13 @@ fn intersect_object_leaves(
     }
 }
 
-/// Whether `member` is an object carrying every required key with its property count in the window.
+/// Whether `member` is an object carrying every required key, every key admitted by the key
+/// constraint, and its property count in the window.
 fn object_leaf_admits(
     leaf: &ObjectLeaf,
     member: &CanonicalJson,
     ctx: &CanonicalizationContext,
+    uncheckable: UncheckableFormat,
 ) -> bool {
     let Value::Object(map) = member.as_value() else {
         return false;
@@ -1153,9 +1230,10 @@ fn object_leaf_admits(
     {
         return false;
     }
-    leaf.property_names
-        .as_ref()
-        .is_none_or(|names| map.keys().all(|key| admits_key(names, key, ctx)))
+    leaf.property_names.as_ref().is_none_or(|names| {
+        map.keys()
+            .all(|key| admits_key(names, key, ctx, uncheckable))
+    })
 }
 
 /// The number leaf admitting exactly the values both admit.
@@ -1393,7 +1471,6 @@ fn formats_conflict(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> bool {
     window.is_empty()
 }
 
-/// Whether the string `member` falls within the leaf's length window and matches every pattern.
 /// The verdict for a format the draft cannot check. Callers differ: dropping a member narrows the
 /// schema, so intersection assumes the value fits; absorbing one narrows it too, so union assumes it
 /// does not.
@@ -1403,6 +1480,7 @@ pub(crate) enum UncheckableFormat {
     Rejects,
 }
 
+/// Whether the string `member` falls within the leaf's length window and matches every pattern.
 fn string_leaf_admits(
     leaf: &StringLeaf,
     regexes: &[Arc<CompiledMatcher>],
@@ -1413,6 +1491,17 @@ fn string_leaf_admits(
     let Value::String(text) = member.as_value() else {
         return false;
     };
+    string_leaf_admits_text(leaf, regexes, text, ctx, uncheckable)
+}
+
+/// Whether `text` falls within the leaf's length window and matches every pattern and format.
+fn string_leaf_admits_text(
+    leaf: &StringLeaf,
+    regexes: &[Arc<CompiledMatcher>],
+    text: &str,
+    ctx: &CanonicalizationContext,
+    uncheckable: UncheckableFormat,
+) -> bool {
     let length = BoundCardinality::from(bytecount::num_chars(text.as_bytes()) as u64);
     leaf.lengths.contains(&length)
         && regexes.iter().all(|regex| regex.is_match(text))
