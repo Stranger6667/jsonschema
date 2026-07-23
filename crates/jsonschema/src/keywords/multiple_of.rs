@@ -879,6 +879,12 @@ mod tests {
         #[test_case(r#"{"multipleOf": 0.5}"#, HUGE_POSITIVE, true ; "huge_positive_multiple_of_0_5")]
         #[test_case(r#"{"multipleOf": 0.5}"#, HUGE_NEGATIVE, true ; "huge_negative_multiple_of_0_5")]
         #[test_case(r#"{"multipleOf": 2}"#, HUGE_POSITIVE, false ; "huge_positive_not_multiple_of_2")]
+        // Integers past `u64` divide exactly, so a divisor `f64` holds must not decide them by
+        // rounding the instance first.
+        #[test_case(r#"{"multipleOf": 3}"#, "135107988821114880000000000000", true ; "past_u64_multiple_of_3")]
+        #[test_case(r#"{"multipleOf": 3}"#, "135107988821114880000000000001", false ; "past_u64_not_multiple_of_3")]
+        #[test_case(r#"{"multipleOf": 2}"#, "18446744073709551617", false ; "past_u64_odd_not_multiple_of_2")]
+        #[test_case(r#"{"multipleOf": 2}"#, "18446744073709551618", true ; "past_u64_even_multiple_of_2")]
         fn huge_decimal_validation(schema_json: &str, instance_value: &str, expected_valid: bool) {
             let schema = parse_json(schema_json);
             let instance = parse_json(instance_value);
