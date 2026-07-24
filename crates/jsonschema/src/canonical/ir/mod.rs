@@ -21,6 +21,7 @@ mod number_leaves;
 mod object_leaves;
 mod raw;
 mod string_leaves;
+mod verdict;
 
 pub(crate) use array_leaves::ArrayLeaves;
 pub(crate) use bound_cardinality::BoundCardinality;
@@ -33,6 +34,7 @@ pub(crate) use number_leaves::NumberLeaves;
 pub(crate) use object_leaves::ObjectLeaves;
 pub(crate) use raw::RawJson;
 pub(crate) use string_leaves::StringLeaves;
+pub(crate) use verdict::Verdict;
 
 /// A `Const`/`Enum` member normalized at construction (`1.0` becomes `1`) so `Value` equality is value equality.
 #[derive(Debug, Clone, PartialEq, Eq)]
