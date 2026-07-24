@@ -259,7 +259,7 @@
     ]
   },
   {
-    "description": "overlapping_branches_keep_the_document_raw",
+    "description": "overlapping_branches_take_the_exact_encoding",
     "schema": {
       "oneOf": [
         {
@@ -271,12 +271,19 @@
       ]
     },
     "expected": {
-      "oneOf": [
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
         {
-          "type": "string"
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "array",
+            "object"
+          ]
         },
         {
-          "minLength": 1
+          "const": ""
         }
       ]
     },
@@ -296,7 +303,7 @@
     ]
   },
   {
-    "description": "a_raw_branch_keeps_the_document_raw",
+    "description": "a_branch_overlapping_only_by_vacuity_is_never_negated",
     "schema": {
       "oneOf": [
         {
@@ -310,11 +317,18 @@
       ]
     },
     "expected": {
-      "oneOf": [
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
         {
-          "type": "string"
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "object"
+          ]
         },
         {
+          "type": "array",
           "contains": {
             "type": "number"
           }
@@ -341,7 +355,7 @@
     ]
   },
   {
-    "description": "one_overlapping_pair_among_disjoint_pairs_keeps_the_document_raw",
+    "description": "only_the_overlapping_pair_pays_its_complement",
     "schema": {
       "oneOf": [
         {
@@ -359,19 +373,10 @@
       ]
     },
     "expected": {
-      "oneOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "integer"
-        },
-        {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "null",
+        "integer"
       ]
     },
     "tests": [
@@ -430,7 +435,7 @@
     ]
   },
   {
-    "description": "duplicate_branches_overlap_and_stay_raw",
+    "description": "duplicate_branches_can_never_match_exactly_once",
     "schema": {
       "oneOf": [
         {
@@ -442,15 +447,10 @@
       ]
     },
     "expected": {
-      "oneOf": [
-        {
-          "const": 1
-        },
-        {
-          "const": 1
-        }
-      ]
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
     },
+    "satisfiable": false,
     "tests": [
       {
         "data": 1,
@@ -463,7 +463,7 @@
     ]
   },
   {
-    "description": "a_true_branch_overlaps_every_satisfiable_branch",
+    "description": "a_true_branch_admits_exactly_the_other_branch_complement",
     "schema": {
       "oneOf": [
         true,
@@ -473,11 +473,13 @@
       ]
     },
     "expected": {
-      "oneOf": [
-        true,
-        {
-          "type": "string"
-        }
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "null",
+        "boolean",
+        "number",
+        "array",
+        "object"
       ]
     },
     "tests": [
@@ -517,7 +519,7 @@
     ]
   },
   {
-    "description": "branches_sharing_one_value_stay_raw",
+    "description": "branches_sharing_one_value_exclude_it",
     "schema": {
       "oneOf": [
         {
@@ -535,19 +537,10 @@
       ]
     },
     "expected": {
-      "oneOf": [
-        {
-          "enum": [
-            1,
-            2
-          ]
-        },
-        {
-          "enum": [
-            2,
-            3
-          ]
-        }
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        1,
+        3
       ]
     },
     "tests": [
@@ -570,7 +563,7 @@
     ]
   },
   {
-    "description": "an_overlapping_oneof_inside_properties_keeps_the_document_raw",
+    "description": "an_overlapping_oneof_inside_properties_takes_the_exact_encoding",
     "schema": {
       "type": "object",
       "properties": {
@@ -587,15 +580,22 @@
       }
     },
     "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
         "a": {
-          "oneOf": [
+          "anyOf": [
             {
-              "type": "string"
+              "type": [
+                "null",
+                "boolean",
+                "number",
+                "array",
+                "object"
+              ]
             },
             {
-              "minLength": 1
+              "const": ""
             }
           ]
         }
@@ -670,7 +670,7 @@
     ]
   },
   {
-    "description": "an_unasserted_format_leaves_the_branches_overlapping",
+    "description": "an_unasserted_format_overlap_takes_the_exact_encoding",
     "validate_formats": false,
     "schema": {
       "oneOf": [
@@ -685,16 +685,9 @@
       ]
     },
     "expected": {
-      "oneOf": [
-        {
-          "type": "string",
-          "format": "uuid"
-        },
-        {
-          "type": "string",
-          "maxLength": 10
-        }
-      ]
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "minLength": 11
     },
     "tests": [
       {
@@ -745,6 +738,268 @@
       },
       {
         "data": 2,
+        "valid": true
+      },
+      {
+        "data": 1.5,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "two always-true branches can never match exactly once",
+    "schema": {
+      "oneOf": [
+        true,
+        true
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": null,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "an overlapping type-set branch narrows to the uncovered types",
+    "schema": {
+      "oneOf": [
+        {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number"
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 1.5,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": false
+      },
+      {
+        "data": null,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "overlapping windows keep exactly the non-shared rays",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "number",
+          "minimum": 0
+        },
+        {
+          "type": "number",
+          "maximum": 10
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "number",
+          "exclusiveMaximum": 0
+        },
+        {
+          "type": "number",
+          "exclusiveMinimum": 10
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 5,
+        "valid": false
+      },
+      {
+        "data": 11,
+        "valid": true
+      },
+      {
+        "data": -1,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "an overlapping type-set branch under draft 4",
+    "draft": "draft4",
+    "schema": {
+      "oneOf": [
+        {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "number"
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "an overlapping integer branch stays raw: its complement is inexpressible",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        }
+      ]
+    },
+    "expected": {
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 1.5,
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a wide all-overlapping oneOf can never match exactly once",
+    "schema": {
+      "oneOf": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a branch overlapping nothing needs no complement",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "string",
+          "maxLength": 5
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string",
+          "minLength": 6
+        },
+        {
+          "const": ""
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 3,
+        "valid": true
+      },
+      {
+        "data": "a",
+        "valid": false
+      },
+      {
+        "data": "",
+        "valid": true
+      },
+      {
+        "data": "abcdefg",
         "valid": true
       },
       {
