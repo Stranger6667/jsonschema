@@ -1460,5 +1460,45 @@
         "valid": false
       }
     ]
+  },
+  {
+    "description": "widening over an integer-carrying type set canonicalizes the grown set",
+    "schema": {
+      "anyOf": [
+        {
+          "type": ["integer", "string"]
+        },
+        {
+          "type": "number",
+          "maximum": 10
+        },
+        {
+          "type": "number",
+          "minimum": 5
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": ["number", "string"]
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 1.5,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": null,
+        "valid": false
+      }
+    ]
   }
 ]
