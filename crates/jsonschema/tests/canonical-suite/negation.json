@@ -987,5 +987,418 @@
         "valid": true
       }
     ]
+  },
+  {
+    "description": "not of a required key admits objects missing it",
+    "schema": {
+      "not": {
+        "type": "object",
+        "required": [
+          "a"
+        ]
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "a": false
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "b": 2
+        },
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of two required keys admits objects missing either",
+    "schema": {
+      "not": {
+        "type": "object",
+        "required": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "a": false
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "b": false
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1,
+          "b": 2
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a property schema demands the key with a violating value",
+    "schema": {
+      "not": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "type": "object",
+          "required": [
+            "a"
+          ],
+          "properties": {
+            "a": {
+              "type": [
+                "boolean",
+                "number",
+                "string",
+                "array",
+                "object"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": null
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a forbidden key demands its presence",
+    "schema": {
+      "not": {
+        "type": "object",
+        "properties": {
+          "a": false
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "type": "object",
+          "required": [
+            "a"
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {},
+        "valid": false
+      },
+      {
+        "data": null,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a required key beside a size floor complements each facet",
+    "schema": {
+      "not": {
+        "type": "object",
+        "required": [
+          "a"
+        ],
+        "minProperties": 2
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "a": false
+          }
+        },
+        {
+          "type": "object",
+          "maxProperties": 1
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1,
+          "b": 2
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "b": 1,
+          "c": 2
+        },
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a required key under draft 4 spells the empty complement as not",
+    "draft": "draft4",
+    "schema": {
+      "not": {
+        "type": "object",
+        "required": [
+          "a"
+        ]
+      }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "a": {
+              "not": {}
+            }
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      },
+      {
+        "data": 1,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a key constraint stays raw: the admitted keys have no complement",
+    "schema": {
+      "not": {
+        "type": "object",
+        "propertyNames": {
+          "maxLength": 2
+        }
+      }
+    },
+    "expected": {
+      "not": {
+        "type": "object",
+        "propertyNames": {
+          "maxLength": 2
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "abc": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "ab": 1
+        },
+        "valid": false
+      },
+      {
+        "data": 5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of an integer-valued property stays raw: the child complement needs a non-integer number",
+    "schema": {
+      "not": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "expected": {
+      "not": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "a": 1.5
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": false
+      }
+    ]
   }
 ]

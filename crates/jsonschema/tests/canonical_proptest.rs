@@ -673,9 +673,10 @@ fn equality_preserving_rewrites_converge(tc: TestCase) {
 #[hegel::test(test_cases = 5_000)]
 fn negation_complements_the_validator_verdict(tc: TestCase) {
     let draft = draw_draft(&tc);
+    let validate_formats = tc.draw(gs::booleans());
     let schema = draw_schema(&tc, 2);
     let negated = json!({ "not": schema });
-    let Some(emitted) = canonicalize(&negated, draft) else {
+    let Some(emitted) = canonicalize_with_formats(&negated, draft, validate_formats) else {
         return;
     };
     if emitted == negated {
@@ -689,7 +690,12 @@ fn negation_complements_the_validator_verdict(tc: TestCase) {
     } else {
         tc.draw(arbitrary_instance())
     };
-    let build = |value: &Value| jsonschema::options().with_draft(draft).build(value);
+    let build = |value: &Value| {
+        jsonschema::options()
+            .with_draft(draft)
+            .should_validate_formats(validate_formats)
+            .build(value)
+    };
     let (Ok(raw), Ok(canonical)) = (build(&schema), build(&emitted)) else {
         return;
     };

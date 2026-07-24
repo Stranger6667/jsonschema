@@ -428,7 +428,13 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         !spans_domain
     });
     if widened != types {
-        debug_assert!(widened.union(types) == widened, "type set lost a member");
+        // Widening canonicalizes as it grows: adding `number` beside an existing `integer` drops the
+        // narrower bit, so containment holds on the semantic covers, not the raw bitsets.
+        debug_assert!(
+            SchemaKind::semantic_cover(widened).union(SchemaKind::semantic_cover(types))
+                == SchemaKind::semantic_cover(widened),
+            "type set lost a member"
+        );
         return rerun(
             widened, members, groups, strings, integers, numbers, arrays, objects, ctx,
         );
@@ -488,7 +494,11 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     //       ]  =>  {"type": ["null", "boolean"]}
     if let SchemaKind::MultiType(saturated) = value_set.kind() {
         let widened = union_type_sets(types, *saturated);
-        debug_assert!(widened.union(types) == widened, "type set lost a member");
+        debug_assert!(
+            SchemaKind::semantic_cover(widened).union(SchemaKind::semantic_cover(types))
+                == SchemaKind::semantic_cover(widened),
+            "type set lost a member"
+        );
         debug_assert!(widened != types, "re-run without a wider type set");
         return rerun(
             widened,

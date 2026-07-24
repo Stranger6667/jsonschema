@@ -204,33 +204,61 @@ fn negate_array_leaf(leaf: &ArrayLeaf, ctx: &CanonicalizationContext) -> Option<
     Some(algebra::union(branches, ctx))
 }
 
+/// The leaf is a conjunction of facets over objects, so its complement is the union of the
+/// per-facet complements beside the non-object types: a size window flips into its outer rays, a
+/// required key into its absence, and a property schema into the key held with a violating value.
 /// ```text
-/// e.g.  {"not": {"type": "object", "minProperties": 2}}
-///       =>  anyOf: [<non-object types>, {"type": "object", "maxProperties": 1}]
+/// e.g.  {"not": {"type": "object", "required": ["a"], "minProperties": 2}}
+///       =>  anyOf: [<non-object types>,
+///                   {"type": "object", "properties": {"a": false}},
+///                   {"type": "object", "maxProperties": 1}]
 /// ```
 fn negate_object_leaf(leaf: &ObjectLeaf, ctx: &CanonicalizationContext) -> Option<Schema> {
-    if !leaf.required.is_empty()
-        || leaf.property_names.is_some()
-        || !leaf.properties.is_empty()
-        || !leaf.pattern_properties.is_empty()
-    {
+    if leaf.property_names.is_some() || !leaf.pattern_properties.is_empty() {
         return None;
     }
-    let windows = length_windows(&leaf.sizes)?;
     let mut branches = vec![type_set_schema(JsonTypeSet::all().remove(JsonType::Object))];
-    branches.extend(windows.into_iter().map(|sizes| {
-        algebra::object_leaf(
-            ObjectLeaf {
-                sizes,
-                required: Vec::new(),
-                property_names: None,
-                properties: BTreeMap::new(),
-                pattern_properties: BTreeMap::new(),
-            },
+    for sizes in length_windows(&leaf.sizes)? {
+        branches.push(object_branch(sizes, Vec::new(), BTreeMap::new(), ctx));
+    }
+    for key in &leaf.required {
+        let absent = BTreeMap::from([(key.clone(), Schema::new(SchemaKind::False))]);
+        branches.push(object_branch(
+            LengthBounds::default(),
+            Vec::new(),
+            absent,
             ctx,
-        )
-    }));
+        ));
+    }
+    for (key, schema) in &leaf.properties {
+        let violating = negate(schema, ctx)?;
+        let held = BTreeMap::from([(key.clone(), violating)]);
+        branches.push(object_branch(
+            LengthBounds::default(),
+            vec![key.clone()],
+            held,
+            ctx,
+        ));
+    }
     Some(algebra::union(branches, ctx))
+}
+
+fn object_branch(
+    sizes: LengthBounds,
+    required: Vec<std::sync::Arc<str>>,
+    properties: BTreeMap<std::sync::Arc<str>, Schema>,
+    ctx: &CanonicalizationContext,
+) -> Schema {
+    algebra::object_leaf(
+        ObjectLeaf {
+            sizes,
+            required,
+            property_names: None,
+            properties,
+            pattern_properties: BTreeMap::new(),
+        },
+        ctx,
+    )
 }
 
 /// Complement of a type set over the value space. `None` when the set admits `integer` but not
