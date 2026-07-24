@@ -390,9 +390,16 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     debug_assert!(arrays.is_empty() || !cover.contains(JsonType::Array));
     debug_assert!(objects.is_empty() || !cover.contains(JsonType::Object));
     // Folding object leaves can produce a leaf spanning the whole domain even though its inputs
-    // did not, so the fold runs before the widening below picks such leaves up.
+    // did not, so the folds run before the widening below picks such leaves up. Merging and
+    // narrowing feed each other; each pass shrinks the leaf count or the requirement count, which
+    // bounds the loop.
     let mut objects: Vec<ObjectLeaf> = objects.into_iter().collect();
-    merge_sole_differing_keys(&mut objects, ctx);
+    loop {
+        merge_sole_differing_keys(&mut objects, ctx);
+        if !drop_required_covered_by_sibling(&mut objects, ctx) {
+            break;
+        }
+    }
     let mut widened = types;
     integers.retain(|leaf| {
         let spans_domain = leaf.bounds.is_unbounded() && leaf.multiple_of.is_empty();
@@ -828,6 +835,57 @@ fn sole_differing_key(left: &ObjectLeaf, right: &ObjectLeaf) -> Option<Arc<str>>
         [_] => differing.pop(),
         _ => None,
     }
+}
+
+/// Drop a required key when the objects its absence would admit - those meeting the rest of the
+/// leaf while missing the key - are covered by a sibling branch. That gained set is the leaf with
+/// the key un-required and its entry pinned to `False`; a sibling covers it when intersecting
+/// changes nothing. One drop per call, so the caller re-merges before the next.
+/// ```text
+/// e.g.  anyOf [
+///         {"type": "object", "properties": {"a": {"type": "string"}}},
+///         {"type": "object", "required": ["a", "b"]}
+///       ]  =>  anyOf [
+///         {"type": "object", "properties": {"a": {"type": "string"}}},
+///         {"type": "object", "required": ["b"]}
+///       ]
+/// e.g.  anyOf [
+///         {"type": "object", "required": ["a", "b"]},
+///         {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["c"]}
+///       ]  =>  unchanged: an object missing `a` and `c` while holding `b` fits neither branch
+/// ```
+fn drop_required_covered_by_sibling(
+    leaves: &mut [ObjectLeaf],
+    ctx: &CanonicalizationContext,
+) -> bool {
+    for index in 0..leaves.len() {
+        for key_index in 0..leaves[index].required.len() {
+            let leaf = &leaves[index];
+            let key = Arc::clone(&leaf.required[key_index]);
+            let mut gained = leaf.clone();
+            gained.required.remove(key_index);
+            gained
+                .properties
+                .insert(Arc::clone(&key), Schema::new(SchemaKind::False));
+            let gained = object_leaf(gained, ctx);
+            // An empty gained set means the requirement was already implied by the other facets.
+            let covered = matches!(gained.kind(), SchemaKind::False)
+                || (0..leaves.len())
+                    .filter(|&sibling| sibling != index)
+                    .any(|sibling| {
+                        intersect(
+                            gained.clone(),
+                            object_leaf(leaves[sibling].clone(), ctx),
+                            ctx,
+                        ) == gained
+                    });
+            if covered {
+                leaves[index].required.remove(key_index);
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Intersect `other` with each union branch; the last branch moves `other` instead of cloning it.
