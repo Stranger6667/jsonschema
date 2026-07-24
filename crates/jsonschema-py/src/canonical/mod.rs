@@ -240,6 +240,10 @@ impl PyCanonicalSchema {
                             Ok((pattern, Py::new(py, PyCanonicalSchema { inner: schema })?))
                         })
                         .collect::<PyResult<_>>()?,
+                    additional_properties: view
+                        .additional_properties
+                        .map(|shield| Py::new(py, PyCanonicalSchema { inner: shield }))
+                        .transpose()?,
                 },
             )?
             .into_any(),
@@ -443,12 +447,15 @@ pub(crate) struct ObjectView {
     properties: std::collections::BTreeMap<String, Py<PyCanonicalSchema>>,
     #[pyo3(get)]
     pattern_properties: std::collections::BTreeMap<String, Py<PyCanonicalSchema>>,
+    #[pyo3(get)]
+    additional_properties: Option<Py<PyCanonicalSchema>>,
 }
 
 #[pymethods]
 impl ObjectView {
     #[classattr]
     fn __match_args__() -> (
+        &'static str,
         &'static str,
         &'static str,
         &'static str,
@@ -463,6 +470,7 @@ impl ObjectView {
             "property_names",
             "properties",
             "pattern_properties",
+            "additional_properties",
         )
     }
 }

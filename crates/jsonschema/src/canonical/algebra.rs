@@ -717,6 +717,7 @@ fn lift_degenerate_member(
                     minimum: None,
                     maximum: Some(BoundCardinality::from(0)),
                 },
+                additional: None,
                 required: Vec::new(),
                 property_names: None,
                 properties: BTreeMap::new(),
@@ -831,6 +832,9 @@ fn merge_sole_differing_keys(leaves: &mut Vec<ObjectLeaf>, ctx: &Canonicalizatio
         folded = false;
         'search: for first in 0..leaves.len() {
             for second in first + 1..leaves.len() {
+                if leaves[first].additional.is_some() || leaves[second].additional.is_some() {
+                    continue;
+                }
                 if let Some(merged) = united_sole_key(&leaves[first], &leaves[second], ctx) {
                     leaves[first] = merged;
                     leaves.remove(second);
@@ -891,6 +895,7 @@ fn united_sole_key(
         property_names: left.property_names.clone(),
         properties,
         pattern_properties: left.pattern_properties.clone(),
+        additional: None,
     })
 }
 
@@ -958,6 +963,7 @@ fn collapse_object_leaves_covering_domain(
         property_names: None,
         properties: BTreeMap::new(),
         pattern_properties: BTreeMap::new(),
+        additional: None,
     };
     if !split_piece_is_covered(piece.clone(), leaves, &keys, ctx) {
         return false;
@@ -1148,6 +1154,9 @@ fn drop_required_covered_by_sibling(
     ctx: &CanonicalizationContext,
 ) -> bool {
     for index in 0..leaves.len() {
+        if leaves[index].additional.is_some() {
+            continue;
+        }
         for key_index in 0..leaves[index].required.len() {
             let implied_floor = BoundCardinality::from(leaves[index].required.len() as u64);
             for keep_floor in [false, true] {
@@ -1307,9 +1316,15 @@ fn widen_entry_covered_by_sibling(
     ctx: &CanonicalizationContext,
 ) -> bool {
     for index in 0..leaves.len() {
+        if leaves[index].additional.is_some() {
+            continue;
+        }
         let keys: Vec<Arc<str>> = leaves[index].properties.keys().cloned().collect();
         for key in keys {
             for sibling in (0..leaves.len()).filter(|&sibling| sibling != index) {
+                if leaves[sibling].additional.is_some() {
+                    continue;
+                }
                 let entry = &leaves[index].properties[&key];
                 let sibling_entry = leaves[sibling].properties.get(&key);
                 // `None` spells the sibling admitting anything at the key, lifting the union to `True`.
@@ -2090,7 +2105,9 @@ fn restrict_array_member(
 
 /// Pack an object facet set into a node, collapsing the leaves that say something simpler.
 pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -> Schema {
+    normalize_additional(&mut leaf, ctx);
     normalize_property_names(&mut leaf, ctx);
+    expand_additional_over_admitted_keys(&mut leaf);
     // A leaf no facet survives on admits every object, which the bare type set already spells;
     // keeping the leaf shape would give one value set two IR forms.
     if leaf.spans_domain() {
@@ -2229,14 +2246,65 @@ fn normalize_property_names(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext
     leaf.property_names = Some(names);
 }
 
+/// Fold the degenerate shields away: one admitting everything says nothing, and one admitting
+/// nothing closes the map, which the key constraint spells.
+fn normalize_additional(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext) {
+    let Some(shield) = leaf.additional.take() else {
+        return;
+    };
+    if matches!(shield.kind(), SchemaKind::True) {
+        return;
+    }
+    if matches!(shield.kind(), SchemaKind::False) {
+        let allowed = union(
+            leaf.properties
+                .keys()
+                .map(|key| {
+                    Schema::new(SchemaKind::Const(CanonicalJson::from_value(
+                        &Value::String(key.to_string()),
+                    )))
+                })
+                .collect(),
+            ctx,
+        );
+        leaf.property_names = Some(match leaf.property_names.take() {
+            Some(names) => intersect(names, allowed, ctx),
+            None => allowed,
+        });
+        return;
+    }
+    leaf.additional = Some(shield);
+}
+
+/// A finite key constraint leaves no room for unnamed keys beyond its members, so the shield
+/// becomes their entries and goes; the two spellings would otherwise name one value set twice.
+/// e.g.  {"type": "object", "propertyNames": {"const": "a"}, "additionalProperties": {"type": "integer"}}
+///       =>  {"type": "object", "propertyNames": {"const": "a"}, "properties": {"a": {"type": "integer"}}}
+fn expand_additional_over_admitted_keys(leaf: &mut ObjectLeaf) {
+    if leaf.additional.is_none() {
+        return;
+    }
+    let Some(keys) = admitted_keys(leaf) else {
+        return;
+    };
+    let Some(shield) = leaf.additional.take() else {
+        return;
+    };
+    for key in keys {
+        leaf.properties.entry(key).or_insert_with(|| shield.clone());
+    }
+}
+
 /// Drop the property schemas that say nothing: one accepting every value, and one whose key the
 /// key constraint rejects, since that key can never be present to be checked.
 fn normalize_properties(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext) {
     let names = leaf.property_names.clone();
+    let shielded = leaf.additional.is_some();
     leaf.properties.retain(|key, schema| {
         // Dropping the entry loses what it says about the key, so only a key the constraint
-        // definitely rejects lets the entry go.
-        !matches!(schema.kind(), SchemaKind::True)
+        // definitely rejects lets the entry go. Under a shield an unconstrained entry still
+        // exempts its key, so it stays.
+        (shielded || !matches!(schema.kind(), SchemaKind::True))
             && names
                 .as_ref()
                 .is_none_or(|names| !matches!(admits_key(names, key, ctx), Verdict::Rejects))
@@ -2314,11 +2382,11 @@ fn admitted_keys(leaf: &ObjectLeaf) -> Option<Vec<Arc<str>>> {
 
 /// What the leaf demands of `key`: its property schema met with every pattern schema matching it.
 fn key_schema(leaf: &ObjectLeaf, key: &str, ctx: &CanonicalizationContext) -> Schema {
-    let mut schema = leaf
-        .properties
-        .get(key)
-        .cloned()
-        .unwrap_or_else(|| Schema::new(SchemaKind::True));
+    let mut schema = leaf.properties.get(key).cloned().unwrap_or_else(|| {
+        leaf.additional
+            .clone()
+            .unwrap_or_else(|| Schema::new(SchemaKind::True))
+    });
     for (pattern, pattern_schema) in &leaf.pattern_properties {
         if matches_key(pattern, key, ctx) {
             schema = intersect(schema, pattern_schema.clone(), ctx);
@@ -2484,13 +2552,38 @@ fn intersect_object_leaves(
         (Some(left), Some(right)) => Some(intersect(left, right, ctx)),
         (names, None) | (None, names) => names,
     };
+    // A key named on one side only still answers to the other side's `additionalProperties`
+    // schema, so the merged entry meets it; a key named on both is shielded on both.
+    let first_shield = first.additional;
+    let second_shield = second.additional;
     let mut properties = first.properties;
+    let first_named: Vec<Arc<str>> = properties.keys().cloned().collect();
+    let mut second_named: Vec<Arc<str>> = Vec::with_capacity(second.properties.len());
     for (key, schema) in second.properties {
-        match properties.remove(&key) {
-            Some(existing) => properties.insert(key, intersect(existing, schema, ctx)),
-            None => properties.insert(key, schema),
+        second_named.push(Arc::clone(&key));
+        let entry = match (properties.remove(&key), &first_shield) {
+            (Some(existing), _) => intersect(existing, schema, ctx),
+            (None, Some(shield)) => intersect(shield.clone(), schema, ctx),
+            (None, None) => schema,
         };
+        properties.insert(key, entry);
     }
+    if let Some(shield) = &second_shield {
+        for key in &first_named {
+            if !second_named.contains(key) {
+                let entry = properties
+                    .remove(key)
+                    .map(|entry| intersect(entry, shield.clone(), ctx));
+                if let Some(entry) = entry {
+                    properties.insert(Arc::clone(key), entry);
+                }
+            }
+        }
+    }
+    let additional = match (first_shield, second_shield) {
+        (Some(left), Some(right)) => Some(intersect(left, right, ctx)),
+        (shield, None) | (None, shield) => shield,
+    };
     let mut pattern_properties = first.pattern_properties;
     for (pattern, schema) in second.pattern_properties {
         match pattern_properties.remove(&pattern) {
@@ -2504,6 +2597,7 @@ fn intersect_object_leaves(
         property_names,
         properties,
         pattern_properties,
+        additional,
     }
 }
 
@@ -2570,6 +2664,7 @@ fn restrict_object_member(
             property_names: None,
             properties: restricted,
             pattern_properties: BTreeMap::new(),
+            additional: None,
         },
         ctx,
     ))
@@ -2600,9 +2695,10 @@ fn object_leaf_admits(
         return Verdict::Rejects;
     }
     let values = Verdict::all(map.iter().map(|(key, value)| {
-        let named = match leaf.properties.get(key.as_str()) {
-            Some(schema) => admits_value(schema, value, ctx),
-            None => Verdict::Admits,
+        let named = match (leaf.properties.get(key.as_str()), &leaf.additional) {
+            (Some(schema), _) => admits_value(schema, value, ctx),
+            (None, Some(shield)) => admits_value(shield, value, ctx),
+            (None, None) => Verdict::Admits,
         };
         if named == Verdict::Rejects {
             return Verdict::Rejects;

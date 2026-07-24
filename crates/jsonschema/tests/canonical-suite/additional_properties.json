@@ -259,7 +259,7 @@
     ]
   },
   {
-    "description": "ir: a non-false additionalProperties schema keeps the document raw",
+    "description": "ir: an additionalProperties schema constrains every unnamed key",
     "schema": {
       "type": "object",
       "additionalProperties": {
@@ -267,6 +267,7 @@
       }
     },
     "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "additionalProperties": {
         "type": "string"
@@ -292,7 +293,7 @@
     ]
   },
   {
-    "description": "ir: an additionalProperties schema meeting named keys keeps the document raw",
+    "description": "ir: an additionalProperties schema crosses onto the other branch's named keys",
     "schema": {
       "allOf": [
         {
@@ -310,18 +311,13 @@
       ]
     },
     "expected": {
-      "allOf": [
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
         {
-          "additionalProperties": {
-            "type": "string"
-          }
-        },
-        {
-          "properties": {
-            "b": {
-              "type": "integer"
-            }
-          }
+          "type": "object",
+          "properties": {"b": false},
+          "additionalProperties": {"type": "string"}
         }
       ]
     },
@@ -351,7 +347,7 @@
     ]
   },
   {
-    "description": "ir: a property entry shielding a key from additionalProperties keeps the document raw",
+    "description": "ir: a property entry shielding a key from additionalProperties keeps its branch apart",
     "schema": {
       "anyOf": [
         {
@@ -372,6 +368,7 @@
       ]
     },
     "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "anyOf": [
         {
           "type": "object",
@@ -464,7 +461,7 @@
     ]
   },
   {
-    "description": "ir: an unmodeled additionalProperties child keeps the document raw",
+    "description": "ir: an additionalProperties complement child canonicalizes in place",
     "schema": {
       "type": "object",
       "additionalProperties": {
@@ -474,11 +471,10 @@
       }
     },
     "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "additionalProperties": {
-        "not": {
-          "type": "string"
-        }
+        "type": ["null", "boolean", "number", "array", "object"]
       }
     },
     "tests": [
@@ -613,6 +609,124 @@
     "tests": [
       {"data": {}, "valid": true},
       {"data": {"a": 1}, "valid": false},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a bare additionalProperties schema constrains only objects",
+    "schema": {"additionalProperties": {"type": "integer"}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "additionalProperties": {"type": "integer"}}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: two additionalProperties schemas meet pointwise",
+    "schemas": [
+      {"allOf": [{"type": "object", "additionalProperties": {"type": "string"}}, {"type": "object", "additionalProperties": {"type": ["string", "number"]}}]},
+      {"type": "object", "additionalProperties": {"type": "string"}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    },
+    "tests": [
+      {"data": {"a": "x"}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a value set restricts against an additionalProperties schema",
+    "schema": {"enum": [{"a": 1}, {"a": "x"}], "additionalProperties": {"type": "string"}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": {"a": "x"}
+    },
+    "tests": [
+      {"data": {"a": "x"}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: additionalProperties stacks with propertyNames",
+    "schema": {"type": "object", "propertyNames": {"maxLength": 2}, "additionalProperties": {"type": "string"}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"type": "string", "maxLength": 2},
+      "additionalProperties": {"type": "string"}
+    },
+    "tests": [
+      {"data": {"ab": "x"}, "valid": true},
+      {"data": {"abc": "x"}, "valid": false},
+      {"data": {"ab": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a required key whose crossed entry admits nothing is unsatisfiable",
+    "schema": {
+      "allOf": [
+        {"type": "object", "required": ["a"], "additionalProperties": {"type": "string"}},
+        {"type": "object", "properties": {"a": {"type": "integer"}}}
+      ]
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": "x"}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an additionalProperties schema under draft 4 keeps the integer guard",
+    "schema": {"type": "object", "additionalProperties": {"type": "integer"}},
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "object",
+      "additionalProperties": {"type": "integer"}
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 1.0}, "valid": false},
+      {"data": {"a": "x"}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an additionalProperties schema beside patternProperties keeps the document raw",
+    "schema": {"patternProperties": {"^x": {"type": "integer"}}, "additionalProperties": {"type": "string"}},
+    "expected": {"patternProperties": {"^x": {"type": "integer"}}, "additionalProperties": {"type": "string"}},
+    "tests": [
+      {"data": {"xa": 1}, "valid": true},
+      {"data": {"xa": "s"}, "valid": false},
+      {"data": {"b": "s"}, "valid": true},
+      {"data": {"b": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an open sibling absorbs an additionalProperties branch",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "additionalProperties": {"type": "string"}},
+        {"type": "object"}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {}, "valid": true},
       {"data": 5, "valid": false}
     ]
   }

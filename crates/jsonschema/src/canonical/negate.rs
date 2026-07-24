@@ -220,7 +220,10 @@ fn negate_array_leaf(leaf: &ArrayLeaf, ctx: &CanonicalizationContext) -> Option<
 ///                   {"type": "object", "maxProperties": 1}]
 /// ```
 fn negate_object_leaf(leaf: &ObjectLeaf, ctx: &CanonicalizationContext) -> Option<Schema> {
-    if leaf.property_names.is_some() || !leaf.pattern_properties.is_empty() {
+    if leaf.property_names.is_some()
+        || !leaf.pattern_properties.is_empty()
+        || leaf.additional.is_some()
+    {
         return None;
     }
     let mut branches = vec![type_set_schema(JsonTypeSet::all().remove(JsonType::Object))];
@@ -262,6 +265,7 @@ fn object_branch(
             property_names: None,
             properties,
             pattern_properties: BTreeMap::new(),
+            additional: None,
         },
         ctx,
     )

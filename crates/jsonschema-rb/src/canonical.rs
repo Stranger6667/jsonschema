@@ -169,6 +169,7 @@ impl RbCanonicalSchema {
                     property_names: view.property_names,
                     properties: view.properties,
                     pattern_properties: view.pattern_properties,
+                    additional_properties: view.additional_properties,
                 })
                 .as_value(),
             CanonicalView::AnyOf(branches) => ruby.obj_wrap(AnyOfView { branches }).as_value(),
@@ -657,6 +658,7 @@ pub struct ObjectView {
     property_names: Option<CanonicalSchema>,
     properties: std::collections::BTreeMap<String, CanonicalSchema>,
     pattern_properties: std::collections::BTreeMap<String, CanonicalSchema>,
+    additional_properties: Option<CanonicalSchema>,
 }
 
 impl DataTypeFunctions for ObjectView {}
@@ -711,6 +713,17 @@ impl ObjectView {
         Ok(hash)
     }
 
+    fn additional_properties(ruby: &Ruby, rb_self: &Self) -> Value {
+        match &rb_self.additional_properties {
+            Some(shield) => ruby
+                .obj_wrap(RbCanonicalSchema {
+                    inner: shield.clone(),
+                })
+                .as_value(),
+            None => ruby.qnil().as_value(),
+        }
+    }
+
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
             "#<JSONSchema::Canonical::ObjectView min_properties={} max_properties={} required={} property_names={} properties={} pattern_properties={}>",
@@ -742,6 +755,10 @@ impl ObjectView {
         hash.aset(
             ruby.sym_new("pattern_properties"),
             Self::pattern_properties(ruby, rb_self)?,
+        )?;
+        hash.aset(
+            ruby.sym_new("additional_properties"),
+            Self::additional_properties(ruby, rb_self),
         )?;
         Ok(hash)
     }
@@ -994,6 +1011,10 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     object_view.define_method(
         "pattern_properties",
         method!(ObjectView::pattern_properties, 0),
+    )?;
+    object_view.define_method(
+        "additional_properties",
+        method!(ObjectView::additional_properties, 0),
     )?;
     object_view.define_method("inspect", method!(ObjectView::inspect, 0))?;
     object_view.define_method("deconstruct_keys", method!(ObjectView::deconstruct_keys, 1))?;

@@ -116,6 +116,8 @@ pub struct ObjectView {
     pub properties: BTreeMap<String, CanonicalSchema>,
     /// The schema every key matching the pattern satisfies when the object carries it.
     pub pattern_properties: BTreeMap<String, CanonicalSchema>,
+    /// The schema every key `properties` does not name satisfies.
+    pub additional_properties: Option<CanonicalSchema>,
 }
 
 /// Payload of [`CanonicalView::Integer`]: the interval bounds and divisor on an integer value.
@@ -176,6 +178,10 @@ impl CanonicalSchema {
                     .iter()
                     .map(|(pattern, schema)| (pattern.to_string(), self.wrap_child(schema)))
                     .collect(),
+                leaf.get()
+                    .additional
+                    .as_ref()
+                    .map(|shield| self.wrap_child(shield)),
             )),
             SchemaKind::Const(value) => CanonicalView::Const(value.to_value()),
             SchemaKind::Enum(values) => CanonicalView::Enum(
@@ -256,6 +262,7 @@ fn object_view(
     property_names: Option<CanonicalSchema>,
     properties: BTreeMap<String, CanonicalSchema>,
     pattern_properties: BTreeMap<String, CanonicalSchema>,
+    additional_properties: Option<CanonicalSchema>,
 ) -> ObjectView {
     ObjectView {
         min_properties: leaf.sizes.minimum.as_ref().map(BoundCardinality::to_number),
@@ -264,6 +271,7 @@ fn object_view(
         property_names,
         properties,
         pattern_properties,
+        additional_properties,
     }
 }
 

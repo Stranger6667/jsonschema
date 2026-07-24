@@ -147,7 +147,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(69)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(71)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -315,6 +315,14 @@ fn draw_leaf(tc: &TestCase) -> Value {
             "required": ["a"],
             "additionalProperties": false
         }),
+        // Shields: unnamed keys answer to the schema, so these collide with every object leaf
+        // above; the named entry exercises the crossing in intersect.
+        70 => json!({ "type": "object", "additionalProperties": { "type": draw_type(tc) } }),
+        71 => json!({
+            "type": "object",
+            "properties": { "a": { "type": draw_type(tc) } },
+            "additionalProperties": { "type": draw_type(tc) }
+        }),
         _ => json!({ "type": ["string", "integer"] }),
     }
 }
@@ -346,7 +354,7 @@ fn draw_schema(tc: &TestCase, depth: u32) -> Value {
 // Meta-valid keywords the canonicaliser does not model; a document carrying one stays `Raw`.
 fn draw_unmodeled_leaf(tc: &TestCase) -> Value {
     match tc.draw(gs::integers::<u8>().min_value(0).max_value(4)) {
-        0 => json!({ "additionalProperties": { "type": "integer" } }),
+        0 => json!({ "unevaluatedProperties": { "type": "integer" } }),
         1 => json!({ "not": { "pattern": "^a" } }),
         2 => json!({ "$defs": { "a": { "type": "null" } }, "$ref": "#/$defs/a" }),
         3 => json!({ "format": "email" }),
