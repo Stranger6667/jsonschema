@@ -951,48 +951,41 @@ fn drop_object_branch_covered_by_sibling(
             return true;
         }
     }
-    // A branch can also sit inside two siblings together when one of them bounds only the size:
-    // the parts of the branch outside that window - the rays below and above it - must then fit
-    // other siblings on their own.
+    // A sibling's size window also splits a branch: the parts inside the window and on the rays
+    // outside it partition the branch, and each part must fit some sibling on its own.
     // e.g.  anyOf [
-    //         {"type": "object", "properties": {"a": {"type": "string"}}},
-    //         {"type": "object", "required": ["b"]},
-    //         {"type": "object", "minProperties": 2}
-    //       ]  =>  anyOf [
-    //         {"type": "object", "properties": {"a": {"type": "string"}}},
-    //         {"type": "object", "minProperties": 2}
-    //       ]
+    //         {"type": "object", "required": ["a"], "properties": {"a": {"type": "string"}}},
+    //         {"type": "object", "maxProperties": 1, "required": ["a"]},
+    //         {"type": "object", "minProperties": 2, "properties": {"a": {"type": "string"}}}
+    //       ]  =>  the first branch dissolves: at one key the entry says nothing beside the
+    //              filled slots, above that the third branch holds it
     for index in 0..leaves.len() {
         for divider in (0..leaves.len()).filter(|&divider| divider != index) {
-            let bounds_only_size = leaves[divider].required.is_empty()
-                && leaves[divider].property_names.is_none()
-                && leaves[divider].properties.is_empty()
-                && leaves[divider].pattern_properties.is_empty();
-            if !bounds_only_size {
-                continue;
-            }
-            let Some(rays) = negate::length_windows(&leaves[divider].sizes) else {
+            let Some(mut windows) = negate::length_windows(&leaves[divider].sizes) else {
                 continue;
             };
-            let all_covered = !rays.is_empty()
-                && rays.iter().all(|ray| {
-                    let mut piece = leaves[index].clone();
-                    piece.sizes = LengthBounds {
-                        minimum: tighter(piece.sizes.minimum.take(), ray.minimum.clone(), Ord::max),
-                        maximum: tighter(piece.sizes.maximum.take(), ray.maximum.clone(), Ord::min),
-                    };
-                    let piece = object_leaf(piece, ctx);
-                    matches!(piece.kind(), SchemaKind::False)
-                        || (0..leaves.len())
-                            .filter(|&sibling| sibling != index && sibling != divider)
-                            .any(|sibling| {
-                                intersect(
-                                    piece.clone(),
-                                    object_leaf(leaves[sibling].clone(), ctx),
-                                    ctx,
-                                ) == piece
-                            })
-                });
+            if windows.is_empty() {
+                continue;
+            }
+            windows.push(leaves[divider].sizes.clone());
+            let all_covered = windows.iter().all(|window| {
+                let mut piece = leaves[index].clone();
+                piece.sizes = LengthBounds {
+                    minimum: tighter(piece.sizes.minimum.take(), window.minimum.clone(), Ord::max),
+                    maximum: tighter(piece.sizes.maximum.take(), window.maximum.clone(), Ord::min),
+                };
+                let piece = object_leaf(piece, ctx);
+                matches!(piece.kind(), SchemaKind::False)
+                    || (0..leaves.len())
+                        .filter(|&sibling| sibling != index)
+                        .any(|sibling| {
+                            intersect(
+                                piece.clone(),
+                                object_leaf(leaves[sibling].clone(), ctx),
+                                ctx,
+                            ) == piece
+                        })
+            });
             if all_covered {
                 leaves.remove(index);
                 return true;
@@ -1178,11 +1171,44 @@ fn drop_size_bound_covered_by_sibling(
             .and_then(|maximum| maximum.clone().checked_increment())
         {
             let mut slice = leaves[index].clone();
-            slice.sizes.minimum = Some(above_floor);
+            slice.sizes.minimum = Some(above_floor.clone());
             slice.sizes.maximum = None;
             if slice_covered(slice, leaves) {
                 leaves[index].sizes.maximum = None;
                 return true;
+            }
+            // A ceiling filled by the required keys makes every other entry vacuous on this leaf,
+            // so the leaf may adopt a sibling's entries for free and shed the ceiling when that
+            // sibling holds the slice above it.
+            let slots_filled =
+                leaves[index].sizes.maximum.as_ref() == Some(&leaves[index].required_count());
+            if !slots_filled {
+                continue;
+            }
+            for sibling in (0..leaves.len()).filter(|&sibling| sibling != index) {
+                let mut enriched = leaves[index].clone();
+                enriched.sizes.maximum = None;
+                for (key, entry) in &leaves[sibling].properties {
+                    if enriched.required.binary_search(key).is_err() {
+                        enriched
+                            .properties
+                            .entry(Arc::clone(key))
+                            .or_insert_with(|| entry.clone());
+                    }
+                }
+                let mut slice = enriched.clone();
+                slice.sizes.minimum = Some(above_floor.clone());
+                let slice = object_leaf(slice, ctx);
+                let held = matches!(slice.kind(), SchemaKind::False)
+                    || intersect(
+                        slice.clone(),
+                        object_leaf(leaves[sibling].clone(), ctx),
+                        ctx,
+                    ) == slice;
+                if held {
+                    leaves[index] = enriched;
+                    return true;
+                }
             }
         }
     }
