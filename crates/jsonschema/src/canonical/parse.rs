@@ -283,19 +283,15 @@ fn parse_schema(
                 }
             }
             // A schema admitting everything says nothing about a key, so `true`/`{}` leaves no
-            // trace. One admitting nothing forbids the unmatched keys, which a key constraint can
-            // carry on drafts that have one. Anything in between is a demand conditional on the
-            // leaf's own coverage, which the algebra cannot intersect exactly: the document stays
-            // raw.
+            // trace. One admitting nothing forbids the unmatched keys, which the key constraint
+            // carries. Anything in between is a demand conditional on the leaf's own coverage,
+            // which the algebra cannot intersect exactly: the document stays raw.
             ("additionalProperties", value @ (Value::Object(_) | Value::Bool(_)))
                 if ctx.draft().is_known_keyword("additionalProperties") =>
             {
                 match parse_schema(value, ctx, false)? {
                     Some(schema) if matches!(schema.kind(), SchemaKind::True) => {}
-                    Some(schema)
-                        if matches!(schema.kind(), SchemaKind::False)
-                            && ctx.draft().is_known_keyword("propertyNames") =>
-                    {
+                    Some(schema) if matches!(schema.kind(), SchemaKind::False) => {
                         forbid_unmatched_keys = true;
                     }
                     Some(_) | None => return Ok(None),
@@ -563,6 +559,15 @@ fn parse_schema(
         .is_some_and(BoundCardinality::is_zero)
     {
         min_properties = None;
+    }
+    // Draft 4 has no `propertyNames` to emit a pattern-shaped key constraint, so only a
+    // finite-key fold - which emit re-spells as `additionalProperties: false` - is expressible
+    // there; a pattern in the coverage keeps the document raw.
+    if forbid_unmatched_keys
+        && matches!(ctx.draft(), Draft::Draft4)
+        && !pattern_properties.is_empty()
+    {
+        return Ok(None);
     }
     // `additionalProperties: false` forbids every key the property map does not name and no
     // pattern matches, which a key constraint spells: the named keys and the patterns' keys,

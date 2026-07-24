@@ -215,10 +215,31 @@ fn insert_contains(map: &mut Map<String, Value>, facet: &ContainsFacet, draft: D
 fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
     let mut map = Map::new();
     map.insert("type".into(), Value::String("object".into()));
+    // Draft 4 has no `propertyNames`; a finite key constraint - the only shape reachable there -
+    // is spelled as the closed property map it was parsed from, with an entry restored for each
+    // allowed key normalization dropped as unconstrained.
+    let closed_keys = if matches!(draft, Draft::Draft4) {
+        leaf.property_names.as_ref().and_then(finite_keys)
+    } else {
+        None
+    };
     if let Some(names) = &leaf.property_names {
-        map.insert("propertyNames".into(), emit(names.kind(), draft));
+        if closed_keys.is_none() {
+            map.insert("propertyNames".into(), emit(names.kind(), draft));
+        }
     }
-    if !leaf.properties.is_empty() {
+    if let Some(keys) = &closed_keys {
+        let mut entries = Map::new();
+        for key in keys {
+            let entry = match leaf.properties.get(key.as_str()) {
+                Some(schema) => emit(schema.kind(), draft),
+                None => Value::Object(Map::new()),
+            };
+            entries.insert(key.clone(), entry);
+        }
+        map.insert("properties".into(), Value::Object(entries));
+        map.insert("additionalProperties".into(), Value::Bool(false));
+    } else if !leaf.properties.is_empty() {
         let entries: Map<String, Value> = leaf
             .properties
             .iter()
@@ -252,6 +273,29 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
         map.insert("maxProperties".into(), Value::Number(max.to_number()));
     }
     Value::Object(map)
+}
+
+/// The exact key strings a finite key constraint admits; `None` for any other shape.
+fn finite_keys(names: &Schema) -> Option<Vec<String>> {
+    match names.kind() {
+        SchemaKind::Const(value) => Some(vec![value.as_value().as_str()?.to_string()]),
+        SchemaKind::Enum(values) => values
+            .as_slice()
+            .iter()
+            .map(|value| value.as_value().as_str().map(str::to_string))
+            .collect(),
+        SchemaKind::True
+        | SchemaKind::False
+        | SchemaKind::MultiType(_)
+        | SchemaKind::TypedGroup { .. }
+        | SchemaKind::String(_)
+        | SchemaKind::Integer(_)
+        | SchemaKind::Number(_)
+        | SchemaKind::Array(_)
+        | SchemaKind::Object(_)
+        | SchemaKind::AnyOf(_)
+        | SchemaKind::Raw(_) => None,
+    }
 }
 
 /// Emit an integer leaf as `{"type":"integer"}` plus its interval bounds.
