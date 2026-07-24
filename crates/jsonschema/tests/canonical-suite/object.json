@@ -330,5 +330,289 @@
       {"data": {"a": 1}, "valid": true},
       {"data": {}, "valid": false}
     ]
+  },
+  {
+    "description": "a key's absence beside its required presence folds into one conditional entry",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "a": false
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "a"
+            ],
+            "properties": {
+              "a": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "string"
+          }
+        }
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "a": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a key's absence beside its bare required presence says nothing about the key",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "a": false
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "a"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "object"
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    },
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "leaves differing in one property entry unite the entry",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "a": {
+                "type": "null"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "a": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": [
+            "null",
+            "string"
+          ]
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "a": null
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a conditional entry beside the key's bare demand admits every object",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "a": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "a"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "object"
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    },
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a fold spanning the object domain joins the sibling type branch",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "a"
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "string",
+        "object"
+      ]
+    },
+    "tests": [
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
+    ]
   }
 ]

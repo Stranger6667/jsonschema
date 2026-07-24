@@ -53,20 +53,9 @@ impl ObjectLeaves {
         self.canonical = true;
     }
 
-    /// Dropping leaves can neither make two of the rest mergeable nor subsume one by another.
-    pub(crate) fn retain(&mut self, keep: impl FnMut(&ObjectLeaf) -> bool) {
-        self.canonicalize();
-        self.leaves.retain(keep);
-    }
-
     /// Merging never removes the last leaf, so this reads the batch without canonicalizing.
     pub(crate) fn is_empty(&self) -> bool {
         self.leaves.is_empty()
-    }
-
-    pub(crate) fn as_slice(&mut self) -> &[ObjectLeaf] {
-        self.canonicalize();
-        &self.leaves
     }
 }
 

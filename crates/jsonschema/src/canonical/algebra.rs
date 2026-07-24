@@ -389,6 +389,10 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     debug_assert!(numbers.is_empty() || !cover.contains(JsonType::Number));
     debug_assert!(arrays.is_empty() || !cover.contains(JsonType::Array));
     debug_assert!(objects.is_empty() || !cover.contains(JsonType::Object));
+    // Folding object leaves can produce a leaf spanning the whole domain even though its inputs
+    // did not, so the fold runs before the widening below picks such leaves up.
+    let mut objects: Vec<ObjectLeaf> = objects.into_iter().collect();
+    merge_sole_differing_keys(&mut objects, ctx);
     let mut widened = types;
     integers.retain(|leaf| {
         let spans_domain = leaf.bounds.is_unbounded() && leaf.multiple_of.is_empty();
@@ -513,6 +517,31 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         );
     }
 
+    // A member set saturating whole types joins another type branch: `null` beside `string` is
+    // the two-type list, not a loose value. A lone value set keeps its `const`/`enum` spelling.
+    if !types.is_empty() {
+        if let Some(saturated) = value_set
+            .kind()
+            .finite_values()
+            .and_then(SchemaKind::finite_values_saturated_domain)
+        {
+            let widened = union_type_sets(types, saturated);
+            if widened != types {
+                return rerun(
+                    widened,
+                    Vec::new(),
+                    groups,
+                    strings,
+                    integers,
+                    numbers,
+                    arrays,
+                    objects,
+                    ctx,
+                );
+            }
+        }
+    }
+
     // Assemble the surviving branches. The collected types become one branch.
     let mut out: Vec<Schema> = Vec::new();
     if !types.is_empty() {
@@ -547,6 +576,10 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     }
     // Each surviving object leaf becomes its own branch.
     for leaf in objects {
+        debug_assert!(
+            !leaf.spans_domain(),
+            "a leaf spanning the object domain joins the type set before assembly"
+        );
         out.push(object_leaf(leaf, ctx));
     }
     // The loose value set becomes a branch, unless it collapsed to empty.
@@ -662,7 +695,7 @@ fn rerun(
     integers: IntegerLeaves,
     numbers: NumberLeaves,
     arrays: ArrayLeaves,
-    objects: ObjectLeaves,
+    objects: Vec<ObjectLeaf>,
     ctx: &CanonicalizationContext,
 ) -> Schema {
     let mut rest: Vec<Schema> = vec![Schema::new(SchemaKind::MultiType(types))];
@@ -678,6 +711,123 @@ fn rerun(
     rest.extend(arrays.into_iter().map(array_leaf));
     rest.extend(objects.into_iter().map(|leaf| object_leaf(leaf, ctx)));
     union(rest, ctx)
+}
+
+/// Fold leaves alike in every facet but one key's demands by uniting those demands: the key stays
+/// required only when both sides demand it, and a held value satisfying either side's entry
+/// satisfies the union of the entries, a missing entry admitting anything. Each fold removes a
+/// leaf, so the loop is bounded.
+/// ```text
+/// e.g.  anyOf [
+///         {"type": "object", "properties": {"a": {"type": "null"}}},
+///         {"type": "object", "properties": {"a": {"type": "string"}}}
+///       ]  =>  {"type": "object", "properties": {"a": {"type": ["null", "string"]}}}
+/// e.g.  anyOf [
+///         {"type": "object", "properties": {"a": {"type": "string"}}},
+///         {"type": "object", "required": ["a"]}
+///       ]  =>  {"type": "object"}
+/// ```
+fn merge_sole_differing_keys(leaves: &mut Vec<ObjectLeaf>, ctx: &CanonicalizationContext) {
+    let mut folded = true;
+    while folded {
+        folded = false;
+        'search: for first in 0..leaves.len() {
+            for second in first + 1..leaves.len() {
+                if let Some(merged) = united_sole_key(&leaves[first], &leaves[second], ctx) {
+                    leaves[first] = merged;
+                    leaves.remove(second);
+                    folded = true;
+                    break 'search;
+                }
+            }
+        }
+    }
+}
+
+/// The one leaf `left` and `right` spell together, when a single key's demands tell them apart.
+fn united_sole_key(
+    left: &ObjectLeaf,
+    right: &ObjectLeaf,
+    ctx: &CanonicalizationContext,
+) -> Option<ObjectLeaf> {
+    if left.sizes != right.sizes
+        || left.property_names != right.property_names
+        || left.pattern_properties != right.pattern_properties
+    {
+        return None;
+    }
+    let key = sole_differing_key(left, right)?;
+    let required = if left.required.contains(&key) {
+        if right.required.contains(&key) {
+            left.required.clone()
+        } else {
+            right.required.clone()
+        }
+    } else {
+        left.required.clone()
+    };
+    let united_entry = match (left.properties.get(&key), right.properties.get(&key)) {
+        (Some(first), Some(second)) => {
+            let schema = if first == second {
+                first.clone()
+            } else {
+                union(vec![first.clone(), second.clone()], ctx)
+            };
+            if matches!(schema.kind(), SchemaKind::True) {
+                None
+            } else {
+                Some(schema)
+            }
+        }
+        // A side without an entry admits anything at the key, so the union does too.
+        _ => None,
+    };
+    let mut properties = left.properties.clone();
+    properties.remove(&key);
+    if let Some(schema) = united_entry {
+        properties.insert(Arc::clone(&key), schema);
+    }
+    Some(ObjectLeaf {
+        sizes: left.sizes.clone(),
+        required,
+        property_names: left.property_names.clone(),
+        properties,
+        pattern_properties: left.pattern_properties.clone(),
+    })
+}
+
+/// The single key whose required status or property entry separates the two leaves.
+fn sole_differing_key(left: &ObjectLeaf, right: &ObjectLeaf) -> Option<Arc<str>> {
+    let mut differing: Vec<Arc<str>> = Vec::new();
+    let note = |key: &Arc<str>, differing: &mut Vec<Arc<str>>| {
+        if !differing.iter().any(|seen| seen == key) {
+            differing.push(Arc::clone(key));
+        }
+    };
+    for key in &left.required {
+        if !right.required.contains(key) {
+            note(key, &mut differing);
+        }
+    }
+    for key in &right.required {
+        if !left.required.contains(key) {
+            note(key, &mut differing);
+        }
+    }
+    for (key, schema) in &left.properties {
+        if right.properties.get(key) != Some(schema) {
+            note(key, &mut differing);
+        }
+    }
+    for (key, schema) in &right.properties {
+        if left.properties.get(key) != Some(schema) {
+            note(key, &mut differing);
+        }
+    }
+    match differing.as_slice() {
+        [_] => differing.pop(),
+        _ => None,
+    }
 }
 
 /// Intersect `other` with each union branch; the last branch moves `other` instead of cloning it.
@@ -1314,6 +1464,11 @@ fn array_leaf_admits(
 /// Pack an object facet set into a node, collapsing the leaves that say something simpler.
 pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -> Schema {
     normalize_property_names(&mut leaf, ctx);
+    // A leaf no facet survives on admits every object, which the bare type set already spells;
+    // keeping the leaf shape would give one value set two IR forms.
+    if leaf.spans_domain() {
+        return type_set_schema(JsonTypeSet::from(JsonType::Object));
+    }
     // A stored key constraint says something about the keys: one admitting every string or none at
     // all was folded into the facets above, and leaving it here would spell those two another way.
     debug_assert!(

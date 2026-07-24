@@ -28,10 +28,16 @@ pub(crate) fn negate(schema: &Schema, ctx: &CanonicalizationContext) -> Option<S
         SchemaKind::String(leaf) => negate_string_leaf(leaf.get(), ctx),
         SchemaKind::Array(leaf) => negate_array_leaf(leaf.get(), ctx),
         SchemaKind::Object(leaf) => negate_object_leaf(leaf.get(), ctx),
-        SchemaKind::TypedGroup { .. }
-        | SchemaKind::Integer(_)
-        | SchemaKind::AnyOf(_)
-        | SchemaKind::Raw(_) => None,
+        // De Morgan: the complement of a union is the intersection of the branch complements, so
+        // one inexpressible branch declines the whole node.
+        SchemaKind::AnyOf(branches) => {
+            let mut result = Schema::new(SchemaKind::True);
+            for branch in branches.as_slice() {
+                result = algebra::intersect(result, negate(branch, ctx)?, ctx);
+            }
+            Some(result)
+        }
+        SchemaKind::TypedGroup { .. } | SchemaKind::Integer(_) | SchemaKind::Raw(_) => None,
     }
 }
 
