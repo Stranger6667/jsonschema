@@ -304,13 +304,21 @@
     ]
   },
   {
-    "description": "ir: draft 4 does not model array-form items tuples",
+    "description": "ir: draft 4 array-form items model a bare tuple",
     "schema": {"items": [{"type": "integer"}]},
     "draft": "draft4",
-    "expected": {"items": [{"type": "integer"}]},
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "object"]},
+        {"type": "array", "items": [{"type": "integer"}]}
+      ]
+    },
     "tests": [
       {"data": [1], "valid": true},
-      {"data": ["x"], "valid": false}
+      {"data": [1.0], "valid": false},
+      {"data": ["x"], "valid": false},
+      {"data": "s", "valid": true}
     ]
   },
   {
@@ -420,6 +428,59 @@
       {"data": [1, "x"], "valid": true},
       {"data": ["x"], "valid": false},
       {"data": [], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a false additionalItems tail caps the length under draft 4",
+    "schema": {"type": "array", "items": [{"type": "integer"}, {"type": "string"}], "additionalItems": false},
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "array",
+      "items": [{"type": "integer"}, {"type": "string"}],
+      "maxItems": 2
+    },
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": [1, "x", 3], "valid": false},
+      {"data": [1], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: draft 4 array-form items with additionalItems models the same tuple",
+    "schema": {"type": "array", "items": [{"type": "integer"}], "additionalItems": {"type": "string"}},
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "array",
+      "items": [{"type": "integer"}],
+      "additionalItems": {"type": "string"}
+    },
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": [1, 2], "valid": false},
+      {"data": [1.0], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: draft 4 pins a value set member through a tuple prefix and through its tail alike",
+    "schemas": [
+      {"enum": [[1, "x"]], "items": [{"type": "integer"}, {"type": "string"}]},
+      {"enum": [[1, "x"]], "items": [{"type": "integer"}], "additionalItems": {"type": "string"}}
+    ],
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "array",
+      "items": [{"type": "integer", "enum": [1]}, {"enum": ["x"]}],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": [1.0, "x"], "valid": false},
+      {"data": ["x", 1], "valid": false},
+      {"data": [1], "valid": false}
     ]
   }
 ]
