@@ -592,6 +592,28 @@
     "satisfiable": false
   },
   {
+    "description": "ir: a negative-zero excluded minimum against a negative-zero maximum admits nothing",
+    "schema": {"type": "number", "exclusiveMinimum": -0.0, "maximum": -0.0},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: a negative-zero minimum against a negative-zero excluded maximum admits nothing",
+    "schema": {"type": "number", "minimum": -0.0, "exclusiveMaximum": -0.0},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: an open interval between two adjacent doubles stays a window, not a const",
+    "schema": {"type": "number", "exclusiveMinimum": 1.5, "maximum": 1.5000000000000002},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "exclusiveMinimum": 1.5, "maximum": 1.5000000000000002},
+    "tests": [
+      {"data": 1.5000000000000002, "valid": true},
+      {"data": 1.5, "valid": false},
+      {"data": 1.6, "valid": false}
+    ]
+  },
+  {
     "description": "ir: an integer type keeps the integers a number interval admits",
     "schemas": [
       {"allOf": [{"type": "integer"}, {"minimum": 2}]},

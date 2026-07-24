@@ -1312,6 +1312,67 @@
     ]
   },
   {
+    "description": "draft7_schemas_preserve_validation ref_in_array_additionalItems",
+    "draft": "draft7",
+    "schema": {
+      "additionalProperties": false,
+      "definition": {"type": "string"},
+      "properties": {
+        "something-else": {
+          "additionalItems": {"$ref": "#/definition"},
+          "items": [{"type": "number"}],
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "tests": [
+      {"something-else": [1, "a", "b"]},
+      {"something-else": [1, 2]},
+      {"something-else": ["a", "b"]},
+      {"other": 1}
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation ref_in_array_contains",
+    "draft": "draft7",
+    "schema": {
+      "additionalProperties": false,
+      "definition": {"pattern": "\\d", "type": "string"},
+      "properties": {
+        "something": {
+          "contains": {"$ref": "#/definition"},
+          "items": {"type": "string"},
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "tests": [
+      {"something": ["a", "b1"]},
+      {"something": ["a", "b"]}
+    ]
+  },
+  {
+    "description": "draft7_schemas_preserve_validation ref_in_array_items",
+    "draft": "draft7",
+    "schema": {
+      "additionalProperties": false,
+      "definition": {"type": "string"},
+      "properties": {
+        "something": {
+          "items": {"$ref": "#/definition"},
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "tests": [
+      {"something": ["a", "b"]},
+      {"something": [1]}
+    ]
+  },
+  {
     "description": "draft7_schemas_preserve_validation ref_in_nested_object_properties",
     "draft": "draft7",
     "schema": {

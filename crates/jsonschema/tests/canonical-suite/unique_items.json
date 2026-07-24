@@ -379,5 +379,37 @@
       {"data": [1, 2], "valid": true},
       {"data": [1, 1], "valid": false}
     ]
+  },
+  {
+    "description": "ir: a two-value item domain under uniqueItems cannot fill minItems 3",
+    "schema": {"type": "array", "items": {"type": "boolean"}, "uniqueItems": true, "minItems": 3},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"type": "boolean"},
+      "uniqueItems": true,
+      "minItems": 3
+    },
+    "satisfiable": true,
+    "tests": [
+      {"data": [true, false, true], "valid": false},
+      {"data": [true, false], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a one-value item domain under uniqueItems cannot fill minItems 2",
+    "schema": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 0}, "uniqueItems": true, "minItems": 2},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"const": 0},
+      "uniqueItems": true,
+      "minItems": 2
+    },
+    "satisfiable": true,
+    "tests": [
+      {"data": [0, 0], "valid": false},
+      {"data": [0], "valid": false}
+    ]
   }
 ]
