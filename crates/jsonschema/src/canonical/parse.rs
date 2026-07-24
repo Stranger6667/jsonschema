@@ -27,13 +27,29 @@ pub(crate) fn parse(
     value: &Value,
     ctx: &CanonicalizationContext,
 ) -> Result<Option<Schema>, CanonicalizationError> {
-    parse_schema(value, ctx, true)
+    let mut scan = DocumentScan::default();
+    let parsed = parse_schema(value, ctx, true, &mut scan)?;
+    // An in-between `additionalProperties` meeting `patternProperties` anywhere in the document
+    // has no exact intersection without pattern-overlap reasoning; nodes built before this check
+    // may already be wrong, so the whole document is discarded, not just the pairing site.
+    if scan.additional_schema && scan.pattern_properties {
+        return Ok(None);
+    }
+    Ok(parsed)
+}
+
+/// What parsing saw anywhere in the document, for pairings decidable only at the root.
+#[derive(Default)]
+struct DocumentScan {
+    additional_schema: bool,
+    pattern_properties: bool,
 }
 
 fn parse_schema(
     value: &Value,
     ctx: &CanonicalizationContext,
     is_root: bool,
+    scan: &mut DocumentScan,
 ) -> Result<Option<Schema>, CanonicalizationError> {
     let map = match value {
         Value::Bool(true) => return Ok(Some(Schema::new(SchemaKind::True))),
@@ -62,6 +78,7 @@ fn parse_schema(
     let mut properties: BTreeMap<Arc<str>, Schema> = BTreeMap::new();
     let mut pattern_properties: BTreeMap<Arc<str>, Schema> = BTreeMap::new();
     let mut forbid_unmatched_keys = false;
+    let mut additional_schema: Option<Schema> = None;
     let mut min_properties: Option<BoundCardinality> = None;
     let mut max_properties: Option<BoundCardinality> = None;
     let mut patterns: Vec<Arc<str>> = Vec::new();
@@ -91,7 +108,7 @@ fn parse_schema(
             }
             ("allOf", Value::Array(branches)) => {
                 for branch in branches {
-                    match parse_schema(branch, ctx, false)? {
+                    match parse_schema(branch, ctx, false, scan)? {
                         Some(schema) => conjuncts.push(schema),
                         None => return Ok(None),
                     }
@@ -100,7 +117,7 @@ fn parse_schema(
             ("anyOf", Value::Array(items)) => {
                 let mut branches = Vec::new();
                 for branch in items {
-                    match parse_schema(branch, ctx, false)? {
+                    match parse_schema(branch, ctx, false, scan)? {
                         Some(schema) => branches.push(schema),
                         None => return Ok(None),
                     }
@@ -114,7 +131,7 @@ fn parse_schema(
             ("oneOf", Value::Array(items)) => {
                 let mut branches = Vec::new();
                 for branch in items {
-                    match parse_schema(branch, ctx, false)? {
+                    match parse_schema(branch, ctx, false, scan)? {
                         Some(schema) => branches.push(schema),
                         None => return Ok(None),
                     }
@@ -179,7 +196,7 @@ fn parse_schema(
             ("items", value @ (Value::Object(_) | Value::Bool(_)))
                 if ctx.draft().is_known_keyword("items") =>
             {
-                match parse_schema(value, ctx, false)? {
+                match parse_schema(value, ctx, false, scan)? {
                     Some(schema) => items = Some(schema),
                     None => return Ok(None),
                 }
@@ -188,7 +205,7 @@ fn parse_schema(
             ("prefixItems", Value::Array(schemas))
                 if ctx.draft().is_known_keyword("prefixItems") =>
             {
-                match parse_prefix(schemas, ctx)? {
+                match parse_prefix(schemas, ctx, scan)? {
                     Some(prefix) => item_prefix = Some(prefix),
                     None => return Ok(None),
                 }
@@ -200,7 +217,7 @@ fn parse_schema(
                     Draft::Draft4 | Draft::Draft6 | Draft::Draft7 | Draft::Draft201909
                 ) =>
             {
-                match parse_prefix(schemas, ctx)? {
+                match parse_prefix(schemas, ctx, scan)? {
                     Some(prefix) => item_prefix = Some(prefix),
                     None => return Ok(None),
                 }
@@ -219,7 +236,7 @@ fn parse_schema(
             ("contains", value @ (Value::Object(_) | Value::Bool(_)))
                 if ctx.draft().is_known_keyword("contains") =>
             {
-                match parse_schema(value, ctx, false)? {
+                match parse_schema(value, ctx, false, scan)? {
                     Some(schema) => contains_schema = Some(schema),
                     None => return Ok(None),
                 }
@@ -250,7 +267,7 @@ fn parse_schema(
                 if ctx.draft().is_known_keyword("properties") =>
             {
                 for (key, value) in entries {
-                    match parse_schema(value, ctx, false)? {
+                    match parse_schema(value, ctx, false, scan)? {
                         Some(schema) => {
                             properties.insert(Arc::from(key.as_str()), schema);
                         }
@@ -261,6 +278,7 @@ fn parse_schema(
             ("patternProperties", Value::Object(entries))
                 if ctx.draft().is_known_keyword("patternProperties") =>
             {
+                scan.pattern_properties = true;
                 for (pattern, value) in entries {
                     let pattern: Arc<str> = Arc::from(pattern.as_str());
                     if ctx.compile_regex(&pattern).is_none() {
@@ -268,7 +286,7 @@ fn parse_schema(
                             pattern: pattern.to_string(),
                         });
                     }
-                    match parse_schema(value, ctx, false)? {
+                    match parse_schema(value, ctx, false, scan)? {
                         Some(schema) => {
                             pattern_properties.insert(pattern, schema);
                         }
@@ -277,24 +295,27 @@ fn parse_schema(
                 }
             }
             ("propertyNames", value) if ctx.draft().is_known_keyword("propertyNames") => {
-                match parse_schema(value, ctx, false)? {
+                match parse_schema(value, ctx, false, scan)? {
                     Some(schema) => property_names = Some(schema),
                     None => return Ok(None),
                 }
             }
             // A schema admitting everything says nothing about a key, so `true`/`{}` leaves no
-            // trace. One admitting nothing forbids the unmatched keys, which the key constraint
-            // carries. Anything in between is a demand conditional on the leaf's own coverage,
-            // which the algebra cannot intersect exactly: the document stays raw.
+            // trace; one admitting nothing forbids the unmatched keys, which the key constraint
+            // carries; anything in between shields the named keys and constrains the rest.
             ("additionalProperties", value @ (Value::Object(_) | Value::Bool(_)))
                 if ctx.draft().is_known_keyword("additionalProperties") =>
             {
-                match parse_schema(value, ctx, false)? {
+                match parse_schema(value, ctx, false, scan)? {
                     Some(schema) if matches!(schema.kind(), SchemaKind::True) => {}
                     Some(schema) if matches!(schema.kind(), SchemaKind::False) => {
                         forbid_unmatched_keys = true;
                     }
-                    Some(_) | None => return Ok(None),
+                    Some(schema) => {
+                        scan.additional_schema = true;
+                        additional_schema = Some(schema);
+                    }
+                    None => return Ok(None),
                 }
             }
             ("minProperties", Value::Number(number))
@@ -365,19 +386,19 @@ fn parse_schema(
                 draft4_exclusive_maximum = *flag;
             }
             ("if", value) if ctx.draft().is_known_keyword("if") => {
-                match parse_schema(value, ctx, false)? {
+                match parse_schema(value, ctx, false, scan)? {
                     Some(schema) => if_schema = Some(schema),
                     None => return Ok(None),
                 }
             }
             ("then", value) if ctx.draft().is_known_keyword("then") => {
-                match parse_schema(value, ctx, false)? {
+                match parse_schema(value, ctx, false, scan)? {
                     Some(schema) => then_schema = Some(schema),
                     None => return Ok(None),
                 }
             }
             ("else", value) if ctx.draft().is_known_keyword("else") => {
-                match parse_schema(value, ctx, false)? {
+                match parse_schema(value, ctx, false, scan)? {
                     Some(schema) => else_schema = Some(schema),
                     None => return Ok(None),
                 }
@@ -392,7 +413,7 @@ fn parse_schema(
                             conjuncts.push(required_dependency(key, names, ctx));
                         }
                         value @ (Value::Object(_) | Value::Bool(_)) => {
-                            match parse_schema(value, ctx, false)? {
+                            match parse_schema(value, ctx, false, scan)? {
                                 Some(schema) => {
                                     conjuncts.push(schema_dependency(key, schema, ctx));
                                 }
@@ -428,7 +449,7 @@ fn parse_schema(
                 for (key, entry) in entries {
                     match entry {
                         value @ (Value::Object(_) | Value::Bool(_)) => {
-                            match parse_schema(value, ctx, false)? {
+                            match parse_schema(value, ctx, false, scan)? {
                                 Some(schema) => {
                                     conjuncts.push(schema_dependency(key, schema, ctx));
                                 }
@@ -444,7 +465,7 @@ fn parse_schema(
             // The complement of the negated schema, when the IR can spell it; an unmodeled child or
             // an inexpressible complement keeps the whole document raw.
             ("not", value) if ctx.draft().is_known_keyword("not") => {
-                match parse_schema(value, ctx, false)? {
+                match parse_schema(value, ctx, false, scan)? {
                     Some(child) => match negate::negate(&child, ctx) {
                         Some(complement) => conjuncts.push(complement),
                         None => return Ok(None),
@@ -511,7 +532,7 @@ fn parse_schema(
             ) =>
         {
             let tail = match additional_items {
-                Some(value) => match parse_schema(value, ctx, false)? {
+                Some(value) => match parse_schema(value, ctx, false, scan)? {
                     Some(schema) => Some(schema),
                     None => return Ok(None),
                 },
@@ -604,6 +625,7 @@ fn parse_schema(
         || property_names.is_some()
         || !properties.is_empty()
         || !pattern_properties.is_empty()
+        || additional_schema.is_some()
     {
         // Every draft marks `required` as unique, so the meta-validated list only needs ordering.
         required.sort();
@@ -617,6 +639,7 @@ fn parse_schema(
                 property_names,
                 properties,
                 pattern_properties,
+                additional: additional_schema,
             },
             ctx,
         ));
@@ -714,6 +737,7 @@ fn dependency_conjunct(key: &str, consequent: Schema, ctx: &CanonicalizationCont
             property_names: None,
             properties: BTreeMap::from([(Arc::from(key), Schema::new(SchemaKind::False))]),
             pattern_properties: BTreeMap::new(),
+            additional: None,
         },
         ctx,
     );
@@ -729,6 +753,7 @@ fn object_with_required(required: Vec<Arc<str>>, ctx: &CanonicalizationContext) 
             property_names: None,
             properties: BTreeMap::new(),
             pattern_properties: BTreeMap::new(),
+            additional: None,
         },
         ctx,
     )
@@ -927,10 +952,11 @@ fn string_facet_schema(leaf: StringLeaf, ctx: &CanonicalizationContext) -> Schem
 fn parse_prefix(
     schemas: &[Value],
     ctx: &CanonicalizationContext,
+    scan: &mut DocumentScan,
 ) -> Result<Option<Vec<Schema>>, CanonicalizationError> {
     let mut prefix = Vec::with_capacity(schemas.len());
     for schema in schemas {
-        match parse_schema(schema, ctx, false)? {
+        match parse_schema(schema, ctx, false, scan)? {
             Some(schema) => prefix.push(schema),
             None => return Ok(None),
         }

@@ -75,6 +75,7 @@ struct Facets {
     property_names: Option<Schema>,
     properties: BTreeMap<Arc<str>, Schema>,
     pattern_properties: BTreeMap<Arc<str>, Schema>,
+    additional: Option<Schema>,
 }
 
 /// Fold the size windows of leaves demanding the same keys under the same key constraint.
@@ -102,12 +103,14 @@ fn merge(mut leaves: Vec<ObjectLeaf>) -> Vec<ObjectLeaf> {
             &left.property_names,
             &left.properties,
             &left.pattern_properties,
+            &left.additional,
         )
             .cmp(&(
                 &right.required,
                 &right.property_names,
                 &right.properties,
                 &right.pattern_properties,
+                &right.additional,
             ))
     });
     let mut merged: Vec<ObjectLeaf> = Vec::with_capacity(leaves.len());
@@ -119,6 +122,7 @@ fn merge(mut leaves: Vec<ObjectLeaf>) -> Vec<ObjectLeaf> {
                 || group.property_names != leaf.property_names
                 || group.properties != leaf.properties
                 || group.pattern_properties != leaf.pattern_properties
+                || group.additional != leaf.additional
         }) {
             flush_group(&mut merged, facets.take(), &mut windows);
             facets = Some(Facets {
@@ -126,6 +130,7 @@ fn merge(mut leaves: Vec<ObjectLeaf>) -> Vec<ObjectLeaf> {
                 property_names: leaf.property_names,
                 properties: leaf.properties,
                 pattern_properties: leaf.pattern_properties,
+                additional: leaf.additional,
             });
         }
         windows.push(leaf.sizes);
@@ -145,6 +150,7 @@ fn flush_group(
         property_names,
         properties,
         pattern_properties,
+        additional,
     }) = facets
     else {
         return;
@@ -158,6 +164,7 @@ fn flush_group(
             property_names: property_names.clone(),
             properties: properties.clone(),
             pattern_properties: pattern_properties.clone(),
+            additional: additional.clone(),
         });
     }
     merged.push(ObjectLeaf {
@@ -166,6 +173,7 @@ fn flush_group(
         property_names,
         properties,
         pattern_properties,
+        additional,
     });
 }
 
@@ -189,6 +197,7 @@ fn extend_over_bare_windows(leaves: &mut [ObjectLeaf]) {
                 && leaf.property_names.is_none()
                 && leaf.properties.is_empty()
                 && leaf.pattern_properties.is_empty()
+                && leaf.additional.is_none()
         })
         .map(|leaf| leaf.sizes.clone())
         .collect();
@@ -200,6 +209,7 @@ fn extend_over_bare_windows(leaves: &mut [ObjectLeaf]) {
             && leaf.property_names.is_none()
             && leaf.properties.is_empty()
             && leaf.pattern_properties.is_empty()
+            && leaf.additional.is_none()
         {
             continue;
         }
@@ -287,6 +297,7 @@ fn absorb_trivially_admitted(leaves: &mut Vec<ObjectLeaf>) {
         leaves[trivial].property_names.is_none()
             && leaves[trivial].properties.is_empty()
             && leaves[trivial].pattern_properties.is_empty()
+            && leaves[trivial].additional.is_none()
             && leaves[trivial].required.is_empty(),
         "a leaf admitting only the empty object carries a facet"
     );
@@ -297,7 +308,8 @@ fn absorb_trivially_admitted(leaves: &mut Vec<ObjectLeaf>) {
     let Some((target, widened)) = leaves.iter().enumerate().find_map(|(index, leaf)| {
         if (leaf.property_names.is_none()
             && leaf.properties.is_empty()
-            && leaf.pattern_properties.is_empty())
+            && leaf.pattern_properties.is_empty()
+            && leaf.additional.is_none())
             || !leaf.required.is_empty()
         {
             return None;
@@ -336,7 +348,10 @@ fn drop_subsumed(leaves: &mut Vec<ObjectLeaf>) {
             let looser_keys = other.property_names.is_none() && leaf.property_names.is_some();
             // A strict submap with equal schemas on the shared keys constrains strictly less: the
             // extra entries only remove objects. Equality per key needs no schema subsumption.
-            let looser_properties = other.properties.len() < leaf.properties.len()
+            // Under a shield the reading inverts - a dropped entry sends its key to the shield -
+            // so there the maps must be equal.
+            let looser_properties = leaf.additional.is_none()
+                && other.properties.len() < leaf.properties.len()
                 && other
                     .properties
                     .iter()
@@ -347,6 +362,7 @@ fn drop_subsumed(leaves: &mut Vec<ObjectLeaf>) {
                     .iter()
                     .all(|(pattern, schema)| leaf.pattern_properties.get(pattern) == Some(schema));
             let wider = other.effective_sizes().covers(&leaf.effective_sizes())
+                && other.additional == leaf.additional
                 && other.required.iter().all(|key| leaf.required.contains(key))
                 && (looser_keys || other.property_names == leaf.property_names)
                 && (looser_properties || other.properties == leaf.properties)

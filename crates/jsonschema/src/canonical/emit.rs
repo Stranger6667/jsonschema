@@ -255,6 +255,12 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
             .collect();
         map.insert("patternProperties".into(), Value::Object(entries));
     }
+    if let Some(additional) = &leaf.additional {
+        map.insert(
+            "additionalProperties".into(),
+            emit(additional.kind(), draft),
+        );
+    }
     if !leaf.required.is_empty() {
         map.insert(
             "required".into(),
