@@ -1,0 +1,246 @@
+[
+  {
+    "description": "ir: an array-form dependency demands its keys only when the trigger is present",
+    "schema": {"dependencies": {"a": ["b"]}},
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "properties": {"a": false}},
+        {"type": "object", "required": ["b"]}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"b": 2}, "valid": true},
+      {"data": {}, "valid": true},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: an array-form dependency spells the absent trigger without boolean schemas under draft 4",
+    "schema": {"dependencies": {"a": ["b"]}},
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "properties": {"a": {"not": {}}}},
+        {"type": "object", "required": ["b"]}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: dependencies is still asserted under 2020-12",
+    "schema": {"dependencies": {"a": ["b"]}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "properties": {"a": false}},
+        {"type": "object", "required": ["b"]}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a dependency on its own key is vacuous",
+    "schema": {"dependencies": {"a": ["a"]}},
+    "draft": "draft7",
+    "expected": {"$schema": "http://json-schema.org/draft-07/schema#"},
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: an empty requirement list is vacuous",
+    "schema": {"dependencies": {"a": []}},
+    "draft": "draft6",
+    "expected": {"$schema": "http://json-schema.org/draft-06/schema#"},
+    "tests": [
+      {"data": {"a": 1}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a schema dependency carrying only required converges with the array form",
+    "schemas": [
+      {"dependencies": {"a": ["b"]}},
+      {"dependencies": {"a": {"required": ["b"]}}}
+    ],
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "properties": {"a": false}},
+        {"type": "object", "required": ["b"]}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": 1, "b": 2}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a tautological dependentSchemas entry drops out",
+    "schema": {"dependentSchemas": {"a": true}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a false dependentSchemas entry forbids the trigger key",
+    "schema": {"dependentSchemas": {"a": false}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "properties": {"a": false}}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"b": 1}, "valid": true},
+      {"data": {}, "valid": true},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: dependentSchemas applies its schema to the whole object",
+    "schema": {"dependentSchemas": {"a": {"properties": {"b": {"type": "integer"}}}}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "properties": {"a": false}},
+        {"type": "object", "properties": {"b": {"type": "integer"}}}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1, "b": "x"}, "valid": false},
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"b": "x"}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: dependentRequired folds into its trigger's requirement",
+    "schemas": [
+      {"type": "object", "required": ["a"], "dependentRequired": {"a": ["b"]}},
+      {"type": "object", "required": ["a", "b"]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "required": ["a", "b"]
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a false dependentSchemas entry beside its required trigger is unsatisfiable",
+    "schema": {"type": "object", "required": ["a"], "dependentSchemas": {"a": false}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": {"a": 1}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: dependentRequired is an annotation before 2019-09",
+    "schema": {"dependentRequired": {"a": ["b"]}},
+    "draft": "draft7",
+    "expected": {"$schema": "http://json-schema.org/draft-07/schema#"},
+    "tests": [
+      {"data": {"a": 1}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: two dependent requirements distribute into disjoint presence branches",
+    "schema": {"dependentRequired": {"a": ["b"], "c": ["d"]}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "properties": {"a": false, "c": false}},
+        {"type": "object", "properties": {"c": false}, "required": ["b"]},
+        {"type": "object", "required": ["b", "d"]},
+        {"type": "object", "properties": {"a": false}, "required": ["d"]}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"a": 1, "b": 2, "c": 3}, "valid": false},
+      {"data": {"a": 1, "b": 2, "c": 3, "d": 4}, "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a dependency beside a size window covering its exception folds to true",
+    "schema": {"anyOf": [{"type": "object", "minProperties": 2}, {"dependentSchemas": {"a": {"properties": {"b": {"type": "null"}}}}}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
+    "tests": [
+      {"data": {"a": 1, "b": "x"}, "valid": true},
+      {"data": {"a": 1, "b": null}, "valid": true},
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": "x"}, "valid": true},
+      {"data": {}, "valid": true},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a size floor covered by dependency branches widens away",
+    "schema": {"anyOf": [{"dependentSchemas": {"a": {"properties": {"b": {"type": "null"}}}}}, {"type": "object", "minProperties": 2, "maxProperties": 2}]},
+    "draft": "draft2019-09",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "properties": {"a": false}},
+        {"type": "object", "properties": {"b": {"type": "null"}}},
+        {"type": "object", "maxProperties": 2}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1, "b": "x"}, "valid": true},
+      {"data": {"a": 1, "b": "x", "c": 3}, "valid": false},
+      {"data": {"a": 1}, "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: dependency trigger keys keep escaped characters",
+    "schema": {"dependencies": {"foo\nbar": ["x"]}},
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "properties": {"foo\nbar": false}},
+        {"type": "object", "required": ["x"]}
+      ]
+    },
+    "tests": [
+      {"data": {"foo\nbar": 1}, "valid": false},
+      {"data": {"foo\nbar": 1, "x": 2}, "valid": true}
+    ]
+  }
+]

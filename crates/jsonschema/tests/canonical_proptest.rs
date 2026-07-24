@@ -147,7 +147,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(63)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(67)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -291,6 +291,17 @@ fn draw_leaf(tc: &TestCase) -> Value {
             "then": { "type": draw_type(tc) },
             "else": { "type": draw_type(tc) }
         }),
+        // Trigger keys drawn from the shared pool collide with the object leaves above.
+        64 => {
+            json!({ "dependencies": { tc.draw(gs::sampled_from(vec!["a", "b"])): draw_keys(tc) } })
+        }
+        65 => json!({ "dependencies": { "a": { "required": draw_keys(tc) } } }),
+        66 => {
+            json!({ "dependentRequired": { tc.draw(gs::sampled_from(vec!["a", "c"])): draw_keys(tc) } })
+        }
+        67 => {
+            json!({ "dependentSchemas": { "a": { "properties": { "b": { "type": draw_type(tc) } } } } })
+        }
         _ => json!({ "type": ["string", "integer"] }),
     }
 }
