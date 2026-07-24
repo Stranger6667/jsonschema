@@ -183,5 +183,80 @@
       {"anyOf": [{"type": "string", "pattern": ""}, {"type": "string", "minLength": 5}]},
       {"type": "string"}
     ]
+  },
+  {
+    "description": "value-set intersection lands on the same node as the direct spelling",
+    "schemas": [
+      {
+        "allOf": [
+          {
+            "enum": [1, 2]
+          },
+          {
+            "enum": [2, 3]
+          }
+        ]
+      },
+      {
+        "const": 2
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": 2
+    },
+    "tests": [
+      {
+        "data": 2,
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": 3,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "draft 4 integer guard from intersection lands on the parse spelling",
+    "draft": "draft4",
+    "schemas": [
+      {
+        "allOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "enum": [1, 2, "a"]
+          }
+        ]
+      },
+      {
+        "type": "integer",
+        "enum": [1, 2]
+      }
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "integer",
+      "enum": [1, 2]
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 1.0,
+        "valid": false
+      },
+      {
+        "data": "a",
+        "valid": false
+      }
+    ]
   }
 ]

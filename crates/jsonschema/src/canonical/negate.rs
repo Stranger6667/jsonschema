@@ -1,9 +1,6 @@
 //! Structural complement of a canonical node.
 use crate::{
-    canonical::{
-        ir::{CanonicalJson, Schema, SchemaKind},
-        parse,
-    },
+    canonical::ir::{type_set_schema, CanonicalJson, Schema, SchemaKind},
     JsonType, JsonTypeSet,
 };
 
@@ -67,7 +64,7 @@ fn negate_type_set(set: JsonTypeSet) -> Option<Schema> {
     }
     // The shared constructor, so a complement spelling a lone `null` or `boolean` lands on the same
     // canonical node as the direct spelling.
-    Some(parse::type_set_schema(complement))
+    Some(type_set_schema(complement))
 }
 
 #[cfg(test)]
