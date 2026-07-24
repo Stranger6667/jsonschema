@@ -58,6 +58,7 @@ fn parse_schema(
     let mut property_names: Option<Schema> = None;
     let mut properties: BTreeMap<Arc<str>, Schema> = BTreeMap::new();
     let mut pattern_properties: BTreeMap<Arc<str>, Schema> = BTreeMap::new();
+    let mut forbid_unmatched_keys = false;
     let mut min_properties: Option<BoundCardinality> = None;
     let mut max_properties: Option<BoundCardinality> = None;
     let mut patterns: Vec<Arc<str>> = Vec::new();
@@ -250,6 +251,25 @@ fn parse_schema(
                     None => return Ok(None),
                 }
             }
+            // A schema admitting everything says nothing about a key, so `true`/`{}` leaves no
+            // trace. One admitting nothing forbids the unmatched keys, which a key constraint can
+            // carry on drafts that have one. Anything in between is a demand conditional on the
+            // leaf's own coverage, which the algebra cannot intersect exactly: the document stays
+            // raw.
+            ("additionalProperties", value @ (Value::Object(_) | Value::Bool(_)))
+                if ctx.draft().is_known_keyword("additionalProperties") =>
+            {
+                match parse_schema(value, ctx, false)? {
+                    Some(schema) if matches!(schema.kind(), SchemaKind::True) => {}
+                    Some(schema)
+                        if matches!(schema.kind(), SchemaKind::False)
+                            && ctx.draft().is_known_keyword("propertyNames") =>
+                    {
+                        forbid_unmatched_keys = true;
+                    }
+                    Some(_) | None => return Ok(None),
+                }
+            }
             ("minProperties", Value::Number(number))
                 if ctx.draft().is_known_keyword("minProperties") =>
             {
@@ -424,6 +444,35 @@ fn parse_schema(
         .is_some_and(BoundCardinality::is_zero)
     {
         min_properties = None;
+    }
+    // `additionalProperties: false` forbids every key the property map does not name and no
+    // pattern matches, which a key constraint spells: the named keys and the patterns' keys,
+    // met into any stored constraint.
+    // e.g.  {"type": "object", "properties": {"a": {"type": "string"}}, "additionalProperties": false}
+    //       =>  {"type": "object", "propertyNames": {"const": "a"}, "properties": {"a": {"type": "string"}}}
+    if forbid_unmatched_keys {
+        let mut allowed: Vec<Schema> =
+            Vec::with_capacity(properties.len() + pattern_properties.len());
+        for key in properties.keys() {
+            allowed.push(Schema::new(SchemaKind::Const(CanonicalJson::from_value(
+                &Value::String(key.to_string()),
+            ))));
+        }
+        for pattern in pattern_properties.keys() {
+            allowed.push(algebra::string_leaf(
+                StringLeaf {
+                    lengths: LengthBounds::default(),
+                    patterns: vec![Arc::clone(pattern)],
+                    formats: Vec::new(),
+                },
+                ctx,
+            ));
+        }
+        let allowed = algebra::union(allowed, ctx);
+        property_names = Some(match property_names.take() {
+            Some(names) => algebra::intersect(names, allowed, ctx),
+            None => allowed,
+        });
     }
     if min_properties.is_some()
         || max_properties.is_some()

@@ -1,0 +1,547 @@
+[
+  {
+    "description": "ir: additionalProperties:false with named keys folds into propertyNames",
+    "schemas": [
+      {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "string"
+          }
+        },
+        "propertyNames": {
+          "const": "a"
+        }
+      },
+      {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 1
+        }
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {
+        "const": "a"
+      },
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "a": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "b": "x"
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "ir: additionalProperties:false with a pattern folds into propertyNames",
+    "schemas": [
+      {
+        "type": "object",
+        "patternProperties": {
+          "^a": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "patternProperties": {
+          "^a": {
+            "type": "integer"
+          }
+        },
+        "propertyNames": {
+          "pattern": "^a"
+        }
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^a"
+      },
+      "patternProperties": {
+        "^a": {
+          "type": "integer"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "ab": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "ab": "x"
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "ir: additionalProperties:false meets a preexisting propertyNames",
+    "schemas": [
+      {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "string"
+          }
+        },
+        "propertyNames": {
+          "maxLength": 5
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "string"
+          }
+        },
+        "propertyNames": {
+          "const": "a"
+        }
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {
+        "const": "a"
+      },
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "a": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "b": "x"
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "ir: additionalProperties:false with no keys admits only the empty object",
+    "schemas": [
+      {
+        "type": "object",
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "maxProperties": 0
+      },
+      {
+        "type": "object",
+        "propertyNames": false
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": {}
+    },
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      },
+      {
+        "data": [],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "ir: an additionalProperties schema admitting everything constrains nothing",
+    "schemas": [
+      {
+        "type": "object",
+        "additionalProperties": true
+      },
+      {
+        "type": "object",
+        "additionalProperties": {}
+      },
+      {
+        "type": "object"
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    },
+    "tests": [
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "ir: a non-false additionalProperties schema keeps the document raw",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "a": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "ir: an additionalProperties schema meeting named keys keeps the document raw",
+    "schema": {
+      "allOf": [
+        {
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        {
+          "properties": {
+            "b": {
+              "type": "integer"
+            }
+          }
+        }
+      ]
+    },
+    "expected": {
+      "allOf": [
+        {
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        {
+          "properties": {
+            "b": {
+              "type": "integer"
+            }
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "c": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "c": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "ir: a property entry shielding a key from additionalProperties keeps the document raw",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "b": true
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "b": true
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "b": 1,
+          "c": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "c": "x"
+        },
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "ir: additionalProperties:false under draft 4 keeps the document raw",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "enum": [
+            "x"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "draft": "draft4",
+    "expected": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "enum": [
+            "x"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "tests": [
+      {
+        "data": {
+          "a": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": "y"
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "ir: an unmodeled additionalProperties child keeps the document raw",
+    "schema": {
+      "type": "object",
+      "additionalProperties": {
+        "not": {
+          "type": "string"
+        }
+      }
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": {
+        "not": {
+          "type": "string"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": "x"
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "ir: additionalProperties:false without a type also admits non-objects",
+    "schema": {
+      "additionalProperties": false
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "const": {}
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": true
+      },
+      {
+        "data": 5,
+        "valid": true
+      }
+    ]
+  }
+]
