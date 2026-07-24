@@ -147,7 +147,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(58)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(60)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -277,6 +277,12 @@ fn draw_leaf(tc: &TestCase) -> Value {
         }
         // Meta-invalid under Draft 4, where the drawn document is simply rejected before modeling.
         57 => json!({ "type": "number", "exclusiveMinimum": small_int(tc) }),
+        // Overlapping branches exercise the exactly-one encoding; disjoint draws its fast path.
+        58 => json!({ "oneOf": [{ "type": "string" }, { "minLength": 1 }] }),
+        59 => json!({ "oneOf": [
+            { "const": small_int(tc) },
+            { "enum": [small_int(tc), small_int(tc)] }
+        ] }),
         _ => json!({ "type": ["string", "integer"] }),
     }
 }
