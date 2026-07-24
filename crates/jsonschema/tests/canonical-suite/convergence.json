@@ -1230,5 +1230,223 @@
         "valid": true
       }
     ]
+  },
+  {
+    "description": "a branch split at a faceted sibling's size seam dissolves when every part is covered",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "a"
+            ],
+            "properties": {
+              "a": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "maxProperties": 1,
+            "required": [
+              "a"
+            ]
+          },
+          {
+            "type": "object",
+            "minProperties": 2,
+            "properties": {
+              "a": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "maxProperties": 1,
+            "required": [
+              "a"
+            ]
+          },
+          {
+            "type": "object",
+            "minProperties": 2,
+            "properties": {
+              "a": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "object",
+          "maxProperties": 1,
+          "required": [
+            "a"
+          ]
+        },
+        {
+          "type": "object",
+          "minProperties": 2,
+          "properties": {
+            "a": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "a": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": "x",
+          "b": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1,
+          "b": 2
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a filled-slot ceiling drops by adopting the covering sibling's entry",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "maxProperties": 1,
+            "required": [
+              "b"
+            ]
+          },
+          {
+            "type": "object",
+            "minProperties": 2,
+            "properties": {
+              "a": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "b"
+            ],
+            "properties": {
+              "a": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "minProperties": 2,
+            "properties": {
+              "a": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "b"
+          ],
+          "properties": {
+            "a": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "minProperties": 2,
+          "properties": {
+            "a": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "b": 1,
+          "c": 2
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": "x",
+          "b": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1,
+          "b": 2
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      }
+    ]
   }
 ]
