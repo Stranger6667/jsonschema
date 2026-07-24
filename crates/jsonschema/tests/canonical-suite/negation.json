@@ -235,6 +235,27 @@
     ]
   },
   {
+    "description": "not of a union that reduces to one type set negates directly",
+    "schema": {
+      "not": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      },
+      "type": "number"
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false
+  },
+  {
     "description": "not of a type set under draft 4",
     "schema": {
       "not": {

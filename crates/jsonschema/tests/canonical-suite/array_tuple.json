@@ -218,6 +218,34 @@
     ]
   },
   {
+    "description": "ir: draft 7 array-form items with a minItems-forced false slot is unsatisfiable",
+    "schema": {"type": "array", "items": [true, false], "minItems": 2},
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {"data": [1, 2], "valid": false},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a false additionalItems tail under draft 7 caps the length below minItems",
+    "schema": {"type": "array", "items": [true], "minItems": 2, "additionalItems": false},
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {"data": [1], "valid": false},
+      {"data": [1, 2], "valid": false}
+    ]
+  },
+  {
     "description": "ir: bare prefixItems constrain only arrays",
     "schema": {"prefixItems": [{"type": "integer"}]},
     "expected": {
