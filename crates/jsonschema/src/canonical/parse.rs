@@ -75,6 +75,9 @@ fn parse_schema(
     // before the bound it modifies, so it is applied once the whole object has been read.
     let mut draft4_exclusive_minimum = false;
     let mut draft4_exclusive_maximum = false;
+    let mut if_schema: Option<Schema> = None;
+    let mut then_schema: Option<Schema> = None;
+    let mut else_schema: Option<Schema> = None;
     let mut conjuncts: Vec<Schema> = Vec::new();
     for (key, entry) in map {
         match (key.as_str(), entry) {
@@ -369,6 +372,24 @@ fn parse_schema(
             ("exclusiveMaximum", Value::Bool(flag)) if matches!(ctx.draft(), Draft::Draft4) => {
                 draft4_exclusive_maximum = *flag;
             }
+            ("if", value) if ctx.draft().is_known_keyword("if") => {
+                match parse_schema(value, ctx, false)? {
+                    Some(schema) => if_schema = Some(schema),
+                    None => return Ok(None),
+                }
+            }
+            ("then", value) if ctx.draft().is_known_keyword("then") => {
+                match parse_schema(value, ctx, false)? {
+                    Some(schema) => then_schema = Some(schema),
+                    None => return Ok(None),
+                }
+            }
+            ("else", value) if ctx.draft().is_known_keyword("else") => {
+                match parse_schema(value, ctx, false)? {
+                    Some(schema) => else_schema = Some(schema),
+                    None => return Ok(None),
+                }
+            }
             // The complement of the negated schema, when the IR can spell it; an unmodeled child or
             // an inexpressible complement keeps the whole document raw.
             ("not", value) if ctx.draft().is_known_keyword("not") => {
@@ -563,6 +584,30 @@ fn parse_schema(
         } else {
             conjuncts.push(number_facet_schema(leaf, ctx));
         }
+    }
+
+    // `then`/`else` apply only beside a sibling `if`; either alone is an annotation with no effect.
+    match (if_schema, then_schema, else_schema) {
+        (None, _, _) | (Some(_), None, None) => {}
+        // ¬if ∨ then: a value the condition rejects needs nothing further.
+        (Some(condition), Some(then), None) => match negate::negate(&condition, ctx) {
+            Some(complement) => conjuncts.push(algebra::union(vec![complement, then], ctx)),
+            None => return Ok(None),
+        },
+        // if ∨ else: a value the condition admits needs nothing further, so the complement is
+        // never needed - unlike every other arm here, this one cannot force the document raw.
+        (Some(condition), None, Some(else_branch)) => {
+            conjuncts.push(algebra::union(vec![condition, else_branch], ctx));
+        }
+        // (if ∧ then) ∨ (¬if ∧ else)
+        (Some(condition), Some(then), Some(else_branch)) => match negate::negate(&condition, ctx) {
+            Some(complement) => {
+                let holds = algebra::intersect(condition, then, ctx);
+                let fails = algebra::intersect(complement, else_branch, ctx);
+                conjuncts.push(algebra::union(vec![holds, fails], ctx));
+            }
+            None => return Ok(None),
+        },
     }
 
     let base = match (type_set, admitted_values(enum_values, const_value)) {

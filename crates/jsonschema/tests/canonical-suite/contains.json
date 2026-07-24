@@ -485,8 +485,8 @@
   },
   {
     "description": "ir: an unmodeled contains schema keeps the document raw",
-    "schema": {"type": "array", "contains": {"if": true}},
-    "expected": {"type": "array", "contains": {"if": true}},
+    "schema": {"type": "array", "contains": {"unevaluatedProperties": true}},
+    "expected": {"type": "array", "contains": {"unevaluatedProperties": true}},
     "tests": [
       {"data": [1], "valid": true},
       {"data": [], "valid": false}
