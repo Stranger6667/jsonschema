@@ -283,11 +283,12 @@
   },
   {
     "description": "ir: an unmodeled key constraint keeps the document raw",
-    "schema": {"type": "object", "propertyNames": {"not": {"type": "string"}}},
-    "expected": {"type": "object", "propertyNames": {"not": {"type": "string"}}},
+    "schema": {"type": "object", "propertyNames": {"not": {"type": "integer"}}},
+    "expected": {"type": "object", "propertyNames": {"not": {"type": "integer"}}},
     "tests": [
       {"data": {}, "valid": true},
-      {"data": {"a": 1}, "valid": false}
+      {"data": {"a": 1}, "valid": true},
+      {"data": [1], "valid": false}
     ]
   },
   {
@@ -295,7 +296,8 @@
     "schemas": [
       {"type": "object", "propertyNames": false},
       {"type": "object", "propertyNames": {"type": "integer"}},
-      {"type": "object", "propertyNames": {"minLength": 2, "maxLength": 1}}
+      {"type": "object", "propertyNames": {"minLength": 2, "maxLength": 1}},
+      {"type": "object", "propertyNames": {"not": {"type": "string"}}}
     ],
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

@@ -95,6 +95,7 @@ pub(crate) mod context;
 pub(crate) mod emit;
 pub(crate) mod error;
 pub(crate) mod ir;
+pub(crate) mod negate;
 pub(crate) mod options;
 pub(crate) mod parse;
 pub(crate) mod schema;

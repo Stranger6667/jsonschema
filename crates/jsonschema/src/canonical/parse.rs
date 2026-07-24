@@ -15,7 +15,7 @@ use crate::{
             Divisors, IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, Side,
             StringLeaf,
         },
-        CanonicalizationError,
+        negate, CanonicalizationError,
     },
     JsonType, JsonTypeSet,
 };
@@ -317,15 +317,16 @@ fn parse_schema(
             ("exclusiveMaximum", Value::Bool(flag)) if matches!(ctx.draft(), Draft::Draft4) => {
                 draft4_exclusive_maximum = *flag;
             }
-            // `not` of a schema admitting everything admits nothing, which is also how emit spells
-            // `false` where a boolean schema cannot appear; other `not` forms stay unmodeled.
-            ("not", Value::Bool(true)) if ctx.draft().is_known_keyword("not") => {
-                conjuncts.push(Schema::new(SchemaKind::False));
-            }
-            ("not", Value::Object(entries))
-                if entries.is_empty() && ctx.draft().is_known_keyword("not") =>
-            {
-                conjuncts.push(Schema::new(SchemaKind::False));
+            // The complement of the negated schema, when the IR can spell it; an unmodeled child or
+            // an inexpressible complement keeps the whole document raw.
+            ("not", value) if ctx.draft().is_known_keyword("not") => {
+                match parse_schema(value, ctx, false)? {
+                    Some(child) => match negate::negate(&child) {
+                        Some(complement) => conjuncts.push(complement),
+                        None => return Ok(None),
+                    },
+                    None => return Ok(None),
+                }
             }
             // TODO(canonical): not modeled yet - every other known keyword keeps the document raw.
             (other, _) if ctx.draft().is_known_keyword(other) => return Ok(None),

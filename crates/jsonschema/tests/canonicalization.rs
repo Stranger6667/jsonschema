@@ -458,16 +458,31 @@ fn validation_error_display_and_source() {
     assert!(std::error::Error::source(&error).is_some());
 }
 
+// `if` is unmodeled, so the document goes raw at the root without descending into the nesting.
 #[test]
 fn deeply_nested_document_round_trips() {
     let mut schema = json!({"type": "string"});
     for _ in 0..300 {
         let mut map = Map::new();
-        map.insert("not".to_string(), schema);
+        map.insert("if".to_string(), schema);
         schema = Value::Object(map);
     }
     let canonical = canonicalize(&schema).expect("canonicalizes");
     assert_eq!(canonical.to_json_schema(), schema);
+}
+
+// The complement of a type set missing only `null` (or only `boolean`) is the same canonical node
+// the direct spelling produces, not a sibling `MultiType` shape.
+#[test]
+fn negated_type_set_complement_converges_with_direct_spelling() {
+    let negated =
+        canonicalize(&json!({"not": {"type": ["boolean", "number", "string", "array", "object"]}}))
+            .unwrap();
+    assert_eq!(negated, canonicalize(&json!({"type": "null"})).unwrap());
+    let negated =
+        canonicalize(&json!({"not": {"type": ["null", "number", "string", "array", "object"]}}))
+            .unwrap();
+    assert_eq!(negated, canonicalize(&json!({"type": "boolean"})).unwrap());
 }
 
 // Numerals `ext::numeric::try_parse_bigint` refuses (huge exponents / digit counts) have no
