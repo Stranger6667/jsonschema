@@ -251,7 +251,9 @@ impl MaybeEmpty for IntegerLeaf {
 pub(crate) struct ArrayLeaf {
     pub(crate) lengths: LengthBounds,
     pub(crate) unique: bool,
-    /// The schema every element must satisfy.
+    /// Per-index schemas: the element at position `i` must satisfy `prefix[i]`.
+    pub(crate) prefix: Vec<Schema>,
+    /// The schema every element from `prefix.len()` onward must satisfy.
     pub(crate) items: Option<Schema>,
 }
 
@@ -259,7 +261,10 @@ impl ArrayLeaf {
     /// Whether every array satisfies this leaf, which makes it the `array` type written longhand.
     /// Every facet has to be listed here, or a union folds the leaf into the type set and drops it.
     pub(crate) fn spans_domain(&self) -> bool {
-        self.lengths.is_unbounded() && !self.unique && self.items.is_none()
+        self.lengths.is_unbounded()
+            && !self.unique
+            && self.prefix.is_empty()
+            && self.items.is_none()
     }
 }
 

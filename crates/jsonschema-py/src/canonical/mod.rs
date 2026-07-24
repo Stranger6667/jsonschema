@@ -159,6 +159,11 @@ impl PyCanonicalSchema {
                         })
                         .transpose()?,
                     unique_items: view.unique_items,
+                    prefix_items: view
+                        .prefix_items
+                        .into_iter()
+                        .map(|schema| Py::new(py, PyCanonicalSchema { inner: schema }))
+                        .collect::<PyResult<_>>()?,
                     items: view
                         .items
                         .map(|items| Py::new(py, PyCanonicalSchema { inner: items }))
@@ -340,14 +345,28 @@ pub(crate) struct ArrayView {
     #[pyo3(get)]
     unique_items: bool,
     #[pyo3(get)]
+    prefix_items: Vec<Py<PyCanonicalSchema>>,
+    #[pyo3(get)]
     items: Option<Py<PyCanonicalSchema>>,
 }
 
 #[pymethods]
 impl ArrayView {
     #[classattr]
-    fn __match_args__() -> (&'static str, &'static str, &'static str, &'static str) {
-        ("min_items", "max_items", "unique_items", "items")
+    fn __match_args__() -> (
+        &'static str,
+        &'static str,
+        &'static str,
+        &'static str,
+        &'static str,
+    ) {
+        (
+            "min_items",
+            "max_items",
+            "unique_items",
+            "prefix_items",
+            "items",
+        )
     }
 }
 

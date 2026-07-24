@@ -154,6 +154,7 @@ impl RbCanonicalSchema {
                     min_items: view.min_items,
                     max_items: view.max_items,
                     unique_items: view.unique_items,
+                    prefix_items: view.prefix_items,
                     items: view.items,
                 })
                 .as_value(),
@@ -502,6 +503,7 @@ pub struct ArrayView {
     min_items: Option<serde_json::Number>,
     max_items: Option<serde_json::Number>,
     unique_items: bool,
+    prefix_items: Vec<CanonicalSchema>,
     items: Option<CanonicalSchema>,
 }
 
@@ -520,6 +522,19 @@ impl ArrayView {
         ruby.into_value(rb_self.unique_items)
     }
 
+    fn prefix_items(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        let array = ruby.ary_new_capa(rb_self.prefix_items.len());
+        for schema in &rb_self.prefix_items {
+            array.push(
+                ruby.obj_wrap(RbCanonicalSchema {
+                    inner: schema.clone(),
+                })
+                .as_value(),
+            )?;
+        }
+        Ok(array.as_value())
+    }
+
     fn items(ruby: &Ruby, rb_self: &Self) -> Value {
         match &rb_self.items {
             Some(items) => ruby
@@ -533,10 +548,11 @@ impl ArrayView {
 
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
-            "#<JSONSchema::Canonical::ArrayView min_items={} max_items={} unique_items={} items={}>",
+            "#<JSONSchema::Canonical::ArrayView min_items={} max_items={} unique_items={} prefix_items={} items={}>",
             Self::min_items(ruby, rb_self)?.inspect(),
             Self::max_items(ruby, rb_self)?.inspect(),
             Self::unique_items(ruby, rb_self).inspect(),
+            Self::prefix_items(ruby, rb_self)?.inspect(),
             Self::items(ruby, rb_self).inspect()
         ))
     }
@@ -548,6 +564,10 @@ impl ArrayView {
         hash.aset(
             ruby.sym_new("unique_items"),
             Self::unique_items(ruby, rb_self),
+        )?;
+        hash.aset(
+            ruby.sym_new("prefix_items"),
+            Self::prefix_items(ruby, rb_self)?,
         )?;
         hash.aset(ruby.sym_new("items"), Self::items(ruby, rb_self))?;
         Ok(hash)
@@ -877,6 +897,7 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     array_view.define_method("min_items", method!(ArrayView::min_items, 0))?;
     array_view.define_method("max_items", method!(ArrayView::max_items, 0))?;
     array_view.define_method("unique_items", method!(ArrayView::unique_items, 0))?;
+    array_view.define_method("prefix_items", method!(ArrayView::prefix_items, 0))?;
     array_view.define_method("items", method!(ArrayView::items, 0))?;
     array_view.define_method("inspect", method!(ArrayView::inspect, 0))?;
     array_view.define_method("deconstruct_keys", method!(ArrayView::deconstruct_keys, 1))?;

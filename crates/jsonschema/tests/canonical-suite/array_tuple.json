@@ -1,0 +1,397 @@
+[
+  {
+    "description": "ir: a 2020-12 prefixItems tuple constrains each index",
+    "schema": {"type": "array", "prefixItems": [{"type": "integer"}, {"type": "string"}]},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"type": "integer"}, {"type": "string"}]
+    },
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": ["x", 1], "valid": false},
+      {"data": [1], "valid": true},
+      {"data": [1, "x", true], "valid": true},
+      {"data": [], "valid": true},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: prefixItems with an items tail constrains the elements beyond the prefix",
+    "schema": {"type": "array", "prefixItems": [{"type": "integer"}], "items": {"type": "string"}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"type": "integer"}],
+      "items": {"type": "string"}
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1, "a"], "valid": true},
+      {"data": [1, "a", "b"], "valid": true},
+      {"data": [1, 2], "valid": false},
+      {"data": ["a"], "valid": false},
+      {"data": [], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: draft 7 array-form items with additionalItems models the same tuple",
+    "schema": {"type": "array", "items": [{"type": "integer"}], "additionalItems": {"type": "string"}},
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "array",
+      "items": [{"type": "integer"}],
+      "additionalItems": {"type": "string"}
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1, "a"], "valid": true},
+      {"data": [1, "a", "b"], "valid": true},
+      {"data": [1, 2], "valid": false},
+      {"data": ["a"], "valid": false},
+      {"data": [], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: allOf intersects two tuples of different lengths index by index",
+    "schema": {
+      "allOf": [
+        {"type": "array", "prefixItems": [{"type": "integer"}]},
+        {"type": "array", "prefixItems": [{"type": "number"}, {"type": "string"}]}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"type": "integer"}, {"type": "string"}]
+    },
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": [1, 2], "valid": false},
+      {"data": ["x", "y"], "valid": false},
+      {"data": [], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a false items tail caps the length at the prefix",
+    "schema": {"type": "array", "prefixItems": [{"type": "integer"}, {"type": "string"}], "items": false},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"type": "integer"}, {"type": "string"}],
+      "maxItems": 2
+    },
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": [1, "x", true], "valid": false},
+      {"data": [1], "valid": true},
+      {"data": [1, 2], "valid": false},
+      {"data": [], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a false additionalItems tail caps the length under draft 7",
+    "schema": {"type": "array", "items": [{"type": "integer"}, {"type": "string"}], "additionalItems": false},
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "array",
+      "items": [{"type": "integer"}, {"type": "string"}],
+      "maxItems": 2
+    },
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": [1, "x", true], "valid": false},
+      {"data": [1], "valid": true},
+      {"data": [1, 2], "valid": false},
+      {"data": [], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a trailing prefix schema equal to the tail folds into it",
+    "schemas": [
+      {"type": "array", "prefixItems": [{"type": "integer"}, {"type": "string"}], "items": {"type": "string"}},
+      {"type": "array", "prefixItems": [{"type": "integer"}], "items": {"type": "string"}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"type": "integer"}],
+      "items": {"type": "string"}
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1, "a"], "valid": true},
+      {"data": [1, "a", "b"], "valid": true},
+      {"data": [1, 2], "valid": false},
+      {"data": ["a"], "valid": false},
+      {"data": [], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a trailing true prefix schema folds when there is no tail",
+    "schemas": [
+      {"type": "array", "prefixItems": [{"type": "integer"}, true]},
+      {"type": "array", "prefixItems": [{"type": "integer"}]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"type": "integer"}]
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1, "anything"], "valid": true},
+      {"data": [1, 2, 3], "valid": true},
+      {"data": ["x"], "valid": false},
+      {"data": [], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a false prefix schema caps the length at its index",
+    "schema": {"type": "array", "prefixItems": [{"type": "integer"}, false]},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"type": "integer"}],
+      "maxItems": 1
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1, 2], "valid": false},
+      {"data": [], "valid": true},
+      {"data": ["x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: maxItems below the prefix length drops the unreachable prefix schemas",
+    "schema": {"type": "array", "prefixItems": [{"type": "integer"}, {"type": "string"}, {"type": "boolean"}], "maxItems": 1},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"type": "integer"}],
+      "maxItems": 1
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1, "x"], "valid": false},
+      {"data": ["x"], "valid": false},
+      {"data": [], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: an unmodeled additionalItems schema keeps the document raw",
+    "schema": {"type": "array", "items": [{"type": "integer"}], "additionalItems": {"not": {"type": "string"}}},
+    "draft": "draft7",
+    "expected": {"type": "array", "items": [{"type": "integer"}], "additionalItems": {"not": {"type": "string"}}},
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1, 5], "valid": true},
+      {"data": [1, "x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a false first prefix schema leaves only the empty array",
+    "schema": {"type": "array", "prefixItems": [false]},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": []
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a false prefix schema beside a minimum is unsatisfiable",
+    "schema": {"type": "array", "prefixItems": [false], "minItems": 1},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: bare prefixItems constrain only arrays",
+    "schema": {"prefixItems": [{"type": "integer"}]},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "object"]},
+        {"type": "array", "prefixItems": [{"type": "integer"}]}
+      ]
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": false},
+      {"data": [1, 2, 3], "valid": true},
+      {"data": {}, "valid": true},
+      {"data": "s", "valid": true},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: union windows under the same prefix merge",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "prefixItems": [{"type": "integer"}], "maxItems": 2},
+        {"type": "array", "prefixItems": [{"type": "integer"}], "minItems": 3}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"type": "integer"}]
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1, 2, 3, 4], "valid": true},
+      {"data": ["x"], "valid": false},
+      {"data": [], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a prefix-constrained branch is dropped by a bare array branch",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "prefixItems": [{"type": "integer"}]},
+        {"type": "array"}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array"
+    },
+    "tests": [
+      {"data": ["x", "y"], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": [], "valid": true},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: draft 4 does not model array-form items tuples",
+    "schema": {"items": [{"type": "integer"}]},
+    "draft": "draft4",
+    "expected": {"items": [{"type": "integer"}]},
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a constant array whose elements fit the prefix survives intersection",
+    "schema": {
+      "allOf": [
+        {"const": [1, "x"]},
+        {"type": "array", "prefixItems": [{"type": "integer"}, {"type": "string"}]}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": [1, "x"]
+    },
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": [1, 2], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a constant array a prefix schema rejects is unsatisfiable",
+    "schema": {
+      "allOf": [
+        {"const": [1, 2]},
+        {"type": "array", "prefixItems": [{"type": "integer"}, {"type": "string"}]}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {"data": [1, 2], "valid": false},
+      {"data": [1, "x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: draft 6 array-form items model a tuple",
+    "schema": {"type": "array", "items": [{"type": "integer"}, {"type": "string"}]},
+    "draft": "draft6",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-06/schema#",
+      "type": "array",
+      "items": [{"type": "integer"}, {"type": "string"}]
+    },
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": ["x", 1], "valid": false},
+      {"data": [1], "valid": true},
+      {"data": [1, "x", "extra"], "valid": true},
+      {"data": [], "valid": true},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: additionalItems without a tuple is inert whatever its value",
+    "schema": {"type": "array", "additionalItems": {"not": {"type": "string"}}},
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "array"
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": true},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a union branch extending another's prefix with no tail folds into it",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "prefixItems": [{"type": "integer"}]},
+        {"type": "array", "prefixItems": [{"type": "integer"}, {"type": "string"}]}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"type": "integer"}]
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1, 2], "valid": true},
+      {"data": [1, "x"], "valid": true},
+      {"data": ["x"], "valid": false},
+      {"data": [], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a union branch adding a tail to another's prefix folds into it",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "prefixItems": [{"type": "integer"}]},
+        {"type": "array", "prefixItems": [{"type": "integer"}], "items": {"type": "string"}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"type": "integer"}]
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1, 2], "valid": true},
+      {"data": [1, "x"], "valid": true},
+      {"data": ["x"], "valid": false},
+      {"data": [], "valid": true}
+    ]
+  }
+]

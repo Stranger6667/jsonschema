@@ -114,12 +114,33 @@ RSpec.describe "JSONSchema.canonicalize" do
       "items" => { "type" => "integer" }
     }
     case JSONSchema.canonicalize(schema).view
-    in JSONSchema::Canonical::ArrayView[min_items:, max_items:, unique_items:, items:]
+    in JSONSchema::Canonical::ArrayView[min_items:, max_items:, unique_items:, prefix_items:, items:]
       expect(min_items).to eq(1)
       expect(max_items).to eq(3)
       expect(unique_items).to be(true)
+      expect(prefix_items).to eq([])
       expect(items.to_json_schema).to eq(
         { "$schema" => "https://json-schema.org/draft/2020-12/schema", "type" => "integer" }
+      )
+    end
+  end
+
+  it "view returns ArrayView with a prefix tuple" do
+    schema = {
+      "type" => "array",
+      "prefixItems" => [{ "type" => "integer" }, { "type" => "string" }],
+      "items" => { "type" => "boolean" }
+    }
+    case JSONSchema.canonicalize(schema).view
+    in JSONSchema::Canonical::ArrayView[prefix_items:, items:]
+      expect(prefix_items.map(&:to_json_schema)).to eq(
+        [
+          { "$schema" => "https://json-schema.org/draft/2020-12/schema", "type" => "integer" },
+          { "$schema" => "https://json-schema.org/draft/2020-12/schema", "type" => "string" }
+        ]
+      )
+      expect(items.to_json_schema).to eq(
+        { "$schema" => "https://json-schema.org/draft/2020-12/schema", "type" => "boolean" }
       )
     end
   end
@@ -216,7 +237,7 @@ RSpec.describe "JSONSchema.canonicalize" do
     "StringView" => [{ "type" => "string", "minLength" => 2, "pattern" => "^a" }, %i[min_length max_length patterns formats]],
     "IntegerView" => [{ "type" => "integer", "minimum" => 2, "maximum" => 9 }, %i[minimum maximum multiple_of]],
     "NumberView" => [{ "type" => "number", "minimum" => 2 }, %i[minimum exclusive_minimum maximum exclusive_maximum multiple_of]],
-    "ArrayView" => [{ "type" => "array", "minItems" => 1 }, %i[min_items max_items unique_items items]],
+    "ArrayView" => [{ "type" => "array", "minItems" => 1 }, %i[min_items max_items unique_items prefix_items items]],
     "ObjectView" => [{ "type" => "object", "minProperties" => 1 },
                      %i[min_properties max_properties required property_names properties pattern_properties]],
     "ConstView" => [{ "const" => nil }, %i[value]],

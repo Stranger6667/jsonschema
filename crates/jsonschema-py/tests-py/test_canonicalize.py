@@ -126,11 +126,31 @@ def test_view_string_formats():
 def test_view_array_lengths():
     schema = {"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": True, "items": {"type": "integer"}}
     match canonicalize(schema).view():
-        case canonical.ArrayView(min_items=min_items, max_items=max_items, unique_items=unique_items, items=items):
+        case canonical.ArrayView(
+            min_items=min_items,
+            max_items=max_items,
+            unique_items=unique_items,
+            prefix_items=prefix_items,
+            items=items,
+        ):
             assert min_items == 1
             assert max_items == 3
             assert unique_items is True
+            assert prefix_items == []
             assert items.to_json_schema() == {"$schema": DRAFT202012, "type": "integer"}
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
+def test_view_array_prefix_items():
+    schema = {"type": "array", "prefixItems": [{"type": "integer"}, {"type": "string"}], "items": {"type": "boolean"}}
+    match canonicalize(schema).view():
+        case canonical.ArrayView(prefix_items=prefix_items, items=items):
+            assert [p.to_json_schema() for p in prefix_items] == [
+                {"$schema": DRAFT202012, "type": "integer"},
+                {"$schema": DRAFT202012, "type": "string"},
+            ]
+            assert items.to_json_schema() == {"$schema": DRAFT202012, "type": "boolean"}
         case other:
             pytest.fail(f"unexpected view: {other!r}")
 

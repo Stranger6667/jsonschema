@@ -52,6 +52,8 @@ fn parse_schema(
     let mut min_items: Option<BoundCardinality> = None;
     let mut max_items: Option<BoundCardinality> = None;
     let mut items: Option<Schema> = None;
+    let mut item_prefix: Option<Vec<Schema>> = None;
+    let mut additional_items: Option<&Value> = None;
     let mut required: Vec<Arc<str>> = Vec::new();
     let mut property_names: Option<Schema> = None;
     let mut properties: BTreeMap<Arc<str>, Schema> = BTreeMap::new();
@@ -161,9 +163,9 @@ fn parse_schema(
                     None => return Ok(None),
                 }
             }
-            // Only the uniform schema form; the tuple form stays unmodeled. Draft 4 stays unmodeled
-            // too: a value set intersected with an item schema can pin a nested number to its
-            // integer spelling, which per element only `prefixItems` could express.
+            // The uniform schema form constrains every element. Draft 4 stays unmodeled: a value set
+            // intersected with an item schema can pin a nested number to its integer spelling, which
+            // Draft 4's `integer` type would reject.
             ("items", value @ (Value::Object(_) | Value::Bool(_)))
                 if ctx.draft().is_known_keyword("items")
                     && !matches!(ctx.draft(), Draft::Draft4) =>
@@ -172,6 +174,39 @@ fn parse_schema(
                     Some(schema) => items = Some(schema),
                     None => return Ok(None),
                 }
+            }
+            // The 2020-12 tuple: each element carries the schema at its index.
+            ("prefixItems", Value::Array(schemas))
+                if ctx.draft().is_known_keyword("prefixItems") =>
+            {
+                match parse_prefix(schemas, ctx)? {
+                    Some(prefix) => item_prefix = Some(prefix),
+                    None => return Ok(None),
+                }
+            }
+            // Array-form `items` is the tuple in 2019-09 and earlier; 2020-12 spells it `prefixItems`.
+            // Draft 4 stays unmodeled for the same per-index integer aliasing reason as uniform items.
+            ("items", Value::Array(schemas))
+                if matches!(
+                    ctx.draft(),
+                    Draft::Draft6 | Draft::Draft7 | Draft::Draft201909
+                ) =>
+            {
+                match parse_prefix(schemas, ctx)? {
+                    Some(prefix) => item_prefix = Some(prefix),
+                    None => return Ok(None),
+                }
+            }
+            // `additionalItems` constrains the elements beyond an array-form `items` tuple. It is
+            // inert when `items` is a schema or absent, and unknown in 2020-12, so its value is
+            // held raw and parsed only once a tuple makes it live.
+            ("additionalItems", value @ (Value::Object(_) | Value::Bool(_)))
+                if matches!(
+                    ctx.draft(),
+                    Draft::Draft6 | Draft::Draft7 | Draft::Draft201909
+                ) =>
+            {
+                additional_items = Some(value);
             }
             ("required", Value::Array(names))
                 if ctx.draft().is_known_keyword("required")
@@ -340,7 +375,34 @@ fn parse_schema(
     if min_items.as_ref().is_some_and(BoundCardinality::is_zero) {
         min_items = None;
     }
-    if min_items.is_some() || max_items.is_some() || unique_items || items.is_some() {
+    // A tuple's tail is spelled `additionalItems` before 2020-12 and schema-form `items` in it. A
+    // schema-form `items` with no tuple constrains every element, so it is the tail of an empty
+    // prefix, and `additionalItems` is then inert.
+    let (prefix, tail) = match item_prefix {
+        Some(prefix)
+            if matches!(
+                ctx.draft(),
+                Draft::Draft6 | Draft::Draft7 | Draft::Draft201909
+            ) =>
+        {
+            let tail = match additional_items {
+                Some(value) => match parse_schema(value, ctx, false)? {
+                    Some(schema) => Some(schema),
+                    None => return Ok(None),
+                },
+                None => None,
+            };
+            (prefix, tail)
+        }
+        Some(prefix) => (prefix, items),
+        None => (Vec::new(), items),
+    };
+    if min_items.is_some()
+        || max_items.is_some()
+        || unique_items
+        || !prefix.is_empty()
+        || tail.is_some()
+    {
         conjuncts.push(array_facet_schema(
             ArrayLeaf {
                 lengths: LengthBounds {
@@ -348,7 +410,8 @@ fn parse_schema(
                     maximum: max_items,
                 },
                 unique: unique_items,
-                items,
+                prefix,
+                items: tail,
             },
             ctx,
         ));
@@ -629,6 +692,21 @@ fn string_facet_schema(leaf: StringLeaf, ctx: &CanonicalizationContext) -> Schem
         JsonTypeSet::all().remove(JsonType::String),
     ));
     algebra::union(vec![non_string, algebra::string_leaf(leaf, ctx)], ctx)
+}
+
+/// Parse a tuple's per-index schemas; `Ok(None)` when any element is unmodeled, keeping the document raw.
+fn parse_prefix(
+    schemas: &[Value],
+    ctx: &CanonicalizationContext,
+) -> Result<Option<Vec<Schema>>, CanonicalizationError> {
+    let mut prefix = Vec::with_capacity(schemas.len());
+    for schema in schemas {
+        match parse_schema(schema, ctx, false)? {
+            Some(schema) => prefix.push(schema),
+            None => return Ok(None),
+        }
+    }
+    Ok(Some(prefix))
 }
 
 /// An array facet constrains only arrays, so `{"minItems": 1}` becomes
