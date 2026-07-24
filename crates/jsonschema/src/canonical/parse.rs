@@ -11,9 +11,9 @@ use crate::{
         algebra,
         context::CanonicalizationContext,
         ir::{
-            ArrayLeaf, AtLeastTwo, BoundCardinality, BoundNumber, BoundRational, CanonicalJson,
-            Divisors, IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, Side,
-            StringLeaf,
+            canonicalize_value_set, type_set_schema, typed_group, ArrayLeaf, BoundCardinality,
+            BoundNumber, BoundRational, CanonicalJson, Divisors, IntegerLeaf, LengthBounds,
+            NumberLeaf, ObjectLeaf, Schema, SchemaKind, Side, StringLeaf,
         },
         negate, CanonicalizationError,
     },
@@ -627,10 +627,7 @@ pub(crate) fn restrict_values_to_types(
     let mut branches = Vec::new();
     let integer_set = canonicalize_value_set(integers);
     if !matches!(integer_set.kind(), SchemaKind::False) {
-        branches.push(Schema::new(SchemaKind::TypedGroup {
-            ty: JsonType::Integer,
-            body: integer_set,
-        }));
+        branches.push(typed_group(JsonType::Integer, integer_set));
     }
     let other_set = canonicalize_value_set(others);
     if !matches!(other_set.kind(), SchemaKind::False) {
@@ -669,44 +666,6 @@ fn parse_type_set(value: &Value) -> Option<JsonTypeSet> {
             Some(set.insert(name.as_str()?.parse::<JsonType>().ok()?))
         }),
         Value::Null | Value::Bool(_) | Value::Number(_) | Value::Object(_) => None,
-    }
-}
-
-/// Canonical node for a bare type set: `null`/`boolean` become their finite value sets, the full
-/// set is `True`, anything else stays a `MultiType`.
-pub(crate) fn type_set_schema(set: JsonTypeSet) -> Schema {
-    let set = SchemaKind::canonical_type_set(set);
-    if SchemaKind::semantic_cover(set) == JsonTypeSet::all() {
-        return Schema::new(SchemaKind::True);
-    }
-    if set == JsonTypeSet::from(JsonType::Null) {
-        return Schema::new(SchemaKind::Const(CanonicalJson::from_value(&Value::Null)));
-    }
-    if set == JsonTypeSet::from(JsonType::Boolean) {
-        return canonicalize_value_set(vec![
-            CanonicalJson::from_value(&Value::Bool(false)),
-            CanonicalJson::from_value(&Value::Bool(true)),
-        ]);
-    }
-    Schema::new(SchemaKind::MultiType(set))
-}
-
-/// Pack members into the canonical value-set shape: empty is unsatisfiable, singletons are `const`,
-/// larger sets are sorted, deduplicated `enum`s - unless they saturate 2+ types, which is a type list.
-pub(crate) fn canonicalize_value_set(members: Vec<CanonicalJson>) -> Schema {
-    match AtLeastTwo::new(members) {
-        Ok(values) => {
-            if let Some(type_set) = SchemaKind::finite_values_saturated_domain(values.as_slice()) {
-                if type_set.len() >= 2 {
-                    return Schema::new(SchemaKind::MultiType(type_set));
-                }
-            }
-            Schema::new(SchemaKind::Enum(values))
-        }
-        Err(mut lone) => match lone.pop() {
-            Some(only) => Schema::new(SchemaKind::Const(only)),
-            None => Schema::new(SchemaKind::False),
-        },
     }
 }
 

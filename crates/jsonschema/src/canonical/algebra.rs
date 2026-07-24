@@ -8,11 +8,11 @@ use crate::{
     canonical::{
         context::{CanonicalizationContext, CompiledMatcher},
         ir::{
-            tighter, ArrayLeaf, ArrayLeaves, AtLeastTwo, BoundCardinality, BoundInteger,
-            BoundNumber, BoundRational, CanonicalJson, Discrete, Divisors, IntegerBounds,
-            IntegerLeaf, IntegerLeaves, LengthBounds, NonEmpty, NumberLeaf, NumberLeaves,
-            ObjectLeaf, ObjectLeaves, Round, Schema, SchemaKind, Side, StringLeaf, StringLeaves,
-            Verdict,
+            canonicalize_value_set, tighter, type_set_schema, typed_group, ArrayLeaf, ArrayLeaves,
+            AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber, BoundRational, CanonicalJson,
+            Discrete, Divisors, IntegerBounds, IntegerLeaf, IntegerLeaves, LengthBounds, NonEmpty,
+            NumberLeaf, NumberLeaves, ObjectLeaf, ObjectLeaves, Round, Schema, SchemaKind, Side,
+            StringLeaf, StringLeaves, Verdict,
         },
         parse,
     },
@@ -88,7 +88,7 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
             if cover.is_empty() {
                 Schema::new(SchemaKind::False)
             } else {
-                parse::type_set_schema(cover)
+                type_set_schema(cover)
             }
         }
         // A `TypedGroup` accepts values of one JSON type that also lie in a value set. If the type set
@@ -166,7 +166,7 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
                 .into_iter()
                 .filter(|member| number_leaf_admits(leaf.get(), member))
                 .collect();
-            typed_group(ty, parse::canonicalize_value_set(kept))
+            typed_group(ty, canonicalize_value_set(kept))
         }
         // A typed group holds `integer` values (Draft 4); keep the ones within the leaf's interval.
         (SchemaKind::TypedGroup { ty, body }, SchemaKind::Integer(leaf))
@@ -175,7 +175,7 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
                 .into_iter()
                 .filter(|member| integer_leaf_admits(leaf.get(), member))
                 .collect();
-            typed_group(ty, parse::canonicalize_value_set(kept))
+            typed_group(ty, canonicalize_value_set(kept))
         }
         // A number interval keeps only the values both sides admit.
         (SchemaKind::Number(first), SchemaKind::Number(second)) => {
@@ -478,7 +478,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         });
     }
 
-    let value_set = parse::canonicalize_value_set(members);
+    let value_set = canonicalize_value_set(members);
     // Packing the loose values may fill a whole type's domain (all of `null`/`boolean`), turning them into a
     // type. As a type it can now absorb more values/groups, so fold it back in and re-run the whole pass.
     // e.g.  anyOf [
@@ -506,7 +506,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     // Assemble the surviving branches. The collected types become one branch.
     let mut out: Vec<Schema> = Vec::new();
     if !types.is_empty() {
-        out.push(parse::type_set_schema(types));
+        out.push(type_set_schema(types));
     }
     // Each per-type group becomes a branch, unless the loose value set already accepts all its values.
     // e.g.  Draft 4, anyOf [
@@ -514,7 +514,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     //         {"enum": [1, "a"]}
     //       ]  =>  {"enum": [1, "a"]}
     for (ty, values) in groups {
-        let body = parse::canonicalize_value_set(values);
+        let body = canonicalize_value_set(values);
         if body.kind().finite_values().is_some() && !value_set_admits_group(&value_set, &body) {
             out.push(typed_group(ty, body));
         }
@@ -655,11 +655,11 @@ fn rerun(
     ctx: &CanonicalizationContext,
 ) -> Schema {
     let mut rest: Vec<Schema> = vec![Schema::new(SchemaKind::MultiType(types))];
-    rest.push(parse::canonicalize_value_set(members));
+    rest.push(canonicalize_value_set(members));
     rest.extend(
         groups
             .into_iter()
-            .map(|(ty, values)| typed_group(ty, parse::canonicalize_value_set(values))),
+            .map(|(ty, values)| typed_group(ty, canonicalize_value_set(values))),
     );
     rest.extend(strings.into_iter().map(|leaf| string_leaf(leaf, ctx)));
     rest.extend(integers.into_iter().map(|leaf| integer_leaf(leaf, ctx)));
@@ -712,7 +712,7 @@ fn restrict_members(
         // `other` is itself a value set: keep the members present in both.
         kind @ (SchemaKind::Const(_) | SchemaKind::Enum(_)) => {
             let admitted = into_members(kind);
-            parse::canonicalize_value_set(
+            canonicalize_value_set(
                 members
                     .into_iter()
                     .filter(|member| admitted.binary_search(member).is_ok())
@@ -742,7 +742,7 @@ fn restrict_members(
                     )
                 })
                 .collect();
-            parse::canonicalize_value_set(kept)
+            canonicalize_value_set(kept)
         }
         // `other` is an integer leaf: keep the integer members within its interval. Draft 4 keeps the
         // integer type guard so `1.0` cannot match `1` through value equality.
@@ -751,7 +751,7 @@ fn restrict_members(
                 .into_iter()
                 .filter(|member| integer_leaf_admits(leaf.get(), member))
                 .collect();
-            let value_set = parse::canonicalize_value_set(kept);
+            let value_set = canonicalize_value_set(kept);
             if matches!(ctx.draft(), Draft::Draft4) {
                 typed_group(JsonType::Integer, value_set)
             } else {
@@ -765,7 +765,7 @@ fn restrict_members(
                 .into_iter()
                 .filter(|member| member.json_type() == ty && admitted.binary_search(member).is_ok())
                 .collect();
-            typed_group(ty, parse::canonicalize_value_set(kept))
+            typed_group(ty, canonicalize_value_set(kept))
         }
         // Intersect dispatch already handled `True`/`False`/`AnyOf`/`Raw`, so `other` is a leaf here.
         // `other` is a number interval: keep the numeric members it admits.
@@ -774,7 +774,7 @@ fn restrict_members(
                 .into_iter()
                 .filter(|member| number_leaf_admits(leaf.get(), member))
                 .collect();
-            parse::canonicalize_value_set(kept)
+            canonicalize_value_set(kept)
         }
         // `other` is an array leaf: keep the array members whose length fits its window.
         SchemaKind::Array(leaf) => {
@@ -785,7 +785,7 @@ fn restrict_members(
                     !matches!(array_leaf_admits(leaf.get(), member, ctx), Verdict::Rejects)
                 })
                 .collect();
-            parse::canonicalize_value_set(kept)
+            canonicalize_value_set(kept)
         }
         // `other` is an object leaf: keep the object members it fully admits, and pin a member a
         // property schema only partially admits to the admitted part of its equality class.
@@ -799,7 +799,7 @@ fn restrict_members(
                     MemberRestriction::Partial(schema) => partial.push(schema),
                 }
             }
-            let mut branches = vec![parse::canonicalize_value_set(kept)];
+            let mut branches = vec![canonicalize_value_set(kept)];
             branches.extend(partial);
             union(branches, ctx)
         }
@@ -807,14 +807,6 @@ fn restrict_members(
         | SchemaKind::False
         | SchemaKind::AnyOf(_)
         | SchemaKind::Raw(_)) => unreachable!("dispatch handles the remaining kinds: {other:?}"),
-    }
-}
-
-fn typed_group(ty: JsonType, body: Schema) -> Schema {
-    if matches!(body.kind(), SchemaKind::False) {
-        Schema::new(SchemaKind::False)
-    } else {
-        Schema::new(SchemaKind::TypedGroup { ty, body })
     }
 }
 
@@ -1801,7 +1793,7 @@ pub(crate) fn integer_leaf(leaf: IntegerLeaf, ctx: &CanonicalizationContext) -> 
     // keeping the leaf shape would give one value set two IR forms.
     if leaf.bounds.minimum.is_none() && leaf.bounds.maximum.is_none() && leaf.multiple_of.is_empty()
     {
-        return parse::type_set_schema(JsonTypeSet::from(JsonType::Integer));
+        return type_set_schema(JsonTypeSet::from(JsonType::Integer));
     }
     let Some(leaf) = snap_to_multiples(leaf).and_then(NonEmpty::new) else {
         return Schema::new(SchemaKind::False);
