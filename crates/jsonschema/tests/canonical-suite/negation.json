@@ -1595,5 +1595,96 @@
         "valid": false
       }
     ]
+  },
+  {
+    "description": "double negation of a conditional entry beside a two-key demand converges",
+    "schemas": [
+      {
+        "not": {
+          "not": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "a": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "a",
+                  "b"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "a": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "a",
+              "b"
+            ]
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "b"
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "a": 1,
+          "b": 2
+        },
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
   }
 ]
