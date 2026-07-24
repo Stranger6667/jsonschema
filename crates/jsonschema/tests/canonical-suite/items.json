@@ -450,13 +450,20 @@
     ]
   },
   {
-    "description": "ir: tuple-form items stay unmodeled",
+    "description": "ir: draft 7 array-form items model a bare tuple",
     "schema": {"items": [{"type": "integer"}]},
     "draft": "draft7",
-    "expected": {"items": [{"type": "integer"}]},
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "object"]},
+        {"type": "array", "items": [{"type": "integer"}]}
+      ]
+    },
     "tests": [
       {"data": [1], "valid": true},
-      {"data": ["x"], "valid": false}
+      {"data": ["x"], "valid": false},
+      {"data": "s", "valid": true}
     ]
   },
   {
@@ -481,13 +488,18 @@
     ]
   },
   {
-    "description": "ir: additionalItems beside items keeps the document raw",
+    "description": "ir: additionalItems is inert beside a schema-form items",
     "schema": {"type": "array", "items": {"type": "integer"}, "additionalItems": false},
     "draft": "draft2019-09",
-    "expected": {"type": "array", "items": {"type": "integer"}, "additionalItems": false},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "type": "array",
+      "items": {"type": "integer"}
+    },
     "tests": [
       {"data": [1], "valid": true},
-      {"data": ["x"], "valid": false}
+      {"data": ["x"], "valid": false},
+      {"data": [1, 2, 3], "valid": true}
     ]
   },
   {

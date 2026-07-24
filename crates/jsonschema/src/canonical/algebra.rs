@@ -585,6 +585,7 @@ fn lift_degenerate_member(
                     maximum: Some(BoundCardinality::from(0)),
                 },
                 unique: false,
+                prefix: Vec::new(),
                 items: None,
             });
             true
@@ -997,33 +998,112 @@ pub(crate) fn array_leaf(mut leaf: ArrayLeaf) -> Schema {
     Schema::new(SchemaKind::Array(leaf))
 }
 
-/// Drop an item schema that says nothing: one accepting every value constrains no element.
+/// Fold an array leaf's per-index and tail element constraints into canonical form: drop a tail that
+/// says nothing, turn a rejecting tail or prefix schema into a length ceiling, and fold trailing
+/// prefix schemas that repeat the tail.
 fn normalize_items(leaf: &mut ArrayLeaf) {
-    let Some(items) = leaf.items.take() else {
-        return;
-    };
-    if matches!(items.kind(), SchemaKind::True) {
-        return;
+    // A tail accepting every value constrains no element beyond the prefix.
+    if leaf
+        .items
+        .as_ref()
+        .is_some_and(|tail| matches!(tail.kind(), SchemaKind::True))
+    {
+        leaf.items = None;
     }
-    // No element can be present, which is what an empty array says.
-    // e.g.  {"type": "array", "items": false}  =>  {"const": []}
-    if matches!(items.kind(), SchemaKind::False) {
-        leaf.lengths = leaf.lengths.clone().intersect(LengthBounds {
-            minimum: None,
-            maximum: Some(BoundCardinality::from(0)),
-        });
-        return;
+    // A rejecting tail forbids every element beyond the prefix, capping the length at the prefix.
+    // e.g.  {"type": "array", "prefixItems": [A, B], "items": false}
+    //       =>  {"type": "array", "prefixItems": [A, B], "maxItems": 2}
+    if leaf
+        .items
+        .as_ref()
+        .is_some_and(|tail| matches!(tail.kind(), SchemaKind::False))
+    {
+        let prefix_len = leaf.prefix.len();
+        cap_length(leaf, prefix_len);
     }
-    leaf.items = Some(items);
+    // A rejecting prefix schema forbids any array reaching its index, capping the length there.
+    // e.g.  {"type": "array", "prefixItems": [A, false]}
+    //       =>  {"type": "array", "prefixItems": [A], "maxItems": 1}
+    if let Some(rejecting) = leaf
+        .prefix
+        .iter()
+        .position(|schema| matches!(schema.kind(), SchemaKind::False))
+    {
+        cap_length(leaf, rejecting);
+    }
+    // No array reaches a prefix index at or beyond the length ceiling, so those schemas never apply.
+    if leaf.lengths.maximum.is_some() {
+        let keep = reachable_prefix_len(leaf);
+        if keep < leaf.prefix.len() {
+            leaf.prefix.truncate(keep);
+            leaf.items = None;
+        }
+    }
+    // A trailing prefix schema that repeats the tail is already covered by it, tail-of-`true` included.
+    // e.g.  {"type": "array", "prefixItems": [A, B], "items": B}
+    //       =>  {"type": "array", "prefixItems": [A], "items": B}
+    while leaf.prefix.last().is_some_and(|last| match &leaf.items {
+        Some(tail) => last == tail,
+        None => matches!(last.kind(), SchemaKind::True),
+    }) {
+        leaf.prefix.pop();
+    }
+    debug_assert!(
+        !leaf
+            .prefix
+            .iter()
+            .any(|schema| matches!(schema.kind(), SchemaKind::False)),
+        "a rejecting prefix schema survived normalization"
+    );
+    debug_assert!(
+        reachable_prefix_len(leaf) == leaf.prefix.len(),
+        "a prefix schema beyond the length ceiling survived normalization"
+    );
+}
+
+/// The number of leading prefix schemas an array within the window can actually reach.
+fn reachable_prefix_len(leaf: &ArrayLeaf) -> usize {
+    leaf.prefix
+        .iter()
+        .enumerate()
+        .take_while(|(index, _)| {
+            leaf.lengths
+                .maximum
+                .as_ref()
+                .is_none_or(|max| BoundCardinality::from(*index as u64) < *max)
+        })
+        .count()
+}
+
+/// Cap the length window so no array reaches index `ceiling`, then drop the unreachable prefix tail
+/// and the now-unreachable element tail.
+fn cap_length(leaf: &mut ArrayLeaf, ceiling: usize) {
+    let ceiling = BoundCardinality::from(ceiling as u64);
+    leaf.lengths.maximum = Some(match leaf.lengths.maximum.take() {
+        Some(max) => max.min(ceiling),
+        None => ceiling,
+    });
+    let keep = reachable_prefix_len(leaf);
+    leaf.prefix.truncate(keep);
+    leaf.items = None;
 }
 
 /// Keep the arrays both leaves accept: the narrower window, distinct items when either asks, and
-/// elements both item schemas admit.
+/// elements both leaves admit at every index.
 fn intersect_array_leaves(
     first: ArrayLeaf,
     second: ArrayLeaf,
     ctx: &CanonicalizationContext,
 ) -> ArrayLeaf {
+    let length = first.prefix.len().max(second.prefix.len());
+    let mut prefix = Vec::with_capacity(length);
+    for index in 0..length {
+        // The longer prefix always supplies a schema at every index below `length`, so an index the
+        // shorter one leaves open falls back to its tail, and the pair always has something to keep.
+        let left = element_constraint(&first, index);
+        let right = element_constraint(&second, index);
+        prefix.push(intersect(left, right, ctx));
+    }
     let items = match (first.items, second.items) {
         (Some(left), Some(right)) => Some(intersect(left, right, ctx)),
         (items, None) | (None, items) => items,
@@ -1031,8 +1111,19 @@ fn intersect_array_leaves(
     ArrayLeaf {
         lengths: first.lengths.intersect(second.lengths),
         unique: first.unique || second.unique,
+        prefix,
         items,
     }
+}
+
+/// The schema a leaf places on the element at `index`: its prefix schema there, else its tail, else
+/// no constraint.
+fn element_constraint(leaf: &ArrayLeaf, index: usize) -> Schema {
+    leaf.prefix
+        .get(index)
+        .cloned()
+        .or_else(|| leaf.items.clone())
+        .unwrap_or_else(|| Schema::new(SchemaKind::True))
 }
 
 /// Whether `member` is an array whose length sits in the window, whose every element the item
@@ -1052,12 +1143,13 @@ fn array_leaf_admits(
     {
         return false;
     }
-    if !leaf.items.as_ref().is_none_or(|schema| {
-        items
-            .iter()
-            .all(|element| admits_value(schema, element, ctx, uncheckable))
-    }) {
-        return false;
+    // The element at each index answers to its prefix schema, or the tail once the prefix runs out.
+    for (index, element) in items.iter().enumerate() {
+        if let Some(schema) = leaf.prefix.get(index).or(leaf.items.as_ref()) {
+            if !admits_value(schema, element, ctx, uncheckable) {
+                return false;
+            }
+        }
     }
     // Members are normalized, so `1` and `1.0` compare equal here just as they do at validation.
     !leaf.unique
@@ -1414,9 +1506,10 @@ fn has_uncheckable_format(schema: &Schema, ctx: &CanonicalizationContext) -> boo
             .any(|nested| has_uncheckable_format(nested, ctx)),
         SchemaKind::Array(leaf) => leaf
             .get()
-            .items
+            .prefix
             .iter()
-            .any(|items| has_uncheckable_format(items, ctx)),
+            .chain(leaf.get().items.iter())
+            .any(|nested| has_uncheckable_format(nested, ctx)),
 
         // A typed group's body is a value set, which carries no format.
         SchemaKind::TypedGroup { .. }

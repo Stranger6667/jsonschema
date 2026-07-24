@@ -88,7 +88,9 @@ pub struct ArrayView {
     pub min_items: Option<Number>,
     pub max_items: Option<Number>,
     pub unique_items: bool,
-    /// The schema every element satisfies.
+    /// Per-index schemas: the element at position `i` satisfies `prefix_items[i]`.
+    pub prefix_items: Vec<CanonicalSchema>,
+    /// The schema every element from `prefix_items.len()` onward satisfies.
     pub items: Option<CanonicalSchema>,
 }
 
@@ -129,6 +131,11 @@ impl CanonicalSchema {
             SchemaKind::Number(leaf) => CanonicalView::Number(number_view(leaf.get())),
             SchemaKind::Array(leaf) => CanonicalView::Array(array_view(
                 leaf.get(),
+                leaf.get()
+                    .prefix
+                    .iter()
+                    .map(|schema| self.wrap_child(schema))
+                    .collect(),
                 leaf.get()
                     .items
                     .as_ref()
@@ -197,10 +204,15 @@ fn integer_view(leaf: &IntegerLeaf) -> IntegerView {
     }
 }
 
-// The item-schema child needs the schema-level wrapping only the caller can do, so it arrives
+// The element-schema children need the schema-level wrapping only the caller can do, so they arrive
 // already wrapped instead of being read off the leaf.
-fn array_view(leaf: &ArrayLeaf, items: Option<CanonicalSchema>) -> ArrayView {
+fn array_view(
+    leaf: &ArrayLeaf,
+    prefix_items: Vec<CanonicalSchema>,
+    items: Option<CanonicalSchema>,
+) -> ArrayView {
     ArrayView {
+        prefix_items,
         items,
         min_items: leaf
             .lengths

@@ -135,12 +135,29 @@ fn emit_number(leaf: &NumberLeaf, draft: Draft) -> Value {
     Value::Object(map)
 }
 
-/// Emit an array leaf as `{"type":"array"}` plus its length bounds, uniqueness and item schema.
+/// Emit an array leaf as `{"type":"array"}` plus its length bounds, uniqueness and element schemas.
+/// A tuple prefix is spelled `prefixItems` with an `items` tail in 2020-12, and array-form `items`
+/// with an `additionalItems` tail in 2019-09 and earlier.
 fn emit_array(leaf: &ArrayLeaf, draft: Draft) -> Value {
     let mut map = Map::new();
     map.insert("type".into(), Value::String("array".into()));
+    let tuple_draft = matches!(draft, Draft::Draft202012 | Draft::Unknown);
+    if !leaf.prefix.is_empty() {
+        let prefix: Vec<Value> = leaf
+            .prefix
+            .iter()
+            .map(|schema| emit(schema.kind(), draft))
+            .collect();
+        let key = if tuple_draft { "prefixItems" } else { "items" };
+        map.insert(key.into(), Value::Array(prefix));
+    }
     if let Some(items) = &leaf.items {
-        map.insert("items".into(), emit(items.kind(), draft));
+        let key = if leaf.prefix.is_empty() || tuple_draft {
+            "items"
+        } else {
+            "additionalItems"
+        };
+        map.insert(key.into(), emit(items.kind(), draft));
     }
     if leaf.unique {
         map.insert("uniqueItems".into(), Value::Bool(true));

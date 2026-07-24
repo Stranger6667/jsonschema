@@ -54,6 +54,36 @@ fn array_view_exposes_bounds() {
     assert_eq!(view.min_items, Some(Number::from(1u64)));
     assert_eq!(view.max_items, Some(Number::from(3u64)));
     assert!(view.unique_items);
+    assert!(view.prefix_items.is_empty());
+}
+
+#[test]
+fn array_view_exposes_prefix_items() {
+    let CanonicalView::Array(view) = canonicalize(&json!({
+        "type": "array",
+        "prefixItems": [{"type": "integer"}, {"type": "string"}],
+        "items": {"type": "boolean"}
+    }))
+    .unwrap()
+    .view() else {
+        panic!("expected an Array view");
+    };
+    let spellings: Vec<_> = view
+        .prefix_items
+        .iter()
+        .map(CanonicalSchema::to_json_schema)
+        .collect();
+    assert_eq!(
+        spellings,
+        vec![
+            json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer"}),
+            json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string"})
+        ]
+    );
+    assert_eq!(
+        view.items.unwrap().to_json_schema(),
+        json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "boolean"})
+    );
 }
 
 #[test]
