@@ -402,13 +402,19 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     let mut objects: Vec<ObjectLeaf> = objects.into_iter().collect();
     loop {
         merge_sole_differing_keys(&mut objects, ctx);
-        if drop_object_branch_covered_by_sibling(&mut objects, ctx) {
+        if drop_object_branch_covered_by_siblings(&mut objects, ctx) {
             continue;
         }
         if drop_required_covered_by_sibling(&mut objects, ctx) {
             continue;
         }
         if drop_size_bound_covered_by_sibling(&mut objects, ctx) {
+            continue;
+        }
+        if collapse_object_leaves_covering_domain(&mut objects, ctx) {
+            continue;
+        }
+        if widen_size_window_covered_by_siblings(&mut objects, ctx) {
             continue;
         }
         if !widen_entry_covered_by_sibling(&mut objects, ctx) {
@@ -922,121 +928,187 @@ fn sole_differing_key(left: &ObjectLeaf, right: &ObjectLeaf) -> Option<Arc<str>>
     }
 }
 
-/// Drop a branch a sibling admits wholly: intersecting with the sibling then changes nothing.
-/// The widening folds can leave one branch inside another, which the pairwise pool subsumption
-/// does not see.
+/// Collapse the leaves to the bare object type when together they admit every object: no leaf is
+/// redundant on its own, but splitting the unconstrained object by each key any leaf mentions
+/// lands every piece inside some leaf.
+/// ```text
+/// e.g.  anyOf [
+///         {"type": "object", "properties": {"a": false}},
+///         {"type": "object", "properties": {"b": {"type": "null"}}},
+///         {"type": "object", "minProperties": 2}
+///       ]  =>  {"type": "object"}    (with `a`: a non-null `b` makes two properties,
+///                                     a null or missing `b` fits the second branch)
+/// ```
+fn collapse_object_leaves_covering_domain(
+    leaves: &mut Vec<ObjectLeaf>,
+    ctx: &CanonicalizationContext,
+) -> bool {
+    if leaves.len() < 2 {
+        return false;
+    }
+    let mut keys: Vec<Arc<str>> = leaves
+        .iter()
+        .flat_map(|leaf| leaf.required.iter().chain(leaf.properties.keys()).cloned())
+        .collect();
+    keys.sort();
+    keys.dedup();
+    let piece = ObjectLeaf {
+        sizes: LengthBounds::default(),
+        required: Vec::new(),
+        property_names: None,
+        properties: BTreeMap::new(),
+        pattern_properties: BTreeMap::new(),
+    };
+    if !split_piece_is_covered(piece.clone(), leaves, &keys, ctx) {
+        return false;
+    }
+    leaves.clear();
+    leaves.push(piece);
+    true
+}
+
+/// Whether some leaf admits the whole piece, or both halves of a key-presence split do
+/// recursively. The key list shrinks with each split, which bounds the recursion.
+fn split_piece_is_covered(
+    piece: ObjectLeaf,
+    leaves: &[ObjectLeaf],
+    keys: &[Arc<str>],
+    ctx: &CanonicalizationContext,
+) -> bool {
+    let schema = object_leaf(piece.clone(), ctx);
+    if matches!(schema.kind(), SchemaKind::False) {
+        return true;
+    }
+    if leaves
+        .iter()
+        .any(|leaf| intersect(schema.clone(), object_leaf(leaf.clone(), ctx), ctx) == schema)
+    {
+        return true;
+    }
+    let Some((key, rest)) = keys.split_first() else {
+        return false;
+    };
+    let mut holding = piece.clone();
+    if let Err(position) = holding.required.binary_search(key) {
+        holding.required.insert(position, Arc::clone(key));
+    }
+    let mut missing = piece;
+    missing
+        .properties
+        .insert(Arc::clone(key), Schema::new(SchemaKind::False));
+    split_piece_is_covered(holding, leaves, rest, ctx)
+        && split_piece_is_covered(missing, leaves, rest, ctx)
+}
+
+/// Drop a size bound when the region it excludes - the leaf's other facets on the outer ray - is
+/// jointly covered by the siblings, so the wider window admits nothing new.
+/// ```text
+/// e.g.  anyOf [
+///         {"type": "object", "properties": {"a": false}},
+///         {"type": "object", "properties": {"b": {"type": "null"}}},
+///         {"type": "object", "minProperties": 2, "maxProperties": 2}
+///       ]  =>  anyOf [..., {"type": "object", "maxProperties": 2}]
+///              (a lone property either is not `a` or leaves `b` missing)
+/// ```
+fn widen_size_window_covered_by_siblings(
+    leaves: &mut [ObjectLeaf],
+    ctx: &CanonicalizationContext,
+) -> bool {
+    for index in 0..leaves.len() {
+        let Some(rays) = negate::length_windows(&leaves[index].sizes) else {
+            continue;
+        };
+        if rays.is_empty() {
+            continue;
+        }
+        let siblings: Vec<ObjectLeaf> = leaves
+            .iter()
+            .enumerate()
+            .filter(|(sibling, _)| *sibling != index)
+            .map(|(_, leaf)| leaf.clone())
+            .collect();
+        let mut keys: Vec<Arc<str>> = siblings
+            .iter()
+            .flat_map(|leaf| leaf.required.iter().chain(leaf.properties.keys()).cloned())
+            .collect();
+        keys.sort();
+        keys.dedup();
+        for ray in rays {
+            let drops_minimum = ray.minimum.is_none();
+            let mut piece = leaves[index].clone();
+            piece.sizes = ray;
+            if split_piece_is_covered(piece, &siblings, &keys, ctx) {
+                if drops_minimum {
+                    leaves[index].sizes.minimum = None;
+                } else {
+                    leaves[index].sizes.maximum = None;
+                }
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Drop a branch its siblings jointly admit: some sibling covers it whole, or splitting it - by
+/// the keys the siblings mention, and by a sibling's size window - lands every piece inside one.
 /// ```text
 /// e.g.  anyOf [
 ///         {"type": "object", "properties": {"a": {"type": "null"}}},
 ///         {"type": "object", "minProperties": 2, "properties": {"a": {"type": "null"}}}
 ///       ]  =>  {"type": "object", "properties": {"a": {"type": "null"}}}
+/// e.g.  anyOf [
+///         {"type": "object", "required": ["a", "b"]},
+///         {"type": "object", "minProperties": 3, "properties": {"a": false}},
+///         {"type": "object", "minProperties": 3, "required": ["b"]}
+///       ]  =>  the third branch dissolves: with `a` it fits the first, without `a` the second
 /// ```
-fn drop_object_branch_covered_by_sibling(
+fn drop_object_branch_covered_by_siblings(
     leaves: &mut Vec<ObjectLeaf>,
     ctx: &CanonicalizationContext,
 ) -> bool {
     for index in 0..leaves.len() {
-        let branch = object_leaf(leaves[index].clone(), ctx);
-        let covered = (0..leaves.len())
-            .filter(|&sibling| sibling != index)
-            .any(|sibling| {
-                intersect(
-                    branch.clone(),
-                    object_leaf(leaves[sibling].clone(), ctx),
-                    ctx,
-                ) == branch
-            });
-        if covered {
+        let siblings: Vec<ObjectLeaf> = leaves
+            .iter()
+            .enumerate()
+            .filter(|(sibling, _)| *sibling != index)
+            .map(|(_, leaf)| leaf.clone())
+            .collect();
+        let mut keys: Vec<Arc<str>> = siblings
+            .iter()
+            .flat_map(|leaf| leaf.required.iter().chain(leaf.properties.keys()).cloned())
+            .collect();
+        keys.sort();
+        keys.dedup();
+        if split_piece_is_covered(leaves[index].clone(), &siblings, &keys, ctx) {
             leaves.remove(index);
             return true;
         }
-    }
-    // A sibling's size window also splits a branch: the parts inside the window and on the rays
-    // outside it partition the branch, and each part must fit some sibling on its own.
-    // e.g.  anyOf [
-    //         {"type": "object", "required": ["a"], "properties": {"a": {"type": "string"}}},
-    //         {"type": "object", "maxProperties": 1, "required": ["a"]},
-    //         {"type": "object", "minProperties": 2, "properties": {"a": {"type": "string"}}}
-    //       ]  =>  the first branch dissolves: at one key the entry says nothing beside the
-    //              filled slots, above that the third branch holds it
-    for index in 0..leaves.len() {
-        for divider in (0..leaves.len()).filter(|&divider| divider != index) {
-            let Some(mut windows) = negate::length_windows(&leaves[divider].sizes) else {
+        // A sibling's size window also splits the branch: the parts inside the window and on the
+        // rays outside it partition it, and each part must be covered on its own.
+        // e.g.  anyOf [
+        //         {"type": "object", "required": ["a"], "properties": {"a": {"type": "string"}}},
+        //         {"type": "object", "maxProperties": 1, "required": ["a"]},
+        //         {"type": "object", "minProperties": 2, "properties": {"a": {"type": "string"}}}
+        //       ]  =>  the first branch dissolves: at one key the entry says nothing beside the
+        //              filled slots, above that the third branch holds it
+        for divider in 0..siblings.len() {
+            let Some(mut windows) = negate::length_windows(&siblings[divider].sizes) else {
                 continue;
             };
             if windows.is_empty() {
                 continue;
             }
-            windows.push(leaves[divider].sizes.clone());
+            windows.push(siblings[divider].sizes.clone());
             let all_covered = windows.iter().all(|window| {
                 let mut piece = leaves[index].clone();
                 piece.sizes = LengthBounds {
                     minimum: tighter(piece.sizes.minimum.take(), window.minimum.clone(), Ord::max),
                     maximum: tighter(piece.sizes.maximum.take(), window.maximum.clone(), Ord::min),
                 };
-                let piece = object_leaf(piece, ctx);
-                matches!(piece.kind(), SchemaKind::False)
-                    || (0..leaves.len())
-                        .filter(|&sibling| sibling != index)
-                        .any(|sibling| {
-                            intersect(
-                                piece.clone(),
-                                object_leaf(leaves[sibling].clone(), ctx),
-                                ctx,
-                            ) == piece
-                        })
+                split_piece_is_covered(piece, &siblings, &keys, ctx)
             });
             if all_covered {
-                leaves.remove(index);
-                return true;
-            }
-        }
-    }
-    // A key's presence splits a branch the same way: the part holding the key and the part
-    // missing it are both plain leaves, and each must fit a sibling on its own.
-    // e.g.  anyOf [
-    //         {"type": "object", "required": ["a", "b"]},
-    //         {"type": "object", "minProperties": 3, "properties": {"a": false}},
-    //         {"type": "object", "minProperties": 3, "required": ["b"]}
-    //       ]  =>  the third branch dissolves: with `a` it fits the first, without `a` the second
-    for index in 0..leaves.len() {
-        let mut keys: Vec<Arc<str>> = leaves
-            .iter()
-            .enumerate()
-            .filter(|(sibling, _)| *sibling != index)
-            .flat_map(|(_, leaf)| {
-                leaf.required
-                    .iter()
-                    .chain(leaf.properties.keys())
-                    .cloned()
-                    .collect::<Vec<_>>()
-            })
-            .collect();
-        keys.sort();
-        keys.dedup();
-        for key in keys {
-            let piece_covered = |piece: ObjectLeaf| {
-                let piece = object_leaf(piece, ctx);
-                matches!(piece.kind(), SchemaKind::False)
-                    || (0..leaves.len())
-                        .filter(|&sibling| sibling != index)
-                        .any(|sibling| {
-                            intersect(
-                                piece.clone(),
-                                object_leaf(leaves[sibling].clone(), ctx),
-                                ctx,
-                            ) == piece
-                        })
-            };
-            let mut holding = leaves[index].clone();
-            if let Err(position) = holding.required.binary_search(&key) {
-                holding.required.insert(position, Arc::clone(&key));
-            }
-            let mut missing = leaves[index].clone();
-            missing
-                .properties
-                .insert(Arc::clone(&key), Schema::new(SchemaKind::False));
-            if piece_covered(holding) && piece_covered(missing) {
                 leaves.remove(index);
                 return true;
             }

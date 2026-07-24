@@ -386,6 +386,65 @@ fn parse_schema(
                     None => return Ok(None),
                 }
             }
+            // Property dependencies: each key, when held by an object, demands its consequent -
+            // more required keys in the array form, a whole-value schema in the schema form. Every
+            // draft validates `dependencies`, 2019-09 onward also under its split spellings.
+            ("dependencies", Value::Object(entries)) => {
+                for (key, entry) in entries {
+                    match entry {
+                        Value::Array(names) if names.iter().all(Value::is_string) => {
+                            conjuncts.push(required_dependency(key, names, ctx));
+                        }
+                        value @ (Value::Object(_) | Value::Bool(_)) => {
+                            match parse_schema(value, ctx, false)? {
+                                Some(schema) => {
+                                    conjuncts.push(schema_dependency(key, schema, ctx));
+                                }
+                                None => return Ok(None),
+                            }
+                        }
+                        Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => {
+                            return Ok(None)
+                        }
+                    }
+                }
+            }
+            ("dependentRequired", Value::Object(entries))
+                if ctx.draft().is_known_keyword("dependentRequired") =>
+            {
+                for (key, entry) in entries {
+                    match entry {
+                        Value::Array(names) if names.iter().all(Value::is_string) => {
+                            conjuncts.push(required_dependency(key, names, ctx));
+                        }
+                        Value::Null
+                        | Value::Bool(_)
+                        | Value::Number(_)
+                        | Value::String(_)
+                        | Value::Array(_)
+                        | Value::Object(_) => return Ok(None),
+                    }
+                }
+            }
+            ("dependentSchemas", Value::Object(entries))
+                if ctx.draft().is_known_keyword("dependentSchemas") =>
+            {
+                for (key, entry) in entries {
+                    match entry {
+                        value @ (Value::Object(_) | Value::Bool(_)) => {
+                            match parse_schema(value, ctx, false)? {
+                                Some(schema) => {
+                                    conjuncts.push(schema_dependency(key, schema, ctx));
+                                }
+                                None => return Ok(None),
+                            }
+                        }
+                        Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => {
+                            return Ok(None)
+                        }
+                    }
+                }
+            }
             // The complement of the negated schema, when the IR can spell it; an unmodeled child or
             // an inexpressible complement keeps the whole document raw.
             ("not", value) if ctx.draft().is_known_keyword("not") => {
@@ -618,6 +677,56 @@ fn parse_schema(
             algebra::intersect(result, conjunct, ctx)
         }),
     ))
+}
+
+/// The array-form dependency on `key`: holding it demands the listed keys too.
+fn required_dependency(key: &str, names: &[Value], ctx: &CanonicalizationContext) -> Schema {
+    let mut required: Vec<Arc<str>> = names
+        .iter()
+        .filter_map(Value::as_str)
+        .map(Arc::from)
+        .collect();
+    required.push(Arc::from(key));
+    required.sort();
+    required.dedup();
+    dependency_conjunct(key, object_with_required(required, ctx), ctx)
+}
+
+/// The schema-form dependency on `key`: holding it demands the whole value meet `schema`.
+fn schema_dependency(key: &str, schema: Schema, ctx: &CanonicalizationContext) -> Schema {
+    let present = object_with_required(vec![Arc::from(key)], ctx);
+    dependency_conjunct(key, algebra::intersect(present, schema, ctx), ctx)
+}
+
+/// A dependency triggers only on objects holding `key`: non-objects and objects without the key
+/// pass vacuously, everything else answers to `consequent`.
+fn dependency_conjunct(key: &str, consequent: Schema, ctx: &CanonicalizationContext) -> Schema {
+    let vacuous = type_set_schema(JsonTypeSet::all().remove(JsonType::Object));
+    let absent = algebra::object_leaf(
+        ObjectLeaf {
+            sizes: LengthBounds::default(),
+            required: Vec::new(),
+            property_names: None,
+            properties: BTreeMap::from([(Arc::from(key), Schema::new(SchemaKind::False))]),
+            pattern_properties: BTreeMap::new(),
+        },
+        ctx,
+    );
+    algebra::union(vec![vacuous, absent, consequent], ctx)
+}
+
+/// An object leaf demanding exactly the sorted `required` keys and nothing else.
+fn object_with_required(required: Vec<Arc<str>>, ctx: &CanonicalizationContext) -> Schema {
+    algebra::object_leaf(
+        ObjectLeaf {
+            sizes: LengthBounds::default(),
+            required,
+            property_names: None,
+            properties: BTreeMap::new(),
+            pattern_properties: BTreeMap::new(),
+        },
+        ctx,
+    )
 }
 
 /// "Exactly one branch matches": some branch matches and no two-branch overlap does, so only the
