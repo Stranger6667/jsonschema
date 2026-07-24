@@ -1,0 +1,465 @@
+[
+  {
+    "description": "not false matches everything",
+    "schemas": [
+      {
+        "not": false
+      },
+      true
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not true matches nothing",
+    "schemas": [
+      {
+        "not": true
+      },
+      {
+        "not": {}
+      },
+      false
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "not of a string type is every other type",
+    "schema": {
+      "not": {
+        "type": "string"
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "null",
+        "boolean",
+        "number",
+        "array",
+        "object"
+      ]
+    },
+    "tests": [
+      {
+        "data": "x",
+        "valid": false
+      },
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 1.5,
+        "valid": true
+      },
+      {
+        "data": null,
+        "valid": true
+      },
+      {
+        "data": [],
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of number excludes every number including integers",
+    "schema": {
+      "not": {
+        "type": "number"
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "null",
+        "boolean",
+        "string",
+        "array",
+        "object"
+      ]
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": 1.5,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a multi-type set complements the set",
+    "schema": {
+      "not": {
+        "type": [
+          "string",
+          "boolean"
+        ]
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "null",
+        "number",
+        "array",
+        "object"
+      ]
+    },
+    "tests": [
+      {
+        "data": "x",
+        "valid": false
+      },
+      {
+        "data": true,
+        "valid": false
+      },
+      {
+        "data": 1,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of an integer type stays raw: the complement needs a non-integer-number facet",
+    "schema": {
+      "not": {
+        "type": "integer"
+      }
+    },
+    "expected": {
+      "not": {
+        "type": "integer"
+      }
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": 1.5,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a numeric window stays raw: window complement deferred",
+    "schema": {
+      "not": {
+        "minimum": 2
+      }
+    },
+    "expected": {
+      "not": {
+        "minimum": 2
+      }
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 3,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "not of a combinator stays raw: De Morgan deferred",
+    "schema": {
+      "not": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "not": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "tests": [
+      {
+        "data": "x",
+        "valid": false
+      },
+      {
+        "data": 1,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a type set under draft 4",
+    "schema": {
+      "not": {
+        "type": "string"
+      }
+    },
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": [
+        "null",
+        "boolean",
+        "number",
+        "array",
+        "object"
+      ]
+    },
+    "tests": [
+      {
+        "data": "x",
+        "valid": false
+      },
+      {
+        "data": 1,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of null admits every other value",
+    "schemas": [
+      {
+        "not": {
+          "type": "null"
+        }
+      },
+      {
+        "not": {
+          "const": null
+        }
+      },
+      {
+        "type": [
+          "boolean",
+          "number",
+          "string",
+          "array",
+          "object"
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "boolean",
+        "number",
+        "string",
+        "array",
+        "object"
+      ]
+    },
+    "tests": [
+      {
+        "data": null,
+        "valid": false
+      },
+      {
+        "data": false,
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of boolean admits every other value",
+    "schemas": [
+      {
+        "not": {
+          "type": "boolean"
+        }
+      },
+      {
+        "not": {
+          "enum": [
+            false,
+            true
+          ]
+        }
+      },
+      {
+        "type": [
+          "null",
+          "number",
+          "string",
+          "array",
+          "object"
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "null",
+        "number",
+        "string",
+        "array",
+        "object"
+      ]
+    },
+    "tests": [
+      {
+        "data": true,
+        "valid": false
+      },
+      {
+        "data": null,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of an enum saturating null and boolean",
+    "schema": {
+      "not": {
+        "enum": [
+          null,
+          false,
+          true
+        ]
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "number",
+        "string",
+        "array",
+        "object"
+      ]
+    },
+    "tests": [
+      {
+        "data": null,
+        "valid": false
+      },
+      {
+        "data": true,
+        "valid": false
+      },
+      {
+        "data": 0,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a non-saturating value set stays raw: value inequality is inexpressible",
+    "schema": {
+      "not": {
+        "enum": [
+          null,
+          true
+        ]
+      }
+    },
+    "expected": {
+      "not": {
+        "enum": [
+          null,
+          true
+        ]
+      }
+    },
+    "tests": [
+      {
+        "data": true,
+        "valid": false
+      },
+      {
+        "data": false,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "double negation cancels",
+    "schemas": [
+      {
+        "not": {
+          "not": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "type": "null"
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "null"
+    },
+    "tests": [
+      {
+        "data": null,
+        "valid": true
+      },
+      {
+        "data": 0,
+        "valid": false
+      }
+    ]
+  }
+]

@@ -147,7 +147,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(50)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(52)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -260,6 +260,9 @@ fn draw_leaf(tc: &TestCase) -> Value {
             "type": "object",
             "patternProperties": { "^a": { "type": "string", "format": "unknown-fmt" } }
         }),
+        // An `integer` draw declines the complement, so both negate outcomes stay exercised.
+        50 => json!({ "not": { "type": draw_type(tc) } }),
+        51 => json!({ "not": { "enum": [false, true] } }),
         _ => json!({ "type": ["string", "integer"] }),
     }
 }
@@ -292,7 +295,7 @@ fn draw_schema(tc: &TestCase, depth: u32) -> Value {
 fn draw_unmodeled_leaf(tc: &TestCase) -> Value {
     match tc.draw(gs::integers::<u8>().min_value(0).max_value(4)) {
         0 => json!({ "additionalProperties": { "type": "integer" } }),
-        1 => json!({ "not": { "type": "string" } }),
+        1 => json!({ "not": { "pattern": "^a" } }),
         2 => json!({ "$defs": { "a": { "type": "null" } }, "$ref": "#/$defs/a" }),
         3 => json!({ "format": "email" }),
         _ => json!({ "oneOf": [{ "type": "string" }, { "minLength": 1 }] }),
@@ -372,6 +375,25 @@ fn canonical_form_preserves_validation(tc: TestCase) {
         canonical.is_valid(&instance),
         "{schema} vs {emitted} on {instance}"
     );
+}
+
+// `not not s` accepts exactly what `s` accepts, so when the scaffold models the double complement
+// the two spellings share one canonical form; a raw result round-trips the document verbatim and
+// carries no claim to check.
+#[hegel::test(test_cases = 5_000)]
+fn double_negation_converges(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    let schema = draw_schema(&tc, 2);
+    let doubled = json!({ "not": { "not": schema } });
+    let Some(via_double) = canonicalize(&doubled, draft) else {
+        return;
+    };
+    if via_double == doubled {
+        return;
+    }
+    let direct =
+        canonicalize(&schema, draft).expect("a modeled double complement implies a modeled child");
+    assert_eq!(direct, via_double, "{schema}");
 }
 
 // A value set intersected with an integer bound preserves validation on its own members and their
