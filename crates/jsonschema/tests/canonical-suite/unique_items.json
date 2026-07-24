@@ -383,33 +383,64 @@
   {
     "description": "ir: a two-value item domain under uniqueItems cannot fill minItems 3",
     "schema": {"type": "array", "items": {"type": "boolean"}, "uniqueItems": true, "minItems": 3},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: a two-value item domain under uniqueItems can exactly fill minItems 2",
+    "schema": {"type": "array", "items": {"type": "boolean"}, "uniqueItems": true, "minItems": 2},
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "array",
       "items": {"type": "boolean"},
       "uniqueItems": true,
-      "minItems": 3
+      "minItems": 2
     },
     "satisfiable": true,
     "tests": [
-      {"data": [true, false, true], "valid": false},
-      {"data": [true, false], "valid": false}
+      {"data": [true, false], "valid": true},
+      {"data": [true], "valid": false}
     ]
   },
   {
     "description": "ir: a one-value item domain under uniqueItems cannot fill minItems 2",
     "schema": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 0}, "uniqueItems": true, "minItems": 2},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: a one-value item domain under uniqueItems without minItems stays satisfiable",
+    "schema": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 0}, "uniqueItems": true},
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "array",
       "items": {"const": 0},
-      "uniqueItems": true,
-      "minItems": 2
+      "uniqueItems": true
     },
     "satisfiable": true,
     "tests": [
-      {"data": [0, 0], "valid": false},
-      {"data": [0], "valid": false}
+      {"data": [0], "valid": true},
+      {"data": [0, 0], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a three-value item domain under uniqueItems cannot fill minItems 4",
+    "schema": {"type": "array", "items": {"enum": [null, true, false]}, "uniqueItems": true, "minItems": 4},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: a finite item domain without uniqueItems does not cap the length",
+    "schema": {"type": "array", "items": {"type": "boolean"}, "minItems": 3},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"type": "boolean"},
+      "minItems": 3
+    },
+    "satisfiable": true,
+    "tests": [
+      {"data": [true, false, true], "valid": true}
     ]
   }
 ]
