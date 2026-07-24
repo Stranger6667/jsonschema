@@ -92,6 +92,16 @@ pub struct ArrayView {
     pub prefix_items: Vec<CanonicalSchema>,
     /// The schema every element from `prefix_items.len()` onward satisfies.
     pub items: Option<CanonicalSchema>,
+    /// Existential demands: the number of elements matching each entry's schema sits in its window.
+    pub contains: Vec<ContainsView>,
+}
+
+/// One `contains` demand of an array. An absent minimum spells the default of one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContainsView {
+    pub schema: CanonicalSchema,
+    pub min_contains: Option<Number>,
+    pub max_contains: Option<Number>,
 }
 
 /// Payload of [`CanonicalView::Object`]: the constraints on an object value.
@@ -140,6 +150,15 @@ impl CanonicalSchema {
                     .items
                     .as_ref()
                     .map(|items| self.wrap_child(items)),
+                leaf.get()
+                    .contains
+                    .iter()
+                    .map(|facet| ContainsView {
+                        schema: self.wrap_child(&facet.schema),
+                        min_contains: facet.minimum.as_ref().map(BoundCardinality::to_number),
+                        max_contains: facet.maximum.as_ref().map(BoundCardinality::to_number),
+                    })
+                    .collect(),
             )),
             SchemaKind::Object(leaf) => CanonicalView::Object(object_view(
                 leaf.get(),
@@ -210,10 +229,12 @@ fn array_view(
     leaf: &ArrayLeaf,
     prefix_items: Vec<CanonicalSchema>,
     items: Option<CanonicalSchema>,
+    contains: Vec<ContainsView>,
 ) -> ArrayView {
     ArrayView {
         prefix_items,
         items,
+        contains,
         min_items: leaf
             .lengths
             .minimum

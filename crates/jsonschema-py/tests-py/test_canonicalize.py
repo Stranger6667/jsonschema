@@ -155,6 +155,28 @@ def test_view_array_prefix_items():
             pytest.fail(f"unexpected view: {other!r}")
 
 
+def test_view_array_contains():
+    schema = {"type": "array", "contains": {"type": "string"}, "minContains": 0, "maxContains": 2}
+    match canonicalize(schema).view():
+        case canonical.ArrayView(contains=[facet]):
+            assert facet.schema.to_json_schema() == {"$schema": DRAFT202012, "type": "string"}
+            assert facet.min_contains == 0
+            assert facet.max_contains == 2
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
+def test_view_array_contains_default_minimum():
+    schema = {"type": "array", "contains": {"type": "null"}}
+    match canonicalize(schema).view():
+        case canonical.ArrayView(contains=[facet]):
+            assert facet.schema.to_json_schema() == {"$schema": DRAFT202012, "type": "null"}
+            assert facet.min_contains is None
+            assert facet.max_contains is None
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
 def test_view_object_sizes():
     schema = {
         "type": "object",

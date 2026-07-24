@@ -596,9 +596,7 @@
       "patternProperties": {
         "^a": {
           "type": "array",
-          "contains": {
-            "type": "integer"
-          }
+          "unevaluatedItems": false
         }
       }
     },
@@ -607,25 +605,21 @@
       "patternProperties": {
         "^a": {
           "type": "array",
-          "contains": {
-            "type": "integer"
-          }
+          "unevaluatedItems": false
         }
       }
     },
     "tests": [
       {
         "data": {
-          "ab": [
-            1
-          ]
+          "ab": []
         },
         "valid": true
       },
       {
         "data": {
           "ab": [
-            "x"
+            1
           ]
         },
         "valid": false

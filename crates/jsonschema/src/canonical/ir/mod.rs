@@ -259,6 +259,8 @@ pub(crate) struct ArrayLeaf {
     pub(crate) prefix: Vec<Schema>,
     /// The schema every element from `prefix.len()` onward must satisfy.
     pub(crate) items: Option<Schema>,
+    /// Existential demands: the number of elements matching each facet's schema sits in its window.
+    pub(crate) contains: Vec<ContainsFacet>,
 }
 
 impl ArrayLeaf {
@@ -269,6 +271,25 @@ impl ArrayLeaf {
             && !self.unique
             && self.prefix.is_empty()
             && self.items.is_none()
+            && self.contains.is_empty()
+    }
+}
+
+/// One `contains` demand: how many elements match `schema`. An absent minimum spells the draft
+/// default of one; an explicit one is normalized to absent.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct ContainsFacet {
+    pub(crate) schema: Schema,
+    pub(crate) minimum: Option<BoundCardinality>,
+    pub(crate) maximum: Option<BoundCardinality>,
+}
+
+impl ContainsFacet {
+    /// The smallest matching count the facet admits.
+    pub(crate) fn effective_minimum(&self) -> BoundCardinality {
+        self.minimum
+            .clone()
+            .unwrap_or_else(|| BoundCardinality::from(1))
     }
 }
 

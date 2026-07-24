@@ -168,6 +168,41 @@ impl PyCanonicalSchema {
                         .items
                         .map(|items| Py::new(py, PyCanonicalSchema { inner: items }))
                         .transpose()?,
+                    contains: view
+                        .contains
+                        .into_iter()
+                        .map(|facet| {
+                            Py::new(
+                                py,
+                                ContainsView {
+                                    schema: Py::new(
+                                        py,
+                                        PyCanonicalSchema {
+                                            inner: facet.schema,
+                                        },
+                                    )?,
+                                    min_contains: facet
+                                        .min_contains
+                                        .map(|number| {
+                                            crate::value_to_python(
+                                                py,
+                                                &serde_json::Value::Number(number),
+                                            )
+                                        })
+                                        .transpose()?,
+                                    max_contains: facet
+                                        .max_contains
+                                        .map(|number| {
+                                            crate::value_to_python(
+                                                py,
+                                                &serde_json::Value::Number(number),
+                                            )
+                                        })
+                                        .transpose()?,
+                                },
+                            )
+                        })
+                        .collect::<PyResult<_>>()?,
                 },
             )?
             .into_any(),
@@ -348,12 +383,15 @@ pub(crate) struct ArrayView {
     prefix_items: Vec<Py<PyCanonicalSchema>>,
     #[pyo3(get)]
     items: Option<Py<PyCanonicalSchema>>,
+    #[pyo3(get)]
+    contains: Vec<Py<ContainsView>>,
 }
 
 #[pymethods]
 impl ArrayView {
     #[classattr]
     fn __match_args__() -> (
+        &'static str,
         &'static str,
         &'static str,
         &'static str,
@@ -366,7 +404,27 @@ impl ArrayView {
             "unique_items",
             "prefix_items",
             "items",
+            "contains",
         )
+    }
+}
+
+/// One `contains` demand of an array. An absent minimum spells the default of one.
+#[pyclass(frozen, name = "ContainsView", module = "jsonschema_rs.canonical")]
+pub(crate) struct ContainsView {
+    #[pyo3(get)]
+    schema: Py<PyCanonicalSchema>,
+    #[pyo3(get)]
+    min_contains: Option<Py<PyAny>>,
+    #[pyo3(get)]
+    max_contains: Option<Py<PyAny>>,
+}
+
+#[pymethods]
+impl ContainsView {
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("schema", "min_contains", "max_contains")
     }
 }
 
@@ -571,6 +629,7 @@ pub(crate) fn init_module(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyRes
     canonical_module.add_class::<StringView>()?;
     canonical_module.add_class::<IntegerView>()?;
     canonical_module.add_class::<ArrayView>()?;
+    canonical_module.add_class::<ContainsView>()?;
     canonical_module.add_class::<ObjectView>()?;
     canonical_module.add_class::<NumberView>()?;
     canonical_module.add_class::<AnyOfView>()?;

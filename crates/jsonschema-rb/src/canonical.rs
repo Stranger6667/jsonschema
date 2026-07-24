@@ -1,5 +1,7 @@
 use jsonschema::{
-    canonical::{CanonicalSchema, CanonicalView, CanonicalizationError},
+    canonical::{
+        CanonicalSchema, CanonicalView, CanonicalizationError, ContainsView as CoreContainsView,
+    },
     JsonType,
 };
 use magnus::{
@@ -156,6 +158,7 @@ impl RbCanonicalSchema {
                     unique_items: view.unique_items,
                     prefix_items: view.prefix_items,
                     items: view.items,
+                    contains: view.contains,
                 })
                 .as_value(),
             CanonicalView::Object(view) => ruby
@@ -505,6 +508,7 @@ pub struct ArrayView {
     unique_items: bool,
     prefix_items: Vec<CanonicalSchema>,
     items: Option<CanonicalSchema>,
+    contains: Vec<CoreContainsView>,
 }
 
 impl DataTypeFunctions for ArrayView {}
@@ -546,14 +550,23 @@ impl ArrayView {
         }
     }
 
+    fn contains(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        let array = ruby.ary_new_capa(rb_self.contains.len());
+        for facet in &rb_self.contains {
+            array.push(ruby.obj_wrap(ContainsView::from_core(facet)).as_value())?;
+        }
+        Ok(array.as_value())
+    }
+
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
-            "#<JSONSchema::Canonical::ArrayView min_items={} max_items={} unique_items={} prefix_items={} items={}>",
+            "#<JSONSchema::Canonical::ArrayView min_items={} max_items={} unique_items={} prefix_items={} items={} contains={}>",
             Self::min_items(ruby, rb_self)?.inspect(),
             Self::max_items(ruby, rb_self)?.inspect(),
             Self::unique_items(ruby, rb_self).inspect(),
             Self::prefix_items(ruby, rb_self)?.inspect(),
-            Self::items(ruby, rb_self).inspect()
+            Self::items(ruby, rb_self).inspect(),
+            Self::contains(ruby, rb_self)?.inspect()
         ))
     }
 
@@ -570,6 +583,66 @@ impl ArrayView {
             Self::prefix_items(ruby, rb_self)?,
         )?;
         hash.aset(ruby.sym_new("items"), Self::items(ruby, rb_self))?;
+        hash.aset(ruby.sym_new("contains"), Self::contains(ruby, rb_self)?)?;
+        Ok(hash)
+    }
+}
+
+/// One `contains` demand of an array. An absent minimum spells the default of one.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::ContainsView", free_immediately)]
+pub struct ContainsView {
+    schema: CanonicalSchema,
+    min_contains: Option<serde_json::Number>,
+    max_contains: Option<serde_json::Number>,
+}
+
+impl DataTypeFunctions for ContainsView {}
+
+impl ContainsView {
+    fn from_core(facet: &CoreContainsView) -> Self {
+        Self {
+            schema: facet.schema.clone(),
+            min_contains: facet.min_contains.clone(),
+            max_contains: facet.max_contains.clone(),
+        }
+    }
+
+    fn schema(ruby: &Ruby, rb_self: &Self) -> Value {
+        ruby.obj_wrap(RbCanonicalSchema {
+            inner: rb_self.schema.clone(),
+        })
+        .as_value()
+    }
+
+    fn min_contains(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        bound_to_ruby(ruby, rb_self.min_contains.as_ref())
+    }
+
+    fn max_contains(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        bound_to_ruby(ruby, rb_self.max_contains.as_ref())
+    }
+
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
+        Ok(format!(
+            "#<JSONSchema::Canonical::ContainsView schema={} min_contains={} max_contains={}>",
+            Self::schema(ruby, rb_self).inspect(),
+            Self::min_contains(ruby, rb_self)?.inspect(),
+            Self::max_contains(ruby, rb_self)?.inspect()
+        ))
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("schema"), Self::schema(ruby, rb_self))?;
+        hash.aset(
+            ruby.sym_new("min_contains"),
+            Self::min_contains(ruby, rb_self)?,
+        )?;
+        hash.aset(
+            ruby.sym_new("max_contains"),
+            Self::max_contains(ruby, rb_self)?,
+        )?;
         Ok(hash)
     }
 }
@@ -899,8 +972,18 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     array_view.define_method("unique_items", method!(ArrayView::unique_items, 0))?;
     array_view.define_method("prefix_items", method!(ArrayView::prefix_items, 0))?;
     array_view.define_method("items", method!(ArrayView::items, 0))?;
+    array_view.define_method("contains", method!(ArrayView::contains, 0))?;
     array_view.define_method("inspect", method!(ArrayView::inspect, 0))?;
     array_view.define_method("deconstruct_keys", method!(ArrayView::deconstruct_keys, 1))?;
+    let contains_view = canonical_module.define_class("ContainsView", ruby.class_object())?;
+    contains_view.define_method("schema", method!(ContainsView::schema, 0))?;
+    contains_view.define_method("min_contains", method!(ContainsView::min_contains, 0))?;
+    contains_view.define_method("max_contains", method!(ContainsView::max_contains, 0))?;
+    contains_view.define_method("inspect", method!(ContainsView::inspect, 0))?;
+    contains_view.define_method(
+        "deconstruct_keys",
+        method!(ContainsView::deconstruct_keys, 1),
+    )?;
 
     let object_view = canonical_module.define_class("ObjectView", ruby.class_object())?;
     object_view.define_method("min_properties", method!(ObjectView::min_properties, 0))?;

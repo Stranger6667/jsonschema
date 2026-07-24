@@ -1,0 +1,495 @@
+[
+  {
+    "description": "ir: contains demands one matching element",
+    "schema": {"type": "array", "contains": {"type": "string"}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "contains": {"type": "string"}
+    },
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": ["x"], "valid": true},
+      {"data": [1], "valid": false},
+      {"data": [], "valid": false},
+      {"data": "x", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: bare contains constrains only arrays",
+    "schema": {"contains": {"type": "null"}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "object"]},
+        {"type": "array", "contains": {"type": "null"}}
+      ]
+    },
+    "tests": [
+      {"data": [null, 1], "valid": true},
+      {"data": [1], "valid": false},
+      {"data": [], "valid": false},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: contains true converges with a one-item minimum",
+    "schemas": [
+      {"type": "array", "contains": true},
+      {"type": "array", "minItems": 1}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "minItems": 1
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: contains true with minContains converges with the item minimum",
+    "schemas": [
+      {"type": "array", "contains": true, "minContains": 3},
+      {"type": "array", "minItems": 3}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "minItems": 3
+    },
+    "tests": [
+      {"data": [1, 2, 3], "valid": true},
+      {"data": [1, 2], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: contains true with maxContains converges with the item window",
+    "schemas": [
+      {"type": "array", "contains": true, "maxContains": 2},
+      {"type": "array", "minItems": 1, "maxItems": 2}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2
+    },
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [], "valid": false},
+      {"data": [1, 2, 3], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: contains false rejects every array",
+    "schema": {"type": "array", "contains": false},
+    "satisfiable": false,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": [1], "valid": false},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: bare contains false admits every non-array",
+    "schema": {"contains": false},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": ["null", "boolean", "number", "string", "object"]
+    },
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": [1], "valid": false},
+      {"data": 1, "valid": true},
+      {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "ir: minContains zero without a maximum says nothing",
+    "schemas": [
+      {"contains": {"type": "string"}, "minContains": 0},
+      true
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: minContains zero with a maximum keeps the ceiling",
+    "schema": {"type": "array", "contains": {"type": "string"}, "minContains": 0, "maxContains": 1},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "contains": {"type": "string"},
+      "minContains": 0,
+      "maxContains": 1
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": ["a"], "valid": true},
+      {"data": ["a", "b"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an explicit one-minimum converges with the default",
+    "schemas": [
+      {"type": "array", "contains": {"type": "null"}, "minContains": 1},
+      {"type": "array", "contains": {"type": "null"}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "contains": {"type": "null"}
+    },
+    "tests": [
+      {"data": [null], "valid": true},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: minContains without contains says nothing",
+    "schemas": [
+      {"minContains": 2},
+      true
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: maxContains without contains says nothing",
+    "schemas": [
+      {"maxContains": 1},
+      true
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: minContains above maxContains rejects every array",
+    "schema": {"type": "array", "contains": {"type": "integer"}, "minContains": 3, "maxContains": 1},
+    "satisfiable": false,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": [1, 1, 1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: minContains above maxItems rejects every array",
+    "schema": {"type": "array", "maxItems": 2, "contains": {"type": "integer"}, "minContains": 3},
+    "satisfiable": false,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "tests": [
+      {"data": [1, 2], "valid": false},
+      {"data": [1, 2, 3], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: contains beside an empty-array ceiling rejects every array",
+    "schema": {"type": "array", "maxItems": 0, "contains": {"type": "null"}},
+    "satisfiable": false,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": [null], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a one-item minimum contains already implies converges away",
+    "schemas": [
+      {"type": "array", "contains": {"type": "string"}, "minItems": 1},
+      {"type": "array", "contains": {"type": "string"}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "contains": {"type": "string"}
+    },
+    "tests": [
+      {"data": ["x"], "valid": true},
+      {"data": [], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: allOf merges the counts of one contains schema",
+    "schema": {
+      "allOf": [
+        {"type": "array", "contains": {"type": "integer"}, "minContains": 2},
+        {"contains": {"type": "integer"}, "minContains": 3}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "contains": {"type": "integer"},
+      "minContains": 3
+    },
+    "tests": [
+      {"data": [1, 2, 3], "valid": true},
+      {"data": [1, 2], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an unrecognized contains format leaves an intersecting value set in place",
+    "schema": {
+      "allOf": [
+        {"enum": [["ok"], ["nope"]]},
+        {"type": "array", "contains": {"type": "string", "format": "my-fmt"}}
+      ]
+    },
+    "validate_formats": true,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [["nope"], ["ok"]]
+    },
+    "tests": [
+      {"data": ["ok"], "valid": true},
+      {"data": ["nope"], "valid": true},
+      {"data": ["x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: allOf keeps distinct contains schemas apart",
+    "schemas": [
+      {
+        "allOf": [
+          {"type": "array", "contains": {"type": "integer"}},
+          {"contains": {"type": "string"}}
+        ]
+      },
+      {
+        "allOf": [
+          {"contains": {"type": "string"}},
+          {"type": "array", "contains": {"type": "integer"}}
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "contains": {"type": "integer"},
+      "allOf": [
+        {"contains": {"type": "string"}}
+      ]
+    },
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": [1], "valid": false},
+      {"data": ["x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: duplicate contains schemas fold to one",
+    "schemas": [
+      {"type": "array", "contains": {"type": "integer"}},
+      {"allOf": [{"type": "array", "contains": {"type": "integer"}}, {"contains": {"type": "integer"}}]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "contains": {"type": "integer"}
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: union branches sharing a contains schema merge their windows",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "contains": {"type": "null"}, "maxItems": 2},
+        {"type": "array", "contains": {"type": "null"}, "minItems": 2}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "contains": {"type": "null"}
+    },
+    "tests": [
+      {"data": [null], "valid": true},
+      {"data": [null, 1, 2], "valid": true},
+      {"data": [1, 2, 3], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a contains branch does not hand its empty-array floor to a window branch",
+    "schema": {
+      "anyOf": [
+        {"type": "array", "minItems": 1, "maxItems": 1},
+        {"type": "array", "contains": {"type": "null"}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "array", "contains": {"type": "null"}},
+        {"type": "array", "minItems": 1, "maxItems": 1}
+      ]
+    },
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": [5], "valid": true},
+      {"data": [null, 1], "valid": true},
+      {"data": [1, 2], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a bare array branch absorbs a contains branch",
+    "schema": {
+      "anyOf": [
+        {"type": "array"},
+        {"type": "array", "contains": {"type": "string"}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array"
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": ["x"], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: contains beside a uniform item schema keeps both demands",
+    "schema": {
+      "type": "array",
+      "items": {"type": "integer", "multipleOf": 2},
+      "contains": {"type": "integer", "multipleOf": 6}
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"type": "integer", "multipleOf": 2},
+      "contains": {"type": "integer", "multipleOf": 6}
+    },
+    "tests": [
+      {"data": [6], "valid": true},
+      {"data": [2, 6], "valid": true},
+      {"data": [2], "valid": false},
+      {"data": [], "valid": false},
+      {"data": [3, 6], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: draft 4 does not know contains",
+    "schema": {"contains": {"type": "string"}},
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#"
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: draft 7 does not know minContains",
+    "schema": {"type": "array", "contains": {"type": "boolean"}, "minContains": 0},
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "array",
+      "contains": {"type": "boolean"}
+    },
+    "tests": [
+      {"data": [true], "valid": true},
+      {"data": [], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: allOf keeps the tighter of two maxContains ceilings",
+    "schema": {
+      "allOf": [
+        {"type": "array", "contains": {"type": "boolean"}, "maxContains": 3},
+        {"contains": {"type": "boolean"}, "maxContains": 1}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "contains": {"type": "boolean"},
+      "maxContains": 1
+    },
+    "tests": [
+      {"data": [true], "valid": true},
+      {"data": [true, false], "valid": false},
+      {"data": [], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: contains true folds its ceiling into an existing item maximum",
+    "schemas": [
+      {"type": "array", "contains": true, "maxContains": 2, "maxItems": 5},
+      {"type": "array", "minItems": 1, "maxItems": 2}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2
+    },
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [], "valid": false},
+      {"data": [1, 2, 3], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: contains false with a zero minimum says nothing",
+    "schemas": [
+      {"contains": false, "minContains": 0},
+      true
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: an unmodeled contains schema keeps the document raw",
+    "schema": {"type": "array", "contains": {"if": true}},
+    "expected": {"type": "array", "contains": {"if": true}},
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [], "valid": false}
+    ]
+  }
+]
