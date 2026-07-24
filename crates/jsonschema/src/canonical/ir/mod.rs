@@ -696,7 +696,7 @@ impl SchemaKind {
         match bits {
             NULL => Some(JsonTypeSet::from(JsonType::Null)),
             BOTH_BOOLEANS => Some(JsonTypeSet::from(JsonType::Boolean)),
-            ALL => Some(JsonTypeSet::from(JsonType::Null).insert(JsonType::Boolean)),
+            ALL => Some(JsonType::Null | JsonType::Boolean),
             _ => None,
         }
     }

@@ -258,5 +258,977 @@
         "valid": false
       }
     ]
+  },
+  {
+    "description": "finite-domain types dissolve into a loose value set",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "enum": [
+              null,
+              0
+            ]
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          {
+            "const": 0
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        null,
+        false,
+        true,
+        0
+      ]
+    },
+    "tests": [
+      {
+        "data": null,
+        "valid": true
+      },
+      {
+        "data": true,
+        "valid": true
+      },
+      {
+        "data": 0,
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "finite-domain types dissolve into a loose value set under draft 4",
+    "draft": "draft4",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "enum": [
+              null,
+              0
+            ]
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          {
+            "enum": [
+              0
+            ]
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "enum": [
+        null,
+        false,
+        true,
+        0
+      ]
+    },
+    "tests": [
+      {
+        "data": null,
+        "valid": true
+      },
+      {
+        "data": 0.0,
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a null member saturates its domain and joins the type list, a lone boolean stays",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "enum": [
+              null,
+              false
+            ]
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "type": [
+              "null",
+              "number"
+            ]
+          },
+          {
+            "enum": [
+              false
+            ]
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "number"
+          ]
+        },
+        {
+          "const": false
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": null,
+        "valid": true
+      },
+      {
+        "data": false,
+        "valid": true
+      },
+      {
+        "data": true,
+        "valid": false
+      },
+      {
+        "data": 1.5,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a null member saturates its domain and joins the type list under draft 4",
+    "draft": "draft4",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "enum": [
+              null,
+              false
+            ]
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "type": [
+              "null",
+              "number"
+            ]
+          },
+          {
+            "enum": [
+              false
+            ]
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "number"
+          ]
+        },
+        {
+          "enum": [
+            false
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": null,
+        "valid": true
+      },
+      {
+        "data": false,
+        "valid": true
+      },
+      {
+        "data": true,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a constant closing an open endpoint fuses into the number window",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          {
+            "const": 0
+          }
+        ]
+      },
+      {
+        "type": "number",
+        "minimum": 0
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "minimum": 0
+    },
+    "tests": [
+      {
+        "data": 0,
+        "valid": true
+      },
+      {
+        "data": 0.5,
+        "valid": true
+      },
+      {
+        "data": -0.5,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a property entry widens by the sibling entry that covers the difference",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "a": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "minProperties": 2,
+            "properties": {
+              "a": {
+                "type": "null"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "a": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "minProperties": 2,
+            "properties": {
+              "a": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "minProperties": 2,
+          "properties": {
+            "a": {
+              "type": [
+                "null",
+                "string"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "a": null,
+          "b": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": "x",
+          "b": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1,
+          "b": 2
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "a": null
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "an object branch inside a sibling dissolves into it",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "a": {
+                "type": "null"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "minProperties": 2,
+            "properties": {
+              "a": {
+                "type": "null"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "null"
+          }
+        }
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "null"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "a": null,
+          "b": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a widened branch left inside its sibling dissolves into it",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "a": {
+                "type": "null"
+              }
+            }
+          },
+          {
+            "allOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "a": false
+                }
+              },
+              {
+                "type": "object",
+                "minProperties": 2
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "null"
+          }
+        }
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "null"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "b": 1,
+          "c": 2
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": null
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a full-slot branch inside a conditional sibling dissolves into it",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "a": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "maxProperties": 1,
+            "required": [
+              "b"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "string"
+          }
+        }
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": "x",
+          "b": 2
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "dropping a required key keeps the floor its count implied",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "a",
+              "b"
+            ]
+          },
+          {
+            "type": "object",
+            "minProperties": 2,
+            "properties": {
+              "a": false
+            }
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "minProperties": 2,
+            "properties": {
+              "a": false
+            }
+          },
+          {
+            "type": "object",
+            "minProperties": 2,
+            "required": [
+              "b"
+            ]
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "object",
+          "minProperties": 2,
+          "properties": {
+            "a": false
+          }
+        },
+        {
+          "type": "object",
+          "minProperties": 2,
+          "required": [
+            "b"
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "a": 1,
+          "b": 2
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "b": 1,
+          "c": 2
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "a": 1,
+          "c": 2
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a branch split by a size-only sibling dissolves when both parts are covered",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "a": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "b"
+            ]
+          },
+          {
+            "type": "object",
+            "minProperties": 2
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "a": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "minProperties": 2
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "minProperties": 2
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1,
+          "b": 2
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "a branch split by a key's presence dissolves when both parts are covered",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "a",
+              "b"
+            ]
+          },
+          {
+            "type": "object",
+            "minProperties": 3,
+            "properties": {
+              "a": false
+            }
+          },
+          {
+            "type": "object",
+            "minProperties": 3,
+            "required": [
+              "b"
+            ]
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "a",
+              "b"
+            ]
+          },
+          {
+            "type": "object",
+            "minProperties": 3,
+            "properties": {
+              "a": false
+            }
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "type": "object",
+          "minProperties": 3,
+          "properties": {
+            "a": false
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "a": 1,
+          "b": 2
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "b": 1,
+          "c": 2,
+          "d": 3
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "b": 1,
+          "c": 2
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "a": 1,
+          "b": 2,
+          "c": 3
+        },
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "a floor whose below-slice a sibling covers is dropped",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "a": false
+            }
+          },
+          {
+            "type": "object",
+            "minProperties": 2,
+            "required": [
+              "b"
+            ]
+          },
+          {
+            "type": "object",
+            "minProperties": 2,
+            "maxProperties": 2
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "a": false
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "b"
+            ]
+          },
+          {
+            "type": "object",
+            "minProperties": 2,
+            "maxProperties": 2
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "a": false
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "b"
+          ]
+        },
+        {
+          "type": "object",
+          "minProperties": 2,
+          "maxProperties": 2
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1,
+          "b": 2,
+          "c": 3
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "a": 1,
+          "b": 2
+        },
+        "valid": true
+      }
+    ]
   }
 ]

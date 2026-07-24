@@ -143,7 +143,7 @@ fn flipped(bound: &BoundNumber) -> BoundNumber {
 
 /// Complements of a count window: the ray below the floor and the ray above the ceiling. A floor
 /// of zero excludes nothing below it; a ceiling with no successor in this build declines.
-fn length_windows(lengths: &LengthBounds) -> Option<Vec<LengthBounds>> {
+pub(crate) fn length_windows(lengths: &LengthBounds) -> Option<Vec<LengthBounds>> {
     let mut windows = Vec::new();
     if let Some(below) = lengths
         .minimum

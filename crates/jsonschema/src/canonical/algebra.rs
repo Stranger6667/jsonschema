@@ -14,7 +14,7 @@ use crate::{
             LengthBounds, NonEmpty, NumberLeaf, NumberLeaves, ObjectLeaf, ObjectLeaves, Round,
             Schema, SchemaKind, Side, StringLeaf, StringLeaves, Verdict,
         },
-        parse,
+        negate, parse,
     },
     JsonType, JsonTypeSet,
 };
@@ -344,11 +344,17 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     //         {"type": "integer", "minimum": 6},
     //         {"const": 5}
     //       ]  =>  {"type": "integer", "minimum": 5}
-    if !strings.is_empty() || !integers.is_empty() || !arrays.is_empty() || !objects.is_empty() {
+    if !strings.is_empty()
+        || !integers.is_empty()
+        || !numbers.is_empty()
+        || !arrays.is_empty()
+        || !objects.is_empty()
+    {
         members.retain(|member| {
             !lift_degenerate_member(
                 &mut strings,
                 &mut integers,
+                &mut numbers,
                 &mut arrays,
                 &mut objects,
                 member,
@@ -396,7 +402,16 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     let mut objects: Vec<ObjectLeaf> = objects.into_iter().collect();
     loop {
         merge_sole_differing_keys(&mut objects, ctx);
-        if !drop_required_covered_by_sibling(&mut objects, ctx) {
+        if drop_object_branch_covered_by_sibling(&mut objects, ctx) {
+            continue;
+        }
+        if drop_required_covered_by_sibling(&mut objects, ctx) {
+            continue;
+        }
+        if drop_size_bound_covered_by_sibling(&mut objects, ctx) {
+            continue;
+        }
+        if !widen_entry_covered_by_sibling(&mut objects, ctx) {
             break;
         }
     }
@@ -524,30 +539,75 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         );
     }
 
-    // A member set saturating whole types joins another type branch: `null` beside `string` is
-    // the two-type list, not a loose value. A lone value set keeps its `const`/`enum` spelling.
+    // Members saturating a whole finite domain join another type branch: `null` beside `string`
+    // is the two-type list, not a loose value, and both booleans together are the `boolean` type.
+    // Unsaturated members stay loose, and a lone value set keeps its `const`/`enum` spelling.
+    // e.g.  anyOf [
+    //         {"type": "number"},
+    //         {"enum": [null, false]}
+    //       ]  =>  anyOf: [{"type": ["null", "number"]}, {"enum": [false]}]
     if !types.is_empty() {
-        if let Some(saturated) = value_set
-            .kind()
-            .finite_values()
-            .and_then(SchemaKind::finite_values_saturated_domain)
-        {
+        if let Some(members) = value_set.kind().finite_values() {
+            let mut saturated = JsonTypeSet::empty();
+            if members.iter().any(|member| member.as_value().is_null()) {
+                saturated = saturated.insert(JsonType::Null);
+            }
+            let holds = |wanted: bool| {
+                members
+                    .iter()
+                    .any(|member| matches!(member.as_value(), Value::Bool(held) if *held == wanted))
+            };
+            if holds(false) && holds(true) {
+                saturated = saturated.insert(JsonType::Boolean);
+            }
             let widened = union_type_sets(types, saturated);
             if widened != types {
+                let remaining: Vec<CanonicalJson> = members
+                    .iter()
+                    .filter(|member| match member.as_value() {
+                        Value::Null => !saturated.contains(JsonType::Null),
+                        Value::Bool(_) => !saturated.contains(JsonType::Boolean),
+                        Value::Number(_)
+                        | Value::String(_)
+                        | Value::Array(_)
+                        | Value::Object(_) => true,
+                    })
+                    .cloned()
+                    .collect();
                 return rerun(
-                    widened,
-                    Vec::new(),
-                    groups,
-                    strings,
-                    integers,
-                    numbers,
-                    arrays,
-                    objects,
-                    ctx,
+                    widened, remaining, groups, strings, integers, numbers, arrays, objects, ctx,
                 );
             }
         }
     }
+
+    // Types with finite domains beside loose values dissolve into them: the values then spell the
+    // whole branch one way. Only `null` and `boolean` have finite domains, and a surviving member
+    // lies outside both, so the expanded set can never saturate back into a type list.
+    // e.g.  anyOf [
+    //         {"type": ["null", "boolean"]},
+    //         {"const": 0}
+    //       ]  =>  {"enum": [null, false, true, 0]}
+    let finite_domains = JsonType::Null | JsonType::Boolean;
+    let (types, value_set) = match value_set.kind().finite_values() {
+        Some(members) if !types.is_empty() && finite_domains.union(types) == finite_domains => {
+            let mut expanded = members.to_vec();
+            if types.contains(JsonType::Null) {
+                expanded.push(CanonicalJson::from_value(&Value::Null));
+            }
+            if types.contains(JsonType::Boolean) {
+                expanded.push(CanonicalJson::from_value(&Value::Bool(false)));
+                expanded.push(CanonicalJson::from_value(&Value::Bool(true)));
+            }
+            let dissolved = canonicalize_value_set(expanded);
+            debug_assert!(
+                dissolved.kind().finite_values().is_some(),
+                "a dissolved type list saturated back into types"
+            );
+            (JsonTypeSet::empty(), dissolved)
+        }
+        _ => (types, value_set),
+    };
 
     // Assemble the surviving branches. The collected types become one branch.
     let mut out: Vec<Schema> = Vec::new();
@@ -621,6 +681,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
 fn lift_degenerate_member(
     strings: &mut StringLeaves,
     integers: &mut IntegerLeaves,
+    numbers: &mut NumberLeaves,
     arrays: &mut ArrayLeaves,
     objects: &mut ObjectLeaves,
     member: &CanonicalJson,
@@ -672,20 +733,44 @@ fn lift_degenerate_member(
         }
         // Outside Draft 4 the value and the window accept the same instances. Draft 4 keeps the value
         // where it is: `7` there also matches `7.0`, which an `integer` window rejects.
-        Value::Number(number) if !integers.is_empty() && !matches!(ctx.draft(), Draft::Draft4) => {
-            match BoundInteger::from_number(number) {
-                Some(bound) => {
-                    integers.insert(IntegerLeaf {
-                        bounds: IntegerBounds {
-                            minimum: Some(bound.clone()),
-                            maximum: Some(bound),
-                        },
-                        multiple_of: Divisors::default(),
-                    });
-                    true
-                }
-                None => false,
+        Value::Number(number)
+            if !integers.is_empty()
+                && !matches!(ctx.draft(), Draft::Draft4)
+                && BoundInteger::from_number(number).is_some() =>
+        {
+            let bound = BoundInteger::from_number(number).expect("checked in the guard");
+            integers.insert(IntegerLeaf {
+                bounds: IntegerBounds {
+                    minimum: Some(bound.clone()),
+                    maximum: Some(bound),
+                },
+                multiple_of: Divisors::default(),
+            });
+            true
+        }
+        // A number window admits every spelling of its values, so the one-value window says the
+        // same thing in every draft; the pool fuses it with a window it touches. A window bound
+        // can hold less precision than the value, so only a window collapsing back to the same
+        // constant carries it.
+        // e.g.  anyOf [
+        //         {"type": "number", "exclusiveMinimum": 0},
+        //         {"const": 0}
+        //       ]  =>  {"type": "number", "minimum": 0}
+        Value::Number(number) if !numbers.is_empty() => {
+            let bound = BoundNumber::new(number, true);
+            let window = NumberLeaf {
+                minimum: Some(bound.clone()),
+                maximum: Some(bound),
+                multiple_of: Divisors::default(),
+            };
+            let collapses_back = matches!(
+                number_leaf(window.clone(), ctx).kind(),
+                SchemaKind::Const(point) if point.as_value() == &Value::Number(number.clone())
+            );
+            if collapses_back {
+                numbers.insert(window);
             }
+            collapses_back
         }
         _ => false,
     }
@@ -837,10 +922,142 @@ fn sole_differing_key(left: &ObjectLeaf, right: &ObjectLeaf) -> Option<Arc<str>>
     }
 }
 
+/// Drop a branch a sibling admits wholly: intersecting with the sibling then changes nothing.
+/// The widening folds can leave one branch inside another, which the pairwise pool subsumption
+/// does not see.
+/// ```text
+/// e.g.  anyOf [
+///         {"type": "object", "properties": {"a": {"type": "null"}}},
+///         {"type": "object", "minProperties": 2, "properties": {"a": {"type": "null"}}}
+///       ]  =>  {"type": "object", "properties": {"a": {"type": "null"}}}
+/// ```
+fn drop_object_branch_covered_by_sibling(
+    leaves: &mut Vec<ObjectLeaf>,
+    ctx: &CanonicalizationContext,
+) -> bool {
+    for index in 0..leaves.len() {
+        let branch = object_leaf(leaves[index].clone(), ctx);
+        let covered = (0..leaves.len())
+            .filter(|&sibling| sibling != index)
+            .any(|sibling| {
+                intersect(
+                    branch.clone(),
+                    object_leaf(leaves[sibling].clone(), ctx),
+                    ctx,
+                ) == branch
+            });
+        if covered {
+            leaves.remove(index);
+            return true;
+        }
+    }
+    // A branch can also sit inside two siblings together when one of them bounds only the size:
+    // the parts of the branch outside that window - the rays below and above it - must then fit
+    // other siblings on their own.
+    // e.g.  anyOf [
+    //         {"type": "object", "properties": {"a": {"type": "string"}}},
+    //         {"type": "object", "required": ["b"]},
+    //         {"type": "object", "minProperties": 2}
+    //       ]  =>  anyOf [
+    //         {"type": "object", "properties": {"a": {"type": "string"}}},
+    //         {"type": "object", "minProperties": 2}
+    //       ]
+    for index in 0..leaves.len() {
+        for divider in (0..leaves.len()).filter(|&divider| divider != index) {
+            let bounds_only_size = leaves[divider].required.is_empty()
+                && leaves[divider].property_names.is_none()
+                && leaves[divider].properties.is_empty()
+                && leaves[divider].pattern_properties.is_empty();
+            if !bounds_only_size {
+                continue;
+            }
+            let Some(rays) = negate::length_windows(&leaves[divider].sizes) else {
+                continue;
+            };
+            let all_covered = !rays.is_empty()
+                && rays.iter().all(|ray| {
+                    let mut piece = leaves[index].clone();
+                    piece.sizes = LengthBounds {
+                        minimum: tighter(piece.sizes.minimum.take(), ray.minimum.clone(), Ord::max),
+                        maximum: tighter(piece.sizes.maximum.take(), ray.maximum.clone(), Ord::min),
+                    };
+                    let piece = object_leaf(piece, ctx);
+                    matches!(piece.kind(), SchemaKind::False)
+                        || (0..leaves.len())
+                            .filter(|&sibling| sibling != index && sibling != divider)
+                            .any(|sibling| {
+                                intersect(
+                                    piece.clone(),
+                                    object_leaf(leaves[sibling].clone(), ctx),
+                                    ctx,
+                                ) == piece
+                            })
+                });
+            if all_covered {
+                leaves.remove(index);
+                return true;
+            }
+        }
+    }
+    // A key's presence splits a branch the same way: the part holding the key and the part
+    // missing it are both plain leaves, and each must fit a sibling on its own.
+    // e.g.  anyOf [
+    //         {"type": "object", "required": ["a", "b"]},
+    //         {"type": "object", "minProperties": 3, "properties": {"a": false}},
+    //         {"type": "object", "minProperties": 3, "required": ["b"]}
+    //       ]  =>  the third branch dissolves: with `a` it fits the first, without `a` the second
+    for index in 0..leaves.len() {
+        let mut keys: Vec<Arc<str>> = leaves
+            .iter()
+            .enumerate()
+            .filter(|(sibling, _)| *sibling != index)
+            .flat_map(|(_, leaf)| {
+                leaf.required
+                    .iter()
+                    .chain(leaf.properties.keys())
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        keys.sort();
+        keys.dedup();
+        for key in keys {
+            let piece_covered = |piece: ObjectLeaf| {
+                let piece = object_leaf(piece, ctx);
+                matches!(piece.kind(), SchemaKind::False)
+                    || (0..leaves.len())
+                        .filter(|&sibling| sibling != index)
+                        .any(|sibling| {
+                            intersect(
+                                piece.clone(),
+                                object_leaf(leaves[sibling].clone(), ctx),
+                                ctx,
+                            ) == piece
+                        })
+            };
+            let mut holding = leaves[index].clone();
+            if let Err(position) = holding.required.binary_search(&key) {
+                holding.required.insert(position, Arc::clone(&key));
+            }
+            let mut missing = leaves[index].clone();
+            missing
+                .properties
+                .insert(Arc::clone(&key), Schema::new(SchemaKind::False));
+            if piece_covered(holding) && piece_covered(missing) {
+                leaves.remove(index);
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Drop a required key when the objects its absence would admit - those meeting the rest of the
 /// leaf while missing the key - are covered by a sibling branch. That gained set is the leaf with
 /// the key un-required and its entry pinned to `False`; a sibling covers it when intersecting
-/// changes nothing. One drop per call, so the caller re-merges before the next.
+/// changes nothing. The bare drop goes first; when it admits too much, the floor the required
+/// count implied is kept explicit and only the key demand is given up. One weakening per call, so
+/// the caller re-merges before the next.
 /// ```text
 /// e.g.  anyOf [
 ///         {"type": "object", "properties": {"a": {"type": "string"}}},
@@ -848,6 +1065,13 @@ fn sole_differing_key(left: &ObjectLeaf, right: &ObjectLeaf) -> Option<Arc<str>>
 ///       ]  =>  anyOf [
 ///         {"type": "object", "properties": {"a": {"type": "string"}}},
 ///         {"type": "object", "required": ["b"]}
+///       ]
+/// e.g.  anyOf [
+///         {"type": "object", "required": ["a", "b"]},
+///         {"type": "object", "minProperties": 2, "properties": {"a": false}}
+///       ]  =>  anyOf [
+///         {"type": "object", "minProperties": 2, "properties": {"a": false}},
+///         {"type": "object", "minProperties": 2, "required": ["b"]}
 ///       ]
 /// e.g.  anyOf [
 ///         {"type": "object", "required": ["a", "b"]},
@@ -860,28 +1084,183 @@ fn drop_required_covered_by_sibling(
 ) -> bool {
     for index in 0..leaves.len() {
         for key_index in 0..leaves[index].required.len() {
-            let leaf = &leaves[index];
-            let key = Arc::clone(&leaf.required[key_index]);
-            let mut gained = leaf.clone();
-            gained.required.remove(key_index);
-            gained
-                .properties
-                .insert(Arc::clone(&key), Schema::new(SchemaKind::False));
-            let gained = object_leaf(gained, ctx);
-            // An empty gained set means the requirement was already implied by the other facets.
-            let covered = matches!(gained.kind(), SchemaKind::False)
-                || (0..leaves.len())
+            let implied_floor = BoundCardinality::from(leaves[index].required.len() as u64);
+            for keep_floor in [false, true] {
+                // An explicit minimum survives the bare drop, so the fallback adds nothing.
+                if keep_floor && leaves[index].sizes.minimum.is_some() {
+                    break;
+                }
+                let leaf = &leaves[index];
+                let key = Arc::clone(&leaf.required[key_index]);
+                let mut weakened = leaf.clone();
+                weakened.required.remove(key_index);
+                if keep_floor {
+                    weakened.sizes.minimum = Some(implied_floor.clone());
+                }
+                let mut gained = weakened.clone();
+                gained
+                    .properties
+                    .insert(Arc::clone(&key), Schema::new(SchemaKind::False));
+                let gained = object_leaf(gained, ctx);
+                // An empty gained set means the two spellings tie, and the constructor's
+                // required spelling stays; rewriting here would depend on the route taken.
+                if matches!(gained.kind(), SchemaKind::False) {
+                    continue;
+                }
+                let covered =
+                    (0..leaves.len())
+                        .filter(|&sibling| sibling != index)
+                        .any(|sibling| {
+                            intersect(
+                                gained.clone(),
+                                object_leaf(leaves[sibling].clone(), ctx),
+                                ctx,
+                            ) == gained
+                        });
+                if covered {
+                    leaves[index] = weakened;
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Drop a size bound when the slice of counts it excludes - the leaf clipped to the other side of
+/// the bound - is covered by a sibling branch. An empty slice is a spelling tie left to the
+/// constructor, as with the required drops. One weakening per call.
+/// ```text
+/// e.g.  anyOf [
+///         {"type": "object", "properties": {"a": false}},
+///         {"type": "object", "minProperties": 2, "required": ["b"]}
+///       ]  =>  anyOf [
+///         {"type": "object", "properties": {"a": false}},
+///         {"type": "object", "required": ["b"]}
+///       ]
+/// ```
+fn drop_size_bound_covered_by_sibling(
+    leaves: &mut [ObjectLeaf],
+    ctx: &CanonicalizationContext,
+) -> bool {
+    for index in 0..leaves.len() {
+        let slice_covered = |slice: ObjectLeaf, leaves: &[ObjectLeaf]| {
+            let slice = object_leaf(slice, ctx);
+            !matches!(slice.kind(), SchemaKind::False)
+                && (0..leaves.len())
                     .filter(|&sibling| sibling != index)
                     .any(|sibling| {
                         intersect(
-                            gained.clone(),
+                            slice.clone(),
                             object_leaf(leaves[sibling].clone(), ctx),
                             ctx,
-                        ) == gained
-                    });
-            if covered {
-                leaves[index].required.remove(key_index);
+                        ) == slice
+                    })
+        };
+        if let Some(below_ceiling) = leaves[index]
+            .sizes
+            .minimum
+            .as_ref()
+            .and_then(|minimum| minimum.clone().checked_decrement())
+        {
+            let mut slice = leaves[index].clone();
+            slice.sizes.minimum = None;
+            slice.sizes.maximum = Some(below_ceiling);
+            if slice_covered(slice, leaves) {
+                leaves[index].sizes.minimum = None;
                 return true;
+            }
+        }
+        if let Some(above_floor) = leaves[index]
+            .sizes
+            .maximum
+            .as_ref()
+            .and_then(|maximum| maximum.clone().checked_increment())
+        {
+            let mut slice = leaves[index].clone();
+            slice.sizes.minimum = Some(above_floor);
+            slice.sizes.maximum = None;
+            if slice_covered(slice, leaves) {
+                leaves[index].sizes.maximum = None;
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Widen a property entry by the union with a sibling's entry at the same key when the sibling
+/// covers the difference, so intersection images and direct spellings of one union agree. The
+/// objects the widening admits all hold the key with a value the sibling's entry accepts, so the
+/// check needs no complement: the widened leaf with the key required under the sibling's entry
+/// must sit inside the sibling. A union with the sibling entry lifted to `True` drops the entry.
+/// Widening is monotone over the finite entry lattice, so the loop is bounded.
+/// ```text
+/// e.g.  anyOf [
+///         {"type": "object", "properties": {"a": {"type": "string"}}},
+///         {"type": "object", "minProperties": 2, "properties": {"a": {"type": "null"}}}
+///       ]  =>  anyOf [
+///         {"type": "object", "properties": {"a": {"type": "string"}}},
+///         {"type": "object", "minProperties": 2, "properties": {"a": {"type": ["null", "string"]}}}
+///       ]
+/// ```
+fn widen_entry_covered_by_sibling(
+    leaves: &mut [ObjectLeaf],
+    ctx: &CanonicalizationContext,
+) -> bool {
+    for index in 0..leaves.len() {
+        let keys: Vec<Arc<str>> = leaves[index].properties.keys().cloned().collect();
+        for key in keys {
+            for sibling in (0..leaves.len()).filter(|&sibling| sibling != index) {
+                let entry = &leaves[index].properties[&key];
+                let sibling_entry = leaves[sibling].properties.get(&key);
+                // `None` spells the sibling admitting anything at the key, lifting the union to `True`.
+                let widened_entry = match sibling_entry {
+                    Some(other) if other == entry => continue,
+                    Some(other) => {
+                        let united = union(vec![entry.clone(), other.clone()], ctx);
+                        if &united == entry {
+                            continue;
+                        }
+                        Some(united).filter(|united| !matches!(united.kind(), SchemaKind::True))
+                    }
+                    None => None,
+                };
+                let mut widened = leaves[index].clone();
+                match widened_entry {
+                    Some(united) => {
+                        widened.properties.insert(Arc::clone(&key), united);
+                    }
+                    None => {
+                        widened.properties.remove(&key);
+                    }
+                }
+                if widened == leaves[index] {
+                    continue;
+                }
+                let mut gained = widened.clone();
+                match leaves[sibling].properties.get(&key) {
+                    Some(other) => {
+                        gained.properties.insert(Arc::clone(&key), other.clone());
+                    }
+                    None => {
+                        gained.properties.remove(&key);
+                    }
+                }
+                if let Err(position) = gained.required.binary_search(&key) {
+                    gained.required.insert(position, Arc::clone(&key));
+                }
+                let gained = object_leaf(gained, ctx);
+                let covered = matches!(gained.kind(), SchemaKind::False)
+                    || intersect(
+                        gained.clone(),
+                        object_leaf(leaves[sibling].clone(), ctx),
+                        ctx,
+                    ) == gained;
+                if covered {
+                    leaves[index] = widened;
+                    return true;
+                }
             }
         }
     }
@@ -1566,6 +1945,21 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
     // carries the pattern schema as a permanent entry the pattern-only spelling lacks.
     normalize_properties(&mut leaf, ctx);
     normalize_pattern_properties(&mut leaf, ctx);
+    // Required keys filling the whole size ceiling leave no slot for any other key, so an entry
+    // outside them can never see its key present.
+    // e.g.  {"type": "object", "maxProperties": 1, "required": ["b"],
+    //        "properties": {"a": {"type": "string"}}}
+    //       =>  {"type": "object", "maxProperties": 1, "required": ["b"]}
+    if leaf
+        .sizes
+        .maximum
+        .as_ref()
+        .is_some_and(|max| *max == leaf.required_count())
+    {
+        let required = &leaf.required;
+        leaf.properties
+            .retain(|key, _| required.binary_search(key).is_ok());
+    }
     // A required key already demands a property, so a minimum it covers says nothing more.
     // e.g.  {"type": "object", "required": ["a", "b"], "minProperties": 2}
     //       =>  {"type": "object", "required": ["a", "b"]}

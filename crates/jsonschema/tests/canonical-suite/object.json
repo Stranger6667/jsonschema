@@ -786,5 +786,47 @@
         "valid": false
       }
     ]
+  },
+  {
+    "description": "an entry outside the required keys filling the size ceiling says nothing",
+    "schema": {
+      "type": "object",
+      "maxProperties": 1,
+      "required": [
+        "b"
+      ],
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "maxProperties": 1,
+      "required": [
+        "b"
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1,
+          "b": 2
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": false
+      }
+    ]
   }
 ]
