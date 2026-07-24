@@ -1,4 +1,6 @@
-use crate::canonical::ir::{ArrayLeaf, BoundCardinality, Bounds, LengthBounds, Schema};
+use crate::canonical::ir::{
+    ArrayLeaf, BoundCardinality, Bounds, ContainsFacet, LengthBounds, Schema,
+};
 
 /// Array leaves merged per uniqueness flag and item schema, free of subsumed windows. Inserts are
 /// batched; the form is restored before any read, so the order in which leaves arrive cannot
@@ -94,20 +96,29 @@ fn merge(mut leaves: Vec<ArrayLeaf>) -> Vec<ArrayLeaf> {
         return leaves;
     }
     leaves.sort_by(|left, right| {
-        (left.unique, &left.prefix, &left.items).cmp(&(right.unique, &right.prefix, &right.items))
+        (left.unique, &left.prefix, &left.items, &left.contains).cmp(&(
+            right.unique,
+            &right.prefix,
+            &right.items,
+            &right.contains,
+        ))
     });
     let mut merged: Vec<ArrayLeaf> = Vec::with_capacity(leaves.len());
     let mut windows: Vec<LengthBounds> = Vec::new();
     let mut facets: Option<Facets> = None;
     for leaf in leaves {
         if facets.as_ref().is_none_or(|group| {
-            group.unique != leaf.unique || group.prefix != leaf.prefix || group.items != leaf.items
+            group.unique != leaf.unique
+                || group.prefix != leaf.prefix
+                || group.items != leaf.items
+                || group.contains != leaf.contains
         }) {
             flush_group(&mut merged, facets.take(), &mut windows);
             facets = Some(Facets {
                 unique: leaf.unique,
                 prefix: leaf.prefix,
                 items: leaf.items,
+                contains: leaf.contains,
             });
         }
         windows.push(leaf.lengths);
@@ -121,6 +132,7 @@ struct Facets {
     unique: bool,
     prefix: Vec<Schema>,
     items: Option<Schema>,
+    contains: Vec<ContainsFacet>,
 }
 
 /// Emit one leaf per merged window, all carrying the group's facets.
@@ -133,6 +145,7 @@ fn flush_group(
         unique,
         prefix,
         items,
+        contains,
     }) = facets
     else {
         return;
@@ -145,6 +158,7 @@ fn flush_group(
             unique,
             prefix: prefix.clone(),
             items: items.clone(),
+            contains: contains.clone(),
         });
     }
     merged.push(ArrayLeaf {
@@ -152,6 +166,7 @@ fn flush_group(
         unique,
         prefix,
         items,
+        contains,
     });
 }
 
@@ -170,14 +185,23 @@ fn flush_group(
 fn extend_over_bare_windows(leaves: &mut [ArrayLeaf]) {
     let bare: Vec<LengthBounds> = leaves
         .iter()
-        .filter(|leaf| !leaf.unique && leaf.prefix.is_empty() && leaf.items.is_none())
+        .filter(|leaf| {
+            !leaf.unique
+                && leaf.prefix.is_empty()
+                && leaf.items.is_none()
+                && leaf.contains.is_empty()
+        })
         .map(|leaf| leaf.lengths.clone())
         .collect();
     if bare.is_empty() {
         return;
     }
     for leaf in leaves.iter_mut() {
-        if !leaf.unique && leaf.prefix.is_empty() && leaf.items.is_none() {
+        if !leaf.unique
+            && leaf.prefix.is_empty()
+            && leaf.items.is_none()
+            && leaf.contains.is_empty()
+        {
             continue;
         }
         // A grown window can reach the next bare window, so retry until none applies.
@@ -211,11 +235,17 @@ fn extend_over_bare_windows(leaves: &mut [ArrayLeaf]) {
 ///       ]
 /// ```
 fn hand_off_empty(leaves: &mut [ArrayLeaf]) {
+    // A `contains` demand floors the length on its own, so such a leaf rejects the empty array
+    // even with no window minimum.
     if !leaves.iter().any(|leaf| {
         leaf.lengths
             .minimum
             .as_ref()
             .is_none_or(BoundCardinality::is_zero)
+            && leaf
+                .contains
+                .iter()
+                .all(|facet| facet.effective_minimum().is_zero())
     }) {
         return;
     }
@@ -244,6 +274,7 @@ fn absorb_trivially_distinct(leaves: &mut Vec<ArrayLeaf>) {
         !leaf.unique
             && leaf.prefix.is_empty()
             && leaf.items.is_none()
+            && leaf.contains.is_empty()
             && leaf
                 .lengths
                 .maximum
@@ -254,9 +285,14 @@ fn absorb_trivially_distinct(leaves: &mut Vec<ArrayLeaf>) {
     };
     let window = leaves[trivial].lengths.clone();
     // Merging the pair yields one window exactly when they overlap or touch. An element-constrained
-    // leaf cannot widen over arrays of one item, whose element it never checked.
+    // leaf cannot widen over arrays of one item, whose element it never checked; a `contains` leaf
+    // cannot widen over the empty array, which its demand rejects.
     let Some((target, widened)) = leaves.iter().enumerate().find_map(|(index, leaf)| {
-        if !leaf.unique || leaf.items.is_some() || !leaf.prefix.is_empty() {
+        if !leaf.unique
+            || leaf.items.is_some()
+            || !leaf.prefix.is_empty()
+            || !leaf.contains.is_empty()
+        {
             return None;
         }
         let mut merged = Bounds::merge_all(vec![leaf.lengths.clone(), window.clone()]);
@@ -289,6 +325,7 @@ fn absorb_trivially_conforming(leaves: &mut Vec<ArrayLeaf>) {
         !leaf.unique
             && leaf.prefix.is_empty()
             && leaf.items.is_none()
+            && leaf.contains.is_empty()
             && leaf
                 .lengths
                 .maximum
@@ -298,11 +335,14 @@ fn absorb_trivially_conforming(leaves: &mut Vec<ArrayLeaf>) {
         return;
     };
     let window = leaves[trivial].lengths.clone();
-    // Merging the pair yields one window exactly when they overlap or touch.
+    // Merging the pair yields one window exactly when they overlap or touch. A `contains` leaf
+    // stays apart: the empty array fails its demand, so widening over it would admit too much.
     let Some((target, widened)) = leaves
         .iter()
         .enumerate()
-        .filter(|(_, leaf)| leaf.items.is_some() || !leaf.prefix.is_empty())
+        .filter(|(_, leaf)| {
+            (leaf.items.is_some() || !leaf.prefix.is_empty()) && leaf.contains.is_empty()
+        })
         .find_map(|(index, leaf)| {
             let merged = Bounds::merge_all(vec![leaf.lengths.clone(), window.clone()]);
             match <[_; 1]>::try_from(merged) {
@@ -338,9 +378,14 @@ fn drop_subsumed(leaves: &mut Vec<ArrayLeaf>) {
             // `other` is looser exactly when its per-index schemas are an equal prefix of `leaf`'s
             // and it places nothing beyond them, while `leaf` constrains further.
             let looser_items = other.items.is_none()
+                && other.contains.is_empty()
                 && leaf.prefix.starts_with(&other.prefix)
-                && (leaf.items.is_some() || leaf.prefix.len() > other.prefix.len());
-            let same_elements = other.prefix == leaf.prefix && other.items == leaf.items;
+                && (leaf.items.is_some()
+                    || leaf.prefix.len() > other.prefix.len()
+                    || !leaf.contains.is_empty());
+            let same_elements = other.prefix == leaf.prefix
+                && other.items == leaf.items
+                && other.contains == leaf.contains;
             let wider = other.lengths.covers(&leaf.lengths)
                 && (!other.unique || leaf.unique)
                 && (looser_items || same_elements);

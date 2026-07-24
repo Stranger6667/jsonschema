@@ -145,6 +145,33 @@ RSpec.describe "JSONSchema.canonicalize" do
     end
   end
 
+  it "view returns ArrayView with its contains demands" do
+    schema = {
+      "type" => "array", "contains" => { "type" => "string" },
+      "minContains" => 0, "maxContains" => 2
+    }
+    case JSONSchema.canonicalize(schema).view
+    in JSONSchema::Canonical::ArrayView[contains: [facet]]
+      expect(facet.schema.to_json_schema).to eq(
+        { "$schema" => "https://json-schema.org/draft/2020-12/schema", "type" => "string" }
+      )
+      expect(facet.min_contains).to eq(0)
+      expect(facet.max_contains).to eq(2)
+    end
+  end
+
+  it "view reports an absent contains count window as nil" do
+    schema = { "type" => "array", "contains" => { "type" => "null" } }
+    case JSONSchema.canonicalize(schema).view
+    in JSONSchema::Canonical::ArrayView[contains: [facet]]
+      expect(facet.schema.to_json_schema).to eq(
+        { "$schema" => "https://json-schema.org/draft/2020-12/schema", "type" => "null" }
+      )
+      expect(facet.min_contains).to be_nil
+      expect(facet.max_contains).to be_nil
+    end
+  end
+
   it "view returns ObjectView with its property-count window" do
     schema = {
       "type" => "object", "minProperties" => 1, "maxProperties" => 3,
@@ -237,7 +264,7 @@ RSpec.describe "JSONSchema.canonicalize" do
     "StringView" => [{ "type" => "string", "minLength" => 2, "pattern" => "^a" }, %i[min_length max_length patterns formats]],
     "IntegerView" => [{ "type" => "integer", "minimum" => 2, "maximum" => 9 }, %i[minimum maximum multiple_of]],
     "NumberView" => [{ "type" => "number", "minimum" => 2 }, %i[minimum exclusive_minimum maximum exclusive_maximum multiple_of]],
-    "ArrayView" => [{ "type" => "array", "minItems" => 1 }, %i[min_items max_items unique_items prefix_items items]],
+    "ArrayView" => [{ "type" => "array", "minItems" => 1 }, %i[min_items max_items unique_items prefix_items items contains]],
     "ObjectView" => [{ "type" => "object", "minProperties" => 1 },
                      %i[min_properties max_properties required property_names properties pattern_properties]],
     "ConstView" => [{ "const" => nil }, %i[value]],

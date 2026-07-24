@@ -12,8 +12,8 @@ use crate::{
         context::CanonicalizationContext,
         ir::{
             canonicalize_value_set, type_set_schema, typed_group, ArrayLeaf, BoundCardinality,
-            BoundNumber, BoundRational, CanonicalJson, Divisors, IntegerLeaf, LengthBounds,
-            NumberLeaf, ObjectLeaf, Schema, SchemaKind, Side, StringLeaf,
+            BoundNumber, BoundRational, CanonicalJson, ContainsFacet, Divisors, IntegerLeaf,
+            LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, Side, StringLeaf,
         },
         negate, CanonicalizationError,
     },
@@ -52,6 +52,9 @@ fn parse_schema(
     let mut min_items: Option<BoundCardinality> = None;
     let mut max_items: Option<BoundCardinality> = None;
     let mut items: Option<Schema> = None;
+    let mut contains_schema: Option<Schema> = None;
+    let mut min_contains: Option<BoundCardinality> = None;
+    let mut max_contains: Option<BoundCardinality> = None;
     let mut item_prefix: Option<Vec<Schema>> = None;
     let mut additional_items: Option<&Value> = None;
     let mut required: Vec<Arc<str>> = Vec::new();
@@ -208,6 +211,30 @@ fn parse_schema(
                 ) =>
             {
                 additional_items = Some(value);
+            }
+            ("contains", value @ (Value::Object(_) | Value::Bool(_)))
+                if ctx.draft().is_known_keyword("contains") =>
+            {
+                match parse_schema(value, ctx, false)? {
+                    Some(schema) => contains_schema = Some(schema),
+                    None => return Ok(None),
+                }
+            }
+            ("minContains", Value::Number(number))
+                if ctx.draft().is_known_keyword("minContains") =>
+            {
+                match BoundCardinality::from_number(number) {
+                    Some(bound) => min_contains = Some(bound),
+                    None => return Ok(None),
+                }
+            }
+            ("maxContains", Value::Number(number))
+                if ctx.draft().is_known_keyword("maxContains") =>
+            {
+                match BoundCardinality::from_number(number) {
+                    Some(bound) => max_contains = Some(bound),
+                    None => return Ok(None),
+                }
             }
             ("required", Value::Array(names))
                 if ctx.draft().is_known_keyword("required")
@@ -418,11 +445,21 @@ fn parse_schema(
         Some(prefix) => (prefix, items),
         None => (Vec::new(), items),
     };
+    // `minContains`/`maxContains` constrain the `contains` count and say nothing without it.
+    let contains: Vec<ContainsFacet> = contains_schema
+        .map(|schema| ContainsFacet {
+            schema,
+            minimum: min_contains,
+            maximum: max_contains,
+        })
+        .into_iter()
+        .collect();
     if min_items.is_some()
         || max_items.is_some()
         || unique_items
         || !prefix.is_empty()
         || tail.is_some()
+        || !contains.is_empty()
     {
         conjuncts.push(array_facet_schema(
             ArrayLeaf {
@@ -433,6 +470,7 @@ fn parse_schema(
                 unique: unique_items,
                 prefix,
                 items: tail,
+                contains,
             },
             ctx,
         ));

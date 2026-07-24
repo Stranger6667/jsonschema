@@ -145,6 +145,9 @@ fn object_view_exposes_property_names() {
 #[test_case(&json!({"type": "object", "properties": {"a": {"type": "string", "format": "only-ok"}}}), &json!({"a": "nope"}); "property schema")]
 #[test_case(&json!({"type": "object", "properties": {"a": {"format": "only-ok"}}}), &json!({"a": "nope"}); "untyped property schema")]
 #[test_case(&json!({"type": "object", "properties": {"a": {"type": "object", "propertyNames": {"format": "only-ok"}}}}), &json!({"a": {"nope": 1}}); "nested object")]
+#[test_case(&json!({"type": "array", "items": {"type": "string", "format": "only-ok"}}), &json!(["nope"]); "item schema")]
+#[test_case(&json!({"type": "array", "contains": {"type": "string", "format": "only-ok"}}), &json!(["nope"]); "contains schema")]
+#[test_case(&json!({"type": "object", "properties": {"a": {"type": "array", "contains": {"type": "string", "format": "only-ok"}}}}), &json!({"a": ["nope"]}); "contains under a property")]
 fn uncheckable_format_keeps_the_value_beside_the_leaf(leaf: &Value, instance: &Value) {
     let schema = json!({"anyOf": [{"const": instance}, leaf]});
     let canonical = options()
@@ -493,6 +496,31 @@ fn negated_type_set_complement_converges_with_direct_spelling() {
 #[test_case(&format!(r#"{{"const":1{}}}"#, "0".repeat((1 << 20) + 1)); "huge_digit_count")]
 fn numerals_without_exact_comparison_stay_raw(text: &str) {
     let schema: Value = serde_json::from_str(text).expect("valid schema JSON");
+    let canonical = canonicalize(&schema).expect("canonicalizes");
+    assert!(matches!(canonical.view(), CanonicalView::Raw(_)));
+    assert_eq!(canonical.to_json_schema(), schema);
+}
+
+// A `contains` count bound with no modeled form keeps the document raw: past `u64` in the default
+// build, a spelling without an exact integer reading under arbitrary precision.
+#[cfg(not(feature = "arbitrary-precision"))]
+#[test_case(&json!({"type": "array", "contains": {"type": "null"}, "minContains": 1e100}); "minimum past u64")]
+#[test_case(&json!({"type": "array", "contains": {"type": "null"}, "maxContains": 1e100}); "maximum past u64")]
+fn contains_counts_without_modeled_form_stay_raw(schema: &Value) {
+    let canonical = canonicalize(schema).expect("canonicalizes");
+    assert!(matches!(canonical.view(), CanonicalView::Raw(_)));
+    assert_eq!(&canonical.to_json_schema(), schema);
+}
+
+#[cfg(feature = "arbitrary-precision")]
+#[test_case("minContains"; "minimum past the expansion cap")]
+#[test_case("maxContains"; "maximum past the expansion cap")]
+fn contains_counts_without_modeled_form_stay_raw(keyword: &str) {
+    // More digits than the canonical expansion cap, yet within the validator's exponent limit:
+    // the count is meta-valid, but its canonical spelling stays scientific.
+    let count = format!("1{}e1000000", "0".repeat(48_577));
+    let text = format!(r#"{{"type":"array","contains":{{"type":"null"}},"{keyword}":{count}}}"#);
+    let schema: Value = serde_json::from_str(&text).expect("valid schema JSON");
     let canonical = canonicalize(&schema).expect("canonicalizes");
     assert!(matches!(canonical.view(), CanonicalView::Raw(_)));
     assert_eq!(canonical.to_json_schema(), schema);

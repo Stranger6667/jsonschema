@@ -10,9 +10,9 @@ use crate::{
         ir::{
             canonicalize_value_set, tighter, type_set_schema, typed_group, ArrayLeaf, ArrayLeaves,
             AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber, BoundRational, CanonicalJson,
-            Discrete, Divisors, IntegerBounds, IntegerLeaf, IntegerLeaves, LengthBounds, NonEmpty,
-            NumberLeaf, NumberLeaves, ObjectLeaf, ObjectLeaves, Round, Schema, SchemaKind, Side,
-            StringLeaf, StringLeaves, Verdict,
+            ContainsFacet, Discrete, Divisors, IntegerBounds, IntegerLeaf, IntegerLeaves,
+            LengthBounds, NonEmpty, NumberLeaf, NumberLeaves, ObjectLeaf, ObjectLeaves, Round,
+            Schema, SchemaKind, Side, StringLeaf, StringLeaves, Verdict,
         },
         parse,
     },
@@ -588,6 +588,7 @@ fn lift_degenerate_member(
                 unique: false,
                 prefix: Vec::new(),
                 items: None,
+                contains: Vec::new(),
             });
             true
         }
@@ -969,7 +970,13 @@ pub(crate) fn number_leaf(leaf: NumberLeaf, ctx: &CanonicalizationContext) -> Sc
 
 /// Pack an array facet set into a node, collapsing the leaves that say something simpler.
 pub(crate) fn array_leaf(mut leaf: ArrayLeaf) -> Schema {
+    if !normalize_contains(&mut leaf) {
+        return Schema::new(SchemaKind::False);
+    }
     normalize_items(&mut leaf);
+    if !reconcile_contains_window(&mut leaf) {
+        return Schema::new(SchemaKind::False);
+    }
     // An array of at most one item has nothing to repeat, so uniqueness says nothing more.
     // e.g.  {"type": "array", "maxItems": 1, "uniqueItems": true}
     //       =>  {"type": "array", "maxItems": 1}
@@ -998,6 +1005,105 @@ pub(crate) fn array_leaf(mut leaf: ArrayLeaf) -> Schema {
         ))));
     }
     Schema::new(SchemaKind::Array(leaf))
+}
+
+/// Fold the `contains` demands into canonical form: merge the windows of one schema, turn a
+/// demand every element meets into a length bound, and drop the vacuous ones. `false` when no
+/// count can sit in a facet's window.
+/// ```text
+/// e.g.  {"type": "array", "contains": true, "minContains": 3}
+///       =>  {"type": "array", "minItems": 3}
+/// ```
+fn normalize_contains(leaf: &mut ArrayLeaf) -> bool {
+    if leaf.contains.is_empty() {
+        return true;
+    }
+    let mut facets = std::mem::take(&mut leaf.contains);
+    facets.sort_by(|left, right| left.schema.cmp(&right.schema));
+    let mut merged: Vec<ContainsFacet> = Vec::with_capacity(facets.len());
+    for facet in facets {
+        match merged.last_mut() {
+            // Conjunction of two demands on one schema: the tighter end on each side.
+            Some(last) if last.schema == facet.schema => {
+                let minimum = last.effective_minimum().max(facet.effective_minimum());
+                last.minimum = Some(minimum);
+                last.maximum = match (last.maximum.take(), facet.maximum) {
+                    (Some(left), Some(right)) => Some(left.min(right)),
+                    (one, None) | (None, one) => one,
+                };
+            }
+            _ => merged.push(facet),
+        }
+    }
+    for mut facet in merged {
+        let minimum = facet.effective_minimum();
+        if facet.maximum.as_ref().is_some_and(|max| minimum > *max) {
+            return false;
+        }
+        // Every element matches, so the matching count is the length itself.
+        if matches!(facet.schema.kind(), SchemaKind::True) {
+            if !minimum.is_zero()
+                && leaf
+                    .lengths
+                    .minimum
+                    .as_ref()
+                    .is_none_or(|current| *current < minimum)
+            {
+                leaf.lengths.minimum = Some(minimum);
+            }
+            if let Some(maximum) = facet.maximum {
+                leaf.lengths.maximum = Some(match leaf.lengths.maximum.take() {
+                    Some(current) => current.min(maximum),
+                    None => maximum,
+                });
+            }
+            continue;
+        }
+        // No element matches, so the count is zero: below any positive minimum.
+        if matches!(facet.schema.kind(), SchemaKind::False) {
+            if minimum.is_zero() {
+                continue;
+            }
+            return false;
+        }
+        if minimum.is_zero() && facet.maximum.is_none() {
+            continue;
+        }
+        facet.minimum = (minimum != BoundCardinality::from(1)).then_some(minimum);
+        leaf.contains.push(facet);
+    }
+    true
+}
+
+/// Check the `contains` demands against the settled length window: matching elements are elements,
+/// so the largest demanded count must fit under the ceiling, and any item minimum it implies is
+/// dropped as redundant.
+fn reconcile_contains_window(leaf: &mut ArrayLeaf) -> bool {
+    let Some(implied) = leaf
+        .contains
+        .iter()
+        .map(ContainsFacet::effective_minimum)
+        .max()
+    else {
+        return true;
+    };
+    if leaf
+        .lengths
+        .maximum
+        .as_ref()
+        .is_some_and(|max| implied > *max)
+    {
+        return false;
+    }
+    if leaf
+        .lengths
+        .minimum
+        .as_ref()
+        .is_some_and(|min| *min <= implied)
+    {
+        leaf.lengths.minimum = None;
+    }
+    true
 }
 
 /// Fold an array leaf's per-index and tail element constraints into canonical form: drop a tail that
@@ -1110,11 +1216,14 @@ fn intersect_array_leaves(
         (Some(left), Some(right)) => Some(intersect(left, right, ctx)),
         (items, None) | (None, items) => items,
     };
+    let mut contains = first.contains;
+    contains.extend(second.contains);
     ArrayLeaf {
         lengths: first.lengths.intersect(second.lengths),
         unique: first.unique || second.unique,
         prefix,
         items,
+        contains,
     }
 }
 
@@ -1144,6 +1253,36 @@ fn array_leaf_admits(
     {
         return Verdict::Rejects;
     }
+    // An undecided element leaves the matching count an interval: `definite` counts sure matches,
+    // `possible` also the undecided ones. A window missed at both readings rejects; one met only
+    // at the right reading stays undecided.
+    let mut contains_verdict = Verdict::Admits;
+    for facet in &leaf.contains {
+        let mut definite: u64 = 0;
+        let mut possible: u64 = 0;
+        for element in items {
+            match admits_value(&facet.schema, element, ctx) {
+                Verdict::Admits => {
+                    definite += 1;
+                    possible += 1;
+                }
+                Verdict::Unknown => possible += 1,
+                Verdict::Rejects => {}
+            }
+        }
+        let definite = BoundCardinality::from(definite);
+        let possible = BoundCardinality::from(possible);
+        if possible < facet.effective_minimum()
+            || facet.maximum.as_ref().is_some_and(|max| definite > *max)
+        {
+            return Verdict::Rejects;
+        }
+        if definite < facet.effective_minimum()
+            || facet.maximum.as_ref().is_some_and(|max| possible > *max)
+        {
+            contains_verdict = Verdict::Unknown;
+        }
+    }
     // Members are normalized, so `1` and `1.0` compare equal here just as they do at validation.
     if leaf.unique
         && !items
@@ -1154,12 +1293,12 @@ fn array_leaf_admits(
         return Verdict::Rejects;
     }
     // The element at each index answers to its prefix schema, or the tail once the prefix runs out.
-    Verdict::all(items.iter().enumerate().map(|(index, element)| {
-        match leaf.prefix.get(index).or(leaf.items.as_ref()) {
+    contains_verdict.and(Verdict::all(items.iter().enumerate().map(
+        |(index, element)| match leaf.prefix.get(index).or(leaf.items.as_ref()) {
             Some(schema) => admits_value(schema, element, ctx),
             None => Verdict::Admits,
-        }
-    }))
+        },
+    )))
 }
 
 /// Pack an object facet set into a node, collapsing the leaves that say something simpler.
@@ -1508,6 +1647,7 @@ fn has_uncheckable_format(schema: &Schema, ctx: &CanonicalizationContext) -> boo
             .prefix
             .iter()
             .chain(leaf.get().items.iter())
+            .chain(leaf.get().contains.iter().map(|facet| &facet.schema))
             .any(|nested| has_uncheckable_format(nested, ctx)),
 
         // A typed group's body is a value set, which carries no format.

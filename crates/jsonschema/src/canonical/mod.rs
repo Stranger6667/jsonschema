@@ -104,6 +104,6 @@ pub(crate) mod view;
 pub use error::CanonicalizationError;
 pub use options::{options, CanonicalizeOptions};
 pub use schema::CanonicalSchema;
-pub use view::{CanonicalKind, CanonicalView};
+pub use view::{CanonicalKind, CanonicalView, ContainsView};
 
 pub(crate) use schema::DefinitionMap;

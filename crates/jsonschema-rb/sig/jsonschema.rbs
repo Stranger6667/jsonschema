@@ -103,6 +103,16 @@ module JSONSchema
       def unique_items: () -> bool
       def prefix_items: () -> Array[CanonicalSchema]
       def items: () -> CanonicalSchema?
+      def contains: () -> Array[ContainsView]
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # One `contains` demand of an array; an absent minimum spells the default of one.
+    class ContainsView
+      def schema: () -> CanonicalSchema
+      def min_contains: () -> Integer?
+      def max_contains: () -> Integer?
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end

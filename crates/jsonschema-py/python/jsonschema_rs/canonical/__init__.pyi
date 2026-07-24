@@ -87,6 +87,20 @@ class ArrayView:
     def prefix_items(self) -> list[CanonicalSchema]: ...
     @property
     def items(self) -> CanonicalSchema | None: ...
+    @property
+    def contains(self) -> list[ContainsView]: ...
+
+@final
+class ContainsView:
+    """One `contains` demand of an array. An absent minimum spells the default of one."""
+
+    __match_args__: tuple[str, ...]
+    @property
+    def schema(self) -> CanonicalSchema: ...
+    @property
+    def min_contains(self) -> int | None: ...
+    @property
+    def max_contains(self) -> int | None: ...
 
 @final
 class ObjectView:

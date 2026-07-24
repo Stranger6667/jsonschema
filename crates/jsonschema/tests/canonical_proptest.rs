@@ -147,7 +147,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(52)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(54)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -263,6 +263,12 @@ fn draw_leaf(tc: &TestCase) -> Value {
         // An `integer` draw declines the complement, so both negate outcomes stay exercised.
         50 => json!({ "not": { "type": draw_type(tc) } }),
         51 => json!({ "not": { "enum": [false, true] } }),
+        52 => json!({ "type": "array", "contains": { "type": draw_type(tc) } }),
+        // Drafts before 2019-09 ignore the count window keywords as unknown.
+        53 => {
+            let (min, max) = ordered(small_length(tc), small_length(tc));
+            json!({ "contains": { "type": draw_type(tc) }, "minContains": min, "maxContains": max })
+        }
         _ => json!({ "type": ["string", "integer"] }),
     }
 }

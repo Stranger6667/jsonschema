@@ -5,8 +5,8 @@ use serde_json::{json, Map, Value};
 
 use crate::{
     canonical::ir::{
-        ArrayLeaf, CanonicalJson, Divisors, IntegerLeaf, NumberLeaf, ObjectLeaf, Schema,
-        SchemaKind, StringLeaf,
+        ArrayLeaf, BoundCardinality, CanonicalJson, ContainsFacet, Divisors, IntegerLeaf,
+        NumberLeaf, ObjectLeaf, Schema, SchemaKind, StringLeaf,
     },
     JsonTypeSet,
 };
@@ -159,6 +159,35 @@ fn emit_array(leaf: &ArrayLeaf, draft: Draft) -> Value {
         };
         map.insert(key.into(), emit(items.kind(), draft));
     }
+    // One `contains` demand sits inline; the keyword is single-valued, so the rest conjoin as
+    // single-demand `allOf` branches.
+    debug_assert!(
+        leaf.contains
+            .windows(2)
+            .all(|pair| pair[0].schema < pair[1].schema),
+        "contains demands are sorted and schema-deduplicated"
+    );
+    debug_assert!(
+        !leaf
+            .contains
+            .iter()
+            .any(|facet| facet.minimum.as_ref() == Some(&BoundCardinality::from(1))),
+        "a default contains minimum is spelled as absent"
+    );
+    let mut facets = leaf.contains.iter();
+    if let Some(facet) = facets.next() {
+        insert_contains(&mut map, facet, draft);
+        let rest: Vec<Value> = facets
+            .map(|facet| {
+                let mut entry = Map::new();
+                insert_contains(&mut entry, facet, draft);
+                Value::Object(entry)
+            })
+            .collect();
+        if !rest.is_empty() {
+            map.insert("allOf".into(), Value::Array(rest));
+        }
+    }
     if leaf.unique {
         map.insert("uniqueItems".into(), Value::Bool(true));
     }
@@ -169,6 +198,17 @@ fn emit_array(leaf: &ArrayLeaf, draft: Draft) -> Value {
         map.insert("maxItems".into(), Value::Number(max.to_number()));
     }
     Value::Object(map)
+}
+
+/// Emit one `contains` demand into `map`; the count window keys appear only where a draft put them.
+fn insert_contains(map: &mut Map<String, Value>, facet: &ContainsFacet, draft: Draft) {
+    map.insert("contains".into(), emit(facet.schema.kind(), draft));
+    if let Some(minimum) = &facet.minimum {
+        map.insert("minContains".into(), Value::Number(minimum.to_number()));
+    }
+    if let Some(maximum) = &facet.maximum {
+        map.insert("maxContains".into(), Value::Number(maximum.to_number()));
+    }
 }
 
 /// Emit an object leaf as `{"type":"object"}` plus its key constraint, required keys and bounds.
