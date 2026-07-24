@@ -1085,5 +1085,33 @@
       {"data": 3, "valid": false},
       {"data": 4.5, "valid": false}
     ]
+  },
+  {
+    "description": "a maximum past i64 has no modeled integer projection (default build keeps it raw); the bound still rejects larger integer-valued numbers, so no `expected` is pinned here - the form differs by feature and is pinned in the Rust unit tests",
+    "schema": {"maximum": 18446744073709551615},
+    "tests": [
+      {"data": 5, "valid": true},
+      {"data": "hello", "valid": true},
+      {"data": 1e100, "valid": false}
+    ]
+  },
+  {
+    "description": "an integer maximum past i64 keeps rejecting oversized integer-valued numbers; dropping it to an unbounded integer would accept them",
+    "schema": {"type": "integer", "maximum": 18446744073709551615},
+    "tests": [
+      {"data": 5, "valid": true},
+      {"data": 1e100, "valid": false},
+      {"data": 5.5, "valid": false},
+      {"data": "hello", "valid": false}
+    ]
+  },
+  {
+    "description": "a minimum below negative i64 keeps rejecting smaller numbers on the same principle",
+    "schema": {"minimum": -18446744073709551615},
+    "tests": [
+      {"data": -5, "valid": true},
+      {"data": "hello", "valid": true},
+      {"data": -1e100, "valid": false}
+    ]
   }
 ]

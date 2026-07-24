@@ -226,21 +226,41 @@ fn number_view_exposes_bounds() {
     assert!(!view.exclusive_maximum);
 }
 
-// Arbitrary precision models a bound past `u64`/`i64` as a big integer and emits it back exactly;
-// the default build keeps such a document raw.
+// Arbitrary precision models a bound past `u64`/`i64` - both signs, and the `(i64::MAX, u64::MAX]`
+// range specifically - as a big integer and emits it back exactly; the default build keeps such a
+// document raw.
 #[cfg(feature = "arbitrary-precision")]
-#[test_case(r#"{"type": "string", "minLength": 99999999999999999999999}"#, CanonicalKind::String, "minLength"; "length bound")]
-#[test_case(r#"{"type": "integer", "minimum": 99999999999999999999999}"#, CanonicalKind::Integer, "minimum"; "integer bound")]
-#[test_case(r#"{"type": "array", "minItems": 99999999999999999999999}"#, CanonicalKind::Array, "minItems"; "array length bound")]
-#[test_case(r#"{"type": "object", "minProperties": 99999999999999999999999}"#, CanonicalKind::Object, "minProperties"; "object size bound")]
-fn past_range_bound_round_trips(text: &str, kind: CanonicalKind, keyword: &str) {
+#[test_case(r#"{"type": "string", "minLength": 99999999999999999999999}"#, CanonicalKind::String, "minLength", "99999999999999999999999"; "length bound")]
+#[test_case(r#"{"type": "integer", "minimum": 99999999999999999999999}"#, CanonicalKind::Integer, "minimum", "99999999999999999999999"; "integer bound")]
+#[test_case(r#"{"type": "array", "minItems": 99999999999999999999999}"#, CanonicalKind::Array, "minItems", "99999999999999999999999"; "array length bound")]
+#[test_case(r#"{"type": "object", "minProperties": 99999999999999999999999}"#, CanonicalKind::Object, "minProperties", "99999999999999999999999"; "object size bound")]
+#[test_case(r#"{"type": "integer", "maximum": 18446744073709551615}"#, CanonicalKind::Integer, "maximum", "18446744073709551615"; "integer maximum at u64 max")]
+#[test_case(r#"{"type": "number", "maximum": 18446744073709551615}"#, CanonicalKind::Number, "maximum", "18446744073709551615"; "number maximum at u64 max")]
+#[test_case(r#"{"type": "integer", "minimum": -99999999999999999999999}"#, CanonicalKind::Integer, "minimum", "-99999999999999999999999"; "integer minimum below negative i64")]
+fn past_range_bound_round_trips(text: &str, kind: CanonicalKind, keyword: &str, bound: &str) {
     let schema: Value = serde_json::from_str(text).expect("valid schema JSON");
     let canonical = canonicalize(&schema).expect("canonicalizes");
     assert_eq!(canonical.kind(), kind);
-    assert_eq!(
-        canonical.to_json_schema()[keyword].to_string(),
-        "99999999999999999999999"
-    );
+    assert_eq!(canonical.to_json_schema()[keyword].to_string(), bound);
+}
+
+// Without a `type`, arbitrary precision keeps the bound on the number branch of the type split rather
+// than dropping to raw.
+#[cfg(feature = "arbitrary-precision")]
+#[test_case(r#"{"maximum": 18446744073709551615}"#, "maximum", "18446744073709551615"; "untyped maximum at u64 max")]
+#[test_case(r#"{"minimum": -18446744073709551615}"#, "minimum", "-18446744073709551615"; "untyped minimum below negative i64")]
+#[test_case(r#"{"maximum": -99999999999999999999999}"#, "maximum", "-99999999999999999999999"; "untyped maximum below negative i64")]
+fn untyped_past_range_numeric_bound_round_trips(text: &str, keyword: &str, bound: &str) {
+    let schema: Value = serde_json::from_str(text).expect("valid schema JSON");
+    let canonical = canonicalize(&schema).expect("canonicalizes");
+    assert_eq!(canonical.kind(), CanonicalKind::AnyOf);
+    let emitted = canonical.to_json_schema();
+    let branches = emitted["anyOf"].as_array().expect("anyOf branches");
+    let number_branch = branches
+        .iter()
+        .find(|branch| branch["type"] == json!("number"))
+        .expect("number branch");
+    assert_eq!(number_branch[keyword].to_string(), bound);
 }
 
 #[cfg(not(feature = "arbitrary-precision"))]
@@ -267,9 +287,32 @@ fn huge_count_bound_stays_raw(ty: &str, keyword: &str) {
 #[test_case(r#"{"type": "number", "minimum": 99999999999999999999999}"#; "number minimum")]
 #[test_case(r#"{"type": "number", "maximum": 99999999999999999999999}"#; "number maximum")]
 #[test_case(r#"{"allOf": [{"type": "integer"}, {"minimum": 99999999999999999999999}]}"#; "interval meeting integer")]
+// No type keyword: the bound alone still projects onto the integers through a later `allOf`.
+#[test_case(r#"{"maximum": 18446744073709551615}"#; "untyped maximum at u64 max")]
+#[test_case(r#"{"minimum": -18446744073709551615}"#; "untyped minimum below negative i64")]
+#[test_case(r#"{"maximum": -99999999999999999999999}"#; "untyped maximum below negative i64")]
+// The `(i64::MAX, u64::MAX]` positive range and the mirror negative range both leave `i64`.
+#[test_case(r#"{"type": "integer", "maximum": 18446744073709551615}"#; "integer maximum at u64 max")]
+#[test_case(r#"{"type": "number", "maximum": 18446744073709551615}"#; "number maximum at u64 max")]
+#[test_case(r#"{"type": "integer", "minimum": -99999999999999999999999}"#; "integer minimum below negative i64")]
 fn huge_numeric_bound_stays_raw(text: &str) {
     let schema: Value = serde_json::from_str(text).expect("valid schema JSON");
     assert_eq!(canonicalize(&schema).unwrap().kind(), CanonicalKind::Raw);
+}
+
+// The representable integer range is exactly `i64`. Past `i64::MAX` the document parses as `u64` and
+// stays raw. Past `i64::MIN` it parses as `f64`, so one step past rounds back to exactly `i64::MIN`
+// and is still modeled; raw starts at the first float below it.
+#[cfg(not(feature = "arbitrary-precision"))]
+#[test_case(r#"{"maximum": 9223372036854775807}"#, false; "maximum at i64 max is modeled")]
+#[test_case(r#"{"maximum": 9223372036854775808}"#, true; "maximum one past i64 max stays raw")]
+#[test_case(r#"{"minimum": -9223372036854775808}"#, false; "minimum at i64 min is modeled")]
+#[test_case(r#"{"minimum": -9223372036854775809}"#, false; "minimum one past i64 min rounds to i64 min")]
+#[test_case(r#"{"minimum": -9223372036854777856}"#, true; "minimum at first float below i64 min stays raw")]
+fn representable_range_boundary(text: &str, stays_raw: bool) {
+    let schema: Value = serde_json::from_str(text).expect("valid schema JSON");
+    let is_raw = canonicalize(&schema).unwrap().kind() == CanonicalKind::Raw;
+    assert_eq!(is_raw, stays_raw);
 }
 
 // The `regex` engine rejects a negative lookahead the fancy engine accepts.
