@@ -172,12 +172,9 @@ fn parse_schema(
                     None => return Ok(None),
                 }
             }
-            // The uniform schema form constrains every element. Draft 4 stays unmodeled: a value set
-            // intersected with an item schema can pin a nested number to its integer spelling, which
-            // Draft 4's `integer` type would reject.
+            // The uniform schema form constrains every element.
             ("items", value @ (Value::Object(_) | Value::Bool(_)))
-                if ctx.draft().is_known_keyword("items")
-                    && !matches!(ctx.draft(), Draft::Draft4) =>
+                if ctx.draft().is_known_keyword("items") =>
             {
                 match parse_schema(value, ctx, false)? {
                     Some(schema) => items = Some(schema),
@@ -194,11 +191,10 @@ fn parse_schema(
                 }
             }
             // Array-form `items` is the tuple in 2019-09 and earlier; 2020-12 spells it `prefixItems`.
-            // Draft 4 stays unmodeled for the same per-index integer aliasing reason as uniform items.
             ("items", Value::Array(schemas))
                 if matches!(
                     ctx.draft(),
-                    Draft::Draft6 | Draft::Draft7 | Draft::Draft201909
+                    Draft::Draft4 | Draft::Draft6 | Draft::Draft7 | Draft::Draft201909
                 ) =>
             {
                 match parse_prefix(schemas, ctx)? {
@@ -212,7 +208,7 @@ fn parse_schema(
             ("additionalItems", value @ (Value::Object(_) | Value::Bool(_)))
                 if matches!(
                     ctx.draft(),
-                    Draft::Draft6 | Draft::Draft7 | Draft::Draft201909
+                    Draft::Draft4 | Draft::Draft6 | Draft::Draft7 | Draft::Draft201909
                 ) =>
             {
                 additional_items = Some(value);
@@ -435,7 +431,7 @@ fn parse_schema(
         Some(prefix)
             if matches!(
                 ctx.draft(),
-                Draft::Draft6 | Draft::Draft7 | Draft::Draft201909
+                Draft::Draft4 | Draft::Draft6 | Draft::Draft7 | Draft::Draft201909
             ) =>
         {
             let tail = match additional_items {

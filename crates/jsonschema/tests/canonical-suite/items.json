@@ -440,12 +440,17 @@
     ]
   },
   {
-    "description": "ir: draft 4 does not model item schemas",
+    "description": "ir: draft 4 uniform item schemas constrain every element",
     "schema": {"type": "array", "items": {"type": "integer"}},
     "draft": "draft4",
-    "expected": {"type": "array", "items": {"type": "integer"}},
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "array",
+      "items": {"type": "integer"}
+    },
     "tests": [
       {"data": [1], "valid": true},
+      {"data": [1.0], "valid": false},
       {"data": ["x"], "valid": false}
     ]
   },
@@ -594,6 +599,112 @@
       {"data": [1, 2], "valid": true},
       {"data": [1, 1], "valid": false},
       {"data": ["x", "y"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: draft 4 item schemas pin a value set member to its integer spelling",
+    "schema": {"enum": [[1]], "items": {"type": "integer"}},
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "array",
+      "items": [{"type": "integer", "enum": [1]}],
+      "minItems": 1,
+      "maxItems": 1
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1.0], "valid": false},
+      {"data": [2], "valid": false},
+      {"data": [], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: draft 4 keeps an array value beside an integer-item leaf that rejects its float spelling",
+    "schema": {"anyOf": [{"enum": [[1]]}, {"type": "array", "items": {"type": "integer"}}]},
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {"type": "array", "items": {"type": "integer"}},
+        {"enum": [[1]]}
+      ]
+    },
+    "tests": [
+      {"data": [1.0], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: draft 4 element pinning recurses through object members",
+    "schema": {"enum": [[{"a": 1}]], "items": {"properties": {"a": {"type": "integer"}}}},
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "array",
+      "items": [
+        {
+          "type": "object",
+          "maxProperties": 1,
+          "required": ["a"],
+          "properties": {"a": {"type": "integer", "enum": [1]}}
+        }
+      ],
+      "minItems": 1,
+      "maxItems": 1
+    },
+    "tests": [
+      {"data": [{"a": 1}], "valid": true},
+      {"data": [{"a": 1.0}], "valid": false},
+      {"data": [{}], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: draft 4 uniform item schemas intersect element-wise",
+    "schemas": [
+      {"allOf": [{"type": "array", "items": {"type": "integer"}}, {"type": "array", "items": {"type": "integer", "minimum": 0}}]},
+      {"type": "array", "items": {"type": "integer", "minimum": 0}}
+    ],
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "array",
+      "items": {"type": "integer", "minimum": 0}
+    },
+    "tests": [
+      {"data": [0, 3], "valid": true},
+      {"data": [-1], "valid": false},
+      {"data": [0.0], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: draft 4 unique items over a two-value element domain cannot fill minItems 3",
+    "schema": {"type": "array", "items": {"enum": [1, 2]}, "uniqueItems": true, "minItems": 3},
+    "draft": "draft4",
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": [1, 2], "valid": false},
+      {"data": [1, 2, 3], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: draft 4 pinned elements carry the member's distinctness, so uniqueItems says nothing more",
+    "schema": {"enum": [[1, 2]], "items": {"type": "integer"}, "uniqueItems": true},
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "array",
+      "items": [{"type": "integer", "enum": [1]}, {"type": "integer", "enum": [2]}],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [1.0, 2], "valid": false},
+      {"data": [2, 1], "valid": false},
+      {"data": [1, 1], "valid": false}
     ]
   }
 ]

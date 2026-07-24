@@ -1400,16 +1400,21 @@ fn restrict_members(
                 .collect();
             canonicalize_value_set(kept)
         }
-        // `other` is an array leaf: keep the array members whose length fits its window.
+        // `other` is an array leaf: keep the array members it fully admits, and pin a member an
+        // element schema only partially admits to the admitted part of its equality class.
         SchemaKind::Array(leaf) => {
-            let kept = members
-                .into_iter()
-                // Dropping a member narrows the schema, so only a definite rejection drops one.
-                .filter(|member| {
-                    !matches!(array_leaf_admits(leaf.get(), member, ctx), Verdict::Rejects)
-                })
-                .collect();
-            canonicalize_value_set(kept)
+            let mut kept = Vec::new();
+            let mut partial = Vec::new();
+            for member in members {
+                match restrict_array_member(leaf.get(), &member, ctx) {
+                    MemberRestriction::Full => kept.push(member),
+                    MemberRestriction::Empty => {}
+                    MemberRestriction::Partial(schema) => partial.push(schema),
+                }
+            }
+            let mut branches = vec![canonicalize_value_set(kept)];
+            branches.extend(partial);
+            union(branches, ctx)
         }
         // `other` is an object leaf: keep the object members it fully admits, and pin a member a
         // property schema only partially admits to the admitted part of its equality class.
@@ -1850,14 +1855,26 @@ fn intersect_array_leaves(
     }
 }
 
-/// The schema a leaf places on the element at `index`: its prefix schema there, else its tail, else
-/// no constraint.
+/// The schema a leaf places on the element at `index`: its prefix schema there, or the tail once
+/// the prefix runs out.
+fn element_schema(leaf: &ArrayLeaf, index: usize) -> Option<&Schema> {
+    leaf.prefix.get(index).or(leaf.items.as_ref())
+}
+
+/// [`element_schema`] with an unconstrained element spelled out.
 fn element_constraint(leaf: &ArrayLeaf, index: usize) -> Schema {
-    leaf.prefix
-        .get(index)
+    element_schema(leaf, index)
         .cloned()
-        .or_else(|| leaf.items.clone())
         .unwrap_or_else(|| Schema::new(SchemaKind::True))
+}
+
+/// Whether any two elements are the same value. Members are normalized, so `1` and `1.0` compare
+/// equal here just as they do at validation.
+fn has_duplicate_elements(elements: &[Value]) -> bool {
+    elements
+        .iter()
+        .enumerate()
+        .any(|(index, element)| elements[..index].contains(element))
 }
 
 /// Whether `member` is an array whose length sits in the window, whose every element the item
@@ -1876,14 +1893,30 @@ fn array_leaf_admits(
     {
         return Verdict::Rejects;
     }
-    // An undecided element leaves the matching count an interval: `definite` counts sure matches,
-    // `possible` also the undecided ones. A window missed at both readings rejects; one met only
-    // at the right reading stays undecided.
-    let mut contains_verdict = Verdict::Admits;
-    for facet in &leaf.contains {
+    if leaf.unique && has_duplicate_elements(items) {
+        return Verdict::Rejects;
+    }
+    contains_verdict(&leaf.contains, items, ctx).and(Verdict::all(items.iter().enumerate().map(
+        |(index, element)| match element_schema(leaf, index) {
+            Some(schema) => admits_value(schema, element, ctx),
+            None => Verdict::Admits,
+        },
+    )))
+}
+
+/// How the `contains` demands read `elements`. An undecided element leaves the matching count an
+/// interval: `definite` counts sure matches, `possible` also the undecided ones. A window missed
+/// at both readings rejects; one met only at the right reading stays undecided.
+fn contains_verdict(
+    facets: &[ContainsFacet],
+    elements: &[Value],
+    ctx: &CanonicalizationContext,
+) -> Verdict {
+    let mut verdict = Verdict::Admits;
+    for facet in facets {
         let mut definite: u64 = 0;
         let mut possible: u64 = 0;
-        for element in items {
+        for element in elements {
             match admits_value(&facet.schema, element, ctx) {
                 Verdict::Admits => {
                     definite += 1;
@@ -1903,25 +1936,84 @@ fn array_leaf_admits(
         if definite < facet.effective_minimum()
             || facet.maximum.as_ref().is_some_and(|max| possible > *max)
         {
-            contains_verdict = Verdict::Unknown;
+            verdict = Verdict::Unknown;
         }
     }
-    // Members are normalized, so `1` and `1.0` compare equal here just as they do at validation.
-    if leaf.unique
-        && !items
-            .iter()
-            .enumerate()
-            .all(|(index, item)| !items[..index].contains(item))
+    verdict
+}
+
+/// How a leaf restricts a candidate member: kept whole, emptied, or pinned to the part of its
+/// equality class the nested schemas admit.
+enum MemberRestriction {
+    Full,
+    Empty,
+    Partial(Schema),
+}
+
+/// Restrict `member` to the arrays the leaf admits. `Partial` arises only under Draft 4, where an
+/// element schema pins a nested whole number to its integer spelling - a strict subset of the
+/// member's equality class that only a tuple pinned to the member's length can spell.
+// e.g.  Draft 4, allOf [
+//         {"enum": [[1]]},
+//         {"items": {"type": "integer"}}
+//       ]  =>  {"type": "array", "items": [{"type": "integer", "enum": [1]}],
+//              "minItems": 1, "maxItems": 1}
+fn restrict_array_member(
+    leaf: &ArrayLeaf,
+    member: &CanonicalJson,
+    ctx: &CanonicalizationContext,
+) -> MemberRestriction {
+    let Value::Array(elements) = member.as_value() else {
+        return MemberRestriction::Empty;
+    };
+    if !leaf
+        .lengths
+        .contains(&BoundCardinality::from(elements.len() as u64))
     {
-        return Verdict::Rejects;
+        return MemberRestriction::Empty;
     }
-    // The element at each index answers to its prefix schema, or the tail once the prefix runs out.
-    contains_verdict.and(Verdict::all(items.iter().enumerate().map(
-        |(index, element)| match leaf.prefix.get(index).or(leaf.items.as_ref()) {
-            Some(schema) => admits_value(schema, element, ctx),
-            None => Verdict::Admits,
+    if leaf.unique && has_duplicate_elements(elements) {
+        return MemberRestriction::Empty;
+    }
+    // Dropping the member narrows the schema, so only a definite `contains` rejection drops it.
+    if contains_verdict(&leaf.contains, elements, ctx) == Verdict::Rejects {
+        return MemberRestriction::Empty;
+    }
+    let mut full = true;
+    let mut restricted = Vec::with_capacity(elements.len());
+    for (index, element) in elements.iter().enumerate() {
+        let pin = Schema::new(SchemaKind::Const(CanonicalJson::from_value(element)));
+        let entry = match element_schema(leaf, index) {
+            None => pin,
+            Some(schema) => {
+                let entry = intersect(schema.clone(), pin.clone(), ctx);
+                if matches!(entry.kind(), SchemaKind::False) {
+                    return MemberRestriction::Empty;
+                }
+                if entry != pin {
+                    full = false;
+                }
+                entry
+            }
+        };
+        restricted.push(entry);
+    }
+    if full {
+        return MemberRestriction::Full;
+    }
+    let length = BoundCardinality::from(elements.len() as u64);
+    MemberRestriction::Partial(array_leaf(ArrayLeaf {
+        lengths: LengthBounds {
+            minimum: Some(length.clone()),
+            maximum: Some(length),
         },
-    )))
+        // Element pinning preserves elementwise equality, so the member's distinctness carries
+        // over and the pinned tuple needs no uniqueness of its own.
+        unique: false,
+        prefix: restricted,
+        items: None,
+        contains: Vec::new(),
+    }))
 }
 
 /// Pack an object facet set into a node, collapsing the leaves that say something simpler.
@@ -2341,14 +2433,6 @@ fn intersect_object_leaves(
         properties,
         pattern_properties,
     }
-}
-
-/// How an object leaf restricts a candidate object member: kept whole, emptied, or pinned to the
-/// part of its equality class the property schemas admit.
-enum MemberRestriction {
-    Full,
-    Empty,
-    Partial(Schema),
 }
 
 /// Restrict `member` to the objects the leaf admits. `Partial` arises only under Draft 4, where a
