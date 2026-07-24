@@ -169,7 +169,7 @@
     ]
   },
   {
-    "description": "ir: union branches with different property schemas stay apart",
+    "description": "ir: union branches differing in one property schema unite the entry",
     "schema": {
       "anyOf": [
         {"type": "object", "properties": {"a": {"type": "integer"}}},
@@ -178,10 +178,8 @@
     },
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "anyOf": [
-        {"type": "object", "properties": {"a": {"type": "integer"}}},
-        {"type": "object", "properties": {"a": {"type": "string"}}}
-      ]
+      "type": "object",
+      "properties": {"a": {"type": ["integer", "string"]}}
     },
     "tests": [
       {"data": {"a": 1}, "valid": true},
@@ -266,7 +264,7 @@
     ]
   },
   {
-    "description": "ir: a branch demanding fewer keys does not swallow different property schemas",
+    "description": "ir: a conditional entry beside the key's typed demand unites the demands",
     "schema": {
       "anyOf": [
         {"type": "object", "properties": {"a": {"type": "integer"}}, "required": ["a"]},
@@ -275,10 +273,8 @@
     },
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "anyOf": [
-        {"type": "object", "properties": {"a": {"type": "string"}}},
-        {"type": "object", "properties": {"a": {"type": "integer"}}, "required": ["a"]}
-      ]
+      "type": "object",
+      "properties": {"a": {"type": ["integer", "string"]}}
     },
     "tests": [
       {"data": {"a": 1}, "valid": true},

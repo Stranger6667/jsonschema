@@ -178,16 +178,16 @@
     ]
   },
   {
-    "description": "not of a bare numeric facet stays raw: its anyOf spelling needs De Morgan",
+    "description": "not of a bare numeric facet complements within the number domain",
     "schema": {
       "not": {
         "minimum": 2
       }
     },
     "expected": {
-      "not": {
-        "minimum": 2
-      }
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "exclusiveMaximum": 2
     },
     "tests": [
       {
@@ -201,7 +201,7 @@
     ]
   },
   {
-    "description": "not of a combinator stays raw: De Morgan deferred",
+    "description": "not of a union complements every branch",
     "schema": {
       "not": {
         "anyOf": [
@@ -215,16 +215,13 @@
       }
     },
     "expected": {
-      "not": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ]
-      }
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "boolean",
+        "number",
+        "array",
+        "object"
+      ]
     },
     "tests": [
       {
@@ -1397,6 +1394,204 @@
       },
       {
         "data": {},
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "not of a mixed union intersects the branch complements",
+    "schema": {
+      "not": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number",
+            "minimum": 0
+          }
+        ]
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "array",
+            "object"
+          ]
+        },
+        {
+          "type": "number",
+          "exclusiveMaximum": 0
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": "x",
+        "valid": false
+      },
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": -1,
+        "valid": true
+      },
+      {
+        "data": true,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a bare required keeps only objects missing the key",
+    "schema": {
+      "not": {
+        "required": [
+          "a"
+        ]
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "a": false
+      }
+    },
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      },
+      {
+        "data": 5,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "double negation of a window returns the window",
+    "schemas": [
+      {
+        "not": {
+          "not": {
+            "type": "number",
+            "minimum": 5
+          }
+        }
+      },
+      {
+        "type": "number",
+        "minimum": 5
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "minimum": 5
+    },
+    "tests": [
+      {
+        "data": 5,
+        "valid": true
+      },
+      {
+        "data": 4,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "not of a union with an integer branch stays raw: one branch complement is inexpressible",
+    "schema": {
+      "not": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "string"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "not": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "string"
+          }
+        ]
+      }
+    },
+    "tests": [
+      {
+        "data": 1.5,
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      },
+      {
+        "data": null,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a bare numeric facet under draft 4",
+    "draft": "draft4",
+    "schema": {
+      "not": {
+        "minimum": 2
+      }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "number",
+      "maximum": 2,
+      "exclusiveMaximum": true
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 2,
+        "valid": false
+      },
+      {
+        "data": 3,
+        "valid": false
+      },
+      {
+        "data": "x",
         "valid": false
       }
     ]
