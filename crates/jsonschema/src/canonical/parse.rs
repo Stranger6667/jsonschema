@@ -368,7 +368,7 @@ fn parse_schema(
             // an inexpressible complement keeps the whole document raw.
             ("not", value) if ctx.draft().is_known_keyword("not") => {
                 match parse_schema(value, ctx, false)? {
-                    Some(child) => match negate::negate(&child) {
+                    Some(child) => match negate::negate(&child, ctx) {
                         Some(complement) => conjuncts.push(complement),
                         None => return Ok(None),
                     },
