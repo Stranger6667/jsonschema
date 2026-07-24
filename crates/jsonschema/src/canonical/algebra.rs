@@ -12,6 +12,7 @@ use crate::{
             BoundNumber, BoundRational, CanonicalJson, Discrete, Divisors, IntegerBounds,
             IntegerLeaf, IntegerLeaves, LengthBounds, NonEmpty, NumberLeaf, NumberLeaves,
             ObjectLeaf, ObjectLeaves, Round, Schema, SchemaKind, Side, StringLeaf, StringLeaves,
+            Verdict,
         },
         parse,
     },
@@ -733,8 +734,12 @@ fn restrict_members(
                 .collect();
             let kept = members
                 .into_iter()
+                // Dropping a member narrows the schema, so only a definite rejection drops one.
                 .filter(|member| {
-                    string_leaf_admits(leaf.get(), &regexes, member, ctx, UncheckableFormat::Admits)
+                    !matches!(
+                        string_leaf_admits(leaf.get(), &regexes, member, ctx),
+                        Verdict::Rejects
+                    )
                 })
                 .collect();
             parse::canonicalize_value_set(kept)
@@ -775,8 +780,9 @@ fn restrict_members(
         SchemaKind::Array(leaf) => {
             let kept = members
                 .into_iter()
+                // Dropping a member narrows the schema, so only a definite rejection drops one.
                 .filter(|member| {
-                    array_leaf_admits(leaf.get(), member, ctx, UncheckableFormat::Admits)
+                    !matches!(array_leaf_admits(leaf.get(), member, ctx), Verdict::Rejects)
                 })
                 .collect();
             parse::canonicalize_value_set(kept)
@@ -858,14 +864,18 @@ fn leaf_absorbs_member(
     ctx: &CanonicalizationContext,
 ) -> bool {
     match member.as_value() {
+        // Absorbing a member narrows the schema, so only a definite admission absorbs one.
         Value::Array(_) => arrays
             .iter()
-            .any(|leaf| array_leaf_admits(leaf, member, ctx, UncheckableFormat::Rejects)),
+            .any(|leaf| matches!(array_leaf_admits(leaf, member, ctx), Verdict::Admits)),
         Value::Object(_) => objects
             .iter()
-            .any(|leaf| object_leaf_admits(leaf, member, ctx, UncheckableFormat::Rejects)),
+            .any(|leaf| matches!(object_leaf_admits(leaf, member, ctx), Verdict::Admits)),
         Value::String(_) => strings.iter().any(|(leaf, regexes)| {
-            string_leaf_admits(leaf, regexes, member, ctx, UncheckableFormat::Rejects)
+            matches!(
+                string_leaf_admits(leaf, regexes, member, ctx),
+                Verdict::Admits
+            )
         }),
         // A number interval admits `7` and `7.0` alike, so no draft aliases them apart. Draft 4
         // keeps the value beside an `integer` interval, which rejects `7.0`.
@@ -1132,31 +1142,32 @@ fn array_leaf_admits(
     leaf: &ArrayLeaf,
     member: &CanonicalJson,
     ctx: &CanonicalizationContext,
-    uncheckable: UncheckableFormat,
-) -> bool {
+) -> Verdict {
     let Value::Array(items) = member.as_value() else {
-        return false;
+        return Verdict::Rejects;
     };
     if !leaf
         .lengths
         .contains(&BoundCardinality::from(items.len() as u64))
     {
-        return false;
-    }
-    // The element at each index answers to its prefix schema, or the tail once the prefix runs out.
-    for (index, element) in items.iter().enumerate() {
-        if let Some(schema) = leaf.prefix.get(index).or(leaf.items.as_ref()) {
-            if !admits_value(schema, element, ctx, uncheckable) {
-                return false;
-            }
-        }
+        return Verdict::Rejects;
     }
     // Members are normalized, so `1` and `1.0` compare equal here just as they do at validation.
-    !leaf.unique
-        || items
+    if leaf.unique
+        && !items
             .iter()
             .enumerate()
             .all(|(index, item)| !items[..index].contains(item))
+    {
+        return Verdict::Rejects;
+    }
+    // The element at each index answers to its prefix schema, or the tail once the prefix runs out.
+    Verdict::all(items.iter().enumerate().map(|(index, element)| {
+        match leaf.prefix.get(index).or(leaf.items.as_ref()) {
+            Some(schema) => admits_value(schema, element, ctx),
+            None => Verdict::Admits,
+        }
+    }))
 }
 
 /// Pack an object facet set into a node, collapsing the leaves that say something simpler.
@@ -1185,14 +1196,14 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
         return Schema::new(SchemaKind::False);
     }
     // A key the property names reject can never be present, so demanding it admits nothing.
-    // Collapsing to `False` narrows the schema, so a format no checker covers counts as admitting.
+    // Collapsing to `False` narrows the schema, so only a definite rejection collapses.
     // e.g.  {"type": "object", "propertyNames": {"const": "foo"}, "required": ["bar"]}
     //       =>  {"not": {}}
     if let Some(names) = &leaf.property_names {
         if leaf
             .required
             .iter()
-            .any(|key| !admits_key(names, key, ctx, UncheckableFormat::Admits))
+            .any(|key| matches!(admits_key(names, key, ctx), Verdict::Rejects))
         {
             return Schema::new(SchemaKind::False);
         }
@@ -1285,12 +1296,12 @@ fn normalize_property_names(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext
 fn normalize_properties(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext) {
     let names = leaf.property_names.clone();
     leaf.properties.retain(|key, schema| {
-        // Dropping the entry loses what it says about the key, so a format no checker covers counts
-        // as admitting and the entry stays.
+        // Dropping the entry loses what it says about the key, so only a key the constraint
+        // definitely rejects lets the entry go.
         !matches!(schema.kind(), SchemaKind::True)
             && names
                 .as_ref()
-                .is_none_or(|names| admits_key(names, key, ctx, UncheckableFormat::Admits))
+                .is_none_or(|names| !matches!(admits_key(names, key, ctx), Verdict::Rejects))
     });
 }
 
@@ -1418,21 +1429,18 @@ fn is_string_domain(kind: &SchemaKind) -> bool {
     }
 }
 
-/// Whether the key constraint admits `key`; `uncheckable` decides for a format no checker covers.
-fn admits_key(
-    names: &Schema,
-    key: &str,
-    ctx: &CanonicalizationContext,
-    uncheckable: UncheckableFormat,
-) -> bool {
+/// Whether the key constraint admits `key`.
+fn admits_key(names: &Schema, key: &str, ctx: &CanonicalizationContext) -> Verdict {
     match names.kind() {
         SchemaKind::Const(value) => {
-            matches!(value.as_value(), Value::String(text) if text == key)
+            Verdict::from_bool(matches!(value.as_value(), Value::String(text) if text == key))
         }
-        SchemaKind::Enum(values) => values
-            .as_slice()
-            .iter()
-            .any(|value| matches!(value.as_value(), Value::String(text) if text == key)),
+        SchemaKind::Enum(values) => Verdict::from_bool(
+            values
+                .as_slice()
+                .iter()
+                .any(|value| matches!(value.as_value(), Value::String(text) if text == key)),
+        ),
         SchemaKind::String(leaf) => {
             let regexes: Vec<_> = leaf
                 .get()
@@ -1443,12 +1451,14 @@ fn admits_key(
                         .expect("pattern validated during parsing")
                 })
                 .collect();
-            string_leaf_admits_text(leaf.get(), &regexes, key, ctx, uncheckable)
+            string_leaf_admits_text(leaf.get(), &regexes, key, ctx)
         }
-        SchemaKind::AnyOf(branches) => branches
-            .as_slice()
-            .iter()
-            .any(|branch| admits_key(branch, key, ctx, uncheckable)),
+        SchemaKind::AnyOf(branches) => Verdict::any(
+            branches
+                .as_slice()
+                .iter()
+                .map(|branch| admits_key(branch, key, ctx)),
+        ),
         // Normalization stores a key constraint only as a string value set, a string leaf, or a
         // union of those: everything else was narrowed or folded away.
         SchemaKind::MultiType(_)
@@ -1465,24 +1475,21 @@ fn admits_key(
     }
 }
 
-/// Whether `schema` admits every value in `value`'s equality class; `uncheckable` decides for a
-/// format no checker covers.
-fn admits_value(
-    schema: &Schema,
-    value: &Value,
-    ctx: &CanonicalizationContext,
-    uncheckable: UncheckableFormat,
-) -> bool {
-    // Intersection reads an uncheckable format as admitting, so a caller wanting the other verdict
-    // declines rather than trusting it.
-    if matches!(uncheckable, UncheckableFormat::Rejects) && has_uncheckable_format(schema, ctx) {
-        return false;
-    }
+/// Whether `schema` admits every value in `value`'s equality class.
+fn admits_value(schema: &Schema, value: &Value, ctx: &CanonicalizationContext) -> Verdict {
     let member = Schema::new(SchemaKind::Const(CanonicalJson::from_value(value)));
     // Non-`False` is not enough: under Draft 4 the intersection can pin a nested whole number to
     // its integer spelling (a typed group), a strict subset of the member's equality class - the
     // member `1` also matches `1.0`, which an integer-typed property schema rejects.
-    intersect(schema.clone(), member.clone(), ctx) == member
+    if intersect(schema.clone(), member.clone(), ctx) != member {
+        return Verdict::Rejects;
+    }
+    // Intersection reads a format no checker covers as admitting, so its "yes" is definite only
+    // when the schema carries none.
+    if has_uncheckable_format(schema, ctx) {
+        return Verdict::Unknown;
+    }
+    Verdict::Admits
 }
 
 /// Whether `schema` asserts a format this draft has no checker for.
@@ -1592,9 +1599,11 @@ fn restrict_object_member(
     {
         return MemberRestriction::Empty;
     }
+    // Returning `Empty` drops the member, which narrows the schema, so only a definite rejection
+    // rules a key out.
     if !leaf.property_names.as_ref().is_none_or(|names| {
         map.keys()
-            .all(|key| admits_key(names, key, ctx, UncheckableFormat::Admits))
+            .all(|key| !matches!(admits_key(names, key, ctx), Verdict::Rejects))
     }) {
         return MemberRestriction::Empty;
     }
@@ -1641,32 +1650,43 @@ fn object_leaf_admits(
     leaf: &ObjectLeaf,
     member: &CanonicalJson,
     ctx: &CanonicalizationContext,
-    uncheckable: UncheckableFormat,
-) -> bool {
+) -> Verdict {
     let Value::Object(map) = member.as_value() else {
-        return false;
+        return Verdict::Rejects;
     };
     if !leaf
         .sizes
         .contains(&BoundCardinality::from(map.len() as u64))
         || !leaf.required.iter().all(|key| map.contains_key(&**key))
     {
-        return false;
+        return Verdict::Rejects;
     }
-    if !leaf.property_names.as_ref().is_none_or(|names| {
-        map.keys()
-            .all(|key| admits_key(names, key, ctx, uncheckable))
-    }) {
-        return false;
+    let keys = match &leaf.property_names {
+        Some(names) => Verdict::all(map.keys().map(|key| admits_key(names, key, ctx))),
+        None => Verdict::Admits,
+    };
+    if keys == Verdict::Rejects {
+        return Verdict::Rejects;
     }
-    map.iter().all(|(key, value)| {
-        leaf.properties
-            .get(key.as_str())
-            .is_none_or(|schema| admits_value(schema, value, ctx, uncheckable))
-            && leaf.pattern_properties.iter().all(|(pattern, schema)| {
-                !matches_key(pattern, key, ctx) || admits_value(schema, value, ctx, uncheckable)
-            })
-    })
+    let values = Verdict::all(map.iter().map(|(key, value)| {
+        let named = match leaf.properties.get(key.as_str()) {
+            Some(schema) => admits_value(schema, value, ctx),
+            None => Verdict::Admits,
+        };
+        if named == Verdict::Rejects {
+            return Verdict::Rejects;
+        }
+        named.and(Verdict::all(leaf.pattern_properties.iter().map(
+            |(pattern, schema)| {
+                if matches_key(pattern, key, ctx) {
+                    admits_value(schema, value, ctx)
+                } else {
+                    Verdict::Admits
+                }
+            },
+        )))
+    }));
+    keys.and(values)
 }
 
 /// The number leaf admitting exactly the values both admit.
@@ -1910,27 +1930,17 @@ fn formats_conflict(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> bool {
     window.is_empty()
 }
 
-/// The verdict for a format the draft cannot check. Callers differ: dropping a member narrows the
-/// schema, so intersection assumes the value fits; absorbing one narrows it too, so union assumes it
-/// does not.
-#[derive(Clone, Copy)]
-pub(crate) enum UncheckableFormat {
-    Admits,
-    Rejects,
-}
-
 /// Whether the string `member` falls within the leaf's length window and matches every pattern.
 fn string_leaf_admits(
     leaf: &StringLeaf,
     regexes: &[Arc<CompiledMatcher>],
     member: &CanonicalJson,
     ctx: &CanonicalizationContext,
-    uncheckable: UncheckableFormat,
-) -> bool {
+) -> Verdict {
     let Value::String(text) = member.as_value() else {
-        return false;
+        return Verdict::Rejects;
     };
-    string_leaf_admits_text(leaf, regexes, text, ctx, uncheckable)
+    string_leaf_admits_text(leaf, regexes, text, ctx)
 }
 
 /// Whether `text` falls within the leaf's length window and matches every pattern and format.
@@ -1939,13 +1949,15 @@ fn string_leaf_admits_text(
     regexes: &[Arc<CompiledMatcher>],
     text: &str,
     ctx: &CanonicalizationContext,
-    uncheckable: UncheckableFormat,
-) -> bool {
+) -> Verdict {
     let length = BoundCardinality::from(bytecount::num_chars(text.as_bytes()) as u64);
-    leaf.lengths.contains(&length)
-        && regexes.iter().all(|regex| regex.is_match(text))
-        && leaf.formats.iter().all(|format| {
-            crate::keywords::format::is_valid(ctx.draft(), format, text)
-                .unwrap_or(matches!(uncheckable, UncheckableFormat::Admits))
-        })
+    if !leaf.lengths.contains(&length) || !regexes.iter().all(|regex| regex.is_match(text)) {
+        return Verdict::Rejects;
+    }
+    Verdict::all(leaf.formats.iter().map(|format| {
+        match crate::keywords::format::is_valid(ctx.draft(), format, text) {
+            Some(admitted) => Verdict::from_bool(admitted),
+            None => Verdict::Unknown,
+        }
+    }))
 }
