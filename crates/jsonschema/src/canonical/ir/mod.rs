@@ -273,6 +273,15 @@ impl ArrayLeaf {
             && self.items.is_none()
             && self.contains.is_empty()
     }
+
+    /// The longest array `uniqueItems` can admit when `items` has a finite domain: every element
+    /// past `prefix` must be distinct, so at most that domain's worth of them fit; `prefix`
+    /// positions draw from their own schemas and never shrink this ceiling.
+    #[must_use]
+    fn unique_length_ceiling(&self) -> Option<BoundCardinality> {
+        let domain = self.items.as_ref()?.kind().finite_domain_size()?;
+        Some(BoundCardinality::from(self.prefix.len() as u64 + domain))
+    }
 }
 
 /// One `contains` demand: how many elements match `schema`. An absent minimum spells the draft
@@ -295,7 +304,15 @@ impl ContainsFacet {
 
 impl MaybeEmpty for ArrayLeaf {
     fn is_empty(&self) -> bool {
-        self.lengths.is_empty()
+        if self.lengths.is_empty() {
+            return true;
+        }
+        // Distinct elements can't outnumber a finite item domain.
+        self.unique
+            && self
+                .unique_length_ceiling()
+                .zip(self.lengths.minimum.as_ref())
+                .is_some_and(|(ceiling, min)| ceiling < *min)
     }
 }
 
@@ -652,6 +669,31 @@ impl SchemaKind {
             | SchemaKind::False
             | SchemaKind::Raw(_) => None,
         }
+    }
+
+    /// The number of distinct values this node admits, when finite: `Const`/`Enum`, or a type set
+    /// drawn only from `null`/`boolean` - the only JSON types with a finite universe. Always small
+    /// enough for a `u64`: it counts a schema's own literal members, never a user-supplied bound.
+    #[must_use]
+    pub(crate) fn finite_domain_size(&self) -> Option<u64> {
+        if let Some(values) = self.finite_values() {
+            return Some(values.len() as u64);
+        }
+        let SchemaKind::MultiType(set) = self else {
+            return None;
+        };
+        let finite_types = JsonType::Null | JsonType::Boolean;
+        if set.intersect(finite_types) != *set {
+            return None;
+        }
+        let mut count = 0u64;
+        if set.contains(JsonType::Null) {
+            count += 1;
+        }
+        if set.contains(JsonType::Boolean) {
+            count += 2;
+        }
+        Some(count)
     }
 
     /// Drop redundant entries from a type set: `Integer` is removed when `Number` is present.
