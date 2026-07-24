@@ -178,7 +178,7 @@
     ]
   },
   {
-    "description": "not of a numeric window stays raw: window complement deferred",
+    "description": "not of a bare numeric facet stays raw: its anyOf spelling needs De Morgan",
     "schema": {
       "not": {
         "minimum": 2
@@ -401,7 +401,7 @@
     ]
   },
   {
-    "description": "not of a non-saturating value set stays raw: value inequality is inexpressible",
+    "description": "not of a mixed null and boolean value set leaves the rest of both domains",
     "schema": {
       "not": {
         "enum": [
@@ -411,16 +411,28 @@
       }
     },
     "expected": {
-      "not": {
-        "enum": [
-          null,
-          true
-        ]
-      }
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "number",
+            "string",
+            "array",
+            "object"
+          ]
+        },
+        {
+          "const": false
+        }
+      ]
     },
     "tests": [
       {
         "data": true,
+        "valid": false
+      },
+      {
+        "data": null,
         "valid": false
       },
       {
@@ -429,6 +441,39 @@
       },
       {
         "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a string value set stays raw: value inequality is inexpressible",
+    "schema": {
+      "not": {
+        "enum": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    "expected": {
+      "not": {
+        "enum": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": false
+      },
+      {
+        "data": "c",
+        "valid": true
+      },
+      {
+        "data": 1,
         "valid": true
       }
     ]
@@ -459,6 +504,487 @@
       {
         "data": 0,
         "valid": false
+      }
+    ]
+  },
+  {
+    "description": "not of a typed number window complements within the number domain",
+    "schema": {
+      "not": {
+        "type": "number",
+        "minimum": 5
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "string",
+            "array",
+            "object"
+          ]
+        },
+        {
+          "type": "number",
+          "exclusiveMaximum": 5
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 4,
+        "valid": true
+      },
+      {
+        "data": 5,
+        "valid": false
+      },
+      {
+        "data": 6,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a two-ended number window is the pair of outer rays",
+    "schema": {
+      "not": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 3
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "string",
+            "array",
+            "object"
+          ]
+        },
+        {
+          "type": "number",
+          "exclusiveMaximum": 1
+        },
+        {
+          "type": "number",
+          "exclusiveMinimum": 3
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 0,
+        "valid": true
+      },
+      {
+        "data": 2,
+        "valid": false
+      },
+      {
+        "data": 4,
+        "valid": true
+      },
+      {
+        "data": true,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a string length floor admits only shorter strings among strings",
+    "schema": {
+      "not": {
+        "type": "string",
+        "minLength": 3
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "array",
+            "object"
+          ]
+        },
+        {
+          "type": "string",
+          "maxLength": 2
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": "ab",
+        "valid": true
+      },
+      {
+        "data": "abc",
+        "valid": false
+      },
+      {
+        "data": 1,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of an array length ceiling admits only longer arrays among arrays",
+    "schema": {
+      "not": {
+        "type": "array",
+        "maxItems": 2
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "object"
+          ]
+        },
+        {
+          "type": "array",
+          "minItems": 3
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": [
+          1,
+          2,
+          3
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of an object size floor admits only smaller objects among objects",
+    "schema": {
+      "not": {
+        "type": "object",
+        "minProperties": 2
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "type": "object",
+          "maxProperties": 1
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1,
+          "b": 2
+        },
+        "valid": false
+      },
+      {
+        "data": 1,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a number constant splits the number line around it",
+    "schema": {
+      "not": {
+        "const": 5
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "string",
+            "array",
+            "object"
+          ]
+        },
+        {
+          "type": "number",
+          "exclusiveMaximum": 5
+        },
+        {
+          "type": "number",
+          "exclusiveMinimum": 5
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 5,
+        "valid": false
+      },
+      {
+        "data": 5.0,
+        "valid": false
+      },
+      {
+        "data": 4,
+        "valid": true
+      },
+      {
+        "data": "5",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a boolean constant is every other value including the other boolean",
+    "schema": {
+      "not": {
+        "const": true
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "number",
+            "string",
+            "array",
+            "object"
+          ]
+        },
+        {
+          "const": false
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": true,
+        "valid": false
+      },
+      {
+        "data": false,
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a numeric enum carves a gap between the members",
+    "schema": {
+      "not": {
+        "enum": [
+          1,
+          2
+        ]
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "string",
+            "array",
+            "object"
+          ]
+        },
+        {
+          "type": "number",
+          "exclusiveMaximum": 1
+        },
+        {
+          "type": "number",
+          "exclusiveMinimum": 1,
+          "exclusiveMaximum": 2
+        },
+        {
+          "type": "number",
+          "exclusiveMinimum": 2
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": 1.5,
+        "valid": true
+      },
+      {
+        "data": 2,
+        "valid": false
+      },
+      {
+        "data": 3,
+        "valid": true
+      },
+      {
+        "data": null,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a typed number window under draft 4",
+    "draft": "draft4",
+    "schema": {
+      "not": {
+        "type": "number",
+        "minimum": 5
+      }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "string",
+            "array",
+            "object"
+          ]
+        },
+        {
+          "type": "number",
+          "maximum": 5,
+          "exclusiveMaximum": true
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 4,
+        "valid": true
+      },
+      {
+        "data": 5,
+        "valid": false
+      },
+      {
+        "data": 6,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a number window carrying a divisor stays raw: the complement needs a negative divisor",
+    "schema": {
+      "not": {
+        "type": "number",
+        "multipleOf": 2
+      }
+    },
+    "expected": {
+      "not": {
+        "type": "number",
+        "multipleOf": 2
+      }
+    },
+    "tests": [
+      {
+        "data": 4,
+        "valid": false
+      },
+      {
+        "data": 3,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "not of a pattern-carrying string stays raw: pattern complement is inexpressible",
+    "schema": {
+      "not": {
+        "type": "string",
+        "pattern": "^a"
+      }
+    },
+    "expected": {
+      "not": {
+        "type": "string",
+        "pattern": "^a"
+      }
+    },
+    "tests": [
+      {
+        "data": "ab",
+        "valid": false
+      },
+      {
+        "data": "b",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": true
       }
     ]
   }

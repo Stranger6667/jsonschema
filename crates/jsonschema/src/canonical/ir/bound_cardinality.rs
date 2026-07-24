@@ -45,6 +45,22 @@ impl BoundCardinality {
         }
     }
 
+    /// The count one below, when one exists.
+    pub(crate) fn checked_decrement(self) -> Option<Self> {
+        #[cfg(not(feature = "arbitrary-precision"))]
+        {
+            self.0.checked_sub(1).map(Self)
+        }
+        #[cfg(feature = "arbitrary-precision")]
+        {
+            if num_traits::Zero::is_zero(&self.0) {
+                None
+            } else {
+                Some(Self(self.0 - 1))
+            }
+        }
+    }
+
     pub(crate) fn is_zero(&self) -> bool {
         #[cfg(not(feature = "arbitrary-precision"))]
         {

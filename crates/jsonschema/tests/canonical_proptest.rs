@@ -147,7 +147,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(54)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(58)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -269,6 +269,14 @@ fn draw_leaf(tc: &TestCase) -> Value {
             let (min, max) = ordered(small_length(tc), small_length(tc));
             json!({ "contains": { "type": draw_type(tc) }, "minContains": min, "maxContains": max })
         }
+        54 => json!({ "type": "number", "minimum": small_int(tc) }),
+        55 => json!({ "type": "number", "maximum": small_int(tc) }),
+        56 => {
+            let (min, max) = ordered(small_int(tc), small_int(tc));
+            json!({ "type": "number", "minimum": min, "maximum": max })
+        }
+        // Meta-invalid under Draft 4, where the drawn document is simply rejected before modeling.
+        57 => json!({ "type": "number", "exclusiveMinimum": small_int(tc) }),
         _ => json!({ "type": ["string", "integer"] }),
     }
 }
@@ -658,4 +666,45 @@ fn equality_preserving_rewrites_converge(tc: TestCase) {
         original, converged,
         "schema = {schema}\n  rewritten = {rewritten}"
     );
+}
+
+// The canonical complement rejects exactly what the schema accepts; the runtime validator is the
+// independent ground truth. A raw result round-trips the document verbatim and carries no claim.
+#[hegel::test(test_cases = 5_000)]
+fn negation_complements_the_validator_verdict(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    let schema = draw_schema(&tc, 2);
+    let negated = json!({ "not": schema });
+    let Some(emitted) = canonicalize(&negated, draft) else {
+        return;
+    };
+    if emitted == negated {
+        return;
+    }
+    // Random instances almost never land on a window's limit, so half the draws reuse a numeric
+    // literal from the schema itself - the boundary is where a flipped inclusivity hides.
+    let literals = numeric_literals(&schema);
+    let instance = if !literals.is_empty() && tc.draw(gs::booleans()) {
+        tc.draw(gs::sampled_from(literals))
+    } else {
+        tc.draw(arbitrary_instance())
+    };
+    let build = |value: &Value| jsonschema::options().with_draft(draft).build(value);
+    let (Ok(raw), Ok(canonical)) = (build(&schema), build(&emitted)) else {
+        return;
+    };
+    assert_eq!(
+        raw.is_valid(&instance),
+        !canonical.is_valid(&instance),
+        "schema = {schema}\n  complement = {emitted}\n  instance = {instance}"
+    );
+}
+
+fn numeric_literals(schema: &Value) -> Vec<Value> {
+    match schema {
+        Value::Number(_) => vec![schema.clone()],
+        Value::Array(items) => items.iter().flat_map(numeric_literals).collect(),
+        Value::Object(map) => map.values().flat_map(numeric_literals).collect(),
+        Value::Null | Value::Bool(_) | Value::String(_) => Vec::new(),
+    }
 }
