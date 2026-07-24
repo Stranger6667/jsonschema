@@ -1777,6 +1777,12 @@ pub(crate) fn integer_leaf(leaf: IntegerLeaf, ctx: &CanonicalizationContext) -> 
         multiple_of: leaf.multiple_of.over_integers(),
         ..leaf
     };
+    // A leaf no facet survives on admits every integer, which the bare type set already spells;
+    // keeping the leaf shape would give one value set two IR forms.
+    if leaf.bounds.minimum.is_none() && leaf.bounds.maximum.is_none() && leaf.multiple_of.is_empty()
+    {
+        return parse::type_set_schema(JsonTypeSet::from(JsonType::Integer));
+    }
     let Some(leaf) = snap_to_multiples(leaf).and_then(NonEmpty::new) else {
         return Schema::new(SchemaKind::False);
     };

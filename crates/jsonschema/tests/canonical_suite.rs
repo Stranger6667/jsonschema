@@ -34,30 +34,44 @@ fn run_case(case: CanonicalCase) {
         .draft()
         .unwrap_or_else(|| Draft::default().detect(inputs[0]));
 
-    // Idempotency and convergence across inputs.
+    // Idempotency and convergence across inputs, at both the emitted-JSON and the IR level.
     let mut form: Option<Value> = None;
     let mut form_draft = raw_draft;
     let mut canonical: Option<CanonicalSchema> = None;
     for input in &inputs {
         let canon = case.canonicalize(input);
         let emitted = canon.to_json_schema();
-        let reemitted = case.canonicalize(&emitted).to_json_schema();
+        let recanonicalized = case.canonicalize(&emitted);
+        let reemitted = recanonicalized.to_json_schema();
         assert_eq!(
             emitted, reemitted,
             "case `{}`: not idempotent\n  input = {input}\n  once  = {emitted}\n  twice = {reemitted}",
             case.description
         );
-        match &form {
+        assert_eq!(
+            canon, recanonicalized,
+            "case `{}`: emitted form is stable but the IR is not\n  input = {input}\n  emitted = {emitted}",
+            case.description
+        );
+        match &canonical {
             None => {
                 form_draft = canon.draft();
                 form = Some(emitted);
                 canonical = Some(canon);
             }
-            Some(prev) => assert_eq!(
-                prev, &emitted,
-                "case `{}`: inputs do not converge\n  a = {prev}\n  b = {emitted}",
-                case.description
-            ),
+            Some(first) => {
+                let prev = form.as_ref().expect("set together with `canonical`");
+                assert_eq!(
+                    prev, &emitted,
+                    "case `{}`: inputs do not converge\n  a = {prev}\n  b = {emitted}",
+                    case.description
+                );
+                assert_eq!(
+                    first, &canon,
+                    "case `{}`: inputs converge on emitted JSON but not on IR\n  input = {input}\n  form = {prev}",
+                    case.description
+                );
+            }
         }
     }
     let form = form.expect("at least one input");
