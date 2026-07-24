@@ -1,0 +1,211 @@
+[
+  {
+    "description": "if alone with no then or else has no effect",
+    "schema": {
+      "if": { "type": "number", "minimum": 5 }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "tests": [
+      { "data": 10, "valid": true },
+      { "data": 1, "valid": true },
+      { "data": "x", "valid": true }
+    ]
+  },
+  {
+    "description": "then without a sibling if is ignored",
+    "schema": {
+      "then": { "type": "number", "minimum": 5 }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "tests": [
+      { "data": 1, "valid": true },
+      { "data": "x", "valid": true }
+    ]
+  },
+  {
+    "description": "else without a sibling if is ignored",
+    "schema": {
+      "else": { "type": "number", "minimum": 5 }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "tests": [
+      { "data": 1, "valid": true },
+      { "data": "x", "valid": true }
+    ]
+  },
+  {
+    "description": "if and then with no else: values failing the condition need nothing further",
+    "schema": {
+      "if": { "type": "number", "minimum": 0 },
+      "then": { "type": "number", "minimum": 100 }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        { "type": ["null", "boolean", "string", "array", "object"] },
+        { "type": "number", "exclusiveMaximum": 0 },
+        { "type": "number", "minimum": 100 }
+      ]
+    },
+    "tests": [
+      { "data": -5, "valid": true },
+      { "data": 0, "valid": false },
+      { "data": 50, "valid": false },
+      { "data": 150, "valid": true },
+      { "data": "hello", "valid": true },
+      { "data": true, "valid": true },
+      { "data": null, "valid": true }
+    ]
+  },
+  {
+    "description": "if and else with no then: values meeting the condition need nothing further",
+    "schema": {
+      "if": { "type": "number", "minimum": 0 },
+      "else": { "type": "string", "minLength": 3 }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        { "type": "string", "minLength": 3 },
+        { "type": "number", "minimum": 0 }
+      ]
+    },
+    "tests": [
+      { "data": 100, "valid": true },
+      { "data": -1, "valid": false },
+      { "data": "ab", "valid": false },
+      { "data": "abc", "valid": true },
+      { "data": true, "valid": false }
+    ]
+  },
+  {
+    "description": "if, then, and else together collapse a value set",
+    "schema": {
+      "if": { "type": "string", "maxLength": 4 },
+      "then": { "const": "yes" },
+      "else": { "const": "no way" }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": ["no way", "yes"]
+    },
+    "tests": [
+      { "data": "yes", "valid": true },
+      { "data": "no way", "valid": true },
+      { "data": "no", "valid": false },
+      { "data": "yesno", "valid": false },
+      { "data": 5, "valid": false },
+      { "data": true, "valid": false }
+    ]
+  },
+  {
+    "description": "if true always takes the then branch",
+    "schema": {
+      "if": true,
+      "then": { "const": "then" },
+      "else": { "const": "else" }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": "then"
+    },
+    "tests": [
+      { "data": "then", "valid": true },
+      { "data": "else", "valid": false },
+      { "data": 1, "valid": false }
+    ]
+  },
+  {
+    "description": "if false always takes the else branch",
+    "schema": {
+      "if": false,
+      "then": { "const": "then" },
+      "else": { "const": "else" }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": "else"
+    },
+    "tests": [
+      { "data": "else", "valid": true },
+      { "data": "then", "valid": false },
+      { "data": 1, "valid": false }
+    ]
+  },
+  {
+    "description": "if, then, and else in separate allOf branches never compose",
+    "schema": {
+      "allOf": [
+        { "if": { "type": "string" } },
+        { "then": { "minLength": 10 } },
+        { "else": { "minLength": 1 } }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "tests": [
+      { "data": "a", "valid": true },
+      { "data": 5, "valid": true },
+      { "data": "", "valid": true }
+    ]
+  },
+  {
+    "description": "if with an inexpressible complement beside a then stays raw: the condition has no complement",
+    "schema": {
+      "if": { "type": "integer" },
+      "then": { "minimum": 5 }
+    },
+    "expected": {
+      "if": { "type": "integer" },
+      "then": { "minimum": 5 }
+    },
+    "tests": [
+      { "data": 5, "valid": true },
+      { "data": 3, "valid": false },
+      { "data": 1.5, "valid": true }
+    ]
+  },
+  {
+    "description": "if with an inexpressible complement beside only an else needs no complement",
+    "schema": {
+      "if": { "type": "integer" },
+      "else": { "const": "fallback" }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [{ "type": "integer" }, { "const": "fallback" }]
+    },
+    "tests": [
+      { "data": 3, "valid": true },
+      { "data": "fallback", "valid": true },
+      { "data": "other", "valid": false },
+      { "data": 1.5, "valid": false }
+    ]
+  },
+  {
+    "description": "if, then, and else are annotations under draft 4",
+    "schema": {
+      "type": "number",
+      "minimum": 0,
+      "if": { "minimum": 100 },
+      "then": { "maximum": 5 }
+    },
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "number",
+      "minimum": 0
+    },
+    "tests": [
+      { "data": 5, "valid": true },
+      { "data": -5, "valid": false }
+    ]
+  }
+]

@@ -461,13 +461,14 @@ fn validation_error_display_and_source() {
     assert!(std::error::Error::source(&error).is_some());
 }
 
-// `if` is unmodeled, so the document goes raw at the root without descending into the nesting.
+// `unevaluatedProperties` is unmodeled, so the document goes raw at the root without descending
+// into the nesting.
 #[test]
 fn deeply_nested_document_round_trips() {
     let mut schema = json!({"type": "string"});
     for _ in 0..300 {
         let mut map = Map::new();
-        map.insert("if".to_string(), schema);
+        map.insert("unevaluatedProperties".to_string(), schema);
         schema = Value::Object(map);
     }
     let canonical = canonicalize(&schema).expect("canonicalizes");

@@ -147,7 +147,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(60)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(63)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -283,6 +283,14 @@ fn draw_leaf(tc: &TestCase) -> Value {
             { "const": small_int(tc) },
             { "enum": [small_int(tc), small_int(tc)] }
         ] }),
+        // `then` alone needs the condition's complement; `else` alone needs none of it.
+        60 => json!({ "if": { "type": draw_type(tc) }, "then": { "type": draw_type(tc) } }),
+        61 => json!({ "if": { "type": draw_type(tc) }, "else": { "type": draw_type(tc) } }),
+        62 => json!({
+            "if": { "type": draw_type(tc) },
+            "then": { "type": draw_type(tc) },
+            "else": { "type": draw_type(tc) }
+        }),
         _ => json!({ "type": ["string", "integer"] }),
     }
 }
