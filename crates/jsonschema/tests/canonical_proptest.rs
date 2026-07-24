@@ -1,6 +1,6 @@
 #![cfg(not(target_arch = "wasm32"))]
 use hegel::{extras::serde_json as json_gs, generators as gs, TestCase};
-use jsonschema::Draft;
+use jsonschema::{canonical::CanonicalView, Draft};
 use serde_json::{json, Value};
 
 fn draw_draft(tc: &TestCase) -> Draft {
@@ -570,5 +570,86 @@ fn a_redundant_divisor_does_not_change_the_form(tc: TestCase) {
         canonicalize(&json!({ "allOf": with_common }), draft),
         "gcd({left}, {right}) = {}",
         common.0
+    );
+}
+
+// Equality-preserving syntactic rewrites: each keeps the accepted value set unchanged, so the
+// canonical forms must be IR-equal.
+fn rewrite_schema(tc: &TestCase, schema: &Value) -> Value {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(4)) {
+        0 => json!({ "allOf": [schema] }),
+        // The empty conjunct says nothing; unlike `true` it is meta-valid in every draft.
+        1 => json!({ "allOf": [schema, {}] }),
+        // A union does not change when one branch appears twice.
+        2 => match schema.get("anyOf").and_then(Value::as_array) {
+            Some(branches) if !branches.is_empty() => {
+                let mut extended = branches.clone();
+                extended.push(branches[0].clone());
+                let mut rewritten = schema
+                    .as_object()
+                    .expect("`anyOf` sits in an object")
+                    .clone();
+                rewritten.insert("anyOf".to_string(), Value::Array(extended));
+                Value::Object(rewritten)
+            }
+            _ => json!({ "anyOf": [schema] }),
+        },
+        // A union does not change when its branches are reordered.
+        3 => match schema.get("anyOf").and_then(Value::as_array) {
+            Some(branches) if branches.len() >= 2 => {
+                let mut rotated = branches.clone();
+                rotated.rotate_left(1);
+                let mut rewritten = schema
+                    .as_object()
+                    .expect("`anyOf` sits in an object")
+                    .clone();
+                rewritten.insert("anyOf".to_string(), Value::Array(rotated));
+                Value::Object(rewritten)
+            }
+            _ => json!({ "anyOf": [schema] }),
+        },
+        // A lone `type: [a, b]` admits the same values as the union of its single-type spellings.
+        _ => match (
+            schema.as_object(),
+            schema.get("type").and_then(Value::as_array),
+        ) {
+            (Some(object), Some(names)) if object.len() == 1 && names.len() >= 2 => json!({
+                "anyOf": names
+                    .iter()
+                    .map(|name| json!({ "type": name }))
+                    .collect::<Vec<_>>()
+            }),
+            _ => json!({ "allOf": [schema] }),
+        },
+    }
+}
+
+#[hegel::test(test_cases = 5_000)]
+fn equality_preserving_rewrites_converge(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    let schema = draw_schema(&tc, 2);
+    // Draft 4's metaschema rejects boolean subschemas, so a wrap of a boolean root is not a
+    // meta-valid document there.
+    if !schema.is_object() {
+        return;
+    }
+    let rewritten = rewrite_schema(&tc, &schema);
+    let Ok(original) = jsonschema::canonical::options()
+        .with_draft(draft)
+        .canonicalize(&schema)
+    else {
+        return;
+    };
+    // A raw document round-trips verbatim, so a wrapper changes it by construction.
+    if matches!(original.view(), CanonicalView::Raw(_)) {
+        return;
+    }
+    let converged = jsonschema::canonical::options()
+        .with_draft(draft)
+        .canonicalize(&rewritten)
+        .expect("a rewrite of a canonicalizable schema canonicalizes");
+    assert_eq!(
+        original, converged,
+        "schema = {schema}\n  rewritten = {rewritten}"
     );
 }
