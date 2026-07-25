@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.49.0] - 2026-07-25
+
 ### Added
 
 - Generic JSON input: `options_for` builds a validator over any instance representation implementing `json::Json`, so instances validate without conversion to `serde_json::Value`. [#239](https://github.com/Stranger6667/jsonschema/issues/239)
@@ -1408,7 +1410,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.5...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.0...HEAD
+[0.49.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.5...rust-v0.49.0
 [0.48.5]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.4...rust-v0.48.5
 [0.48.4]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.3...rust-v0.48.4
 [0.48.3]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.48.2...rust-v0.48.3
