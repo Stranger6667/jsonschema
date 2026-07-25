@@ -77,6 +77,8 @@ impl IntoIterator for StringLeaves {
 struct Facets {
     patterns: Vec<Arc<str>>,
     formats: Vec<Arc<str>>,
+    content_media_types: Vec<Arc<str>>,
+    content_encodings: Vec<Arc<str>>,
 }
 
 /// Fold the length windows of leaves carrying the same patterns and formats.
@@ -95,20 +97,35 @@ fn merge(mut leaves: Vec<StringLeaf>) -> Vec<StringLeaf> {
         return leaves;
     }
     leaves.sort_by(|left, right| {
-        (&left.patterns, &left.formats).cmp(&(&right.patterns, &right.formats))
+        (
+            &left.patterns,
+            &left.formats,
+            &left.content_media_types,
+            &left.content_encodings,
+        )
+            .cmp(&(
+                &right.patterns,
+                &right.formats,
+                &right.content_media_types,
+                &right.content_encodings,
+            ))
     });
     let mut merged: Vec<StringLeaf> = Vec::with_capacity(leaves.len());
     let mut windows: Vec<LengthBounds> = Vec::new();
     let mut facets: Option<Facets> = None;
     for leaf in leaves {
-        if facets
-            .as_ref()
-            .is_none_or(|group| group.patterns != leaf.patterns || group.formats != leaf.formats)
-        {
+        if facets.as_ref().is_none_or(|group| {
+            group.patterns != leaf.patterns
+                || group.formats != leaf.formats
+                || group.content_media_types != leaf.content_media_types
+                || group.content_encodings != leaf.content_encodings
+        }) {
             flush_group(&mut merged, facets.take(), &mut windows);
             facets = Some(Facets {
                 patterns: leaf.patterns,
                 formats: leaf.formats,
+                content_media_types: leaf.content_media_types,
+                content_encodings: leaf.content_encodings,
             });
         }
         windows.push(leaf.lengths);
@@ -128,7 +145,13 @@ fn flush_group(
     facets: Option<Facets>,
     windows: &mut Vec<LengthBounds>,
 ) {
-    let Some(Facets { patterns, formats }) = facets else {
+    let Some(Facets {
+        patterns,
+        formats,
+        content_media_types,
+        content_encodings,
+    }) = facets
+    else {
         return;
     };
     let mut lengths = Bounds::merge_all(std::mem::take(windows));
@@ -138,12 +161,16 @@ fn flush_group(
             lengths: window,
             patterns: patterns.clone(),
             formats: formats.clone(),
+            content_media_types: content_media_types.clone(),
+            content_encodings: content_encodings.clone(),
         });
     }
     merged.push(StringLeaf {
         lengths: last,
         patterns,
         formats,
+        content_media_types,
+        content_encodings,
     });
 }
 
@@ -171,8 +198,21 @@ fn drop_subsumed(leaves: &mut Vec<StringLeaf>) {
                 && other
                     .formats
                     .iter()
-                    .all(|format| leaf.formats.contains(format));
-            let facets = |leaf: &StringLeaf| leaf.patterns.len() + leaf.formats.len();
+                    .all(|format| leaf.formats.contains(format))
+                && other
+                    .content_media_types
+                    .iter()
+                    .all(|media_type| leaf.content_media_types.contains(media_type))
+                && other
+                    .content_encodings
+                    .iter()
+                    .all(|encoding| leaf.content_encodings.contains(encoding));
+            let facets = |leaf: &StringLeaf| {
+                leaf.patterns.len()
+                    + leaf.formats.len()
+                    + leaf.content_media_types.len()
+                    + leaf.content_encodings.len()
+            };
             if wider && (facets(other) < facets(leaf) || index > other_index) {
                 keep[index] = false;
             }

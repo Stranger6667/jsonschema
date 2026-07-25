@@ -170,7 +170,11 @@ pub(crate) fn length_windows(lengths: &LengthBounds) -> Option<Vec<LengthBounds>
 ///       =>  anyOf: [<non-string types>, {"type": "string", "maxLength": 2}]
 /// ```
 fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Option<Schema> {
-    if !leaf.patterns.is_empty() || !leaf.formats.is_empty() {
+    if !leaf.patterns.is_empty()
+        || !leaf.formats.is_empty()
+        || !leaf.content_media_types.is_empty()
+        || !leaf.content_encodings.is_empty()
+    {
         return None;
     }
     let windows = length_windows(&leaf.lengths)?;
@@ -181,6 +185,8 @@ fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Optio
                 lengths,
                 patterns: Vec::new(),
                 formats: Vec::new(),
+                content_media_types: Vec::new(),
+                content_encodings: Vec::new(),
             },
             ctx,
         )

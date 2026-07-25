@@ -100,6 +100,40 @@ fn emit_string(leaf: &StringLeaf) -> Value {
                 .map(|format| json!({ "format": format.as_ref() })),
         ),
     }
+    // A media type and an encoding sharing one schema object decode-then-check under the runtime
+    // dispatch (`compile_media_type` reads its sibling `contentEncoding`), which would silently
+    // recompose two facets this leaf keeps independent - so whenever both are present, every value
+    // of either goes into its own `allOf` branch instead of beside `type` on the main object.
+    let both_content_facets_present =
+        !leaf.content_media_types.is_empty() && !leaf.content_encodings.is_empty();
+    match leaf.content_media_types.as_slice() {
+        [] => {}
+        [media_type] if !both_content_facets_present => {
+            map.insert(
+                "contentMediaType".into(),
+                Value::String(media_type.to_string()),
+            );
+        }
+        media_types => conjuncts.extend(
+            media_types
+                .iter()
+                .map(|media_type| json!({ "contentMediaType": media_type.as_ref() })),
+        ),
+    }
+    match leaf.content_encodings.as_slice() {
+        [] => {}
+        [encoding] if !both_content_facets_present => {
+            map.insert(
+                "contentEncoding".into(),
+                Value::String(encoding.to_string()),
+            );
+        }
+        encodings => conjuncts.extend(
+            encodings
+                .iter()
+                .map(|encoding| json!({ "contentEncoding": encoding.as_ref() })),
+        ),
+    }
     if !conjuncts.is_empty() {
         map.insert("allOf".into(), Value::Array(conjuncts));
     }

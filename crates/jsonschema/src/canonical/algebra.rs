@@ -437,8 +437,11 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         !spans_domain
     });
     strings.retain(|leaf| {
-        let spans_domain =
-            leaf.lengths.is_unbounded() && leaf.patterns.is_empty() && leaf.formats.is_empty();
+        let spans_domain = leaf.lengths.is_unbounded()
+            && leaf.patterns.is_empty()
+            && leaf.formats.is_empty()
+            && leaf.content_media_types.is_empty()
+            && leaf.content_encodings.is_empty();
         if spans_domain {
             widened = union_type_sets(widened, JsonTypeSet::from(JsonType::String));
         }
@@ -734,6 +737,8 @@ fn lift_degenerate_member(
                 },
                 patterns: Vec::new(),
                 formats: Vec::new(),
+                content_media_types: Vec::new(),
+                content_encodings: Vec::new(),
             });
             true
         }
@@ -1614,6 +1619,8 @@ pub(crate) fn string_leaf(leaf: StringLeaf, ctx: &CanonicalizationContext) -> Sc
     // e.g.  {"type": "string", "maxLength": 0}  =>  {"const": ""}
     if leaf.get().patterns.is_empty()
         && leaf.get().formats.is_empty()
+        && leaf.get().content_media_types.is_empty()
+        && leaf.get().content_encodings.is_empty()
         && leaf
             .get()
             .lengths
@@ -2577,42 +2584,53 @@ fn admits_value(schema: &Schema, value: &Value, ctx: &CanonicalizationContext) -
     if intersect(schema.clone(), member.clone(), ctx) != member {
         return Verdict::Rejects;
     }
-    // Intersection reads a format no checker covers as admitting, so its "yes" is definite only
-    // when the schema carries none.
-    if has_uncheckable_format(schema, ctx) {
+    // Intersection reads a format or content check no checker covers as admitting, so its "yes" is
+    // definite only when the schema carries none.
+    if has_uncheckable_string_facet(schema, ctx) {
         return Verdict::Unknown;
     }
     Verdict::Admits
 }
 
-/// Whether `schema` asserts a format this draft has no checker for.
-fn has_uncheckable_format(schema: &Schema, ctx: &CanonicalizationContext) -> bool {
+/// Whether `schema` asserts a format, media type, or encoding this draft has no checker for.
+fn has_uncheckable_string_facet(schema: &Schema, ctx: &CanonicalizationContext) -> bool {
     match schema.kind() {
-        SchemaKind::String(leaf) => leaf
-            .get()
-            .formats
-            .iter()
-            .any(|format| crate::keywords::format::is_valid(ctx.draft(), format, "").is_none()),
+        SchemaKind::String(leaf) => {
+            leaf.get()
+                .formats
+                .iter()
+                .any(|format| crate::keywords::format::is_valid(ctx.draft(), format, "").is_none())
+                || leaf
+                    .get()
+                    .content_media_types
+                    .iter()
+                    .any(|media_type| !is_known_content_media_type(media_type))
+                || leaf
+                    .get()
+                    .content_encodings
+                    .iter()
+                    .any(|encoding| !is_known_content_encoding(encoding))
+        }
         SchemaKind::AnyOf(branches) => branches
             .as_slice()
             .iter()
-            .any(|branch| has_uncheckable_format(branch, ctx)),
+            .any(|branch| has_uncheckable_string_facet(branch, ctx)),
         SchemaKind::Object(leaf) => leaf
             .get()
             .property_names
             .iter()
             .chain(leaf.get().properties.values())
             .chain(leaf.get().pattern_properties.values())
-            .any(|nested| has_uncheckable_format(nested, ctx)),
+            .any(|nested| has_uncheckable_string_facet(nested, ctx)),
         SchemaKind::Array(leaf) => leaf
             .get()
             .prefix
             .iter()
             .chain(leaf.get().items.iter())
             .chain(leaf.get().contains.iter().map(|facet| &facet.schema))
-            .any(|nested| has_uncheckable_format(nested, ctx)),
+            .any(|nested| has_uncheckable_string_facet(nested, ctx)),
 
-        // A typed group's body is a value set, which carries no format.
+        // A typed group's body is a value set, which carries no format or content check.
         SchemaKind::TypedGroup { .. }
         | SchemaKind::MultiType(_)
         | SchemaKind::Integer(_)
@@ -2623,6 +2641,14 @@ fn has_uncheckable_format(schema: &Schema, ctx: &CanonicalizationContext) -> boo
         | SchemaKind::False
         | SchemaKind::Raw(_) => false,
     }
+}
+
+fn is_known_content_media_type(media_type: &str) -> bool {
+    crate::content_media_type::DEFAULT_CONTENT_MEDIA_TYPE_CHECKS.contains_key(media_type)
+}
+
+fn is_known_content_encoding(encoding: &str) -> bool {
+    crate::content_encoding::DEFAULT_CONTENT_ENCODING_CHECKS_AND_CONVERTERS.contains_key(encoding)
 }
 
 /// Keep the objects both leaves accept: the narrower window, and every key either demands.
@@ -3016,10 +3042,20 @@ fn intersect_string_leaves(first: StringLeaf, second: StringLeaf) -> StringLeaf 
     formats.extend(second.formats);
     formats.sort();
     formats.dedup();
+    let mut content_media_types = first.content_media_types;
+    content_media_types.extend(second.content_media_types);
+    content_media_types.sort();
+    content_media_types.dedup();
+    let mut content_encodings = first.content_encodings;
+    content_encodings.extend(second.content_encodings);
+    content_encodings.sort();
+    content_encodings.dedup();
     StringLeaf {
         lengths: first.lengths.intersect(second.lengths),
         patterns,
         formats,
+        content_media_types,
+        content_encodings,
     }
 }
 
@@ -3057,7 +3093,8 @@ fn string_leaf_admits(
     string_leaf_admits_text(leaf, regexes, text, ctx)
 }
 
-/// Whether `text` falls within the leaf's length window and matches every pattern and format.
+/// Whether `text` falls within the leaf's length window and matches every pattern, format, media
+/// type, and encoding.
 fn string_leaf_admits_text(
     leaf: &StringLeaf,
     regexes: &[Arc<CompiledMatcher>],
@@ -3068,10 +3105,30 @@ fn string_leaf_admits_text(
     if !leaf.lengths.contains(&length) || !regexes.iter().all(|regex| regex.is_match(text)) {
         return Verdict::Rejects;
     }
-    Verdict::all(leaf.formats.iter().map(|format| {
-        match crate::keywords::format::is_valid(ctx.draft(), format, text) {
-            Some(admitted) => Verdict::from_bool(admitted),
-            None => Verdict::Unknown,
-        }
-    }))
+    Verdict::all(
+        leaf.formats
+            .iter()
+            .map(
+                |format| match crate::keywords::format::is_valid(ctx.draft(), format, text) {
+                    Some(admitted) => Verdict::from_bool(admitted),
+                    None => Verdict::Unknown,
+                },
+            )
+            .chain(leaf.content_media_types.iter().map(|media_type| {
+                match crate::content_media_type::DEFAULT_CONTENT_MEDIA_TYPE_CHECKS
+                    .get(media_type.as_ref())
+                {
+                    Some(check) => Verdict::from_bool(check(text)),
+                    None => Verdict::Unknown,
+                }
+            }))
+            .chain(leaf.content_encodings.iter().map(|encoding| {
+                match crate::content_encoding::DEFAULT_CONTENT_ENCODING_CHECKS_AND_CONVERTERS
+                    .get(encoding.as_ref())
+                {
+                    Some((check, _)) => Verdict::from_bool(check(text)),
+                    None => Verdict::Unknown,
+                }
+            })),
+    )
 }

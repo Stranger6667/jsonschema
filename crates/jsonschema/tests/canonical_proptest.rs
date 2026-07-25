@@ -147,7 +147,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(71)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(74)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -322,6 +322,14 @@ fn draw_leaf(tc: &TestCase) -> Value {
             "type": "object",
             "properties": { "a": { "type": draw_type(tc) } },
             "additionalProperties": { "type": draw_type(tc) }
+        }),
+        72 => json!({ "type": "string", "contentMediaType": "application/json" }),
+        73 => json!({ "type": "string", "contentEncoding": "base64" }),
+        // Same object composes decode-then-check, which this leaf's independent facets cannot spell.
+        74 => json!({
+            "type": "string",
+            "contentMediaType": "application/json",
+            "contentEncoding": "base64"
         }),
         _ => json!({ "type": ["string", "integer"] }),
     }

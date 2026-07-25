@@ -133,6 +133,8 @@ impl RbCanonicalSchema {
                     max_length: view.max_length,
                     patterns: view.patterns,
                     formats: view.formats,
+                    content_media_types: view.content_media_types,
+                    content_encodings: view.content_encodings,
                 })
                 .as_value(),
             CanonicalView::Number(view) => ruby
@@ -340,7 +342,8 @@ fn strings_to_ruby(ruby: &Ruby, values: &[String]) -> Result<Value, Error> {
     Ok(array.as_value())
 }
 
-/// A string value within a length window, matching every pattern and format.
+/// A string value within a length window, matching every pattern, format, media type, and
+/// encoding.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::StringView", free_immediately)]
 pub struct StringView {
@@ -348,6 +351,8 @@ pub struct StringView {
     max_length: Option<serde_json::Number>,
     patterns: Vec<String>,
     formats: Vec<String>,
+    content_media_types: Vec<String>,
+    content_encodings: Vec<String>,
 }
 
 impl DataTypeFunctions for StringView {}
@@ -369,13 +374,23 @@ impl StringView {
         strings_to_ruby(ruby, &rb_self.formats)
     }
 
+    fn content_media_types(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        strings_to_ruby(ruby, &rb_self.content_media_types)
+    }
+
+    fn content_encodings(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        strings_to_ruby(ruby, &rb_self.content_encodings)
+    }
+
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
-            "#<JSONSchema::Canonical::StringView min_length={} max_length={} patterns={} formats={}>",
+            "#<JSONSchema::Canonical::StringView min_length={} max_length={} patterns={} formats={} content_media_types={} content_encodings={}>",
             Self::min_length(ruby, rb_self)?.inspect(),
             Self::max_length(ruby, rb_self)?.inspect(),
             Self::patterns(ruby, rb_self)?.inspect(),
-            Self::formats(ruby, rb_self)?.inspect()
+            Self::formats(ruby, rb_self)?.inspect(),
+            Self::content_media_types(ruby, rb_self)?.inspect(),
+            Self::content_encodings(ruby, rb_self)?.inspect()
         ))
     }
 
@@ -385,6 +400,14 @@ impl StringView {
         hash.aset(ruby.sym_new("max_length"), Self::max_length(ruby, rb_self)?)?;
         hash.aset(ruby.sym_new("patterns"), Self::patterns(ruby, rb_self)?)?;
         hash.aset(ruby.sym_new("formats"), Self::formats(ruby, rb_self)?)?;
+        hash.aset(
+            ruby.sym_new("content_media_types"),
+            Self::content_media_types(ruby, rb_self)?,
+        )?;
+        hash.aset(
+            ruby.sym_new("content_encodings"),
+            Self::content_encodings(ruby, rb_self)?,
+        )?;
         Ok(hash)
     }
 }
@@ -955,6 +978,14 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     string_view.define_method("max_length", method!(StringView::max_length, 0))?;
     string_view.define_method("patterns", method!(StringView::patterns, 0))?;
     string_view.define_method("formats", method!(StringView::formats, 0))?;
+    string_view.define_method(
+        "content_media_types",
+        method!(StringView::content_media_types, 0),
+    )?;
+    string_view.define_method(
+        "content_encodings",
+        method!(StringView::content_encodings, 0),
+    )?;
     string_view.define_method("inspect", method!(StringView::inspect, 0))?;
     string_view.define_method("deconstruct_keys", method!(StringView::deconstruct_keys, 1))?;
 

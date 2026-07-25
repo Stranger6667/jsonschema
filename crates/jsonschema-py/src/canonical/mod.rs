@@ -100,6 +100,8 @@ impl PyCanonicalSchema {
                         .transpose()?,
                     patterns: view.patterns,
                     formats: view.formats,
+                    content_media_types: view.content_media_types,
+                    content_encodings: view.content_encodings,
                 },
             )?
             .into_any(),
@@ -351,7 +353,7 @@ impl TypedGroupView {
     }
 }
 
-/// A string value within a length window matching every pattern and format.
+/// A string value within a length window matching every pattern, format, media type, and encoding.
 #[pyclass(frozen, name = "StringView", module = "jsonschema_rs.canonical")]
 pub(crate) struct StringView {
     #[pyo3(get)]
@@ -362,13 +364,31 @@ pub(crate) struct StringView {
     patterns: Vec<String>,
     #[pyo3(get)]
     formats: Vec<String>,
+    #[pyo3(get)]
+    content_media_types: Vec<String>,
+    #[pyo3(get)]
+    content_encodings: Vec<String>,
 }
 
 #[pymethods]
 impl StringView {
     #[classattr]
-    fn __match_args__() -> (&'static str, &'static str, &'static str, &'static str) {
-        ("min_length", "max_length", "patterns", "formats")
+    fn __match_args__() -> (
+        &'static str,
+        &'static str,
+        &'static str,
+        &'static str,
+        &'static str,
+        &'static str,
+    ) {
+        (
+            "min_length",
+            "max_length",
+            "patterns",
+            "formats",
+            "content_media_types",
+            "content_encodings",
+        )
     }
 }
 

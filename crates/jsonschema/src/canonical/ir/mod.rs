@@ -394,6 +394,12 @@ pub(crate) struct StringLeaf {
     pub(crate) patterns: Vec<Arc<str>>,
     /// Sorted, deduplicated. A string must satisfy every format. Empty unless formats assert.
     pub(crate) formats: Vec<Arc<str>>,
+    /// Sorted, deduplicated. A string must satisfy every media type. Empty outside Draft 6/7, where
+    /// `contentMediaType` is an annotation.
+    pub(crate) content_media_types: Vec<Arc<str>>,
+    /// Sorted, deduplicated. A string must satisfy every encoding. Empty outside Draft 6/7, where
+    /// `contentEncoding` is an annotation.
+    pub(crate) content_encodings: Vec<Arc<str>>,
 }
 
 /// Sorted, deduplicated, and holding at least two elements; fewer collapses to a simpler node.

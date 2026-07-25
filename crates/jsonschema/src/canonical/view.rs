@@ -59,14 +59,16 @@ pub struct TypedGroupView {
     pub body: CanonicalSchema,
 }
 
-/// Payload of [`CanonicalView::String`]: the `minLength`/`maxLength` bounds, patterns and formats on
-/// a string value.
+/// Payload of [`CanonicalView::String`]: the `minLength`/`maxLength` bounds, patterns, formats,
+/// media types, and encodings on a string value.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StringView {
     pub min_length: Option<Number>,
     pub max_length: Option<Number>,
     pub patterns: Vec<String>,
     pub formats: Vec<String>,
+    pub content_media_types: Vec<String>,
+    pub content_encodings: Vec<String>,
 }
 
 /// Payload of [`CanonicalView::Number`]: the interval bounds on a number value, each with whether
@@ -289,6 +291,16 @@ fn string_view(leaf: &StringLeaf) -> StringView {
             .map(BoundCardinality::to_number),
         patterns: leaf.patterns.iter().map(ToString::to_string).collect(),
         formats: leaf.formats.iter().map(ToString::to_string).collect(),
+        content_media_types: leaf
+            .content_media_types
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
+        content_encodings: leaf
+            .content_encodings
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
     }
 }
 
