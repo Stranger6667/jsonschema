@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.49.1] - 2026-07-25
+
 ### Fixed
 
 - `JSONSchema.canonicalize` rejecting `pattern_options` (it should take the same regex configuration as validators).
@@ -224,7 +226,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.1...HEAD
+[0.49.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.0...ruby-v0.49.1
 [0.49.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.5...ruby-v0.49.0
 [0.48.5]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.2...ruby-v0.48.5
 [0.48.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.1...ruby-v0.48.2
