@@ -83,6 +83,8 @@ fn parse_schema(
     let mut max_properties: Option<BoundCardinality> = None;
     let mut patterns: Vec<Arc<str>> = Vec::new();
     let mut formats: Vec<Arc<str>> = Vec::new();
+    let mut content_media_types: Vec<Arc<str>> = Vec::new();
+    let mut content_encodings: Vec<Arc<str>> = Vec::new();
     let mut multiple_of = Divisors::default();
     // The number domain keeps each end as written: on the reals an excluded bound has no successor
     // to fold it into, unlike the integer path below.
@@ -352,6 +354,28 @@ fn parse_schema(
                     formats.push(Arc::from(name.as_str()));
                 }
             }
+            // `contentEncoding`/`contentMediaType`/`contentSchema` are annotations from 2019-09 on -
+            // no draft asserts them there, so they leave no trace in the IR.
+            ("contentEncoding" | "contentMediaType" | "contentSchema", _)
+                if matches!(
+                    ctx.draft(),
+                    Draft::Draft201909 | Draft::Draft202012 | Draft::Unknown
+                ) => {}
+            // Together the two decode-then-check the encoded string, which the leaf's independent
+            // facets cannot spell - each alone checks the string it sits beside directly, so the
+            // guard only fires when both keywords share this schema object.
+            ("contentMediaType", Value::String(name))
+                if matches!(ctx.draft(), Draft::Draft6 | Draft::Draft7)
+                    && !map.contains_key("contentEncoding") =>
+            {
+                content_media_types.push(Arc::from(name.as_str()));
+            }
+            ("contentEncoding", Value::String(name))
+                if matches!(ctx.draft(), Draft::Draft6 | Draft::Draft7)
+                    && !map.contains_key("contentMediaType") =>
+            {
+                content_encodings.push(Arc::from(name.as_str()));
+            }
             // Only a positive divisor whose spelling denotes an exact rational is modeled; without
             // one the validator's own division is what decides membership.
             ("multipleOf", Value::Number(number)) if ctx.draft().is_known_keyword("multipleOf") => {
@@ -501,11 +525,21 @@ fn parse_schema(
     if min_length.as_ref().is_some_and(BoundCardinality::is_zero) {
         min_length = None;
     }
-    if min_length.is_some() || max_length.is_some() || !patterns.is_empty() || !formats.is_empty() {
+    if min_length.is_some()
+        || max_length.is_some()
+        || !patterns.is_empty()
+        || !formats.is_empty()
+        || !content_media_types.is_empty()
+        || !content_encodings.is_empty()
+    {
         patterns.sort();
         patterns.dedup();
         formats.sort();
         formats.dedup();
+        content_media_types.sort();
+        content_media_types.dedup();
+        content_encodings.sort();
+        content_encodings.dedup();
         let leaf = StringLeaf {
             lengths: LengthBounds {
                 minimum: min_length,
@@ -513,6 +547,8 @@ fn parse_schema(
             },
             patterns,
             formats,
+            content_media_types,
+            content_encodings,
         };
         conjuncts.push(string_facet_schema(leaf, ctx));
     }
@@ -609,6 +645,8 @@ fn parse_schema(
                     lengths: LengthBounds::default(),
                     patterns: vec![Arc::clone(pattern)],
                     formats: Vec::new(),
+                    content_media_types: Vec::new(),
+                    content_encodings: Vec::new(),
                 },
                 ctx,
             ));

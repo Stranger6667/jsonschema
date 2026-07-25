@@ -123,6 +123,18 @@ def test_view_string_formats():
             pytest.fail(f"unexpected view: {other!r}")
 
 
+def test_view_string_content():
+    # Same-object contentEncoding+contentMediaType decode-then-check and stay raw; separate allOf
+    # branches model independently, which the view then exposes.
+    schema = {"allOf": [{"type": "string", "contentEncoding": "base64"}, {"contentMediaType": "application/json"}]}
+    match canonicalize(schema, draft=7).view():
+        case canonical.StringView(content_media_types=content_media_types, content_encodings=content_encodings):
+            assert content_media_types == ["application/json"]
+            assert content_encodings == ["base64"]
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
 def test_view_array_lengths():
     schema = {"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": True, "items": {"type": "integer"}}
     match canonicalize(schema).view():

@@ -98,6 +98,18 @@ RSpec.describe "JSONSchema.canonicalize" do
     end
   end
 
+  it "view returns StringView carrying an independent media type and encoding" do
+    # Same-object contentEncoding+contentMediaType decode-then-check and stay raw; separate allOf
+    # branches model independently, which the view then exposes.
+    schema = { "allOf" => [{ "type" => "string", "contentEncoding" => "base64" },
+                           { "contentMediaType" => "application/json" }] }
+    case JSONSchema.canonicalize(schema, draft: :draft7).view
+    in JSONSchema::Canonical::StringView[content_media_types:, content_encodings:]
+      expect(content_media_types).to eq(["application/json"])
+      expect(content_encodings).to eq(["base64"])
+    end
+  end
+
   it "view returns NumberView with its real interval" do
     case JSONSchema.canonicalize({ "type" => "number", "minimum" => 2, "exclusiveMaximum" => 5 }).view
     in JSONSchema::Canonical::NumberView[minimum:, exclusive_minimum:, maximum:, exclusive_maximum:]
@@ -261,7 +273,8 @@ RSpec.describe "JSONSchema.canonicalize" do
   {
     "MultiTypeView" => [{ "type" => %w[integer string] }, %i[types]],
     "TypedGroupView" => [{ "type" => "integer", "enum" => [1, 2] }, %i[type_name]],
-    "StringView" => [{ "type" => "string", "minLength" => 2, "pattern" => "^a" }, %i[min_length max_length patterns formats]],
+    "StringView" => [{ "type" => "string", "minLength" => 2, "pattern" => "^a" },
+                     %i[min_length max_length patterns formats content_media_types content_encodings]],
     "IntegerView" => [{ "type" => "integer", "minimum" => 2, "maximum" => 9 }, %i[minimum maximum multiple_of]],
     "NumberView" => [{ "type" => "number", "minimum" => 2 }, %i[minimum exclusive_minimum maximum exclusive_maximum multiple_of]],
     "ArrayView" => [{ "type" => "array", "minItems" => 1 }, %i[min_items max_items unique_items prefix_items items contains]],

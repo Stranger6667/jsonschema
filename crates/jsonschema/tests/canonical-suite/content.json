@@ -1,0 +1,182 @@
+[
+  {
+    "description": "contentMediaType alone is an annotation from 2019-09 on",
+    "schema": {
+      "contentMediaType": "application/json"
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "tests": [
+      { "data": "{\"foo\": \"bar\"}", "valid": true },
+      { "data": "not json", "valid": true },
+      { "data": 100, "valid": true }
+    ]
+  },
+  {
+    "description": "contentEncoding alone is an annotation from 2019-09 on",
+    "schema": {
+      "contentEncoding": "base64"
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "tests": [
+      { "data": "Zm9v", "valid": true },
+      { "data": "not base64!!!", "valid": true }
+    ]
+  },
+  {
+    "description": "contentSchema alone is an annotation",
+    "schema": {
+      "contentSchema": { "type": "integer" }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "tests": [
+      { "data": "anything", "valid": true },
+      { "data": 100, "valid": true }
+    ]
+  },
+  {
+    "description": "contentEncoding, contentMediaType, and contentSchema together are all annotations",
+    "schema": {
+      "contentMediaType": "application/json",
+      "contentEncoding": "base64",
+      "contentSchema": { "type": "object" }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "tests": [
+      { "data": "not valid base64 or json", "valid": true }
+    ]
+  },
+  {
+    "description": "content keywords are annotations under 2019-09 too",
+    "schema": {
+      "contentMediaType": "application/json",
+      "contentEncoding": "base64"
+    },
+    "draft": "draft2019-09",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema"
+    },
+    "tests": [
+      { "data": "not valid base64 or json", "valid": true }
+    ]
+  },
+  {
+    "description": "draft 7 models a known contentMediaType as a string facet",
+    "schema": {
+      "type": "string",
+      "contentMediaType": "application/json"
+    },
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "string",
+      "contentMediaType": "application/json"
+    },
+    "tests": [
+      { "data": "{\"foo\": \"bar\"}", "valid": true },
+      { "data": "not json", "valid": false }
+    ]
+  },
+  {
+    "description": "draft 7 models a known contentEncoding as a string facet",
+    "schema": {
+      "type": "string",
+      "contentEncoding": "base64"
+    },
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "string",
+      "contentEncoding": "base64"
+    },
+    "tests": [
+      { "data": "Zm9v", "valid": true },
+      { "data": "not base64!!!", "valid": false }
+    ]
+  },
+  {
+    "description": "draft 6 models a known contentEncoding the same way draft 7 does",
+    "schema": {
+      "type": "string",
+      "contentEncoding": "base64"
+    },
+    "draft": "draft6",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-06/schema#",
+      "type": "string",
+      "contentEncoding": "base64"
+    },
+    "tests": [
+      { "data": "Zm9v", "valid": true },
+      { "data": "not base64!!!", "valid": false }
+    ]
+  },
+  {
+    "description": "contentEncoding and contentMediaType together in the same schema decode-then-check, which the leaf's independent facets cannot spell",
+    "schema": {
+      "type": "string",
+      "contentMediaType": "application/json",
+      "contentEncoding": "base64"
+    },
+    "draft": "draft7",
+    "expected": {
+      "type": "string",
+      "contentMediaType": "application/json",
+      "contentEncoding": "base64"
+    },
+    "tests": [
+      { "data": "eyJhIjoxfQ==", "valid": true },
+      { "data": "ezp9Cg==", "valid": false }
+    ]
+  },
+  {
+    "description": "contentEncoding and contentMediaType from separate allOf branches check the raw string independently, not decode-then-check",
+    "schema": {
+      "allOf": [
+        { "type": "string", "contentEncoding": "base64" },
+        { "contentMediaType": "application/json" }
+      ]
+    },
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "string",
+      "allOf": [
+        { "contentMediaType": "application/json" },
+        { "contentEncoding": "base64" }
+      ]
+    },
+    "tests": [
+      { "data": "eyJhIjoxfQ==", "valid": false },
+      { "data": "not base64!!!", "valid": false }
+    ]
+  },
+  {
+    "description": "an unrecognized contentMediaType is not absorbed by a constant string beside it",
+    "schema": {
+      "anyOf": [
+        { "type": "string", "contentMediaType": "application/x-unknown" },
+        { "const": "xyz" }
+      ]
+    },
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "anyOf": [
+        { "type": "string", "contentMediaType": "application/x-unknown" },
+        { "const": "xyz" }
+      ]
+    },
+    "tests": [
+      { "data": "xyz", "valid": true },
+      { "data": "abc", "valid": true }
+    ]
+  }
+]

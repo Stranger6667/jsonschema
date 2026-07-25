@@ -72,6 +72,8 @@ module JSONSchema
       def max_length: () -> Integer?
       def patterns: () -> Array[String]
       def formats: () -> Array[String]
+      def content_media_types: () -> Array[String]
+      def content_encodings: () -> Array[String]
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end
