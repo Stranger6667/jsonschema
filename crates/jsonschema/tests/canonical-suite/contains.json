@@ -491,5 +491,46 @@
       {"data": [1], "valid": true},
       {"data": [], "valid": false}
     ]
+  },
+  {
+    "description": "ir: a contains demand no element position can meet is unsatisfiable",
+    "schema": {"type": "array", "contains": {"type": "integer"}, "items": {"type": "string"}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: a contains demand outnumbering the positions that can meet it is unsatisfiable",
+    "schema": {
+      "type": "array",
+      "prefixItems": [{"type": "string"}],
+      "items": {"type": "integer"},
+      "contains": {"type": "string"},
+      "minContains": 2
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: a contains demand a prefix position meets survives a rejecting tail",
+    "schema": {
+      "type": "array",
+      "prefixItems": [{"type": "string"}, {"type": "string"}],
+      "items": {"type": "integer"},
+      "contains": {"type": "string"},
+      "minContains": 2
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"type": "string"}, {"type": "string"}],
+      "items": {"type": "integer"},
+      "contains": {"type": "string"},
+      "minContains": 2
+    },
+    "satisfiable": true,
+    "tests": [
+      {"data": ["a", "b"], "valid": true},
+      {"data": ["a", 1], "valid": false}
+    ]
   }
 ]

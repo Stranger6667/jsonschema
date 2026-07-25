@@ -970,7 +970,7 @@ fn array_facet_schema(leaf: ArrayLeaf, ctx: &CanonicalizationContext) -> Schema 
     let non_array = Schema::new(SchemaKind::MultiType(
         JsonTypeSet::all().remove(JsonType::Array),
     ));
-    algebra::union(vec![non_array, algebra::array_leaf(leaf)], ctx)
+    algebra::union(vec![non_array, algebra::array_leaf(leaf, ctx)], ctx)
 }
 
 /// An object facet constrains only objects, so `{"minProperties": 1}` becomes

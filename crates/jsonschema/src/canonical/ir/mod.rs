@@ -278,7 +278,7 @@ impl ArrayLeaf {
     /// past `prefix` must be distinct, so at most that domain's worth of them fit; `prefix`
     /// positions draw from their own schemas and never shrink this ceiling.
     #[must_use]
-    fn unique_length_ceiling(&self) -> Option<BoundCardinality> {
+    pub(crate) fn unique_length_ceiling(&self) -> Option<BoundCardinality> {
         let domain = self.items.as_ref()?.kind().finite_domain_size()?;
         Some(BoundCardinality::from(self.prefix.len() as u64 + domain))
     }
@@ -675,13 +675,22 @@ impl SchemaKind {
         }
     }
 
-    /// The number of distinct values this node admits, when finite: `Const`/`Enum`, or a type set
-    /// drawn only from `null`/`boolean` - the only JSON types with a finite universe. Always small
-    /// enough for a `u64`: it counts a schema's own literal members, never a user-supplied bound.
+    /// The number of distinct values this node admits, when finite: `Const`/`Enum`, an integer
+    /// window closed on both sides, or a type set drawn only from `null`/`boolean` - the only JSON
+    /// types with a finite universe. A window whose count outgrows a `u64` counts as unbounded; a
+    /// divisor is ignored, so the count is an upper bound rather than the exact size.
     #[must_use]
     pub(crate) fn finite_domain_size(&self) -> Option<u64> {
         if let Some(values) = self.finite_values() {
             return Some(values.len() as u64);
+        }
+        if let SchemaKind::Integer(leaf) = self {
+            let bounds = &leaf.get().bounds;
+            return bounds
+                .minimum
+                .as_ref()
+                .zip(bounds.maximum.as_ref())
+                .and_then(|(minimum, maximum)| minimum.span_to(maximum));
         }
         let SchemaKind::MultiType(set) = self else {
             return None;

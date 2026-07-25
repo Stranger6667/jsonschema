@@ -45,6 +45,18 @@ impl BoundInteger {
         self.0.is_one()
     }
 
+    /// How many integers run from this bound to `end` inclusive, when the count fits a `u64`.
+    pub(crate) fn span_to(&self, end: &Self) -> Option<u64> {
+        #[cfg(not(feature = "arbitrary-precision"))]
+        {
+            u64::try_from(end.0.checked_sub(self.0)?.checked_add(1)?).ok()
+        }
+        #[cfg(feature = "arbitrary-precision")]
+        {
+            num_traits::ToPrimitive::to_u64(&(&end.0 - &self.0 + InnerInteger::one()))
+        }
+    }
+
     /// Whether `f64` holds this value exactly. The runtime `multipleOf` divides in `f64`, so beyond
     /// this magnitude its verdict and exact integer arithmetic disagree.
     pub(crate) fn is_exact_in_f64(&self) -> bool {

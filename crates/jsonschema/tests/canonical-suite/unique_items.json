@@ -394,7 +394,8 @@
       "type": "array",
       "items": {"type": "boolean"},
       "uniqueItems": true,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     },
     "satisfiable": true,
     "tests": [
@@ -415,7 +416,7 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "array",
       "items": {"const": 0},
-      "uniqueItems": true
+      "maxItems": 1
     },
     "satisfiable": true,
     "tests": [
@@ -441,6 +442,96 @@
     "satisfiable": true,
     "tests": [
       {"data": [true, false, true], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a finite item domain caps the length under uniqueItems",
+    "schemas": [
+      {"type": "array", "items": {"type": "boolean"}, "uniqueItems": true},
+      {"type": "array", "items": {"type": "boolean"}, "uniqueItems": true, "maxItems": 7}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"type": "boolean"},
+      "uniqueItems": true,
+      "maxItems": 2
+    },
+    "satisfiable": true,
+    "tests": [
+      {"data": [true, false], "valid": true},
+      {"data": [true, false, true], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a one-value item domain under uniqueItems admits at most one element",
+    "schema": {"type": "array", "items": {"type": "null"}, "uniqueItems": true},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"type": "null"},
+      "maxItems": 1
+    },
+    "satisfiable": true,
+    "tests": [
+      {"data": [null], "valid": true},
+      {"data": [null, null], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a bounded integer item domain caps the length under uniqueItems",
+    "schema": {
+      "type": "array",
+      "items": {"type": "integer", "minimum": 0, "maximum": 2},
+      "uniqueItems": true
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"type": "integer", "minimum": 0, "maximum": 2},
+      "uniqueItems": true,
+      "maxItems": 3
+    },
+    "satisfiable": true,
+    "tests": [
+      {"data": [0, 1, 2], "valid": true},
+      {"data": [0, 1, 2, 0], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an item domain unbounded on one side sets no ceiling under uniqueItems",
+    "schema": {"type": "array", "items": {"type": "integer", "minimum": 0}, "uniqueItems": true},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"type": "integer", "minimum": 0},
+      "uniqueItems": true
+    },
+    "satisfiable": true,
+    "tests": [
+      {"data": [0, 1, 2, 3], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: prefix positions raise the ceiling a finite item domain sets",
+    "schema": {
+      "type": "array",
+      "prefixItems": [{"type": "string"}],
+      "items": {"type": "boolean"},
+      "uniqueItems": true
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"type": "string"}],
+      "items": {"type": "boolean"},
+      "uniqueItems": true,
+      "maxItems": 3
+    },
+    "satisfiable": true,
+    "tests": [
+      {"data": ["a", true, false], "valid": true},
+      {"data": ["a", true, false, true], "valid": false}
     ]
   }
 ]
