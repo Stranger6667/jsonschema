@@ -741,32 +741,9 @@ pub fn make_options_from_kwargs(
     }
 
     if let Some(val) = pattern_options_val {
-        if let Ok(fancy_opts) = <&FancyRegexOptions>::try_convert(val) {
-            let mut po = jsonschema::PatternOptions::fancy_regex();
-            if let Some(limit) = fancy_opts.backtrack_limit {
-                po = po.backtrack_limit(limit);
-            }
-            if let Some(limit) = fancy_opts.size_limit {
-                po = po.size_limit(limit);
-            }
-            if let Some(limit) = fancy_opts.dfa_size_limit {
-                po = po.dfa_size_limit(limit);
-            }
-            opts = opts.with_pattern_options(po);
-        } else if let Ok(regex_opts) = <&RegexOptions>::try_convert(val) {
-            let mut po = jsonschema::PatternOptions::regex();
-            if let Some(limit) = regex_opts.size_limit {
-                po = po.size_limit(limit);
-            }
-            if let Some(limit) = regex_opts.dfa_size_limit {
-                po = po.dfa_size_limit(limit);
-            }
-            opts = opts.with_pattern_options(po);
-        } else {
-            return Err(Error::new(
-                ruby.exception_type_error(),
-                "pattern_options must be a RegexOptions or FancyRegexOptions instance",
-            ));
+        match extract_pattern_options(ruby, val)? {
+            RbPatternOptions::Fancy(inner) => opts = opts.with_pattern_options(inner),
+            RbPatternOptions::Regex(inner) => opts = opts.with_pattern_options(inner),
         }
     }
 
@@ -950,6 +927,42 @@ impl RegexOptions {
         }
         s.push('>');
         s
+    }
+}
+
+/// A `pattern_options` argument converted into [`jsonschema::PatternOptions`].
+pub(crate) enum RbPatternOptions {
+    Fancy(jsonschema::PatternOptions<jsonschema::FancyRegex>),
+    Regex(jsonschema::PatternOptions<jsonschema::Regex>),
+}
+
+pub(crate) fn extract_pattern_options(ruby: &Ruby, val: Value) -> Result<RbPatternOptions, Error> {
+    if let Ok(fancy_opts) = <&FancyRegexOptions>::try_convert(val) {
+        let mut po = jsonschema::PatternOptions::fancy_regex();
+        if let Some(limit) = fancy_opts.backtrack_limit {
+            po = po.backtrack_limit(limit);
+        }
+        if let Some(limit) = fancy_opts.size_limit {
+            po = po.size_limit(limit);
+        }
+        if let Some(limit) = fancy_opts.dfa_size_limit {
+            po = po.dfa_size_limit(limit);
+        }
+        Ok(RbPatternOptions::Fancy(po))
+    } else if let Ok(regex_opts) = <&RegexOptions>::try_convert(val) {
+        let mut po = jsonschema::PatternOptions::regex();
+        if let Some(limit) = regex_opts.size_limit {
+            po = po.size_limit(limit);
+        }
+        if let Some(limit) = regex_opts.dfa_size_limit {
+            po = po.dfa_size_limit(limit);
+        }
+        Ok(RbPatternOptions::Regex(po))
+    } else {
+        Err(Error::new(
+            ruby.exception_type_error(),
+            "pattern_options must be a RegexOptions or FancyRegexOptions instance",
+        ))
     }
 }
 
