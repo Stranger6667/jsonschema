@@ -95,7 +95,18 @@ jobs:
       # magnus in the Ruby job, where a matching Ruby is set up.
       # `benchmark-suite` only carries benchmarks for other validators (valico, jsonschema-valid,
       # boon) and has no tests, so building it here costs ~30 extra dependency crates for nothing.
-      - run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite
+      - if: runner.os != 'Windows'
+        run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite
+
+      # `rb-sys` builds against the Ruby the host provides, and the MSVC runner has none to link,
+      # so `magnus` is named out rather than reached through `--all-features`. The feature carries
+      # no platform restriction of its own - the gem cross-builds it for `x64-mingw-ucrt`.
+      - if: runner.os == 'Windows'
+        run: >
+          cargo test --no-fail-fast --workspace
+          --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite
+          --features jsonschema/conformance,jsonschema/resolve-http,jsonschema/resolve-file,jsonschema/resolve-async,jsonschema/tls-aws-lc-rs,jsonschema/tls-ring,jsonschema/arbitrary-precision,jsonschema/macros,jsonschema/pyo3,referencing/retrieve-async,jsonschema-macros/arbitrary-precision,jsonschema-macros/float-roundtrip
+
       - run: cargo test --no-fail-fast -p jsonschema-value --features "pyo3-tests,conformance,arbitrary-precision,macros"
 
   test-cross:
@@ -748,10 +759,10 @@ jobs:
             flags: "--feature-powerset --exclude-features resolve-http"
           - target: wasm32-unknown-unknown
             name: wasm32-unknown-unknown
-            flags: "--feature-powerset --exclude-features default,resolve-http,resolve-file,resolve-async,retrieve-async,pyo3"
+            flags: "--feature-powerset --exclude-features default,resolve-http,resolve-file,resolve-async,retrieve-async,pyo3,magnus"
           - target: wasm32-wasip1
             name: wasm32-wasip1
-            flags: "--feature-powerset --exclude-features retrieve-async,pyo3"
+            flags: "--feature-powerset --exclude-features retrieve-async,pyo3,magnus"
     name: Check features on ${{ matrix.name }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30

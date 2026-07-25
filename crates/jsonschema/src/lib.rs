@@ -1168,7 +1168,7 @@ pub mod json {
     pub use jsonschema_value::{
         cmp, unique, Array, Json, JsonNumber, Node, NodeIdentity, Object, SerdeJson,
     };
-    #[cfg(all(feature = "magnus", unix))]
+    #[cfg(feature = "magnus")]
     pub use jsonschema_value::{
         magnus_child, magnus_invalidate_members_cache, magnus_is_object, magnus_probe_root,
         magnus_take_pending_error, Magnus, MagnusPendingErrorScope, PendingError, RbNode,
