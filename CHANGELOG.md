@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `jsonschema-value`: Ruby builds on x64-mingw-ucrt.
+
 ## [0.49.0] - 2026-07-25
 
 ### Added
