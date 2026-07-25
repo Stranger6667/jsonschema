@@ -59,15 +59,31 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
         (SchemaKind::True, right) => Schema::new(right),
         // Same as above with the sides swapped: `True` on the right keeps the left side.
         (left, SchemaKind::True) => Schema::new(left),
+        // References stay opaque. Equal references deduplicate; every other interaction remains an
+        // exact symbolic conjunction rather than claiming facts about an unresolved target.
+        (SchemaKind::Reference(left), SchemaKind::Reference(right)) if left == right => {
+            Schema::new(SchemaKind::Reference(left))
+        }
         // One side is an `AnyOf` (matches if any branch matches). Push the intersection inside the union:
-        // (A or B) and C = (A and C) or (B and C). Intersect each branch with the other side, then re-union.
-        // e.g.  allOf [
-        //         {"anyOf": [{"const": 1}, {"type": "string"}]},
-        //         {"type": "string"}
-        //       ]  =>  {"type": "string"}
+        // (A or B) and C = (A and C) or (B and C). This happens before opaque ref handling so an `AllOf`
+        // never retains a distributable union that would change shape when emitted and parsed again.
         (SchemaKind::AnyOf(branches), other) | (other, SchemaKind::AnyOf(branches)) => {
             distribute(branches, Schema::new(other), ctx)
         }
+        (
+            left @ (SchemaKind::Not(_)
+            | SchemaKind::AllOf(_)
+            | SchemaKind::OneOf(_)
+            | SchemaKind::Reference(_)),
+            right,
+        )
+        | (
+            left,
+            right @ (SchemaKind::Not(_)
+            | SchemaKind::AllOf(_)
+            | SchemaKind::OneOf(_)
+            | SchemaKind::Reference(_)),
+        ) => opaque_intersection(Schema::new(left), Schema::new(right), ctx),
         // `Const`/`Enum` is a fixed set of allowed values. Keep only those values the other side also accepts.
         (left @ (SchemaKind::Const(_) | SchemaKind::Enum(_)), right) => {
             restrict_members(into_members(left), Schema::new(right), ctx)
@@ -245,6 +261,128 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
     }
 }
 
+fn opaque_intersection(left: Schema, right: Schema, ctx: &CanonicalizationContext) -> Schema {
+    let mut symbolic = Vec::new();
+    let mut structural = Schema::new(SchemaKind::True);
+    let mut stack = vec![left, right];
+    while let Some(schema) = stack.pop() {
+        match schema.into_kind() {
+            SchemaKind::AllOf(inner) => stack.extend(inner),
+            kind @ (SchemaKind::Not(_) | SchemaKind::OneOf(_) | SchemaKind::Reference(_)) => {
+                symbolic.push(Schema::new(kind));
+            }
+            kind @ (SchemaKind::MultiType(_)
+            | SchemaKind::TypedGroup { .. }
+            | SchemaKind::String(_)
+            | SchemaKind::Integer(_)
+            | SchemaKind::Number(_)
+            | SchemaKind::Array(_)
+            | SchemaKind::Object(_)
+            | SchemaKind::Const(_)
+            | SchemaKind::Enum(_)
+            | SchemaKind::AnyOf(_)) => {
+                structural = intersect(structural, Schema::new(kind), ctx);
+                if matches!(structural.kind(), SchemaKind::False) {
+                    return structural;
+                }
+            }
+            // Intersect dispatch consumes both constants before reaching an opaque operand, and an
+            // opaque conjunction holds neither, so flattening one never yields them. A definition
+            // target that cannot be modeled stays `Raw` in `definitions`, and a reference to it
+            // never resolves here, so no combinator ever holds one.
+            SchemaKind::True | SchemaKind::False | SchemaKind::Raw(_) => {
+                unreachable!("an opaque conjunct is neither a constant nor a whole document")
+            }
+        }
+    }
+    debug_assert!(
+        !symbolic.is_empty(),
+        "opaque intersection retains at least one symbolic branch"
+    );
+    match structural.into_kind() {
+        SchemaKind::AnyOf(branches) => union(
+            branches
+                .into_iter()
+                .map(|branch| {
+                    let mut conjuncts = symbolic.clone();
+                    conjuncts.push(branch);
+                    opaque_conjunction(conjuncts)
+                })
+                .collect(),
+            ctx,
+        ),
+        SchemaKind::True => opaque_conjunction(symbolic),
+        kind @ (SchemaKind::MultiType(_)
+        | SchemaKind::TypedGroup { .. }
+        | SchemaKind::String(_)
+        | SchemaKind::Integer(_)
+        | SchemaKind::Number(_)
+        | SchemaKind::Array(_)
+        | SchemaKind::Object(_)
+        | SchemaKind::Const(_)
+        | SchemaKind::Enum(_)
+        | SchemaKind::Not(_)
+        | SchemaKind::AllOf(_)
+        | SchemaKind::OneOf(_)
+        | SchemaKind::Reference(_)
+        | SchemaKind::False
+        | SchemaKind::Raw(_)) => {
+            symbolic.push(Schema::new(kind));
+            opaque_conjunction(symbolic)
+        }
+    }
+}
+
+fn opaque_conjunction(branches: Vec<Schema>) -> Schema {
+    for branch in &branches {
+        if let SchemaKind::Not(inner) = branch.kind() {
+            if branches.iter().any(|candidate| candidate == inner) {
+                return Schema::new(SchemaKind::False);
+            }
+        }
+    }
+    let schema = match AtLeastTwo::new(branches) {
+        Ok(branches) => {
+            debug_assert!(
+                branches.as_slice().iter().all(|branch| !matches!(
+                    branch.kind(),
+                    SchemaKind::True
+                        | SchemaKind::False
+                        | SchemaKind::AllOf(_)
+                        | SchemaKind::AnyOf(_)
+                )),
+                "opaque conjunction branches are flattened, non-trivial, and distributable unions are eliminated"
+            );
+            Schema::new(SchemaKind::AllOf(branches))
+        }
+        Err(mut lone) => lone.pop().unwrap_or_else(|| Schema::new(SchemaKind::True)),
+    };
+    debug_assert!(
+        contains_reference(&schema),
+        "opaque intersection is constructed only across a symbolic reference"
+    );
+    schema
+}
+
+/// Keep exact exclusivity symbolic when its branches contain references, avoiding distributive expansion.
+pub(crate) fn one_of(symbolic_branch: Schema, mut branches: Vec<Schema>) -> Schema {
+    debug_assert!(
+        contains_reference(&symbolic_branch),
+        "oneOf receives a symbolic reference branch"
+    );
+    branches.retain(|branch| !matches!(branch.kind(), SchemaKind::False));
+    if branches.is_empty() {
+        return symbolic_branch;
+    }
+    branches.push(symbolic_branch);
+    branches.sort();
+    debug_assert!(
+        branches.windows(2).all(|pair| pair[0] <= pair[1]),
+        "oneOf branches are sorted without deduplication"
+    );
+    Schema::new(SchemaKind::OneOf(branches))
+}
+
 /// The schema accepting every value that ANY of the `branches` accepts (set union, `anyOf`), in normal form.
 pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Schema {
     // Every branch is sorted into one of these: the JSON types any branch allows, loose values, the
@@ -257,6 +395,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     let mut numbers = NumberLeaves::default();
     let mut arrays = ArrayLeaves::default();
     let mut objects = ObjectLeaves::default();
+    let mut symbolic_branches: Vec<Schema> = Vec::new();
 
     let mut stack = branches;
     while let Some(branch) = stack.pop() {
@@ -294,6 +433,42 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             SchemaKind::Array(leaf) => arrays.insert(leaf.into_inner()),
             // An object leaf accepts a property-count window; collect it with the other object branches.
             SchemaKind::Object(leaf) => objects.insert(leaf.into_inner()),
+            SchemaKind::Not(schema) => {
+                let complement = Schema::new(SchemaKind::Not(schema));
+                if !symbolic_branches
+                    .iter()
+                    .any(|existing| existing == &complement)
+                {
+                    symbolic_branches.push(complement);
+                }
+            }
+            SchemaKind::AllOf(branches) => {
+                let conjunction = Schema::new(SchemaKind::AllOf(branches));
+                if !symbolic_branches
+                    .iter()
+                    .any(|existing| existing == &conjunction)
+                {
+                    symbolic_branches.push(conjunction);
+                }
+            }
+            SchemaKind::OneOf(branches) => {
+                let exclusive = Schema::new(SchemaKind::OneOf(branches));
+                if !symbolic_branches
+                    .iter()
+                    .any(|existing| existing == &exclusive)
+                {
+                    symbolic_branches.push(exclusive);
+                }
+            }
+            SchemaKind::Reference(uri) => {
+                let reference = Schema::new(SchemaKind::Reference(uri));
+                if !symbolic_branches
+                    .iter()
+                    .any(|existing| existing == &reference)
+                {
+                    symbolic_branches.push(reference);
+                }
+            }
             // `Raw` is whole-document and never nested in a combinator, so union never sees it.
             SchemaKind::Raw(_) => {
                 unreachable!("`Raw` is whole-document; combinators never contain it")
@@ -470,7 +645,16 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             "type set lost a member"
         );
         return rerun(
-            widened, members, groups, strings, integers, numbers, arrays, objects, ctx,
+            widened,
+            members,
+            groups,
+            strings,
+            integers,
+            numbers,
+            arrays,
+            objects,
+            symbolic_branches,
+            ctx,
         );
     }
 
@@ -543,6 +727,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             numbers,
             arrays,
             objects,
+            symbolic_branches,
             ctx,
         );
     }
@@ -583,7 +768,16 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
                     .cloned()
                     .collect();
                 return rerun(
-                    widened, remaining, groups, strings, integers, numbers, arrays, objects, ctx,
+                    widened,
+                    remaining,
+                    groups,
+                    strings,
+                    integers,
+                    numbers,
+                    arrays,
+                    objects,
+                    symbolic_branches,
+                    ctx,
                 );
             }
         }
@@ -657,10 +851,23 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         );
         out.push(object_leaf(leaf, ctx));
     }
+    out.extend(symbolic_branches);
     // The loose value set becomes a branch, unless it collapsed to empty.
     if !matches!(value_set.kind(), SchemaKind::False) {
         out.push(value_set);
     }
+
+    // A direct branch absorbs every stricter conjunction containing it: `A or (A and B) = A`.
+    let top_level: ahash::AHashSet<Schema> = out.iter().cloned().collect();
+    out.retain(|branch| {
+        let SchemaKind::AllOf(conjuncts) = branch.kind() else {
+            return true;
+        };
+        !conjuncts
+            .as_slice()
+            .iter()
+            .any(|conjunct| top_level.contains(conjunct))
+    });
 
     // Zero branches accept nothing, so the union is `False`; one branch needs no `anyOf` wrapper.
     match AtLeastTwo::new(out) {
@@ -799,6 +1006,7 @@ fn rerun(
     numbers: NumberLeaves,
     arrays: ArrayLeaves,
     objects: Vec<ObjectLeaf>,
+    symbolic_branches: Vec<Schema>,
     ctx: &CanonicalizationContext,
 ) -> Schema {
     let mut rest: Vec<Schema> = vec![Schema::new(SchemaKind::MultiType(types))];
@@ -813,6 +1021,7 @@ fn rerun(
     rest.extend(numbers.into_iter().map(|leaf| number_leaf(leaf, ctx)));
     rest.extend(arrays.into_iter().map(|leaf| array_leaf(leaf, ctx)));
     rest.extend(objects.into_iter().map(|leaf| object_leaf(leaf, ctx)));
+    rest.extend(symbolic_branches);
     union(rest, ctx)
 }
 
@@ -1410,7 +1619,11 @@ fn into_members(kind: SchemaKind) -> Vec<CanonicalJson> {
         | SchemaKind::Number(_)
         | SchemaKind::Array(_)
         | SchemaKind::Object(_)
+        | SchemaKind::Not(_)
+        | SchemaKind::AllOf(_)
         | SchemaKind::AnyOf(_)
+        | SchemaKind::OneOf(_)
+        | SchemaKind::Reference(_)
         | SchemaKind::True
         | SchemaKind::False
         | SchemaKind::Raw(_)) => unreachable!("value-set kind expected: {other:?}"),
@@ -1525,7 +1738,11 @@ fn restrict_members(
         }
         other @ (SchemaKind::True
         | SchemaKind::False
+        | SchemaKind::Not(_)
+        | SchemaKind::AllOf(_)
         | SchemaKind::AnyOf(_)
+        | SchemaKind::OneOf(_)
+        | SchemaKind::Reference(_)
         | SchemaKind::Raw(_)) => unreachable!("dispatch handles the remaining kinds: {other:?}"),
     }
 }
@@ -2128,9 +2345,8 @@ enum MemberRestriction {
     Partial(Schema),
 }
 
-/// Restrict `member` to the arrays the leaf admits. `Partial` arises only under Draft 4, where an
-/// element schema pins a nested whole number to its integer spelling - a strict subset of the
-/// member's equality class that only a tuple pinned to the member's length can spell.
+/// Restrict `member` to the arrays the leaf admits. `Partial` arises when a nested constraint admits
+/// only part of the member's equality class or when a symbolic `contains` demand is undecidable.
 // e.g.  Draft 4, allOf [
 //         {"enum": [[1]]},
 //         {"items": {"type": "integer"}}
@@ -2153,11 +2369,21 @@ fn restrict_array_member(
     if leaf.unique && has_duplicate_elements(elements) {
         return MemberRestriction::Empty;
     }
+    let contains_symbolic_reference = leaf
+        .contains
+        .iter()
+        .any(|facet| contains_reference(&facet.schema));
     // Dropping the member narrows the schema, so only a definite `contains` rejection drops it.
-    if contains_verdict(&leaf.contains, elements, ctx) == Verdict::Rejects {
-        return MemberRestriction::Empty;
-    }
-    let mut full = true;
+    // An uncheckable format is ignored by validation, while a symbolic reference must survive.
+    let (mut full, contains) = match contains_verdict(&leaf.contains, elements, ctx) {
+        Verdict::Rejects => return MemberRestriction::Empty,
+        Verdict::Unknown if contains_symbolic_reference => (false, leaf.contains.clone()),
+        Verdict::Admits | Verdict::Unknown => (true, Vec::new()),
+    };
+    debug_assert!(
+        contains.is_empty() || contains_symbolic_reference,
+        "only reference-bearing contains facets survive an undecidable finite member"
+    );
     let mut restricted = Vec::with_capacity(elements.len());
     for (index, element) in elements.iter().enumerate() {
         let pin = Schema::new(SchemaKind::Const(CanonicalJson::from_value(element)));
@@ -2177,6 +2403,10 @@ fn restrict_array_member(
         restricted.push(entry);
     }
     if full {
+        debug_assert!(
+            contains.is_empty(),
+            "a fully admitted array has no unresolved contains demand"
+        );
         return MemberRestriction::Full;
     }
     let length = BoundCardinality::from(elements.len() as u64);
@@ -2191,7 +2421,7 @@ fn restrict_array_member(
             unique: false,
             prefix: restricted,
             items: None,
-            contains: Vec::new(),
+            contains,
         },
         ctx,
     ))
@@ -2517,6 +2747,10 @@ fn is_string_domain(kind: &SchemaKind) -> bool {
             .as_slice()
             .iter()
             .all(|branch| is_string_domain(branch.kind())),
+        SchemaKind::AllOf(branches) => branches
+            .as_slice()
+            .iter()
+            .any(|branch| is_string_domain(branch.kind())),
         // A typed group exists only under Draft 4, which has no `propertyNames`; grouping it here
         // keeps the answer conservative, and narrowing is the identity on any string-domain schema.
         SchemaKind::True
@@ -2525,6 +2759,9 @@ fn is_string_domain(kind: &SchemaKind) -> bool {
         | SchemaKind::Number(_)
         | SchemaKind::Array(_)
         | SchemaKind::Object(_)
+        | SchemaKind::Not(_)
+        | SchemaKind::OneOf(_)
+        | SchemaKind::Reference(_)
         | SchemaKind::Raw(_) => false,
     }
 }
@@ -2559,10 +2796,19 @@ fn admits_key(names: &Schema, key: &str, ctx: &CanonicalizationContext) -> Verdi
                 .iter()
                 .map(|branch| admits_key(branch, key, ctx)),
         ),
-        // Normalization stores a key constraint only as a string value set, a string leaf, or a
-        // union of those: everything else was narrowed or folded away.
-        SchemaKind::MultiType(_)
-        | SchemaKind::TypedGroup { .. }
+        SchemaKind::AllOf(branches) => Verdict::all(
+            branches
+                .as_slice()
+                .iter()
+                .map(|branch| admits_key(branch, key, ctx)),
+        ),
+        SchemaKind::Not(_) | SchemaKind::OneOf(_) | SchemaKind::Reference(_) => Verdict::Unknown,
+        // An opaque conjunct keeps the narrowing intersection from folding into a string leaf, so
+        // the type set it introduced stays a branch of its own.
+        SchemaKind::MultiType(set) => Verdict::from_bool(set.contains(JsonType::String)),
+        // Normalization stores the rest of a key constraint as a string value set, a string leaf,
+        // or a union of those: everything else was narrowed or folded away.
+        SchemaKind::TypedGroup { .. }
         | SchemaKind::True
         | SchemaKind::False
         | SchemaKind::Integer(_)
@@ -2577,6 +2823,9 @@ fn admits_key(names: &Schema, key: &str, ctx: &CanonicalizationContext) -> Verdi
 
 /// Whether `schema` admits every value in `value`'s equality class.
 fn admits_value(schema: &Schema, value: &Value, ctx: &CanonicalizationContext) -> Verdict {
+    if contains_reference(schema) {
+        return Verdict::Unknown;
+    }
     let member = Schema::new(SchemaKind::Const(CanonicalJson::from_value(value)));
     // Non-`False` is not enough: under Draft 4 the intersection can pin a nested whole number to
     // its integer spelling (a typed group), a strict subset of the member's equality class - the
@@ -2590,6 +2839,81 @@ fn admits_value(schema: &Schema, value: &Value, ctx: &CanonicalizationContext) -
         return Verdict::Unknown;
     }
     Verdict::Admits
+}
+
+pub(crate) fn contains_reference(schema: &Schema) -> bool {
+    match schema.kind() {
+        SchemaKind::Reference(_) => true,
+        SchemaKind::Not(inner) | SchemaKind::TypedGroup { body: inner, .. } => {
+            contains_reference(inner)
+        }
+        SchemaKind::AllOf(branches) | SchemaKind::AnyOf(branches) => {
+            for branch in branches.as_slice() {
+                if contains_reference(branch) {
+                    return true;
+                }
+            }
+            false
+        }
+        SchemaKind::OneOf(branches) => {
+            for branch in branches {
+                if contains_reference(branch) {
+                    return true;
+                }
+            }
+            false
+        }
+        SchemaKind::Array(leaf) => {
+            let leaf = leaf.get();
+            for schema in &leaf.prefix {
+                if contains_reference(schema) {
+                    return true;
+                }
+            }
+            if let Some(schema) = &leaf.items {
+                if contains_reference(schema) {
+                    return true;
+                }
+            }
+            for facet in &leaf.contains {
+                if contains_reference(&facet.schema) {
+                    return true;
+                }
+            }
+            false
+        }
+        SchemaKind::Object(leaf) => {
+            let leaf = leaf.get();
+            if let Some(schema) = &leaf.property_names {
+                if contains_reference(schema) {
+                    return true;
+                }
+            }
+            for schema in leaf.properties.values() {
+                if contains_reference(schema) {
+                    return true;
+                }
+            }
+            for schema in leaf.pattern_properties.values() {
+                if contains_reference(schema) {
+                    return true;
+                }
+            }
+            if let Some(schema) = &leaf.additional {
+                return contains_reference(schema);
+            }
+            false
+        }
+        SchemaKind::MultiType(_)
+        | SchemaKind::String(_)
+        | SchemaKind::Integer(_)
+        | SchemaKind::Number(_)
+        | SchemaKind::Const(_)
+        | SchemaKind::Enum(_)
+        | SchemaKind::True
+        | SchemaKind::False
+        | SchemaKind::Raw(_) => false,
+    }
 }
 
 /// Whether `schema` asserts a format, media type, or encoding this draft has no checker for.
@@ -2615,6 +2939,11 @@ fn has_uncheckable_string_facet(schema: &Schema, ctx: &CanonicalizationContext) 
             .as_slice()
             .iter()
             .any(|branch| has_uncheckable_string_facet(branch, ctx)),
+        // A conjunction and a complement both carry a reference, and the only caller declines a
+        // schema holding one before asking about its facets.
+        SchemaKind::AllOf(_) | SchemaKind::OneOf(_) | SchemaKind::Not(_) => {
+            unreachable!("a symbolic branch never reaches the facet scan")
+        }
         SchemaKind::Object(leaf) => leaf
             .get()
             .property_names
@@ -2637,6 +2966,7 @@ fn has_uncheckable_string_facet(schema: &Schema, ctx: &CanonicalizationContext) 
         | SchemaKind::Number(_)
         | SchemaKind::Const(_)
         | SchemaKind::Enum(_)
+        | SchemaKind::Reference(_)
         | SchemaKind::True
         | SchemaKind::False
         | SchemaKind::Raw(_) => false,
@@ -2737,15 +3067,17 @@ fn restrict_object_member(
     {
         return MemberRestriction::Empty;
     }
-    // Returning `Empty` drops the member, which narrows the schema, so only a definite rejection
-    // rules a key out.
-    if !leaf.property_names.as_ref().is_none_or(|names| {
-        map.keys()
-            .all(|key| !matches!(admits_key(names, key, ctx), Verdict::Rejects))
-    }) {
-        return MemberRestriction::Empty;
+    let mut restricted_property_names = None;
+    if let Some(names) = &leaf.property_names {
+        for key in map.keys() {
+            match admits_key(names, key, ctx) {
+                Verdict::Admits => {}
+                Verdict::Rejects => return MemberRestriction::Empty,
+                Verdict::Unknown => restricted_property_names = Some(names.clone()),
+            }
+        }
     }
-    let mut full = true;
+    let mut full = restricted_property_names.is_none();
     let mut restricted: BTreeMap<Arc<str>, Schema> = BTreeMap::new();
     for (key, value) in map {
         let pin = Schema::new(SchemaKind::Const(CanonicalJson::from_value(value)));
@@ -2774,7 +3106,7 @@ fn restrict_object_member(
                 maximum: Some(BoundCardinality::from(map.len() as u64)),
             },
             required: restricted.keys().cloned().collect(),
-            property_names: None,
+            property_names: restricted_property_names,
             properties: restricted,
             pattern_properties: BTreeMap::new(),
             additional: None,

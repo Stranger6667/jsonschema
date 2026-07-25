@@ -83,6 +83,38 @@ impl PyCanonicalSchema {
                 },
             )?
             .into_any(),
+            CanonicalView::OneOf(branches) => Py::new(
+                py,
+                OneOfView {
+                    branches: branches
+                        .into_iter()
+                        .map(|branch| {
+                            Ok(Py::new(py, PyCanonicalSchema { inner: branch })?.into_any())
+                        })
+                        .collect::<PyResult<_>>()?,
+                },
+            )?
+            .into_any(),
+            CanonicalView::AllOf(branches) => Py::new(
+                py,
+                AllOfView {
+                    branches: branches
+                        .into_iter()
+                        .map(|branch| {
+                            Ok(Py::new(py, PyCanonicalSchema { inner: branch })?.into_any())
+                        })
+                        .collect::<PyResult<_>>()?,
+                },
+            )?
+            .into_any(),
+            CanonicalView::Not(schema) => Py::new(
+                py,
+                NotView {
+                    schema: Py::new(py, PyCanonicalSchema { inner: *schema })?,
+                },
+            )?
+            .into_any(),
+            CanonicalView::Reference(uri) => Py::new(py, ReferenceView { uri })?.into_any(),
             CanonicalView::String(view) => Py::new(
                 py,
                 StringView {
@@ -261,7 +293,7 @@ impl PyCanonicalSchema {
         })
     }
 
-    /// Map of reference uri -> canonical target for every reference reachable from this schema.
+    /// Map of reference URI -> canonical target for every known target reachable from this schema.
     fn definitions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
         let dict = pyo3::types::PyDict::new(py);
         for (uri, target) in self.inner.definitions() {
@@ -564,6 +596,66 @@ impl AnyOfView {
     }
 }
 
+/// A value matches iff exactly one branch matches.
+#[pyclass(frozen, name = "OneOfView", module = "jsonschema_rs.canonical")]
+pub(crate) struct OneOfView {
+    #[pyo3(get)]
+    branches: Vec<Py<PyAny>>,
+}
+
+#[pymethods]
+impl OneOfView {
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("branches",)
+    }
+}
+
+/// A value matches iff every branch matches.
+#[pyclass(frozen, name = "AllOfView", module = "jsonschema_rs.canonical")]
+pub(crate) struct AllOfView {
+    #[pyo3(get)]
+    branches: Vec<Py<PyAny>>,
+}
+
+#[pymethods]
+impl AllOfView {
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("branches",)
+    }
+}
+
+/// The complement of `schema`, preserving a symbolic ref under ``not``, conditionals, and ``oneOf``.
+#[pyclass(frozen, name = "NotView", module = "jsonschema_rs.canonical")]
+pub(crate) struct NotView {
+    #[pyo3(get)]
+    schema: Py<PyCanonicalSchema>,
+}
+
+#[pymethods]
+impl NotView {
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("schema",)
+    }
+}
+
+/// A symbolic JSON Schema reference.
+#[pyclass(frozen, name = "ReferenceView", module = "jsonschema_rs.canonical")]
+pub(crate) struct ReferenceView {
+    #[pyo3(get)]
+    uri: String,
+}
+
+#[pymethods]
+impl ReferenceView {
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("uri",)
+    }
+}
+
 /// Exactly one admitted value.
 #[pyclass(frozen, name = "ConstView", module = "jsonschema_rs.canonical")]
 pub(crate) struct ConstView {
@@ -671,7 +763,11 @@ pub(crate) fn init_module(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyRes
     canonical_module.add_class::<ContainsView>()?;
     canonical_module.add_class::<ObjectView>()?;
     canonical_module.add_class::<NumberView>()?;
+    canonical_module.add_class::<NotView>()?;
+    canonical_module.add_class::<AllOfView>()?;
     canonical_module.add_class::<AnyOfView>()?;
+    canonical_module.add_class::<OneOfView>()?;
+    canonical_module.add_class::<ReferenceView>()?;
     canonical_module.add_class::<ConstView>()?;
     canonical_module.add_class::<EnumView>()?;
     canonical_module.add_class::<RawView>()?;

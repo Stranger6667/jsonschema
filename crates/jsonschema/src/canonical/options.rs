@@ -13,7 +13,9 @@ use crate::{
         schema::CanonicalSchema,
         CanonicalizationError, DefinitionMap,
     },
-    compiler::{formats_are_assertions_by_default, validate_schema},
+    compiler::{
+        formats_are_assertions_by_default, normalize_base_uri, resolve_base_uri, validate_schema,
+    },
     options::{PatternEngineOptions, PatternOptions},
 };
 
@@ -33,7 +35,7 @@ pub struct CanonicalizeOptions<'r> {
 }
 
 impl<'r> CanonicalizeOptions<'r> {
-    /// Use a pre-built [`Registry`] for external `$ref` resolution.
+    /// Use a pre-built [`Registry`] for dialect and `$ref` resolution.
     #[must_use]
     pub fn with_registry(mut self, registry: &'r Registry<'r>) -> Self {
         self.registry = Some(registry);
@@ -97,20 +99,46 @@ fn build(
         }
     }
     let draft = detect_draft(value, draft, registry)?;
+    if draft == Draft::Unknown {
+        return Ok(CanonicalSchema::new(
+            Schema::new(SchemaKind::Raw(RawJson::new(value.clone()))),
+            draft,
+            pattern_options,
+            validate_formats.unwrap_or(false),
+            Arc::new(DefinitionMap::new()),
+        ));
+    }
     let validate_formats =
         validate_formats.unwrap_or_else(|| formats_are_assertions_by_default(draft));
     validate_schema(draft, value)?;
+    let resource = draft.create_resource_ref(value);
+    let base_uri = resolve_base_uri(None, resource.id())?;
+    let registry = match registry {
+        Some(registry) => registry
+            .add(base_uri.as_str(), resource)?
+            .draft(draft)
+            .prepare()?,
+        None => Registry::new()
+            .add(base_uri.as_str(), resource)?
+            .draft(draft)
+            .prepare()?,
+    };
+    let base_uri = normalize_base_uri(&registry, &base_uri);
+    let resolver = registry.resolver(base_uri);
     let context = CanonicalizationContext::new(draft, pattern_options, validate_formats);
-    let inner = match parse::parse(value, &context)? {
-        Some(schema) => schema,
-        None => Schema::new(SchemaKind::Raw(RawJson::new(value.clone()))),
+    let (inner, definitions) = match parse::parse(value, &context, &resolver)? {
+        Some(parsed) => (parsed.root, Arc::new(parsed.definitions)),
+        None => (
+            Schema::new(SchemaKind::Raw(RawJson::new(value.clone()))),
+            Arc::new(DefinitionMap::new()),
+        ),
     };
     Ok(CanonicalSchema::new(
         inner,
         draft,
         pattern_options,
         validate_formats,
-        Arc::new(DefinitionMap::new()),
+        definitions,
     ))
 }
 
@@ -129,5 +157,5 @@ fn detect_draft<'r>(
     }
     options
         .draft_for(value)
-        .map_err(|error| CanonicalizationError::InvalidSchemaType(error.to_string()))
+        .map_err(CanonicalizationError::from)
 }

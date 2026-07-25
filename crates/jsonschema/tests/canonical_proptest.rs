@@ -331,6 +331,15 @@ fn draw_leaf(tc: &TestCase) -> Value {
             "contentMediaType": "application/json",
             "contentEncoding": "base64"
         }),
+        63 => {
+            let (first, second) = (draw_type(tc), draw_type(tc));
+            let types = if first == second {
+                vec![first]
+            } else {
+                vec![first, second]
+            };
+            json!({ "type": types })
+        }
         _ => json!({ "type": ["string", "integer"] }),
     }
 }
@@ -346,12 +355,65 @@ fn draw_keys(tc: &TestCase) -> Vec<&'static str> {
     keys
 }
 
-fn draw_schema(tc: &TestCase, depth: u32) -> Value {
+fn draw_reference_uri(tc: &TestCase) -> &'static str {
+    tc.draw(gs::sampled_from(vec![
+        "#/$defs/null_target",
+        "#/$defs/integer_target",
+        "#/$defs/string_target",
+        "#/$defs/raw_target",
+        "#/$defs/alias_target",
+        "#/$defs/recursive_target",
+    ]))
+}
+
+fn draw_reference_leaf(tc: &TestCase) -> Value {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(12)) {
+        0 => json!({ "$ref": draw_reference_uri(tc) }),
+        1 => json!({ "not": { "$ref": draw_reference_uri(tc) } }),
+        2 => json!({
+            "allOf": [
+                { "$ref": "#/$defs/integer_target" },
+                { "$ref": "#/$defs/string_target" }
+            ]
+        }),
+        3 => json!({
+            "oneOf": [
+                { "$ref": "#/$defs/integer_target" },
+                { "$ref": "#/$defs/string_target" }
+            ]
+        }),
+        4 => json!({
+            "if": { "$ref": "#/$defs/integer_target" },
+            "then": { "$ref": "#/$defs/string_target" }
+        }),
+        5 => json!({ "type": "array", "items": { "$ref": draw_reference_uri(tc) } }),
+        6 => json!({ "type": "array", "contains": { "$ref": draw_reference_uri(tc) } }),
+        7 => json!({ "type": "object", "properties": { "a": { "$ref": draw_reference_uri(tc) } } }),
+        8 => {
+            json!({ "type": "object", "additionalProperties": { "$ref": draw_reference_uri(tc) } })
+        }
+        9 => {
+            json!({ "type": "object", "patternProperties": { "^a": { "$ref": draw_reference_uri(tc) } } })
+        }
+        10 => json!({ "type": "object", "propertyNames": { "$ref": "#/$defs/string_target" } }),
+        11 => json!({ "dependentSchemas": { "a": { "$ref": draw_reference_uri(tc) } } }),
+        12 => json!({ "not": { "$ref": "#/$defs/recursive_target" } }),
+        _ => json!({ "$ref": draw_reference_uri(tc), "type": draw_type(tc) }),
+    }
+}
+
+fn draw_schema_node(tc: &TestCase, depth: u32) -> Value {
     if depth == 0 || tc.draw(gs::booleans()) {
-        return draw_leaf(tc);
+        return if tc.draw(gs::integers::<u8>().min_value(0).max_value(7)) == 0 {
+            draw_reference_leaf(tc)
+        } else {
+            draw_leaf(tc)
+        };
     }
     let count = tc.draw(gs::integers::<usize>().min_value(1).max_value(2));
-    let branches: Vec<Value> = (0..count).map(|_| draw_schema(tc, depth - 1)).collect();
+    let branches: Vec<Value> = (0..count)
+        .map(|_| draw_schema_node(tc, depth - 1))
+        .collect();
     if tc.draw(gs::booleans()) {
         json!({ "allOf": branches })
     } else {
@@ -359,12 +421,51 @@ fn draw_schema(tc: &TestCase, depth: u32) -> Value {
     }
 }
 
+fn draw_schema(tc: &TestCase, depth: u32) -> Value {
+    let mut schema = draw_schema_node(tc, depth);
+    if let Value::Object(object) = &mut schema {
+        object.insert(
+            "$defs".into(),
+            json!({
+                "null_target": { "type": "null" },
+                "integer_target": { "type": "integer", "minimum": -2 },
+                "string_target": { "type": "string", "minLength": 1 },
+                "raw_target": { "unevaluatedProperties": false },
+                "alias_target": { "$ref": "#/$defs/integer_target" },
+                "recursive_target": {
+                    "type": "object",
+                    "properties": { "a": { "$ref": "#/$defs/recursive_target" } }
+                }
+            }),
+        );
+    }
+    schema
+}
+
+fn split_root_definitions(schema: &Value) -> (Value, Option<Value>) {
+    let mut schema = schema.clone();
+    let definitions = schema
+        .as_object_mut()
+        .and_then(|object| object.remove("$defs"));
+    (schema, definitions)
+}
+
+fn attach_root_definitions(mut schema: Value, definitions: Option<Value>) -> Value {
+    if let Some(definitions) = definitions {
+        schema
+            .as_object_mut()
+            .expect("a transformed schema with root definitions is an object")
+            .insert("$defs".into(), definitions);
+    }
+    schema
+}
+
 // Meta-valid keywords the canonicaliser does not model; a document carrying one stays `Raw`.
 fn draw_unmodeled_leaf(tc: &TestCase) -> Value {
     match tc.draw(gs::integers::<u8>().min_value(0).max_value(4)) {
         0 => json!({ "unevaluatedProperties": { "type": "integer" } }),
         1 => json!({ "not": { "pattern": "^a" } }),
-        2 => json!({ "$defs": { "a": { "type": "null" } }, "$ref": "#/$defs/a" }),
+        2 => json!({ "unevaluatedItems": { "type": "null" } }),
         3 => json!({ "format": "email" }),
         _ => json!({ "oneOf": [{ "type": "string" }, { "minLength": 1 }] }),
     }
@@ -452,7 +553,8 @@ fn canonical_form_preserves_validation(tc: TestCase) {
 fn double_negation_converges(tc: TestCase) {
     let draft = draw_draft(&tc);
     let schema = draw_schema(&tc, 2);
-    let doubled = json!({ "not": { "not": schema } });
+    let (schema_body, definitions) = split_root_definitions(&schema);
+    let doubled = attach_root_definitions(json!({ "not": { "not": schema_body } }), definitions);
     let Some(via_double) = canonicalize(&doubled, draft) else {
         return;
     };
@@ -644,7 +746,8 @@ fn a_redundant_divisor_does_not_change_the_form(tc: TestCase) {
 // Equality-preserving syntactic rewrites: each keeps the accepted value set unchanged, so the
 // canonical forms must be IR-equal.
 fn rewrite_schema(tc: &TestCase, schema: &Value) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(4)) {
+    let (schema, definitions) = split_root_definitions(schema);
+    let rewritten = match tc.draw(gs::integers::<u8>().min_value(0).max_value(4)) {
         0 => json!({ "allOf": [schema] }),
         // The empty conjunct says nothing; unlike `true` it is meta-valid in every draft.
         1 => json!({ "allOf": [schema, {}] }),
@@ -689,7 +792,8 @@ fn rewrite_schema(tc: &TestCase, schema: &Value) -> Value {
             }),
             _ => json!({ "allOf": [schema] }),
         },
-    }
+    };
+    attach_root_definitions(rewritten, definitions)
 }
 
 #[hegel::test(test_cases = 5_000)]
@@ -729,7 +833,8 @@ fn negation_complements_the_validator_verdict(tc: TestCase) {
     let draft = draw_draft(&tc);
     let validate_formats = tc.draw(gs::booleans());
     let schema = draw_schema(&tc, 2);
-    let negated = json!({ "not": schema });
+    let (schema_body, definitions) = split_root_definitions(&schema);
+    let negated = attach_root_definitions(json!({ "not": schema_body }), definitions);
     let Some(emitted) = canonicalize_with_formats(&negated, draft, validate_formats) else {
         return;
     };

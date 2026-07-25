@@ -23,7 +23,7 @@ impl CanonicalKind {
     }
 }
 
-/// A canonical node: one arm per IR variant. Constructs beyond value sets surface as `Raw`.
+/// A canonical node: one arm per IR variant.
 ///
 /// Exhaustive on purpose: a new variant must break every consumer that maps views, the bindings
 /// included, rather than reaching a runtime fallback.
@@ -45,8 +45,15 @@ pub enum CanonicalView {
     Object(ObjectView),
     Const(Value),
     Enum(Vec<Value>),
+    /// The exact complement of an opaque schema, used when `not`, a conditional, or `oneOf` negates a symbolic ref.
+    Not(Box<CanonicalSchema>),
+    /// A value matches iff every opaque branch matches.
+    AllOf(Vec<CanonicalSchema>),
     /// A value matches iff at least one branch matches.
     AnyOf(Vec<CanonicalSchema>),
+    /// A value matches iff exactly one branch matches.
+    OneOf(Vec<CanonicalSchema>),
+    Reference(String),
     True,
     False,
     Raw(Value),
@@ -193,6 +200,14 @@ impl CanonicalSchema {
                     .map(CanonicalJson::to_value)
                     .collect(),
             ),
+            SchemaKind::Not(schema) => CanonicalView::Not(Box::new(self.wrap_child(schema))),
+            SchemaKind::AllOf(branches) => CanonicalView::AllOf(
+                branches
+                    .as_slice()
+                    .iter()
+                    .map(|branch| self.wrap_child(branch))
+                    .collect(),
+            ),
             SchemaKind::AnyOf(branches) => CanonicalView::AnyOf(
                 branches
                     .as_slice()
@@ -200,6 +215,13 @@ impl CanonicalSchema {
                     .map(|branch| self.wrap_child(branch))
                     .collect(),
             ),
+            SchemaKind::OneOf(branches) => CanonicalView::OneOf(
+                branches
+                    .iter()
+                    .map(|branch| self.wrap_child(branch))
+                    .collect(),
+            ),
+            SchemaKind::Reference(uri) => CanonicalView::Reference(uri.to_string()),
             SchemaKind::True => CanonicalView::True,
             SchemaKind::False => CanonicalView::False,
             SchemaKind::Raw(_) => CanonicalView::Raw(self.to_json_schema()),

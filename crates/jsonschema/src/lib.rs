@@ -1554,8 +1554,8 @@ pub async fn async_validator_map_for(
 ///
 /// # Errors
 ///
-/// Returns [`CanonicalizationError`] when the input is not a valid JSON Schema document or cannot be represented in
-/// canonical form.
+/// Returns [`CanonicalizationError`] when the input is not a valid JSON Schema document or a reference cannot be resolved.
+/// Valid constructs outside the modeled subset instead produce an opaque `Raw` form.
 pub fn canonicalize(value: &Value) -> Result<canonical::CanonicalSchema, CanonicalizationError> {
     canonical::options().canonicalize(value)
 }

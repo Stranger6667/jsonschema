@@ -191,8 +191,16 @@ pub(crate) enum SchemaKind {
     Const(CanonicalJson),
     /// A sorted, deduplicated finite set of admitted values.
     Enum(AtLeastTwo<CanonicalJson>),
+    /// The exact complement of an opaque schema, preserving refs under `not`, conditionals, and `oneOf`.
+    Not(Schema),
+    /// A value matches iff every opaque branch matches.
+    AllOf(AtLeastTwo<Schema>),
     /// A value matches iff at least one of the sorted, mutually unmergeable branches matches.
     AnyOf(AtLeastTwo<Schema>),
+    /// A value matches iff exactly one branch matches; sorted branches retain duplicates because multiplicity is semantic.
+    OneOf(Vec<Schema>),
+    /// A static `$ref` kept symbolic. Its target, when known, lives in `CanonicalSchema::definitions`.
+    Reference(Arc<str>),
     /// Matches any value.
     True,
     /// Matches no value.
@@ -657,7 +665,11 @@ impl SchemaKind {
             | SchemaKind::Number(_)
             | SchemaKind::Array(_)
             | SchemaKind::Object(_)
+            | SchemaKind::Not(_)
+            | SchemaKind::AllOf(_)
             | SchemaKind::AnyOf(_)
+            | SchemaKind::OneOf(_)
+            | SchemaKind::Reference(_)
             | SchemaKind::True
             | SchemaKind::False
             | SchemaKind::Raw(_) => None,

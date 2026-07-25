@@ -1,0 +1,1057 @@
+[
+  {
+    "description": "same-document ref keeps a canonical reachable definition",
+    "schema": {
+      "$ref": "#/$defs/user",
+      "$defs": {
+        "user": {
+          "allOf": [
+            {"type": "integer"},
+            {"minimum": 0}
+          ]
+        }
+      }
+    },
+    "kind": "reference",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/$defs/user",
+      "$defs": {
+        "user": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "tests": [
+      {"data": -1, "valid": false},
+      {"data": 0, "valid": true},
+      {"data": "0", "valid": false}
+    ]
+  },
+  {
+    "description": "an arbitrary pointer resolves through the registry",
+    "schema": {
+      "$id": "https://example.com/root",
+      "$ref": "#/$defs/container/properties/name",
+      "$defs": {
+        "container": {
+          "properties": {
+            "name": {"type": "string"}
+          }
+        }
+      }
+    },
+    "kind": "reference",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Fexample.com%252Froot%2523%252F%2524defs%252Fcontainer%252Fproperties%252Fname",
+      "$defs": {
+        "urn:jsonschema:canonical:https%3A%2F%2Fexample.com%2Froot%23%2F%24defs%2Fcontainer%2Fproperties%2Fname": {
+          "type": "string"
+        }
+      }
+    },
+    "tests": [
+      {"data": "value", "valid": true},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "a boolean pointer target is emitted as a local definition",
+    "schema": {
+      "$id": "https://example.com/root",
+      "$ref": "#/$defs/container/oneOf/0",
+      "$defs": {
+        "container": {
+          "oneOf": [
+            false,
+            {"type": "string"}
+          ]
+        }
+      }
+    },
+    "kind": "reference",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Fexample.com%252Froot%2523%252F%2524defs%252Fcontainer%252FoneOf%252F0",
+      "$defs": {
+        "urn:jsonschema:canonical:https%3A%2F%2Fexample.com%2Froot%23%2F%24defs%2Fcontainer%2FoneOf%2F0": false
+      }
+    },
+    "tests": [
+      {"data": null, "valid": false},
+      {"data": "value", "valid": false}
+    ]
+  },
+  {
+    "description": "an anchor resolves through the registry",
+    "schema": {
+      "$id": "https://example.com/root",
+      "$ref": "#name",
+      "$defs": {
+        "target": {
+          "$anchor": "name",
+          "type": "string"
+        }
+      }
+    },
+    "kind": "reference",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Fexample.com%252Froot%2523name",
+      "$defs": {
+        "urn:jsonschema:canonical:https%3A%2F%2Fexample.com%2Froot%23name": {
+          "type": "string"
+        }
+      }
+    },
+    "tests": [
+      {"data": "value", "valid": true},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "a reference crosses a nested identifier through the registry",
+    "schema": {
+      "$id": "https://example.com/root",
+      "$ref": "nested#value",
+      "$defs": {
+        "target": {
+          "$id": "nested",
+          "$anchor": "value",
+          "type": "integer"
+        }
+      }
+    },
+    "kind": "reference",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Fexample.com%252Fnested%2523value",
+      "$defs": {
+        "urn:jsonschema:canonical:https%3A%2F%2Fexample.com%2Fnested%23value": {
+          "type": "integer"
+        }
+      }
+    },
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": "value", "valid": false}
+    ]
+  },
+  {
+    "description": "identical local pointers in distinct resource scopes remain distinct",
+    "schema": {
+      "$id": "https://example.com/root",
+      "anyOf": [
+        {"$ref": "#/$defs/value"},
+        {"$ref": "nested"}
+      ],
+      "$defs": {
+        "value": {"type": "integer"},
+        "resource": {
+          "$id": "nested",
+          "$ref": "#/$defs/value",
+          "$defs": {
+            "value": {"type": "string"}
+          }
+        }
+      }
+    },
+    "kind": "any_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"$ref": "#/$defs/value"},
+        {"$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Fexample.com%252Fnested"}
+      ],
+      "$defs": {
+        "value": {"type": "integer"},
+        "urn:jsonschema:canonical:https%3A%2F%2Fexample.com%2Fnested": {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Fexample.com%252Fnested%2523%252F%2524defs%252Fvalue"
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Fexample.com%2Fnested%23%2F%24defs%2Fvalue": {
+          "type": "string"
+        }
+      }
+    },
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": "value", "valid": true},
+      {"data": false, "valid": false}
+    ]
+  },
+  {
+    "description": "recursive definition stays symbolic",
+    "schema": {
+      "$ref": "#/$defs/node",
+      "$defs": {
+        "node": {
+          "type": "object",
+          "properties": {
+            "next": {"$ref": "#/$defs/node"}
+          }
+        }
+      }
+    },
+    "kind": "reference",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/$defs/node",
+      "$defs": {
+        "node": {
+          "type": "object",
+          "properties": {
+            "next": {"$ref": "#/$defs/node"}
+          }
+        }
+      }
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"next": {"next": {}}}, "valid": true},
+      {"data": {"next": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "definitions spelling stays aligned with its reference pointer",
+    "schema": {
+      "$ref": "#/definitions/value",
+      "definitions": {
+        "value": {"type": "string", "minLength": 2}
+      }
+    },
+    "kind": "reference",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/definitions/value",
+      "definitions": {
+        "value": {"type": "string", "minLength": 2}
+      }
+    },
+    "tests": [
+      {"data": "ab", "valid": true},
+      {"data": "a", "valid": false},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "definition name round-trips pointer and URI escaping",
+    "schema": {
+      "$ref": "#/$defs/a~1b%20c",
+      "$defs": {
+        "a/b c": {"const": 1}
+      }
+    },
+    "kind": "reference",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/$defs/a~1b%20c",
+      "$defs": {
+        "a/b c": {"const": 1}
+      }
+    },
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": 2, "valid": false}
+    ]
+  },
+  {
+    "description": "unresolved external ref is a canonicalization error",
+    "schema": {"$ref": "other.json"},
+    "error": "ReferenceResolution"
+  },
+  {
+    "description": "unsupported reachable target keeps the whole document raw",
+    "schema": {
+      "$ref": "#/$defs/value",
+      "$defs": {
+        "value": {"unevaluatedProperties": false}
+      }
+    },
+    "kind": "raw",
+    "expected": {
+      "$ref": "#/$defs/value",
+      "$defs": {
+        "value": {"unevaluatedProperties": false}
+      }
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"value": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "different references intersect as an opaque conjunction",
+    "schema": {
+      "allOf": [
+        {"$ref": "#/$defs/left"},
+        {"$ref": "#/$defs/right"}
+      ],
+      "$defs": {
+        "left": {"type": "integer"},
+        "right": {"type": "string"}
+      }
+    },
+    "kind": "all_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {"$ref": "#/$defs/left"},
+        {"$ref": "#/$defs/right"}
+      ],
+      "$defs": {
+        "left": {"type": "integer"},
+        "right": {"type": "string"}
+      }
+    },
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": "x", "valid": false}
+    ]
+  },
+  {
+    "description": "an opaque reference conjunction distributes across a symbolic union",
+    "schema": {
+      "allOf": [
+        {
+          "if": {"$ref": "#/$defs/integer"},
+          "then": {"$ref": "#/$defs/string"}
+        },
+        {
+          "$ref": "#/$defs/null",
+          "type": "null"
+        }
+      ],
+      "$defs": {
+        "integer": {"type": "integer"},
+        "string": {"type": "string"},
+        "null": {"type": "null"}
+      }
+    },
+    "kind": "any_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "allOf": [
+            {"type": "null"},
+            {"not": {"$ref": "#/$defs/integer"}},
+            {"$ref": "#/$defs/null"}
+          ]
+        },
+        {
+          "allOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/null"},
+            {"$ref": "#/$defs/string"}
+          ]
+        }
+      ],
+      "$defs": {
+        "integer": {"type": "integer"},
+        "null": {"type": "null"},
+        "string": {"type": "string"}
+      }
+    },
+    "tests": [
+      {"data": null, "valid": true},
+      {"data": 1, "valid": false},
+      {"data": "x", "valid": false}
+    ]
+  },
+  {
+    "description": "not of a reference stays as an opaque complement",
+    "schema": {
+      "not": {"$ref": "#/$defs/value"},
+      "$defs": {
+        "value": {"const": 1}
+      }
+    },
+    "kind": "not",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {"$ref": "#/$defs/value"},
+      "$defs": {
+        "value": {"const": 1}
+      }
+    },
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": 2, "valid": true}
+    ]
+  },
+  {
+    "description": "double negation of a reference union returns the union",
+    "schema": {
+      "not": {
+        "not": {
+          "anyOf": [
+            {"$ref": "#/$defs/one"},
+            {"$ref": "#/$defs/two"}
+          ]
+        }
+      },
+      "$defs": {
+        "one": {"const": 1},
+        "two": {"const": 2}
+      }
+    },
+    "kind": "any_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"$ref": "#/$defs/one"},
+        {"$ref": "#/$defs/two"}
+      ],
+      "$defs": {
+        "one": {"const": 1},
+        "two": {"const": 2}
+      }
+    },
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": 2, "valid": true},
+      {"data": 3, "valid": false}
+    ]
+  },
+  {
+    "description": "a direct reference absorbs conjunctions introduced by double negation",
+    "draft": "draft4",
+    "schema": {
+      "not": {
+        "not": {
+          "anyOf": [
+            {"$ref": "#/definitions/null"},
+            {
+              "allOf": [
+                {"$ref": "#/definitions/integer"},
+                {"$ref": "#/definitions/string"}
+              ]
+            }
+          ]
+        }
+      },
+      "definitions": {
+        "integer": {"type": "integer"},
+        "null": {"type": "null"},
+        "string": {"type": "string"}
+      }
+    },
+    "kind": "any_of",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {
+          "allOf": [
+            {"$ref": "#/definitions/integer"},
+            {"$ref": "#/definitions/string"}
+          ]
+        },
+        {"$ref": "#/definitions/null"}
+      ],
+      "definitions": {
+        "integer": {"type": "integer"},
+        "null": {"type": "null"},
+        "string": {"type": "string"}
+      }
+    },
+    "tests": [
+      {"data": null, "valid": true},
+      {"data": 1, "valid": false},
+      {"data": "x", "valid": false}
+    ]
+  },
+  {
+    "description": "syntactic double negation restores a reference conjunction without subset absorption",
+    "draft": "draft4",
+    "schema": {
+      "not": {
+        "not": {
+          "anyOf": [
+            {
+              "allOf": [
+                {"$ref": "#/definitions/integer"},
+                {"$ref": "#/definitions/string"}
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "a": {"type": "string"}
+              }
+            }
+          ]
+        }
+      },
+      "definitions": {
+        "integer": {"type": "integer"},
+        "string": {"type": "string"}
+      }
+    },
+    "kind": "any_of",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "a": {"type": "string"}
+          }
+        },
+        {
+          "allOf": [
+            {"$ref": "#/definitions/integer"},
+            {"$ref": "#/definitions/string"}
+          ]
+        }
+      ],
+      "definitions": {
+        "integer": {"type": "integer"},
+        "string": {"type": "string"}
+      }
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": "x"}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "a reference dependency emits the implication without its redundant trigger",
+    "draft": "draft2019-09",
+    "schema": {
+      "dependentSchemas": {
+        "a": {"$ref": "#/$defs/null"}
+      },
+      "$defs": {
+        "null": {"type": "null"}
+      }
+    },
+    "kind": "any_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "properties": {"a": false}},
+        {"$ref": "#/$defs/null"}
+      ],
+      "$defs": {
+        "null": {"type": "null"}
+      }
+    },
+    "tests": [
+      {"data": null, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "a reference intersected with its exact complement is false",
+    "schema": {
+      "allOf": [
+        {"$ref": "#/$defs/value"},
+        {"not": {"$ref": "#/$defs/value"}}
+      ],
+      "$defs": {
+        "value": {"type": "integer"}
+      }
+    },
+    "kind": "false",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": "x", "valid": false}
+    ]
+  },
+  {
+    "description": "a reference oneOf drops false branches and collapses to its sole survivor",
+    "schema": {
+      "oneOf": [
+        false,
+        {"$ref": "#/$defs/value"}
+      ],
+      "$defs": {
+        "value": {"type": "string"}
+      }
+    },
+    "kind": "reference",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/$defs/value",
+      "$defs": {
+        "value": {"type": "string"}
+      }
+    },
+    "tests": [
+      {"data": "value", "valid": true},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "oneOf references stay as a compact symbolic exclusive union",
+    "schema": {
+      "oneOf": [
+        {"$ref": "#/$defs/one"},
+        {"$ref": "#/$defs/two"}
+      ],
+      "$defs": {
+        "one": {"const": 1},
+        "two": {"const": 2}
+      }
+    },
+    "kind": "one_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {"$ref": "#/$defs/one"},
+        {"$ref": "#/$defs/two"}
+      ],
+      "$defs": {
+        "one": {"const": 1},
+        "two": {"const": 2}
+      }
+    },
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": 2, "valid": true},
+      {"data": 3, "valid": false}
+    ]
+  },
+  {
+    "description": "reference condition keeps its symbolic complement",
+    "schema": {
+      "if": {"$ref": "#/$defs/condition"},
+      "then": {"const": 1},
+      "$defs": {
+        "condition": {"type": "integer"}
+      }
+    },
+    "kind": "any_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"const": 1},
+        {"not": {"$ref": "#/$defs/condition"}}
+      ],
+      "$defs": {
+        "condition": {"type": "integer"}
+      }
+    },
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": 2, "valid": false},
+      {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "reference assertion siblings stay as a symbolic conjunction",
+    "schema": {
+      "$ref": "#/$defs/value",
+      "type": "string",
+      "minLength": 2,
+      "$defs": {
+        "value": {"type": "string"}
+      }
+    },
+    "kind": "all_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {"type": "string", "minLength": 2},
+        {"$ref": "#/$defs/value"}
+      ],
+      "$defs": {
+        "value": {"type": "string"}
+      }
+    },
+    "tests": [
+      {"data": "ab", "valid": true},
+      {"data": "a", "valid": false},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "reference contains does not reject a finite array member",
+    "schema": {
+      "allOf": [
+        {"const": [1]},
+        {"contains": {"$ref": "#/$defs/value"}}
+      ],
+      "$defs": {
+        "value": {"type": "integer"}
+      }
+    },
+    "kind": "array",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"const": 1}],
+      "maxItems": 1,
+      "contains": {"$ref": "#/$defs/value"},
+      "$defs": {
+        "value": {"type": "integer"}
+      }
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": false}
+    ]
+  },
+  {
+    "description": "reference property does not reject a finite object member",
+    "schema": {
+      "allOf": [
+        {"const": {"value": 1}},
+        {"properties": {"value": {"$ref": "#/$defs/value"}}}
+      ],
+      "$defs": {
+        "value": {"type": "integer"}
+      }
+    },
+    "kind": "object",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "value": {
+          "allOf": [
+            {"const": 1},
+            {"$ref": "#/$defs/value"}
+          ]
+        }
+      },
+      "required": ["value"],
+      "maxProperties": 1,
+      "$defs": {
+        "value": {"type": "integer"}
+      }
+    },
+    "tests": [
+      {"data": {"value": 1}, "valid": true},
+      {"data": {"value": "x"}, "valid": false}
+    ]
+  },
+  {
+    "description": "reference key constraint keeps a named entry",
+    "schema": {
+      "allOf": [
+        {"propertyNames": {"$ref": "#/$defs/name"}},
+        {"type": "object", "properties": {"a": {"type": "integer"}}}
+      ],
+      "$defs": {
+        "name": {"type": "string", "minLength": 1}
+      }
+    },
+    "kind": "object",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "a": {"type": "integer"}
+      },
+      "propertyNames": {
+        "allOf": [
+          {"type": "string"},
+          {"$ref": "#/$defs/name"}
+        ]
+      },
+      "$defs": {
+        "name": {"type": "string", "minLength": 1}
+      }
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false}
+    ]
+  },
+  {
+    "description": "an opaque reference conjunction distributes across a restricted value set",
+    "draft": "draft4",
+    "schema": {
+      "allOf": [
+        {"$ref": "#/definitions/x"},
+        {"enum": [{"a": 1}, {"b": 2}]},
+        {"type": "object", "properties": {"a": {"type": "integer"}}}
+      ],
+      "definitions": {
+        "x": {"type": "object"}
+      }
+    },
+    "kind": "any_of",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": "object",
+              "properties": {"a": {"type": "integer", "enum": [1]}},
+              "required": ["a"],
+              "maxProperties": 1
+            },
+            {"$ref": "#/definitions/x"}
+          ]
+        },
+        {
+          "allOf": [
+            {"enum": [{"b": 2}]},
+            {"$ref": "#/definitions/x"}
+          ]
+        }
+      ],
+      "definitions": {
+        "x": {"type": "object"}
+      }
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": 2}, "valid": true},
+      {"data": {"a": 2}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "an opaque conjunction with disjoint types is unsatisfiable",
+    "schema": {
+      "allOf": [
+        {"$ref": "#/$defs/x"},
+        {"type": "string"},
+        {"type": "integer"}
+      ],
+      "$defs": {
+        "x": {"minLength": 1}
+      }
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "tests": [
+      {"data": "x", "valid": false},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "a direct reference to a map-valued root keyword resolves as a schema",
+    "schema": {
+      "$ref": "#/properties",
+      "properties": {
+        "x": {"type": "string"}
+      }
+    },
+    "kind": "any_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "allOf": [
+            {"type": ["null", "boolean", "number", "string", "array"]},
+            {"$ref": "#/$defs/urn:jsonschema:canonical:json-schema%253A%252F%252F%252F%2523%252Fproperties"}
+          ]
+        },
+        {
+          "allOf": [
+            {"type": "object", "properties": {"x": {"type": "string"}}},
+            {"$ref": "#/$defs/urn:jsonschema:canonical:json-schema%253A%252F%252F%252F%2523%252Fproperties"}
+          ]
+        }
+      ],
+      "$defs": {
+        "urn:jsonschema:canonical:json-schema%3A%2F%2F%2F%23%2Fproperties": true
+      }
+    },
+    "tests": [
+      {"data": {"x": "value"}, "valid": true},
+      {"data": {"x": 1}, "valid": false},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "a raw reachable definition keeps the whole document raw",
+    "schema": {
+      "$ref": "#/$defs/a",
+      "$defs": {
+        "a": {
+          "unevaluatedProperties": {"$ref": "#/$defs/b"}
+        },
+        "b": {"type": "string"}
+      }
+    },
+    "kind": "raw",
+    "expected": {
+      "$ref": "#/$defs/a",
+      "$defs": {
+        "a": {
+          "unevaluatedProperties": {"$ref": "#/$defs/b"}
+        },
+        "b": {"type": "string"}
+      }
+    },
+    "tests": [
+      {"data": {"x": "value"}, "valid": true},
+      {"data": {"x": 1}, "valid": false},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "a wide reference oneOf remains linear in output size",
+    "schema": {
+      "oneOf": [
+        {"$ref": "#/$defs/d9"},
+        {"$ref": "#/$defs/d8"},
+        {"$ref": "#/$defs/d7"},
+        {"$ref": "#/$defs/d6"},
+        {"$ref": "#/$defs/d5"},
+        {"$ref": "#/$defs/d4"},
+        {"$ref": "#/$defs/d3"},
+        {"$ref": "#/$defs/d2"},
+        {"$ref": "#/$defs/d11"},
+        {"$ref": "#/$defs/d10"},
+        {"$ref": "#/$defs/d1"},
+        {"$ref": "#/$defs/d0"}
+      ],
+      "$defs": {
+        "d0": {"const": 0},
+        "d1": {"const": 1},
+        "d2": {"const": 2},
+        "d3": {"const": 3},
+        "d4": {"const": 4},
+        "d5": {"const": 5},
+        "d6": {"const": 6},
+        "d7": {"const": 7},
+        "d8": {"const": 8},
+        "d9": {"const": 9},
+        "d10": {"const": 10},
+        "d11": {"const": 11}
+      }
+    },
+    "kind": "one_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {"$ref": "#/$defs/d0"},
+        {"$ref": "#/$defs/d1"},
+        {"$ref": "#/$defs/d10"},
+        {"$ref": "#/$defs/d11"},
+        {"$ref": "#/$defs/d2"},
+        {"$ref": "#/$defs/d3"},
+        {"$ref": "#/$defs/d4"},
+        {"$ref": "#/$defs/d5"},
+        {"$ref": "#/$defs/d6"},
+        {"$ref": "#/$defs/d7"},
+        {"$ref": "#/$defs/d8"},
+        {"$ref": "#/$defs/d9"}
+      ],
+      "$defs": {
+        "d0": {"const": 0},
+        "d1": {"const": 1},
+        "d2": {"const": 2},
+        "d3": {"const": 3},
+        "d4": {"const": 4},
+        "d5": {"const": 5},
+        "d6": {"const": 6},
+        "d7": {"const": 7},
+        "d8": {"const": 8},
+        "d9": {"const": 9},
+        "d10": {"const": 10},
+        "d11": {"const": 11}
+      }
+    },
+    "tests": [
+      {"data": 0, "valid": true},
+      {"data": 11, "valid": true},
+      {"data": 12, "valid": false}
+    ]
+  },
+  {
+    "description": "reference prefix item does not reject a finite object member",
+    "schema": {
+      "allOf": [
+        {"const": {"a": [1]}},
+        {
+          "type": "object",
+          "properties": {
+            "a": {"type": "array", "prefixItems": [{"$ref": "#/$defs/x"}]}
+          }
+        }
+      ],
+      "$defs": {
+        "x": {"type": "integer"}
+      }
+    },
+    "kind": "object",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "allOf": [
+                {"const": 1},
+                {"$ref": "#/$defs/x"}
+              ]
+            }
+          ],
+          "minItems": 1,
+          "maxItems": 1
+        }
+      },
+      "required": ["a"],
+      "maxProperties": 1,
+      "$defs": {
+        "x": {"type": "integer"}
+      }
+    },
+    "tests": [
+      {"data": {"a": [1]}, "valid": true},
+      {"data": {"a": [2]}, "valid": false},
+      {"data": {"a": ["x"]}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "a reference under a shield leaves a finite object member unabsorbed",
+    "schema": {
+      "anyOf": [
+        {"const": {"a": [1]}},
+        {
+          "type": "object",
+          "additionalProperties": {"type": "array", "prefixItems": [{"$ref": "#/$defs/x"}]}
+        }
+      ],
+      "$defs": {
+        "x": {"type": "integer"}
+      }
+    },
+    "kind": "any_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": {"type": "array", "prefixItems": [{"$ref": "#/$defs/x"}]}
+        },
+        {"const": {"a": [1]}}
+      ],
+      "$defs": {
+        "x": {"type": "integer"}
+      }
+    },
+    "tests": [
+      {"data": {"a": [1]}, "valid": true},
+      {"data": {"a": ["x"]}, "valid": false},
+      {"data": {}, "valid": true},
+      {"data": [[1]], "valid": false}
+    ]
+  }
+]

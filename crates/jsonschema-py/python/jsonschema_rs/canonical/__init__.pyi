@@ -127,12 +127,44 @@ class ObjectView:
     def additional_properties(self) -> CanonicalSchema | None: ...
 
 @final
+class NotView:
+    """The exact complement of ``schema``."""
+
+    __match_args__: tuple[str, ...]
+    @property
+    def schema(self) -> CanonicalSchema: ...
+
+@final
+class AllOfView:
+    """A value matches iff every branch matches."""
+
+    __match_args__: tuple[str, ...]
+    @property
+    def branches(self) -> list[CanonicalSchema]: ...
+
+@final
 class AnyOfView:
     """A value matches iff at least one branch matches."""
 
     __match_args__: tuple[str, ...]
     @property
     def branches(self) -> list[CanonicalSchema]: ...
+
+@final
+class OneOfView:
+    """A value matches iff exactly one branch matches."""
+
+    __match_args__: tuple[str, ...]
+    @property
+    def branches(self) -> list[CanonicalSchema]: ...
+
+@final
+class ReferenceView:
+    """A symbolic JSON Schema reference."""
+
+    __match_args__: tuple[str, ...]
+    @property
+    def uri(self) -> str: ...
 
 @final
 class ConstView:
@@ -168,7 +200,11 @@ CanonicalViewType: TypeAlias = (
     | IntegerView
     | ArrayView
     | ObjectView
+    | NotView
+    | AllOfView
     | AnyOfView
+    | OneOfView
+    | ReferenceView
     | ConstView
     | EnumView
     | RawView

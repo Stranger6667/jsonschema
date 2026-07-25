@@ -2,16 +2,13 @@
 //!
 //! <div class="warning">
 //!
-//! Experimental: keyword coverage is incomplete and the API may change in minor releases. A schema
-//! using any unsupported construct canonicalizes to an opaque pass-through of the whole document;
-//! see [Coverage](#coverage).
+//! Experimental: the API may change in minor releases. Schemas that cannot be represented exactly
+//! are preserved verbatim as [`CanonicalKind::Raw`].
 //!
 //! </div>
 //!
-//! Schemas accepting the same value set reduce to the *same* canonical schema, unsatisfiable ones to
-//! `false`. Canonicalization is **sound**: the canonical form accepts a value iff the original does -
-//! it rewrites shape, never the accepted set. Equivalence becomes structural equality and
-//! satisfiability a single check.
+//! Canonicalization rewrites schemas to a normal form without changing the accepted value set.
+//! Equivalent supported schemas reduce to the same form and contradictions reduce to `false`.
 //!
 //! # Examples
 //!
@@ -51,40 +48,23 @@
 //!
 //! # How it works
 //!
-//! A schema is treated as the set of JSON values it accepts. Canonicalization picks one
-//! representative schema per value set: it parses the document into an internal representation,
-//! rewrites every equivalent spelling to that representative, and emits it back as JSON Schema.
-//! Rewriting is driven by the value set alone, so two schemas accepting the same values come out
-//! structurally identical no matter how differently they were written, and constraints admitting
-//! no value at all reduce to the `false` schema, which
-//! [`is_satisfiable`](CanonicalSchema::is_satisfiable) reports.
+//! Canonicalization parses a schema into an internal representation, normalizes that
+//! representation, then emits JSON Schema. Annotations that do not affect validation disappear.
+//! The selected draft, format policy, and regular-expression configuration are part of the result's
+//! semantics.
 //!
-//! Only constructs that constrain the accepted value set survive. Annotations such as `title` or
-//! `description`, and keywords the draft does not define, leave no trace in the canonical form.
-//! `format` follows the validator's draft policy: Draft 4/6/7 assert known formats and keep them,
-//! while Draft 2019-09/2020-12 treat them as annotations and drop them;
-//! [`CanonicalizeOptions::should_validate_formats`] overrides the default. Regular expressions are
-//! matched with the configured engine, so a canonical form holds under the engine that produced it;
-//! validate it with the same [`CanonicalizeOptions::with_pattern_options`] configuration.
+//! # Unsupported schemas
 //!
-//! # Coverage
-//!
-//! Canonicalization models a growing subset of JSON Schema - currently the type system,
-//! `const`/`enum` value sets, the `allOf`/`anyOf` combinators, and numeric, string, array, and
-//! object constraints. Rather than relying on any keyword list, detect support per document: a
-//! schema using anything outside the modeled subset (references, `contains`, ...) canonicalizes
-//! *successfully* to an opaque pass-through of the whole document, [`CanonicalView::Raw`]. A `Raw`
-//! schema is the original verbatim - equivalent but inert: nothing folds, and
-//! [`is_satisfiable`](CanonicalSchema::is_satisfiable) stays conservatively `true`. Match on
-//! [`CanonicalKind::Raw`](CanonicalKind) to tell the two outcomes apart.
+//! When exact normalization is unavailable, canonicalization succeeds with
+//! [`CanonicalKind::Raw`] and preserves the original document unchanged. Unresolved references
+//! remain errors. A reference whose target uses a different draft than the referring document is
+//! also not yet modeled and falls back to `Raw` (future work).
 //!
 //! # Entry points
 //!
-//! - [`canonicalize`](crate::canonicalize) / [`options`](fn@options) - canonicalize a schema (`options` configures
-//!   the draft, registry, format assertions, and pattern engine).
-//! - [`CanonicalSchema`] - the result: emit with [`to_json_schema`](CanonicalSchema::to_json_schema), inspect with
-//!   [`view`](CanonicalSchema::view), check [`is_satisfiable`](CanonicalSchema::is_satisfiable).
-//! - [`CanonicalView`] - a total, match-once view of one canonical node for structural inspection.
+//! - [`canonicalize`](crate::canonicalize) canonicalizes with defaults.
+//! - [`options`](fn@options) configures canonicalization.
+//! - [`CanonicalSchema`] emits, inspects, and checks the result.
 
 #![deny(clippy::wildcard_enum_match_arm)]
 
@@ -105,5 +85,7 @@ pub use error::CanonicalizationError;
 pub use options::{options, CanonicalizeOptions};
 pub use schema::CanonicalSchema;
 pub use view::{CanonicalKind, CanonicalView, ContainsView};
+
+pub(crate) const CANONICAL_REFERENCE_PREFIX: &str = "urn:jsonschema:canonical:";
 
 pub(crate) use schema::DefinitionMap;

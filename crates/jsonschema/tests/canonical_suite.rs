@@ -14,8 +14,11 @@ fn run_case(case: CanonicalCase) {
 
     if let Some(expected_kind) = &case.error {
         assert!(
-            case.expected.is_none() && case.tests.is_empty() && case.satisfiable.is_none(),
-            "case `{}`: `error` cases cannot also set `expected`/`tests`/`satisfiable`",
+            case.expected.is_none()
+                && case.tests.is_empty()
+                && case.satisfiable.is_none()
+                && case.kind.is_none(),
+            "case `{}`: `error` cases cannot also set `expected`/`tests`/`satisfiable`/`kind`",
             case.description
         );
         for input in &inputs {
@@ -78,6 +81,14 @@ fn run_case(case: CanonicalCase) {
     let canonical = canonical.expect("at least one input");
 
     let satisfiable = canonical.is_satisfiable();
+    if let Some(expected) = &case.kind {
+        assert_eq!(
+            canonical.kind().as_str(),
+            expected,
+            "case `{}`: canonical kind mismatch\n  form = {form}",
+            case.description
+        );
+    }
     if let Some(expected) = case.satisfiable {
         assert_eq!(
             satisfiable, expected,
@@ -146,6 +157,9 @@ struct CanonicalCase {
     /// Pins `CanonicalSchema::is_satisfiable()`; a `valid: true` test already implies satisfiable.
     #[serde(default)]
     satisfiable: Option<bool>,
+    /// Pins the public structural kind label.
+    #[serde(default)]
+    kind: Option<String>,
     /// Force `should_validate_formats`; `None` keeps the draft default.
     #[serde(default)]
     validate_formats: Option<bool>,
@@ -157,6 +171,7 @@ struct CanonicalCase {
 fn error_kind(error: &CanonicalizationError) -> &'static str {
     match error {
         CanonicalizationError::InvalidSchemaType(_) => "InvalidSchemaType",
+        CanonicalizationError::ReferenceResolution(_) => "ReferenceResolution",
         CanonicalizationError::ValidationError(_) => "ValidationError",
         CanonicalizationError::InvalidPattern { .. } => "InvalidPattern",
         _ => "Unknown",

@@ -2,17 +2,178 @@ use std::{cmp::Ordering, collections::HashSet};
 
 use jsonschema::{
     canonical::{options, CanonicalKind, CanonicalSchema, CanonicalView},
-    canonicalize, CanonicalizationError, Draft, JsonType, PatternOptions,
+    canonicalize, CanonicalizationError, Draft, JsonType, PatternOptions, Registry,
 };
 use serde_json::{json, Map, Number, Value};
 use test_case::test_case;
 
 #[test_case(&json!({"unevaluatedProperties": false}); "unevaluated properties")]
-#[test_case(&json!({"$defs": {"a": {"type": "null"}}, "$ref": "#/$defs/a"}); "ref into defs")]
 fn unmodeled_document_round_trips_verbatim(schema: &Value) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     assert_eq!(&canonical.to_json_schema(), schema);
     assert!(matches!(canonical.view(), CanonicalView::Raw(_)));
+}
+
+#[test]
+fn reference_view_exposes_its_canonical_definition() {
+    let canonical = canonicalize(&json!({
+        "$ref": "#/$defs/user",
+        "$defs": {
+            "user": {
+                "allOf": [
+                    {"type": "integer"},
+                    {"minimum": 0}
+                ]
+            }
+        }
+    }))
+    .expect("canonicalizes");
+
+    assert_eq!(
+        canonical.view(),
+        CanonicalView::Reference("#/$defs/user".to_string())
+    );
+    let definitions: Vec<_> = canonical.definitions().collect();
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(definitions[0].0, "#/$defs/user");
+    assert!(matches!(definitions[0].1.view(), CanonicalView::Integer(_)));
+}
+
+#[test]
+fn external_registry_reference_emits_a_self_contained_definition() {
+    let external = json!({
+        "$id": "https://example.com/external",
+        "$anchor": "value",
+        "type": "string"
+    });
+    let registry = Registry::new()
+        .add("https://example.com/external", &external)
+        .expect("resource URI is valid")
+        .prepare()
+        .expect("registry prepares");
+    let canonical = options()
+        .with_registry(&registry)
+        .canonicalize(&json!({"$ref": "https://example.com/external#value"}))
+        .expect("canonicalizes");
+
+    let reference =
+        "urn:jsonschema:canonical:https%3A%2F%2Fexample.com%2Fexternal%23value".to_string();
+    assert_eq!(
+        canonical.view(),
+        CanonicalView::Reference(reference.clone())
+    );
+    assert_eq!(
+        canonical
+            .definitions()
+            .map(|(uri, _)| uri)
+            .collect::<Vec<_>>(),
+        vec![reference]
+    );
+
+    let emitted = canonical.to_json_schema();
+    let validator =
+        jsonschema::validator_for(&emitted).expect("canonical output is self-contained");
+    assert!(validator.is_valid(&json!("value")));
+    assert!(!validator.is_valid(&json!(1)));
+}
+
+#[test]
+fn absolute_self_reference_collapses_to_the_root_pointer() {
+    // A ref spelled as the root's own `$id` resolves to the whole document. Detection relies on the
+    // registry borrowing the root `Value` (pointer identity), so a non-`#` spelling must still emit
+    // the `#` self-pointer rather than a canonical URN definition.
+    let canonical = canonicalize(&json!({
+        "$id": "https://example.com/root",
+        "type": "object",
+        "properties": {
+            "self": {"$ref": "https://example.com/root"}
+        }
+    }))
+    .expect("canonicalizes");
+
+    let emitted = canonical.to_json_schema();
+    assert_eq!(emitted["properties"]["self"], json!({"$ref": "#"}));
+    assert!(
+        canonical.definitions().next().is_none(),
+        "the root self-reference is not materialized as a definition"
+    );
+}
+
+#[test]
+fn registry_already_holding_the_root_uri_still_canonicalizes() {
+    // A caller may pre-register the very schema they canonicalize. `build` re-adds the root under its
+    // own base URI, so this exercises the add-under-an-existing-URI path.
+    let schema = json!({
+        "$id": "https://example.com/root",
+        "$ref": "#/$defs/value",
+        "$defs": {"value": {"type": "string"}}
+    });
+    let registry = Registry::new()
+        .add("https://example.com/root", &schema)
+        .expect("resource URI is valid")
+        .prepare()
+        .expect("registry prepares");
+
+    let canonical = options()
+        .with_registry(&registry)
+        .canonicalize(&schema)
+        .expect("canonicalizes despite the pre-registered root");
+
+    assert_eq!(
+        canonical.view(),
+        CanonicalView::Reference("#/$defs/value".to_string())
+    );
+    let definitions: Vec<_> = canonical.definitions().collect();
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(definitions[0].0, "#/$defs/value");
+    assert_eq!(
+        canonical.to_json_schema()["$defs"]["value"],
+        json!({"type": "string"})
+    );
+}
+
+#[test]
+fn unsupported_reference_target_keeps_the_whole_document_raw() {
+    let schema = json!({
+        "$ref": "#/$defs/value",
+        "$defs": {"value": {"unevaluatedProperties": false}}
+    });
+    let canonical = canonicalize(&schema).expect("canonicalizes");
+
+    assert!(matches!(canonical.view(), CanonicalView::Raw(_)));
+    assert_eq!(canonical.to_json_schema(), schema);
+}
+
+#[test]
+fn symbolic_reference_operations_have_distinct_views() {
+    let intersection = canonicalize(&json!({
+        "allOf": [
+            {"$ref": "#/$defs/left"},
+            {"$ref": "#/$defs/right"}
+        ],
+        "$defs": {
+            "left": {"type": "integer"},
+            "right": {"type": "string"}
+        }
+    }))
+    .expect("canonicalizes");
+
+    let CanonicalView::AllOf(branches) = intersection.view() else {
+        panic!("expected an AllOf view");
+    };
+    assert!(branches
+        .iter()
+        .all(|branch| matches!(branch.view(), CanonicalView::Reference(_))));
+
+    let complement = canonicalize(&json!({
+        "not": {"$ref": "#/$defs/other"},
+        "$defs": {"other": {"type": "integer"}}
+    }))
+    .expect("canonicalizes");
+    let CanonicalView::Not(inner) = complement.view() else {
+        panic!("expected a Not view");
+    };
+    assert!(matches!(inner.view(), CanonicalView::Reference(_)));
 }
 
 #[test]

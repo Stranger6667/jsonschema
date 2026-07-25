@@ -28,6 +28,7 @@ pub(crate) fn negate(schema: &Schema, ctx: &CanonicalizationContext) -> Option<S
         SchemaKind::String(leaf) => negate_string_leaf(leaf.get(), ctx),
         SchemaKind::Array(leaf) => negate_array_leaf(leaf.get(), ctx),
         SchemaKind::Object(leaf) => negate_object_leaf(leaf.get(), ctx),
+        SchemaKind::Not(inner) => Some(inner.clone()),
         // De Morgan: the complement of a union is the intersection of the branch complements, so
         // one inexpressible branch declines the whole node.
         SchemaKind::AnyOf(branches) => {
@@ -36,6 +37,25 @@ pub(crate) fn negate(schema: &Schema, ctx: &CanonicalizationContext) -> Option<S
                 result = algebra::intersect(result, negate(branch, ctx)?, ctx);
             }
             Some(result)
+        }
+        // De Morgan in the other direction restores a union when every branch has an exact
+        // structural complement. Otherwise `Not` preserves the opaque conjunction exactly.
+        SchemaKind::AllOf(branches) => {
+            let mut complements = Vec::with_capacity(branches.as_slice().len());
+            for branch in branches.as_slice() {
+                let Some(complement) = negate(branch, ctx) else {
+                    return Some(Schema::new(SchemaKind::Not(schema.clone())));
+                };
+                complements.push(complement);
+            }
+            debug_assert!(
+                complements.len() >= 2,
+                "an AllOf has at least two branches before applying De Morgan"
+            );
+            Some(algebra::union(complements, ctx))
+        }
+        SchemaKind::OneOf(_) | SchemaKind::Reference(_) => {
+            Some(Schema::new(SchemaKind::Not(schema.clone())))
         }
         SchemaKind::TypedGroup { .. } | SchemaKind::Integer(_) | SchemaKind::Raw(_) => None,
     }

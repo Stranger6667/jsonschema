@@ -1,7 +1,7 @@
 #![allow(clippy::large_stack_arrays, clippy::needless_pass_by_value)]
 
 mod tests {
-    use jsonschema::{canonical::CanonicalKind, Draft, PatternOptions};
+    use jsonschema::{canonical::CanonicalKind, Draft, PatternOptions, Registry};
     #[cfg(not(target_arch = "wasm32"))]
     use std::env;
     #[cfg(not(target_arch = "wasm32"))]
@@ -41,14 +41,25 @@ mod tests {
             "draft2020-12" => Draft::Draft202012,
             _ => panic!("Unsupported draft"),
         };
-        let mut options = jsonschema::options().with_draft(draft);
         if should_skip_draft(test.draft) {
             return;
         }
+        let root_uri = test.schema[draft.id_keyword()]
+            .as_str()
+            .unwrap_or("json-schema:///");
+        let registry = Registry::new()
+            .retriever(testsuite_retriever())
+            .draft(draft)
+            .add(root_uri, &test.schema)
+            .expect("Failed to add the test schema to the registry")
+            .prepare()
+            .expect("Failed to prepare the test schema registry");
+        let mut options = jsonschema::options()
+            .with_draft(draft)
+            .with_registry(&registry);
         if test.is_optional {
             options = options.should_validate_formats(true);
         }
-        options = options.with_retriever(testsuite_retriever());
 
         for engine in [RegexEngine::FancyRegex, RegexEngine::Regex] {
             match engine {
@@ -65,7 +76,9 @@ mod tests {
 
             // Canonicalization must not change what a schema accepts. A `Raw` document round-trips
             // verbatim, so only the modeled subset is worth comparing.
-            let mut canonicalize_options = jsonschema::canonical::options().with_draft(draft);
+            let mut canonicalize_options = jsonschema::canonical::options()
+                .with_draft(draft)
+                .with_registry(&registry);
             match engine {
                 RegexEngine::Regex => {
                     canonicalize_options =

@@ -481,5 +481,41 @@
       {"data": {"c": 1, "d": 2}, "valid": true},
       {"data": {"a": 1, "b": 2, "c": 3}, "valid": false}
     ]
+  },
+  {
+    "description": "ir: a finite object retains an unknown symbolic key constraint",
+    "schema": {
+      "allOf": [
+        {"const": {"a": 1}},
+        {"propertyNames": {"$ref": "#/$defs/name"}}
+      ],
+      "$defs": {
+        "name": {"const": "b"}
+      }
+    },
+    "kind": "object",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {
+        "allOf": [
+          {"type": "string"},
+          {"$ref": "#/$defs/name"}
+        ]
+      },
+      "properties": {
+        "a": {"const": 1}
+      },
+      "required": ["a"],
+      "maxProperties": 1,
+      "$defs": {
+        "name": {"const": "b"}
+      }
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"b": 1}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
   }
 ]

@@ -847,13 +847,14 @@
     ]
   },
   {
-    "description": "ir: a reference in a pattern child keeps the document raw",
+    "description": "ir: a reference in a pattern child stays symbolic",
     "schema": {
       "type": "object",
       "patternProperties": {"^a": {"$ref": "#/$defs/child"}},
       "$defs": {"child": {"type": "integer"}}
     },
     "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "patternProperties": {"^a": {"$ref": "#/$defs/child"}},
       "$defs": {"child": {"type": "integer"}}
