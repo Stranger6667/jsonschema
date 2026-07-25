@@ -482,5 +482,19 @@
       {"data": ["x", 1], "valid": false},
       {"data": [1], "valid": false}
     ]
+  },
+  {
+    "description": "ir: draft 2019-09 array-form items and additionalItems model a tuple",
+    "draft": "draft2019-09",
+    "schema": {
+      "type": "array",
+      "items": [{"type": "null"}],
+      "additionalItems": false
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [null], "valid": true},
+      {"data": [null, null], "valid": false}
+    ]
   }
 ]

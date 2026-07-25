@@ -242,5 +242,22 @@
       {"data": {"foo\nbar": 1}, "valid": false},
       {"data": {"foo\nbar": 1, "x": 2}, "valid": true}
     ]
+  },
+  {
+    "description": "an unmodeled schema dependency keeps the document raw",
+    "draft": "draft7",
+    "schema": {
+      "dependencies": {
+        "a": {"$ref": "urn:unmodeled"}
+      }
+    }
+  },
+  {
+    "description": "an unmodeled dependentSchemas entry keeps the document raw",
+    "schema": {
+      "dependentSchemas": {
+        "a": {"unevaluatedProperties": false}
+      }
+    }
   }
 ]

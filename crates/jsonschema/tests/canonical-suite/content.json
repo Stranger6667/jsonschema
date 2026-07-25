@@ -178,5 +178,98 @@
       { "data": "xyz", "valid": true },
       { "data": "abc", "valid": true }
     ]
+  },
+  {
+    "description": "a known content encoding absorbs a constant string it admits",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "value": {"type": "string", "contentEncoding": "base64"}
+          }
+        },
+        {"const": {"value": "Zm9v"}}
+      ]
+    },
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "value": {"type": "string", "contentEncoding": "base64"}
+      }
+    },
+    "tests": [
+      {"data": {"value": "Zm9v"}, "valid": true},
+      {"data": {"value": "not base64!!!"}, "valid": false}
+    ]
+  },
+  {
+    "description": "a known content media type absorbs a constant string it admits",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "value": {"type": "string", "contentMediaType": "application/json"}
+          }
+        },
+        {"const": {"value": "{\"a\":1}"}}
+      ]
+    },
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "value": {"type": "string", "contentMediaType": "application/json"}
+      }
+    },
+    "tests": [
+      {"data": {"value": "{\"a\":1}"}, "valid": true},
+      {"data": {"value": "not json"}, "valid": false}
+    ]
+  },
+  {
+    "description": "an unknown content encoding keeps finite string membership conservative",
+    "schema": {
+      "allOf": [
+        {"type": "string", "contentEncoding": "application/x-unknown"},
+        {"enum": ["a", "b", 1]}
+      ]
+    },
+    "draft": "draft7",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "enum": ["a", "b"]
+    },
+    "tests": [
+      {"data": "a", "valid": true},
+      {"data": "b", "valid": true},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "an unknown nested content encoding prevents constant absorption",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "string",
+              "contentEncoding": "application/x-unknown"
+            }
+          }
+        },
+        {"const": {"value": "anything"}}
+      ]
+    },
+    "draft": "draft7",
+    "tests": [
+      {"data": {"value": "anything"}, "valid": true},
+      {"data": {"value": 1}, "valid": false}
+    ]
   }
 ]

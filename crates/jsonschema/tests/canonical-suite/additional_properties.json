@@ -729,5 +729,13 @@
       {"data": {}, "valid": true},
       {"data": 5, "valid": false}
     ]
+  },
+  {
+    "description": "ir: an unmodeled additionalProperties schema keeps the document raw",
+    "schema": {
+      "additionalProperties": {
+        "unevaluatedProperties": false
+      }
+    }
   }
 ]
