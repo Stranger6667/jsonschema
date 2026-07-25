@@ -31,14 +31,10 @@ fraction = { version = "0.15", default-features = false, features = [
 num-bigint = { version = "0.4", optional = true }
 num-cmp = "0.1"
 num-traits = "0.2.19"
-pyo3 = { version = "0.29", optional = true, features = ["abi3-py310"] }
-serde_json = { workspace = true, features = ["float_roundtrip"] }
-
-# rb-sys' bindgen needs a libc the target actually has, so the Ruby representation exists only
-# where the bindings ship: unix. Windows and wasm both fail to build it.
-[target.'cfg(unix)'.dependencies]
 magnus = { version = "0.8", optional = true, features = ["rb-sys"] }
+pyo3 = { version = "0.29", optional = true, features = ["abi3-py310"] }
 rb-sys = { version = "0.9", optional = true }
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 
 [dev-dependencies]
 test-case = "3"

@@ -10,14 +10,14 @@ pub mod numeric_check;
 pub mod types;
 pub mod unique;
 
-#[cfg(all(feature = "magnus", unix))]
+#[cfg(feature = "magnus")]
 mod magnus;
 #[cfg(feature = "pyo3")]
 mod pyo3;
 #[cfg(feature = "serde_json")]
 mod serde_json;
 
-#[cfg(all(feature = "magnus", unix))]
+#[cfg(feature = "magnus")]
 pub use magnus::{
     child as magnus_child, invalidate_members_cache as magnus_invalidate_members_cache,
     is_object as magnus_is_object, probe_root as magnus_probe_root,
