@@ -1,5 +1,6 @@
 import pytest
 
+import jsonschema_rs
 from jsonschema_rs import CanonicalSchema, ValidationError, canonical, canonicalize
 
 DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
@@ -376,3 +377,29 @@ def test_invalid_pattern():
 )
 def test_string_canonical_forms(schema, expected):
     assert canonicalize(schema).to_json_schema() == expected
+
+
+# A pattern whose compiled size exceeds the default regex limit; real AWS schemas carry these.
+LARGE_PATTERN_SCHEMA = {"type": "string", "pattern": "^.{0,100000}$"}
+
+
+def test_large_pattern_is_rejected_by_default():
+    with pytest.raises(jsonschema_rs.canonical.InvalidPattern):
+        canonicalize(LARGE_PATTERN_SCHEMA)
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        jsonschema_rs.FancyRegexOptions(size_limit=150_000_000),
+        jsonschema_rs.RegexOptions(size_limit=150_000_000),
+    ],
+)
+def test_large_pattern_with_raised_size_limit(options):
+    canonical = canonicalize(LARGE_PATTERN_SCHEMA, pattern_options=options)
+    assert canonical.kind == "string"
+
+
+def test_pattern_options_rejects_other_types():
+    with pytest.raises(TypeError):
+        canonicalize(LARGE_PATTERN_SCHEMA, pattern_options=object())

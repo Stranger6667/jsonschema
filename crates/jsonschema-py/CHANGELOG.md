@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `canonicalize` rejecting `pattern_options` (it should take the same regex configuration as validators).
+
 ## [0.49.0] - 2026-07-25
 
 ### Added

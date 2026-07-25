@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `JSONSchema.canonicalize` rejecting `pattern_options` (it should take the same regex configuration as validators).
+- `InvalidPattern` failures raising the base `CanonicalizationError` (they should raise `JSONSchema::Canonical::InvalidPattern`).
+
 ## [0.49.0] - 2026-07-25
 
 ### Added

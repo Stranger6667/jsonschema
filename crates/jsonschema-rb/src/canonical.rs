@@ -14,13 +14,17 @@ use magnus::{
 };
 
 use crate::{
-    options::parse_draft_symbol,
+    options::{extract_pattern_options, parse_draft_symbol, RbPatternOptions},
     ser::{to_schema_value, value_to_ruby},
     static_id::define_rb_intern,
 };
 
 define_rb_intern!(static CANONICAL_KW_DRAFT: "draft");
 define_rb_intern!(static CANONICAL_KW_VALIDATE_FORMATS: "validate_formats");
+define_rb_intern!(static CANONICAL_KW_PATTERN_OPTIONS: "pattern_options");
+
+type CanonicalKwArgs =
+    magnus::scan_args::KwArgs<(), (Option<Value>, Option<bool>, Option<Value>), ()>;
 
 macro_rules! canonical_error_class {
     ($static_name:ident, $class_name:literal) => {
@@ -42,6 +46,7 @@ macro_rules! canonical_error_class {
 
 canonical_error_class!(CANONICALIZATION_ERROR_CLASS, "CanonicalizationError");
 canonical_error_class!(INVALID_SCHEMA_TYPE_CLASS, "InvalidSchemaType");
+canonical_error_class!(INVALID_PATTERN_CLASS, "InvalidPattern");
 
 fn canonicalization_error(ruby: &Ruby, error: CanonicalizationError) -> Error {
     if let CanonicalizationError::ValidationError(validation_error) = error {
@@ -51,6 +56,9 @@ fn canonicalization_error(ruby: &Ruby, error: CanonicalizationError) -> Error {
     match error {
         CanonicalizationError::InvalidSchemaType(_) => {
             Error::new(ruby.get_inner(&INVALID_SCHEMA_TYPE_CLASS), message)
+        }
+        CanonicalizationError::InvalidPattern { .. } => {
+            Error::new(ruby.get_inner(&INVALID_PATTERN_CLASS), message)
         }
         // `ValidationError` returns above; future variants fall back to the base canonical error.
         _ => Error::new(ruby.get_inner(&CANONICALIZATION_ERROR_CLASS), message),
@@ -892,12 +900,16 @@ fn canonicalize(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
     let parsed = scan_args::<(Value,), (), (), (), _, ()>(args)?;
     let (schema_arg,) = parsed.required;
     let keywords: RHash = parsed.keywords;
-    let base_kwargs: magnus::scan_args::KwArgs<(), (Option<Value>, Option<bool>), ()> = get_kwargs(
+    let base_kwargs: CanonicalKwArgs = get_kwargs(
         keywords,
         &[],
-        &[*CANONICAL_KW_DRAFT, *CANONICAL_KW_VALIDATE_FORMATS],
+        &[
+            *CANONICAL_KW_DRAFT,
+            *CANONICAL_KW_VALIDATE_FORMATS,
+            *CANONICAL_KW_PATTERN_OPTIONS,
+        ],
     )?;
-    let (draft_val, validate_formats) = base_kwargs.optional;
+    let (draft_val, validate_formats, pattern_options) = base_kwargs.optional;
 
     let schema_value = to_schema_value(ruby, schema_arg)?;
     let mut options = jsonschema::canonical::options();
@@ -906,6 +918,12 @@ fn canonicalize(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
     }
     if let Some(validate_formats) = validate_formats {
         options = options.should_validate_formats(validate_formats);
+    }
+    if let Some(val) = pattern_options {
+        match extract_pattern_options(ruby, val)? {
+            RbPatternOptions::Fancy(inner) => options = options.with_pattern_options(inner),
+            RbPatternOptions::Regex(inner) => options = options.with_pattern_options(inner),
+        }
     }
     options
         .canonicalize(&schema_value)
@@ -919,6 +937,7 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     let base_error =
         canonical_module.define_error("CanonicalizationError", ruby.exception_standard_error())?;
     canonical_module.define_error("InvalidSchemaType", base_error)?;
+    canonical_module.define_error("InvalidPattern", base_error)?;
 
     let canonical_schema = canonical_module.define_class("CanonicalSchema", ruby.class_object())?;
     canonical_schema.define_method(

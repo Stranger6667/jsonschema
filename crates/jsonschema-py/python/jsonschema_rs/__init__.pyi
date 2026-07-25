@@ -635,6 +635,7 @@ def canonicalize(
     *,
     draft: int | None = None,
     validate_formats: bool | None = None,
+    pattern_options: PatternOptionsType | None = None,
 ) -> CanonicalSchema:
     """Parse and normalize a JSON Schema to its canonical form.
 

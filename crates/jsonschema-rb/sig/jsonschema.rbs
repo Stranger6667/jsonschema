@@ -29,6 +29,9 @@ module JSONSchema
     class InvalidSchemaType < CanonicalizationError
     end
 
+    class InvalidPattern < CanonicalizationError
+    end
+
     # A schema reduced to canonical form: schemas accepting the same values share one form.
     class CanonicalSchema
       def to_json_schema: () -> untyped
@@ -164,7 +167,8 @@ module JSONSchema
   def self.canonicalize: (
     untyped schema,
     ?draft: draft?,
-    ?validate_formats: bool?
+    ?validate_formats: bool?,
+    ?pattern_options: (RegexOptions | FancyRegexOptions)?
   ) -> Canonical::CanonicalSchema
 
   # Create a validator with auto-detected draft version.

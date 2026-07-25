@@ -594,17 +594,18 @@ impl EnumView {
     }
 }
 
-/// canonicalize(schema, /, *, draft=None, validate_formats=None)
+/// canonicalize(schema, /, *, draft=None, validate_formats=None, pattern_options=None)
 ///
 /// Parse and normalize a JSON Schema to its canonical form.
 ///
 /// Returns a :class:`CanonicalSchema` that is semantically equivalent to the input.
 #[pyfunction]
-#[pyo3(signature = (schema, *, draft=None, validate_formats=None))]
+#[pyo3(signature = (schema, *, draft=None, validate_formats=None, pattern_options=None))]
 pub(crate) fn canonicalize(
     schema: &Bound<'_, PyAny>,
     draft: Option<u8>,
     validate_formats: Option<bool>,
+    pattern_options: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<PyCanonicalSchema> {
     let schema_value = crate::ser::to_value(schema)?;
     let mut options = jsonschema::canonical::options();
@@ -613,6 +614,16 @@ pub(crate) fn canonicalize(
     }
     if let Some(validate_formats) = validate_formats {
         options = options.should_validate_formats(validate_formats);
+    }
+    if let Some(pattern_options) = pattern_options {
+        match crate::regex::extract_pattern_options(pattern_options)? {
+            crate::regex::PyPatternOptions::Fancy(inner) => {
+                options = options.with_pattern_options(inner);
+            }
+            crate::regex::PyPatternOptions::Regex(inner) => {
+                options = options.with_pattern_options(inner);
+            }
+        }
     }
     options
         .canonicalize(&schema_value)
