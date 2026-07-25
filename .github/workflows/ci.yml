@@ -553,6 +553,33 @@ jobs:
               ruby -e "require \"jsonschema_rs\"; raise unless JSONSchema.valid?({\"type\" => \"string\"}, \"hello\"); puts \"musl OK\""
             '
 
+  # Windows is the only supported gem platform where `long` is 32 bits, so it is the only one that
+  # rejects `c_long` values used as `i64`. No other job compiles the extension for that target.
+  test-ruby-cross-windows:
+    name: Ruby Cross-compile (x64-mingw-ucrt)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - uses: ruby/setup-ruby@003a5c4d8d6321bd302e38f6f0ec593f77f06600 # v1.319.0
+        with:
+          ruby-version: "3.4"
+
+      - name: Expose Gemfile.lock for rb-sys-dock version detection
+        run: cp crates/jsonschema-rb/Gemfile.lock Gemfile.lock
+
+      # A single version stages the extension at `lib/jsonschema/jsonschema_rb.so`, which the gem
+      # task then satisfies with a host build against the cross target. Two or more versions stage
+      # under per-ABI directories instead, so nothing pulls the host Ruby in.
+      - uses: oxidize-rb/actions/cross-gem@e5f9a49a7812a078584072f6e3f657ad247c8771 # v1.4.4
+        with:
+          platform: x64-mingw-ucrt
+          ruby-versions: "3.4,4.0"
+          working-directory: crates/jsonschema-rb
+
   lint-ruby:
     name: Lint Ruby
     runs-on: ubuntu-24.04

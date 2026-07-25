@@ -401,8 +401,14 @@ pub struct RbNumber {
 
 impl RbNumber {
     fn fixnum(&self) -> i64 {
-        unsafe { rb_sys::FIX2LONG(self.value) }
+        fixnum_of(self.value)
     }
+}
+
+// `FIX2LONG` yields `c_long`, which is 32-bit on Windows. Ruby caps the fixnum range at
+// `LONG_MAX / 2`, so the widening never loses a bit; anything wider arrives as a bignum.
+fn fixnum_of(value: VALUE) -> i64 {
+    unsafe { rb_sys::FIX2LONG(value) as i64 }
 }
 
 impl JsonNumber for RbNumber {
@@ -463,7 +469,7 @@ impl JsonNumber for RbNumber {
 
 fn number_of(value: VALUE) -> Option<Number> {
     match value_kind(value) {
-        Kind::Fixnum => Some(Number::from(unsafe { rb_sys::FIX2LONG(value) })),
+        Kind::Fixnum => Some(Number::from(fixnum_of(value))),
         Kind::Float => float_of(value).and_then(Number::from_f64),
         Kind::Bignum => big_number(value),
         Kind::Decimal => big_decimal_number(value),
@@ -656,7 +662,7 @@ fn member_named(hash: VALUE, key: VALUE) -> Option<VALUE> {
 }
 
 fn hash_len(value: VALUE) -> usize {
-    unsafe { rb_sys::FIX2LONG(rb_hash_size(value)) }.max(0) as usize
+    fixnum_of(unsafe { rb_hash_size(value) }).max(0) as usize
 }
 
 fn raw_members(value: VALUE) -> Members {
