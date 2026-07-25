@@ -1,6 +1,6 @@
 [package]
 name = "jsonschema-rb"
-version = "0.48.5"
+version = "0.49.0"
 edition = "2021"
 authors = ["Dmitry Dygalo <dmitry@dygalo.dev>"]
 license = "MIT"
