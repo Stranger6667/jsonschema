@@ -83,7 +83,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let schema_str = fs::read_to_string(&args.schema_path)?;
     let schema: Value = serde_json::from_str(&schema_str)?;
-    let draft = args.draft.unwrap_or_else(|| Draft::default().detect(&schema));
+    let draft = args
+        .draft
+        .unwrap_or_else(|| Draft::default().detect(&schema));
 
     // To initialise metaschema validators
     let _ = &*SPECIFICATIONS;

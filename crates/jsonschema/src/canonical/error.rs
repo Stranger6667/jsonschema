@@ -6,6 +6,8 @@ use crate::ValidationError;
 pub enum CanonicalizationError {
     /// Schema root is neither a boolean nor an object.
     InvalidSchemaType(String),
+    /// A schema reference could not be resolved.
+    ReferenceResolution(referencing::Error),
     /// Meta-schema validation failed.
     ValidationError(ValidationError<'static>),
     /// A `pattern` value is not a valid regular expression.
@@ -21,6 +23,7 @@ impl std::fmt::Display for CanonicalizationError {
             Self::InvalidSchemaType(value) => {
                 write!(f, "schema must be a boolean or object, got: {value}")
             }
+            Self::ReferenceResolution(error) => error.fmt(f),
             Self::ValidationError(error) => write!(f, "schema validation failed: {error}"),
             Self::InvalidPattern { pattern } => {
                 write!(f, "invalid regular expression: {pattern:?}")
@@ -32,6 +35,7 @@ impl std::fmt::Display for CanonicalizationError {
 impl std::error::Error for CanonicalizationError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::ReferenceResolution(error) => Some(error),
             Self::ValidationError(error) => Some(error),
             Self::InvalidSchemaType(_) | Self::InvalidPattern { .. } => None,
         }
@@ -41,5 +45,11 @@ impl std::error::Error for CanonicalizationError {
 impl From<ValidationError<'static>> for CanonicalizationError {
     fn from(error: ValidationError<'static>) -> Self {
         Self::ValidationError(error)
+    }
+}
+
+impl From<referencing::Error> for CanonicalizationError {
+    fn from(error: referencing::Error) -> Self {
+        Self::ReferenceResolution(error)
     }
 }

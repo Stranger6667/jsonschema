@@ -10,8 +10,13 @@ StringView = _canonical.StringView
 NumberView = _canonical.NumberView
 IntegerView = _canonical.IntegerView
 ArrayView = _canonical.ArrayView
+ContainsView = _canonical.ContainsView
 ObjectView = _canonical.ObjectView
+NotView = _canonical.NotView
+AllOfView = _canonical.AllOfView
 AnyOfView = _canonical.AnyOfView
+OneOfView = _canonical.OneOfView
+ReferenceView = _canonical.ReferenceView
 ConstView = _canonical.ConstView
 EnumView = _canonical.EnumView
 RawView = _canonical.RawView
@@ -26,7 +31,11 @@ CanonicalViewType = (
     | IntegerView
     | ArrayView
     | ObjectView
+    | NotView
+    | AllOfView
     | AnyOfView
+    | OneOfView
+    | ReferenceView
     | ConstView
     | EnumView
     | RawView
@@ -58,19 +67,24 @@ class InvalidPattern(CanonicalizationError):
 
 
 __all__ = [
+    "AllOfView",
     "AnyOfView",
     "ArrayView",
     "CanonicalViewType",
     "CanonicalizationError",
     "ConstView",
+    "ContainsView",
     "EnumView",
     "FalseView",
     "IntegerView",
     "InvalidPattern",
     "InvalidSchemaType",
     "MultiTypeView",
+    "NotView",
     "ObjectView",
+    "OneOfView",
     "RawView",
+    "ReferenceView",
     "StringView",
     "NumberView",
     "TrueView",

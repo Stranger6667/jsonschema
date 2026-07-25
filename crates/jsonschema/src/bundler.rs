@@ -74,14 +74,6 @@ fn definitions_keyword(draft: Draft) -> &'static str {
     }
 }
 
-fn id_keyword(draft: Draft) -> &'static str {
-    if matches!(draft, Draft::Draft4) {
-        "id"
-    } else {
-        "$id"
-    }
-}
-
 fn merge_entries(target: &mut Map<String, Value>, defs: Map<String, Value>) {
     for (k, v) in defs {
         target.entry(k).or_insert(v);
@@ -128,8 +120,8 @@ fn ensure_embedded_ids(
     root_draft: Draft,
     embedded_draft: Draft,
 ) {
-    let root_keyword = id_keyword(root_draft);
-    let embedded_keyword = id_keyword(embedded_draft);
+    let root_keyword = root_draft.id_keyword();
+    let embedded_keyword = embedded_draft.id_keyword();
     let uri_value = Value::String(uri.to_owned());
 
     obj.entry(embedded_keyword.to_string())

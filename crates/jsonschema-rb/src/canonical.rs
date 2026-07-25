@@ -182,7 +182,11 @@ impl RbCanonicalSchema {
                     additional_properties: view.additional_properties,
                 })
                 .as_value(),
+            CanonicalView::Not(schema) => ruby.obj_wrap(NotView { schema: *schema }).as_value(),
+            CanonicalView::AllOf(branches) => ruby.obj_wrap(AllOfView { branches }).as_value(),
             CanonicalView::AnyOf(branches) => ruby.obj_wrap(AnyOfView { branches }).as_value(),
+            CanonicalView::OneOf(branches) => ruby.obj_wrap(OneOfView { branches }).as_value(),
+            CanonicalView::Reference(uri) => ruby.obj_wrap(ReferenceView { uri }).as_value(),
             CanonicalView::Raw(schema) => ruby.obj_wrap(RawView { schema }).as_value(),
         }
     }
@@ -836,6 +840,147 @@ impl AnyOfView {
     }
 }
 
+/// A value matches iff exactly one branch matches.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::OneOfView", free_immediately)]
+pub struct OneOfView {
+    branches: Vec<CanonicalSchema>,
+}
+
+impl DataTypeFunctions for OneOfView {}
+
+impl OneOfView {
+    fn branches(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        let array = ruby.ary_new_capa(rb_self.branches.len());
+        for branch in &rb_self.branches {
+            array.push(
+                ruby.obj_wrap(RbCanonicalSchema {
+                    inner: branch.clone(),
+                })
+                .as_value(),
+            )?;
+        }
+        Ok(array.as_value())
+    }
+
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
+        let kinds = ruby.ary_new_capa(rb_self.branches.len());
+        for branch in &rb_self.branches {
+            kinds.push(ruby.sym_new(branch.kind().as_str()).as_value())?;
+        }
+        Ok(format!(
+            "#<JSONSchema::Canonical::OneOfView branches={}>",
+            kinds.as_value().inspect()
+        ))
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("branches"), Self::branches(ruby, rb_self)?)?;
+        Ok(hash)
+    }
+}
+
+/// A value matches iff every branch matches.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::AllOfView", free_immediately)]
+pub struct AllOfView {
+    branches: Vec<CanonicalSchema>,
+}
+
+impl DataTypeFunctions for AllOfView {}
+
+impl AllOfView {
+    fn branches(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        let array = ruby.ary_new_capa(rb_self.branches.len());
+        for branch in &rb_self.branches {
+            array.push(
+                ruby.obj_wrap(RbCanonicalSchema {
+                    inner: branch.clone(),
+                })
+                .as_value(),
+            )?;
+        }
+        Ok(array.as_value())
+    }
+
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
+        let kinds = ruby.ary_new_capa(rb_self.branches.len());
+        for branch in &rb_self.branches {
+            kinds.push(ruby.sym_new(branch.kind().as_str()).as_value())?;
+        }
+        Ok(format!(
+            "#<JSONSchema::Canonical::AllOfView branches={}>",
+            kinds.as_value().inspect()
+        ))
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("branches"), Self::branches(ruby, rb_self)?)?;
+        Ok(hash)
+    }
+}
+
+/// The complement of `schema`, preserving a symbolic ref under `not`, conditionals, and `oneOf`.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::NotView", free_immediately)]
+pub struct NotView {
+    schema: CanonicalSchema,
+}
+
+impl DataTypeFunctions for NotView {}
+
+impl NotView {
+    fn schema(ruby: &Ruby, rb_self: &Self) -> Value {
+        ruby.obj_wrap(RbCanonicalSchema {
+            inner: rb_self.schema.clone(),
+        })
+        .as_value()
+    }
+
+    fn inspect(rb_self: &Self) -> String {
+        format!(
+            "#<JSONSchema::Canonical::NotView schema={}>",
+            rb_self.schema.kind().as_str()
+        )
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("schema"), Self::schema(ruby, rb_self))?;
+        Ok(hash)
+    }
+}
+
+/// A symbolic JSON Schema reference.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::ReferenceView", free_immediately)]
+pub struct ReferenceView {
+    uri: String,
+}
+
+impl DataTypeFunctions for ReferenceView {}
+
+impl ReferenceView {
+    fn uri(rb_self: &Self) -> String {
+        rb_self.uri.clone()
+    }
+
+    fn inspect(rb_self: &Self) -> String {
+        format!(
+            "#<JSONSchema::Canonical::ReferenceView uri={:?}>",
+            rb_self.uri
+        )
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("uri"), rb_self.uri.clone())?;
+        Ok(hash)
+    }
+}
+
 /// Exactly one admitted value.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::ConstView", free_immediately)]
@@ -1073,6 +1218,29 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     any_of_view.define_method("branches", method!(AnyOfView::branches, 0))?;
     any_of_view.define_method("inspect", method!(AnyOfView::inspect, 0))?;
     any_of_view.define_method("deconstruct_keys", method!(AnyOfView::deconstruct_keys, 1))?;
+
+    let one_of_view = canonical_module.define_class("OneOfView", ruby.class_object())?;
+    one_of_view.define_method("branches", method!(OneOfView::branches, 0))?;
+    one_of_view.define_method("inspect", method!(OneOfView::inspect, 0))?;
+    one_of_view.define_method("deconstruct_keys", method!(OneOfView::deconstruct_keys, 1))?;
+
+    let all_of_view = canonical_module.define_class("AllOfView", ruby.class_object())?;
+    all_of_view.define_method("branches", method!(AllOfView::branches, 0))?;
+    all_of_view.define_method("inspect", method!(AllOfView::inspect, 0))?;
+    all_of_view.define_method("deconstruct_keys", method!(AllOfView::deconstruct_keys, 1))?;
+
+    let not_view = canonical_module.define_class("NotView", ruby.class_object())?;
+    not_view.define_method("schema", method!(NotView::schema, 0))?;
+    not_view.define_method("inspect", method!(NotView::inspect, 0))?;
+    not_view.define_method("deconstruct_keys", method!(NotView::deconstruct_keys, 1))?;
+
+    let reference_view = canonical_module.define_class("ReferenceView", ruby.class_object())?;
+    reference_view.define_method("uri", method!(ReferenceView::uri, 0))?;
+    reference_view.define_method("inspect", method!(ReferenceView::inspect, 0))?;
+    reference_view.define_method(
+        "deconstruct_keys",
+        method!(ReferenceView::deconstruct_keys, 1),
+    )?;
 
     let raw_view = canonical_module.define_class("RawView", ruby.class_object())?;
     raw_view.define_method("schema", method!(RawView::schema, 0))?;

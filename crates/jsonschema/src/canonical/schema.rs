@@ -86,7 +86,7 @@ impl CanonicalSchema {
     /// Emit this canonical schema back to JSON Schema.
     #[must_use]
     pub fn to_json_schema(&self) -> Value {
-        emit::to_json_schema(&self.inner, self.draft)
+        emit::to_json_schema(&self.inner, self.draft, &self.definitions)
     }
 
     /// Return `false` when this schema provably admits no instances.
@@ -121,7 +121,7 @@ impl CanonicalSchema {
         )
     }
 
-    /// Every reference uri reachable from this schema, mapped to its canonical target.
+    /// Every reachable reference target known to this document, keyed by its URI.
     #[must_use]
     pub fn definitions(&self) -> impl ExactSizeIterator<Item = (String, CanonicalSchema)> + '_ {
         self.definitions

@@ -256,9 +256,13 @@
     ]
   },
   {
-    "description": "ir: an unmodeled property schema keeps the document raw",
+    "description": "ir: a self-reference in a property child stays symbolic",
     "schema": {"type": "object", "properties": {"a": {"$ref": "#"}}},
-    "expected": {"type": "object", "properties": {"a": {"$ref": "#"}}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": {"$ref": "#"}}
+    },
     "tests": [
       {"data": {}, "valid": true}
     ]

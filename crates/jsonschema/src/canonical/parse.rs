@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use ahash::AHashSet;
 
-use referencing::Draft;
+use referencing::{Draft, Resolver};
 use serde_json::Value;
 
 use crate::{
@@ -15,10 +15,16 @@ use crate::{
             BoundNumber, BoundRational, CanonicalJson, ContainsFacet, Divisors, IntegerLeaf,
             LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, Side, StringLeaf,
         },
-        negate, CanonicalizationError,
+        negate, CanonicalizationError, DefinitionMap, CANONICAL_REFERENCE_PREFIX,
     },
     JsonType, JsonTypeSet,
 };
+
+/// Root IR plus every symbolic `$ref` target parsed during canonicalization.
+pub(crate) struct ParseOutput {
+    pub(crate) root: Schema,
+    pub(crate) definitions: DefinitionMap,
+}
 
 /// Parse a document into structural IR when every construct is modeled; `Ok(None)` keeps it `Raw`.
 /// Keywords the draft does not define are annotations the validator ignores, so they never block
@@ -26,30 +32,67 @@ use crate::{
 pub(crate) fn parse(
     value: &Value,
     ctx: &CanonicalizationContext,
-) -> Result<Option<Schema>, CanonicalizationError> {
-    let mut scan = DocumentScan::default();
-    let parsed = parse_schema(value, ctx, true, &mut scan)?;
+    resolver: &Resolver<'_>,
+) -> Result<Option<ParseOutput>, CanonicalizationError> {
+    let mut state = ParseState::new(value, resolver.base_uri().as_str());
+    let parsed = parse_schema_in_scope(value, ctx, true, resolver, &mut state)?;
     // An in-between `additionalProperties` meeting `patternProperties` anywhere in the document
     // has no exact intersection without pattern-overlap reasoning; nodes built before this check
     // may already be wrong, so the whole document is discarded, not just the pairing site.
-    if scan.additional_schema && scan.pattern_properties {
+    if state.additional_schema && state.pattern_properties {
         return Ok(None);
     }
-    Ok(parsed)
+    let Some(root) = parsed else {
+        return Ok(None);
+    };
+    prune_unreachable_definitions(&root, &mut state.definitions);
+    Ok(Some(ParseOutput {
+        root,
+        definitions: state.definitions,
+    }))
 }
 
-/// What parsing saw anywhere in the document, for pairings decidable only at the root.
-#[derive(Default)]
-struct DocumentScan {
+/// Canonical reference graph plus facts whose interaction is decided only after parsing the root.
+struct ParseState<'a> {
+    root: &'a Value,
+    root_base_uri: Arc<str>,
     additional_schema: bool,
     pattern_properties: bool,
+    definitions: DefinitionMap,
+    in_progress: AHashSet<Arc<str>>,
+}
+
+impl<'a> ParseState<'a> {
+    fn new(root: &'a Value, root_base_uri: &str) -> Self {
+        Self {
+            root,
+            root_base_uri: Arc::from(root_base_uri),
+            additional_schema: false,
+            pattern_properties: false,
+            definitions: DefinitionMap::new(),
+            in_progress: AHashSet::new(),
+        }
+    }
 }
 
 fn parse_schema(
     value: &Value,
     ctx: &CanonicalizationContext,
     is_root: bool,
-    scan: &mut DocumentScan,
+    resolver: &Resolver<'_>,
+    state: &mut ParseState<'_>,
+) -> Result<Option<Schema>, CanonicalizationError> {
+    let resolver = resolver.in_subresource(ctx.draft().create_resource_ref(value))?;
+    parse_schema_in_scope(value, ctx, is_root, &resolver, state)
+}
+
+/// Parse a root or resolved target whose resolver already carries that resource's base URI.
+fn parse_schema_in_scope(
+    value: &Value,
+    ctx: &CanonicalizationContext,
+    is_root: bool,
+    resolver: &Resolver<'_>,
+    state: &mut ParseState<'_>,
 ) -> Result<Option<Schema>, CanonicalizationError> {
     let map = match value {
         Value::Bool(true) => return Ok(Some(Schema::new(SchemaKind::True))),
@@ -58,6 +101,24 @@ fn parse_schema(
         // Not a schema document; the root is rejected earlier, a nested one keeps the document raw.
         Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => return Ok(None),
     };
+
+    if let Some(reference) = map.get("$ref").and_then(Value::as_str) {
+        let Some(reference) = resolve_reference(reference, ctx, resolver, state)? else {
+            return Ok(None);
+        };
+        if matches!(ctx.draft(), Draft::Draft4 | Draft::Draft6 | Draft::Draft7) {
+            return Ok(Some(reference));
+        }
+        if !ref_has_assertion_siblings(map, ctx.draft()) {
+            return Ok(Some(reference));
+        }
+        let mut siblings = map.clone();
+        siblings.remove("$ref");
+        return Ok(
+            parse_schema(&Value::Object(siblings), ctx, is_root, resolver, state)?
+                .map(|siblings| algebra::intersect(reference, siblings, ctx)),
+        );
+    }
 
     let mut type_set = None;
     let mut enum_values = None;
@@ -108,9 +169,11 @@ fn parse_schema(
                     return Ok(None);
                 }
             }
+            ("$id" | "id" | "$anchor", Value::String(_))
+            | ("$defs" | "definitions", Value::Object(_)) => {}
             ("allOf", Value::Array(branches)) => {
                 for branch in branches {
-                    match parse_schema(branch, ctx, false, scan)? {
+                    match parse_schema(branch, ctx, false, resolver, state)? {
                         Some(schema) => conjuncts.push(schema),
                         None => return Ok(None),
                     }
@@ -119,7 +182,7 @@ fn parse_schema(
             ("anyOf", Value::Array(items)) => {
                 let mut branches = Vec::new();
                 for branch in items {
-                    match parse_schema(branch, ctx, false, scan)? {
+                    match parse_schema(branch, ctx, false, resolver, state)? {
                         Some(schema) => branches.push(schema),
                         None => return Ok(None),
                     }
@@ -129,22 +192,27 @@ fn parse_schema(
             // When no two branches share a value, "exactly one matches" is "at least one
             // matches", so a pairwise-disjoint `oneOf` is its `anyOf`. Overlapping branches
             // take the exact encoding - each branch beside the complements of the others -
-            // when every complement is expressible and the expansion stays small.
+            // when every complement is expressible.
             ("oneOf", Value::Array(items)) => {
                 let mut branches = Vec::new();
                 for branch in items {
-                    match parse_schema(branch, ctx, false, scan)? {
+                    match parse_schema(branch, ctx, false, resolver, state)? {
                         Some(schema) => branches.push(schema),
                         None => return Ok(None),
                     }
                 }
-                let overlaps = pairwise_overlaps(&branches, ctx);
-                if overlaps.is_empty() {
-                    conjuncts.push(algebra::union(branches, ctx));
+                if let Some(index) = branches.iter().position(algebra::contains_reference) {
+                    let symbolic_branch = branches.swap_remove(index);
+                    conjuncts.push(algebra::one_of(symbolic_branch, branches));
                 } else {
-                    match exactly_one_of(branches, overlaps, ctx) {
-                        Some(schema) => conjuncts.push(schema),
-                        None => return Ok(None),
+                    let overlaps = pairwise_overlaps(&branches, ctx);
+                    if overlaps.is_empty() {
+                        conjuncts.push(algebra::union(branches, ctx));
+                    } else {
+                        match exactly_one_of(branches, overlaps, ctx) {
+                            Some(schema) => conjuncts.push(schema),
+                            None => return Ok(None),
+                        }
                     }
                 }
             }
@@ -198,7 +266,7 @@ fn parse_schema(
             ("items", value @ (Value::Object(_) | Value::Bool(_)))
                 if ctx.draft().is_known_keyword("items") =>
             {
-                match parse_schema(value, ctx, false, scan)? {
+                match parse_schema(value, ctx, false, resolver, state)? {
                     Some(schema) => items = Some(schema),
                     None => return Ok(None),
                 }
@@ -207,7 +275,7 @@ fn parse_schema(
             ("prefixItems", Value::Array(schemas))
                 if ctx.draft().is_known_keyword("prefixItems") =>
             {
-                match parse_prefix(schemas, ctx, scan)? {
+                match parse_prefix(schemas, ctx, resolver, state)? {
                     Some(prefix) => item_prefix = Some(prefix),
                     None => return Ok(None),
                 }
@@ -219,7 +287,7 @@ fn parse_schema(
                     Draft::Draft4 | Draft::Draft6 | Draft::Draft7 | Draft::Draft201909
                 ) =>
             {
-                match parse_prefix(schemas, ctx, scan)? {
+                match parse_prefix(schemas, ctx, resolver, state)? {
                     Some(prefix) => item_prefix = Some(prefix),
                     None => return Ok(None),
                 }
@@ -238,7 +306,7 @@ fn parse_schema(
             ("contains", value @ (Value::Object(_) | Value::Bool(_)))
                 if ctx.draft().is_known_keyword("contains") =>
             {
-                match parse_schema(value, ctx, false, scan)? {
+                match parse_schema(value, ctx, false, resolver, state)? {
                     Some(schema) => contains_schema = Some(schema),
                     None => return Ok(None),
                 }
@@ -269,7 +337,7 @@ fn parse_schema(
                 if ctx.draft().is_known_keyword("properties") =>
             {
                 for (key, value) in entries {
-                    match parse_schema(value, ctx, false, scan)? {
+                    match parse_schema(value, ctx, false, resolver, state)? {
                         Some(schema) => {
                             properties.insert(Arc::from(key.as_str()), schema);
                         }
@@ -280,7 +348,7 @@ fn parse_schema(
             ("patternProperties", Value::Object(entries))
                 if ctx.draft().is_known_keyword("patternProperties") =>
             {
-                scan.pattern_properties = true;
+                state.pattern_properties = true;
                 for (pattern, value) in entries {
                     let pattern: Arc<str> = Arc::from(pattern.as_str());
                     if ctx.compile_regex(&pattern).is_none() {
@@ -288,7 +356,7 @@ fn parse_schema(
                             pattern: pattern.to_string(),
                         });
                     }
-                    match parse_schema(value, ctx, false, scan)? {
+                    match parse_schema(value, ctx, false, resolver, state)? {
                         Some(schema) => {
                             pattern_properties.insert(pattern, schema);
                         }
@@ -297,7 +365,7 @@ fn parse_schema(
                 }
             }
             ("propertyNames", value) if ctx.draft().is_known_keyword("propertyNames") => {
-                match parse_schema(value, ctx, false, scan)? {
+                match parse_schema(value, ctx, false, resolver, state)? {
                     Some(schema) => property_names = Some(schema),
                     None => return Ok(None),
                 }
@@ -308,13 +376,13 @@ fn parse_schema(
             ("additionalProperties", value @ (Value::Object(_) | Value::Bool(_)))
                 if ctx.draft().is_known_keyword("additionalProperties") =>
             {
-                match parse_schema(value, ctx, false, scan)? {
+                match parse_schema(value, ctx, false, resolver, state)? {
                     Some(schema) if matches!(schema.kind(), SchemaKind::True) => {}
                     Some(schema) if matches!(schema.kind(), SchemaKind::False) => {
                         forbid_unmatched_keys = true;
                     }
                     Some(schema) => {
-                        scan.additional_schema = true;
+                        state.additional_schema = true;
                         additional_schema = Some(schema);
                     }
                     None => return Ok(None),
@@ -410,19 +478,19 @@ fn parse_schema(
                 draft4_exclusive_maximum = *flag;
             }
             ("if", value) if ctx.draft().is_known_keyword("if") => {
-                match parse_schema(value, ctx, false, scan)? {
+                match parse_schema(value, ctx, false, resolver, state)? {
                     Some(schema) => if_schema = Some(schema),
                     None => return Ok(None),
                 }
             }
             ("then", value) if ctx.draft().is_known_keyword("then") => {
-                match parse_schema(value, ctx, false, scan)? {
+                match parse_schema(value, ctx, false, resolver, state)? {
                     Some(schema) => then_schema = Some(schema),
                     None => return Ok(None),
                 }
             }
             ("else", value) if ctx.draft().is_known_keyword("else") => {
-                match parse_schema(value, ctx, false, scan)? {
+                match parse_schema(value, ctx, false, resolver, state)? {
                     Some(schema) => else_schema = Some(schema),
                     None => return Ok(None),
                 }
@@ -437,7 +505,7 @@ fn parse_schema(
                             conjuncts.push(required_dependency(key, names, ctx));
                         }
                         value @ (Value::Object(_) | Value::Bool(_)) => {
-                            match parse_schema(value, ctx, false, scan)? {
+                            match parse_schema(value, ctx, false, resolver, state)? {
                                 Some(schema) => {
                                     conjuncts.push(schema_dependency(key, schema, ctx));
                                 }
@@ -473,7 +541,7 @@ fn parse_schema(
                 for (key, entry) in entries {
                     match entry {
                         value @ (Value::Object(_) | Value::Bool(_)) => {
-                            match parse_schema(value, ctx, false, scan)? {
+                            match parse_schema(value, ctx, false, resolver, state)? {
                                 Some(schema) => {
                                     conjuncts.push(schema_dependency(key, schema, ctx));
                                 }
@@ -486,10 +554,24 @@ fn parse_schema(
                     }
                 }
             }
+            // Cancel a syntactic double complement before parsing its body, avoiding symbolic De Morgan expansion.
+            ("not", Value::Object(inner))
+                if ctx.draft().is_known_keyword("not")
+                    && inner.len() == 1
+                    && inner.contains_key("not") =>
+            {
+                let body = inner
+                    .get("not")
+                    .expect("the double-complement guard found its body");
+                match parse_schema(body, ctx, false, resolver, state)? {
+                    Some(schema) => conjuncts.push(schema),
+                    None => return Ok(None),
+                }
+            }
             // The complement of the negated schema, when the IR can spell it; an unmodeled child or
             // an inexpressible complement keeps the whole document raw.
             ("not", value) if ctx.draft().is_known_keyword("not") => {
-                match parse_schema(value, ctx, false, scan)? {
+                match parse_schema(value, ctx, false, resolver, state)? {
                     Some(child) => match negate::negate(&child, ctx) {
                         Some(complement) => conjuncts.push(complement),
                         None => return Ok(None),
@@ -568,7 +650,7 @@ fn parse_schema(
             ) =>
         {
             let tail = match additional_items {
-                Some(value) => match parse_schema(value, ctx, false, scan)? {
+                Some(value) => match parse_schema(value, ctx, false, resolver, state)? {
                     Some(schema) => Some(schema),
                     None => return Ok(None),
                 },
@@ -745,6 +827,212 @@ fn parse_schema(
     ))
 }
 
+fn ref_has_assertion_siblings(map: &serde_json::Map<String, Value>, draft: Draft) -> bool {
+    map.keys().any(|key| {
+        !matches!(
+            key.as_str(),
+            "$ref"
+                | "$schema"
+                | "$id"
+                | "id"
+                | "$anchor"
+                | "$defs"
+                | "definitions"
+                | "title"
+                | "description"
+                | "default"
+                | "examples"
+        ) && draft.is_known_keyword(key)
+    })
+}
+
+fn resolve_reference(
+    reference: &str,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+    state: &mut ParseState<'_>,
+) -> Result<Option<Schema>, CanonicalizationError> {
+    let base_uri = resolver.base_uri();
+    let location = resolver.resolve_uri(&base_uri.borrow(), reference)?;
+    let resolved = resolver.lookup(reference)?;
+    let (target, target_resolver, target_draft) = resolved.into_inner();
+    if std::ptr::eq(target, state.root) {
+        return Ok(Some(Schema::new(SchemaKind::Reference(Arc::from("#")))));
+    }
+    if target_draft != ctx.draft() {
+        return Ok(None);
+    }
+    let key = canonical_reference_uri(reference, location.as_str(), &state.root_base_uri);
+    if !ensure_definition(Arc::clone(&key), target, ctx, &target_resolver, state)? {
+        return Ok(None);
+    }
+    debug_assert!(
+        state.definitions.contains_key(&key) || state.in_progress.contains(&key),
+        "a resolved reference target is complete or actively being canonicalized"
+    );
+    Ok(Some(Schema::new(SchemaKind::Reference(key))))
+}
+
+fn canonical_reference_uri(reference: &str, location: &str, root_base_uri: &str) -> Arc<str> {
+    if let Some(uri) = canonical_definition_reference(reference) {
+        return uri;
+    }
+    if is_direct_definition_reference(reference)
+        && resource_uri(location) == resource_uri(root_base_uri)
+    {
+        return Arc::from(reference);
+    }
+    if location.starts_with(CANONICAL_REFERENCE_PREFIX) {
+        return Arc::from(location);
+    }
+    let location =
+        percent_encoding::utf8_percent_encode(location, percent_encoding::NON_ALPHANUMERIC);
+    let uri = format!("{CANONICAL_REFERENCE_PREFIX}{location}");
+    let uri = referencing::uri::from_str(&uri).expect("a percent-encoded canonical URI is valid");
+    Arc::from(uri.as_str())
+}
+
+fn canonical_definition_reference(reference: &str) -> Option<Arc<str>> {
+    for prefix in ["#/$defs/", "#/definitions/"] {
+        let Some(encoded) = reference.strip_prefix(prefix) else {
+            continue;
+        };
+        let decoded = percent_encoding::percent_decode_str(encoded)
+            .decode_utf8()
+            .ok()?;
+        let uri = referencing::unescape_segment(&decoded);
+        if uri.starts_with(CANONICAL_REFERENCE_PREFIX) {
+            return Some(Arc::from(uri.as_ref()));
+        }
+    }
+    None
+}
+
+fn resource_uri(uri: &str) -> &str {
+    uri.split_once('#').map_or(uri, |(resource, _)| resource)
+}
+
+fn is_direct_definition_reference(reference: &str) -> bool {
+    for prefix in ["#/$defs/", "#/definitions/"] {
+        if let Some(name) = reference.strip_prefix(prefix) {
+            let Ok(decoded) = percent_encoding::percent_decode_str(name).decode_utf8() else {
+                return false;
+            };
+            return !decoded.is_empty() && !decoded.contains('/');
+        }
+    }
+    false
+}
+
+fn ensure_definition(
+    key: Arc<str>,
+    target: &Value,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+    state: &mut ParseState<'_>,
+) -> Result<bool, CanonicalizationError> {
+    if state.definitions.contains_key(&key) || state.in_progress.contains(&key) {
+        return Ok(true);
+    }
+    let inserted = state.in_progress.insert(Arc::clone(&key));
+    debug_assert!(
+        inserted,
+        "a new definition target is not already in progress"
+    );
+    let parsed = parse_schema_in_scope(target, ctx, false, resolver, state)?;
+    let was_in_progress = state.in_progress.remove(&key);
+    debug_assert!(
+        was_in_progress,
+        "definition parsing balances its in-progress marker"
+    );
+    let Some(parsed) = parsed else {
+        return Ok(false);
+    };
+    let previous = state.definitions.insert(key, parsed);
+    debug_assert!(
+        previous.is_none(),
+        "a canonical definition target is inserted once"
+    );
+    Ok(true)
+}
+
+/// Retain definitions referenced by the final IR. The registry resolves source references before algebra, but cannot know which
+/// symbolic references survive canonical rewriting, so this is a linear liveness walk over already-resolved definition keys.
+fn prune_unreachable_definitions(root: &Schema, definitions: &mut DefinitionMap) {
+    let mut pending = Vec::new();
+    collect_live_definition_references(root, &mut pending);
+    let mut reachable = AHashSet::new();
+    while let Some(uri) = pending.pop() {
+        let Some((uri, schema)) = definitions.get_key_value(uri) else {
+            continue;
+        };
+        if reachable.insert(Arc::clone(uri)) {
+            collect_live_definition_references(schema, &mut pending);
+        }
+    }
+    drop(pending);
+    definitions.retain(|uri, _| reachable.contains(uri));
+    debug_assert!(
+        definitions.keys().all(|uri| reachable.contains(uri)),
+        "the retained definition map contains only targets reachable from the canonical root"
+    );
+}
+
+fn collect_live_definition_references<'a>(schema: &'a Schema, references: &mut Vec<&'a str>) {
+    match schema.kind() {
+        SchemaKind::Reference(uri) => references.push(uri),
+        SchemaKind::Not(schema) | SchemaKind::TypedGroup { body: schema, .. } => {
+            collect_live_definition_references(schema, references);
+        }
+        SchemaKind::AllOf(branches) | SchemaKind::AnyOf(branches) => {
+            for branch in branches.as_slice() {
+                collect_live_definition_references(branch, references);
+            }
+        }
+        SchemaKind::OneOf(branches) => {
+            for branch in branches {
+                collect_live_definition_references(branch, references);
+            }
+        }
+        SchemaKind::Array(leaf) => {
+            let leaf = leaf.get();
+            for schema in &leaf.prefix {
+                collect_live_definition_references(schema, references);
+            }
+            if let Some(schema) = &leaf.items {
+                collect_live_definition_references(schema, references);
+            }
+            for facet in &leaf.contains {
+                collect_live_definition_references(&facet.schema, references);
+            }
+        }
+        SchemaKind::Object(leaf) => {
+            let leaf = leaf.get();
+            if let Some(schema) = &leaf.property_names {
+                collect_live_definition_references(schema, references);
+            }
+            for schema in leaf.properties.values() {
+                collect_live_definition_references(schema, references);
+            }
+            for schema in leaf.pattern_properties.values() {
+                collect_live_definition_references(schema, references);
+            }
+            if let Some(schema) = &leaf.additional {
+                collect_live_definition_references(schema, references);
+            }
+        }
+        SchemaKind::MultiType(_)
+        | SchemaKind::String(_)
+        | SchemaKind::Integer(_)
+        | SchemaKind::Number(_)
+        | SchemaKind::Const(_)
+        | SchemaKind::Enum(_)
+        | SchemaKind::True
+        | SchemaKind::False
+        | SchemaKind::Raw(_) => {}
+    }
+}
+
 /// The array-form dependency on `key`: holding it demands the listed keys too.
 fn required_dependency(key: &str, names: &[Value], ctx: &CanonicalizationContext) -> Schema {
     let mut required: Vec<Arc<str>> = names
@@ -760,8 +1048,7 @@ fn required_dependency(key: &str, names: &[Value], ctx: &CanonicalizationContext
 
 /// The schema-form dependency on `key`: holding it demands the whole value meet `schema`.
 fn schema_dependency(key: &str, schema: Schema, ctx: &CanonicalizationContext) -> Schema {
-    let present = object_with_required(vec![Arc::from(key)], ctx);
-    dependency_conjunct(key, algebra::intersect(present, schema, ctx), ctx)
+    dependency_conjunct(key, schema, ctx)
 }
 
 /// A dependency triggers only on objects holding `key`: non-objects and objects without the key
@@ -847,7 +1134,11 @@ fn pairwise_overlaps(branches: &[Schema], ctx: &CanonicalizationContext) -> Vec<
             | SchemaKind::Number(_)
             | SchemaKind::Array(_)
             | SchemaKind::Object(_)
+            | SchemaKind::Not(_)
+            | SchemaKind::AllOf(_)
             | SchemaKind::AnyOf(_)
+            | SchemaKind::OneOf(_)
+            | SchemaKind::Reference(_)
             | SchemaKind::True
             | SchemaKind::False
             | SchemaKind::Raw(_) => structural.push(branch),
@@ -990,11 +1281,12 @@ fn string_facet_schema(leaf: StringLeaf, ctx: &CanonicalizationContext) -> Schem
 fn parse_prefix(
     schemas: &[Value],
     ctx: &CanonicalizationContext,
-    scan: &mut DocumentScan,
+    resolver: &Resolver<'_>,
+    state: &mut ParseState<'_>,
 ) -> Result<Option<Vec<Schema>>, CanonicalizationError> {
     let mut prefix = Vec::with_capacity(schemas.len());
     for schema in schemas {
-        match parse_schema(schema, ctx, false, scan)? {
+        match parse_schema(schema, ctx, false, resolver, state)? {
             Some(schema) => prefix.push(schema),
             None => return Ok(None),
         }

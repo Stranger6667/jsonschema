@@ -4,18 +4,25 @@ use referencing::Draft;
 use serde_json::{json, Map, Value};
 
 use crate::{
-    canonical::ir::{
-        ArrayLeaf, BoundCardinality, CanonicalJson, ContainsFacet, Divisors, IntegerLeaf,
-        NumberLeaf, ObjectLeaf, Schema, SchemaKind, StringLeaf,
+    canonical::{
+        ir::{
+            ArrayLeaf, BoundCardinality, CanonicalJson, ContainsFacet, Divisors, IntegerLeaf,
+            NumberLeaf, ObjectLeaf, Schema, SchemaKind, StringLeaf,
+        },
+        DefinitionMap, CANONICAL_REFERENCE_PREFIX,
     },
     JsonTypeSet,
 };
 
-pub(crate) fn to_json_schema(root: &Schema, draft: Draft) -> Value {
+const CANONICAL_REFERENCE_SEGMENT: &percent_encoding::AsciiSet =
+    &percent_encoding::CONTROLS.add(b'%');
+
+pub(crate) fn to_json_schema(root: &Schema, draft: Draft, definitions: &DefinitionMap) -> Value {
     let value = emit(root.kind(), draft);
     if matches!(root.kind(), SchemaKind::Raw(_)) {
         return value;
     }
+    let value = attach_definitions(value, definitions, draft);
     match schema_uri(draft) {
         Some(uri) => with_schema_uri(value, uri),
         None => value,
@@ -55,6 +62,14 @@ fn emit(kind: &SchemaKind, draft: Draft) -> Value {
             map.insert("type".into(), Value::String(ty.to_string()));
             Value::Object(map)
         }
+        SchemaKind::Not(schema) => json!({"not": emit(schema.kind(), draft)}),
+        SchemaKind::AllOf(branches) => json!({
+            "allOf": branches
+                .as_slice()
+                .iter()
+                .map(|branch| emit(branch.kind(), draft))
+                .collect::<Vec<_>>()
+        }),
         SchemaKind::AnyOf(branches) => json!({
             "anyOf": branches
                 .as_slice()
@@ -62,7 +77,73 @@ fn emit(kind: &SchemaKind, draft: Draft) -> Value {
                 .map(|branch| emit(branch.kind(), draft))
                 .collect::<Vec<_>>()
         }),
+        SchemaKind::OneOf(branches) => json!({
+            "oneOf": branches
+                .iter()
+                .map(|branch| emit(branch.kind(), draft))
+                .collect::<Vec<_>>()
+        }),
+        SchemaKind::Reference(uri) => emit_reference(uri, draft),
         SchemaKind::Raw(value) => value.get().clone(),
+    }
+}
+
+fn emit_reference(uri: &str, draft: Draft) -> Value {
+    if !uri.starts_with(CANONICAL_REFERENCE_PREFIX) {
+        return json!({"$ref": uri});
+    }
+    let mut reference = format!("#/{}/", definition_keyword(draft));
+    let mut segment = String::with_capacity(uri.len());
+    referencing::write_escaped_str(&mut segment, uri);
+    reference.extend(percent_encoding::utf8_percent_encode(
+        &segment,
+        CANONICAL_REFERENCE_SEGMENT,
+    ));
+    json!({"$ref": reference})
+}
+
+fn attach_definitions(mut value: Value, definitions: &DefinitionMap, draft: Draft) -> Value {
+    if definitions.is_empty() {
+        return value;
+    }
+    let Value::Object(root) = &mut value else {
+        return value;
+    };
+    let generated_keyword = definition_keyword(draft);
+    for (keyword, prefix) in [("$defs", "#/$defs/"), ("definitions", "#/definitions/")] {
+        let mut entries: Map<_, _> = definitions
+            .iter()
+            .filter_map(|(uri, schema)| {
+                definition_name(uri, prefix).map(|name| (name, emit(schema.kind(), draft)))
+            })
+            .collect();
+        if keyword == generated_keyword {
+            for (uri, schema) in definitions {
+                if uri.starts_with(CANONICAL_REFERENCE_PREFIX) {
+                    entries.insert(uri.to_string(), emit(schema.kind(), draft));
+                }
+            }
+        }
+        if !entries.is_empty() {
+            root.insert(keyword.into(), Value::Object(entries));
+        }
+    }
+    value
+}
+
+fn definition_name(uri: &str, prefix: &str) -> Option<String> {
+    let encoded = uri.strip_prefix(prefix)?;
+    let decoded = percent_encoding::percent_decode_str(encoded)
+        .decode_utf8()
+        .ok()?;
+    Some(referencing::unescape_segment(&decoded).into_owned())
+}
+
+const fn definition_keyword(draft: Draft) -> &'static str {
+    if matches!(draft, Draft::Draft4 | Draft::Draft6 | Draft::Draft7) {
+        "definitions"
+    } else {
+        "$defs"
     }
 }
 
@@ -333,7 +414,11 @@ fn finite_keys(names: &Schema) -> Option<Vec<String>> {
         | SchemaKind::Number(_)
         | SchemaKind::Array(_)
         | SchemaKind::Object(_)
+        | SchemaKind::Not(_)
+        | SchemaKind::AllOf(_)
         | SchemaKind::AnyOf(_)
+        | SchemaKind::OneOf(_)
+        | SchemaKind::Reference(_)
         | SchemaKind::Raw(_) => None,
     }
 }

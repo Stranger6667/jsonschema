@@ -83,6 +83,18 @@ impl Draft {
             self
         }
     }
+    /// Returns the schema identifier keyword used by this draft.
+    #[must_use]
+    pub const fn id_keyword(self) -> &'static str {
+        match self {
+            Draft::Draft4 => "id",
+            Draft::Draft6
+            | Draft::Draft7
+            | Draft::Draft201909
+            | Draft::Draft202012
+            | Draft::Unknown => "$id",
+        }
+    }
     pub(crate) fn id_of(self, contents: &Value) -> Option<&str> {
         match self {
             Draft::Draft4 => spec::ids::legacy_id(contents),

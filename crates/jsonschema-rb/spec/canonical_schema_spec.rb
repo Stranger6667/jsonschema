@@ -6,8 +6,7 @@ DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
 
 RSpec.describe "JSONSchema.canonicalize" do
   [
-    { "unevaluatedProperties" => false },
-    { "$defs" => { "a" => { "type" => "null" } }, "$ref" => "#/$defs/a" }
+    { "unevaluatedProperties" => false }
   ].each do |schema|
     it "round-trips unmodeled #{schema.inspect} verbatim" do
       result = JSONSchema.canonicalize(schema)
@@ -257,6 +256,41 @@ RSpec.describe "JSONSchema.canonicalize" do
     end
   end
 
+  it "view returns OneOfView exposing each branch" do
+    schema = {
+      "oneOf" => [{ "$ref" => "#/$defs/one" }, { "$ref" => "#/$defs/two" }],
+      "$defs" => { "one" => { "const" => 1 }, "two" => { "const" => 2 } }
+    }
+    case JSONSchema.canonicalize(schema).view
+    in JSONSchema::Canonical::OneOfView[branches:]
+      expect(branches.length).to eq(2)
+      expect(branches).to all(be_a(JSONSchema::Canonical::CanonicalSchema))
+      expect(branches.map(&:kind)).to eq(%i[reference reference])
+    end
+  end
+
+  it "view returns AllOfView with a symbolic reference" do
+    schema = {
+      "allOf" => [{ "$ref" => "#/$defs/value" }, { "type" => "string" }],
+      "$defs" => { "value" => { "type" => "string" } }
+    }
+    case JSONSchema.canonicalize(schema).view
+    in JSONSchema::Canonical::AllOfView[branches:]
+      expect(branches.map(&:kind)).to eq(%i[multi_type reference])
+    end
+  end
+
+  it "view returns NotView with a symbolic reference" do
+    schema = {
+      "not" => { "$ref" => "#/$defs/other" },
+      "$defs" => { "other" => { "type" => "string" } }
+    }
+    case JSONSchema.canonicalize(schema).view
+    in JSONSchema::Canonical::NotView[schema: inner]
+      expect(inner.kind).to eq(:reference)
+    end
+  end
+
   # `inspect` must render exactly what the reader returns, so the two cannot drift.
   it "inspect renders CanonicalSchema readers" do
     schema = JSONSchema.canonicalize({ "const" => 1 })
@@ -343,9 +377,12 @@ RSpec.describe "JSONSchema.canonicalize" do
     expect(JSONSchema.canonicalize({}, draft: :draft4).draft).to eq(:draft4)
   end
 
-  it "definitions is empty" do
+  it "definitions exposes canonical reference targets" do
     schema = { "$defs" => { "a" => {} }, "$ref" => "#/$defs/a" }
-    expect(JSONSchema.canonicalize(schema).definitions).to eq({})
+    canonical = JSONSchema.canonicalize(schema)
+    expect(canonical.view.uri).to eq("#/$defs/a")
+    expect(canonical.definitions.keys).to eq(["#/$defs/a"])
+    expect(canonical.definitions["#/$defs/a"].kind).to eq(:true) # rubocop:disable Lint/BooleanSymbol
   end
 
   it "raises ValidationError when meta-validation fails" do
