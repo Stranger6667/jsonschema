@@ -4,7 +4,7 @@
 
 ### Added
 
-- Experimental schema canonicalization: `JSONSchema.canonicalize` and the `JSONSchema::Canonical` module reduce a schema to a normal form. Incomplete keyword coverage; API may change.
+- **EXPERIMENTAL**: Schema canonicalization via `jsonschema::canonicalize`. It reduces a reasonable subset of JSON Schemas to their normal forms.
 - Validation of recursive Ruby objects.
 
 ### Changed
