@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.49.0] - 2026-07-25
+
 ### Added
 
 - Validation of recursive Python objects. [#945](https://github.com/Stranger6667/jsonschema/issues/945)
@@ -1134,7 +1136,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.48.5...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.0...HEAD
+[0.49.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.48.5...python-v0.49.0
 [0.48.5]: https://github.com/Stranger6667/jsonschema/compare/python-v0.48.2...python-v0.48.5
 [0.48.2]: https://github.com/Stranger6667/jsonschema/compare/python-v0.48.1...python-v0.48.2
 [0.48.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.48.0...python-v0.48.1
