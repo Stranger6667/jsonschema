@@ -494,6 +494,8 @@ fn negated_type_set_complement_converges_with_direct_spelling() {
 #[cfg(feature = "arbitrary-precision")]
 #[test_case(r#"{"const":1e999999999999999999999}"#; "huge_exponent_const")]
 #[test_case(r#"{"enum":[1e999999999999999999999]}"#; "huge_exponent_enum")]
+#[test_case(r#"{"type":"number","minimum":1e999999999999999999999}"#; "huge_exponent_bound")]
+#[test_case(r#"{"type":"number","multipleOf":1e999999999999999999999}"#; "huge_exponent_divisor")]
 #[test_case(&format!(r#"{{"const":1{}}}"#, "0".repeat((1 << 20) + 1)); "huge_digit_count")]
 fn numerals_without_exact_comparison_stay_raw(text: &str) {
     let schema: Value = serde_json::from_str(text).expect("valid schema JSON");
@@ -514,13 +516,25 @@ fn contains_counts_without_modeled_form_stay_raw(schema: &Value) {
 }
 
 #[cfg(feature = "arbitrary-precision")]
-#[test_case("minContains"; "minimum past the expansion cap")]
-#[test_case("maxContains"; "maximum past the expansion cap")]
-fn contains_counts_without_modeled_form_stay_raw(keyword: &str) {
+#[test_case("string", "minLength"; "minimum string length past the expansion cap")]
+#[test_case("string", "maxLength"; "maximum string length past the expansion cap")]
+#[test_case("array", "minItems"; "minimum array length past the expansion cap")]
+#[test_case("array", "maxItems"; "maximum array length past the expansion cap")]
+#[test_case("object", "minProperties"; "minimum object size past the expansion cap")]
+#[test_case("object", "maxProperties"; "maximum object size past the expansion cap")]
+#[test_case("array", "minContains"; "minimum contains count past the expansion cap")]
+#[test_case("array", "maxContains"; "maximum contains count past the expansion cap")]
+fn count_bound_without_modeled_form_stays_raw(ty: &str, keyword: &str) {
     // More digits than the canonical expansion cap, yet within the validator's exponent limit:
     // the count is meta-valid, but its canonical spelling stays scientific.
     let count = format!("1{}e1000000", "0".repeat(48_577));
-    let text = format!(r#"{{"type":"array","contains":{{"type":"null"}},"{keyword}":{count}}}"#);
+    let contains = keyword
+        .ends_with("Contains")
+        .then_some(r#","contains":{"type":"null"}"#);
+    let text = format!(
+        r#"{{"type":"{ty}"{},"{keyword}":{count}}}"#,
+        contains.unwrap_or_default()
+    );
     let schema: Value = serde_json::from_str(&text).expect("valid schema JSON");
     let canonical = canonicalize(&schema).expect("canonicalizes");
     assert!(matches!(canonical.view(), CanonicalView::Raw(_)));
@@ -585,6 +599,18 @@ fn canonical_schema_ordering() {
     assert_eq!(one.cmp(&one), Ordering::Equal);
     assert!(one < two);
     assert!(two > one);
+
+    let raw = |text: &str| canonicalize(&serde_json::from_str(text).unwrap()).unwrap();
+    let raw_one = raw(r#"{"unevaluatedProperties":{"const":1}}"#);
+    let raw_two = raw(r#"{"unevaluatedProperties":{"const":2}}"#);
+    assert_eq!(raw_one.partial_cmp(&raw_two), Some(Ordering::Less));
+    assert!(raw_one < raw_two);
+
+    #[cfg(feature = "arbitrary-precision")]
+    assert!(
+        raw(r#"{"unevaluatedProperties":{"const":1e400}}"#)
+            < raw(r#"{"unevaluatedProperties":{"const":2e400}}"#)
+    );
 }
 
 // Each draft stamps its own `$schema` URI onto the emitted document.

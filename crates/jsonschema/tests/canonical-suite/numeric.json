@@ -1135,5 +1135,17 @@
       {"data": "hello", "valid": true},
       {"data": -1e100, "valid": false}
     ]
+  },
+  {
+    "description": "divisors whose least common multiple exceeds finite f64 remain separate",
+    "schema": {
+      "allOf": [
+        {"type": "number", "multipleOf": 8e307},
+        {"type": "number", "multipleOf": 9e307}
+      ]
+    },
+    "tests": [
+      {"data": 0, "valid": true}
+    ]
   }
 ]

@@ -372,5 +372,23 @@
       {"data": "b", "valid": true},
       {"data": "c", "valid": false}
     ]
+  },
+  {
+    "description": "ir: intersecting string leaves can produce an empty length window",
+    "schema": {
+      "allOf": [
+        {"type": "string", "minLength": 5},
+        {"type": "string", "maxLength": 2}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {"data": "a", "valid": false},
+      {"data": "abcdef", "valid": false}
+    ]
   }
 ]

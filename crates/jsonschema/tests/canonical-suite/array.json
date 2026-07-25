@@ -439,5 +439,30 @@
       {"data": [1], "valid": true},
       {"data": [], "valid": false}
     ]
+  },
+  {
+    "description": "an array contains facet filters a mixed finite value set",
+    "schema": {
+      "allOf": [
+        {"enum": [0, [], [1], [1, 2], [2, 2]]},
+        {
+          "type": "array",
+          "minItems": 1,
+          "contains": {"type": "integer"},
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": [1]
+    },
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [], "valid": false},
+      {"data": [1, 2], "valid": false},
+      {"data": 0, "valid": false}
+    ]
   }
 ]

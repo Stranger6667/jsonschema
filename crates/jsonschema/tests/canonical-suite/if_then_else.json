@@ -207,5 +207,19 @@
       { "data": 5, "valid": true },
       { "data": -5, "valid": false }
     ]
+  },
+  {
+    "description": "an unmodeled if schema keeps the document raw",
+    "schema": {
+      "if": {"unevaluatedProperties": false},
+      "then": true
+    }
+  },
+  {
+    "description": "an unmodeled else schema keeps the document raw",
+    "schema": {
+      "if": true,
+      "else": {"unevaluatedProperties": false}
+    }
   }
 ]

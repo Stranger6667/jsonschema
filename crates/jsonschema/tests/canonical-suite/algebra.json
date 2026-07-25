@@ -1500,5 +1500,55 @@
         "valid": false
       }
     ]
+  },
+  {
+    "description": "a draft 4 guarded integer value set filters through a number interval",
+    "draft": "draft4",
+    "schema": {
+      "allOf": [
+        {
+          "type": "integer",
+          "enum": [1, 2, 3]
+        },
+        {
+          "minimum": 2,
+          "maximum": 4
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "integer",
+      "enum": [2, 3]
+    },
+    "tests": [
+      {"data": 2, "valid": true},
+      {"data": 3, "valid": true},
+      {"data": 2.0, "valid": false},
+      {"data": 1, "valid": false},
+      {"data": 4, "valid": false}
+    ]
+  },
+  {
+    "description": "finite boolean values widen the type set while a composite member remains",
+    "schema": {
+      "anyOf": [
+        {"type": "string"},
+        {"enum": [false, true, {"a": 1}]}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["boolean", "string"]},
+        {"const": {"a": 1}}
+      ]
+    },
+    "tests": [
+      {"data": false, "valid": true},
+      {"data": "x", "valid": true},
+      {"data": {"a": 1}, "valid": true},
+      {"data": null, "valid": false}
+    ]
   }
 ]

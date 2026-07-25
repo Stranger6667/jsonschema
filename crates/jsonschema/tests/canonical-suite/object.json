@@ -828,5 +828,128 @@
         "valid": false
       }
     ]
+  },
+  {
+    "description": "an optional property branch absorbs the same required property branch",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {"a": {"type": "string"}},
+          "required": ["a"]
+        },
+        {
+          "type": "object",
+          "properties": {"a": {"type": "string"}}
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": {"type": "string"}}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": "x"}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "complementary required property schemas leave only the requirement",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {"a": {"type": "string"}},
+          "required": ["a"]
+        },
+        {
+          "type": "object",
+          "properties": {"a": {"not": {"type": "string"}}},
+          "required": ["a"]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "required": ["a"]
+    },
+    "tests": [
+      {"data": {"a": "x"}, "valid": true},
+      {"data": {"a": 1}, "valid": true},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "jointly covered larger objects remove a two-property ceiling",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object",
+          "minProperties": 2,
+          "maxProperties": 2
+        },
+        {
+          "type": "object",
+          "minProperties": 3,
+          "required": ["a"]
+        },
+        {
+          "type": "object",
+          "minProperties": 3,
+          "properties": {"a": false}
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "minProperties": 2
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"b": 1, "c": 2, "d": 3}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "a nonmatching pattern lets an object leaf absorb a finite member",
+    "schema": {
+      "anyOf": [
+        {"const": {"other": 1}},
+        {
+          "type": "object",
+          "patternProperties": {"^a": false}
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "patternProperties": {"^a": false}
+    },
+    "tests": [
+      {"data": {"other": 1}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "a rejected finite object remains beside its key constraint",
+    "schema": {
+      "anyOf": [
+        {"const": {"b": 1}},
+        {
+          "type": "object",
+          "propertyNames": {"const": "a"}
+        }
+      ]
+    },
+    "tests": [
+      {"data": {"b": 1}, "valid": true},
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": 2}, "valid": false}
+    ]
   }
 ]
