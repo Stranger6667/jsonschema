@@ -199,13 +199,16 @@ fn negate_array_leaf(leaf: &ArrayLeaf, ctx: &CanonicalizationContext) -> Option<
     let windows = length_windows(&leaf.lengths)?;
     let mut branches = vec![type_set_schema(JsonTypeSet::all().remove(JsonType::Array))];
     branches.extend(windows.into_iter().map(|lengths| {
-        algebra::array_leaf(ArrayLeaf {
-            lengths,
-            unique: false,
-            prefix: Vec::new(),
-            items: None,
-            contains: Vec::new(),
-        })
+        algebra::array_leaf(
+            ArrayLeaf {
+                lengths,
+                unique: false,
+                prefix: Vec::new(),
+                items: None,
+                contains: Vec::new(),
+            },
+            ctx,
+        )
     }));
     Some(algebra::union(branches, ctx))
 }

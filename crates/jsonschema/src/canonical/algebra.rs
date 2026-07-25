@@ -201,7 +201,7 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
         (SchemaKind::MultiType(set), SchemaKind::Array(leaf))
         | (SchemaKind::Array(leaf), SchemaKind::MultiType(set)) => {
             if set.contains(JsonType::Array) {
-                array_leaf(leaf.into_inner())
+                array_leaf(leaf.into_inner(), ctx)
             } else {
                 Schema::new(SchemaKind::False)
             }
@@ -209,11 +209,10 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
         // Two array leaves: keep the arrays both accept - the narrower window, and distinct items
         // when either side asks for them.
         (SchemaKind::Array(first), SchemaKind::Array(second)) => {
-            array_leaf(intersect_array_leaves(
-                first.into_inner(),
-                second.into_inner(),
+            array_leaf(
+                intersect_array_leaves(first.into_inner(), second.into_inner(), ctx),
                 ctx,
-            ))
+            )
         }
         // An object leaf constrains object values. A type set keeps it only when the set covers
         // `object`; otherwise the two share no value, so `False`.
@@ -645,7 +644,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     }
     // Each surviving array leaf becomes its own branch.
     for leaf in arrays {
-        out.push(array_leaf(leaf));
+        out.push(array_leaf(leaf, ctx));
     }
     // Each surviving object leaf becomes its own branch.
     for leaf in objects {
@@ -807,7 +806,7 @@ fn rerun(
     rest.extend(strings.into_iter().map(|leaf| string_leaf(leaf, ctx)));
     rest.extend(integers.into_iter().map(|leaf| integer_leaf(leaf, ctx)));
     rest.extend(numbers.into_iter().map(|leaf| number_leaf(leaf, ctx)));
-    rest.extend(arrays.into_iter().map(array_leaf));
+    rest.extend(arrays.into_iter().map(|leaf| array_leaf(leaf, ctx)));
     rest.extend(objects.into_iter().map(|leaf| object_leaf(leaf, ctx)));
     union(rest, ctx)
 }
@@ -1684,13 +1683,28 @@ pub(crate) fn number_leaf(leaf: NumberLeaf, ctx: &CanonicalizationContext) -> Sc
 }
 
 /// Pack an array facet set into a node, collapsing the leaves that say something simpler.
-pub(crate) fn array_leaf(mut leaf: ArrayLeaf) -> Schema {
+pub(crate) fn array_leaf(mut leaf: ArrayLeaf, ctx: &CanonicalizationContext) -> Schema {
     if !normalize_contains(&mut leaf) {
         return Schema::new(SchemaKind::False);
     }
     normalize_items(&mut leaf);
     if !reconcile_contains_window(&mut leaf) {
         return Schema::new(SchemaKind::False);
+    }
+    if !reconcile_contains_positions(&leaf, ctx) {
+        return Schema::new(SchemaKind::False);
+    }
+    // Distinct elements cannot outnumber the values they are drawn from, so a finite item domain
+    // is a length ceiling.
+    // e.g.  {"type": "array", "items": {"type": "boolean"}, "uniqueItems": true}
+    //       =>  {"type": "array", "items": {"type": "boolean"}, "uniqueItems": true, "maxItems": 2}
+    if leaf.unique {
+        if let Some(ceiling) = leaf.unique_length_ceiling() {
+            leaf.lengths.maximum = Some(match leaf.lengths.maximum.take() {
+                Some(maximum) => maximum.min(ceiling),
+                None => ceiling,
+            });
+        }
     }
     // An array of at most one item has nothing to repeat, so uniqueness says nothing more.
     // e.g.  {"type": "array", "maxItems": 1, "uniqueItems": true}
@@ -1817,6 +1831,55 @@ fn reconcile_contains_window(leaf: &mut ArrayLeaf) -> bool {
         .is_some_and(|min| *min <= implied)
     {
         leaf.lengths.minimum = None;
+    }
+    true
+}
+
+/// Check the `contains` demands against the element schemas: a demand is met only at a position
+/// whose own schema shares a value with it, so a demand asking for more matches than there are such
+/// positions leaves the leaf empty.
+/// ```text
+/// e.g.  {"type": "array", "contains": {"type": "integer"}, "items": {"type": "string"}}
+///       =>  false
+/// ```
+fn reconcile_contains_positions(leaf: &ArrayLeaf, ctx: &CanonicalizationContext) -> bool {
+    for facet in &leaf.contains {
+        let minimum = facet.effective_minimum();
+        if minimum.is_zero() {
+            continue;
+        }
+        // Every element past the prefix answers to the tail alone, so once one of those positions
+        // can meet the demand, so can any number of them.
+        let tail_reachable = leaf
+            .lengths
+            .maximum
+            .as_ref()
+            .is_none_or(|max| BoundCardinality::from(leaf.prefix.len() as u64) < *max);
+        if tail_reachable {
+            let tail = leaf
+                .items
+                .clone()
+                .unwrap_or_else(|| Schema::new(SchemaKind::True));
+            if !matches!(
+                intersect(tail, facet.schema.clone(), ctx).kind(),
+                SchemaKind::False
+            ) {
+                continue;
+            }
+        }
+        let matching = leaf
+            .prefix
+            .iter()
+            .filter(|schema| {
+                !matches!(
+                    intersect((*schema).clone(), facet.schema.clone(), ctx).kind(),
+                    SchemaKind::False
+                )
+            })
+            .count();
+        if BoundCardinality::from(matching as u64) < minimum {
+            return false;
+        }
     }
     true
 }
@@ -2089,18 +2152,21 @@ fn restrict_array_member(
         return MemberRestriction::Full;
     }
     let length = BoundCardinality::from(elements.len() as u64);
-    MemberRestriction::Partial(array_leaf(ArrayLeaf {
-        lengths: LengthBounds {
-            minimum: Some(length.clone()),
-            maximum: Some(length),
+    MemberRestriction::Partial(array_leaf(
+        ArrayLeaf {
+            lengths: LengthBounds {
+                minimum: Some(length.clone()),
+                maximum: Some(length),
+            },
+            // Element pinning preserves elementwise equality, so the member's distinctness carries
+            // over and the pinned tuple needs no uniqueness of its own.
+            unique: false,
+            prefix: restricted,
+            items: None,
+            contains: Vec::new(),
         },
-        // Element pinning preserves elementwise equality, so the member's distinctness carries
-        // over and the pinned tuple needs no uniqueness of its own.
-        unique: false,
-        prefix: restricted,
-        items: None,
-        contains: Vec::new(),
-    }))
+        ctx,
+    ))
 }
 
 /// Pack an object facet set into a node, collapsing the leaves that say something simpler.
