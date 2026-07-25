@@ -1699,7 +1699,7 @@ pub(crate) fn array_leaf(mut leaf: ArrayLeaf, ctx: &CanonicalizationContext) -> 
     // e.g.  {"type": "array", "items": {"type": "boolean"}, "uniqueItems": true}
     //       =>  {"type": "array", "items": {"type": "boolean"}, "uniqueItems": true, "maxItems": 2}
     if leaf.unique {
-        if let Some(ceiling) = leaf.unique_length_ceiling() {
+        if let Some(ceiling) = unique_length_ceiling(&leaf, ctx) {
             leaf.lengths.maximum = Some(match leaf.lengths.maximum.take() {
                 Some(maximum) => maximum.min(ceiling),
                 None => ceiling,
@@ -1833,6 +1833,27 @@ fn reconcile_contains_window(leaf: &mut ArrayLeaf) -> bool {
         leaf.lengths.minimum = None;
     }
     true
+}
+
+/// The longest array `uniqueItems` admits when the tail draws from a finite domain: every element
+/// past the prefix comes out of that domain, and a prefix position whose own schema stays inside it
+/// competes for the same values instead of contributing one of its own.
+/// ```text
+/// e.g.  {"prefixItems": [{"const": true}], "items": {"type": "boolean"}, "uniqueItems": true}
+///       =>  ceiling 2, not 3
+/// ```
+fn unique_length_ceiling(
+    leaf: &ArrayLeaf,
+    ctx: &CanonicalizationContext,
+) -> Option<BoundCardinality> {
+    let tail = leaf.items.as_ref()?;
+    let domain = tail.kind().finite_domain_size()?;
+    let independent = leaf
+        .prefix
+        .iter()
+        .filter(|schema| intersect((*schema).clone(), tail.clone(), ctx) != **schema)
+        .count() as u64;
+    Some(BoundCardinality::from(domain.saturating_add(independent)))
 }
 
 /// Check the `contains` demands against the element schemas: a demand is met only at a position

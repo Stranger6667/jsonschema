@@ -513,6 +513,93 @@
     ]
   },
   {
+    "description": "ir: a prefix position inside the item domain claims no slot of its own",
+    "schemas": [
+      {
+        "type": "array",
+        "prefixItems": [{"const": true}],
+        "items": {"type": "boolean"},
+        "uniqueItems": true
+      },
+      {
+        "type": "array",
+        "prefixItems": [{"const": true}],
+        "items": {"type": "boolean"},
+        "uniqueItems": true,
+        "maxItems": 2
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"const": true}],
+      "items": {"type": "boolean"},
+      "uniqueItems": true,
+      "maxItems": 2
+    },
+    "satisfiable": true,
+    "tests": [
+      {"data": [true, false], "valid": true},
+      {"data": [true, false, true], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a prefix position inside the item domain cannot lift minItems past it",
+    "schema": {
+      "type": "array",
+      "prefixItems": [{"const": true}],
+      "items": {"type": "boolean"},
+      "uniqueItems": true,
+      "minItems": 3
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false
+  },
+  {
+    "description": "ir: prefix positions competing with each other leave the ceiling wide",
+    "schema": {
+      "type": "array",
+      "prefixItems": [{"const": true}, {"const": true}],
+      "items": {"type": "boolean"},
+      "uniqueItems": true
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"const": true}, {"const": true}],
+      "items": {"type": "boolean"},
+      "uniqueItems": true,
+      "maxItems": 2
+    },
+    "satisfiable": true,
+    "tests": [
+      {"data": [true], "valid": true},
+      {"data": [true, true], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a prefix position outside the item domain claims a slot of its own",
+    "schema": {
+      "type": "array",
+      "prefixItems": [{"const": "x"}],
+      "items": {"type": "boolean"},
+      "uniqueItems": true
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"const": "x"}],
+      "items": {"type": "boolean"},
+      "uniqueItems": true,
+      "maxItems": 3
+    },
+    "satisfiable": true,
+    "tests": [
+      {"data": ["x", true, false], "valid": true},
+      {"data": ["x", true, false, true], "valid": false}
+    ]
+  },
+  {
     "description": "ir: prefix positions raise the ceiling a finite item domain sets",
     "schema": {
       "type": "array",
