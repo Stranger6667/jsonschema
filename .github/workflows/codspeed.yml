@@ -28,7 +28,9 @@ jobs:
             benches: "--bench codegen"
           - name: canonicalize
             package: jsonschema
-            features: ""
+            # Both bindings canonicalize with arbitrary precision, which is where the numeric work
+            # that this bench measures actually runs.
+            features: "--features arbitrary-precision"
             benches: "--bench canonicalize"
           - name: codegen-generate
             package: jsonschema-macros-core
