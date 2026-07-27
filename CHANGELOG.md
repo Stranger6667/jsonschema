@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Faster serialization of canonicalized schemas.
+
 ## [0.49.1] - 2026-07-25
 
 ### Fixed
