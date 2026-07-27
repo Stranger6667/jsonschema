@@ -1178,7 +1178,8 @@ fn collapse_object_leaves_covering_domain(
         pattern_properties: BTreeMap::new(),
         additional: None,
     };
-    if !split_piece_is_covered(piece.clone(), leaves, &keys, ctx) {
+    let mut normalized = Vec::new();
+    if !split_piece_is_covered(piece.clone(), leaves, &mut normalized, None, &keys, ctx) {
         return false;
     }
     leaves.clear();
@@ -1186,11 +1187,34 @@ fn collapse_object_leaves_covering_domain(
     true
 }
 
+/// The leaf at `index` normalized, reusing `normalized` when it was already built. A split rebuilds
+/// the same schemas at every node of its recursion otherwise, and normalizing up front instead
+/// would pay for leaves the short-circuiting scan in `split_piece_is_covered` never reaches - most
+/// calls give up before measuring anything, so even the slot vector waits for a first use.
+fn cover(
+    index: usize,
+    leaves: &[ObjectLeaf],
+    normalized: &mut Vec<Option<Schema>>,
+    ctx: &CanonicalizationContext,
+) -> Schema {
+    if normalized.is_empty() {
+        normalized.resize(leaves.len(), None);
+    } else if let Some(schema) = &normalized[index] {
+        return schema.clone();
+    }
+    let schema = object_leaf(leaves[index].clone(), ctx);
+    normalized[index] = Some(schema.clone());
+    schema
+}
+
 /// Whether some leaf admits the whole piece, or both halves of a key-presence split do
-/// recursively. The key list shrinks with each split, which bounds the recursion.
+/// recursively. The key list shrinks with each split, which bounds the recursion. `skip` leaves out
+/// the branch being measured, so a leaf is never covered by itself.
 fn split_piece_is_covered(
     piece: ObjectLeaf,
     leaves: &[ObjectLeaf],
+    normalized: &mut Vec<Option<Schema>>,
+    skip: Option<usize>,
     keys: &[Arc<str>],
     ctx: &CanonicalizationContext,
 ) -> bool {
@@ -1198,11 +1222,10 @@ fn split_piece_is_covered(
     if matches!(schema.kind(), SchemaKind::False) {
         return true;
     }
-    if leaves
-        .iter()
-        .any(|leaf| intersect(schema.clone(), object_leaf(leaf.clone(), ctx), ctx) == schema)
-    {
-        return true;
+    for index in (0..leaves.len()).filter(|index| Some(*index) != skip) {
+        if intersect(schema.clone(), cover(index, leaves, normalized, ctx), ctx) == schema {
+            return true;
+        }
     }
     let Some((key, rest)) = keys.split_first() else {
         return false;
@@ -1215,8 +1238,8 @@ fn split_piece_is_covered(
     missing
         .properties
         .insert(Arc::clone(key), Schema::new(SchemaKind::False));
-    split_piece_is_covered(holding, leaves, rest, ctx)
-        && split_piece_is_covered(missing, leaves, rest, ctx)
+    split_piece_is_covered(holding, leaves, normalized, skip, rest, ctx)
+        && split_piece_is_covered(missing, leaves, normalized, skip, rest, ctx)
 }
 
 /// Drop a size bound when the region it excludes - the leaf's other facets on the outer ray - is
@@ -1233,6 +1256,9 @@ fn widen_size_window_covered_by_siblings(
     leaves: &mut [ObjectLeaf],
     ctx: &CanonicalizationContext,
 ) -> bool {
+    // A leaf normalizes the same way whichever index is being measured, so one cache spans the
+    // whole loop.
+    let mut normalized = Vec::new();
     for index in 0..leaves.len() {
         let Some(rays) = negate::length_windows(&leaves[index].sizes) else {
             continue;
@@ -1240,15 +1266,11 @@ fn widen_size_window_covered_by_siblings(
         if rays.is_empty() {
             continue;
         }
-        let siblings: Vec<ObjectLeaf> = leaves
+        let mut keys: Vec<Arc<str>> = leaves
             .iter()
             .enumerate()
             .filter(|(sibling, _)| *sibling != index)
-            .map(|(_, leaf)| leaf.clone())
-            .collect();
-        let mut keys: Vec<Arc<str>> = siblings
-            .iter()
-            .flat_map(|leaf| leaf.required.iter().chain(leaf.properties.keys()).cloned())
+            .flat_map(|(_, leaf)| leaf.required.iter().chain(leaf.properties.keys()).cloned())
             .collect();
         keys.sort();
         keys.dedup();
@@ -1256,7 +1278,7 @@ fn widen_size_window_covered_by_siblings(
             let drops_minimum = ray.minimum.is_none();
             let mut piece = leaves[index].clone();
             piece.sizes = ray;
-            if split_piece_is_covered(piece, &siblings, &keys, ctx) {
+            if split_piece_is_covered(piece, leaves, &mut normalized, Some(index), &keys, ctx) {
                 if drops_minimum {
                     leaves[index].sizes.minimum = None;
                 } else {
@@ -1286,20 +1308,26 @@ fn drop_object_branch_covered_by_siblings(
     leaves: &mut Vec<ObjectLeaf>,
     ctx: &CanonicalizationContext,
 ) -> bool {
+    // A leaf normalizes the same way whichever index is being measured, so one cache spans the
+    // whole loop.
+    let mut normalized = Vec::new();
     for index in 0..leaves.len() {
-        let siblings: Vec<ObjectLeaf> = leaves
+        let mut keys: Vec<Arc<str>> = leaves
             .iter()
             .enumerate()
             .filter(|(sibling, _)| *sibling != index)
-            .map(|(_, leaf)| leaf.clone())
-            .collect();
-        let mut keys: Vec<Arc<str>> = siblings
-            .iter()
-            .flat_map(|leaf| leaf.required.iter().chain(leaf.properties.keys()).cloned())
+            .flat_map(|(_, leaf)| leaf.required.iter().chain(leaf.properties.keys()).cloned())
             .collect();
         keys.sort();
         keys.dedup();
-        if split_piece_is_covered(leaves[index].clone(), &siblings, &keys, ctx) {
+        if split_piece_is_covered(
+            leaves[index].clone(),
+            leaves,
+            &mut normalized,
+            Some(index),
+            &keys,
+            ctx,
+        ) {
             leaves.remove(index);
             return true;
         }
@@ -1311,21 +1339,21 @@ fn drop_object_branch_covered_by_siblings(
         //         {"type": "object", "minProperties": 2, "properties": {"a": {"type": "string"}}}
         //       ]  =>  the first branch dissolves: at one key the entry says nothing beside the
         //              filled slots, above that the third branch holds it
-        for divider in 0..siblings.len() {
-            let Some(mut windows) = negate::length_windows(&siblings[divider].sizes) else {
+        for divider in (0..leaves.len()).filter(|divider| *divider != index) {
+            let Some(mut windows) = negate::length_windows(&leaves[divider].sizes) else {
                 continue;
             };
             if windows.is_empty() {
                 continue;
             }
-            windows.push(siblings[divider].sizes.clone());
+            windows.push(leaves[divider].sizes.clone());
             let all_covered = windows.iter().all(|window| {
                 let mut piece = leaves[index].clone();
                 piece.sizes = LengthBounds {
                     minimum: tighter(piece.sizes.minimum.take(), window.minimum.clone(), Ord::max),
                     maximum: tighter(piece.sizes.maximum.take(), window.maximum.clone(), Ord::min),
                 };
-                split_piece_is_covered(piece, &siblings, &keys, ctx)
+                split_piece_is_covered(piece, leaves, &mut normalized, Some(index), &keys, ctx)
             });
             if all_covered {
                 leaves.remove(index);
