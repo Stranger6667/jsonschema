@@ -5,6 +5,7 @@
 ### Performance
 
 - Faster serialization of canonicalized schemas.
+- Faster macro code generation for subschemas with many keywords.
 
 ## [0.49.1] - 2026-07-25
 
