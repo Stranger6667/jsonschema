@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.49.2] - 2026-07-28
+
 ### Fixed
 
 - Canonical numeric bounds no `float` can hold are exposed as `decimal.Decimal` instead of a rounded, wider bound.
@@ -1151,7 +1153,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.2...HEAD
+[0.49.2]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.1...python-v0.49.2
 [0.49.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.0...python-v0.49.1
 [0.49.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.48.5...python-v0.49.0
 [0.48.5]: https://github.com/Stranger6667/jsonschema/compare/python-v0.48.2...python-v0.48.5
