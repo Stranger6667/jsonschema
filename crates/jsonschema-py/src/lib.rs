@@ -18,6 +18,7 @@ use email::EmailOptions;
 #[cfg(not(target_arch = "wasm32"))]
 use http::HttpOptions;
 use jsonschema::{
+    canonical::json::canonical_number,
     json::{probe_root, take_pending_error, PendingErrorScope, Pyo3},
     paths::LocationSegment,
     Draft, Retrieve, ValidationOptions,
@@ -65,6 +66,16 @@ fn referencing_error_type(py: Python<'_>) -> PyResult<Bound<'_, PyType>> {
     Ok(exception_class.cast_into::<PyType>()?)
 }
 
+/// Whether `text` is the number `value` writes back to, i.e. a Python float carries the literal.
+fn float_spells(value: f64, text: &str) -> bool {
+    let mut buffer = zmij::Buffer::new();
+    let written = buffer.format_finite(value);
+    // Two spellings of one value share a canonical form, so this compares values, not text: `1e20`
+    // and `100000000000000000000` agree, while `100000000000000000000.1` differs from both.
+    canonical_number(written).as_deref().unwrap_or(written)
+        == canonical_number(text).as_deref().unwrap_or(text)
+}
+
 /// Convert a serde_json::Value to a Python object, properly handling arbitrary precision numbers
 pub(crate) fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
     match value {
@@ -84,12 +95,14 @@ pub(crate) fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyRe
                 let s = n.as_str();
                 let is_float = s.bytes().any(|b| b == b'.' || b == b'e' || b == b'E');
                 if is_float {
-                    if let Some(f) = n.as_f64() {
+                    if let Some(f) = n.as_f64().filter(|f| float_spells(*f, s)) {
                         Ok(pyo3::types::PyFloat::new(py, f).into_any().unbind())
                     } else {
-                        // Fall back to decimal.Decimal for values outside f64 range so Python callers
+                        // Fall back to decimal.Decimal for values no float carries, so Python callers
                         // observe the exact literal from JSON instead of ValueError/inf when numbers
-                        // exceed binary64 limits.
+                        // exceed binary64 limits, or a rounded neighbour when they exceed its
+                        // precision. A canonical bound can sit a fraction away from a round number,
+                        // and rounding it there would admit values the schema excludes.
                         let decimal_type =
                             unsafe { PyType::from_borrowed_type_ptr(py, types::DECIMAL_TYPE) };
                         decimal_type.call1((s,)).map(|obj| obj.into_any().unbind())
