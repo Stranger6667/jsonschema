@@ -10,7 +10,7 @@ pub static FHIR_SCHEMA: &[u8] = include_bytes!("../data/fhir.schema.json");
 pub static RECURSIVE_SCHEMA: &[u8] = include_bytes!("../data/recursive_schema.json");
 
 static ZUORA: &[u8] = include_bytes!("../data/zuora.json");
-static KUBERNETES: &[u8] = include_bytes!("../data/kubernetes.json");
+pub static KUBERNETES: &[u8] = include_bytes!("../data/kubernetes.json");
 static CANADA: &[u8] = include_bytes!("../data/canada.json");
 static CITM: &[u8] = include_bytes!("../data/citm_catalog.json");
 static FAST_VALID: &[u8] = include_bytes!("../data/fast_valid.json");

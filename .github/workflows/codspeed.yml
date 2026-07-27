@@ -26,6 +26,10 @@ jobs:
             package: jsonschema
             features: "--features macros"
             benches: "--bench codegen"
+          - name: canonicalize
+            package: jsonschema
+            features: ""
+            benches: "--bench canonicalize"
           - name: codegen-generate
             package: jsonschema-macros-core
             features: "--features bench"
