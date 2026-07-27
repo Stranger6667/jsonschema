@@ -83,6 +83,15 @@ mod bench {
             json!({"type": "object", "properties": props})
         };
 
+        // Bounds far from zero on a fractional grid: each end is snapped onto a multiple, which is
+        // where the exact rational behind a spelling earns its keep.
+        let wide_numeric_grid = json!({
+            "type": "number",
+            "multipleOf": 0.5,
+            "minimum": -1e308,
+            "maximum": 1e308,
+        });
+
         let object_with_properties = json!({
             "type": "object",
             "properties": {
@@ -111,6 +120,7 @@ mod bench {
                 "many_small_allofs_inside_object",
                 &many_small_allofs_inside_object,
             ),
+            ("wide_numeric_grid", &wide_numeric_grid),
             ("object_with_properties", &object_with_properties),
             ("chained_refs", &chained_refs),
             ("open_api", &open_api),
