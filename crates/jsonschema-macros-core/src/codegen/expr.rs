@@ -40,7 +40,12 @@ impl ValidateBlock {
         match (self, other) {
             (Self::AlwaysValid, b) => b,
             (a, Self::AlwaysValid) => a,
-            (Self::Expr(a), Self::Expr(b)) => Self::Expr(quote! { #a #b }),
+            // Appending leaves the left block where it is; `quote!` would copy both into a fresh
+            // stream, and these are folded, so the accumulator would be recopied on every keyword.
+            (Self::Expr(mut a), Self::Expr(b)) => {
+                a.extend(b);
+                Self::Expr(a)
+            }
         }
     }
 }
@@ -64,7 +69,10 @@ impl CollectBlock {
         match (self, other) {
             (Self::AlwaysValid, b) => b,
             (a, Self::AlwaysValid) => a,
-            (Self::Expr(a), Self::Expr(b)) => Self::Expr(quote! { #a #b }),
+            (Self::Expr(mut a), Self::Expr(b)) => {
+                a.extend(b);
+                Self::Expr(a)
+            }
         }
     }
 }
