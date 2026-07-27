@@ -78,39 +78,37 @@ impl<'a, 'b> JsonPointerNode<'a, 'b> {
 ///
 /// Appends the escaped form of `value` directly to `buffer`.
 pub fn write_escaped_str(buffer: &mut String, value: &str) {
-    match value.find(['~', '/']) {
-        Some(mut escape_idx) => {
-            let mut remaining = value;
+    let bytes = value.as_bytes();
+    // `str::find(['~', '/'])` builds a UTF-8 char searcher; `memchr2` is a SIMD byte scan.
+    // Both needles are ASCII, so every index it returns is a char boundary.
+    let Some(mut escape_idx) = memchr::memchr2(b'~', b'/', bytes) else {
+        // If no escape characters are found, append the segment as is
+        buffer.push_str(value);
+        return;
+    };
 
-            // Loop through the string to replace `~` and `/`
-            loop {
-                let (before, after) = remaining.split_at(escape_idx);
-                // Copy everything before the escape char
-                buffer.push_str(before);
+    let mut start = 0;
+    loop {
+        // Copy everything before the escape char
+        buffer.push_str(&value[start..escape_idx]);
 
-                // Append the appropriate escape sequence
-                match after.as_bytes()[0] {
-                    b'~' => buffer.push_str("~0"),
-                    b'/' => buffer.push_str("~1"),
-                    _ => unreachable!(),
-                }
+        // Append the appropriate escape sequence
+        buffer.push_str(if bytes[escape_idx] == b'~' {
+            "~0"
+        } else {
+            "~1"
+        });
 
-                // Move past the escaped character
-                remaining = &after[1..];
+        // Move past the escaped character
+        start = escape_idx + 1;
 
-                // Find the next `~` or `/` to continue escaping
-                if let Some(next_escape_idx) = remaining.find(['~', '/']) {
-                    escape_idx = next_escape_idx;
-                } else {
-                    // Append any remaining part of the string
-                    buffer.push_str(remaining);
-                    break;
-                }
-            }
-        }
-        None => {
-            // If no escape characters are found, append the segment as is
-            buffer.push_str(value);
+        // Find the next `~` or `/` to continue escaping
+        if let Some(next) = memchr::memchr2(b'~', b'/', &bytes[start..]) {
+            escape_idx = start + next;
+        } else {
+            // Append any remaining part of the string
+            buffer.push_str(&value[start..]);
+            break;
         }
     }
 }
