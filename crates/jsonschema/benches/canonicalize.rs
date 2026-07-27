@@ -123,7 +123,7 @@ mod bench {
 
         for (name, schema) in cases {
             c.bench_function(&format!("canonicalize/{name}"), |b| {
-                b.iter(|| jsonschema::canonicalize(schema).expect("valid schema"));
+                b.iter_with_large_drop(|| jsonschema::canonicalize(schema).expect("valid schema"));
             });
         }
     }
@@ -147,7 +147,7 @@ mod bench {
         ];
         for (name, schema) in cases {
             c.bench_function(&format!("emit/{name}"), |b| {
-                b.iter(|| schema.to_json_schema());
+                b.iter_with_large_drop(|| schema.to_json_schema());
             });
         }
     }
