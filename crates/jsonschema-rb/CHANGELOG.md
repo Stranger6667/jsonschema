@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.49.2] - 2026-07-28
+
 ### Performance
 
 - Faster serialization of canonicalized schemas.
@@ -230,7 +232,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.2...HEAD
+[0.49.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.1...ruby-v0.49.2
 [0.49.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.0...ruby-v0.49.1
 [0.49.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.5...ruby-v0.49.0
 [0.48.5]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.2...ruby-v0.48.5
