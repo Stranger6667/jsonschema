@@ -2,9 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Canonical numeric bounds no `float` can hold are exposed as `decimal.Decimal` instead of a rounded, wider bound.
+
 ### Performance
 
 - Faster serialization of canonicalized schemas.
+- Up to 70x faster `canonicalize` for `multipleOf` beside numeric bounds far from zero.
 
 ## [0.49.1] - 2026-07-25
 

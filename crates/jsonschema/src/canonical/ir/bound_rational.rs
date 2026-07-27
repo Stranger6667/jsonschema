@@ -1,9 +1,9 @@
 //! A positive `multipleOf` divisor over the `number` domain.
 use std::cmp::Ordering;
 
-use fraction::{BigFraction, Integer};
+use fraction::{BigFraction, BigInt, Integer, Sign};
 use jsonschema_value::numeric_check::{divisor_kind, satisfies_multiple_of, DivisorKind};
-use num_traits::{One, Zero};
+use num_traits::{One, Signed, Zero};
 use serde_json::Number;
 
 use super::{normalized_number, BoundInteger};
@@ -119,7 +119,11 @@ impl BoundRational {
         // The first multiple at or above the lower end. Snapping has already pulled an excluded
         // end onto the next multiple wherever it could, and where it could not this leaf is kept
         // rather than called empty.
-        let candidate = step * (low / step.clone()).ceil();
+        let Some(candidate) =
+            step_index(&low, step, super::Round::Up).and_then(|index| grid_point(step, &index))
+        else {
+            return true;
+        };
         if candidate > high {
             return false;
         }
@@ -165,18 +169,16 @@ impl BoundRational {
         let step = self.exact_value()?;
         let spelling = bound.to_number();
         let limit = exact(&spelling).filter(|limit| decimal(limit).as_ref() == Some(&spelling))?;
-        let steps = &limit / step.clone();
-        let steps = match direction {
-            super::Round::Up => steps.ceil(),
-            super::Round::Down => steps.floor(),
-        };
-        let mut candidate = step * steps;
-        // An end the interval excludes cannot keep a multiple sitting on it.
+        let mut index = step_index(&limit, step, direction)?;
+        let mut candidate = grid_point(step, &index)?;
+        // An end the interval excludes cannot keep a multiple sitting on it. One step along the grid
+        // is one off the index, which keeps the move clear of rational addition.
         if !bound.is_inclusive() && candidate == limit {
-            candidate = match direction {
-                super::Round::Up => step + candidate,
-                super::Round::Down => candidate - step.clone(),
+            index = match direction {
+                super::Round::Up => index + 1_u8,
+                super::Round::Down => index - 1_u8,
             };
+            candidate = grid_point(step, &index)?;
         }
         let snapped = decimal(&candidate)?;
         // A spelling the validator reads as a different number would move the end, not pin it.
@@ -244,12 +246,55 @@ impl Ord for BoundRational {
     }
 }
 
+/// How many whole steps of `divisor` reach `bound`, rounded as `direction` says. Rational division
+/// would reduce the quotient before it is rounded away, and reduction walks the whole numerator.
+fn step_index(
+    bound: &BigFraction,
+    divisor: &BigFraction,
+    direction: super::Round,
+) -> Option<BigInt> {
+    let (bound_numerator, bound_denominator) = (bound.numer()?, bound.denom()?);
+    let (divisor_numerator, divisor_denominator) = (divisor.numer()?, divisor.denom()?);
+    let magnitude = BigInt::from(bound_numerator * divisor_denominator);
+    let numerator = if bound.is_sign_negative() {
+        -magnitude
+    } else {
+        magnitude
+    };
+    let denominator = BigInt::from(bound_denominator * divisor_numerator);
+    Some(match direction {
+        super::Round::Up => numerator.div_ceil(&denominator),
+        super::Round::Down => numerator.div_floor(&denominator),
+    })
+}
+
+/// `divisor * index`, already in lowest terms. A reduced divisor leaves the index as the only thing
+/// its denominator can share a factor with, and taking the index modulo that denominator first keeps
+/// the common factor off the numerator, which is the part that grows.
+fn grid_point(divisor: &BigFraction, index: &BigInt) -> Option<BigFraction> {
+    let (divisor_numerator, divisor_denominator) = (divisor.numer()?, divisor.denom()?);
+    let magnitude = index.magnitude();
+    let common = (magnitude % divisor_denominator).gcd(divisor_denominator);
+    let numerator = divisor_numerator * (magnitude / &common);
+    let denominator = divisor_denominator / &common;
+    debug_assert!(
+        (&numerator % &denominator).gcd(&denominator).is_one(),
+        "a reduced divisor times a whole step is already in lowest terms"
+    );
+    let sign = if index.is_negative() {
+        Sign::Minus
+    } else {
+        Sign::Plus
+    };
+    Some(BigFraction::new_raw_signed(sign, numerator, denominator))
+}
+
 /// The exact rational a JSON number denotes.
 fn exact(number: &Number) -> Option<BigFraction> {
     #[cfg(feature = "arbitrary-precision")]
     {
         if let Some(value) = jsonschema_value::numeric::bignum::try_parse_bigint(number) {
-            return Some(BigFraction::from(value));
+            return Some(whole(value));
         }
         if let Some(value) = jsonschema_value::numeric::bignum::try_parse_bigfraction(number) {
             return Some(value);
@@ -258,9 +303,22 @@ fn exact(number: &Number) -> Option<BigFraction> {
     number.as_f64().map(BigFraction::from)
 }
 
+/// The rational a whole number denotes. `BigFraction::from` writes the integer out in decimal and
+/// reads it back one digit at a time, while a magnitude over one is already the reduced form.
+#[cfg(feature = "arbitrary-precision")]
+fn whole(value: num_bigint::BigInt) -> BigFraction {
+    let (sign, magnitude) = value.into_parts();
+    let fraction = BigFraction::new_raw(magnitude, fraction::BigUint::one());
+    if sign == num_bigint::Sign::Minus {
+        -fraction
+    } else {
+        fraction
+    }
+}
+
 /// `value` written as a decimal JSON number, or `None` when no finite decimal spells it.
 fn decimal(value: &BigFraction) -> Option<Number> {
-    let denominator = value.denom()?;
+    let (numerator, denominator) = (value.numer()?, value.denom()?);
     // Scaling by ten clears one factor of two and one of five, so a finite decimal exists exactly
     // when those are the denominator's only prime factors, and the wider power decides how many
     // places it takes.
@@ -278,6 +336,51 @@ fn decimal(value: &BigFraction) -> Option<Number> {
         rest.is_one(),
         "a JSON number's denominator is a power of ten"
     );
-    let places = twos.max(fives) as usize;
-    format!("{value:.places$}").parse().ok()
+    let places = twos.max(fives);
+    let text = spelled(numerator, denominator, places, value.is_sign_negative());
+    debug_assert_eq!(
+        text,
+        format!("{value:.width$}", width = places as usize),
+        "the scaled spelling reads as the formatted one"
+    );
+    text.parse().ok()
+}
+
+/// The text `format!("{value:.places$}")` writes. Scaling to a whole number and placing the point
+/// keeps this clear of the fraction crate's formatting, which walks the numerator once per place.
+fn spelled(
+    numerator: &fraction::BigUint,
+    denominator: &fraction::BigUint,
+    places: u32,
+    negative: bool,
+) -> String {
+    let scale = fraction::BigUint::from(10_u8).pow(places);
+    debug_assert!(
+        (&scale % denominator).is_zero(),
+        "ten to the places is a multiple of the denominator"
+    );
+    let digits = (numerator * (scale / denominator)).to_string();
+    let places = places as usize;
+    let mut text = String::with_capacity(digits.len() + places + 3);
+    if negative {
+        text.push('-');
+    }
+    if places == 0 {
+        text.push_str(&digits);
+        return text;
+    }
+    if let Some(width) = digits.len().checked_sub(places).filter(|whole| *whole > 0) {
+        let (whole, fraction) = digits.split_at(width);
+        text.push_str(whole);
+        text.push('.');
+        text.push_str(fraction);
+    } else {
+        // Fewer digits than places, so there is no whole part and the rest pads the fraction out.
+        text.push_str("0.");
+        for _ in 0..places - digits.len() {
+            text.push('0');
+        }
+        text.push_str(&digits);
+    }
+    text
 }

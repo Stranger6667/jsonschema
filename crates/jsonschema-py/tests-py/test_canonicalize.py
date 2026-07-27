@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import pytest
 
 import jsonschema_rs
@@ -257,6 +259,28 @@ def test_view_number_interval():
             assert exclusive_minimum is False
             assert maximum == 5
             assert exclusive_maximum is True
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
+def test_view_number_bound_off_the_float_grid():
+    # Folding `multipleOf` into an exclusive bound lands a fraction past a number no float can hold
+    # apart from its neighbour, and rounding it there would admit the value the schema excludes.
+    schema = {"type": "number", "multipleOf": 0.1, "exclusiveMinimum": 10**20}
+    match canonicalize(schema).view():
+        case canonical.NumberView(minimum=minimum, exclusive_minimum=exclusive_minimum):
+            assert minimum == Decimal("100000000000000000000.1")
+            assert exclusive_minimum is False
+            assert not jsonschema_rs.is_valid(schema, float(minimum))
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
+def test_view_number_bound_on_the_float_grid():
+    match canonicalize({"type": "number", "multipleOf": 0.5, "exclusiveMinimum": 1}).view():
+        case canonical.NumberView(minimum=minimum):
+            assert minimum == 1.5
+            assert isinstance(minimum, float)
         case other:
             pytest.fail(f"unexpected view: {other!r}")
 

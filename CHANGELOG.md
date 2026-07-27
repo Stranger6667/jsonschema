@@ -6,6 +6,7 @@
 
 - Faster serialization of canonicalized schemas.
 - Faster macro code generation for subschemas with many keywords.
+- Up to 70x faster canonicalization of `multipleOf` beside numeric bounds far from zero.
 
 ## [0.49.1] - 2026-07-25
 
