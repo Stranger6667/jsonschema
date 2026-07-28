@@ -1007,5 +1007,51 @@
         "valid": false
       }
     ]
+  },
+  {
+    "description": "a symbolic oneOf whose every branch repeats admits nothing",
+    "schema": {"oneOf": [{"$ref": "#/$defs/x"}, {"$ref": "#/$defs/x"}], "$defs": {"x": {"type": "string"}}},
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": "a", "valid": false},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "a repeated symbolic oneOf branch becomes the complement of the survivors",
+    "schema": {"oneOf": [{"$ref": "#/$defs/x"}, {"$ref": "#/$defs/x"}, {"type": "integer"}], "$defs": {"x": {"type": "string"}}},
+    "satisfiable": true,
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": "a", "valid": false},
+      {"data": true, "valid": false}
+    ]
+  },
+  {
+    "description": "a repeated symbolic oneOf branch overlapping a survivor excludes the overlap",
+    "schema": {"oneOf": [{"$ref": "#/$defs/x"}, {"$ref": "#/$defs/x"}, {"type": ["integer", "string"]}], "$defs": {"x": {"type": "string"}}},
+    "satisfiable": true,
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": "a", "valid": false}
+    ]
+  },
+  {
+    "description": "reference-free survivors of a repeated symbolic branch take the concrete encoding",
+    "schema": {"oneOf": [{"$ref": "#/$defs/x"}, {"$ref": "#/$defs/x"}, {"type": "integer"}, {"type": "boolean"}], "$defs": {"x": {"type": "string"}}},
+    "satisfiable": true,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [{"type": ["boolean", "integer"]}, {"not": {"$ref": "#/$defs/x"}}],
+      "$defs": {"x": {"type": "string"}}
+    },
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": true, "valid": true},
+      {"data": "a", "valid": false},
+      {"data": 1.5, "valid": false}
+    ]
   }
 ]
