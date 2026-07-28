@@ -1027,7 +1027,25 @@
       {"data": 1, "valid": true},
       {"data": "a", "valid": false},
       {"data": true, "valid": false}
-    ]
+    ],
+    "expected": {
+      "$defs": {
+        "x": {
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "not": {
+            "$ref": "#/$defs/x"
+          }
+        }
+      ]
+    }
   },
   {
     "description": "a repeated symbolic oneOf branch overlapping a survivor excludes the overlap",
@@ -1036,7 +1054,28 @@
     "tests": [
       {"data": 1, "valid": true},
       {"data": "a", "valid": false}
-    ]
+    ],
+    "expected": {
+      "$defs": {
+        "x": {
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        {
+          "not": {
+            "$ref": "#/$defs/x"
+          }
+        }
+      ]
+    }
   },
   {
     "description": "reference-free survivors of a repeated symbolic branch take the concrete encoding",

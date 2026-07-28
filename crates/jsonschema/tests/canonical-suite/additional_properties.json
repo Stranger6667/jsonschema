@@ -581,7 +581,21 @@
       {"data": {"vv": 1}, "valid": true},
       {"data": {"other": 1}, "valid": false},
       {"data": {}, "valid": true}
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^v": {}
+      },
+      "properties": {
+        "bar": {},
+        "foo": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
   },
   {
     "description": "raw: draft 4 cannot spell two pattern maps meeting, so the document stays raw",
@@ -594,7 +608,25 @@
     "tests": [
       {"data": {}, "valid": true},
       {"data": {"ab": 1}, "valid": false}
-    ]
+    ],
+    "expected": {
+      "allOf": [
+        {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^a": {}
+          },
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^b": {}
+          },
+          "type": "object"
+        }
+      ]
+    }
   },
   {
     "description": "ir: a required key outside the closed map is unsatisfiable under draft 4",
@@ -764,6 +796,39 @@
       "additionalProperties": {
         "unevaluatedProperties": false
       }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": [
+                  "null",
+                  "boolean",
+                  "number",
+                  "string",
+                  "array"
+                ]
+              },
+              {
+                "const": {}
+              }
+            ]
+          },
+          "type": "object"
+        }
+      ]
     }
   }
 ]

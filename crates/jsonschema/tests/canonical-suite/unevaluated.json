@@ -28,7 +28,19 @@
       {"data": {"a": "x", "b": 1}, "valid": true},
       {"data": {"a": "x", "b": "y"}, "valid": false},
       {"data": {"a": 1}, "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
   },
   {
     "description": "ir: unevaluatedProperties beside patternProperties is additionalProperties",
@@ -40,7 +52,20 @@
       {"data": {"ab": 1}, "valid": true},
       {"data": {"ab": "x"}, "valid": false},
       {"data": {"b": 1}, "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "patternProperties": {
+        "^a": {
+          "type": "integer"
+        }
+      },
+      "propertyNames": {
+        "pattern": "^a",
+        "type": "string"
+      },
+      "type": "object"
+    }
   },
   {
     "description": "ir: a live additionalProperties leaves unevaluatedProperties inert",
@@ -51,7 +76,17 @@
     "tests": [
       {"data": {"a": "x", "b": 1}, "valid": true},
       {"data": {"b": "x"}, "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "properties": {
+        "a": true
+      },
+      "type": "object"
+    }
   },
   {
     "description": "ir: unevaluatedProperties in a nested schema degrades independently",
@@ -62,7 +97,32 @@
     "tests": [
       {"data": {"a": {"b": 1}}, "valid": true},
       {"data": {"a": {"c": 1}}, "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "a": {
+          "anyOf": [
+            {
+              "type": [
+                "null",
+                "boolean",
+                "number",
+                "string",
+                "array"
+              ]
+            },
+            {
+              "propertyNames": {
+                "const": "b"
+              },
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    }
   },
   {
     "description": "ir: unevaluatedItems:false beside prefixItems is the tuple tail",
@@ -75,7 +135,17 @@
       {"data": ["x"], "valid": false},
       {"data": [1, 2], "valid": false},
       {"data": [], "valid": true}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "maxItems": 1,
+      "prefixItems": [
+        {
+          "type": "integer"
+        }
+      ],
+      "type": "array"
+    }
   },
   {
     "description": "ir: unevaluatedItems with no tuple constrains every element",
@@ -86,7 +156,14 @@
     "tests": [
       {"data": [1, 2], "valid": true},
       {"data": [1, "x"], "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "type": "integer"
+      },
+      "type": "array"
+    }
   },
   {
     "description": "ir: a schema-form items leaves unevaluatedItems inert",
@@ -97,7 +174,19 @@
     "tests": [
       {"data": [1, "x"], "valid": true},
       {"data": [1, 2], "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "type": "string"
+      },
+      "prefixItems": [
+        {
+          "type": "integer"
+        }
+      ],
+      "type": "array"
+    }
   },
   {
     "description": "ir: 2019-09 spells the tuple tail additionalItems",
@@ -109,7 +198,17 @@
     "tests": [
       {"data": [1], "valid": true},
       {"data": [1, 2], "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "items": [
+        {
+          "type": "integer"
+        }
+      ],
+      "maxItems": 1,
+      "type": "array"
+    }
   },
   {
     "description": "ir: 2019-09 a live additionalItems leaves unevaluatedItems inert",
@@ -121,7 +220,19 @@
     "tests": [
       {"data": [1, "x"], "valid": true},
       {"data": [1, 2], "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "additionalItems": {
+        "type": "string"
+      },
+      "items": [
+        {
+          "type": "integer"
+        }
+      ],
+      "type": "array"
+    }
   },
   {
     "description": "ir: both unevaluated keywords degrade in one schema object",
@@ -134,7 +245,30 @@
       {"data": {"b": 1}, "valid": false},
       {"data": [1], "valid": true},
       {"data": [1, 2], "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        {
+          "maxItems": 1,
+          "type": "array"
+        },
+        {
+          "propertyNames": {
+            "const": "a"
+          },
+          "type": "object"
+        }
+      ]
+    }
   },
   {
     "description": "raw: an instance-dependent applicator can annotate keys the unevaluatedProperties would see",
@@ -143,7 +277,17 @@
     "tests": [
       {"data": {"a": 1}, "valid": true},
       {"data": {"b": 1}, "valid": false}
-    ]
+    ],
+    "expected": {
+      "anyOf": [
+        {
+          "properties": {
+            "a": {}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    }
   },
   {
     "description": "ir: an allOf branch names the keys its unevaluatedProperties sibling must skip",
@@ -156,7 +300,32 @@
       {"data": {"a": "x"}, "valid": false},
       {"data": {"b": 1}, "valid": false},
       {"data": {}, "valid": true}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "properties": {
+            "a": {
+              "type": "integer"
+            }
+          },
+          "propertyNames": {
+            "const": "a"
+          },
+          "type": "object"
+        }
+      ]
+    }
   },
   {
     "description": "ir: every allOf branch contributes, and nesting recurses",
@@ -168,7 +337,30 @@
       {"data": {"a": 1, "b": 2}, "valid": true},
       {"data": {"c": 1}, "valid": false},
       {"data": {}, "valid": true}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "propertyNames": {
+            "enum": [
+              "a",
+              "b"
+            ]
+          },
+          "type": "object"
+        }
+      ]
+    }
   },
   {
     "description": "ir: an allOf branch pattern names the keys it reaches",
@@ -178,7 +370,33 @@
       {"data": {"ab": "x"}, "valid": false},
       {"data": {"b": 1}, "valid": false},
       {"data": {}, "valid": true}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "patternProperties": {
+            "^a": {
+              "type": "integer"
+            }
+          },
+          "propertyNames": {
+            "pattern": "^a",
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
   },
   {
     "description": "ir: an allOf branch reaching every key leaves the unevaluatedProperties inert",
@@ -189,7 +407,27 @@
     "tests": [
       {"data": {"a": 1}, "valid": true},
       {"data": {"a": "x"}, "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        }
+      ]
+    }
   },
   {
     "description": "raw: an allOf branch whose own applicator is instance-dependent stays unmodeled",
@@ -198,7 +436,26 @@
     "tests": [
       {"data": {"a": 1}, "valid": true},
       {"data": {"c": 1}, "valid": false}
-    ]
+    ],
+    "expected": {
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "a": {}
+              }
+            },
+            {
+              "properties": {
+                "b": {}
+              }
+            }
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    }
   },
   {
     "description": "ir: an allOf branch tuple names the indexes its unevaluatedItems sibling must skip",
@@ -211,7 +468,30 @@
       {"data": [1], "valid": true},
       {"data": ["x"], "valid": false},
       {"data": [1, 2], "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "object"
+          ]
+        },
+        {
+          "maxItems": 1,
+          "prefixItems": [
+            {
+              "type": "integer"
+            }
+          ],
+          "type": "array"
+        }
+      ]
+    }
   },
   {
     "description": "ir: the longest branch tuple wins, and nesting recurses",
@@ -219,7 +499,25 @@
     "tests": [
       {"data": [1, 2], "valid": true},
       {"data": [1, 2, 3], "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "object"
+          ]
+        },
+        {
+          "maxItems": 2,
+          "type": "array"
+        }
+      ]
+    }
   },
   {
     "description": "ir: a local tuple shorter than the branch tuple is extended to it",
@@ -229,7 +527,33 @@
       {"data": [1, 2], "valid": false},
       {"data": ["x"], "valid": false},
       {"data": [1, "x", 3], "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "object"
+          ]
+        },
+        {
+          "maxItems": 2,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "type": "array"
+        }
+      ]
+    }
   },
   {
     "description": "ir: a branch schema-form items reaches every index, leaving unevaluatedItems inert",
@@ -240,7 +564,27 @@
     "tests": [
       {"data": [1, 2], "valid": true},
       {"data": [1, "x"], "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "object"
+          ]
+        },
+        {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      ]
+    }
   },
   {
     "description": "ir: 2019-09 spells the branch tuple as array-form items",
@@ -251,7 +595,30 @@
       {"data": [1], "valid": true},
       {"data": ["x"], "valid": false},
       {"data": [1, 2], "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "object"
+          ]
+        },
+        {
+          "items": [
+            {
+              "type": "integer"
+            }
+          ],
+          "maxItems": 1,
+          "type": "array"
+        }
+      ]
+    }
   },
   {
     "description": "ir: 2019-09 a branch additionalItems reaches every index past its tuple",
@@ -263,7 +630,30 @@
     "tests": [
       {"data": [1, 2], "valid": true},
       {"data": [1, "x"], "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "object"
+          ]
+        },
+        {
+          "additionalItems": {
+            "type": "integer"
+          },
+          "items": [
+            true
+          ],
+          "type": "array"
+        }
+      ]
+    }
   },
   {
     "description": "raw: a branch contains marks indexes no prefix length spells",
@@ -272,7 +662,17 @@
     "tests": [
       {"data": [2], "valid": true},
       {"data": [2, 3], "valid": false}
-    ]
+    ],
+    "expected": {
+      "allOf": [
+        {
+          "contains": {
+            "const": 2
+          }
+        }
+      ],
+      "unevaluatedItems": false
+    }
   },
   {
     "description": "ir: a local additionalProperties already reaches every key, so the allOf cover is not hoisted",
@@ -284,7 +684,27 @@
       {"data": {"a": 1}, "valid": true},
       {"data": {"a": "x"}, "valid": false},
       {"data": {"b": 1}, "valid": true}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        }
+      ]
+    }
   },
   {
     "description": "raw: a $ref sibling can annotate keys the unevaluatedProperties would see",
@@ -293,7 +713,18 @@
     "tests": [
       {"data": {"a": 1}, "valid": true},
       {"data": {"b": 1}, "valid": false}
-    ]
+    ],
+    "expected": {
+      "$defs": {
+        "named": {
+          "properties": {
+            "a": {}
+          }
+        }
+      },
+      "$ref": "#/$defs/named",
+      "unevaluatedProperties": false
+    }
   },
   {
     "description": "raw: if/then can annotate keys the unevaluatedProperties would see",
@@ -302,7 +733,20 @@
     "tests": [
       {"data": {"a": 1}, "valid": true},
       {"data": {"b": 1}, "valid": false}
-    ]
+    ],
+    "expected": {
+      "if": {
+        "required": [
+          "a"
+        ]
+      },
+      "then": {
+        "properties": {
+          "a": {}
+        }
+      },
+      "unevaluatedProperties": false
+    }
   },
   {
     "description": "raw: contains marks the elements it matches evaluated",
@@ -311,7 +755,14 @@
     "tests": [
       {"data": [2], "valid": true},
       {"data": [2, 3], "valid": false}
-    ]
+    ],
+    "expected": {
+      "contains": {
+        "const": 2
+      },
+      "type": "array",
+      "unevaluatedItems": false
+    }
   },
   {
     "description": "ir: before 2020-12 prefixItems is not a keyword, so it leaves every element unevaluated",
@@ -324,7 +775,11 @@
       {"data": [], "valid": true},
       {"data": [1], "valid": false},
       {"data": [null], "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "const": []
+    }
   },
   {
     "description": "ir: draft 7 does not know unevaluatedProperties, so it is an ignored annotation",
@@ -336,7 +791,11 @@
     "tests": [
       {"data": {"a": 1}, "valid": true},
       {"data": {"b": 1}, "valid": true}
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object"
+    }
   },
   {
     "description": "ir: not contributes no annotations, so unevaluatedProperties still degrades",
@@ -347,6 +806,13 @@
     "tests": [
       {"data": {"a": 1}, "valid": true},
       {"data": {"b": 1}, "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "propertyNames": {
+        "const": "a"
+      },
+      "type": "object"
+    }
   }
 ]

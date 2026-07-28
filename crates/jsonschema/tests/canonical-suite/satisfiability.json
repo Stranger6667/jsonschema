@@ -11,7 +11,13 @@
         "data": 0,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "maximum": 300,
+      "minimum": 0,
+      "type": "integer"
+    }
   },
   {
     "description": "finite domain anyof disjoint integer ranges under cap stays satisfiable - admits a witness",
@@ -34,7 +40,22 @@
         "data": 1,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "maximum": 3,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "maximum": 12,
+          "minimum": 10,
+          "type": "integer"
+        }
+      ]
+    }
   },
   {
     "description": "finite domain anyof disjoint integer ranges over cap stays satisfiable - admits a witness",
@@ -57,7 +78,22 @@
         "data": 100,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "maximum": 200,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "maximum": 400,
+          "minimum": 300,
+          "type": "integer"
+        }
+      ]
+    }
   },
   {
     "description": "admits oracle coverage - anyof null bounded integer parity and satisfiability",
@@ -146,7 +182,27 @@
       {
         "data": "a@b.com"
       }
-    ]
+    ],
+    "expected": {
+      "allOf": [
+        {
+          "const": "x"
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "format": "email",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      ]
+    }
   },
   {
     "description": "admits oracle coverage - allOf const true not anyof format parity and satisfiability",
@@ -186,7 +242,27 @@
       {
         "data": null
       }
-    ]
+    ],
+    "expected": {
+      "allOf": [
+        {
+          "const": true
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "format": "email",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      ]
+    }
   },
   {
     "description": "draft4 integer membership excludes float - enum with float member drops it for integer type",
@@ -253,7 +329,14 @@
         "data": 1.0,
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "enum": [
+        1
+      ],
+      "type": "integer"
+    }
   },
   {
     "description": "draft4 integer enum filter preserves float rejection - enum with 1.0 keeps only integer 1",
@@ -298,6 +381,22 @@
           "type": "string"
         }
       }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "a": {
+          "type": "integer"
+        },
+        "b": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "a",
+        "b"
+      ],
+      "type": "object"
     }
   },
   {
@@ -318,6 +417,28 @@
       },
       "additionalProperties": false,
       "maxProperties": 2
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "a": {
+          "type": "integer"
+        },
+        "b": {
+          "type": "string"
+        }
+      },
+      "propertyNames": {
+        "enum": [
+          "a",
+          "b"
+        ]
+      },
+      "required": [
+        "a",
+        "b"
+      ],
+      "type": "object"
     }
   },
   {
@@ -332,6 +453,15 @@
       "additionalProperties": {
         "not": false
       }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      },
+      "type": "object"
     }
   },
   {
@@ -344,6 +474,10 @@
           "not": false
         }
       }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
     }
   },
   {
@@ -371,6 +505,30 @@
           }
         }
       ]
+    },
+    "expected": {
+      "allOf": [
+        {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "patternProperties": {
+            "^[a-zA-Z][a-zA-Z0-9-]*[a-zA-Z0-9]?$": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      ]
     }
   },
   {
@@ -388,6 +546,20 @@
           }
         }
       ]
+    },
+    "expected": {
+      "oneOf": [
+        {
+          "pattern": "^(?:fa[bdlrs] )?fa-(?!-)[a-z0-9-]+$"
+        },
+        {
+          "format": "uri-reference",
+          "not": {
+            "pattern": "^(?:fa[bdlrs] )?fa-(?!-)[a-z0-9-]+$"
+          }
+        }
+      ],
+      "type": "string"
     }
   },
   {
@@ -403,6 +575,21 @@
           "minimum": -5,
           "maximum": 0,
           "multipleOf": 1.5
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "maximum": 0,
+          "minimum": -4.5,
+          "multipleOf": 1.5,
+          "type": "number"
         }
       ]
     }
@@ -424,6 +611,23 @@
           "maximum": 4
         }
       ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "maximum": 4,
+          "minimum": 3,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   {
@@ -439,6 +643,22 @@
               "$ref": "#"
             }
           }
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "anyOf": [
+        {
+          "properties": {
+            "child": {
+              "$ref": "#"
+            }
+          },
+          "type": "object"
         },
         {
           "type": "boolean"
@@ -464,6 +684,22 @@
           ]
         }
       }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "properties": {
+        "child": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "$ref": "#"
+            }
+          ]
+        }
+      },
+      "type": "object"
     }
   },
   {
@@ -479,7 +715,11 @@
         "data": 5,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": 5
+    }
   },
   {
     "description": "numeric_bounds_satisfiable integer_simple_interval",
@@ -494,7 +734,13 @@
         "data": 3,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "maximum": 5,
+      "minimum": 1,
+      "type": "integer"
+    }
   },
   {
     "description": "numeric_bounds_satisfiable integer_float_bounds_whole",
@@ -509,7 +755,11 @@
         "data": 1,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": 1
+    }
   },
   {
     "description": "numeric_bounds_satisfiable integer_float_bounds_admit_integer",
@@ -524,7 +774,11 @@
         "data": 2,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": 2
+    }
   },
   {
     "description": "numeric_bounds_satisfiable number_closed_singleton",
@@ -539,7 +793,11 @@
         "data": 5,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": 5
+    }
   },
   {
     "description": "numeric_bounds_satisfiable number_open_admits_float",
@@ -554,7 +812,13 @@
         "data": 5.5,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "exclusiveMaximum": 6,
+      "exclusiveMinimum": 5,
+      "type": "number"
+    }
   },
   {
     "description": "numeric_bounds_satisfiable integer_multiple_of_in_interval",
@@ -570,7 +834,14 @@
         "data": 3,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "maximum": 9,
+      "minimum": 3,
+      "multipleOf": 3,
+      "type": "integer"
+    }
   },
   {
     "description": "numeric_bounds_satisfiable integer_multiple_of_includes_zero",
@@ -586,7 +857,14 @@
         "data": 0,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "maximum": 98,
+      "minimum": 0,
+      "multipleOf": 7,
+      "type": "integer"
+    }
   },
   {
     "description": "numeric_bounds_satisfiable integer_negative_interval_multiple_of",
@@ -602,7 +880,14 @@
         "data": -8,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "maximum": -4,
+      "minimum": -8,
+      "multipleOf": 4,
+      "type": "integer"
+    }
   },
   {
     "description": "numeric_bounds_satisfiable integer_interval_includes_zero_multiple_of",
@@ -618,7 +903,11 @@
         "data": 0,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": 0
+    }
   },
   {
     "description": "numeric_bounds_satisfiable number_multiple_of_endpoint",
@@ -634,7 +923,14 @@
         "data": 0.3,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "maximum": 0.3,
+      "minimum": 0,
+      "multipleOf": 0.3,
+      "type": "number"
+    }
   },
   {
     "description": "numeric_bounds_satisfiable integer_exclusive_minimum_with_multiple_of",
@@ -651,7 +947,14 @@
         "data": 3,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "maximum": 6,
+      "minimum": 3,
+      "multipleOf": 3,
+      "type": "integer"
+    }
   },
   {
     "description": "const_enum_filter_satisfiable number_const_integer_value",
@@ -838,7 +1141,13 @@
         "data": 1.5,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "not": {
+        "type": "integer"
+      },
+      "type": "number"
+    }
   },
   {
     "description": "not_contradictions_satisfiable string_minus_long_strings",
@@ -861,7 +1170,12 @@
         "data": "ab",
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "maxLength": 2,
+      "type": "string"
+    }
   },
   {
     "description": "not_contradictions_satisfiable integer_interval_minus_one_value",
@@ -889,7 +1203,22 @@
         "data": 5,
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "anyOf": [
+        {
+          "maximum": 4,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "maximum": 10,
+          "minimum": 6,
+          "type": "integer"
+        }
+      ]
+    }
   },
   {
     "description": "array_satisfiable items_false_min_zero_admits_empty",
@@ -904,7 +1233,11 @@
         "data": [],
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": []
+    }
   },
   {
     "description": "array_satisfiable items_false_no_min",
@@ -918,7 +1251,11 @@
         "data": [],
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": []
+    }
   },
   {
     "description": "array_satisfiable false_in_prefix_but_max_excludes",
@@ -941,7 +1278,18 @@
         ],
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "items": [
+        {
+          "type": "string"
+        }
+      ],
+      "maxItems": 1,
+      "minItems": 1,
+      "type": "array"
+    }
   },
   {
     "description": "array_satisfiable min_eq_max",
@@ -960,7 +1308,13 @@
         ],
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    }
   },
   {
     "description": "array_satisfiable two_unique_booleans",
@@ -981,7 +1335,17 @@
         ],
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "type": "array",
+      "uniqueItems": true
+    }
   },
   {
     "description": "array_satisfiable unique_unbounded_integers",
@@ -1100,7 +1464,16 @@
         ],
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "items": {
+        "type": "integer"
+      },
+      "minItems": 100,
+      "type": "array",
+      "uniqueItems": true
+    }
   },
   {
     "description": "array_satisfiable unique_unbounded_strings",
@@ -1219,7 +1592,16 @@
         ],
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 100,
+      "type": "array",
+      "uniqueItems": true
+    }
   },
   {
     "description": "object_satisfiable required_with_string_schema",
@@ -1242,7 +1624,19 @@
         },
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "a"
+      ],
+      "type": "object"
+    }
   },
   {
     "description": "object_satisfiable property_names_admits_required",
@@ -1263,7 +1657,18 @@
         },
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "propertyNames": {
+        "pattern": "^a",
+        "type": "string"
+      },
+      "required": [
+        "a"
+      ],
+      "type": "object"
+    }
   },
   {
     "description": "object_satisfiable empty_required",
@@ -1277,7 +1682,11 @@
         "data": {},
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object"
+    }
   },
   {
     "description": "object_satisfiable max_zero_admits_empty_object",
@@ -1292,7 +1701,11 @@
         "data": {},
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": {}
+    }
   },
   {
     "description": "object_satisfiable required_with_zero_min",
@@ -1311,7 +1724,14 @@
         },
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "required": [
+        "a"
+      ],
+      "type": "object"
+    }
   },
   {
     "description": "parse_exclusive_satisfiable exclusive_overrides_when_stronger",
@@ -1330,7 +1750,12 @@
         "data": 10,
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "minimum": 11,
+      "type": "integer"
+    }
   },
   {
     "description": "parse_exclusive_satisfiable exclusive_weaker_preserves_minimum",
@@ -1349,7 +1774,12 @@
         "data": 0,
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "minimum": 1,
+      "type": "integer"
+    }
   },
   {
     "description": "items_number_contains_integer",
@@ -1370,7 +1800,17 @@
         ],
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "contains": {
+        "type": "integer"
+      },
+      "items": {
+        "type": "number"
+      },
+      "type": "array"
+    }
   },
   {
     "description": "unique_items_prefix_plus_tail",
@@ -1397,7 +1837,22 @@
         ],
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalItems": {
+        "type": "boolean"
+      },
+      "items": [
+        {
+          "const": "x"
+        }
+      ],
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array",
+      "uniqueItems": true
+    }
   },
   {
     "description": "integer_subtype_of_number_satisfiable number_min_intersect_integer_max",
@@ -1419,7 +1874,13 @@
         "data": 5,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "maximum": 10,
+      "minimum": 1,
+      "type": "integer"
+    }
   },
   {
     "description": "integer_subtype_of_number_satisfiable integer_mod_two_intersect_number_mod_three",
@@ -1441,7 +1902,12 @@
         "data": 6,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "multipleOf": 6,
+      "type": "integer"
+    }
   },
   {
     "description": "integer_subtype_of_number_satisfiable any_of_integer_number",
@@ -1483,7 +1949,11 @@
         "data": 3,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "integer"
+    }
   },
   {
     "description": "numeric_promotion_satisfiable snap_min_admits_two_four_six",
@@ -1498,7 +1968,13 @@
         "data": 2,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "minimum": 2,
+      "multipleOf": 2,
+      "type": "integer"
+    }
   },
   {
     "description": "numeric_promotion_satisfiable integer_valued_mult_promotes",
@@ -1512,7 +1988,12 @@
         "data": 4,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "multipleOf": 2,
+      "type": "integer"
+    }
   },
   {
     "description": "numeric_promotion_satisfiable fractional_multiple_of_is_number",
@@ -1526,7 +2007,12 @@
         "data": 0.5,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "multipleOf": 0.5,
+      "type": "number"
+    }
   },
   {
     "description": "numeric_promotion_satisfiable zero_singleton_admitted_by_any_mult",
@@ -1542,7 +2028,11 @@
         "data": 0,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": 0
+    }
   },
   {
     "description": "numeric_promotion_satisfiable multof_one_promotes_admits_neg_integers",
@@ -1561,7 +2051,12 @@
         "data": -3,
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "maximum": 0,
+      "type": "integer"
+    }
   },
   {
     "description": "type_pin_simplification_satisfiable any_of_singleton_null_satisfiable",
@@ -1662,7 +2157,17 @@
         ],
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "contains": {
+        "type": "integer"
+      },
+      "items": {
+        "type": "integer"
+      },
+      "type": "array"
+    }
   },
   {
     "description": "array_normalisation_satisfiable array_short_tuple_with_minItems_one",
@@ -1684,7 +2189,17 @@
         ],
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "items": [
+        {
+          "type": "string"
+        }
+      ],
+      "minItems": 1,
+      "type": "array"
+    }
   },
   {
     "description": "array_normalisation_satisfiable array_universe_one_cap_one",
@@ -1704,7 +2219,15 @@
         ],
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "items": {
+        "const": 1
+      },
+      "maxItems": 1,
+      "type": "array"
+    }
   },
   {
     "description": "object_and_not_merge_satisfiable object_only_a_blocked_admits_empty",
@@ -1721,7 +2244,11 @@
         "data": {},
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "const": {}
+    }
   },
   {
     "description": "object_and_not_merge_satisfiable two_not_enums_admit_anything_else",
@@ -1757,7 +2284,25 @@
         "data": "x",
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "allOf": [
+        {
+          "not": {
+            "enum": [
+              1
+            ]
+          }
+        },
+        {
+          "not": {
+            "enum": [
+              "x"
+            ]
+          }
+        }
+      ]
+    }
   },
   {
     "description": "unique array with wide-integer prefix slots whose universe sizes overflow u64 stays satisfiable",
@@ -1799,7 +2344,25 @@
         ],
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      ],
+      "type": "array",
+      "uniqueItems": true
+    }
   },
   {
     "description": "unique array with wide-integer prefix and tail whose universe sizes overflow u64 stays satisfiable",
@@ -1835,7 +2398,30 @@
         ],
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "maximum": 9223372036854775807,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "minItems": 2,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "expected_arbitrary_precision": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "maximum": 9223372036854775807,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "maxItems": 9223372036854775808,
+      "minItems": 2,
+      "type": "array",
+      "uniqueItems": true
+    }
   },
   {
     "description": "array with a zero-minContains contains clause kept by its maxContains stays satisfiable",
@@ -1862,7 +2448,20 @@
         "data": [],
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "contains": {
+        "type": "integer"
+      },
+      "items": {
+        "type": "string"
+      },
+      "maxContains": 1,
+      "minContains": 0,
+      "minItems": 1,
+      "type": "array"
+    }
   },
   {
     "description": "const fractional under negated type set stays satisfiable - keeps a MultiType the const is tested against",
@@ -1894,7 +2493,22 @@
         "data": "x",
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "allOf": [
+        {
+          "not": {
+            "type": [
+              "integer",
+              "string"
+            ]
+          }
+        },
+        {
+          "const": 1.5
+        }
+      ]
+    }
   },
   {
     "description": "an unrecognized format is never proven disjoint from a rigid one even under assertions - date and semver-x stays satisfiable",
@@ -1911,6 +2525,18 @@
           "format": "semver-x"
         }
       ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "format": "date"
+        },
+        {
+          "format": "semver-x"
+        }
+      ],
+      "type": "string"
     }
   },
   {
@@ -1927,6 +2553,10 @@
           "format": "email"
         }
       ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string"
     }
   },
   {
@@ -1944,6 +2574,18 @@
           "format": "idn-email"
         }
       ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "format": "email"
+        },
+        {
+          "format": "idn-email"
+        }
+      ],
+      "type": "string"
     }
   },
   {
@@ -1963,7 +2605,12 @@
         "data": "not-email",
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "format": "email",
+      "type": "string"
+    }
   },
   {
     "description": "annotation-only format policy is preserved in the emitted schema - draft7 email admits a non-email when assertions are off",
@@ -1978,7 +2625,11 @@
         "data": "not-email",
         "valid": true
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "string"
+    }
   },
   {
     "description": "ir: nested allOf with disjoint type domains is unsatisfiable",
@@ -2007,13 +2658,21 @@
     "draft": "draft2020-12",
     "validate_formats": true,
     "schema": {"allOf": [{"type": "string", "format": "date"}, {"type": "string", "format": "uuid"}]},
-    "satisfiable": false
+    "satisfiable": false,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
   },
   {
     "description": "the same rigid formats stay satisfiable when formats are annotations only",
     "draft": "draft2020-12",
     "validate_formats": false,
     "schema": {"allOf": [{"type": "string", "format": "date"}, {"type": "string", "format": "uuid"}]},
-    "satisfiable": true
+    "satisfiable": true,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string"
+    }
   }
 ]

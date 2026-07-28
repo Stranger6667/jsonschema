@@ -15,6 +15,7 @@ fn run_case(case: CanonicalCase) {
     if let Some(expected_kind) = &case.error {
         assert!(
             case.expected.is_none()
+                && case.expected_arbitrary_precision.is_none()
                 && case.tests.is_empty()
                 && case.satisfiable.is_none()
                 && case.kind.is_none(),
@@ -104,13 +105,17 @@ fn run_case(case: CanonicalCase) {
         );
     }
 
-    if let Some(expected) = &case.expected {
-        assert_eq!(
-            &form, expected,
-            "case `{}`: canonical form mismatch\n  expected = {expected}\n  actual   = {form}",
+    let expected = case.expected_for_build().unwrap_or_else(|| {
+        panic!(
+            "case `{}`: every non-`error` case must set `expected`\n  actual = {form}",
             case.description
-        );
-    }
+        )
+    });
+    assert_eq!(
+        &form, expected,
+        "case `{}`: canonical form mismatch\n  expected = {expected}\n  actual   = {form}",
+        case.description
+    );
 
     // Raw and canonical validators must agree on every test value.
     if !case.tests.is_empty() {
@@ -152,6 +157,10 @@ struct CanonicalCase {
     draft: Option<String>,
     #[serde(default)]
     expected: Option<Value>,
+    /// Overrides `expected` under `arbitrary-precision`, where wide literals survive as written
+    /// instead of going through `f64`.
+    #[serde(default)]
+    expected_arbitrary_precision: Option<Value>,
     #[serde(default)]
     tests: Vec<SchemaTest>,
     /// Pins `CanonicalSchema::is_satisfiable()`; a `valid: true` test already implies satisfiable.
@@ -223,6 +232,15 @@ impl CanonicalCase {
                 self.description
             ),
         }
+    }
+
+    /// The canonical form this build should produce.
+    fn expected_for_build(&self) -> Option<&Value> {
+        #[cfg(feature = "arbitrary-precision")]
+        if self.expected_arbitrary_precision.is_some() {
+            return self.expected_arbitrary_precision.as_ref();
+        }
+        self.expected.as_ref()
     }
 
     fn draft(&self) -> Option<Draft> {

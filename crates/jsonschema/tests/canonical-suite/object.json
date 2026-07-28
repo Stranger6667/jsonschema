@@ -950,6 +950,22 @@
       {"data": {"b": 1}, "valid": true},
       {"data": {"a": 1}, "valid": true},
       {"data": {"b": 2}, "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "propertyNames": {
+            "const": "a"
+          },
+          "type": "object"
+        },
+        {
+          "const": {
+            "b": 1
+          }
+        }
+      ]
+    }
   }
 ]

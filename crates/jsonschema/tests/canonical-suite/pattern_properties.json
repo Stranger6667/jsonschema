@@ -901,7 +901,22 @@
       {"data": {"a": "x"}, "valid": false},
       {"data": {"c": "x"}, "valid": true},
       {"data": {"c": 1}, "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "properties": {
+        "a": {
+          "type": "integer"
+        },
+        "b": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
   },
   {
     "description": "raw: a prefix pattern reaches unboundedly many keys, so the additionalProperties pairing stays unmodeled",
@@ -911,7 +926,18 @@
       {"data": {"ab": 1}, "valid": true},
       {"data": {"ab": "x"}, "valid": false},
       {"data": {"b": "x"}, "valid": true}
-    ]
+    ],
+    "expected": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "patternProperties": {
+        "^a": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
   },
   {
     "description": "raw: one unfoldable pattern beside a finite one still keeps the pairing unmodeled",
@@ -921,7 +947,21 @@
       {"data": {"a": 1}, "valid": true},
       {"data": {"bc": true}, "valid": true},
       {"data": {"c": "x"}, "valid": true}
-    ]
+    ],
+    "expected": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "patternProperties": {
+        "^a$": {
+          "type": "integer"
+        },
+        "^b": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
   },
   {
     "description": "ir: draft 4 folds a finite-key pattern into the coverage additionalProperties:false spells",
@@ -935,6 +975,16 @@
       {"data": {"a": "x"}, "valid": false},
       {"data": {"b": 1}, "valid": false},
       {"data": {}, "valid": true}
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "a": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
   }
 ]
