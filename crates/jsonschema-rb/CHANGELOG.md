@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Canonicalization of `unevaluatedProperties` and `unevaluatedItems` when no in-place applicator sits beside them.
+
 ## [0.49.2] - 2026-07-28
 
 ### Performance

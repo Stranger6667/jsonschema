@@ -102,6 +102,14 @@ fn parse_schema_in_scope(
         Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => return Ok(None),
     };
 
+    // Runs before the `$ref` split below, which would hide a `$ref` from the applicator check.
+    if has_unevaluated(map, ctx.draft()) {
+        let Some(degraded) = degrade_unevaluated(map, ctx.draft()) else {
+            return Ok(None);
+        };
+        return parse_schema_in_scope(&degraded, ctx, is_root, resolver, state);
+    }
+
     if let Some(reference) = map.get("$ref").and_then(Value::as_str) {
         let Some(reference) = resolve_reference(reference, ctx, resolver, state)? else {
             return Ok(None);
@@ -825,6 +833,80 @@ fn parse_schema_in_scope(
             algebra::intersect(result, conjunct, ctx)
         }),
     ))
+}
+
+/// Keywords whose subschemas evaluate this same instance location, so their annotations reach an
+/// `unevaluated*` sibling. `not` is absent: it succeeds only when its subschema fails, and a failed
+/// subschema contributes no annotations.
+fn has_in_place_applicator(map: &serde_json::Map<String, Value>) -> bool {
+    map.keys().any(|key| {
+        matches!(
+            key.as_str(),
+            "$dynamicRef"
+                | "$recursiveRef"
+                | "$ref"
+                | "allOf"
+                | "anyOf"
+                | "dependencies"
+                | "dependentSchemas"
+                | "else"
+                | "if"
+                | "oneOf"
+                | "then"
+        )
+    })
+}
+
+/// Whether this object asserts an `unevaluated*` keyword. Both enter the vocabulary in the same
+/// draft, so one `is_known_keyword` answer covers the pair.
+fn has_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> bool {
+    draft.is_known_keyword("unevaluatedProperties")
+        && (map.contains_key("unevaluatedProperties") || map.contains_key("unevaluatedItems"))
+}
+
+/// Rewrite every asserted `unevaluated*` into its `additional*` twin. With no in-place applicator
+/// beside it, `unevaluated*` sees exactly the keys or indices its twin sees; a live twin already
+/// evaluates all of them, leaving it inert and dropped. `None` keeps the document raw.
+fn degrade_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> Option<Value> {
+    if has_in_place_applicator(map) {
+        return None;
+    }
+    let mut degraded = map.clone();
+    if let Some(value) = degraded.remove("unevaluatedProperties") {
+        if !degraded.contains_key("additionalProperties") {
+            degraded.insert("additionalProperties".to_string(), value);
+        }
+    }
+    if let Some(value) = degraded.remove("unevaluatedItems") {
+        // `contains` marks the elements it matches evaluated, which no `additional*` twin spells.
+        if map.contains_key("contains") {
+            return None;
+        }
+        // Before 2020-12 `prefixItems` is not a keyword, yet validators still let it evaluate
+        // elements, leaving the tail ambiguous.
+        if map.contains_key("prefixItems")
+            && matches!(
+                draft,
+                Draft::Draft4 | Draft::Draft6 | Draft::Draft7 | Draft::Draft201909
+            )
+        {
+            return None;
+        }
+        // A tuple's tail is `additionalItems` before 2020-12 and schema-form `items` in it.
+        let tail = match (map.get("items"), draft) {
+            (None, _) => Some("items"),
+            (
+                Some(Value::Array(_)),
+                Draft::Draft4 | Draft::Draft6 | Draft::Draft7 | Draft::Draft201909,
+            ) => Some("additionalItems"),
+            (Some(_), _) => None,
+        };
+        if let Some(tail) = tail.filter(|tail| !degraded.contains_key(*tail)) {
+            degraded.insert(tail.to_string(), value);
+        }
+    }
+    // No asserted `unevaluated*` survives, so re-parsing this map terminates.
+    Some(Value::Object(degraded))
 }
 
 fn ref_has_assertion_siblings(map: &serde_json::Map<String, Value>, draft: Draft) -> bool {

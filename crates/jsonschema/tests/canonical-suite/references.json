@@ -266,14 +266,14 @@
     "schema": {
       "$ref": "#/$defs/value",
       "$defs": {
-        "value": {"unevaluatedProperties": false}
+        "value": {"allOf": [{}], "unevaluatedProperties": false}
       }
     },
     "kind": "raw",
     "expected": {
       "$ref": "#/$defs/value",
       "$defs": {
-        "value": {"unevaluatedProperties": false}
+        "value": {"allOf": [{}], "unevaluatedProperties": false}
       }
     },
     "tests": [
@@ -880,6 +880,7 @@
       "$ref": "#/$defs/a",
       "$defs": {
         "a": {
+          "allOf": [{}],
           "unevaluatedProperties": {"$ref": "#/$defs/b"}
         },
         "b": {"type": "string"}
@@ -890,6 +891,7 @@
       "$ref": "#/$defs/a",
       "$defs": {
         "a": {
+          "allOf": [{}],
           "unevaluatedProperties": {"$ref": "#/$defs/b"}
         },
         "b": {"type": "string"}

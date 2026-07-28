@@ -6,7 +6,7 @@ DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
 
 RSpec.describe "JSONSchema.canonicalize" do
   [
-    { "unevaluatedProperties" => false }
+    { "allOf" => [{}], "unevaluatedProperties" => false }
   ].each do |schema|
     it "round-trips unmodeled #{schema.inspect} verbatim" do
       result = JSONSchema.canonicalize(schema)
@@ -316,7 +316,7 @@ RSpec.describe "JSONSchema.canonicalize" do
                      %i[min_properties max_properties required property_names properties pattern_properties]],
     "ConstView" => [{ "const" => nil }, %i[value]],
     "EnumView" => [{ "enum" => [1, 2] }, %i[values]],
-    "RawView" => [{ "unevaluatedProperties" => false }, %i[schema]]
+    "RawView" => [{ "allOf" => [{}], "unevaluatedProperties" => false }, %i[schema]]
   }.each do |name, (schema, readers)|
     it "inspect renders #{name} readers" do
       draft = name == "TypedGroupView" ? :draft4 : :draft202012
@@ -335,9 +335,9 @@ RSpec.describe "JSONSchema.canonicalize" do
   end
 
   it "view returns RawView with the document payload" do
-    case JSONSchema.canonicalize({ "unevaluatedProperties" => false }).view
+    case JSONSchema.canonicalize({ "allOf" => [{}], "unevaluatedProperties" => false }).view
     in JSONSchema::Canonical::RawView[schema:]
-      expect(schema).to eq({ "unevaluatedProperties" => false })
+      expect(schema).to eq({ "allOf" => [{}], "unevaluatedProperties" => false })
     end
   end
 

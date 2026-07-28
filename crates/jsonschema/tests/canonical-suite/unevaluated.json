@@ -1,0 +1,208 @@
+[
+  {
+    "description": "ir: unevaluatedProperties:false beside properties is additionalProperties:false",
+    "schemas": [
+      {"type": "object", "properties": {"a": {"type": "string"}}, "unevaluatedProperties": false},
+      {"type": "object", "properties": {"a": {"type": "string"}}, "additionalProperties": false}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"const": "a"},
+      "properties": {"a": {"type": "string"}}
+    },
+    "tests": [
+      {"data": {"a": "x"}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"b": "x"}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: unevaluatedProperties as a schema constrains the unnamed keys",
+    "schemas": [
+      {"type": "object", "properties": {"a": {"type": "string"}}, "unevaluatedProperties": {"type": "integer"}},
+      {"type": "object", "properties": {"a": {"type": "string"}}, "additionalProperties": {"type": "integer"}}
+    ],
+    "tests": [
+      {"data": {"a": "x", "b": 1}, "valid": true},
+      {"data": {"a": "x", "b": "y"}, "valid": false},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: unevaluatedProperties beside patternProperties is additionalProperties",
+    "schemas": [
+      {"type": "object", "patternProperties": {"^a": {"type": "integer"}}, "unevaluatedProperties": false},
+      {"type": "object", "patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": false}
+    ],
+    "tests": [
+      {"data": {"ab": 1}, "valid": true},
+      {"data": {"ab": "x"}, "valid": false},
+      {"data": {"b": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a live additionalProperties leaves unevaluatedProperties inert",
+    "schemas": [
+      {"type": "object", "properties": {"a": {}}, "additionalProperties": {"type": "integer"}, "unevaluatedProperties": false},
+      {"type": "object", "properties": {"a": {}}, "additionalProperties": {"type": "integer"}}
+    ],
+    "tests": [
+      {"data": {"a": "x", "b": 1}, "valid": true},
+      {"data": {"b": "x"}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: unevaluatedProperties in a nested schema degrades independently",
+    "schemas": [
+      {"type": "object", "properties": {"a": {"properties": {"b": {}}, "unevaluatedProperties": false}}},
+      {"type": "object", "properties": {"a": {"properties": {"b": {}}, "additionalProperties": false}}}
+    ],
+    "tests": [
+      {"data": {"a": {"b": 1}}, "valid": true},
+      {"data": {"a": {"c": 1}}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: unevaluatedItems:false beside prefixItems is the tuple tail",
+    "schemas": [
+      {"type": "array", "prefixItems": [{"type": "integer"}], "unevaluatedItems": false},
+      {"type": "array", "prefixItems": [{"type": "integer"}], "items": false}
+    ],
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": false},
+      {"data": [1, 2], "valid": false},
+      {"data": [], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: unevaluatedItems with no tuple constrains every element",
+    "schemas": [
+      {"type": "array", "unevaluatedItems": {"type": "integer"}},
+      {"type": "array", "items": {"type": "integer"}}
+    ],
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [1, "x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a schema-form items leaves unevaluatedItems inert",
+    "schemas": [
+      {"type": "array", "prefixItems": [{"type": "integer"}], "items": {"type": "string"}, "unevaluatedItems": false},
+      {"type": "array", "prefixItems": [{"type": "integer"}], "items": {"type": "string"}}
+    ],
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": [1, 2], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: 2019-09 spells the tuple tail additionalItems",
+    "draft": "draft2019-09",
+    "schemas": [
+      {"type": "array", "items": [{"type": "integer"}], "unevaluatedItems": false},
+      {"type": "array", "items": [{"type": "integer"}], "additionalItems": false}
+    ],
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1, 2], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: 2019-09 a live additionalItems leaves unevaluatedItems inert",
+    "draft": "draft2019-09",
+    "schemas": [
+      {"type": "array", "items": [{"type": "integer"}], "additionalItems": {"type": "string"}, "unevaluatedItems": false},
+      {"type": "array", "items": [{"type": "integer"}], "additionalItems": {"type": "string"}}
+    ],
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": [1, 2], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: both unevaluated keywords degrade in one schema object",
+    "schemas": [
+      {"properties": {"a": {}}, "unevaluatedProperties": false, "prefixItems": [{}], "unevaluatedItems": false},
+      {"properties": {"a": {}}, "additionalProperties": false, "prefixItems": [{}], "items": false}
+    ],
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": 1}, "valid": false},
+      {"data": [1], "valid": true},
+      {"data": [1, 2], "valid": false}
+    ]
+  },
+  {
+    "description": "raw: an in-place applicator can annotate keys the unevaluatedProperties would see",
+    "schema": {"allOf": [{"properties": {"a": {}}}], "unevaluatedProperties": false},
+    "kind": "raw",
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "raw: a $ref sibling can annotate keys the unevaluatedProperties would see",
+    "schema": {"$defs": {"named": {"properties": {"a": {}}}}, "$ref": "#/$defs/named", "unevaluatedProperties": false},
+    "kind": "raw",
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "raw: if/then can annotate keys the unevaluatedProperties would see",
+    "schema": {"if": {"required": ["a"]}, "then": {"properties": {"a": {}}}, "unevaluatedProperties": false},
+    "kind": "raw",
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "raw: contains marks the elements it matches evaluated",
+    "schema": {"type": "array", "contains": {"const": 2}, "unevaluatedItems": false},
+    "kind": "raw",
+    "tests": [
+      {"data": [2], "valid": true},
+      {"data": [2, 3], "valid": false}
+    ]
+  },
+  {
+    "description": "raw: before 2020-12 a prefixItems beside unevaluatedItems leaves the tuple tail ambiguous",
+    "draft": "draft2019-09",
+    "schema": {"type": "array", "prefixItems": [{"type": "integer"}], "unevaluatedItems": false},
+    "kind": "raw",
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [null], "valid": true}
+    ]
+  },
+  {
+    "description": "ir: draft 7 does not know unevaluatedProperties, so it is an ignored annotation",
+    "draft": "draft7",
+    "schemas": [
+      {"type": "object", "properties": {"a": {}}, "unevaluatedProperties": false},
+      {"type": "object", "properties": {"a": {}}}
+    ],
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": 1}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: not contributes no annotations, so unevaluatedProperties still degrades",
+    "schemas": [
+      {"properties": {"a": {}}, "not": {"required": ["zz"]}, "unevaluatedProperties": false},
+      {"properties": {"a": {}}, "not": {"required": ["zz"]}, "additionalProperties": false}
+    ],
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": 1}, "valid": false}
+    ]
+  }
+]
