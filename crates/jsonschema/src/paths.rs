@@ -310,14 +310,28 @@ impl<'a> RefTracker<'a> {
 
     /// Compute the evaluation path for a validator with the given canonical location.
     ///
-    /// This is: `prefix() + (location - target_base)`
+    /// This is: `prefix + (location - target_base)`
     #[inline]
-    pub(crate) fn evaluation_path(&self, location: &Location) -> Location {
+    pub(crate) fn evaluation_path_with_prefix(
+        &self,
+        prefix: &Location,
+        location: &Location,
+    ) -> Location {
         let suffix = location
             .as_str()
             .strip_prefix(self.target_base.as_str())
             .unwrap_or(location.as_str());
-        self.prefix().join_raw_suffix(suffix)
+        prefix.join_raw_suffix(suffix)
+    }
+
+    #[inline]
+    pub(crate) fn parent(&self) -> Option<&RefTracker<'a>> {
+        self.parent
+    }
+
+    #[inline]
+    pub(crate) fn suffix(&self) -> &Location {
+        self.suffix
     }
 
     fn compute_prefix(&self) -> Location {
@@ -342,10 +356,14 @@ impl<'a> RefTracker<'a> {
 
 /// Compute the evaluation path, using the tracker if present.
 #[inline]
-pub(crate) fn evaluation_path(tracker: Option<&RefTracker<'_>>, location: &Location) -> Location {
+pub(crate) fn evaluation_path(
+    tracker: Option<&RefTracker<'_>>,
+    location: &Location,
+    ctx: &mut crate::validator::ValidationContext,
+) -> Location {
     match tracker {
         None => location.clone(),
-        Some(t) => t.evaluation_path(location),
+        Some(t) => ctx.evaluation_path(t, location),
     }
 }
 
@@ -635,6 +653,12 @@ impl Location {
             }
         }
     }
+    /// Address of the backing string, stable while the owner is alive.
+    #[must_use]
+    pub(crate) fn as_ptr(&self) -> usize {
+        Arc::as_ptr(&self.0).cast::<u8>() as usize
+    }
+
     /// Get a clone of the inner `Arc<str>` representing the location.
     #[must_use]
     pub(crate) fn as_arc(&self) -> Arc<str> {

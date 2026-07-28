@@ -26,7 +26,16 @@ pub struct ValidationContext {
     is_valid_cache: Option<AHashMap<(usize, NodeIdentity), bool>>,
     /// Lazy-initialized cache for ECMA regex transformation results during format "regex" validation.
     ecma_regex_cache: Option<AHashMap<String, bool>>,
+    eval_prefix_cache: Option<AHashMap<(usize, usize), Location>>,
+    eval_path_cache: Option<AHashMap<(usize, usize), Location>>,
+    eval_path_calls: u32,
 }
+
+/// Evaluation paths are only cached once this many have been built.
+///
+/// Distinct paths are bounded by the schema, while the number built scales with the instance,
+/// so a high count implies repeats. Below it the map would cost more than it saves.
+const EVAL_PATH_CACHE_THRESHOLD: u32 = 4096;
 
 impl ValidationContext {
     pub(crate) fn new() -> Self {
@@ -115,6 +124,51 @@ impl ValidationContext {
             .get_or_insert_with(AHashMap::new)
             .insert((node_id, identity), result);
     }
+    /// Evaluation path for `location` under `tracker`, cached across instance nodes.
+    ///
+    /// Keying on addresses is sound because none of them can be freed and reused mid-run:
+    /// keyword locations and `$ref` suffixes live in the compiled schema, and cached prefixes
+    /// are owned by `eval_prefix_cache`.
+    pub(crate) fn evaluation_path(
+        &mut self,
+        tracker: &RefTracker<'_>,
+        location: &Location,
+    ) -> Location {
+        self.eval_path_calls = self.eval_path_calls.saturating_add(1);
+        if self.eval_path_calls < EVAL_PATH_CACHE_THRESHOLD {
+            return tracker.evaluation_path_with_prefix(tracker.prefix(), location);
+        }
+        let prefix = self.canonical_prefix(tracker);
+        let key = (prefix.as_ptr(), location.as_ptr());
+        if let Some(hit) = self.eval_path_cache.as_ref().and_then(|c| c.get(&key)) {
+            return hit.clone();
+        }
+        let path = tracker.evaluation_path_with_prefix(&prefix, location);
+        self.eval_path_cache
+            .get_or_insert_with(AHashMap::new)
+            .insert(key, path.clone());
+        path
+    }
+
+    fn canonical_prefix(&mut self, tracker: &RefTracker<'_>) -> Location {
+        let parent = tracker.parent().map(|parent| self.canonical_prefix(parent));
+        let key = (
+            parent.as_ref().map_or(0, Location::as_ptr),
+            tracker.suffix().as_ptr(),
+        );
+        if let Some(hit) = self.eval_prefix_cache.as_ref().and_then(|c| c.get(&key)) {
+            return hit.clone();
+        }
+        let prefix = match &parent {
+            None => tracker.suffix().clone(),
+            Some(parent) => parent.join_raw_suffix(tracker.suffix().as_str()),
+        };
+        self.eval_prefix_cache
+            .get_or_insert_with(AHashMap::new)
+            .insert(key, prefix.clone());
+        prefix
+    }
+
     /// Check if an ECMA regex pattern is valid.
     pub(crate) fn is_valid_ecma_regex(&mut self, pattern: &str) -> bool {
         if let Some(cache) = &self.ecma_regex_cache {
@@ -532,6 +586,45 @@ mod tests {
         let data: Value = serde_json::from_str(&content).unwrap();
         let case = &data.as_array().unwrap()[idx];
         case.get("schema").unwrap().clone()
+    }
+
+    /// Large enough that early paths are built directly and later ones come from the cache.
+    #[test]
+    fn evaluation_paths_match_across_cache_threshold() {
+        const ELEMENTS: usize = 5000;
+
+        let schema = json!({
+            "type": "array",
+            "items": {"$ref": "#/$defs/entry"},
+            "$defs": {
+                "entry": {
+                    "type": "object",
+                    "properties": {"value": {"$ref": "#/$defs/leaf"}}
+                },
+                "leaf": {"type": "integer"}
+            }
+        });
+        let validator = crate::validator_for(&schema).expect("Valid schema");
+        let instance = Value::Array((0..ELEMENTS).map(|_| json!({"value": "no"})).collect());
+
+        let evaluation = validator.evaluate(&instance);
+        let list = serde_json::to_value(evaluation.list()).expect("Serializable");
+        let failures: Vec<_> = list["details"]
+            .as_array()
+            .expect("`details` is an array")
+            .iter()
+            .filter(|unit| unit.get("errors").is_some())
+            .collect();
+
+        assert_eq!(failures.len(), ELEMENTS);
+        for (idx, unit) in failures.iter().enumerate() {
+            assert_eq!(
+                unit["evaluationPath"],
+                "/items/$ref/properties/value/$ref/type"
+            );
+            assert_eq!(unit["instanceLocation"], format!("/{idx}/value"));
+            assert_eq!(unit["schemaLocation"], "/$defs/leaf/type");
+        }
     }
 
     #[test]

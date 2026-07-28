@@ -1012,9 +1012,10 @@ fn absorbed_error_node(
     keyword_location: &Location,
     absolute_location: Option<&Arc<Uri<String>>>,
     error: ErrorDescription,
+    ctx: &mut ValidationContext,
 ) -> EvaluationNode {
     EvaluationNode::invalid(
-        crate::paths::evaluation_path(tracker, keyword_location),
+        crate::paths::evaluation_path(tracker, keyword_location, ctx),
         absolute_location.cloned(),
         format_schema_location(keyword_location, absolute_location),
         location.into(),
@@ -1165,6 +1166,7 @@ impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
                 &self.type_location,
                 self.type_absolute_location.as_ref(),
                 error,
+                ctx,
             )]);
         };
         let count = array.len() as u64;
@@ -1180,6 +1182,7 @@ impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
                     &constraint.location,
                     constraint.absolute_location.as_ref(),
                     error,
+                    ctx,
                 ));
             }
         }
@@ -1194,6 +1197,7 @@ impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
                     &constraint.location,
                     constraint.absolute_location.as_ref(),
                     error,
+                    ctx,
                 ));
             }
         }

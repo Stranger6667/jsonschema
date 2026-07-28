@@ -448,7 +448,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
             }
             if !required_errors.is_empty() {
                 children.push(EvaluationNode::invalid(
-                    crate::paths::evaluation_path(tracker, &self.required_location),
+                    crate::paths::evaluation_path(tracker, &self.required_location, ctx),
                     self.required_absolute_location.clone(),
                     format_schema_location(
                         &self.required_location,

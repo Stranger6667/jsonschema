@@ -375,7 +375,7 @@ impl<F: Json> SchemaNode<F> {
     ) -> EvaluationNode {
         let instance_location: Location = location.into();
 
-        let keyword_location = crate::paths::evaluation_path(tracker, &self.location);
+        let keyword_location = crate::paths::evaluation_path(tracker, &self.location, ctx);
         let schema_location = Arc::clone(self.inner.formatted_schema_location.get_or_init(|| {
             crate::evaluation::format_schema_location(&self.location, self.absolute_path.as_ref())
         }));
@@ -437,7 +437,7 @@ impl<F: Json> SchemaNode<F> {
 
             let absolute_location = absolute_location.cloned();
 
-            let eval_path = crate::paths::evaluation_path(tracker, child_location);
+            let eval_path = crate::paths::evaluation_path(tracker, child_location, ctx);
 
             // schemaLocation: The canonical location WITHOUT $ref traversals.
             // Per JSON Schema spec: "MUST NOT include by-reference applicators such as $ref"
@@ -659,8 +659,7 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
 }
 
 impl<F: Json> SchemaNode<F> {
-    /// `evaluate` with the instance location already built, so callers that need it anyway
-    /// do not pay for a second identical one.
+    /// `evaluate` with the instance location already built.
     fn evaluate_at(
         &self,
         instance: &F::Node<'_>,
