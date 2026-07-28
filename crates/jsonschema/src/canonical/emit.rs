@@ -330,45 +330,65 @@ fn insert_contains(map: &mut Map<String, Value>, facet: &ContainsFacet, draft: D
 fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
     let mut map = Map::new();
     map.insert("type".into(), Value::String("object".into()));
-    // Draft 4 has no `propertyNames`; a finite key constraint - the only shape reachable there -
-    // is spelled as the closed property map it was parsed from, with an entry restored for each
-    // allowed key normalization dropped as unconstrained.
-    let closed_keys = if matches!(draft, Draft::Draft4) {
-        leaf.property_names.as_ref().and_then(finite_keys)
+    // Draft 4 has no `propertyNames`, so a key constraint is spelled as the closed map it was
+    // parsed from, with an entry restored for each allowed key or pattern normalization dropped.
+    let closed = if matches!(draft, Draft::Draft4) {
+        draft4_closed_coverage(leaf)
     } else {
         None
     };
     if let Some(names) = &leaf.property_names {
-        if closed_keys.is_none() {
+        if closed.is_none() {
+            // Draft 4 ignores `propertyNames`, so reaching it there would silently widen the
+            // emitted schema; parse keeps such a document raw rather than letting one through.
+            debug_assert!(
+                !matches!(draft, Draft::Draft4),
+                "a Draft 4 key constraint reached emit without a closed-map spelling"
+            );
             map.insert("propertyNames".into(), emit(names.kind(), draft));
         }
     }
-    if let Some(keys) = &closed_keys {
-        let mut entries = Map::new();
-        for key in keys {
-            let entry = match leaf.properties.get(key.as_str()) {
-                Some(schema) => emit(schema.kind(), draft),
-                None => Value::Object(Map::new()),
-            };
-            entries.insert(key.clone(), entry);
+    if let Some((keys, patterns)) = &closed {
+        if !keys.is_empty() {
+            let mut entries = Map::new();
+            for key in keys {
+                let entry = match leaf.properties.get(key.as_str()) {
+                    Some(schema) => emit(schema.kind(), draft),
+                    None => Value::Object(Map::new()),
+                };
+                entries.insert(key.clone(), entry);
+            }
+            map.insert("properties".into(), Value::Object(entries));
         }
-        map.insert("properties".into(), Value::Object(entries));
+        if !patterns.is_empty() {
+            let mut entries = Map::new();
+            for pattern in patterns {
+                let entry = match leaf.pattern_properties.get(pattern.as_str()) {
+                    Some(schema) => emit(schema.kind(), draft),
+                    None => Value::Object(Map::new()),
+                };
+                entries.insert(pattern.clone(), entry);
+            }
+            map.insert("patternProperties".into(), Value::Object(entries));
+        }
         map.insert("additionalProperties".into(), Value::Bool(false));
-    } else if !leaf.properties.is_empty() {
-        let entries: Map<String, Value> = leaf
-            .properties
-            .iter()
-            .map(|(key, schema)| (key.to_string(), emit(schema.kind(), draft)))
-            .collect();
-        map.insert("properties".into(), Value::Object(entries));
-    }
-    if !leaf.pattern_properties.is_empty() {
-        let entries: Map<String, Value> = leaf
-            .pattern_properties
-            .iter()
-            .map(|(pattern, schema)| (pattern.to_string(), emit(schema.kind(), draft)))
-            .collect();
-        map.insert("patternProperties".into(), Value::Object(entries));
+    } else {
+        if !leaf.properties.is_empty() {
+            let entries: Map<String, Value> = leaf
+                .properties
+                .iter()
+                .map(|(key, schema)| (key.to_string(), emit(schema.kind(), draft)))
+                .collect();
+            map.insert("properties".into(), Value::Object(entries));
+        }
+        if !leaf.pattern_properties.is_empty() {
+            let entries: Map<String, Value> = leaf
+                .pattern_properties
+                .iter()
+                .map(|(pattern, schema)| (pattern.to_string(), emit(schema.kind(), draft)))
+                .collect();
+            map.insert("patternProperties".into(), Value::Object(entries));
+        }
     }
     if let Some(additional) = &leaf.additional {
         map.insert(
@@ -397,26 +417,73 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
 }
 
 /// The exact key strings a finite key constraint admits; `None` for any other shape.
-fn finite_keys(names: &Schema) -> Option<Vec<String>> {
+/// The keys and patterns a Draft 4 key constraint closes over, when `additionalProperties: false`
+/// over them spells it exactly.
+pub(crate) fn draft4_closed_coverage(leaf: &ObjectLeaf) -> Option<(Vec<String>, Vec<String>)> {
+    let names = leaf.property_names.as_ref()?;
+    let mut keys = Vec::new();
+    let mut patterns = Vec::new();
+    collect_closed_coverage(names, &mut keys, &mut patterns)?;
+    patterns.sort_unstable();
+    patterns.dedup();
+    // A stored pattern the constraint does not name would widen the coverage; the reverse is fine,
+    // since emit restores a dropped one.
+    leaf.pattern_properties
+        .keys()
+        .all(|pattern| patterns.binary_search(&pattern.to_string()).is_ok())
+        .then_some((keys, patterns))
+}
+
+/// Split a key constraint into the keys it names and the patterns it admits.
+fn collect_closed_coverage(
+    names: &Schema,
+    keys: &mut Vec<String>,
+    patterns: &mut Vec<String>,
+) -> Option<()> {
     match names.kind() {
-        SchemaKind::Const(value) => Some(vec![value.as_value().as_str()?.to_string()]),
-        SchemaKind::Enum(values) => values
-            .as_slice()
-            .iter()
-            .map(|value| value.as_value().as_str().map(str::to_string))
-            .collect(),
+        SchemaKind::Const(value) => {
+            keys.push(value.as_value().as_str()?.to_string());
+            Some(())
+        }
+        SchemaKind::Enum(values) => {
+            for value in values.as_slice() {
+                keys.push(value.as_value().as_str()?.to_string());
+            }
+            Some(())
+        }
+        // Any facet beyond the pattern narrows the constraint below what the pattern spells.
+        SchemaKind::String(leaf) => {
+            let leaf = leaf.get();
+            let [pattern] = leaf.patterns.as_slice() else {
+                return None;
+            };
+            if leaf.lengths.minimum.is_some()
+                || leaf.lengths.maximum.is_some()
+                || !leaf.formats.is_empty()
+                || !leaf.content_media_types.is_empty()
+                || !leaf.content_encodings.is_empty()
+            {
+                return None;
+            }
+            patterns.push(pattern.to_string());
+            Some(())
+        }
+        SchemaKind::AnyOf(branches) => {
+            for branch in branches.as_slice() {
+                collect_closed_coverage(branch, keys, patterns)?;
+            }
+            Some(())
+        }
         SchemaKind::True
         | SchemaKind::False
         | SchemaKind::MultiType(_)
         | SchemaKind::TypedGroup { .. }
-        | SchemaKind::String(_)
         | SchemaKind::Integer(_)
         | SchemaKind::Number(_)
         | SchemaKind::Array(_)
         | SchemaKind::Object(_)
         | SchemaKind::Not(_)
         | SchemaKind::AllOf(_)
-        | SchemaKind::AnyOf(_)
         | SchemaKind::OneOf(_)
         | SchemaKind::Reference(_)
         | SchemaKind::Raw(_) => None,
