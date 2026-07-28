@@ -147,7 +147,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(77)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(80)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -339,6 +339,17 @@ fn draw_leaf(tc: &TestCase) -> Value {
             json!({ "type": "array", "prefixItems": [{ "type": "integer" }], "unevaluatedItems": false })
         }
         77 => json!({ "type": "object", "unevaluatedProperties": { "type": draw_type(tc) } }),
+        // A pattern matching finitely many keys names them, which frees the `additionalProperties`
+        // pairing the unbounded spellings above keep raw.
+        78 => {
+            json!({ "type": "object", "patternProperties": { "^a$": { "type": draw_type(tc) } }, "additionalProperties": { "type": draw_type(tc) } })
+        }
+        79 => {
+            json!({ "type": "object", "patternProperties": { "^(a|b)$": { "type": draw_type(tc) } }, "properties": { "a": { "type": draw_type(tc) } } })
+        }
+        80 => {
+            json!({ "type": "object", "patternProperties": { "^a$": { "type": draw_type(tc) } }, "additionalProperties": false })
+        }
         63 => {
             let (first, second) = (draw_type(tc), draw_type(tc));
             let types = if first == second {

@@ -5,6 +5,7 @@
 ### Added
 
 - Canonicalization of a Draft 4 `type` list holding `integer` beside other types with `enum`, which previously modeled only when spelled as an `allOf`.
+- Canonicalization of `patternProperties` patterns matching finitely many keys, such as `^a$` and `^(a|b)$`.
 - Canonicalization of `unevaluatedProperties` and `unevaluatedItems` when no in-place applicator sits beside them.
 
 ### Fixed
