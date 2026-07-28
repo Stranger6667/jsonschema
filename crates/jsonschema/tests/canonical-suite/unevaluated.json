@@ -137,12 +137,88 @@
     ]
   },
   {
-    "description": "raw: an in-place applicator can annotate keys the unevaluatedProperties would see",
-    "schema": {"allOf": [{"properties": {"a": {}}}], "unevaluatedProperties": false},
+    "description": "raw: an instance-dependent applicator can annotate keys the unevaluatedProperties would see",
+    "schema": {"anyOf": [{"properties": {"a": {}}}], "unevaluatedProperties": false},
     "kind": "raw",
     "tests": [
       {"data": {"a": 1}, "valid": true},
       {"data": {"b": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an allOf branch names the keys its unevaluatedProperties sibling must skip",
+    "schemas": [
+      {"allOf": [{"properties": {"a": {"type": "integer"}}}], "unevaluatedProperties": false},
+      {"allOf": [{"properties": {"a": {"type": "integer"}}}], "properties": {"a": true}, "additionalProperties": false}
+    ],
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {"b": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: every allOf branch contributes, and nesting recurses",
+    "schemas": [
+      {"allOf": [{"properties": {"a": {}}}, {"allOf": [{"properties": {"b": {}}}]}], "unevaluatedProperties": false},
+      {"allOf": [{"properties": {"a": {}}}, {"allOf": [{"properties": {"b": {}}}]}], "properties": {"a": true, "b": true}, "additionalProperties": false}
+    ],
+    "tests": [
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"c": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: an allOf branch pattern names the keys it reaches",
+    "schema": {"allOf": [{"patternProperties": {"^a": {"type": "integer"}}}], "unevaluatedProperties": false},
+    "tests": [
+      {"data": {"ab": 1}, "valid": true},
+      {"data": {"ab": "x"}, "valid": false},
+      {"data": {"b": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: an allOf branch reaching every key leaves the unevaluatedProperties inert",
+    "schemas": [
+      {"allOf": [{"additionalProperties": {"type": "integer"}}], "unevaluatedProperties": false},
+      {"allOf": [{"additionalProperties": {"type": "integer"}}]}
+    ],
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false}
+    ]
+  },
+  {
+    "description": "raw: an allOf branch whose own applicator is instance-dependent stays unmodeled",
+    "schema": {"allOf": [{"anyOf": [{"properties": {"a": {}}}, {"properties": {"b": {}}}]}], "unevaluatedProperties": false},
+    "kind": "raw",
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"c": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "raw: an allOf beside unevaluatedItems is not modeled yet",
+    "schema": {"allOf": [{"prefixItems": [{"type": "integer"}]}], "unevaluatedItems": false},
+    "kind": "raw",
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1, 2], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a local additionalProperties already reaches every key, so the allOf cover is not hoisted",
+    "schemas": [
+      {"allOf": [{"properties": {"a": {}}}], "additionalProperties": {"type": "integer"}, "unevaluatedProperties": false},
+      {"allOf": [{"properties": {"a": {}}}], "additionalProperties": {"type": "integer"}}
+    ],
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {"b": 1}, "valid": true}
     ]
   },
   {

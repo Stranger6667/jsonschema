@@ -147,7 +147,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(80)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(83)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -350,6 +350,16 @@ fn draw_leaf(tc: &TestCase) -> Value {
         80 => {
             json!({ "type": "object", "patternProperties": { "^a$": { "type": draw_type(tc) } }, "additionalProperties": false })
         }
+        // An `unevaluatedProperties` beside `allOf` degrades over the branches' hoisted names.
+        81 => {
+            json!({ "type": "object", "allOf": [{ "properties": { "a": { "type": draw_type(tc) } } }], "unevaluatedProperties": false })
+        }
+        82 => {
+            json!({ "type": "object", "allOf": [{ "properties": { "a": true } }, { "properties": { "b": true } }], "unevaluatedProperties": { "type": draw_type(tc) } })
+        }
+        83 => {
+            json!({ "type": "object", "allOf": [{ "patternProperties": { "^a": true } }], "properties": { "b": true }, "unevaluatedProperties": false })
+        }
         63 => {
             let (first, second) = (draw_type(tc), draw_type(tc));
             let types = if first == second {
@@ -449,7 +459,7 @@ fn draw_schema(tc: &TestCase, depth: u32) -> Value {
                 "null_target": { "type": "null" },
                 "integer_target": { "type": "integer", "minimum": -2 },
                 "string_target": { "type": "string", "minLength": 1 },
-                "raw_target": { "allOf": [{}], "unevaluatedProperties": false },
+                "raw_target": { "anyOf": [{}], "unevaluatedProperties": false },
                 "alias_target": { "$ref": "#/$defs/integer_target" },
                 "recursive_target": {
                     "type": "object",
@@ -482,7 +492,7 @@ fn attach_root_definitions(mut schema: Value, definitions: Option<Value>) -> Val
 // Meta-valid keywords the canonicaliser does not model; a document carrying one stays `Raw`.
 fn draw_unmodeled_leaf(tc: &TestCase) -> Value {
     match tc.draw(gs::integers::<u8>().min_value(0).max_value(4)) {
-        0 => json!({ "allOf": [{}], "unevaluatedProperties": { "type": "integer" } }),
+        0 => json!({ "anyOf": [{}], "unevaluatedProperties": { "type": "integer" } }),
         1 => json!({ "not": { "pattern": "^a" } }),
         2 => json!({ "contains": {}, "unevaluatedItems": { "type": "null" } }),
         3 => json!({ "format": "email" }),
