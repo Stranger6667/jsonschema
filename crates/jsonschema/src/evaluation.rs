@@ -5,7 +5,10 @@ use serde::{
     ser::{SerializeMap, SerializeSeq, SerializeStruct},
     Serialize,
 };
-use std::{fmt, sync::Arc};
+use std::{
+    fmt::{self, Write},
+    sync::Arc,
+};
 
 /// Annotations associated with an output unit.
 #[derive(Debug, Clone, PartialEq)]
@@ -640,11 +643,10 @@ pub(crate) fn format_schema_location(
 ) -> Arc<str> {
     if let Some(uri) = absolute {
         let base = uri.strip_fragment();
-        if location.as_str().is_empty() {
-            Arc::from(format!("{base}#"))
-        } else {
-            Arc::from(format!("{base}#{}", location.as_str()))
-        }
+        let suffix = location.as_str();
+        crate::paths::build_arc_str(suffix.len() + 1, |buffer| {
+            write!(buffer, "{base}#{suffix}").expect("writing to a String cannot fail");
+        })
     } else {
         location.as_arc()
     }

@@ -12,6 +12,10 @@
 
 - `unevaluatedItems` counting `prefixItems` as evaluating elements before Draft 2020-12, where it is not a keyword.
 
+### Performance
+
+- Up to 25% faster `evaluate`.
+
 ## [0.49.2] - 2026-07-28
 
 ### Performance
