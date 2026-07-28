@@ -1,7 +1,7 @@
 //! Parsing schema documents into structural IR; anything not modeled stays `Raw`.
 use std::{collections::BTreeMap, sync::Arc};
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 
 use referencing::{Draft, Resolver};
 use serde_json::Value;
@@ -29,10 +29,10 @@ pub(crate) struct ParseOutput {
 /// Parse a document into structural IR when every construct is modeled; `Ok(None)` keeps it `Raw`.
 /// Keywords the draft does not define are annotations the validator ignores, so they never block
 /// modeling - except an unknown `$schema`, whose dialect semantics are unknowable.
-pub(crate) fn parse(
-    value: &Value,
+pub(crate) fn parse<'a>(
+    value: &'a Value,
     ctx: &CanonicalizationContext,
-    resolver: &Resolver<'_>,
+    resolver: &Resolver<'a>,
 ) -> Result<Option<ParseOutput>, CanonicalizationError> {
     let mut state = ParseState::new(value, resolver.base_uri().as_str());
     let parsed = parse_schema_in_scope(value, ctx, true, resolver, &mut state)?;
@@ -60,6 +60,8 @@ struct ParseState<'a> {
     pattern_properties: bool,
     definitions: DefinitionMap,
     in_progress: AHashSet<Arc<str>>,
+    /// The target each definition key was minted for, so a key cannot be reused for another one.
+    sources: AHashMap<Arc<str>, &'a Value>,
 }
 
 impl<'a> ParseState<'a> {
@@ -71,28 +73,29 @@ impl<'a> ParseState<'a> {
             pattern_properties: false,
             definitions: DefinitionMap::new(),
             in_progress: AHashSet::new(),
+            sources: AHashMap::default(),
         }
     }
 }
 
-fn parse_schema(
+fn parse_schema<'a>(
     value: &Value,
     ctx: &CanonicalizationContext,
     is_root: bool,
-    resolver: &Resolver<'_>,
-    state: &mut ParseState<'_>,
+    resolver: &Resolver<'a>,
+    state: &mut ParseState<'a>,
 ) -> Result<Option<Schema>, CanonicalizationError> {
     let resolver = resolver.in_subresource(ctx.draft().create_resource_ref(value))?;
     parse_schema_in_scope(value, ctx, is_root, &resolver, state)
 }
 
 /// Parse a root or resolved target whose resolver already carries that resource's base URI.
-fn parse_schema_in_scope(
+fn parse_schema_in_scope<'a>(
     value: &Value,
     ctx: &CanonicalizationContext,
     is_root: bool,
-    resolver: &Resolver<'_>,
-    state: &mut ParseState<'_>,
+    resolver: &Resolver<'a>,
+    state: &mut ParseState<'a>,
 ) -> Result<Option<Schema>, CanonicalizationError> {
     let map = match value {
         Value::Bool(true) => return Ok(Some(Schema::new(SchemaKind::True))),
@@ -1107,11 +1110,11 @@ fn ref_has_assertion_siblings(map: &serde_json::Map<String, Value>, draft: Draft
     })
 }
 
-fn resolve_reference(
+fn resolve_reference<'a>(
     reference: &str,
     ctx: &CanonicalizationContext,
-    resolver: &Resolver<'_>,
-    state: &mut ParseState<'_>,
+    resolver: &Resolver<'a>,
+    state: &mut ParseState<'a>,
 ) -> Result<Option<Schema>, CanonicalizationError> {
     let base_uri = resolver.base_uri();
     let location = resolver.resolve_uri(&base_uri.borrow(), reference)?;
@@ -1196,16 +1199,24 @@ fn is_direct_definition_reference(reference: &str) -> bool {
     false
 }
 
-fn ensure_definition(
+fn ensure_definition<'a>(
     key: Arc<str>,
-    target: &Value,
+    target: &'a Value,
     ctx: &CanonicalizationContext,
-    resolver: &Resolver<'_>,
-    state: &mut ParseState<'_>,
+    resolver: &Resolver<'a>,
+    state: &mut ParseState<'a>,
 ) -> Result<bool, CanonicalizationError> {
+    // A `$defs` name spelling a canonical URI keys the same string that a reference to the resource
+    // it encodes mints, so without this the early return below would alias the two targets.
+    if let Some(existing) = state.sources.get(&key) {
+        if !std::ptr::eq(*existing, target) {
+            return Ok(false);
+        }
+    }
     if state.definitions.contains_key(&key) || state.in_progress.contains(&key) {
         return Ok(true);
     }
+    state.sources.insert(Arc::clone(&key), target);
     let inserted = state.in_progress.insert(Arc::clone(&key));
     debug_assert!(
         inserted,
@@ -1476,11 +1487,11 @@ fn string_facet_schema(leaf: StringLeaf, ctx: &CanonicalizationContext) -> Schem
 }
 
 /// Parse a tuple's per-index schemas; `Ok(None)` when any element is unmodeled, keeping the document raw.
-fn parse_prefix(
+fn parse_prefix<'a>(
     schemas: &[Value],
     ctx: &CanonicalizationContext,
-    resolver: &Resolver<'_>,
-    state: &mut ParseState<'_>,
+    resolver: &Resolver<'a>,
+    state: &mut ParseState<'a>,
 ) -> Result<Option<Vec<Schema>>, CanonicalizationError> {
     let mut prefix = Vec::with_capacity(schemas.len());
     for schema in schemas {

@@ -1086,5 +1086,85 @@
       {"data": 1, "valid": true},
       {"data": {"a": 1}, "valid": true}
     ]
+  },
+  {
+    "description": "a definition name spelling a canonical URI does not alias the target that URI names",
+    "schema": {
+      "$id": "http://doc/root",
+      "anyOf": [
+        {"$ref": "#/$defs/urn:jsonschema:canonical:http%253A%252F%252Fdoc%252Froot%2523%252F%2524defs%252Fcontainer%252Fproperties%252Fname"},
+        {"$ref": "#/$defs/container/properties/name"}
+      ],
+      "$defs": {
+        "container": {"properties": {"name": {"type": "string"}}},
+        "urn:jsonschema:canonical:http%3A%2F%2Fdoc%2Froot%23%2F%24defs%2Fcontainer%2Fproperties%2Fname": {
+          "type": "object",
+          "required": ["p"],
+          "properties": {"p": {"$ref": "#/$defs/urn:jsonschema:canonical:http%253A%252F%252Fdoc%252Froot%2523%252F%2524defs%252Fcontainer%252Fproperties%252Fname"}}
+        }
+      }
+    },
+    "kind": "raw",
+    "satisfiable": true,
+    "expected": {
+      "$id": "http://doc/root",
+      "anyOf": [
+        {"$ref": "#/$defs/urn:jsonschema:canonical:http%253A%252F%252Fdoc%252Froot%2523%252F%2524defs%252Fcontainer%252Fproperties%252Fname"},
+        {"$ref": "#/$defs/container/properties/name"}
+      ],
+      "$defs": {
+        "container": {"properties": {"name": {"type": "string"}}},
+        "urn:jsonschema:canonical:http%3A%2F%2Fdoc%2Froot%23%2F%24defs%2Fcontainer%2Fproperties%2Fname": {
+          "type": "object",
+          "required": ["p"],
+          "properties": {"p": {"$ref": "#/$defs/urn:jsonschema:canonical:http%253A%252F%252Fdoc%252Froot%2523%252F%2524defs%252Fcontainer%252Fproperties%252Fname"}}
+        }
+      }
+    },
+    "tests": [
+      {"data": "x", "valid": true},
+      {"data": 1, "valid": false},
+      {"data": {"p": {}}, "valid": false}
+    ]
+  },
+  {
+    "description": "a definition name spelling a canonical URI does not alias a subresource with that identifier",
+    "schema": {
+      "$id": "http://doc/root",
+      "anyOf": [
+        {"$ref": "#/$defs/urn:jsonschema:canonical:http%253A%252F%252Fremote%252Fa"},
+        {"$ref": "http://remote/a"}
+      ],
+      "$defs": {
+        "remote": {"$id": "http://remote/a", "type": "string"},
+        "urn:jsonschema:canonical:http%3A%2F%2Fremote%2Fa": {
+          "type": "object",
+          "required": ["p"],
+          "properties": {"p": {"$ref": "#/$defs/urn:jsonschema:canonical:http%253A%252F%252Fremote%252Fa"}}
+        }
+      }
+    },
+    "kind": "raw",
+    "satisfiable": true,
+    "expected": {
+      "$id": "http://doc/root",
+      "anyOf": [
+        {"$ref": "#/$defs/urn:jsonschema:canonical:http%253A%252F%252Fremote%252Fa"},
+        {"$ref": "http://remote/a"}
+      ],
+      "$defs": {
+        "remote": {"$id": "http://remote/a", "type": "string"},
+        "urn:jsonschema:canonical:http%3A%2F%2Fremote%2Fa": {
+          "type": "object",
+          "required": ["p"],
+          "properties": {"p": {"$ref": "#/$defs/urn:jsonschema:canonical:http%253A%252F%252Fremote%252Fa"}}
+        }
+      }
+    },
+    "tests": [
+      {"data": "x", "valid": true},
+      {"data": 1, "valid": false},
+      {"data": {"p": {}}, "valid": false}
+    ]
   }
 ]

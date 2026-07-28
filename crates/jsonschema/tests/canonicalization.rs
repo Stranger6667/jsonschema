@@ -133,6 +133,49 @@ fn registry_already_holding_the_root_uri_still_canonicalizes() {
 }
 
 #[test]
+fn a_definition_name_spelling_a_canonical_uri_does_not_alias_a_registry_resource() {
+    // Both references mint the same key, so aliasing them canonicalized this to `false` while the
+    // validator accepted `"x"`. Only a registry reaches this route; the suite covers the `$id` one.
+    let remote = json!({"$id": "http://remote/a", "type": "string"});
+    let registry = Registry::new()
+        .add("http://remote/a", &remote)
+        .expect("resource URI is valid")
+        .prepare()
+        .expect("registry prepares");
+    let schema = json!({
+        "anyOf": [
+            {"$ref": "#/$defs/urn:jsonschema:canonical:http%253A%252F%252Fremote%252Fa"},
+            {"$ref": "http://remote/a"}
+        ],
+        "$defs": {
+            "urn:jsonschema:canonical:http%3A%2F%2Fremote%2Fa": {
+                "type": "object",
+                "required": ["p"],
+                "properties": {
+                    "p": {"$ref": "#/$defs/urn:jsonschema:canonical:http%253A%252F%252Fremote%252Fa"}
+                }
+            }
+        }
+    });
+
+    let canonical = options()
+        .with_registry(&registry)
+        .canonicalize(&schema)
+        .expect("canonicalizes");
+    assert_eq!(canonical.kind(), CanonicalKind::Raw);
+    assert!(
+        canonical.is_satisfiable(),
+        "the string branch admits a value, so the document is not empty"
+    );
+
+    let validator = jsonschema::options()
+        .with_registry(&registry)
+        .build(&schema)
+        .expect("builds");
+    assert!(validator.is_valid(&json!("x")));
+}
+
+#[test]
 fn unsupported_reference_target_keeps_the_whole_document_raw() {
     let schema = json!({
         "$ref": "#/$defs/value",
