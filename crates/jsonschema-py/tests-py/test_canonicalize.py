@@ -6,12 +6,15 @@ import jsonschema_rs
 from jsonschema_rs import CanonicalSchema, ValidationError, canonical, canonicalize
 
 DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
+# `anyOf` annotates whichever branch the instance matched, which no `additional*` twin spells,
+# so this stays raw. Each construct canonicalization learns needs a still-unmodeled stand-in here.
+UNMODELED = {"anyOf": [{}], "unevaluatedProperties": False}
 
 
 @pytest.mark.parametrize(
     "schema",
     [
-        {"allOf": [{}], "unevaluatedProperties": False},
+        UNMODELED,
     ],
 )
 def test_unmodeled_round_trips_verbatim(schema):
@@ -374,9 +377,9 @@ def test_view_not_with_symbolic_reference():
 
 
 def test_view_raw():
-    match canonicalize({"allOf": [{}], "unevaluatedProperties": False}).view():
+    match canonicalize(UNMODELED).view():
         case canonical.RawView(schema=payload):
-            assert payload == {"allOf": [{}], "unevaluatedProperties": False}
+            assert payload == UNMODELED
         case other:
             pytest.fail(f"unexpected view: {other!r}")
 

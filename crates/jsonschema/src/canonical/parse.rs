@@ -867,17 +867,16 @@ fn finite_pattern_keys(pattern: &str) -> Option<Vec<Arc<str>>> {
     }
 }
 
-/// Keywords whose subschemas evaluate this same instance location, so their annotations reach an
-/// `unevaluated*` sibling. `not` is absent: it succeeds only when its subschema fails, and a failed
-/// subschema contributes no annotations.
-fn has_in_place_applicator(map: &serde_json::Map<String, Value>) -> bool {
+/// In-place applicators whose annotations depend on which branch the instance matched. `allOf` is
+/// absent: every branch must pass, so [`property_cover`] can read its contribution off the document.
+/// `not` is absent too: it succeeds only when its subschema fails, and a failure annotates nothing.
+fn has_instance_dependent_applicator(map: &serde_json::Map<String, Value>) -> bool {
     map.keys().any(|key| {
         matches!(
             key.as_str(),
             "$dynamicRef"
                 | "$recursiveRef"
                 | "$ref"
-                | "allOf"
                 | "anyOf"
                 | "dependencies"
                 | "dependentSchemas"
@@ -887,6 +886,66 @@ fn has_in_place_applicator(map: &serde_json::Map<String, Value>) -> bool {
                 | "then"
         )
     })
+}
+
+/// The keys an `allOf` tree evaluates beside an `unevaluatedProperties`.
+#[derive(Default)]
+struct PropertyCover {
+    /// A branch reaches every key, leaving the `unevaluatedProperties` inert.
+    everything: bool,
+    keys: Vec<String>,
+    patterns: Vec<String>,
+}
+
+/// Name each covered key and pattern here as a vacuous entry, so the `additional*` twin skips it.
+fn hoist_cover(degraded: &mut serde_json::Map<String, Value>, cover: &PropertyCover) {
+    for (keyword, names) in [
+        ("properties", &cover.keys),
+        ("patternProperties", &cover.patterns),
+    ] {
+        if names.is_empty() {
+            continue;
+        }
+        let Value::Object(entries) = degraded
+            .entry(keyword)
+            .or_insert_with(|| Value::Object(serde_json::Map::new()))
+        else {
+            continue;
+        };
+        for name in names {
+            entries.entry(name.as_str()).or_insert(Value::Bool(true));
+        }
+    }
+}
+
+/// Accumulate what `branch` evaluates; `None` when the instance decides it.
+fn property_cover(branch: &Value, cover: &mut PropertyCover) -> Option<()> {
+    let map = match branch {
+        // No keywords, so nothing is annotated.
+        Value::Bool(_) => return Some(()),
+        Value::Object(map) => map,
+        Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => return None,
+    };
+    if has_instance_dependent_applicator(map) {
+        return None;
+    }
+    // Either one reaches every key the branch does not name, leaving nothing unevaluated.
+    if map.contains_key("additionalProperties") || map.contains_key("unevaluatedProperties") {
+        cover.everything = true;
+        return Some(());
+    }
+    if let Some(Value::Object(properties)) = map.get("properties") {
+        cover.keys.extend(properties.keys().cloned());
+    }
+    if let Some(Value::Object(patterns)) = map.get("patternProperties") {
+        cover.patterns.extend(patterns.keys().cloned());
+    }
+    if let Some(Value::Array(nested)) = map.get("allOf") {
+        for branch in nested {
+            property_cover(branch, cover)?;
+        }
+    }
+    Some(())
 }
 
 /// Whether this object asserts an `unevaluated*` keyword. Both enter the vocabulary in the same
@@ -900,12 +959,32 @@ fn has_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> bool {
 /// beside it, `unevaluated*` sees exactly the keys or indices its twin sees; a live twin already
 /// evaluates all of them, leaving it inert and dropped. `None` keeps the document raw.
 fn degrade_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> Option<Value> {
-    if has_in_place_applicator(map) {
+    if has_instance_dependent_applicator(map) {
+        return None;
+    }
+    // An `allOf` beside `unevaluatedItems` is not modeled yet, so it still blocks there.
+    if map.contains_key("allOf") && map.contains_key("unevaluatedItems") {
         return None;
     }
     let mut degraded = map.clone();
-    if let Some(value) = degraded.remove("unevaluatedProperties") {
-        if !degraded.contains_key("additionalProperties") {
+    // A local `additionalProperties` leaves nothing unevaluated, so the sibling is inert - and
+    // hoisting would change which keys that `additionalProperties` reaches, so it must not run.
+    if let Some(value) = degraded
+        .remove("unevaluatedProperties")
+        .filter(|_| !degraded.contains_key("additionalProperties"))
+    {
+        // Naming a covered key here is all `additionalProperties` needs to skip it; the branch
+        // that named it still carries the constraint.
+        if let Some(Value::Array(branches)) = map.get("allOf") {
+            let mut cover = PropertyCover::default();
+            for branch in branches {
+                property_cover(branch, &mut cover)?;
+            }
+            if !cover.everything {
+                hoist_cover(&mut degraded, &cover);
+                degraded.insert("additionalProperties".to_string(), value);
+            }
+        } else {
             degraded.insert("additionalProperties".to_string(), value);
         }
     }
