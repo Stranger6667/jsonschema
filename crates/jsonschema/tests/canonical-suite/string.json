@@ -103,7 +103,11 @@
     "satisfiable": false,
     "tests": [
       {"data": "xyz", "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
   },
   {
     "description": "ir: empty string length window is unsatisfiable",
@@ -111,7 +115,11 @@
     "satisfiable": false,
     "tests": [
       {"data": "abc", "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
   },
   {
     "description": "ir: integer-valued float length bound is modeled like the validator",
@@ -221,7 +229,11 @@
     "satisfiable": false,
     "tests": [
       {"data": "a", "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
   },
   {
     "description": "ir: non-overlapping string windows stay separate anyOf branches",
@@ -282,7 +294,11 @@
     "satisfiable": false,
     "tests": [
       {"data": "abcd", "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
   },
   {
     "description": "ir: invalid regex in pattern is rejected",

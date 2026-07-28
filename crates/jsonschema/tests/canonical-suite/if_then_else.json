@@ -213,6 +213,12 @@
     "schema": {
       "if": {"unevaluatedProperties": false},
       "then": true
+    },
+    "expected": {
+      "if": {
+        "unevaluatedProperties": false
+      },
+      "then": true
     }
   },
   {
@@ -220,6 +226,9 @@
     "schema": {
       "if": true,
       "else": {"unevaluatedProperties": false}
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
     }
   }
 ]

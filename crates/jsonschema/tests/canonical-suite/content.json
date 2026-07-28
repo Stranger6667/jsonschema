@@ -270,6 +270,25 @@
     "tests": [
       {"data": {"value": "anything"}, "valid": true},
       {"data": {"value": 1}, "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "anyOf": [
+        {
+          "properties": {
+            "value": {
+              "contentEncoding": "application/x-unknown",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "const": {
+            "value": "anything"
+          }
+        }
+      ]
+    }
   }
 ]

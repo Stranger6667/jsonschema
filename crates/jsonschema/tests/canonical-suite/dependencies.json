@@ -259,6 +259,26 @@
       "dependentSchemas": {
         "a": {"unevaluatedProperties": false}
       }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "properties": {
+            "a": false
+          },
+          "type": "object"
+        }
+      ]
     }
   }
 ]

@@ -681,7 +681,23 @@
         "data": 2,
         "valid": false
       }
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {
+          "enum": [
+            1
+          ],
+          "type": "integer"
+        },
+        {
+          "enum": [
+            "x"
+          ]
+        }
+      ]
+    }
   },
   {
     "description": "mixed enum sorts by value order",
@@ -943,7 +959,23 @@
       {"data": 2, "valid": true},
       {"data": 2.0, "valid": false},
       {"data": "x", "valid": true}
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {
+          "enum": [
+            2
+          ],
+          "type": "integer"
+        },
+        {
+          "enum": [
+            "x"
+          ]
+        }
+      ]
+    }
   },
   {
     "description": "ir: draft 4 a type list with no integer members leaves the value set unguarded",

@@ -513,7 +513,21 @@
       {"data": 7, "valid": true},
       {"data": 7.0, "valid": true},
       {"data": 1, "valid": false}
-    ]
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {
+          "minimum": 2,
+          "type": "integer"
+        },
+        {
+          "enum": [
+            7
+          ]
+        }
+      ]
+    }
   },
   {
     "description": "ir: a string window absorbs a value it already admits",
