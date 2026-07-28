@@ -173,13 +173,16 @@
     ]
   },
   {
-    "description": "raw: before 2020-12 a prefixItems beside unevaluatedItems leaves the tuple tail ambiguous",
+    "description": "ir: before 2020-12 prefixItems is not a keyword, so it leaves every element unevaluated",
     "draft": "draft2019-09",
-    "schema": {"type": "array", "prefixItems": [{"type": "integer"}], "unevaluatedItems": false},
-    "kind": "raw",
+    "schemas": [
+      {"type": "array", "prefixItems": [{"type": "integer"}], "unevaluatedItems": false},
+      {"type": "array", "prefixItems": [{"type": "integer"}], "items": false}
+    ],
     "tests": [
-      {"data": [1], "valid": true},
-      {"data": [null], "valid": true}
+      {"data": [], "valid": true},
+      {"data": [1], "valid": false},
+      {"data": [null], "valid": false}
     ]
   },
   {

@@ -882,17 +882,8 @@ fn degrade_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> Op
         if map.contains_key("contains") {
             return None;
         }
-        // Before 2020-12 `prefixItems` is not a keyword, yet validators still let it evaluate
-        // elements, leaving the tail ambiguous.
-        if map.contains_key("prefixItems")
-            && matches!(
-                draft,
-                Draft::Draft4 | Draft::Draft6 | Draft::Draft7 | Draft::Draft201909
-            )
-        {
-            return None;
-        }
-        // A tuple's tail is `additionalItems` before 2020-12 and schema-form `items` in it.
+        // A tuple's tail is `additionalItems` before 2020-12 and schema-form `items` in it. Before
+        // 2020-12 `prefixItems` is not a keyword and evaluates nothing, so it leaves no tuple.
         let tail = match (map.get("items"), draft) {
             (None, _) => Some("items"),
             (

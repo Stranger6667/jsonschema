@@ -6,6 +6,10 @@
 
 - Canonicalization of `unevaluatedProperties` and `unevaluatedItems` when no in-place applicator sits beside them.
 
+### Fixed
+
+- `unevaluatedItems` counting `prefixItems` as evaluating elements before Draft 2020-12, where it is not a keyword.
+
 ## [0.49.2] - 2026-07-28
 
 ### Fixed
