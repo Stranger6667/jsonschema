@@ -357,7 +357,6 @@ fn parse_schema_in_scope(
             ("patternProperties", Value::Object(entries))
                 if ctx.draft().is_known_keyword("patternProperties") =>
             {
-                state.pattern_properties = true;
                 for (pattern, value) in entries {
                     let pattern: Arc<str> = Arc::from(pattern.as_str());
                     if ctx.compile_regex(&pattern).is_none() {
@@ -697,6 +696,14 @@ fn parse_schema_in_scope(
     {
         min_properties = None;
     }
+    // A pattern matching finitely many keys names them outright, so its schema moves onto them and
+    // the pattern goes. What is left decides whether this document meets the `additionalProperties`
+    // pairing at all - `additionalProperties` already knows to skip a named key.
+    fold_finite_key_patterns(&mut pattern_properties, &mut properties, ctx);
+    if !pattern_properties.is_empty() {
+        state.pattern_properties = true;
+    }
+
     // Draft 4 has no `propertyNames` to emit a pattern-shaped key constraint, so only a
     // finite-key fold - which emit re-spells as `additionalProperties: false` - is expressible
     // there; a pattern in the coverage keeps the document raw.
@@ -823,6 +830,41 @@ fn parse_schema_in_scope(
             algebra::intersect(result, conjunct, ctx)
         }),
     ))
+}
+
+/// Move every pattern matching finitely many keys onto those keys, met into whatever the property
+/// map already demands of each, and drop the pattern.
+fn fold_finite_key_patterns(
+    pattern_properties: &mut BTreeMap<Arc<str>, Schema>,
+    properties: &mut BTreeMap<Arc<str>, Schema>,
+    ctx: &CanonicalizationContext,
+) {
+    pattern_properties.retain(|pattern, schema| {
+        let Some(keys) = finite_pattern_keys(pattern) else {
+            return true;
+        };
+        for key in keys {
+            let merged = match properties.remove(&key) {
+                Some(existing) => algebra::intersect(existing, schema.clone(), ctx),
+                None => schema.clone(),
+            };
+            properties.insert(key, merged);
+        }
+        false
+    });
+}
+
+/// The keys a pattern matches when it matches finitely many; `^` and `$` anchor the whole string,
+/// so an exact or alternation spelling names its keys outright.
+fn finite_pattern_keys(pattern: &str) -> Option<Vec<Arc<str>>> {
+    match jsonschema_regex::analyze_pattern(pattern)? {
+        jsonschema_regex::PatternAnalysis::Exact(key) => Some(vec![Arc::from(key.as_ref())]),
+        jsonschema_regex::PatternAnalysis::Alternation(keys) => {
+            Some(keys.iter().map(|key| Arc::from(key.as_str())).collect())
+        }
+        jsonschema_regex::PatternAnalysis::Prefix(_)
+        | jsonschema_regex::PatternAnalysis::NoWhitespace => None,
+    }
 }
 
 /// Keywords whose subschemas evaluate this same instance location, so their annotations reach an

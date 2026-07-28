@@ -683,7 +683,7 @@
     ]
   },
   {
-    "description": "ir: a vacuous named key is no fold target",
+    "description": "ir: an anchored single-key pattern folds onto a vacuous named key",
     "schemas": [
       {"type": "object", "properties": {"a": true}, "patternProperties": {"^a$": {"type": "integer"}}},
       {"type": "object", "patternProperties": {"^a$": {"type": "integer"}}}
@@ -691,7 +691,7 @@
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
-      "patternProperties": {"^a$": {"type": "integer"}}
+      "properties": {"a": {"type": "integer"}}
     },
     "tests": [
       {"data": {"a": 1}, "valid": true},
@@ -822,12 +822,16 @@
     ]
   },
   {
-    "description": "ir: an anchored single-key pattern keeps its spelling",
-    "schema": {"type": "object", "patternProperties": {"^a$": {"type": "integer"}}},
+    "description": "ir: an anchored single-key pattern names its key, so it converges with the properties spelling",
+    "schemas": [
+      {"type": "object", "patternProperties": {"^a$": {"type": "integer"}}},
+      {"type": "object", "patternProperties": {"^(a)$": {"type": "integer"}}},
+      {"type": "object", "properties": {"a": {"type": "integer"}}}
+    ],
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
-      "patternProperties": {"^a$": {"type": "integer"}}
+      "properties": {"a": {"type": "integer"}}
     },
     "tests": [
       {"data": {"a": 1}, "valid": true},
@@ -864,6 +868,73 @@
     "tests": [
       {"data": {"ab": 1}, "valid": true},
       {"data": {"ab": "x"}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a finite-key pattern beside an in-between additionalProperties needs no pattern-overlap reasoning",
+    "schemas": [
+      {"type": "object", "patternProperties": {"^a$": {"type": "integer"}}, "additionalProperties": {"type": "string"}},
+      {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": {"type": "integer"}},
+      "additionalProperties": {"type": "string"}
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {"b": "x"}, "valid": true},
+      {"data": {"b": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: an alternation pattern names each of its keys",
+    "schemas": [
+      {"type": "object", "patternProperties": {"^(a|b)$": {"type": "integer"}}, "additionalProperties": {"type": "string"}},
+      {"type": "object", "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}}, "additionalProperties": {"type": "string"}}
+    ],
+    "tests": [
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {"c": "x"}, "valid": true},
+      {"data": {"c": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "raw: a prefix pattern reaches unboundedly many keys, so the additionalProperties pairing stays unmodeled",
+    "schema": {"type": "object", "patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": {"type": "string"}},
+    "kind": "raw",
+    "tests": [
+      {"data": {"ab": 1}, "valid": true},
+      {"data": {"ab": "x"}, "valid": false},
+      {"data": {"b": "x"}, "valid": true}
+    ]
+  },
+  {
+    "description": "raw: one unfoldable pattern beside a finite one still keeps the pairing unmodeled",
+    "schema": {"type": "object", "patternProperties": {"^a$": {"type": "integer"}, "^b": {"type": "boolean"}}, "additionalProperties": {"type": "string"}},
+    "kind": "raw",
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"bc": true}, "valid": true},
+      {"data": {"c": "x"}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: draft 4 folds a finite-key pattern into the coverage additionalProperties:false spells",
+    "draft": "draft4",
+    "schemas": [
+      {"type": "object", "patternProperties": {"^a$": {"type": "integer"}}, "additionalProperties": false},
+      {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": false}
+    ],
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {"b": 1}, "valid": false},
+      {"data": {}, "valid": true}
     ]
   }
 ]
