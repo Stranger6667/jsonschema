@@ -149,13 +149,15 @@ fn extract_ref_target_base(alias: &referencing::Uri<String>) -> Location {
 
 fn compile_reference_validator<'a, F: Json>(
     ctx: &compiler::Context<F>,
+    parent: &Map<String, Value>,
     reference: &str,
     keyword: &str,
 ) -> Option<CompilationResult<'a, F>> {
-    let current_location = match ctx.absolute_location_uri().map_err(ValidationError::from) {
-        Ok(uri) => uri,
-        Err(error) => return Some(Err(error)),
-    };
+    // An empty reference ("" per RFC 3986) targets the enclosing resource - skip to avoid
+    // infinite recursion.
+    if reference.is_empty() {
+        return None;
+    }
     let alias = match ctx
         .resolve_reference_uri(reference)
         .map_err(ValidationError::from)
@@ -164,15 +166,25 @@ fn compile_reference_validator<'a, F: Json>(
         Err(error) => return Some(Err(error)),
     };
 
-    // Direct self-reference or empty string ref ("" per RFC 3986) - skip to avoid infinite recursion
-    if alias == current_location
-        || (reference.is_empty() && alias.strip_fragment() == current_location.strip_fragment())
+    let ref_suffix = ctx.suffix().join(keyword);
+    let ref_target_base = extract_ref_target_base(&alias);
+
+    let resolved = match ctx.lookup(reference) {
+        Ok(resolved) => resolved,
+        Err(error) => return Some(Err(ValidationError::from(error))),
+    };
+
+    // Direct self-reference - skip to avoid infinite recursion. This compares node identity
+    // rather than URIs because the location pointer is relative to the enclosing document
+    // while the base URI may come from an `$id`-bearing subresource; composing the two
+    // yields a URI that does not denote this schema and can collide with the target's.
+    if resolved
+        .contents()
+        .as_object()
+        .is_some_and(|target| std::ptr::eq(target, parent))
     {
         return None;
     }
-
-    let ref_suffix = ctx.suffix().join(keyword);
-    let ref_target_base = extract_ref_target_base(&alias);
 
     match ctx.lookup_maybe_recursive(reference) {
         Ok(Some(validator)) => {
@@ -190,10 +202,7 @@ fn compile_reference_validator<'a, F: Json>(
         return Some(Err(ValidationError::from(error)));
     }
 
-    let (contents, resolver, draft) = match ctx.lookup(reference) {
-        Ok(resolved) => resolved.into_inner(),
-        Err(error) => return Some(Err(ValidationError::from(error))),
-    };
+    let (contents, resolver, draft) = resolved.into_inner();
     let vocabularies = resolver.find_vocabularies(draft, contents);
     let resource_ref = draft.create_resource_ref(contents);
     let inner_ctx = ctx.with_resolver_and_draft(
@@ -283,12 +292,12 @@ fn invalid_reference<'a, F: Json>(
 #[inline]
 pub(crate) fn compile_impl<'a, F: Json>(
     ctx: &compiler::Context<F>,
-    _parent: &'a Map<String, Value>,
+    parent: &'a Map<String, Value>,
     schema: &'a Value,
     keyword: &str,
 ) -> Option<CompilationResult<'a, F>> {
     if let Some(reference) = schema.as_str() {
-        compile_reference_validator(ctx, reference, keyword)
+        compile_reference_validator(ctx, parent, reference, keyword)
     } else {
         Some(Err(invalid_reference(ctx, keyword, schema)))
     }
@@ -1533,5 +1542,177 @@ mod tests {
 
         // JSON Pointer form holds the literal space ' ', not the URI-encoded "%20".
         assert_eq!(error.schema_path().as_str(), "/$defs/Request class/type",);
+    }
+
+    /// A fragment-only JSON Pointer `$ref` written inside an `$id`-bearing subresource must
+    /// resolve within that subresource, even when its pointer coincides with the pointer that
+    /// reached the subresource from the enclosing document.
+    ///
+    /// Cross-checked against `jsonschema` (Python) and `@hyperjump/json-schema`: both resolve
+    /// these to the inner `integer` definition on every draft where the shape is expressible.
+    #[test_case("https://json-schema.org/draft/2020-12/schema", "$defs" ; "draft 2020-12")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", "$defs" ; "draft 2019-09")]
+    #[test_case("http://json-schema.org/draft-07/schema#", "definitions" ; "draft 7")]
+    #[test_case("http://json-schema.org/draft-06/schema#", "definitions" ; "draft 6")]
+    #[test_case("http://json-schema.org/draft-04/schema#", "definitions" ; "draft 4")]
+    fn pointer_ref_inside_nested_id_resolves_in_that_resource(meta: &str, defs: &str) {
+        // The inner `$ref` shadows the outer definition name. Reached through `properties` so
+        // the shape is also expressible on drafts where `$ref` suppresses its siblings.
+        let schema = json!({
+            "$schema": meta,
+            "id": "https://example.com/outer",
+            "$id": "https://example.com/outer",
+            "properties": {"value": {"$ref": format!("#/{defs}/wrapper")}},
+            defs: {
+                "target": {"type": "string"},
+                "wrapper": {
+                    "id": "https://example.com/inner",
+                    "$id": "https://example.com/inner",
+                    "allOf": [{"$ref": format!("#/{defs}/target")}],
+                    defs: {"target": {"type": "integer"}}
+                }
+            }
+        });
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        assert!(validator.is_valid(&json!({"value": 1})));
+        assert!(!validator.is_valid(&json!({"value": "text"})));
+    }
+
+    /// The same shape with the `$ref` sitting directly on the subresource, where the composed
+    /// "current location" URI used to collide with the reference's own target URI and the `$ref`
+    /// was silently dropped as a self-reference.
+    #[test_case("https://json-schema.org/draft/2020-12/schema" ; "draft 2020-12")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema" ; "draft 2019-09")]
+    fn shadowed_pointer_ref_on_nested_id_root_is_not_a_self_reference(meta: &str) {
+        let schema = json!({
+            "$schema": meta,
+            "$id": "https://example.com/outer",
+            "$ref": "#/$defs/target",
+            "$defs": {
+                "target": {
+                    "$id": "https://example.com/inner",
+                    "$ref": "#/$defs/target",
+                    "$defs": {"target": {"type": "integer"}}
+                }
+            }
+        });
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        assert!(validator.is_valid(&json!(1)));
+        assert!(!validator.is_valid(&json!("text")));
+        assert!(!validator.is_valid(&json!({})));
+    }
+
+    /// Spelling the same reference absolutely must not change the outcome.
+    #[test]
+    fn absolute_spelling_of_shadowed_pointer_ref_agrees() {
+        let schema = json!({
+            "$id": "https://example.com/outer",
+            "$ref": "#/$defs/target",
+            "$defs": {
+                "target": {
+                    "$id": "https://example.com/inner",
+                    "$ref": "https://example.com/inner#/$defs/target",
+                    "$defs": {"target": {"type": "integer"}}
+                }
+            }
+        });
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        assert!(validator.is_valid(&json!(1)));
+        assert!(!validator.is_valid(&json!("text")));
+    }
+
+    /// Three nested resources, to exercise the resolution stack rather than a single hop.
+    #[test]
+    fn shadowed_pointer_ref_through_three_nested_resources() {
+        let schema = json!({
+            "$id": "https://example.com/first",
+            "$ref": "#/$defs/target",
+            "$defs": {
+                "target": {
+                    "$id": "https://example.com/second",
+                    "$ref": "#/$defs/target",
+                    "$defs": {
+                        "target": {
+                            "$id": "https://example.com/third",
+                            "$ref": "#/$defs/target",
+                            "$defs": {"target": {"type": "integer"}}
+                        }
+                    }
+                }
+            }
+        });
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        assert!(validator.is_valid(&json!(1)));
+        assert!(!validator.is_valid(&json!("text")));
+    }
+
+    /// Without the nested `$id` the inner `$ref` really does target its own enclosing schema,
+    /// which stays an unconstrained self-loop.
+    #[test]
+    fn pointer_ref_without_nested_id_remains_a_self_reference() {
+        let schema = json!({
+            "$id": "https://example.com/outer",
+            "$ref": "#/$defs/target",
+            "$defs": {
+                "target": {
+                    "$ref": "#/$defs/target",
+                    "$defs": {"target": {"type": "integer"}}
+                }
+            }
+        });
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        assert!(validator.is_valid(&json!(1)));
+        assert!(validator.is_valid(&json!("text")));
+    }
+
+    /// The same shape reached through a `Registry` rather than inline, which enters resolution
+    /// by a different path.
+    #[test]
+    fn shadowed_pointer_ref_inside_nested_id_via_registry() {
+        let registry = referencing::Registry::new()
+            .add(
+                "https://example.com/outer",
+                referencing::Resource::from_contents(json!({
+                    "$id": "https://example.com/outer",
+                    "$ref": "#/$defs/target",
+                    "$defs": {
+                        "target": {
+                            "$id": "https://example.com/inner",
+                            "$ref": "#/$defs/target",
+                            "$defs": {"target": {"type": "integer"}}
+                        }
+                    }
+                })),
+            )
+            .expect("Invalid resource")
+            .prepare()
+            .expect("Invalid registry");
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(&json!({"$ref": "https://example.com/outer"}))
+            .expect("Invalid schema");
+        assert!(validator.is_valid(&json!(1)));
+        assert!(!validator.is_valid(&json!("text")));
+    }
+
+    /// An `$anchor` declared inside a nested `$id` resource uses the same base URI machinery
+    /// through a different lookup path, and must not be shadowed by a same-named outer anchor.
+    #[test]
+    fn anchor_ref_inside_nested_id_resolves_in_that_resource() {
+        let schema = json!({
+            "$id": "https://example.com/outer",
+            "$ref": "#/$defs/wrapper",
+            "$defs": {
+                "wrapper": {
+                    "$id": "https://example.com/inner",
+                    "$ref": "#target",
+                    "$defs": {"target": {"$anchor": "target", "type": "integer"}}
+                },
+                "decoy": {"$anchor": "target", "type": "string"}
+            }
+        });
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        assert!(validator.is_valid(&json!(1)));
+        assert!(!validator.is_valid(&json!("text")));
     }
 }

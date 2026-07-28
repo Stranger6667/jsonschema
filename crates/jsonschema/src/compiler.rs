@@ -432,21 +432,6 @@ impl<'a, F: Json> Context<'a, F> {
     pub(crate) fn lookup_recursive_reference(&self) -> Result<Resolved<'_>, referencing::Error> {
         self.resolver.lookup_recursive_ref()
     }
-    pub(crate) fn absolute_location_uri(&self) -> Result<Arc<Uri<String>>, referencing::Error> {
-        // Reuse the shared buffer to avoid allocations
-        let mut buffer = self.shared.uri_buffer.borrow_mut();
-        buffer.clear();
-        buffer.push('#');
-        if !self.location.as_str().is_empty() {
-            uri::encode_to(self.location.as_str(), &mut buffer);
-        }
-        let result = self
-            .resolver
-            .resolve_uri(&self.resolver.base_uri().borrow(), &buffer);
-        buffer.clear();
-        result
-    }
-
     pub(crate) fn resolve_reference_uri(
         &self,
         reference: &str,
