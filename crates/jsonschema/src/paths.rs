@@ -1,6 +1,7 @@
 //! Facilities for working with paths within schemas or validated instances.
 use std::{
     borrow::Cow,
+    cell::RefCell,
     fmt,
     sync::{Arc, OnceLock},
 };
@@ -42,6 +43,29 @@ static EMPTY_LOCATION: OnceLock<Location> = OnceLock::new();
 /// Cloning these is just an atomic increment (Arc clone).
 static CACHED_INDEX_PATHS: OnceLock<[Location; 16]> = OnceLock::new();
 
+thread_local! {
+    static LOCATION_BUFFER: RefCell<String> = const { RefCell::new(String::new()) };
+}
+
+/// Build an `Arc<str>` in a single allocation.
+///
+/// `Arc::from(String)` would allocate a second time and copy, so format into a reused
+/// buffer instead. `write` must not build a location itself - that panics on the borrow.
+#[inline]
+pub(crate) fn build_arc_str(capacity: usize, write: impl FnOnce(&mut String)) -> Arc<str> {
+    LOCATION_BUFFER.with_borrow_mut(|buffer| {
+        buffer.clear();
+        buffer.reserve(capacity);
+        write(buffer);
+        Arc::from(buffer.as_str())
+    })
+}
+
+#[inline]
+fn build_location(capacity: usize, write: impl FnOnce(&mut String)) -> Location {
+    Location(build_arc_str(capacity, write))
+}
+
 #[inline]
 fn get_cached_index_paths() -> &'static [Location; 16] {
     CACHED_INDEX_PATHS.get_or_init(|| {
@@ -76,10 +100,10 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
                     // Single index > 15: compute directly
                     let mut idx_buffer = itoa::Buffer::new();
                     let idx = idx_buffer.format(*idx);
-                    let mut buffer = String::with_capacity(1 + idx.len());
-                    buffer.push('/');
-                    buffer.push_str(idx);
-                    return Location(Arc::from(buffer));
+                    return build_location(1 + idx.len(), |buffer| {
+                        buffer.push('/');
+                        buffer.push_str(idx);
+                    });
                 }
             }
         }
@@ -100,70 +124,68 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
             head = next;
         }
 
-        let mut buffer = String::with_capacity(string_capacity);
+        build_location(string_capacity, |buffer| {
+            if capacity <= STACK_CAPACITY {
+                // Stack-allocated storage with references - no cloning needed
+                let mut stack_segments: [Option<&JsonPointerSegment<'_>>; STACK_CAPACITY] =
+                    [None; STACK_CAPACITY];
+                let mut idx = 0;
+                head = value;
 
-        if capacity <= STACK_CAPACITY {
-            // Stack-allocated storage with references - no cloning needed
-            let mut stack_segments: [Option<&JsonPointerSegment<'_>>; STACK_CAPACITY] =
-                [None; STACK_CAPACITY];
-            let mut idx = 0;
-            head = value;
-
-            if head.parent().is_some() {
-                stack_segments[idx] = Some(head.segment());
-                idx += 1;
-            }
-
-            while let Some(next) = head.parent() {
-                head = next;
                 if head.parent().is_some() {
                     stack_segments[idx] = Some(head.segment());
                     idx += 1;
                 }
-            }
 
-            // Format in reverse order
-            for segment in stack_segments[..idx].iter().rev().flatten() {
-                buffer.push('/');
-                match segment {
-                    JsonPointerSegment::Key(property) => {
-                        write_escaped_str(&mut buffer, property);
-                    }
-                    JsonPointerSegment::Index(idx) => {
-                        write_index(&mut buffer, *idx);
+                while let Some(next) = head.parent() {
+                    head = next;
+                    if head.parent().is_some() {
+                        stack_segments[idx] = Some(head.segment());
+                        idx += 1;
                     }
                 }
-            }
-        } else {
-            // Heap-allocated fallback for deep paths (>16 segments)
-            let mut segments: Vec<&JsonPointerSegment<'_>> = Vec::with_capacity(capacity);
-            head = value;
 
-            if head.parent().is_some() {
-                segments.push(head.segment());
-            }
+                // Format in reverse order
+                for segment in stack_segments[..idx].iter().rev().flatten() {
+                    buffer.push('/');
+                    match segment {
+                        JsonPointerSegment::Key(property) => {
+                            write_escaped_str(buffer, property);
+                        }
+                        JsonPointerSegment::Index(idx) => {
+                            write_index(buffer, *idx);
+                        }
+                    }
+                }
+            } else {
+                // Heap-allocated fallback for deep paths (>16 segments)
+                let mut segments: Vec<&JsonPointerSegment<'_>> = Vec::with_capacity(capacity);
+                head = value;
 
-            while let Some(next) = head.parent() {
-                head = next;
                 if head.parent().is_some() {
                     segments.push(head.segment());
                 }
-            }
 
-            for segment in segments.iter().rev() {
-                buffer.push('/');
-                match segment {
-                    JsonPointerSegment::Key(property) => {
-                        write_escaped_str(&mut buffer, property);
+                while let Some(next) = head.parent() {
+                    head = next;
+                    if head.parent().is_some() {
+                        segments.push(head.segment());
                     }
-                    JsonPointerSegment::Index(idx) => {
-                        write_index(&mut buffer, *idx);
+                }
+
+                for segment in segments.iter().rev() {
+                    buffer.push('/');
+                    match segment {
+                        JsonPointerSegment::Key(property) => {
+                            write_escaped_str(buffer, property);
+                        }
+                        JsonPointerSegment::Index(idx) => {
+                            write_index(buffer, *idx);
+                        }
                     }
                 }
             }
-        }
-
-        Location(Arc::from(buffer))
+        })
     }
 }
 
@@ -585,10 +607,10 @@ impl Location {
             return self.clone();
         }
         let parent = &self.0;
-        let mut buffer = String::with_capacity(parent.len() + suffix.len());
-        buffer.push_str(parent);
-        buffer.push_str(suffix);
-        Self(Arc::from(buffer))
+        build_location(parent.len() + suffix.len(), |buffer| {
+            buffer.push_str(parent);
+            buffer.push_str(suffix);
+        })
     }
 
     #[must_use]
@@ -596,20 +618,20 @@ impl Location {
         let parent = &self.0;
         match segment.into() {
             LocationSegment::Property(property) => {
-                let mut buffer = String::with_capacity(parent.len() + property.len() + 1);
-                buffer.push_str(parent);
-                buffer.push('/');
-                write_escaped_str(&mut buffer, &property);
-                Self(Arc::from(buffer))
+                build_location(parent.len() + property.len() + 1, |buffer| {
+                    buffer.push_str(parent);
+                    buffer.push('/');
+                    write_escaped_str(buffer, &property);
+                })
             }
             LocationSegment::Index(idx) => {
                 let mut idx_buffer = itoa::Buffer::new();
                 let idx = idx_buffer.format(idx);
-                let mut buffer = String::with_capacity(parent.len() + idx.len() + 1);
-                buffer.push_str(parent);
-                buffer.push('/');
-                buffer.push_str(idx);
-                Self(Arc::from(buffer))
+                build_location(parent.len() + idx.len() + 1, |buffer| {
+                    buffer.push_str(parent);
+                    buffer.push('/');
+                    buffer.push_str(idx);
+                })
             }
         }
     }
