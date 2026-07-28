@@ -559,13 +559,41 @@
     ]
   },
   {
-    "description": "ir: additionalProperties:false beside patternProperties keeps the document raw under draft 4",
+    "description": "ir: draft 4 spells a pattern-shaped key constraint as the closed map it was parsed from",
     "schema": {"type": "object", "patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": false},
     "draft": "draft4",
-    "expected": {"type": "object", "patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": false},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "object", "patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": false},
     "tests": [
       {"data": {"ab": 1}, "valid": true},
-      {"data": {"b": 1}, "valid": false}
+      {"data": {"ab": "x"}, "valid": false},
+      {"data": {"b": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: draft 4 keeps named keys beside the pattern in the closed map",
+    "schema": {"type": "object", "properties": {"bar": {}, "foo": {"type": "integer"}}, "patternProperties": {"^v": {}}, "additionalProperties": false},
+    "draft": "draft4",
+    "tests": [
+      {"data": {"bar": 1}, "valid": true},
+      {"data": {"foo": 1}, "valid": true},
+      {"data": {"foo": "x"}, "valid": false},
+      {"data": {"vv": 1}, "valid": true},
+      {"data": {"other": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "raw: draft 4 cannot spell two pattern maps meeting, so the document stays raw",
+    "schema": {"allOf": [
+      {"type": "object", "patternProperties": {"^a": {}}, "additionalProperties": false},
+      {"type": "object", "patternProperties": {"^b": {}}, "additionalProperties": false}
+    ]},
+    "draft": "draft4",
+    "kind": "raw",
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"ab": 1}, "valid": false}
     ]
   },
   {

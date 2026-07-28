@@ -35,6 +35,8 @@ pub(crate) fn parse<'a>(
     resolver: &Resolver<'a>,
 ) -> Result<Option<ParseOutput>, CanonicalizationError> {
     let mut state = ParseState::new(value, resolver.base_uri().as_str());
+    state.merges_object_leaves =
+        matches!(ctx.draft(), Draft::Draft4) && merges_object_leaves(value);
     let parsed = parse_schema_in_scope(value, ctx, true, resolver, &mut state)?;
     // An in-between `additionalProperties` meeting `patternProperties` anywhere in the document
     // has no exact intersection without pattern-overlap reasoning; nodes built before this check
@@ -58,6 +60,8 @@ struct ParseState<'a> {
     root_base_uri: Arc<str>,
     additional_schema: bool,
     pattern_properties: bool,
+    /// Set only under Draft 4, where it decides whether a pattern coverage can survive the algebra.
+    merges_object_leaves: bool,
     definitions: DefinitionMap,
     in_progress: AHashSet<Arc<str>>,
     /// The target each definition key was minted for, so a key cannot be reused for another one.
@@ -71,6 +75,7 @@ impl<'a> ParseState<'a> {
             root_base_uri: Arc::from(root_base_uri),
             additional_schema: false,
             pattern_properties: false,
+            merges_object_leaves: false,
             definitions: DefinitionMap::new(),
             in_progress: AHashSet::new(),
             sources: AHashMap::default(),
@@ -693,13 +698,10 @@ fn parse_schema_in_scope<'a>(
         state.pattern_properties = true;
     }
 
-    // Draft 4 has no `propertyNames` to emit a pattern-shaped key constraint, so only a
-    // finite-key fold - which emit re-spells as `additionalProperties: false` - is expressible
-    // there; a pattern in the coverage keeps the document raw.
-    if forbid_unmatched_keys
-        && matches!(ctx.draft(), Draft::Draft4)
-        && !pattern_properties.is_empty()
-    {
+    // Draft 4 holds a key constraint only as the closed map it was parsed from, which the algebra
+    // can destroy by meeting two pattern maps. Bailing here, before the rest of the document is
+    // parsed, keeps that cheap - and only a merging keyword can bring two leaves together.
+    if forbid_unmatched_keys && !pattern_properties.is_empty() && state.merges_object_leaves {
         return Ok(None);
     }
     // `additionalProperties: false` forbids every key the property map does not name and no
@@ -1259,6 +1261,33 @@ fn prune_unreachable_definitions(root: &Schema, definitions: &mut DefinitionMap)
         definitions.keys().all(|uri| reachable.contains(uri)),
         "the retained definition map contains only targets reachable from the canonical root"
     );
+}
+
+/// Whether the document holds a keyword that can bring two object leaves together.
+fn merges_object_leaves(value: &Value) -> bool {
+    match value {
+        Value::Object(map) => {
+            map.keys().any(|key| {
+                matches!(
+                    key.as_str(),
+                    "$dynamicRef"
+                        | "$recursiveRef"
+                        | "$ref"
+                        | "allOf"
+                        | "anyOf"
+                        | "dependencies"
+                        | "dependentSchemas"
+                        | "else"
+                        | "if"
+                        | "not"
+                        | "oneOf"
+                        | "then"
+                )
+            }) || map.values().any(merges_object_leaves)
+        }
+        Value::Array(items) => items.iter().any(merges_object_leaves),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => false,
+    }
 }
 
 fn collect_live_definition_references<'a>(schema: &'a Schema, references: &mut Vec<&'a str>) {
