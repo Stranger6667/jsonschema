@@ -1,7 +1,7 @@
 //! Facilities for working with paths within schemas or validated instances.
 use std::{
     borrow::Cow,
-    cell::RefCell,
+    cell::{Cell, RefCell},
     fmt,
     sync::{Arc, OnceLock},
 };
@@ -261,6 +261,8 @@ pub(crate) struct RefTracker<'a> {
     parent: Option<&'a RefTracker<'a>>,
     /// Cached joined prefix (computed once on first access).
     cached_prefix: std::sync::OnceLock<Location>,
+    /// Identifier of the canonical prefix in the current evaluation cache. Zero means uncached.
+    cached_prefix_identifier: Cell<usize>,
 }
 
 impl<'a> RefTracker<'a> {
@@ -284,6 +286,7 @@ impl<'a> RefTracker<'a> {
             target_base,
             parent,
             cached_prefix: std::sync::OnceLock::new(),
+            cached_prefix_identifier: Cell::new(0),
         }
     }
 
@@ -332,6 +335,20 @@ impl<'a> RefTracker<'a> {
     #[inline]
     pub(crate) fn suffix(&self) -> &Location {
         self.suffix
+    }
+
+    #[inline]
+    pub(crate) fn cached_prefix_identifier(&self) -> Option<usize> {
+        match self.cached_prefix_identifier.get() {
+            0 => None,
+            identifier => Some(identifier),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn cache_prefix_identifier(&self, identifier: usize) {
+        debug_assert_ne!(identifier, 0);
+        self.cached_prefix_identifier.set(identifier);
     }
 
     fn compute_prefix(&self) -> Location {
