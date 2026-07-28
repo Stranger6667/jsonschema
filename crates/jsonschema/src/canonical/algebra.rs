@@ -2049,6 +2049,19 @@ pub(crate) fn array_leaf(mut leaf: ArrayLeaf, ctx: &CanonicalizationContext) -> 
     // e.g.  {"type": "array", "items": {"type": "boolean"}, "uniqueItems": true}
     //       =>  {"type": "array", "items": {"type": "boolean"}, "uniqueItems": true, "maxItems": 2}
     if leaf.unique {
+        // The elements meeting a demand are distinct and all drawn from its own domain, so a demand
+        // asking for more matches than that domain holds cannot be met.
+        // e.g.  {"type": "array", "contains": {"type": "boolean"}, "minContains": 3, "uniqueItems": true}
+        //       =>  false
+        if leaf.contains.iter().any(|facet| {
+            facet
+                .schema
+                .kind()
+                .finite_domain_size()
+                .is_some_and(|domain| facet.effective_minimum() > BoundCardinality::from(domain))
+        }) {
+            return Schema::new(SchemaKind::False);
+        }
         if let Some(ceiling) = unique_length_ceiling(&leaf, ctx) {
             leaf.lengths.maximum = Some(match leaf.lengths.maximum.take() {
                 Some(maximum) => maximum.min(ceiling),
