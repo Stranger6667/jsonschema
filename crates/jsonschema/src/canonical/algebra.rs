@@ -364,23 +364,149 @@ fn opaque_conjunction(branches: Vec<Schema>) -> Schema {
     schema
 }
 
-/// Keep exact exclusivity symbolic when its branches contain references, avoiding distributive expansion.
-pub(crate) fn one_of(symbolic_branch: Schema, mut branches: Vec<Schema>) -> Schema {
-    debug_assert!(
-        contains_reference(&symbolic_branch),
-        "oneOf receives a symbolic reference branch"
-    );
-    branches.retain(|branch| !matches!(branch.kind(), SchemaKind::False));
-    if branches.is_empty() {
-        return symbolic_branch;
+/// One representative per branch appearing at least twice, and the branches appearing exactly once.
+/// Requires sorted `branches`, so equal ones are adjacent.
+fn partition_by_multiplicity(branches: &[Schema]) -> (Vec<Schema>, Vec<Schema>) {
+    let mut duplicates = Vec::new();
+    let mut singles = Vec::new();
+    let mut start = 0;
+    while start < branches.len() {
+        let mut end = start + 1;
+        while end < branches.len() && branches[end] == branches[start] {
+            end += 1;
+        }
+        if end - start >= 2 {
+            duplicates.push(branches[start].clone());
+        } else {
+            singles.push(branches[start].clone());
+        }
+        start = end;
     }
-    branches.push(symbolic_branch);
+    (duplicates, singles)
+}
+
+/// The schema accepting every value that EXACTLY ONE of the `branches` accepts (`oneOf`), in normal
+/// form. `None` when the exclusivity has no exact encoding, keeping the document raw.
+///
+/// A reference is opaque to intersection and negation, so a branch holding one keeps the
+/// exclusivity symbolic instead of expanding it; the rest take [`concrete_one_of`].
+pub(crate) fn one_of(mut branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Option<Schema> {
+    if !branches.iter().any(contains_reference) {
+        return concrete_one_of(branches, ctx);
+    }
+    // A branch accepting nothing can never be the single match.
+    branches.retain(|branch| !matches!(branch.kind(), SchemaKind::False));
     branches.sort();
+
+    // A repeated branch contributes 0 or at least 2 matches, never exactly 1, so `oneOf [A, A, B]`
+    // is `B and not A`. Dropping the copies without the complement would admit a value in both.
+    let (duplicates, singles) = partition_by_multiplicity(&branches);
+    if !duplicates.is_empty() {
+        if singles.is_empty() {
+            return Some(Schema::new(SchemaKind::False));
+        }
+        let mut complements = Vec::with_capacity(duplicates.len());
+        for duplicate in &duplicates {
+            // All or nothing: dropping a duplicate whose exclusion is never restated is unsound.
+            let Some(complement) = negate::negate(duplicate, ctx) else {
+                complements.clear();
+                break;
+            };
+            complements.push(complement);
+        }
+        if complements.len() == duplicates.len() {
+            // Survivors re-enter from the top, not wrapped in a `OneOf` here: the duplicates may
+            // have held the only references, and a reference-free remainder must take the concrete
+            // route or it emits a form that canonicalizes to something else.
+            let mut result = one_of(singles, ctx)?;
+            for complement in complements {
+                result = intersect(result, complement, ctx);
+            }
+            return Some(result);
+        }
+    }
+
+    // A lone branch is itself; a one-element `OneOf` would emit as `{"oneOf": [X]}` instead of `X`.
+    if branches.len() == 1 {
+        return branches.pop();
+    }
     debug_assert!(
         branches.windows(2).all(|pair| pair[0] <= pair[1]),
         "oneOf branches are sorted without deduplication"
     );
-    Schema::new(SchemaKind::OneOf(branches))
+    Some(Schema::new(SchemaKind::OneOf(branches)))
+}
+
+/// [`one_of`] over branches none of which holds a reference: some branch matches and no two-branch
+/// overlap does, so only the overlaps need complements — a branch overlapping nothing is never
+/// negated. `None` when an overlap's complement is inexpressible.
+fn concrete_one_of(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Option<Schema> {
+    let overlaps = pairwise_overlaps(&branches, ctx);
+    let mut result = union(branches, ctx);
+    for overlap in overlaps {
+        result = intersect(result, negate::negate(&overlap, ctx)?, ctx);
+    }
+    Some(result)
+}
+
+/// Every region two branches share: the values repeating across finite-value branches packed as
+/// one value set, and the non-`False` pairwise intersections involving structural branches. Empty
+/// exactly when the branches are pairwise disjoint, so `oneOf` degrades to `anyOf`.
+///
+/// Finite-value branches share a value exactly when a member repeats across them, so one hash set
+/// replaces their share of the quadratic sweep; only the remaining branches pay a pairwise
+/// `intersect`, plus one `intersect` against each finite-value branch.
+fn pairwise_overlaps(branches: &[Schema], ctx: &CanonicalizationContext) -> Vec<Schema> {
+    let mut seen: ahash::AHashSet<&CanonicalJson> = ahash::AHashSet::new();
+    let mut shared: Vec<CanonicalJson> = Vec::new();
+    let mut finite: Vec<&Schema> = Vec::new();
+    let mut structural: Vec<&Schema> = Vec::new();
+    for branch in branches {
+        match branch.kind() {
+            SchemaKind::Const(value) => {
+                if !seen.insert(value) {
+                    shared.push(value.clone());
+                }
+                finite.push(branch);
+            }
+            SchemaKind::Enum(values) => {
+                for value in values.as_slice() {
+                    if !seen.insert(value) {
+                        shared.push(value.clone());
+                    }
+                }
+                finite.push(branch);
+            }
+            SchemaKind::MultiType(_)
+            | SchemaKind::TypedGroup { .. }
+            | SchemaKind::String(_)
+            | SchemaKind::Integer(_)
+            | SchemaKind::Number(_)
+            | SchemaKind::Array(_)
+            | SchemaKind::Object(_)
+            | SchemaKind::Not(_)
+            | SchemaKind::AllOf(_)
+            | SchemaKind::AnyOf(_)
+            | SchemaKind::OneOf(_)
+            | SchemaKind::Reference(_)
+            | SchemaKind::True
+            | SchemaKind::False
+            | SchemaKind::Raw(_) => structural.push(branch),
+        }
+    }
+    let mut overlaps = Vec::new();
+    if !shared.is_empty() {
+        overlaps.push(canonicalize_value_set(shared));
+    }
+    for (index, left) in structural.iter().enumerate() {
+        for right in structural[index + 1..].iter().chain(&finite) {
+            let intersection = intersect((*left).clone(), (*right).clone(), ctx);
+            if !matches!(intersection.kind(), SchemaKind::False) {
+                overlaps.push(intersection);
+            }
+        }
+    }
+    overlaps
 }
 
 /// The schema accepting every value that ANY of the `branches` accepts (set union, `anyOf`), in normal form.

@@ -197,10 +197,6 @@ fn parse_schema_in_scope(
                 }
                 conjuncts.push(algebra::union(branches, ctx));
             }
-            // When no two branches share a value, "exactly one matches" is "at least one
-            // matches", so a pairwise-disjoint `oneOf` is its `anyOf`. Overlapping branches
-            // take the exact encoding - each branch beside the complements of the others -
-            // when every complement is expressible.
             ("oneOf", Value::Array(items)) => {
                 let mut branches = Vec::new();
                 for branch in items {
@@ -209,19 +205,9 @@ fn parse_schema_in_scope(
                         None => return Ok(None),
                     }
                 }
-                if let Some(index) = branches.iter().position(algebra::contains_reference) {
-                    let symbolic_branch = branches.swap_remove(index);
-                    conjuncts.push(algebra::one_of(symbolic_branch, branches));
-                } else {
-                    let overlaps = pairwise_overlaps(&branches, ctx);
-                    if overlaps.is_empty() {
-                        conjuncts.push(algebra::union(branches, ctx));
-                    } else {
-                        match exactly_one_of(branches, overlaps, ctx) {
-                            Some(schema) => conjuncts.push(schema),
-                            None => return Ok(None),
-                        }
-                    }
+                match algebra::one_of(branches, ctx) {
+                    Some(schema) => conjuncts.push(schema),
+                    None => return Ok(None),
                 }
             }
             ("type", value) => match parse_type_set(value) {
@@ -1368,81 +1354,6 @@ fn object_with_required(required: Vec<Arc<str>>, ctx: &CanonicalizationContext) 
         },
         ctx,
     )
-}
-
-/// "Exactly one branch matches": some branch matches and no two-branch overlap does, so only the
-/// overlaps need complements — a branch overlapping nothing is never negated. `None` when an
-/// overlap's complement is inexpressible.
-fn exactly_one_of(
-    branches: Vec<Schema>,
-    overlaps: Vec<Schema>,
-    ctx: &CanonicalizationContext,
-) -> Option<Schema> {
-    let mut result = algebra::union(branches, ctx);
-    for overlap in overlaps {
-        result = algebra::intersect(result, negate::negate(&overlap, ctx)?, ctx);
-    }
-    Some(result)
-}
-
-/// Every region two branches share: the values repeating across finite-value branches packed as
-/// one value set, and the non-`False` pairwise intersections involving structural branches. Empty
-/// exactly when the branches are pairwise disjoint, so `oneOf` degrades to `anyOf`.
-///
-/// Finite-value branches share a value exactly when a member repeats across them, so one hash set
-/// replaces their share of the quadratic sweep; only the remaining branches pay a pairwise
-/// `intersect`, plus one `intersect` against each finite-value branch.
-fn pairwise_overlaps(branches: &[Schema], ctx: &CanonicalizationContext) -> Vec<Schema> {
-    let mut seen: AHashSet<&CanonicalJson> = AHashSet::new();
-    let mut shared: Vec<CanonicalJson> = Vec::new();
-    let mut finite: Vec<&Schema> = Vec::new();
-    let mut structural: Vec<&Schema> = Vec::new();
-    for branch in branches {
-        match branch.kind() {
-            SchemaKind::Const(value) => {
-                if !seen.insert(value) {
-                    shared.push(value.clone());
-                }
-                finite.push(branch);
-            }
-            SchemaKind::Enum(values) => {
-                for value in values.as_slice() {
-                    if !seen.insert(value) {
-                        shared.push(value.clone());
-                    }
-                }
-                finite.push(branch);
-            }
-            SchemaKind::MultiType(_)
-            | SchemaKind::TypedGroup { .. }
-            | SchemaKind::String(_)
-            | SchemaKind::Integer(_)
-            | SchemaKind::Number(_)
-            | SchemaKind::Array(_)
-            | SchemaKind::Object(_)
-            | SchemaKind::Not(_)
-            | SchemaKind::AllOf(_)
-            | SchemaKind::AnyOf(_)
-            | SchemaKind::OneOf(_)
-            | SchemaKind::Reference(_)
-            | SchemaKind::True
-            | SchemaKind::False
-            | SchemaKind::Raw(_) => structural.push(branch),
-        }
-    }
-    let mut overlaps = Vec::new();
-    if !shared.is_empty() {
-        overlaps.push(canonicalize_value_set(shared));
-    }
-    for (index, left) in structural.iter().enumerate() {
-        for right in structural[index + 1..].iter().chain(&finite) {
-            let intersection = algebra::intersect((*left).clone(), (*right).clone(), ctx);
-            if !matches!(intersection.kind(), SchemaKind::False) {
-                overlaps.push(intersection);
-            }
-        }
-    }
-    overlaps
 }
 
 /// The finite value set admitted by `const` and `enum` together: their conjunction.

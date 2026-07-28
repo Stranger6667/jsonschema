@@ -4,6 +4,7 @@
 
 ### Added
 
+- Canonicalization of a `oneOf` whose branches repeat, where a repeated branch can never contribute exactly one match.
 - Canonicalization of a `$ref` whose target is an empty schema, which now folds to `false`.
 - Canonicalization of `unevaluatedItems` beside `allOf`, where every branch must pass and so the indexes they evaluate are known without the instance.
 - Canonicalization of `unevaluatedProperties` beside `allOf`, where every branch must pass and so what they evaluate is known without the instance.
