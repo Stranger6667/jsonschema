@@ -380,7 +380,7 @@ impl<F: Json> SchemaNode<F> {
             crate::evaluation::format_schema_location(&self.location, self.absolute_path.as_ref())
         }));
 
-        match self.evaluate(instance, location, tracker, ctx) {
+        match self.evaluate_at(instance, location, &instance_location, tracker, ctx) {
             EvaluationResult::Valid {
                 annotations,
                 children,
@@ -412,6 +412,7 @@ impl<F: Json> SchemaNode<F> {
     fn evaluate_subschemas<'a, 'i, I>(
         instance: &F::Node<'i>,
         location: &LazyLocation,
+        instance_loc: &Location,
         tracker: Option<&RefTracker>,
         subschemas: I,
         annotations: Option<Annotations>,
@@ -430,8 +431,6 @@ impl<F: Json> SchemaNode<F> {
         let (lower_bound, _) = subschemas.size_hint();
         let mut children: Vec<EvaluationNode> = Vec::with_capacity(lower_bound);
         let mut invalid = false;
-
-        let instance_loc: Location = location.into();
 
         for (child_location, absolute_location, cached_schema_location, validator) in subschemas {
             let child_result = validator.evaluate(instance, location, tracker, ctx);
@@ -655,10 +654,26 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
+        self.evaluate_at(instance, location, &location.into(), tracker, ctx)
+    }
+}
+
+impl<F: Json> SchemaNode<F> {
+    /// `evaluate` with the instance location already built, so callers that need it anyway
+    /// do not pay for a second identical one.
+    fn evaluate_at(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        instance_loc: &Location,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
         match &self.inner.validators {
             NodeValidators::Array { ref validators } => Self::evaluate_subschemas(
                 instance,
                 location,
+                instance_loc,
                 tracker,
                 validators.iter().map(|entry| {
                     (
@@ -692,6 +707,7 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
                 Self::evaluate_subschemas(
                     instance,
                     location,
+                    instance_loc,
                     tracker,
                     validators.iter().map(|entry| {
                         (
