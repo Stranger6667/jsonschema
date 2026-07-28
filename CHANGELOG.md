@@ -4,6 +4,7 @@
 
 ### Added
 
+- Canonicalization of `unevaluatedItems` beside `allOf`, where every branch must pass and so the indexes they evaluate are known without the instance.
 - Canonicalization of `unevaluatedProperties` beside `allOf`, where every branch must pass and so what they evaluate is known without the instance.
 - Canonicalization of a Draft 4 `type` list holding `integer` beside other types with `enum`, which previously modeled only when spelled as an `allOf`.
 - Canonicalization of `patternProperties` patterns matching finitely many keys, such as `^a$` and `^(a|b)$`.

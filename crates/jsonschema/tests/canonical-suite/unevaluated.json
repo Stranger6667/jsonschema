@@ -201,12 +201,77 @@
     ]
   },
   {
-    "description": "raw: an allOf beside unevaluatedItems is not modeled yet",
-    "schema": {"allOf": [{"prefixItems": [{"type": "integer"}]}], "unevaluatedItems": false},
+    "description": "ir: an allOf branch tuple names the indexes its unevaluatedItems sibling must skip",
+    "schemas": [
+      {"allOf": [{"prefixItems": [{"type": "integer"}]}], "unevaluatedItems": false},
+      {"allOf": [{"prefixItems": [{"type": "integer"}]}], "prefixItems": [true], "items": false}
+    ],
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": false},
+      {"data": [1, 2], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: the longest branch tuple wins, and nesting recurses",
+    "schema": {"allOf": [{"prefixItems": [{}]}, {"allOf": [{"prefixItems": [{}, {}]}]}], "unevaluatedItems": false},
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [1, 2, 3], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a local tuple shorter than the branch tuple is extended to it",
+    "schema": {"prefixItems": [{"type": "integer"}], "allOf": [{"prefixItems": [{}, {"type": "string"}]}], "unevaluatedItems": false},
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": [1, 2], "valid": false},
+      {"data": ["x"], "valid": false},
+      {"data": [1, "x", 3], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a branch schema-form items reaches every index, leaving unevaluatedItems inert",
+    "schemas": [
+      {"allOf": [{"items": {"type": "integer"}}], "unevaluatedItems": false},
+      {"allOf": [{"items": {"type": "integer"}}]}
+    ],
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [1, "x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: 2019-09 spells the branch tuple as array-form items",
+    "draft": "draft2019-09",
+    "schema": {"allOf": [{"items": [{"type": "integer"}]}], "unevaluatedItems": false},
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": false},
+      {"data": [1, 2], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: 2019-09 a branch additionalItems reaches every index past its tuple",
+    "draft": "draft2019-09",
+    "schemas": [
+      {"allOf": [{"items": [{}], "additionalItems": {"type": "integer"}}], "unevaluatedItems": false},
+      {"allOf": [{"items": [{}], "additionalItems": {"type": "integer"}}]}
+    ],
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [1, "x"], "valid": false}
+    ]
+  },
+  {
+    "description": "raw: a branch contains marks indexes no prefix length spells",
+    "schema": {"allOf": [{"contains": {"const": 2}}], "unevaluatedItems": false},
     "kind": "raw",
     "tests": [
-      {"data": [1], "valid": true},
-      {"data": [1, 2], "valid": false}
+      {"data": [2], "valid": true},
+      {"data": [2, 3], "valid": false}
     ]
   },
   {

@@ -948,6 +948,81 @@ fn property_cover(branch: &Value, cover: &mut PropertyCover) -> Option<()> {
     Some(())
 }
 
+/// The indexes an `allOf` tree evaluates beside an `unevaluatedItems`.
+#[derive(Default)]
+struct ItemCover {
+    /// A branch reaches every index, leaving the `unevaluatedItems` inert.
+    everything: bool,
+    /// The longest tuple prefix any branch evaluates.
+    prefix: usize,
+}
+
+/// Extend the local tuple so the tail keyword starts past every index the branches evaluate; the
+/// branch that evaluated an index still carries its constraint.
+fn pad_tuple(degraded: &mut serde_json::Map<String, Value>, prefix_items: bool, prefix: usize) {
+    if prefix == 0 {
+        return;
+    }
+    let keyword = if prefix_items { "prefixItems" } else { "items" };
+    let Value::Array(tuple) = degraded
+        .entry(keyword)
+        .or_insert_with(|| Value::Array(Vec::new()))
+    else {
+        return;
+    };
+    tuple.resize(tuple.len().max(prefix), Value::Bool(true));
+}
+
+/// Accumulate the indexes `branch` evaluates; `None` when the instance decides them.
+fn item_cover(branch: &Value, draft: Draft, cover: &mut ItemCover) -> Option<()> {
+    let map = match branch {
+        // No keywords, so nothing is annotated.
+        Value::Bool(_) => return Some(()),
+        Value::Object(map) => map,
+        Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => return None,
+    };
+    if has_instance_dependent_applicator(map) {
+        return None;
+    }
+    // `contains` marks the indexes it matches, which no prefix length spells.
+    if map.contains_key("contains") {
+        return None;
+    }
+    // Reaches every index the branch's own tuple leaves over.
+    if map.contains_key("unevaluatedItems") {
+        cover.everything = true;
+        return Some(());
+    }
+    let tuple_is_prefix_items = matches!(draft, Draft::Draft202012 | Draft::Unknown);
+    match map.get("items") {
+        // Schema-form `items` reaches every index past the tuple.
+        Some(Value::Object(_) | Value::Bool(_)) => {
+            cover.everything = true;
+            return Some(());
+        }
+        Some(Value::Array(items)) if !tuple_is_prefix_items => {
+            cover.prefix = cover.prefix.max(items.len());
+            if map.contains_key("additionalItems") {
+                cover.everything = true;
+                return Some(());
+            }
+        }
+        // An array `items` is not a tuple in 2020-12, where the parse loop keeps it raw.
+        Some(Value::Array(_) | Value::Null | Value::Number(_) | Value::String(_)) | None => {}
+    }
+    if tuple_is_prefix_items {
+        if let Some(Value::Array(prefix)) = map.get("prefixItems") {
+            cover.prefix = cover.prefix.max(prefix.len());
+        }
+    }
+    if let Some(Value::Array(nested)) = map.get("allOf") {
+        for branch in nested {
+            item_cover(branch, draft, cover)?;
+        }
+    }
+    Some(())
+}
+
 /// Whether this object asserts an `unevaluated*` keyword. Both enter the vocabulary in the same
 /// draft, so one `is_known_keyword` answer covers the pair.
 fn has_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> bool {
@@ -960,10 +1035,6 @@ fn has_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> bool {
 /// evaluates all of them, leaving it inert and dropped. `None` keeps the document raw.
 fn degrade_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> Option<Value> {
     if has_instance_dependent_applicator(map) {
-        return None;
-    }
-    // An `allOf` beside `unevaluatedItems` is not modeled yet, so it still blocks there.
-    if map.contains_key("allOf") && map.contains_key("unevaluatedItems") {
         return None;
     }
     let mut degraded = map.clone();
@@ -993,18 +1064,38 @@ fn degrade_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> Op
         if map.contains_key("contains") {
             return None;
         }
-        // A tuple's tail is `additionalItems` before 2020-12 and schema-form `items` in it. Before
-        // 2020-12 `prefixItems` is not a keyword and evaluates nothing, so it leaves no tuple.
-        let tail = match (map.get("items"), draft) {
-            (None, _) => Some("items"),
-            (
-                Some(Value::Array(_)),
-                Draft::Draft4 | Draft::Draft6 | Draft::Draft7 | Draft::Draft201909,
-            ) => Some("additionalItems"),
-            (Some(_), _) => None,
-        };
-        if let Some(tail) = tail.filter(|tail| !degraded.contains_key(*tail)) {
-            degraded.insert(tail.to_string(), value);
+        let mut cover = ItemCover::default();
+        if let Some(Value::Array(branches)) = map.get("allOf") {
+            for branch in branches {
+                item_cover(branch, draft, &mut cover)?;
+            }
+        }
+        if !cover.everything {
+            // A tuple's tail is `additionalItems` before 2020-12 and schema-form `items` in it,
+            // where the tuple itself is `prefixItems`. A schema-form `items` already reaches every
+            // index past the tuple, leaving nothing for the twin.
+            let tuple_is_prefix_items = matches!(draft, Draft::Draft202012 | Draft::Unknown);
+            let tail = match (map.get("items"), tuple_is_prefix_items) {
+                // A branch prefix needs a local tuple to sit behind, spelled `items` before 2020-12.
+                (None, false) if cover.prefix > 0 => Some("additionalItems"),
+                (None, _) => Some("items"),
+                (Some(Value::Array(_)), false) => Some("additionalItems"),
+                (
+                    Some(
+                        Value::Object(_)
+                        | Value::Bool(_)
+                        | Value::Array(_)
+                        | Value::Null
+                        | Value::Number(_)
+                        | Value::String(_),
+                    ),
+                    _,
+                ) => None,
+            };
+            if let Some(tail) = tail.filter(|tail| !degraded.contains_key(*tail)) {
+                pad_tuple(&mut degraded, tuple_is_prefix_items, cover.prefix);
+                degraded.insert(tail.to_string(), value);
+            }
         }
     }
     // No asserted `unevaluated*` survives, so re-parsing this map terminates.
