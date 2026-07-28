@@ -11,7 +11,7 @@ DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
 @pytest.mark.parametrize(
     "schema",
     [
-        {"unevaluatedProperties": False},
+        {"allOf": [{}], "unevaluatedProperties": False},
     ],
 )
 def test_unmodeled_round_trips_verbatim(schema):
@@ -374,9 +374,9 @@ def test_view_not_with_symbolic_reference():
 
 
 def test_view_raw():
-    match canonicalize({"unevaluatedProperties": False}).view():
+    match canonicalize({"allOf": [{}], "unevaluatedProperties": False}).view():
         case canonical.RawView(schema=payload):
-            assert payload == {"unevaluatedProperties": False}
+            assert payload == {"allOf": [{}], "unevaluatedProperties": False}
         case other:
             pytest.fail(f"unexpected view: {other!r}")
 

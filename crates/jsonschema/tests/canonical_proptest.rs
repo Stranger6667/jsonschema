@@ -147,7 +147,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(74)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(77)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -331,6 +331,14 @@ fn draw_leaf(tc: &TestCase) -> Value {
             "contentMediaType": "application/json",
             "contentEncoding": "base64"
         }),
+        // `unevaluated*` with no in-place applicator beside it degrades to its `additional*` twin.
+        75 => {
+            json!({ "type": "object", "properties": { "a": true }, "unevaluatedProperties": false })
+        }
+        76 => {
+            json!({ "type": "array", "prefixItems": [{ "type": "integer" }], "unevaluatedItems": false })
+        }
+        77 => json!({ "type": "object", "unevaluatedProperties": { "type": draw_type(tc) } }),
         63 => {
             let (first, second) = (draw_type(tc), draw_type(tc));
             let types = if first == second {
@@ -430,7 +438,7 @@ fn draw_schema(tc: &TestCase, depth: u32) -> Value {
                 "null_target": { "type": "null" },
                 "integer_target": { "type": "integer", "minimum": -2 },
                 "string_target": { "type": "string", "minLength": 1 },
-                "raw_target": { "unevaluatedProperties": false },
+                "raw_target": { "allOf": [{}], "unevaluatedProperties": false },
                 "alias_target": { "$ref": "#/$defs/integer_target" },
                 "recursive_target": {
                     "type": "object",
@@ -463,9 +471,9 @@ fn attach_root_definitions(mut schema: Value, definitions: Option<Value>) -> Val
 // Meta-valid keywords the canonicaliser does not model; a document carrying one stays `Raw`.
 fn draw_unmodeled_leaf(tc: &TestCase) -> Value {
     match tc.draw(gs::integers::<u8>().min_value(0).max_value(4)) {
-        0 => json!({ "unevaluatedProperties": { "type": "integer" } }),
+        0 => json!({ "allOf": [{}], "unevaluatedProperties": { "type": "integer" } }),
         1 => json!({ "not": { "pattern": "^a" } }),
-        2 => json!({ "unevaluatedItems": { "type": "null" } }),
+        2 => json!({ "contains": {}, "unevaluatedItems": { "type": "null" } }),
         3 => json!({ "format": "email" }),
         _ => json!({ "oneOf": [{ "type": "string" }, { "minLength": 1 }] }),
     }
