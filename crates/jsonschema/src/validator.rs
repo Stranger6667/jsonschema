@@ -1,6 +1,8 @@
 //! Building a JSON Schema validator.
 //! The main idea is to create a tree from the input JSON Schema. This tree will contain
 //! everything needed to perform such validation in runtime.
+use std::collections::hash_map::Entry;
+
 use crate::{
     error::{error, no_error, ErrorIterator},
     evaluation::{Annotations, ErrorDescription, Evaluation, EvaluationNode},
@@ -14,6 +16,47 @@ use serde_json::Value;
 // Re-export LazyEvaluationPath from paths module
 pub(crate) use crate::paths::LazyEvaluationPath;
 
+#[derive(Default)]
+struct EvaluationPathCache {
+    prefix_identifiers: AHashMap<(usize, usize), usize>,
+    paths: AHashMap<(usize, usize), Location>,
+}
+
+impl EvaluationPathCache {
+    fn evaluation_path(&mut self, tracker: &RefTracker<'_>, location: &Location) -> Location {
+        let prefix_identifier = self.prefix_identifier(tracker);
+        let key = (prefix_identifier, location.as_ptr());
+        match self.paths.entry(key) {
+            Entry::Occupied(entry) => entry.get().clone(),
+            Entry::Vacant(entry) => {
+                let path = tracker.evaluation_path_with_prefix(tracker.prefix(), location);
+                entry.insert(path.clone());
+                path
+            }
+        }
+    }
+
+    fn prefix_identifier(&mut self, tracker: &RefTracker<'_>) -> usize {
+        if let Some(identifier) = tracker.cached_prefix_identifier() {
+            return identifier;
+        }
+        let parent_identifier = tracker
+            .parent()
+            .map_or(0, |parent| self.prefix_identifier(parent));
+        let key = (parent_identifier, tracker.suffix().as_ptr());
+        let next_identifier = self.prefix_identifiers.len() + 1;
+        let identifier = match self.prefix_identifiers.entry(key) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(entry) => {
+                entry.insert(next_identifier);
+                next_identifier
+            }
+        };
+        tracker.cache_prefix_identifier(identifier);
+        identifier
+    }
+}
+
 /// Validation state for cycle detection and memoization.
 #[derive(Default)]
 pub struct ValidationContext {
@@ -26,16 +69,14 @@ pub struct ValidationContext {
     is_valid_cache: Option<AHashMap<(usize, NodeIdentity), bool>>,
     /// Lazy-initialized cache for ECMA regex transformation results during format "regex" validation.
     ecma_regex_cache: Option<AHashMap<String, bool>>,
-    eval_prefix_cache: Option<AHashMap<(usize, usize), Location>>,
-    eval_path_cache: Option<AHashMap<(usize, usize), Location>>,
-    eval_path_calls: u32,
+    evaluation_path_cache: Option<Box<EvaluationPathCache>>,
+    evaluation_path_calls: u32,
 }
 
 /// Evaluation paths are only cached once this many have been built.
 ///
-/// Distinct paths are bounded by the schema, while the number built scales with the instance,
-/// so a high count implies repeats. Below it the map would cost more than it saves.
-const EVAL_PATH_CACHE_THRESHOLD: u32 = 4096;
+/// Small evaluations show little path reuse, so below this threshold the map costs more than it saves.
+const EVALUATION_PATH_CACHE_THRESHOLD: u32 = 4096;
 
 impl ValidationContext {
     pub(crate) fn new() -> Self {
@@ -134,39 +175,13 @@ impl ValidationContext {
         tracker: &RefTracker<'_>,
         location: &Location,
     ) -> Location {
-        self.eval_path_calls = self.eval_path_calls.saturating_add(1);
-        if self.eval_path_calls < EVAL_PATH_CACHE_THRESHOLD {
+        self.evaluation_path_calls = self.evaluation_path_calls.saturating_add(1);
+        if self.evaluation_path_calls < EVALUATION_PATH_CACHE_THRESHOLD {
             return tracker.evaluation_path_with_prefix(tracker.prefix(), location);
         }
-        let prefix = self.canonical_prefix(tracker);
-        let key = (prefix.as_ptr(), location.as_ptr());
-        if let Some(hit) = self.eval_path_cache.as_ref().and_then(|c| c.get(&key)) {
-            return hit.clone();
-        }
-        let path = tracker.evaluation_path_with_prefix(&prefix, location);
-        self.eval_path_cache
-            .get_or_insert_with(AHashMap::new)
-            .insert(key, path.clone());
-        path
-    }
-
-    fn canonical_prefix(&mut self, tracker: &RefTracker<'_>) -> Location {
-        let parent = tracker.parent().map(|parent| self.canonical_prefix(parent));
-        let key = (
-            parent.as_ref().map_or(0, Location::as_ptr),
-            tracker.suffix().as_ptr(),
-        );
-        if let Some(hit) = self.eval_prefix_cache.as_ref().and_then(|c| c.get(&key)) {
-            return hit.clone();
-        }
-        let prefix = match &parent {
-            None => tracker.suffix().clone(),
-            Some(parent) => parent.join_raw_suffix(tracker.suffix().as_str()),
-        };
-        self.eval_prefix_cache
-            .get_or_insert_with(AHashMap::new)
-            .insert(key, prefix.clone());
-        prefix
+        self.evaluation_path_cache
+            .get_or_insert_with(Box::default)
+            .evaluation_path(tracker, location)
     }
 
     /// Check if an ECMA regex pattern is valid.
