@@ -596,7 +596,7 @@
       "patternProperties": {
         "^a": {
           "type": "array",
-          "allOf": [{"type": "array"}],
+          "anyOf": [{"type": "array"}],
           "unevaluatedItems": false
         }
       }
@@ -606,7 +606,7 @@
       "patternProperties": {
         "^a": {
           "type": "array",
-          "allOf": [{"type": "array"}],
+          "anyOf": [{"type": "array"}],
           "unevaluatedItems": false
         }
       }

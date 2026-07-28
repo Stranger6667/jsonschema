@@ -147,7 +147,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(83)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(86)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -359,6 +359,16 @@ fn draw_leaf(tc: &TestCase) -> Value {
         }
         83 => {
             json!({ "type": "object", "allOf": [{ "patternProperties": { "^a": true } }], "properties": { "b": true }, "unevaluatedProperties": false })
+        }
+        // An `unevaluatedItems` beside `allOf` degrades over the branches' longest tuple.
+        84 => {
+            json!({ "type": "array", "allOf": [{ "prefixItems": [{ "type": draw_type(tc) }] }], "unevaluatedItems": false })
+        }
+        85 => {
+            json!({ "type": "array", "prefixItems": [{ "type": draw_type(tc) }], "allOf": [{ "prefixItems": [true, { "type": draw_type(tc) }] }], "unevaluatedItems": false })
+        }
+        86 => {
+            json!({ "type": "array", "allOf": [{ "items": [{ "type": draw_type(tc) }] }], "unevaluatedItems": { "type": draw_type(tc) } })
         }
         63 => {
             let (first, second) = (draw_type(tc), draw_type(tc));
