@@ -15,7 +15,7 @@
 
 ### Performance
 
-- Up to 25% faster `evaluate`.
+- Up to 70% faster `evaluate`.
 
 ## [0.49.2] - 2026-07-28
 

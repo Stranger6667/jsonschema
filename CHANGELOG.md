@@ -15,7 +15,7 @@
 
 ### Performance
 
-- Up to 25% faster `evaluate` by building each location in a single allocation instead of two.
+- Up to 70% faster `evaluate` by building each location in a single allocation instead of two, reusing the instance location a node already built, and caching evaluation paths across instance nodes.
 
 ## [0.49.2] - 2026-07-28
 
