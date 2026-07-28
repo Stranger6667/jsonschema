@@ -548,9 +548,14 @@ fn compile_items<'a, F: Json>(
 }
 
 fn compile_prefix_items<'a, F: Json>(
-    _ctx: &compiler::Context<'_, F>,
+    ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
 ) -> Result<Option<usize>, ValidationError<'a>> {
+    // `prefixItems` arrived in 2020-12; an earlier draft reads it as an unknown keyword, and an
+    // unknown keyword evaluates nothing.
+    if !ctx.draft().is_known_keyword("prefixItems") {
+        return Ok(None);
+    }
     if let Some(Some(items)) = parent.get("prefixItems").map(Value::as_array) {
         Ok(Some(items.len()))
     } else {
@@ -838,7 +843,25 @@ pub(crate) fn compile<'a, F: Json>(
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use referencing::Draft;
+    use serde_json::{json, Value};
+    use test_case::test_case;
+
+    #[test_case(Draft::Draft201909, &json!([]), true; "2019-09 empty array")]
+    #[test_case(Draft::Draft201909, &json!([1]), false; "2019-09 leaves the first item unevaluated")]
+    #[test_case(Draft::Draft202012, &json!([1]), true; "2020-12 evaluates the prefixed index")]
+    #[test_case(Draft::Draft202012, &json!([1, 2]), false; "2020-12 leaves the index past the prefix unevaluated")]
+    fn prefix_items_evaluate_only_where_the_draft_defines_them(
+        draft: Draft,
+        instance: &Value,
+        expected: bool,
+    ) {
+        let validator = crate::options()
+            .with_draft(draft)
+            .build(&json!({"prefixItems": [{"type": "integer"}], "unevaluatedItems": false}))
+            .expect("schema compiles");
+        assert_eq!(validator.is_valid(instance), expected);
+    }
 
     #[test]
     fn dynamic_ref_cycle_does_not_overflow() {
