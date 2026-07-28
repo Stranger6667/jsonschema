@@ -228,8 +228,9 @@ fn parse_schema_in_scope(
                 Some(set) => type_set = Some(set),
                 None => return Ok(None),
             },
-            // TODO(canonical): not modeled yet - `const`/`enum` numbers without a plain spelling
-            // have no exact runtime comparison; such documents stay raw.
+            // A `const`/`enum` number too large to expand into a plain decimal spelling has no
+            // exact runtime comparison, so such a document stays raw. Only `arbitrary-precision`
+            // reaches this: the cap is a million digits, past every other build's numeric range.
             ("enum", Value::Array(values)) if ctx.draft().is_known_keyword("enum") => {
                 if !values.iter().all(finite_value_spelling_is_exact) {
                     return Ok(None);
@@ -598,17 +599,6 @@ fn parse_schema_in_scope(
     }
     if draft4_exclusive_maximum {
         real_maximum = real_maximum.map(BoundNumber::excluded);
-    }
-
-    // TODO(canonical): not modeled yet - Draft 4 `integer` mixed with other types in a type list
-    // alongside `const`/`enum`.
-    if matches!(ctx.draft(), Draft::Draft4)
-        && (enum_values.is_some() || const_value.is_some())
-        && type_set.is_some_and(|set| {
-            set.contains(JsonType::Integer) && set != JsonTypeSet::from(JsonType::Integer)
-        })
-    {
-        return Ok(None);
     }
 
     // `minLength: 0` is the type-default, so drop it: the leaf then compares equal to one without it.
@@ -1283,7 +1273,8 @@ pub(crate) fn restrict_values_to_types(
     algebra::union(branches, ctx)
 }
 
-/// Whether every number nested in an instance-data value keeps a plain canonical spelling.
+/// Whether every number nested in an instance-data value keeps a plain canonical spelling, which
+/// holds until a magnitude needs more digits to write out than `MAX_EXPANDED_INTEGER_DIGITS`.
 #[cfg(feature = "arbitrary-precision")]
 fn finite_value_spelling_is_exact(value: &Value) -> bool {
     match value {
