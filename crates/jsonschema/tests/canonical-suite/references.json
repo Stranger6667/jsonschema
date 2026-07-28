@@ -1055,5 +1055,36 @@
       {"data": {}, "valid": true},
       {"data": [[1]], "valid": false}
     ]
+  },
+  {
+    "description": "a reference to a definition that canonicalizes to false folds to false",
+    "schema": {"$ref": "#/$defs/x", "$defs": {"x": false}},
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": null, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "a chain of references to an empty definition folds to false",
+    "schema": {"$ref": "#/$defs/a", "$defs": {"a": {"$ref": "#/$defs/b"}, "b": {"$ref": "#/$defs/c"}, "c": false}},
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [{"data": 1, "valid": false}]
+  },
+  {
+    "description": "negating a reference to an empty definition admits everything",
+    "schema": {"not": {"$ref": "#/$defs/x"}, "$defs": {"x": false}},
+    "kind": "true",
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": {"a": 1}, "valid": true}
+    ]
   }
 ]

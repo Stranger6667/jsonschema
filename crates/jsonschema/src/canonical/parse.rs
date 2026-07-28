@@ -1145,6 +1145,17 @@ fn resolve_reference(
         state.definitions.contains_key(&key) || state.in_progress.contains(&key),
         "a resolved reference target is complete or actively being canonicalized"
     );
+    // Folding an empty target lets the surrounding leaf normalization see the contradiction:
+    // `required: ["a"]` beside `properties: {"a": false}` collapses, a symbolic `Reference` does
+    // not. A canonical URI is exempt because it must keep its local definition to stay idempotent.
+    if !key.starts_with(CANONICAL_REFERENCE_PREFIX)
+        && state
+            .definitions
+            .get(&key)
+            .is_some_and(|body| matches!(body.kind(), SchemaKind::False))
+    {
+        return Ok(Some(Schema::new(SchemaKind::False)));
+    }
     Ok(Some(Schema::new(SchemaKind::Reference(key))))
 }
 
