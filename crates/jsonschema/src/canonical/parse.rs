@@ -10,12 +10,14 @@ use crate::{
     canonical::{
         algebra,
         context::CanonicalizationContext,
+        emptiness,
         ir::{
             canonicalize_value_set, type_set_schema, typed_group, ArrayLeaf, BoundCardinality,
             BoundNumber, BoundRational, CanonicalJson, ContainsFacet, Divisors, IntegerLeaf,
             LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, Side, StringLeaf,
         },
         negate, CanonicalizationError, DefinitionMap, CANONICAL_REFERENCE_PREFIX,
+        ROOT_DEFINITION_KEY,
     },
     JsonType, JsonTypeSet,
 };
@@ -24,6 +26,9 @@ use crate::{
 pub(crate) struct ParseOutput {
     pub(crate) root: Schema,
     pub(crate) definitions: DefinitionMap,
+    /// Whether any `$ref` resolved during this parse. `resolve_reference` is the only producer of
+    /// `SchemaKind::Reference`, so `false` means the emptiness pass has no graph to build.
+    pub(crate) has_references: bool,
 }
 
 /// Parse a document into structural IR when every construct is modeled; `Ok(None)` keeps it `Raw`.
@@ -34,23 +39,96 @@ pub(crate) fn parse<'a>(
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'a>,
 ) -> Result<Option<ParseOutput>, CanonicalizationError> {
-    let mut state = ParseState::new(value, resolver.base_uri().as_str());
-    state.merges_object_leaves =
+    parse_inner(value, ctx, resolver, None, Pruning::Prune)
+}
+
+/// [`parse`], resolving every target in `assumed_empty` to `false` instead of to a `Reference`.
+///
+/// One parse applies a whole round's hypothesis, so every body comes back canonicalized under it.
+pub(crate) fn parse_with_empty<'a>(
+    value: &'a Value,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'a>,
+    assumed_empty: &'a AHashSet<Arc<str>>,
+) -> Result<Option<ParseOutput>, CanonicalizationError> {
+    parse_inner(value, ctx, resolver, Some(assumed_empty), Pruning::Prune)
+}
+
+/// [`parse_with_empty`] keeping every body, including those the hypothesis made unreachable.
+///
+/// Folding every reference to a key is what makes it unreachable, and the fixpoint reads that body
+/// to decide whether the assumption held - so pruning here would delete the evidence.
+pub(crate) fn parse_hypothesis<'a>(
+    value: &'a Value,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'a>,
+    assumed_empty: &'a AHashSet<Arc<str>>,
+) -> Result<Option<ParseOutput>, CanonicalizationError> {
+    parse_inner(value, ctx, resolver, Some(assumed_empty), Pruning::Keep)
+}
+
+/// Whether to drop the definitions the emitted IR no longer references.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Pruning {
+    Prune,
+    Keep,
+}
+
+fn parse_inner<'a>(
+    value: &'a Value,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'a>,
+    assumed_empty: Option<&AHashSet<Arc<str>>>,
+    pruning: Pruning,
+) -> Result<Option<ParseOutput>, CanonicalizationError> {
+    // A body that came out `false` denotes the empty set, so every reference to it folds as well -
+    // but `resolve_reference` can only fold a target whose body already finished parsing, which
+    // makes that dependent on the order definitions were registered in. Re-parsing with the folded
+    // keys added, until none are new, settles it: the result no longer depends on the order.
+    let mut folded: AHashSet<Arc<str>> = assumed_empty.cloned().unwrap_or_default();
+    loop {
+        let Some(parsed) = parse_once(value, ctx, resolver, &folded, pruning)? else {
+            return Ok(None);
+        };
+        let mut grew = false;
+        for (key, body) in &parsed.definitions {
+            if matches!(body.kind(), SchemaKind::False) {
+                grew |= folded.insert(Arc::clone(key));
+            }
+        }
+        if !grew {
+            return Ok(Some(parsed));
+        }
+    }
+}
+
+fn parse_once<'a>(
+    value: &'a Value,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'a>,
+    assumed_empty: &AHashSet<Arc<str>>,
+    pruning: Pruning,
+) -> Result<Option<ParseOutput>, CanonicalizationError> {
+    let mut state = ParseState::new(value, resolver.base_uri().as_str(), assumed_empty);
+    state.facts.merges_object_leaves =
         matches!(ctx.draft(), Draft::Draft4) && merges_object_leaves(value);
     let parsed = parse_schema_in_scope(value, ctx, true, resolver, &mut state)?;
     // An in-between `additionalProperties` meeting `patternProperties` anywhere in the document
     // has no exact intersection without pattern-overlap reasoning; nodes built before this check
     // may already be wrong, so the whole document is discarded, not just the pairing site.
-    if state.additional_schema && state.pattern_properties {
+    if state.facts.additional_schema && state.facts.pattern_properties {
         return Ok(None);
     }
     let Some(root) = parsed else {
         return Ok(None);
     };
-    prune_unreachable_definitions(&root, &mut state.definitions);
+    if pruning == Pruning::Prune {
+        prune_unreachable_definitions(&root, &mut state.definitions);
+    }
     Ok(Some(ParseOutput {
         root,
         definitions: state.definitions,
+        has_references: state.facts.has_references,
     }))
 }
 
@@ -58,28 +136,47 @@ pub(crate) fn parse<'a>(
 struct ParseState<'a> {
     root: &'a Value,
     root_base_uri: Arc<str>,
-    additional_schema: bool,
-    pattern_properties: bool,
-    /// Set only under Draft 4, where it decides whether a pattern coverage can survive the algebra.
-    merges_object_leaves: bool,
+    /// Whole-document facts whose interaction is only decided once the root is complete.
+    facts: DocumentFacts,
     definitions: DefinitionMap,
     in_progress: AHashSet<Arc<str>>,
     /// The target each definition key was minted for, so a key cannot be reused for another one.
     sources: AHashMap<Arc<str>, &'a Value>,
+    /// Targets to resolve as `False`. Empty on every parse outside the emptiness fixpoint.
+    assumed_empty: &'a AHashSet<Arc<str>>,
+}
+
+/// Flags set anywhere in the document and read after the whole parse.
+///
+/// Independent observations rather than a state machine, so the usual "replace bools with an enum"
+/// advice does not apply - any combination of them is reachable.
+#[derive(Default)]
+#[allow(clippy::struct_excessive_bools)]
+struct DocumentFacts {
+    additional_schema: bool,
+    pattern_properties: bool,
+    /// Set only under Draft 4, where it decides whether a pattern coverage can survive the algebra.
+    merges_object_leaves: bool,
+    /// `resolve_reference` is the only producer of `Reference`, so this gates the emptiness pass.
+    has_references: bool,
 }
 
 impl<'a> ParseState<'a> {
-    fn new(root: &'a Value, root_base_uri: &str) -> Self {
+    fn new(root: &'a Value, root_base_uri: &str, assumed_empty: &'a AHashSet<Arc<str>>) -> Self {
         Self {
             root,
             root_base_uri: Arc::from(root_base_uri),
-            additional_schema: false,
-            pattern_properties: false,
-            merges_object_leaves: false,
+            facts: DocumentFacts::default(),
             definitions: DefinitionMap::new(),
             in_progress: AHashSet::new(),
             sources: AHashMap::default(),
+            assumed_empty,
         }
+    }
+
+    /// Whether `key` is being resolved as `false` for this parse.
+    fn assumes_empty(&self, key: &str) -> bool {
+        self.assumed_empty.contains(key)
     }
 }
 
@@ -384,7 +481,7 @@ fn parse_schema_in_scope<'a>(
                         forbid_unmatched_keys = true;
                     }
                     Some(schema) => {
-                        state.additional_schema = true;
+                        state.facts.additional_schema = true;
                         additional_schema = Some(schema);
                     }
                     None => return Ok(None),
@@ -695,13 +792,13 @@ fn parse_schema_in_scope<'a>(
     // pairing at all - `additionalProperties` already knows to skip a named key.
     fold_finite_key_patterns(&mut pattern_properties, &mut properties, ctx);
     if !pattern_properties.is_empty() {
-        state.pattern_properties = true;
+        state.facts.pattern_properties = true;
     }
 
     // Draft 4 holds a key constraint only as the closed map it was parsed from, which the algebra
     // can destroy by meeting two pattern maps. Bailing here, before the rest of the document is
     // parsed, keeps that cheap - and only a merging keyword can bring two leaves together.
-    if forbid_unmatched_keys && !pattern_properties.is_empty() && state.merges_object_leaves {
+    if forbid_unmatched_keys && !pattern_properties.is_empty() && state.facts.merges_object_leaves {
         return Ok(None);
     }
     // `additionalProperties: false` forbids every key the property map does not name and no
@@ -1118,12 +1215,19 @@ fn resolve_reference<'a>(
     resolver: &Resolver<'a>,
     state: &mut ParseState<'a>,
 ) -> Result<Option<Schema>, CanonicalizationError> {
+    state.facts.has_references = true;
     let base_uri = resolver.base_uri();
     let location = resolver.resolve_uri(&base_uri.borrow(), reference)?;
     let resolved = resolver.lookup(reference)?;
     let (target, target_resolver, target_draft) = resolved.into_inner();
     if std::ptr::eq(target, state.root) {
-        return Ok(Some(Schema::new(SchemaKind::Reference(Arc::from("#")))));
+        // The root is never keyed, so the fixpoint names it by the spelling emitted here.
+        if state.assumes_empty(ROOT_DEFINITION_KEY) {
+            return Ok(Some(Schema::new(SchemaKind::False)));
+        }
+        return Ok(Some(Schema::new(SchemaKind::Reference(Arc::from(
+            ROOT_DEFINITION_KEY,
+        )))));
     }
     if target_draft != ctx.draft() {
         return Ok(None);
@@ -1136,6 +1240,11 @@ fn resolve_reference<'a>(
         state.definitions.contains_key(&key) || state.in_progress.contains(&key),
         "a resolved reference target is complete or actively being canonicalized"
     );
+    // Unlike the fold below, canonical URIs are not exempt: a cycle closed through an `$id`-bearing
+    // subresource is keyed by a minted URI, and exempting it would leave it live once proven empty.
+    if state.assumes_empty(&key) {
+        return Ok(Some(Schema::new(SchemaKind::False)));
+    }
     // Folding an empty target lets the surrounding leaf normalization see the contradiction:
     // `required: ["a"]` beside `properties: {"a": false}` collapses, a symbolic `Reference` does
     // not. A canonical URI is exempt because it must keep its local definition to stay idempotent.
@@ -1291,58 +1400,11 @@ fn merges_object_leaves(value: &Value) -> bool {
 }
 
 fn collect_live_definition_references<'a>(schema: &'a Schema, references: &mut Vec<&'a str>) {
-    match schema.kind() {
-        SchemaKind::Reference(uri) => references.push(uri),
-        SchemaKind::Not(schema) | SchemaKind::TypedGroup { body: schema, .. } => {
-            collect_live_definition_references(schema, references);
-        }
-        SchemaKind::AllOf(branches) | SchemaKind::AnyOf(branches) => {
-            for branch in branches.as_slice() {
-                collect_live_definition_references(branch, references);
-            }
-        }
-        SchemaKind::OneOf(branches) => {
-            for branch in branches {
-                collect_live_definition_references(branch, references);
-            }
-        }
-        SchemaKind::Array(leaf) => {
-            let leaf = leaf.get();
-            for schema in &leaf.prefix {
-                collect_live_definition_references(schema, references);
-            }
-            if let Some(schema) = &leaf.items {
-                collect_live_definition_references(schema, references);
-            }
-            for facet in &leaf.contains {
-                collect_live_definition_references(&facet.schema, references);
-            }
-        }
-        SchemaKind::Object(leaf) => {
-            let leaf = leaf.get();
-            if let Some(schema) = &leaf.property_names {
-                collect_live_definition_references(schema, references);
-            }
-            for schema in leaf.properties.values() {
-                collect_live_definition_references(schema, references);
-            }
-            for schema in leaf.pattern_properties.values() {
-                collect_live_definition_references(schema, references);
-            }
-            if let Some(schema) = &leaf.additional {
-                collect_live_definition_references(schema, references);
-            }
-        }
-        SchemaKind::MultiType(_)
-        | SchemaKind::String(_)
-        | SchemaKind::Integer(_)
-        | SchemaKind::Number(_)
-        | SchemaKind::Const(_)
-        | SchemaKind::Enum(_)
-        | SchemaKind::True
-        | SchemaKind::False
-        | SchemaKind::Raw(_) => {}
-    }
+    // Derived from the emptiness walker rather than repeated: the two must agree on which fields
+    // hold a schema, and a field missed here leaks a `$ref` to a pruned definition.
+    let mut found = Vec::new();
+    emptiness::collect_classified_references(schema, emptiness::Position::InPlace, &mut found);
+    references.extend(found.into_iter().map(|(uri, _)| uri.as_ref()));
 }
 
 /// The array-form dependency on `key`: holding it demands the listed keys too.

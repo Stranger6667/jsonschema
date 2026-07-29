@@ -60,6 +60,17 @@
 //! remain errors. A reference whose target uses a different draft than the referring document is
 //! also not yet modeled and falls back to `Raw` (future work).
 //!
+//! # Recursive schemas
+//!
+//! A schema demanding an infinite descent, such as `{"type": "object", "required": ["a"],
+//! "properties": {"a": {"$ref": "#"}}}`, canonicalizes to `false`: every cycle passes a keyword
+//! that consumes structure, so no finite value can satisfy it.
+//!
+//! A cycle closed entirely through in-place applicators (`allOf`, `anyOf`, `oneOf`, `not`) consumes
+//! nothing, so no descent is forced and it is left untouched.
+//!
+//! Detection only ever proves emptiness, so it errs towards satisfiable.
+//!
 //! # Entry points
 //!
 //! - [`canonicalize`](crate::canonicalize) canonicalizes with defaults.
@@ -73,6 +84,7 @@ pub mod json;
 pub(crate) mod algebra;
 pub(crate) mod context;
 pub(crate) mod emit;
+pub(crate) mod emptiness;
 pub(crate) mod error;
 pub(crate) mod ir;
 pub(crate) mod negate;
@@ -87,5 +99,10 @@ pub use schema::CanonicalSchema;
 pub use view::{CanonicalKind, CanonicalView, ContainsView};
 
 pub(crate) const CANONICAL_REFERENCE_PREFIX: &str = "urn:jsonschema:canonical:";
+
+/// Names the document root in the definition key space. No minted key can spell it: a reference
+/// resolving to the root short-circuits before a key is derived, and every derived key is either a
+/// `#/$defs/`-style pointer or carries [`CANONICAL_REFERENCE_PREFIX`].
+pub(crate) const ROOT_DEFINITION_KEY: &str = "#";
 
 pub(crate) use schema::DefinitionMap;

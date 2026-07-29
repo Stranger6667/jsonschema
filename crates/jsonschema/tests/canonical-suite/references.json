@@ -71,14 +71,9 @@
         }
       }
     },
-    "kind": "reference",
-    "expected": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Fexample.com%252Froot%2523%252F%2524defs%252Fcontainer%252FoneOf%252F0",
-      "$defs": {
-        "urn:jsonschema:canonical:https%3A%2F%2Fexample.com%2Froot%23%2F%24defs%2Fcontainer%2FoneOf%2F0": false
-      }
-    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
     "tests": [
       {"data": null, "valid": false},
       {"data": "value", "valid": false}
@@ -1165,6 +1160,483 @@
       {"data": "x", "valid": true},
       {"data": 1, "valid": false},
       {"data": {"p": {}}, "valid": false}
+    ]
+  },
+  {
+    "description": "a recursive object requiring a property of its own type admits nothing",
+    "schema": {"type": "object", "required": ["a"], "properties": {"a": {"$ref": "#"}}},
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"a": {}}, "valid": false},
+      {"data": {"a": {"a": {}}}, "valid": false}
+    ]
+  },
+  {
+    "description": "a recursive array demanding an element of its own type admits nothing",
+    "schema": {"type": "array", "minItems": 1, "items": {"$ref": "#"}},
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": [[]], "valid": false}
+    ]
+  },
+  {
+    "description": "a mutually recursive pair with no base case admits nothing",
+    "schema": {
+      "$ref": "#/$defs/a",
+      "$defs": {
+        "a": {"allOf": [{"$ref": "#/$defs/b"}, {"type": "object"}]},
+        "b": {"type": "object", "required": ["x"], "properties": {"x": {"$ref": "#/$defs/a"}}}
+      }
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"x": {}}, "valid": false}
+    ]
+  },
+  {
+    "description": "an optional recursive property leaves the schema satisfiable",
+    "schema": {"type": "object", "properties": {"a": {"$ref": "#"}}},
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "properties": {"a": {"$ref": "#"}}},
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": {}}, "valid": true},
+      {"data": {"a": {"a": {}}}, "valid": true}
+    ]
+  },
+  {
+    "description": "a recursive branch beside a terminating one leaves the schema satisfiable",
+    "schema": {"anyOf": [{"type": "string"}, {"$ref": "#"}]},
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": "string"}, {"$ref": "#"}]},
+    "tests": [
+      {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "mutual recursion with a terminating arm leaves the schema satisfiable",
+    "schema": {
+      "$ref": "#/$defs/a",
+      "$defs": {
+        "a": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/b"}]},
+        "b": {"$ref": "#/$defs/a"}
+      }
+    },
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "$ref": "#/$defs/a", "$defs": {"a": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/b"}]}, "b": {"$ref": "#/$defs/a"}}},
+    "tests": [
+      {"data": null, "valid": true}
+    ]
+  },
+  {
+    "description": "an ill-founded in-place cycle stays satisfiable",
+    "schema": {"$ref": "#/$defs/a", "$defs": {"a": {"allOf": [{"$ref": "#/$defs/a"}, {"type": "integer"}]}}},
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "$ref": "#/$defs/a", "$defs": {"a": {"allOf": [{"type": "integer"}, {"$ref": "#/$defs/a"}]}}},
+    "tests": [
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "a recursive reference under not stays satisfiable",
+    "schema": {
+      "$ref": "#/$defs/a",
+      "$defs": {
+        "a": {"type": "object", "required": ["x"], "properties": {"x": {"not": {"$ref": "#/$defs/a"}}}}
+      }
+    },
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "$ref": "#/$defs/a", "$defs": {"a": {"type": "object", "required": ["x"], "properties": {"x": {"not": {"$ref": "#/$defs/a"}}}}}},
+    "tests": [
+      {"data": {"x": 1}, "valid": true}
+    ]
+  },
+  {
+    "description": "a target reached both in place and through a property keeps its in-place edge",
+    "schema": {
+      "$ref": "#/$defs/a",
+      "$defs": {
+        "a": {
+          "allOf": [{"$ref": "#/$defs/a"}],
+          "type": "object",
+          "required": ["x"],
+          "properties": {"x": {"$ref": "#/$defs/a"}}
+        }
+      }
+    },
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "$ref": "#/$defs/a", "$defs": {"a": {"allOf": [{"type": "object", "required": ["x"], "properties": {"x": {"$ref": "#/$defs/a"}}}, {"$ref": "#/$defs/a"}]}}},
+    "tests": [
+      {"data": {"x": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "a cycle with the document root as a member admits nothing",
+    "schema": {
+      "type": "object",
+      "required": ["p"],
+      "properties": {"p": {"$ref": "#/$defs/d1"}},
+      "$defs": {
+        "d1": {"type": "object", "required": ["p"], "properties": {"p": {"$ref": "#"}}}
+      }
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"p": {}}, "valid": false},
+      {"data": {"p": {"p": {}}}, "valid": false}
+    ]
+  },
+  {
+    "description": "a recursive definition folds under a root carrying $schema",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"p": {"$ref": "#/$defs/a"}},
+      "$defs": {
+        "a": {"type": "object", "required": ["x"], "properties": {"x": {"$ref": "#/$defs/a"}, "y": {"$ref": "#"}}}
+      }
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "properties": {"p": false}},
+    "satisfiable": true,
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"p": {}}, "valid": false},
+      {"data": {"p": {"x": {"x": {}}}}, "valid": false}
+    ]
+  },
+  {
+    "description": "a well-founded member stays provable when an ill-founded one shares its component",
+    "schema": {
+      "$ref": "#/$defs/d0",
+      "$defs": {
+        "d0": {"type": "array", "minItems": 2, "prefixItems": [{"$ref": "#/$defs/d2"}, {"$ref": "#/$defs/d0"}]},
+        "d2": {"oneOf": [{"$ref": "#/$defs/d3"}, {"$ref": "#/$defs/d2"}]},
+        "d3": {"allOf": [{"not": {"$ref": "#/$defs/d0"}}, {"$ref": "#/$defs/d4"}]},
+        "d4": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/d4"}}
+      }
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": [[], []], "valid": false}
+    ]
+  },
+  {
+    "description": "a definition outside every cycle is refolded before the components that reach it",
+    "schema": {
+      "$ref": "#/$defs/d0",
+      "$defs": {
+        "d0": {"type": "array", "contains": {"$ref": "#/$defs/d1"}},
+        "d1": {"oneOf": [{"$ref": "#/$defs/d3"}, {"$ref": "#/$defs/d2"}]},
+        "d2": {"type": "array", "contains": {"$ref": "#/$defs/d0"}},
+        "d3": {"type": "object", "required": ["x"], "properties": {"x": {"$ref": "#/$defs/d4"}}},
+        "d4": {"type": "object", "minProperties": 1, "propertyNames": {"$ref": "#/$defs/d4"}}
+      }
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": [[]], "valid": false}
+    ]
+  },
+  {
+    "description": "a Draft 4 recursive definition with no finite witness admits nothing",
+    "draft": "draft4",
+    "schema": {
+      "$ref": "#/definitions/a",
+      "definitions": {
+        "a": {"type": "object", "required": ["x"], "properties": {"x": {"$ref": "#/definitions/a"}}}
+      }
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "not": {}},
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"x": {}}, "valid": false}
+    ]
+  },
+  {
+    "description": "a Draft 4 pattern coverage beside a merging keyword keeps the document raw",
+    "draft": "draft4",
+    "schema": {
+      "$ref": "#/definitions/a",
+      "definitions": {
+        "a": {
+          "type": "object",
+          "required": ["x"],
+          "patternProperties": {"^x": {"$ref": "#/definitions/a"}},
+          "additionalProperties": false,
+          "allOf": [{"type": "object"}]
+        }
+      }
+    },
+    "expected": {
+      "$ref": "#/definitions/a",
+      "definitions": {
+        "a": {
+          "type": "object",
+          "required": ["x"],
+          "patternProperties": {"^x": {"$ref": "#/definitions/a"}},
+          "additionalProperties": false,
+          "allOf": [{"type": "object"}]
+        }
+      }
+    },
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"x": {}}, "valid": false}
+    ]
+  },
+  {
+    "description": "a $defs member literally named like a minted canonical URI does not fold the document root",
+    "schema": {
+      "anyOf": [
+        {"$ref": "#/$defs/urn:jsonschema:canonical:json-schema%253A%252F%252F%252F%2523"},
+        {"$ref": "#/$defs/k"},
+        {"type": "string"}
+      ],
+      "$defs": {
+        "urn:jsonschema:canonical:json-schema%3A%2F%2F%2F%23": {
+          "type": "object",
+          "required": ["q"],
+          "properties": {"q": {"$ref": "#/$defs/urn:jsonschema:canonical:json-schema%253A%252F%252F%252F%2523"}}
+        },
+        "k": {"type": "object", "required": ["z"], "properties": {"z": {"$ref": "#"}}}
+      }
+    },
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": "string"}, {"$ref": "#/$defs/k"}], "$defs": {"k": {"type": "object", "required": ["z"], "properties": {"z": {"$ref": "#"}}}}},
+    "tests": [
+      {"data": {"z": "hello"}, "valid": true},
+      {"data": "hello", "valid": true},
+      {"data": {"z": {"z": "hello"}}, "valid": true},
+      {"data": 1, "valid": false},
+      {"data": {"q": {"q": 1}}, "valid": false}
+    ]
+  },
+  {
+    "description": "a three-round emptiness cascade does not exceed its round bound",
+    "schema": {
+      "type": "array",
+      "contains": {"$ref": "#/$defs/d1"},
+      "$defs": {
+        "d0": {"type": "array", "contains": {"$ref": "#/$defs/d0"}},
+        "d1": {"if": {"$ref": "#/$defs/d0"}, "then": {"$ref": "#/$defs/d1"}, "else": {"$ref": "#"}}
+      }
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": [[]], "valid": false}
+    ]
+  },
+  {
+    "description": "a cycle exposed by an earlier round's fold is proven in the next round",
+    "schema": {
+      "anyOf": [
+        {"$ref": "#/$defs/d1"},
+        {"type": "object", "required": ["x"], "properties": {"x": {"$ref": "#"}}}
+      ],
+      "$defs": {
+        "d0": {"type": "object", "required": ["x"], "properties": {"x": {"$ref": "#/$defs/d0"}}},
+        "d1": {"if": {"$ref": "#/$defs/d0"}, "then": {"$ref": "#"}, "else": {"$ref": "#/$defs/d3"}},
+        "d3": {"type": "array", "contains": {"$ref": "#/$defs/d0"}}
+      }
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"x": {}}, "valid": false},
+      {"data": [], "valid": false}
+    ]
+  },
+  {
+    "description": "a required key reached through additionalProperties folds the cycle demanding it",
+    "schema": {
+      "$ref": "#/$defs/a",
+      "$defs": {
+        "a": {"type": "object", "required": ["x"], "additionalProperties": {"$ref": "#/$defs/a"}}
+      }
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"x": {}}, "valid": false}
+    ]
+  },
+  {
+    "description": "a definition folded to false is substituted at every reference, whatever the parse order",
+    "schema": {
+      "anyOf": [{"$ref": "#/$defs/d"}, {"$ref": "#/$defs/c"}],
+      "$defs": {
+        "d": {"allOf": [
+          {"type": "object", "required": ["x"], "properties": {"x": false}},
+          {"type": "object", "properties": {"w": {"$ref": "#/$defs/c"}}}
+        ]},
+        "c": {"type": "object", "properties": {"z": {"$ref": "#/$defs/d"}}}
+      }
+    },
+    "kind": "reference",
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "$ref": "#/$defs/c", "$defs": {"c": {"type": "object", "properties": {"z": false}}}},
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"z": 1}, "valid": false},
+      {"data": {"w": {}}, "valid": true}
+    ]
+  },
+  {
+    "description": "an assumption dropped in the first round leaves the rest provable in the second",
+    "schema": {
+      "$ref": "#/$defs/a",
+      "$defs": {
+        "a": {"type": "object", "required": ["x"], "properties": {
+          "x": {"$ref": "#/$defs/a"},
+          "z": {"$ref": "#/$defs/b"}
+        }},
+        "b": {"type": "object", "required": ["x"], "patternProperties": {"^y": {"$ref": "#/$defs/a"}}}
+      }
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"x": {}}, "valid": false}
+    ]
+  },
+  {
+    "description": "a demanded key reached only through additionalProperties folds its cycle",
+    "schema": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "#"}},
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"a": {}}, "valid": false},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "a definition folded to false is substituted whichever branch order registers it",
+    "schema": {
+      "anyOf": [
+        {"$ref": "#/$defs/d1"},
+        {"type": "object", "required": ["x"], "properties": {"x": {"$ref": "#/$defs/d0"}}}
+      ],
+      "$defs": {
+        "d0": {"oneOf": [{"$ref": "#/$defs/d1"}, {"$ref": "#"}]},
+        "d1": {"allOf": [{"type": "array", "contains": {"$ref": "#/$defs/d0"}}, {"$ref": "#/$defs/d1"}]}
+      }
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": [], "valid": false},
+      {"data": {"x": []}, "valid": false}
+    ]
+  },
+  {
+    "description": "an unsatisfiable subresource definition beside a proven cycle admits nothing",
+    "schema": {
+      "type": "object",
+      "required": ["a"],
+      "properties": {
+        "a": {"$ref": "#"},
+        "b": {"$ref": "sub"}
+      },
+      "$defs": {
+        "s": {"$id": "sub", "not": {}}
+      }
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"a": {}}, "valid": false},
+      {"data": {"b": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "a draft 4 integer enum guard on a demanded sibling leaves the cycle provable",
+    "draft": "draft4",
+    "schema": {
+      "type": "object",
+      "required": ["a", "z"],
+      "properties": {
+        "a": {"type": "integer", "enum": [1, 2]},
+        "z": {"$ref": "#"}
+      }
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "not": {}},
+    "tests": [
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": 1, "z": {"a": 2}}, "valid": false}
+    ]
+  },
+  {
+    "description": "a forbidden pattern beside a recursive one leaves unmatched keys free",
+    "schema": {
+      "type": "object",
+      "minProperties": 1,
+      "patternProperties": {
+        "^a": false,
+        "^b": {"$ref": "#"}
+      }
+    },
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "minProperties": 1, "patternProperties": {"^a": false, "^b": {"$ref": "#"}}},
+    "tests": [
+      {"data": {"z": 1}, "valid": true},
+      {"data": {"b1": {"z": 1}}, "valid": true},
+      {"data": {"a1": 1}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "a hypothesis meeting an inexpressible complement leaves the cycle symbolic",
+    "schema": {
+      "type": "object",
+      "required": ["a"],
+      "properties": {
+        "a": {"$ref": "#"},
+        "b": {"not": {"oneOf": [{"$ref": "#"}, {"type": "integer", "minimum": 5}]}}
+      }
+    },
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "required": ["a"], "properties": {"a": {"$ref": "#"}, "b": {"not": {"oneOf": [{"type": "integer", "minimum": 5}, {"$ref": "#"}]}}}},
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": {}, "valid": false},
+      {"data": {"a": {}}, "valid": false}
     ]
   }
 ]
