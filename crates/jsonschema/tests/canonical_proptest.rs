@@ -912,3 +912,215 @@ fn numeric_literals(schema: &Value) -> Vec<Value> {
         Value::Null | Value::Bool(_) | Value::String(_) => Vec::new(),
     }
 }
+
+#[derive(Clone, Copy, Debug)]
+enum Link {
+    /// Consumes structure: the reference sits under a required property.
+    RequiredProperty,
+    /// Consumes structure: the reference sits under `items` beside a non-zero `minItems`.
+    Item,
+    /// Consumes structure: the reference sits under an optional property.
+    OptionalProperty,
+    /// Consumes structure: the reference sits under `contains`.
+    Contains,
+    /// Consumes structure: the reference sits under `propertyNames` beside `minProperties`.
+    PropertyName,
+    /// Consumes nothing: the reference sits beside a type constraint in an `allOf`.
+    InPlace,
+    /// Consumes nothing, and one branch terminates: an `anyOf` needs both branches to fail.
+    InPlaceBranch,
+    /// Two consuming edges from one body.
+    TwoRequired,
+    /// Two consuming edges, both demanded by `minItems`.
+    PrefixPair,
+    /// One in-place edge and one consuming edge from the same body.
+    MixedPosition,
+    /// Two in-place edges under `oneOf`.
+    OneOfPair,
+    /// An in-place branch beside a consuming one, under `anyOf`.
+    AnyOfMixed,
+    /// A consuming edge conjoined with an in-place one.
+    ContainsMixed,
+    /// Terminates the ring.
+    Base,
+}
+
+/// Links that always consume structure, so every cycle they build is well founded.
+const WELL_FOUNDED_LINKS: &[Link] = &[
+    Link::RequiredProperty,
+    Link::Item,
+    Link::OptionalProperty,
+    Link::Contains,
+    Link::PropertyName,
+    Link::TwoRequired,
+    Link::PrefixPair,
+    Link::Base,
+];
+
+const ALL_LINKS: &[Link] = &[
+    Link::RequiredProperty,
+    Link::Item,
+    Link::OptionalProperty,
+    Link::Contains,
+    Link::PropertyName,
+    Link::InPlace,
+    Link::InPlaceBranch,
+    Link::TwoRequired,
+    Link::PrefixPair,
+    Link::MixedPosition,
+    Link::OneOfPair,
+    Link::AnyOfMixed,
+    Link::ContainsMixed,
+    Link::Base,
+];
+
+fn draw_link(tc: &TestCase, well_founded: bool) -> Link {
+    let links = if well_founded {
+        WELL_FOUNDED_LINKS
+    } else {
+        ALL_LINKS
+    };
+    tc.draw(gs::sampled_from(links.to_vec()))
+}
+
+/// A definition body reaching `next`, or `second` too when the arm takes two targets.
+fn definition_body(link: Link, next: &str, second: &str) -> Value {
+    match link {
+        Link::RequiredProperty => {
+            json!({"type": "object", "required": ["x"], "properties": {"x": {"$ref": next}}})
+        }
+        Link::Item => json!({"type": "array", "minItems": 1, "items": {"$ref": next}}),
+        Link::OptionalProperty => json!({"type": "object", "properties": {"x": {"$ref": next}}}),
+        Link::Contains => json!({"type": "array", "contains": {"$ref": next}}),
+        Link::PropertyName => {
+            json!({"type": "object", "minProperties": 1, "propertyNames": {"$ref": next}})
+        }
+        Link::InPlace => json!({"allOf": [{"$ref": next}, {"type": "integer"}]}),
+        Link::InPlaceBranch => json!({"anyOf": [{"$ref": next}, {"type": "integer"}]}),
+        // Two outgoing references, which one target per body can never produce - and which every
+        // shape the guardedness rule decides needs: a member on both an in-place and a consuming
+        // edge, or a cycle that only closes through a definition outside it.
+        Link::TwoRequired => json!({"type": "object", "required": ["x", "y"], "properties": {
+            "x": {"$ref": next}, "y": {"$ref": second}
+        }}),
+        Link::PrefixPair => json!({"type": "array", "minItems": 2, "prefixItems": [
+            {"$ref": next}, {"$ref": second}
+        ]}),
+        Link::MixedPosition => json!({"allOf": [
+            {"$ref": next},
+            {"type": "object", "required": ["x"], "properties": {"x": {"$ref": second}}}
+        ]}),
+        Link::AnyOfMixed => json!({"anyOf": [
+            {"$ref": next},
+            {"type": "object", "required": ["x"], "properties": {"x": {"$ref": second}}}
+        ]}),
+        Link::ContainsMixed => json!({"allOf": [
+            {"type": "array", "contains": {"$ref": next}},
+            {"$ref": second}
+        ]}),
+        Link::OneOfPair => json!({"oneOf": [{"$ref": next}, {"$ref": second}]}),
+        Link::Base => json!({"type": "integer"}),
+    }
+}
+
+/// A graph of definitions, each reaching one or two others by index.
+///
+/// `well_founded` restricts the links to ones that consume structure. The validator's own recursion
+/// guard is spelling-sensitive on an ill-founded cycle - reordering two `oneOf` branches flips its
+/// verdict with no canonicalization involved - so it is only a usable oracle for these.
+#[hegel::composite]
+fn definition_graph(tc: TestCase, well_founded: bool) -> Value {
+    let size = tc.draw(gs::integers::<usize>().min_value(1).max_value(5));
+    let target = |tc: &TestCase| {
+        let index = tc.draw(gs::integers::<usize>().min_value(0).max_value(size));
+        if index == size {
+            "#".to_string()
+        } else {
+            format!("#/$defs/d{index}")
+        }
+    };
+    let body =
+        |tc: &TestCase| definition_body(draw_link(tc, well_founded), &target(tc), &target(tc));
+    let mut definitions = serde_json::Map::new();
+    for index in 0..size {
+        definitions.insert(format!("d{index}"), body(&tc));
+    }
+    let mut root = body(&tc)
+        .as_object()
+        .expect("a link body is an object")
+        .clone();
+    root.insert("$defs".into(), Value::Object(definitions));
+    Value::Object(root)
+}
+
+fn emptiness_candidates() -> Vec<Value> {
+    vec![
+        json!(null),
+        json!(true),
+        json!(1),
+        json!("x"),
+        json!([]),
+        json!([1]),
+        json!([[1]]),
+        json!([{}]),
+        json!({}),
+        json!({"x": {}}),
+        json!({"x": 1}),
+        json!({"x": {"x": 1}}),
+        json!({"x": []}),
+    ]
+}
+
+// Canonicalizing a recursive definition ring preserves the accepted set.
+#[hegel::test(test_cases = 5_000)]
+fn recursive_reference_form_preserves_validation(tc: TestCase) {
+    let schema = tc.draw(definition_graph(true));
+    let emitted = canonicalize(&schema, Draft::Draft202012)
+        .unwrap_or_else(|| panic!("a definition ring canonicalizes: {schema}"));
+    let build = |value: &Value| {
+        jsonschema::options()
+            .with_draft(Draft::Draft202012)
+            .build(value)
+            .unwrap_or_else(|error| panic!("a definition ring builds: {error}\n  {value}"))
+    };
+    let (raw, canonical) = (build(&schema), build(&emitted));
+    for instance in emptiness_candidates() {
+        assert_eq!(
+            raw.is_valid(&instance),
+            canonical.is_valid(&instance),
+            "{schema} vs {emitted} on {instance}"
+        );
+    }
+}
+
+#[hegel::test(test_cases = 5_000)]
+fn unsatisfiable_recursive_reference_rejects_every_candidate(tc: TestCase) {
+    let schema = tc.draw(definition_graph(true));
+    let canonical = jsonschema::canonical::options()
+        .with_draft(Draft::Draft202012)
+        .canonicalize(&schema)
+        .unwrap_or_else(|error| panic!("a definition ring canonicalizes: {error}\n  {schema}"));
+    if canonical.is_satisfiable() {
+        return;
+    }
+    let validator = jsonschema::options()
+        .with_draft(Draft::Draft202012)
+        .build(&schema)
+        .unwrap_or_else(|error| panic!("a definition ring builds: {error}\n  {schema}"));
+    for instance in emptiness_candidates() {
+        assert!(
+            !validator.is_valid(&instance),
+            "declared unsatisfiable but the validator accepts {instance}\n  schema = {schema}"
+        );
+    }
+}
+
+#[hegel::test(test_cases = 30_000)]
+fn recursive_reference_form_is_idempotent(tc: TestCase) {
+    let schema = tc.draw(definition_graph(false));
+    let once = canonicalize(&schema, Draft::Draft202012)
+        .unwrap_or_else(|| panic!("a definition ring canonicalizes: {schema}"));
+    let twice = canonicalize(&once, Draft::Draft202012)
+        .unwrap_or_else(|| panic!("a canonical form re-canonicalizes: {once}"));
+    assert_eq!(once, twice, "schema = {schema}");
+}

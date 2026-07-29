@@ -8,6 +8,7 @@ use serde_json::Value;
 use crate::{
     canonical::{
         context::CanonicalizationContext,
+        emptiness,
         ir::{RawJson, Schema, SchemaKind},
         parse,
         schema::CanonicalSchema,
@@ -127,7 +128,10 @@ fn build(
     let resolver = registry.resolver(base_uri);
     let context = CanonicalizationContext::new(draft, pattern_options, validate_formats);
     let (inner, definitions) = match parse::parse(value, &context, &resolver)? {
-        Some(parsed) => (parsed.root, Arc::new(parsed.definitions)),
+        Some(parsed) => {
+            let parsed = emptiness::fold_empty_definitions(parsed, value, &context, &resolver)?;
+            (parsed.root, Arc::new(parsed.definitions))
+        }
         None => (
             Schema::new(SchemaKind::Raw(RawJson::new(value.clone()))),
             Arc::new(DefinitionMap::new()),
