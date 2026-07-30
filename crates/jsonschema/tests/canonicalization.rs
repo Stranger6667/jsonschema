@@ -472,6 +472,19 @@ fn untyped_past_range_numeric_bound_round_trips(text: &str, keyword: &str, bound
     assert_eq!(number_branch[keyword].to_string(), bound);
 }
 
+// A bound past the `f64` range must not swallow its exclusive partner on the same side: the
+// canonical form would accept values the document rejects.
+#[cfg(feature = "arbitrary-precision")]
+#[test_case(r#"{"type": "number", "maximum": 1e400, "exclusiveMaximum": 0.1}"#, "exclusiveMaximum", "0.1"; "maximum past f64 range")]
+#[test_case(r#"{"type": "number", "minimum": -1e400, "exclusiveMinimum": 0.1}"#, "exclusiveMinimum", "0.1"; "minimum past f64 range")]
+fn past_range_bound_keeps_its_tighter_partner(text: &str, keyword: &str, bound: &str) {
+    let schema: Value = serde_json::from_str(text).expect("valid schema JSON");
+    let emitted = canonicalize(&schema)
+        .expect("canonicalizes")
+        .to_json_schema();
+    assert_eq!(emitted[keyword].to_string(), bound, "{emitted}");
+}
+
 #[cfg(not(feature = "arbitrary-precision"))]
 #[test_case("string", "minLength")]
 #[test_case("string", "maxLength")]

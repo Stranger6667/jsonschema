@@ -805,6 +805,11 @@ mod tests {
         #[test_case(r#"{"maximum": 0.5}"#, "0.5", true; "frac max equal")]
         #[test_case(r#"{"maximum": 0.5}"#, "0.6", false; "frac max greater")]
         #[test_case(r#"{"maximum": 0.5}"#, "0.4", true; "frac max less")]
+        // An integer past the f64 range against a fractional bound.
+        #[test_case(r#"{"maximum": 0.5}"#, "1e400", false; "frac max vs past range")]
+        #[test_case(r#"{"exclusiveMaximum": 0.5}"#, "1e400", false; "frac exmax vs past range")]
+        #[test_case(r#"{"minimum": 0.5}"#, "-1e400", false; "frac min vs past range")]
+        #[test_case(r#"{"exclusiveMinimum": 0.5}"#, "-1e400", false; "frac exmin vs past range")]
         fn comparison_operators(schema_json: &str, instance_json: &str, expected: bool) {
             let schema = parse_json(schema_json);
             let instance = parse_json(instance_json);

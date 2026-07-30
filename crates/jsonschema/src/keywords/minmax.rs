@@ -254,8 +254,11 @@ pub(crate) mod bigint_validators {
                         } else if let Some(v) = item.as_f64() {
                             // Scientific notation or other f64-representable numbers
                             $f64_cmp(v, &self.limit)
+                        } else if let Some(instance_bigint) = numeric::bignum::try_parse_bigint(&item.to_number()) {
+                            // An integer past the f64 range (e.g. 1e400) is still exact as a BigInt.
+                            BigFraction::from(instance_bigint) $bigfrac_op self.limit
                         } else {
-                            // Extreme scientific notation beyond f64 range (e.g., 1e309, 1e400)
+                            // Extreme scientific notation beyond f64 range (e.g., 1e2000000)
                             // These are not supported for comparison - treat as always valid
                             // since we can't reliably compare them
                             true
