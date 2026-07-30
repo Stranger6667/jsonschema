@@ -173,6 +173,17 @@ fn check_bigfrac_bound(op: BoundOp, limit: &fraction::BigFraction, value: &Numbe
         };
     }
 
+    // An integer past the f64 range is exact as a BigInt, e.g. `1e400` against `0.1`.
+    if let Some(instance_bigint) = numeric::bignum::try_parse_bigint(value) {
+        let instance_frac = fraction::BigFraction::from(instance_bigint);
+        return match op {
+            BoundOp::Lt => instance_frac < *limit,
+            BoundOp::Lte => instance_frac <= *limit,
+            BoundOp::Gt => instance_frac > *limit,
+            BoundOp::Gte => instance_frac >= *limit,
+        };
+    }
+
     // Dynamic BigFraction validators treat this branch as valid because
     // extremely large scientific notation cannot be compared reliably.
     true

@@ -2164,6 +2164,8 @@ fn test_arbitrary_precision_integer_type_matches_runtime(instance_json: &str) {
 #[test_case(r#"{"type":"number","exclusiveMaximum":0.1}"#, "5"; "exclusive_maximum_bigfrac_vs_small_u64")]
 #[test_case(r#"{"type":"number","exclusiveMaximum":0.1}"#, "-5"; "exclusive_maximum_bigfrac_vs_negative_i64")]
 #[test_case(r#"{"type":"number","exclusiveMaximum":0.1}"#, "1e20"; "exclusive_maximum_bigfrac_vs_big_integer")]
+#[test_case(r#"{"type":"number","exclusiveMaximum":0.1}"#, "1e400"; "exclusive_maximum_bigfrac_vs_past_range_integer")]
+#[test_case(r#"{"type":"number","exclusiveMinimum":0.1}"#, "-1e400"; "exclusive_minimum_bigfrac_vs_past_range_integer")]
 // A divisor larger than u64 checked against a small integer, a negative integer, and a fraction.
 #[test_case(r#"{"type":"number","multipleOf":18446744073709551616}"#, "5"; "multiple_of_bigint_vs_small_u64")]
 #[test_case(r#"{"type":"number","multipleOf":18446744073709551616}"#, "-4"; "multiple_of_bigint_vs_negative_i64")]
