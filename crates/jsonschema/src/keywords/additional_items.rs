@@ -1,7 +1,7 @@
 use crate::{
     compiler,
     error::{no_error, ErrorIterator, ValidationError},
-    keywords::{boolean::FalseValidator, CompilationResult},
+    keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     types::{JsonType, JsonTypeSet},
@@ -135,7 +135,11 @@ pub(crate) fn compile<'a, F: Json>(
 ) -> Option<CompilationResult<'a, F>> {
     if let Some(items) = parent.get("items") {
         match items {
-            Value::Object(_) => None,
+            // `additionalItems` describes the elements past an array-form `items` tuple. Any other
+            // `items` is a schema covering every element, so there is no tail and the spec says to
+            // ignore the keyword — including `items: false`, where the tail is empty rather than
+            // forbidden, and non-arrays are not this keyword's business at all.
+            Value::Object(_) | Value::Bool(_) => None,
             Value::Array(items) => {
                 let kctx = ctx.new_at_location("additionalItems");
                 let items_count = items.len();
@@ -150,14 +154,6 @@ pub(crate) fn compile<'a, F: Json>(
                         kctx.location().clone(),
                     )),
                     _ => None,
-                }
-            }
-            Value::Bool(value) => {
-                if *value {
-                    None
-                } else {
-                    let location = ctx.location().join("additionalItems");
-                    Some(FalseValidator::compile(location))
                 }
             }
             _ => {
@@ -183,6 +179,45 @@ mod tests {
     use referencing::Draft;
     use serde_json::{json, Value};
     use test_case::test_case;
+
+    // A boolean `items` leaves no tuple tail, so `additionalItems` is ignored and only `items`
+    // can reject. The keyword constrains array elements, so it must never touch a non-array.
+    #[test_case(&json!({"additionalItems": false, "items": false}), &json!(null))]
+    #[test_case(&json!({"additionalItems": false, "items": false}), &json!([]))]
+    #[test_case(&json!({"additionalItems": false, "items": false}), &json!("a"))]
+    #[test_case(&json!({"additionalItems": true, "items": false}), &json!(null))]
+    #[test_case(&json!({"additionalItems": {"type": "string"}, "items": false}), &json!(null))]
+    #[test_case(&json!({"additionalItems": false, "items": true}), &json!(null))]
+    fn boolean_items_makes_additional_items_inert(schema: &Value, instance: &Value) {
+        // 2020-12 dropped the keyword entirely, so it is inert there for a second reason.
+        for draft in [
+            Draft::Draft6,
+            Draft::Draft7,
+            Draft::Draft201909,
+            Draft::Draft202012,
+        ] {
+            let validator = crate::options()
+                .with_draft(draft)
+                .build(schema)
+                .expect("Invalid schema");
+            assert!(
+                validator.is_valid(instance),
+                "{draft:?} rejected {instance}"
+            );
+        }
+    }
+
+    // `items: false` still forbids every element, with or without `additionalItems` beside it.
+    #[test_case(&json!({"additionalItems": false, "items": false}))]
+    #[test_case(&json!({"additionalItems": true, "items": false}))]
+    #[test_case(&json!({"items": false}))]
+    fn boolean_items_still_rejects_elements(schema: &Value) {
+        let validator = crate::options()
+            .with_draft(Draft::Draft7)
+            .build(schema)
+            .expect("Invalid schema");
+        assert!(!validator.is_valid(&json!([1])));
+    }
 
     // When items: false and additionalItems: false, items runs first (lower priority)
     #[test_case(&json!({"additionalItems": false, "items": false}), &json!([1]), "/items")]
