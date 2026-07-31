@@ -1,0 +1,1167 @@
+[
+  {
+    "description": "a lone $dynamicAnchor asserts nothing",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$dynamicAnchor": "meta",
+      "type": "string"
+    },
+    "kind": "multi_type",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string"
+    },
+    "tests": [
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a lone $recursiveAnchor asserts nothing",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "$recursiveAnchor": true,
+      "type": "integer"
+    },
+    "kind": "multi_type",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "type": "integer"
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": "1",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "$ref and $dynamicAnchor are independent of order - $defs first",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://test.json-schema.org/ref-and-dynamic-anchor/root",
+      "$defs": {
+        "inner": {
+          "$id": "inner",
+          "$dynamicAnchor": "foo",
+          "title": "inner",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        }
+      },
+      "$ref": "inner",
+      "$dynamicAnchor": "foo"
+    },
+    "kind": "reference",
+    "expected": {
+      "$defs": {
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fref-and-dynamic-anchor%2Finner": {
+          "anyOf": [
+            {
+              "type": [
+                "null",
+                "boolean",
+                "number",
+                "string",
+                "array"
+              ]
+            },
+            {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fref-and-dynamic-anchor%252Finner",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "tests": [
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": "one"
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a $dynamicRef without a matching $dynamicAnchor behaves like a normal $ref to an $anchor",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://test.json-schema.org/dynamic-ref-no-anchor/root",
+      "$ref": "#/$defs/used",
+      "$defs": {
+        "inner": {
+          "$anchor": "foo",
+          "type": "string"
+        },
+        "used": {
+          "$dynamicRef": "#foo"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$defs": {
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-no-anchor%2Froot%23foo": {
+          "type": "string"
+        },
+        "used": {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-no-anchor%252Froot%2523foo"
+        }
+      },
+      "$ref": "#/$defs/used",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "a $dynamicRef resolves to the first $dynamicAnchor still in scope",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://test.json-schema.org/typical-dynamic-resolution/root",
+      "$ref": "list",
+      "$defs": {
+        "foo": {
+          "$dynamicAnchor": "items",
+          "type": "string"
+        },
+        "list": {
+          "$id": "list",
+          "type": "array",
+          "items": {
+            "$dynamicRef": "#items"
+          },
+          "$defs": {
+            "items": {
+              "$comment": "Only needed to satisfy the bookending requirement",
+              "$dynamicAnchor": "items"
+            }
+          }
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": [
+          "a",
+          "b"
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          "a",
+          1
+        ],
+        "valid": false
+      },
+      {
+        "data": [],
+        "valid": true
+      }
+    ],
+    "expected": {
+      "$defs": {
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Ftypical-dynamic-resolution%2Flist%23items%7Cdyn%3Ditems%40https%3A%2F%2Ftest.json-schema.org%2Ftypical-dynamic-resolution%2Froot": {
+          "type": "string"
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Ftypical-dynamic-resolution%2Flist%7Cdyn%3Ditems%40https%3A%2F%2Ftest.json-schema.org%2Ftypical-dynamic-resolution%2Froot": {
+          "items": {
+            "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Ftypical-dynamic-resolution%252Flist%2523items%257Cdyn%253Ditems%2540https%253A%252F%252Ftest.json-schema.org%252Ftypical-dynamic-resolution%252Froot"
+          },
+          "type": "array"
+        }
+      },
+      "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Ftypical-dynamic-resolution%252Flist%257Cdyn%253Ditems%2540https%253A%252F%252Ftest.json-schema.org%252Ftypical-dynamic-resolution%252Froot",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "multiple dynamic paths to the $dynamicRef keyword - raw, because `if`/`then`/`else` over `$ref` branches is not modeled",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://test.json-schema.org/dynamic-ref-with-multiple-paths/main",
+      "if": {
+        "properties": {
+          "kindOfList": {
+            "const": "numbers"
+          }
+        },
+        "required": [
+          "kindOfList"
+        ]
+      },
+      "then": {
+        "$ref": "numberList"
+      },
+      "else": {
+        "$ref": "stringList"
+      },
+      "$defs": {
+        "genericList": {
+          "$id": "genericList",
+          "properties": {
+            "list": {
+              "items": {
+                "$dynamicRef": "#itemType"
+              }
+            }
+          },
+          "$defs": {
+            "defaultItemType": {
+              "$comment": "Only needed to satisfy the bookending requirement",
+              "$dynamicAnchor": "itemType"
+            }
+          }
+        },
+        "numberList": {
+          "$id": "numberList",
+          "$defs": {
+            "itemType": {
+              "$dynamicAnchor": "itemType",
+              "type": "number"
+            }
+          },
+          "$ref": "genericList"
+        },
+        "stringList": {
+          "$id": "stringList",
+          "$defs": {
+            "itemType": {
+              "$dynamicAnchor": "itemType",
+              "type": "string"
+            }
+          },
+          "$ref": "genericList"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "kindOfList": "numbers",
+          "list": [
+            1.1
+          ]
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "kindOfList": "numbers",
+          "list": [
+            "foo"
+          ]
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "kindOfList": "strings",
+          "list": [
+            "foo"
+          ]
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "kindOfList": "strings",
+          "list": [
+            1.1
+          ]
+        },
+        "valid": false
+      }
+    ],
+    "kind": "raw",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://test.json-schema.org/dynamic-ref-with-multiple-paths/main",
+      "if": {
+        "properties": {
+          "kindOfList": {
+            "const": "numbers"
+          }
+        },
+        "required": [
+          "kindOfList"
+        ]
+      },
+      "then": {
+        "$ref": "numberList"
+      },
+      "else": {
+        "$ref": "stringList"
+      },
+      "$defs": {
+        "genericList": {
+          "$id": "genericList",
+          "properties": {
+            "list": {
+              "items": {
+                "$dynamicRef": "#itemType"
+              }
+            }
+          },
+          "$defs": {
+            "defaultItemType": {
+              "$comment": "Only needed to satisfy the bookending requirement",
+              "$dynamicAnchor": "itemType"
+            }
+          }
+        },
+        "numberList": {
+          "$id": "numberList",
+          "$defs": {
+            "itemType": {
+              "$dynamicAnchor": "itemType",
+              "type": "number"
+            }
+          },
+          "$ref": "genericList"
+        },
+        "stringList": {
+          "$id": "stringList",
+          "$defs": {
+            "itemType": {
+              "$dynamicAnchor": "itemType",
+              "type": "string"
+            }
+          },
+          "$ref": "genericList"
+        }
+      }
+    }
+  },
+  {
+    "description": "multiple dynamic paths specialize the shared target",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://test.json-schema.org/dynamic-ref-multiple-paths-anyof/main",
+      "anyOf": [
+        {
+          "$ref": "numberList"
+        },
+        {
+          "$ref": "stringList"
+        }
+      ],
+      "$defs": {
+        "genericList": {
+          "$id": "genericList",
+          "properties": {
+            "list": {
+              "items": {
+                "$dynamicRef": "#itemType"
+              }
+            }
+          },
+          "$defs": {
+            "defaultItemType": {
+              "$comment": "Only needed to satisfy the bookending requirement",
+              "$dynamicAnchor": "itemType"
+            }
+          }
+        },
+        "numberList": {
+          "$id": "numberList",
+          "$defs": {
+            "itemType": {
+              "$dynamicAnchor": "itemType",
+              "type": "number"
+            }
+          },
+          "$ref": "genericList"
+        },
+        "stringList": {
+          "$id": "stringList",
+          "$defs": {
+            "itemType": {
+              "$dynamicAnchor": "itemType",
+              "type": "string"
+            }
+          },
+          "$ref": "genericList"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "list": [
+            1.1
+          ]
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "list": [
+            "foo"
+          ]
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "list": [
+            true
+          ]
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "list": [
+            1.1,
+            "foo"
+          ]
+        },
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$defs": {
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-multiple-paths-anyof%2FgenericList%23itemType%7Cdyn%3DitemType%40https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-multiple-paths-anyof%2FnumberList": {
+          "type": "number"
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-multiple-paths-anyof%2FgenericList%23itemType%7Cdyn%3DitemType%40https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-multiple-paths-anyof%2FstringList": {
+          "type": "string"
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-multiple-paths-anyof%2FgenericList%7Cdyn%3DitemType%40https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-multiple-paths-anyof%2FnumberList": {
+          "anyOf": [
+            {
+              "type": [
+                "null",
+                "boolean",
+                "number",
+                "string",
+                "array"
+              ]
+            },
+            {
+              "properties": {
+                "list": {
+                  "anyOf": [
+                    {
+                      "type": [
+                        "null",
+                        "boolean",
+                        "number",
+                        "string",
+                        "object"
+                      ]
+                    },
+                    {
+                      "items": {
+                        "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-multiple-paths-anyof%252FgenericList%2523itemType%257Cdyn%253DitemType%2540https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-multiple-paths-anyof%252FnumberList"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            }
+          ]
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-multiple-paths-anyof%2FgenericList%7Cdyn%3DitemType%40https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-multiple-paths-anyof%2FstringList": {
+          "anyOf": [
+            {
+              "type": [
+                "null",
+                "boolean",
+                "number",
+                "string",
+                "array"
+              ]
+            },
+            {
+              "properties": {
+                "list": {
+                  "anyOf": [
+                    {
+                      "type": [
+                        "null",
+                        "boolean",
+                        "number",
+                        "string",
+                        "object"
+                      ]
+                    },
+                    {
+                      "items": {
+                        "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-multiple-paths-anyof%252FgenericList%2523itemType%257Cdyn%253DitemType%2540https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-multiple-paths-anyof%252FstringList"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            }
+          ]
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-multiple-paths-anyof%2FnumberList": {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-multiple-paths-anyof%252FgenericList%257Cdyn%253DitemType%2540https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-multiple-paths-anyof%252FnumberList"
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-multiple-paths-anyof%2FstringList": {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-multiple-paths-anyof%252FgenericList%257Cdyn%253DitemType%2540https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-multiple-paths-anyof%252FstringList"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-multiple-paths-anyof%252FnumberList"
+        },
+        {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-multiple-paths-anyof%252FstringList"
+        }
+      ]
+    }
+  },
+  {
+    "description": "$recursiveRef without $recursiveAnchor works like $ref",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "$id": "https://test.json-schema.org/recursive-ref-without-anchor/root",
+      "$ref": "#/$defs/myobject",
+      "$defs": {
+        "myobject": {
+          "$id": "myobject.json",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": {
+                "$recursiveRef": "#"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": "foo",
+        "valid": true
+      },
+      {
+        "data": {
+          "foo": "bar"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "foo": {
+            "bar": "baz"
+          }
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "foo": 1
+        },
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$defs": {
+        "myobject": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Frecursive-ref-without-anchor%252Fmyobject.json%2523"
+              },
+              "type": "object"
+            }
+          ]
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Frecursive-ref-without-anchor%2Fmyobject.json%23": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Frecursive-ref-without-anchor%252Fmyobject.json%2523"
+              },
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "$ref": "#/$defs/myobject",
+      "$schema": "https://json-schema.org/draft/2019-09/schema"
+    }
+  },
+  {
+    "description": "$recursiveRef with nesting resolves to the outermost $recursiveAnchor",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "$id": "https://test.json-schema.org/recursive-ref-with-nesting/root",
+      "$recursiveAnchor": true,
+      "$ref": "#/$defs/myobject",
+      "$defs": {
+        "myobject": {
+          "$id": "myobject.json",
+          "$recursiveAnchor": true,
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": {
+                "$recursiveRef": "#"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": "foo",
+        "valid": true
+      },
+      {
+        "data": {
+          "foo": "bar"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "foo": {
+            "bar": "baz"
+          }
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "foo": 1
+        },
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$defs": {
+        "urn:jsonschema:canonical:%23%2F%24defs%2Fmyobject%7Cdyn%3D%24recursiveAnchor%40https%3A%2F%2Ftest.json-schema.org%2Frecursive-ref-with-nesting%2Froot": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#"
+              },
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "$ref": "#/$defs/urn:jsonschema:canonical:%2523%252F%2524defs%252Fmyobject%257Cdyn%253D%2524recursiveAnchor%2540https%253A%252F%252Ftest.json-schema.org%252Frecursive-ref-with-nesting%252Froot",
+      "$schema": "https://json-schema.org/draft/2019-09/schema"
+    }
+  },
+  {
+    "description": "an intermediary that only reaches a $dynamicRef is still specialized per path",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://test.json-schema.org/dynamic-ref-through-intermediary/main",
+      "anyOf": [
+        {
+          "$ref": "numberList"
+        },
+        {
+          "$ref": "stringList"
+        }
+      ],
+      "$defs": {
+        "generic": {
+          "$id": "generic",
+          "properties": {
+            "list": {
+              "items": {
+                "$dynamicRef": "#itemType"
+              }
+            }
+          },
+          "$defs": {
+            "fallback": {
+              "$dynamicAnchor": "itemType"
+            }
+          }
+        },
+        "middle": {
+          "$comment": "Holds no dynamic reference itself; it only reaches one through `$ref`.",
+          "$id": "middle",
+          "$ref": "generic"
+        },
+        "numberList": {
+          "$id": "numberList",
+          "$defs": {
+            "itemType": {
+              "$dynamicAnchor": "itemType",
+              "type": "number"
+            }
+          },
+          "$ref": "middle"
+        },
+        "stringList": {
+          "$id": "stringList",
+          "$defs": {
+            "itemType": {
+              "$dynamicAnchor": "itemType",
+              "type": "string"
+            }
+          },
+          "$ref": "middle"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "list": [
+            1.5
+          ]
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "list": [
+            "a"
+          ]
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "list": [
+            true
+          ]
+        },
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$defs": {
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-through-intermediary%2Fgeneric%23itemType%7Cdyn%3DitemType%40https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-through-intermediary%2FnumberList": {
+          "type": "number"
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-through-intermediary%2Fgeneric%23itemType%7Cdyn%3DitemType%40https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-through-intermediary%2FstringList": {
+          "type": "string"
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-through-intermediary%2Fgeneric%7Cdyn%3DitemType%40https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-through-intermediary%2FnumberList": {
+          "anyOf": [
+            {
+              "type": [
+                "null",
+                "boolean",
+                "number",
+                "string",
+                "array"
+              ]
+            },
+            {
+              "properties": {
+                "list": {
+                  "anyOf": [
+                    {
+                      "type": [
+                        "null",
+                        "boolean",
+                        "number",
+                        "string",
+                        "object"
+                      ]
+                    },
+                    {
+                      "items": {
+                        "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-through-intermediary%252Fgeneric%2523itemType%257Cdyn%253DitemType%2540https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-through-intermediary%252FnumberList"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            }
+          ]
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-through-intermediary%2Fgeneric%7Cdyn%3DitemType%40https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-through-intermediary%2FstringList": {
+          "anyOf": [
+            {
+              "type": [
+                "null",
+                "boolean",
+                "number",
+                "string",
+                "array"
+              ]
+            },
+            {
+              "properties": {
+                "list": {
+                  "anyOf": [
+                    {
+                      "type": [
+                        "null",
+                        "boolean",
+                        "number",
+                        "string",
+                        "object"
+                      ]
+                    },
+                    {
+                      "items": {
+                        "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-through-intermediary%252Fgeneric%2523itemType%257Cdyn%253DitemType%2540https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-through-intermediary%252FstringList"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            }
+          ]
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-through-intermediary%2Fmiddle%7Cdyn%3DitemType%40https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-through-intermediary%2FnumberList": {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-through-intermediary%252Fgeneric%257Cdyn%253DitemType%2540https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-through-intermediary%252FnumberList"
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-through-intermediary%2Fmiddle%7Cdyn%3DitemType%40https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-through-intermediary%2FstringList": {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-through-intermediary%252Fgeneric%257Cdyn%253DitemType%2540https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-through-intermediary%252FstringList"
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-through-intermediary%2FnumberList": {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-through-intermediary%252Fmiddle%257Cdyn%253DitemType%2540https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-through-intermediary%252FnumberList"
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-through-intermediary%2FstringList": {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-through-intermediary%252Fmiddle%257Cdyn%253DitemType%2540https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-through-intermediary%252FstringList"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-through-intermediary%252FnumberList"
+        },
+        {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-through-intermediary%252FstringList"
+        }
+      ]
+    }
+  },
+  {
+    "description": "a $recursiveRef naming anything but `#` is not a recursive reference",
+    "draft": "draft2019-09",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "$id": "https://test.json-schema.org/recursive-ref-not-hash/root",
+      "$recursiveAnchor": true,
+      "$recursiveRef": "#/$defs/inner",
+      "$defs": {
+        "inner": {
+          "type": "string"
+        }
+      }
+    },
+    "kind": "raw",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "$id": "https://test.json-schema.org/recursive-ref-not-hash/root",
+      "$recursiveAnchor": true,
+      "$recursiveRef": "#/$defs/inner",
+      "$defs": {
+        "inner": {
+          "type": "string"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "a $dynamicRef onto an unmodeled target keeps the document raw",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://test.json-schema.org/dynamic-ref-unmodeled/root",
+      "$ref": "#/$defs/use",
+      "$defs": {
+        "target": {
+          "$dynamicAnchor": "n",
+          "anyOf": [
+            {}
+          ],
+          "unevaluatedProperties": false
+        },
+        "use": {
+          "$dynamicRef": "#n"
+        }
+      }
+    },
+    "kind": "raw",
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      }
+    ],
+    "expected": {
+      "$defs": {
+        "target": {
+          "$dynamicAnchor": "n",
+          "anyOf": [
+            {}
+          ],
+          "unevaluatedProperties": false
+        },
+        "use": {
+          "$dynamicRef": "#n"
+        }
+      },
+      "$id": "https://test.json-schema.org/dynamic-ref-unmodeled/root",
+      "$ref": "#/$defs/use",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "$recursiveRef under 2020-12 asserts nothing",
+    "schemas": [
+      {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": {
+          "$recursiveRef": "#"
+        }
+      },
+      {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object"
+      }
+    ],
+    "kind": "multi_type",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    },
+    "tests": [
+      {
+        "data": {
+          "x": "hello"
+        },
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "$recursiveRef beside $ref under 2020-12 asserts nothing",
+    "schemas": [
+      {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$recursiveRef": "#",
+        "$ref": "#/$defs/str",
+        "$defs": {
+          "str": {
+            "type": "string"
+          }
+        }
+      },
+      {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$ref": "#/$defs/str",
+        "$defs": {
+          "str": {
+            "type": "string"
+          }
+        }
+      }
+    ],
+    "kind": "reference",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/$defs/str",
+      "$defs": {
+        "str": {
+          "type": "string"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "an unused $dynamicAnchor does not block the ref-to-false fold",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$dynamicAnchor": "node",
+      "$ref": "#/$defs/x",
+      "$defs": {
+        "x": false
+      }
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "an unused $dynamicAnchor does not specialize definitions",
+    "schemas": [
+      {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$dynamicAnchor": "node",
+        "$ref": "#/$defs/x",
+        "$defs": {
+          "x": {
+            "type": "integer"
+          }
+        }
+      },
+      {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$ref": "#/$defs/x",
+        "$defs": {
+          "x": {
+            "type": "integer"
+          }
+        }
+      }
+    ],
+    "kind": "reference",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/$defs/x",
+      "$defs": {
+        "x": {
+          "type": "integer"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a $recursiveAnchor without a $recursiveRef does not specialize definitions",
+    "schemas": [
+      {
+        "$schema": "https://json-schema.org/draft/2019-09/schema",
+        "$recursiveAnchor": true,
+        "$ref": "#/$defs/x",
+        "$defs": {
+          "x": {
+            "type": "integer"
+          }
+        }
+      },
+      {
+        "$schema": "https://json-schema.org/draft/2019-09/schema",
+        "$ref": "#/$defs/x",
+        "$defs": {
+          "x": {
+            "type": "integer"
+          }
+        }
+      }
+    ],
+    "kind": "reference",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "$ref": "#/$defs/x",
+      "$defs": {
+        "x": {
+          "type": "integer"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  }
+]
