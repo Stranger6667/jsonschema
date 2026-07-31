@@ -665,6 +665,75 @@ mod tests {
         assert!(crate::is_valid(schema, instance));
     }
 
+    #[test_case(crate::Draft::Draft4)]
+    #[test_case(crate::Draft::Draft6)]
+    #[test_case(crate::Draft::Draft7)]
+    #[test_case(crate::Draft::Draft201909)]
+    #[test_case(crate::Draft::Draft202012)]
+    fn size_bounds_past_u64(draft: crate::Draft) {
+        // No collection can reach `2^64`, so a `max*` bound there accepts every instance and a
+        // `min*` bound rejects every one - but every draft must build the schema.
+        const LIMIT: &str = "18446744073709551616";
+        for (keyword, instance) in [
+            ("maxLength", json!("ab")),
+            ("minLength", json!("ab")),
+            ("maxItems", json!([1, 2])),
+            ("minItems", json!([1, 2])),
+            ("maxProperties", json!({"a": 1})),
+            ("minProperties", json!({"a": 1})),
+        ] {
+            let mut cases = vec![
+                (
+                    format!(r#"{{"{keyword}": {LIMIT}}}"#),
+                    keyword.starts_with("max"),
+                ),
+                // The bound sits under `properties/a`, which none of these instances reach.
+                (
+                    format!(r#"{{"properties": {{"a": {{"{keyword}": {LIMIT}}}}}}}"#),
+                    true,
+                ),
+            ];
+            if keyword.ends_with("Items") {
+                // The fused array-shape validator reads the bound on its own.
+                cases.push((
+                    format!(r#"{{"type": "array", "items": {{}}, "{keyword}": {LIMIT}}}"#),
+                    keyword.starts_with("max"),
+                ));
+            }
+            for (schema, expected) in cases {
+                let schema: Value = serde_json::from_str(&schema).expect("Invalid JSON");
+                let validator = crate::options()
+                    .with_draft(draft)
+                    .build(&schema)
+                    .unwrap_or_else(|error| panic!("{schema} does not build: {error}"));
+                assert_eq!(
+                    validator.is_valid(&instance),
+                    expected,
+                    "{schema} against {instance}"
+                );
+            }
+        }
+    }
+
+    #[test_case("-1")]
+    #[test_case("1.5")]
+    #[test_case(r#""x""#)]
+    // `18446744073709551616.0` is indistinguishable from the integer without the raw JSON text.
+    #[cfg_attr(feature = "arbitrary-precision", test_case("18446744073709551616.0"))]
+    fn invalid_size_bounds_still_rejected(limit: &str) {
+        for keyword in ["maxLength", "minItems", "maxProperties"] {
+            let schema: Value = serde_json::from_str(&format!(r#"{{"{keyword}": {limit}}}"#))
+                .expect("Invalid JSON");
+            assert!(
+                crate::options()
+                    .with_draft(crate::Draft::Draft4)
+                    .build(&schema)
+                    .is_err(),
+                "{schema} should not build"
+            );
+        }
+    }
+
     #[test]
     fn required_all_properties() {
         // See: GH-190
