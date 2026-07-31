@@ -1,9 +1,10 @@
-#![allow(clippy::float_cmp, clippy::cast_sign_loss)]
-
 use crate::{
     compiler,
     error::ValidationError,
-    keywords::{helpers::fail_on_non_positive_integer, CompilationResult},
+    keywords::{
+        helpers::{fail_on_non_positive_integer, size_limit},
+        CompilationResult,
+    },
     paths::{LazyLocation, Location, RefTracker},
     validator::{Validate, ValidationContext},
     Json, Node,
@@ -22,22 +23,10 @@ impl MaxLengthValidator {
         schema: &'a Value,
         location: Location,
     ) -> CompilationResult<'a, F> {
-        if let Some(limit) = schema.as_u64() {
-            return Ok(Box::new(MaxLengthValidator { limit, location }));
-        }
-        if ctx.supports_integer_valued_numbers() {
-            if let Some(limit) = schema.as_f64() {
-                if limit.trunc() == limit {
-                    #[allow(clippy::cast_possible_truncation)]
-                    return Ok(Box::new(MaxLengthValidator {
-                        // NOTE: Imprecise cast as big integers are not supported yet
-                        limit: limit as u64,
-                        location,
-                    }));
-                }
-            }
-        }
-        Err(fail_on_non_positive_integer(schema, location))
+        let Some(limit) = size_limit(ctx, schema) else {
+            return Err(fail_on_non_positive_integer(schema, location));
+        };
+        Ok(Box::new(MaxLengthValidator { limit, location }))
     }
 }
 

@@ -150,7 +150,10 @@ pub(crate) fn is_integer<N: jsonschema_value::JsonNumber>(num: &N) -> bool {
     }
     #[cfg(not(feature = "arbitrary-precision"))]
     {
-        false
+        // Without the raw text, a number past `i64`/`u64` is an `f64` - and every `f64` of that
+        // magnitude is an exact integer, so there is no decimal point left to be strict about.
+        num.as_f64()
+            .is_some_and(|value| value.abs() >= crate::canonical::json::I64_UPPER_EXCLUSIVE_F64)
     }
 }
 

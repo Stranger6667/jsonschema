@@ -16,6 +16,7 @@
 
 ### Fixed
 
+- Draft 4 rejecting a size bound at or past `2^64`, such as `{"maxItems": 18446744073709551616}`.
 - An integer past the `f64` range admitted by a fractional bound it exceeds, such as `1e400` under `{"exclusiveMaximum": 0.1}`.
 - A `$ref` at the root of an `$id`-bearing subresource dropped as a self-reference when its pointer matched the one that reached that subresource.
 - Canonicalization reusing one definition's body for a same-named definition in another resource, when the name spells a canonical URI.
