@@ -4,12 +4,10 @@ use crate::{
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
-    types::{JsonType, JsonTypeSet},
     validator::{Validate, ValidationContext},
     Array, Json, Node, SerdeJson,
 };
 use serde_json::{Map, Value};
-use std::borrow::Cow;
 
 pub(crate) struct AdditionalItemsObjectValidator<F: Json = SerdeJson> {
     node: SchemaNode<F>,
@@ -135,11 +133,6 @@ pub(crate) fn compile<'a, F: Json>(
 ) -> Option<CompilationResult<'a, F>> {
     if let Some(items) = parent.get("items") {
         match items {
-            // `additionalItems` describes the elements past an array-form `items` tuple. Any other
-            // `items` is a schema covering every element, so there is no tail and the spec says to
-            // ignore the keyword — including `items: false`, where the tail is empty rather than
-            // forbidden, and non-arrays are not this keyword's business at all.
-            Value::Object(_) | Value::Bool(_) => None,
             Value::Array(items) => {
                 let kctx = ctx.new_at_location("additionalItems");
                 let items_count = items.len();
@@ -156,18 +149,12 @@ pub(crate) fn compile<'a, F: Json>(
                     _ => None,
                 }
             }
-            _ => {
-                let location = ctx.location().join("additionalItems");
-                Some(Err(ValidationError::multiple_type_error(
-                    location.clone(),
-                    location,
-                    Location::new(),
-                    Cow::Borrowed(schema),
-                    JsonTypeSet::from(JsonType::Object)
-                        .insert(JsonType::Array)
-                        .insert(JsonType::Boolean),
-                )))
-            }
+            // `additionalItems` describes the elements past an array-form `items` tuple. Any other
+            // `items` value leaves no tail, so the keyword is ignored: a schema (object or boolean)
+            // covers every element — including `items: false`, where the tail is empty rather than
+            // forbidden — and an invalid `items` value is itself ignored. Non-arrays are not this
+            // keyword's business at all.
+            _ => None,
         }
     } else {
         None
@@ -205,6 +192,31 @@ mod tests {
                 "{draft:?} rejected {instance}"
             );
         }
+    }
+
+    // A non-array `items` value leaves no tuple tail either, so `additionalItems` beside it is
+    // ignored just like the invalid `items` itself. Only a registry resource can carry such a
+    // pair, since top-level builds are meta-validated.
+    #[test_case(&json!(42))]
+    #[test_case(&json!("items"))]
+    #[test_case(&json!(null))]
+    fn non_array_items_makes_additional_items_inert(items: &Value) {
+        let resource = json!({
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "additionalItems": {"type": "string"},
+            "items": items,
+        });
+        let registry = crate::Registry::new()
+            .add("https://example.com/tail", &resource)
+            .expect("resource accepted")
+            .prepare()
+            .expect("registry build failed");
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(&json!({"$ref": "https://example.com/tail"}))
+            .expect("Invalid schema");
+        assert!(validator.is_valid(&json!([1, 2])));
+        assert!(validator.is_valid(&json!(null)));
     }
 
     // `items: false` still forbids every element, with or without `additionalItems` beside it.
