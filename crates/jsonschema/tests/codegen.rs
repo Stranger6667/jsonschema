@@ -1184,6 +1184,18 @@ struct UnevalItemsTupleValidator;
 )]
 struct UnevalItemsTupleAdditionalValidator;
 
+// Array-form `items` is not a valid 2020-12 keyword value, so it reaches compilation only where
+// the meta-schema does not look: under an unknown keyword reached by `$ref`.
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":"#/tuple","tuple":{"type":"array","items":[{"type":"integer"}],"unevaluatedItems":false}}"##
+)]
+struct UnevalItems202012TupleValidator;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":"#/tuple","tuple":{"type":"array","items":[{"type":"integer"}],"additionalItems":{"type":"string"},"unevaluatedItems":false}}"##
+)]
+struct UnevalItems202012TupleAdditionalValidator;
+
 #[jsonschema::validator(
     schema = r#"{"type":"array","prefixItems":[{}],"unevaluatedItems":{"type":"integer"}}"#
 )]
@@ -2055,6 +2067,27 @@ uneval_differential!(
     test_uneval_items_tuple_additional,
     UnevalItemsTupleAdditionalValidator,
     r#"{"$schema":"https://json-schema.org/draft/2019-09/schema","type":"array","items":[{"type":"integer"}],"additionalItems":{"type":"string"},"unevaluatedItems":false}"#,
+    [
+        serde_json::json!([1]),
+        serde_json::json!([1, "s"]),
+        serde_json::json!([1, 2])
+    ]
+);
+uneval_differential!(
+    test_uneval_items_2020_12_tuple,
+    UnevalItems202012TupleValidator,
+    r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":"#/tuple","tuple":{"type":"array","items":[{"type":"integer"}],"unevaluatedItems":false}}"##,
+    [
+        serde_json::json!([1]),
+        serde_json::json!([1, "s"]),
+        serde_json::json!(["s"]),
+        serde_json::json!([])
+    ]
+);
+uneval_differential!(
+    test_uneval_items_2020_12_tuple_additional,
+    UnevalItems202012TupleAdditionalValidator,
+    r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":"#/tuple","tuple":{"type":"array","items":[{"type":"integer"}],"additionalItems":{"type":"string"},"unevaluatedItems":false}}"##,
     [
         serde_json::json!([1]),
         serde_json::json!([1, "s"]),

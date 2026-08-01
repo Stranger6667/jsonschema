@@ -42,10 +42,10 @@ pub(crate) struct ItemsValidators<F: Json = SerdeJson> {
     dynamic_ref: Option<PendingItemsValidators<F>>,
     /// Validators from "$recursiveRef" keyword (Draft 2019-09 only)
     recursive_ref: Option<PendingItemsValidators<F>>,
-    /// Items limit - for Draft 2019-09 "items" keyword behavior
+    /// Items limit - for array-form "items", and for schema-form "items" before Draft 2020-12
     /// If present, marks first N items as evaluated
     items_limit: Option<usize>,
-    /// Items schema present - for Draft 2020-12+ "items" keyword
+    /// Items schema present - for schema-form "items" from Draft 2020-12 on
     /// If true, marks ALL items as evaluated
     items_all: bool,
     /// Prefix items count - from "prefixItems" keyword
@@ -191,7 +191,7 @@ impl<F: Json> ItemsValidators<F> {
 
         // Mark items based on items/prefixItems keywords
         if let Some(limit) = self.items_limit {
-            // Draft 2019-09: items (as array) marks first N items
+            // Array-form items marks the first N items
             for idx in indexes.iter_mut().take(limit) {
                 *idx = true;
             }
@@ -526,18 +526,22 @@ fn compile_items<'a, F: Json>(
     parent: &'a Map<String, Value>,
 ) -> Result<(Option<usize>, bool), ValidationError<'a>> {
     if let Some(subschema) = parent.get("items") {
-        if ctx.draft() == Draft::Draft201909
+        if let Some(tuple) = subschema.as_array() {
+            // Array-form `items` compiles as a tuple under every draft, so it evaluates only the
+            // prefix; `additionalItems` dispatches under every draft too and covers the tail.
+            let limit = if parent.contains_key("additionalItems") {
+                usize::MAX
+            } else {
+                tuple.len()
+            };
+            Ok((Some(limit), false))
+        } else if ctx.draft() == Draft::Draft201909
             || ctx.draft() == Draft::Draft7
             || ctx.draft() == Draft::Draft6
             || ctx.draft() == Draft::Draft4
         {
-            // Older drafts: items can be array or object
-            let limit = if parent.contains_key("additionalItems") || subschema.is_object() {
-                usize::MAX
-            } else {
-                subschema.as_array().map_or(usize::MAX, std::vec::Vec::len)
-            };
-            Ok((Some(limit), false))
+            // Older drafts: schema-form items applies to all items
+            Ok((Some(usize::MAX), false))
         } else {
             // Draft 2020-12+: items is always a schema that applies to all items
             Ok((None, true))
@@ -861,6 +865,48 @@ mod tests {
             .build(&json!({"prefixItems": [{"type": "integer"}], "unevaluatedItems": false}))
             .expect("schema compiles");
         assert_eq!(validator.is_valid(instance), expected);
+    }
+
+    // Array-form `items` is not a valid 2020-12 keyword value, so it reaches compilation only
+    // where the meta-schema does not look: under an unknown keyword reached by `$ref`.
+    fn build_2020_12_tuple_subschema(subschema: &Value) -> crate::Validator {
+        crate::options()
+            .build(&json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$ref": "#/tuple",
+                "tuple": subschema
+            }))
+            .expect("schema compiles")
+    }
+
+    #[test_case(&json!([1]), true; "tuple prefix satisfied")]
+    #[test_case(&json!(["x"]), false; "tuple prefix violated")]
+    #[test_case(&json!([1, "x"]), false; "index past the tuple prefix is unevaluated")]
+    fn array_items_evaluate_only_the_tuple_prefix_in_2020_12(instance: &Value, expected: bool) {
+        let validator = build_2020_12_tuple_subschema(&json!({
+            "items": [{"type": "integer"}],
+            "unevaluatedItems": false
+        }));
+        if expected {
+            crate::tests_util::is_valid_with(&validator, instance);
+        } else {
+            crate::tests_util::is_not_valid_with(&validator, instance);
+        }
+    }
+
+    #[test_case(&json!([1, "x"]), true; "tail covered by additionalItems")]
+    #[test_case(&json!([1, 2]), false; "tail rejected by additionalItems")]
+    fn additional_items_evaluates_the_tuple_tail_in_2020_12(instance: &Value, expected: bool) {
+        let validator = build_2020_12_tuple_subschema(&json!({
+            "items": [{"type": "integer"}],
+            "additionalItems": {"type": "string"},
+            "unevaluatedItems": false
+        }));
+        if expected {
+            crate::tests_util::is_valid_with(&validator, instance);
+        } else {
+            crate::tests_util::is_not_valid_with(&validator, instance);
+        }
     }
 
     #[test]

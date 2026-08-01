@@ -1,6 +1,5 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use referencing::Draft;
 use serde_json::{Map, Value};
 
 use crate::context::CompileContext;
@@ -629,17 +628,12 @@ pub(crate) fn compile_index_evaluated_expr(
 
     if applicator_vocab_enabled {
         if let Some(items_schema) = schema.get("items") {
-            match (ctx.draft, items_schema) {
-                (Draft::Draft202012 | Draft::Unknown, _) => {
-                    parts.push(quote! { true });
-                }
-                (_, Value::Array(tuple)) => {
-                    if schema.contains_key("additionalItems") {
-                        parts.push(quote! { true });
-                    } else {
-                        let tuple_len = tuple.len();
-                        parts.push(quote! { idx < #tuple_len });
-                    }
+            match items_schema {
+                // Array-form `items` compiles as a tuple under every draft, so it evaluates only
+                // the prefix; `additionalItems` compiles under every draft too and covers the tail.
+                Value::Array(tuple) if !schema.contains_key("additionalItems") => {
+                    let tuple_len = tuple.len();
+                    parts.push(quote! { idx < #tuple_len });
                 }
                 _ => {
                     parts.push(quote! { true });

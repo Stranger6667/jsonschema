@@ -22,6 +22,7 @@
 - A `$ref` at the root of an `$id`-bearing subresource dropped as a self-reference when its pointer matched the one that reached that subresource.
 - Canonicalization reusing one definition's body for a same-named definition in another resource, when the name spells a canonical URI.
 - `unevaluatedItems` counting `prefixItems` as evaluating elements before Draft 2020-12, where it is not a keyword.
+- `unevaluatedItems` counting an array-form `items` as evaluating every element under Draft 2020-12, where it evaluates only its prefix.
 
 ### Performance
 

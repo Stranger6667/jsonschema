@@ -16,7 +16,7 @@ pub(crate) fn compile(
 
 fn compile_plain(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledExpr {
     if let Value::Array(schemas) = value {
-        // Tuple validation (draft <= 2019-09 only)
+        // Tuple validation
         let compiled: Vec<CompiledExpr> = schemas
             .iter()
             .enumerate()
