@@ -16,6 +16,7 @@
 
 ### Fixed
 
+- `additionalItems` values that are not schemas silently ignored beside an array-form `items` (they should fail the build like `additionalProperties`).
 - `additionalItems` beside a boolean `items` rejecting every instance, such as `{"additionalItems": false, "items": false}`.
 - `additionalItems` beside a non-array `items` value failing schema compilation with an error blaming `additionalItems` (the keyword should be ignored).
 - Draft 4 rejecting a size bound at or past `2^64`, such as `{"maxItems": 18446744073709551616}`.

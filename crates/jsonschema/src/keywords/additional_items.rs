@@ -4,10 +4,12 @@ use crate::{
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
+    types::{JsonType, JsonTypeSet},
     validator::{Validate, ValidationContext},
     Array, Json, Node, SerdeJson,
 };
 use serde_json::{Map, Value};
+use std::borrow::Cow;
 
 pub(crate) struct AdditionalItemsObjectValidator<F: Json = SerdeJson> {
     node: SchemaNode<F>,
@@ -146,7 +148,18 @@ pub(crate) fn compile<'a, F: Json>(
                         items_count,
                         kctx.location().clone(),
                     )),
-                    _ => None,
+                    Value::Bool(true) => None,
+                    // Anything else is not a schema; fail the build like `additionalProperties`.
+                    _ => {
+                        let location = kctx.location().clone();
+                        Some(Err(ValidationError::multiple_type_error(
+                            location.clone(),
+                            location,
+                            Location::new(),
+                            Cow::Borrowed(schema),
+                            JsonTypeSet::from(JsonType::Object).insert(JsonType::Boolean),
+                        )))
+                    }
                 }
             }
             // `additionalItems` describes the elements past an array-form `items` tuple. Any other
@@ -217,6 +230,34 @@ mod tests {
             .expect("Invalid schema");
         assert!(validator.is_valid(&json!([1, 2])));
         assert!(validator.is_valid(&json!(null)));
+    }
+
+    // A non-schema `additionalItems` beside an array-form `items` fails the build, like
+    // `additionalProperties` does. Only a registry resource can carry such a value, since
+    // top-level builds are meta-validated.
+    #[test_case(&json!("false"); "string")]
+    #[test_case(&json!(5); "number")]
+    #[test_case(&json!(null); "null")]
+    #[test_case(&json!([false]); "array")]
+    fn non_schema_additional_items_fails_compilation(value: &Value) {
+        let resource = json!({
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "items": [{"type": "integer"}],
+            "additionalItems": value,
+        });
+        let registry = crate::Registry::new()
+            .add("https://example.com/tail", &resource)
+            .expect("resource accepted")
+            .prepare()
+            .expect("registry build failed");
+        let error = crate::options()
+            .with_registry(&registry)
+            .build(&json!({"$ref": "https://example.com/tail"}))
+            .expect_err("Should fail to build");
+        assert_eq!(
+            error.to_string(),
+            format!("{value} is not of types \"boolean\", \"object\"")
+        );
     }
 
     // `items: false` still forbids every element, with or without `additionalItems` beside it.

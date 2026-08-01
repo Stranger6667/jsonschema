@@ -16,6 +16,7 @@
 
 ### Fixed
 
+- `additionalItems` values that are not schemas silently ignored beside an array-form `items` (they should fail the build like `additionalProperties`).
 - `additionalItems` beside a boolean `items` rejecting every instance, such as `{"additionalItems": false, "items": false}`.
 - Draft 4 rejecting a size bound at or past `2^64`, such as `{"maxItems": 18446744073709551616}`.
 - An integer past the `f64` range admitted by a fractional bound it exceeds, such as `1e400` under `{"exclusiveMaximum": 0.1}`.
