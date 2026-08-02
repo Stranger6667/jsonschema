@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- An integer past `i64` admitted by a fractional bound `f64` rounds it onto, such as `-10000000000000000000000000` under `{"maximum": -10000000000000000000000000.1}`.
+
 ## [0.49.3] - 2026-08-02
 
 ### Added

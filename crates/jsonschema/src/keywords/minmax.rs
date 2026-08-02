@@ -251,12 +251,13 @@ pub(crate) mod bigint_validators {
                             $u64_cmp(v, &self.limit)
                         } else if let Some(v) = item.as_i64() {
                             $i64_cmp(v, &self.limit)
+                        } else if let Some(instance_bigint) = numeric::bignum::try_parse_bigint(&item.to_number()) {
+                            // An integer past i64 is exact as a BigInt, while f64 rounds it onto
+                            // limits only a fractional digit separates it from.
+                            BigFraction::from(instance_bigint) $bigfrac_op self.limit
                         } else if let Some(v) = item.as_f64() {
                             // Scientific notation or other f64-representable numbers
                             $f64_cmp(v, &self.limit)
-                        } else if let Some(instance_bigint) = numeric::bignum::try_parse_bigint(&item.to_number()) {
-                            // An integer past the f64 range (e.g. 1e400) is still exact as a BigInt.
-                            BigFraction::from(instance_bigint) $bigfrac_op self.limit
                         } else {
                             // Extreme scientific notation beyond f64 range (e.g., 1e2000000)
                             // These are not supported for comparison - treat as always valid
@@ -595,6 +596,8 @@ mod tests {
     #[test_case(r#"{"maximum": 18446744073709551615}"#, r"18446744073709551616"; "maximum invalid just above u64_max limit")]
     #[test_case(r#"{"minimum": 1e2000000}"#, r"18446744073709551616"; "bigint instance below infinity minimum")]
     #[test_case(r#"{"maximum": -1e2000000}"#, r"-9223372036854775809"; "bigint instance above negative infinity maximum")]
+    #[test_case(r#"{"maximum": -10000000000000000000000000.1}"#, r"-10000000000000000000000000"; "bigint instance above a fractional maximum f64 rounds onto it")]
+    #[test_case(r#"{"minimum": 10000000000000000000000000.1}"#, r"10000000000000000000000000"; "bigint instance below a fractional minimum f64 rounds onto it")]
     fn is_not_valid_arbitrary_precision(schema_json: &str, instance_json: &str) {
         let schema = parse_json(schema_json);
         let instance = parse_json(instance_json);

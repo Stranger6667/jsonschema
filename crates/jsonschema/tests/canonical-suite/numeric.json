@@ -1222,5 +1222,37 @@
       ],
       "type": "integer"
     }
+  },
+  {
+    "description": "an integer past i64 sits below a bound only its fractional digit separates",
+    "schema": {
+      "allOf": [
+        { "const": -10000000000000000000000000 },
+        { "type": "number", "maximum": -10000000000000000000000000.1 }
+      ]
+    },
+    "expected": {
+      "allOf": [
+        { "const": -1e25 },
+        { "maximum": -1e25, "type": "number" }
+      ]
+    },
+    "expected_arbitrary_precision": { "$schema": "https://json-schema.org/draft/2020-12/schema", "not": {} }
+  },
+  {
+    "description": "a divisor snapping an excluded end past i64 leaves the constant nothing",
+    "schema": {
+      "allOf": [
+        { "const": -10000000000000000000000000 },
+        { "type": "number", "exclusiveMaximum": -10000000000000000000000000, "multipleOf": 0.1 }
+      ]
+    },
+    "expected": {
+      "allOf": [
+        { "const": -1e25 },
+        { "exclusiveMaximum": -1e25, "multipleOf": 0.1, "type": "number" }
+      ]
+    },
+    "expected_arbitrary_precision": { "$schema": "https://json-schema.org/draft/2020-12/schema", "not": {} }
   }
 ]
