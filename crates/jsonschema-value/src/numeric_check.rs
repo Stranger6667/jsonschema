@@ -164,16 +164,8 @@ fn check_bigfrac_bound(op: BoundOp, limit: &fraction::BigFraction, value: &Numbe
         };
     }
 
-    if let Some(v) = value.as_f64() {
-        return match op {
-            BoundOp::Lt => numeric::bignum::f64_lt_bigfrac(v, limit),
-            BoundOp::Lte => numeric::bignum::f64_le_bigfrac(v, limit),
-            BoundOp::Gt => numeric::bignum::f64_gt_bigfrac(v, limit),
-            BoundOp::Gte => numeric::bignum::f64_ge_bigfrac(v, limit),
-        };
-    }
-
-    // An integer past the f64 range is exact as a BigInt, e.g. `1e400` against `0.1`.
+    // An integer past i64 is exact as a BigInt, while `f64` rounds it onto limits a fractional
+    // digit separates it from, e.g. `-10000000000000000000000000` against the same with `.1`.
     if let Some(instance_bigint) = numeric::bignum::try_parse_bigint(value) {
         let instance_frac = fraction::BigFraction::from(instance_bigint);
         return match op {
@@ -181,6 +173,15 @@ fn check_bigfrac_bound(op: BoundOp, limit: &fraction::BigFraction, value: &Numbe
             BoundOp::Lte => instance_frac <= *limit,
             BoundOp::Gt => instance_frac > *limit,
             BoundOp::Gte => instance_frac >= *limit,
+        };
+    }
+
+    if let Some(v) = value.as_f64() {
+        return match op {
+            BoundOp::Lt => numeric::bignum::f64_lt_bigfrac(v, limit),
+            BoundOp::Lte => numeric::bignum::f64_le_bigfrac(v, limit),
+            BoundOp::Gt => numeric::bignum::f64_gt_bigfrac(v, limit),
+            BoundOp::Gte => numeric::bignum::f64_ge_bigfrac(v, limit),
         };
     }
 
