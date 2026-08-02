@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.49.3] - 2026-08-02
+
 ### Added
 
 - Canonicalization of a recursive schema with no finite witness, which now folds to `false`.
@@ -260,7 +262,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.2...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.3...HEAD
+[0.49.3]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.2...ruby-v0.49.3
 [0.49.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.1...ruby-v0.49.2
 [0.49.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.0...ruby-v0.49.1
 [0.49.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.48.5...ruby-v0.49.0
