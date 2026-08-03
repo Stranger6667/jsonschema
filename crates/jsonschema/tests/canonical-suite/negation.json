@@ -2304,5 +2304,75 @@
         "valid": false
       }
     ]
+  },
+  {
+    "description": "`not` an existential demand, where an array fails it exactly when no element matches",
+    "schema": {
+      "not": {
+        "type": "array",
+        "contains": {
+          "type": "string"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "object"
+          ]
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": [
+              "null",
+              "boolean",
+              "number",
+              "array",
+              "object"
+            ]
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": [],
+        "valid": true
+      },
+      {
+        "data": [
+          "a"
+        ],
+        "valid": false
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1,
+          "a"
+        ],
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
   }
 ]
