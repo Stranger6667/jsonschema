@@ -24,13 +24,23 @@ impl BoundOp {
     }
 }
 
-// Codegen inlines every u64/i64-representable bound and only routes limits with no `as_u64`/`as_i64`
-// representation through `compile_bound`, so no integer variant is ever constructed.
+// An `f64` limit is exact only up to 2^53, so an integer limit keeps its own width and compares
+// against the instance in exact arithmetic.
 #[derive(Clone, Debug, PartialEq)]
 pub enum CompiledBound {
     F64 {
         op: BoundOp,
         limit: f64,
+    },
+    #[cfg(not(feature = "arbitrary-precision"))]
+    I64 {
+        op: BoundOp,
+        limit: i64,
+    },
+    #[cfg(not(feature = "arbitrary-precision"))]
+    U64 {
+        op: BoundOp,
+        limit: u64,
     },
     #[cfg(feature = "arbitrary-precision")]
     BigInt {
@@ -201,6 +211,16 @@ pub fn compile_bound(op: BoundOp, limit: &Number) -> CompiledBound {
         }
     }
 
+    #[cfg(not(feature = "arbitrary-precision"))]
+    {
+        if let Some(value) = limit.as_i64() {
+            return CompiledBound::I64 { op, limit: value };
+        }
+        if let Some(value) = limit.as_u64() {
+            return CompiledBound::U64 { op, limit: value };
+        }
+    }
+
     if let Some(value) = limit.as_f64() {
         return CompiledBound::F64 { op, limit: value };
     }
@@ -224,6 +244,10 @@ pub fn compile_bound(op: BoundOp, limit: &Number) -> CompiledBound {
 pub fn check_bound(compiled: &CompiledBound, value: &Number) -> bool {
     match compiled {
         CompiledBound::F64 { op, limit } => check_primitive_bound(*op, value, *limit),
+        #[cfg(not(feature = "arbitrary-precision"))]
+        CompiledBound::I64 { op, limit } => check_primitive_bound(*op, value, *limit),
+        #[cfg(not(feature = "arbitrary-precision"))]
+        CompiledBound::U64 { op, limit } => check_primitive_bound(*op, value, *limit),
         #[cfg(feature = "arbitrary-precision")]
         CompiledBound::BigInt { op, limit } => check_bigint_bound(*op, limit, value),
         #[cfg(feature = "arbitrary-precision")]
