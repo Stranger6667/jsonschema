@@ -7,7 +7,7 @@ use jsonschema::{
 use serde_json::{json, Map, Number, Value};
 use test_case::test_case;
 
-#[test_case(&json!({"anyOf": [{}], "unevaluatedProperties": false}); "unevaluated properties beside an applicator")]
+#[test_case(&json!({"if": {}, "unevaluatedProperties": false}); "unevaluated properties beside an applicator")]
 fn unmodeled_document_round_trips_verbatim(schema: &Value) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     assert_eq!(&canonical.to_json_schema(), schema);
@@ -489,7 +489,7 @@ fn a_definition_name_spelling_a_canonical_uri_does_not_alias_a_registry_resource
 fn unsupported_reference_target_keeps_the_whole_document_raw() {
     let schema = json!({
         "$ref": "#/$defs/value",
-        "$defs": {"value": {"anyOf": [{}], "unevaluatedProperties": false}}
+        "$defs": {"value": {"if": {}, "unevaluatedProperties": false}}
     });
     let canonical = canonicalize(&schema).expect("canonicalizes");
 
@@ -717,10 +717,10 @@ fn unmodeled_documents_hash_by_document_identity() {
             .expect("canonicalizes")
     };
     let integer = canonical(
-        r#"{"anyOf": [{}], "unevaluatedProperties": {"enum": [1, null, true, "x", [2], {"b": 3}]}}"#,
+        r#"{"if": {}, "unevaluatedProperties": {"enum": [1, null, true, "x", [2], {"b": 3}]}}"#,
     );
     let float = canonical(
-        r#"{"anyOf": [{}], "unevaluatedProperties": {"enum": [1.0, null, true, "x", [2], {"b": 3}]}}"#,
+        r#"{"if": {}, "unevaluatedProperties": {"enum": [1.0, null, true, "x", [2], {"b": 3}]}}"#,
     );
     assert_eq!(integer.kind(), CanonicalKind::Raw);
     let distinct: HashSet<CanonicalSchema> =
@@ -876,7 +876,7 @@ fn error_display(schema: &Value, message: &str) {
 #[test_case(&json!(false), CanonicalKind::False, "false"; "boolean false")]
 #[test_case(&json!({"type": "integer", "minimum": 0}), CanonicalKind::Integer, "integer"; "integer_leaf")]
 #[test_case(&json!({"type": "number", "minimum": 0}), CanonicalKind::Number, "number"; "number_leaf")]
-#[test_case(&json!({"anyOf": [{}], "unevaluatedProperties": false}), CanonicalKind::Raw, "raw"; "raw")]
+#[test_case(&json!({"if": {}, "unevaluatedProperties": false}), CanonicalKind::Raw, "raw"; "raw")]
 fn kind_reports_its_label(schema: &Value, kind: CanonicalKind, label: &str) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     assert_eq!(canonical.kind(), kind);
@@ -997,7 +997,7 @@ fn deeply_nested_document_round_trips() {
     let mut schema = json!({"type": "string"});
     for _ in 0..300 {
         let mut map = Map::new();
-        map.insert("anyOf".to_string(), json!([{}]));
+        map.insert("if".to_string(), json!({}));
         map.insert("unevaluatedProperties".to_string(), schema);
         schema = Value::Object(map);
     }
@@ -1131,15 +1131,15 @@ fn canonical_schema_ordering() {
     assert!(two > one);
 
     let raw = |text: &str| canonicalize(&serde_json::from_str(text).unwrap()).unwrap();
-    let raw_one = raw(r#"{"anyOf":[{}],"unevaluatedProperties":{"const":1}}"#);
-    let raw_two = raw(r#"{"anyOf":[{}],"unevaluatedProperties":{"const":2}}"#);
+    let raw_one = raw(r#"{"if":{},"unevaluatedProperties":{"const":1}}"#);
+    let raw_two = raw(r#"{"if":{},"unevaluatedProperties":{"const":2}}"#);
     assert_eq!(raw_one.partial_cmp(&raw_two), Some(Ordering::Less));
     assert!(raw_one < raw_two);
 
     #[cfg(feature = "arbitrary-precision")]
     assert!(
-        raw(r#"{"anyOf":[{}],"unevaluatedProperties":{"const":1e400}}"#)
-            < raw(r#"{"anyOf":[{}],"unevaluatedProperties":{"const":2e400}}"#)
+        raw(r#"{"if":{},"unevaluatedProperties":{"const":1e400}}"#)
+            < raw(r#"{"if":{},"unevaluatedProperties":{"const":2e400}}"#)
     );
 }
 

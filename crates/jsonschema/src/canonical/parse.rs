@@ -1247,6 +1247,24 @@ fn finite_pattern_keys(pattern: &str) -> Option<Vec<Arc<str>>> {
 /// In-place applicators whose annotations depend on which branch the instance matched. `allOf` is
 /// absent: every branch must pass, so [`property_cover`] can read its contribution off the document.
 /// `not` is absent too: it succeeds only when its subschema fails, and a failure annotates nothing.
+/// Whether an in-place applicator sits here that no cover reads. `anyOf`/`oneOf` are absent because
+/// the cover handles them, taking their branches only when those agree.
+fn has_unresolved_applicator(map: &serde_json::Map<String, Value>) -> bool {
+    map.keys().any(|key| {
+        matches!(
+            key.as_str(),
+            "$dynamicRef"
+                | "$recursiveRef"
+                | "$ref"
+                | "dependencies"
+                | "dependentSchemas"
+                | "else"
+                | "if"
+                | "then"
+        )
+    })
+}
+
 fn has_instance_dependent_applicator(map: &serde_json::Map<String, Value>) -> bool {
     map.keys().any(|key| {
         matches!(
@@ -1265,13 +1283,29 @@ fn has_instance_dependent_applicator(map: &serde_json::Map<String, Value>) -> bo
     })
 }
 
-/// The keys an `allOf` tree evaluates beside an `unevaluatedProperties`.
-#[derive(Default)]
+/// The keys an in-place applicator evaluates beside an `unevaluatedProperties`.
+#[derive(Default, PartialEq, Eq)]
 struct PropertyCover {
     /// A branch reaches every key, leaving the `unevaluatedProperties` inert.
     everything: bool,
     keys: Vec<String>,
     patterns: Vec<String>,
+}
+
+impl PropertyCover {
+    /// Spell one cover one way, so two of them compare by what they reach.
+    fn normalize(&mut self) {
+        for names in [&mut self.keys, &mut self.patterns] {
+            names.sort();
+            names.dedup();
+        }
+    }
+
+    fn absorb(&mut self, other: Self) {
+        self.everything |= other.everything;
+        self.keys.extend(other.keys);
+        self.patterns.extend(other.patterns);
+    }
 }
 
 /// Name each covered key and pattern here as a vacuous entry, so the `additional*` twin skips it.
@@ -1325,13 +1359,20 @@ fn property_cover(branch: &Value, cover: &mut PropertyCover) -> Option<()> {
     Some(())
 }
 
-/// The indexes an `allOf` tree evaluates beside an `unevaluatedItems`.
-#[derive(Default)]
+/// The indexes an in-place applicator evaluates beside an `unevaluatedItems`.
+#[derive(Default, PartialEq, Eq)]
 struct ItemCover {
     /// A branch reaches every index, leaving the `unevaluatedItems` inert.
     everything: bool,
     /// The longest tuple prefix any branch evaluates.
     prefix: usize,
+}
+
+impl ItemCover {
+    fn absorb(&mut self, other: &Self) {
+        self.everything |= other.everything;
+        self.prefix = self.prefix.max(other.prefix);
+    }
 }
 
 /// Extend the local tuple so the tail keyword starts past every index the branches evaluate; the
@@ -1400,6 +1441,68 @@ fn item_cover(branch: &Value, draft: Draft, cover: &mut ItemCover) -> Option<()>
     Some(())
 }
 
+/// The keys the in-place applicators beside an `unevaluatedProperties` evaluate. Every `allOf`
+/// branch succeeds, so their covers add up; alternatives pin one only when each branch reaches the
+/// same keys, since otherwise which branch matched decides what is left over.
+fn sibling_property_cover(map: &serde_json::Map<String, Value>) -> Option<PropertyCover> {
+    let mut cover = PropertyCover::default();
+    if let Some(Value::Array(branches)) = map.get("allOf") {
+        for branch in branches {
+            property_cover(branch, &mut cover)?;
+        }
+    }
+    for keyword in ["anyOf", "oneOf"] {
+        let Some(Value::Array(branches)) = map.get(keyword) else {
+            continue;
+        };
+        let mut agreed: Option<PropertyCover> = None;
+        for branch in branches {
+            let mut reached = PropertyCover::default();
+            property_cover(branch, &mut reached)?;
+            reached.normalize();
+            match &agreed {
+                Some(first) if *first != reached => return None,
+                Some(_) => {}
+                None => agreed = Some(reached),
+            }
+        }
+        if let Some(agreed) = agreed {
+            cover.absorb(agreed);
+        }
+    }
+    Some(cover)
+}
+
+/// The indexes the in-place applicators beside an `unevaluatedItems` evaluate, on the same terms as
+/// the key cover.
+fn sibling_item_cover(map: &serde_json::Map<String, Value>, draft: Draft) -> Option<ItemCover> {
+    let mut cover = ItemCover::default();
+    if let Some(Value::Array(branches)) = map.get("allOf") {
+        for branch in branches {
+            item_cover(branch, draft, &mut cover)?;
+        }
+    }
+    for keyword in ["anyOf", "oneOf"] {
+        let Some(Value::Array(branches)) = map.get(keyword) else {
+            continue;
+        };
+        let mut agreed: Option<ItemCover> = None;
+        for branch in branches {
+            let mut reached = ItemCover::default();
+            item_cover(branch, draft, &mut reached)?;
+            match &agreed {
+                Some(first) if *first != reached => return None,
+                Some(_) => {}
+                None => agreed = Some(reached),
+            }
+        }
+        if let Some(agreed) = &agreed {
+            cover.absorb(agreed);
+        }
+    }
+    Some(cover)
+}
+
 /// Whether this object asserts an `unevaluated*` keyword. Both enter the vocabulary in the same
 /// draft, so one `is_known_keyword` answer covers the pair.
 fn has_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> bool {
@@ -1411,7 +1514,7 @@ fn has_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> bool {
 /// beside it, `unevaluated*` sees exactly the keys or indices its twin sees; a live twin already
 /// evaluates all of them, leaving it inert and dropped. `None` keeps the document raw.
 fn degrade_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> Option<Value> {
-    if has_instance_dependent_applicator(map) {
+    if has_unresolved_applicator(map) {
         return None;
     }
     let mut degraded = map.clone();
@@ -1423,16 +1526,9 @@ fn degrade_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> Op
     {
         // Naming a covered key here is all `additionalProperties` needs to skip it; the branch
         // that named it still carries the constraint.
-        if let Some(Value::Array(branches)) = map.get("allOf") {
-            let mut cover = PropertyCover::default();
-            for branch in branches {
-                property_cover(branch, &mut cover)?;
-            }
-            if !cover.everything {
-                hoist_cover(&mut degraded, &cover);
-                degraded.insert("additionalProperties".to_string(), value);
-            }
-        } else {
+        let cover = sibling_property_cover(map)?;
+        if !cover.everything {
+            hoist_cover(&mut degraded, &cover);
             degraded.insert("additionalProperties".to_string(), value);
         }
     }
@@ -1456,12 +1552,7 @@ fn degrade_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> Op
             }
             None => value,
         };
-        let mut cover = ItemCover::default();
-        if let Some(Value::Array(branches)) = map.get("allOf") {
-            for branch in branches {
-                item_cover(branch, draft, &mut cover)?;
-            }
-        }
+        let cover = sibling_item_cover(map, draft)?;
         if !cover.everything {
             // A tuple's tail is `additionalItems` before 2020-12 and schema-form `items` in it,
             // where the tuple itself is `prefixItems`. A schema-form `items` already reaches every
