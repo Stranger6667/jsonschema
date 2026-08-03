@@ -4,6 +4,7 @@
 
 ### Added
 
+- Canonicalization of `not` a string value set, which the string leaf carries as excluded values.
 - Canonicalization of `unevaluatedItems` beside `contains`, where the elements it matches are evaluated and the tail admits either.
 - Canonicalization of `unevaluated*` beside `anyOf` or `oneOf`, where every branch evaluating the same keys or indexes pins what is left over.
 - Canonicalization of `not` an array element schema, which an array fails exactly when one element violates it.

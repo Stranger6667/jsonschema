@@ -134,6 +134,7 @@ impl PyCanonicalSchema {
                     formats: view.formats,
                     content_media_types: view.content_media_types,
                     content_encodings: view.content_encodings,
+                    excluded: view.excluded,
                 },
             )?
             .into_any(),
@@ -418,12 +419,15 @@ pub(crate) struct StringView {
     content_media_types: Vec<String>,
     #[pyo3(get)]
     content_encodings: Vec<String>,
+    #[pyo3(get)]
+    excluded: Vec<String>,
 }
 
 #[pymethods]
 impl StringView {
     #[classattr]
     fn __match_args__() -> (
+        &'static str,
         &'static str,
         &'static str,
         &'static str,
@@ -438,6 +442,7 @@ impl StringView {
             "formats",
             "content_media_types",
             "content_encodings",
+            "excluded",
         )
     }
 }

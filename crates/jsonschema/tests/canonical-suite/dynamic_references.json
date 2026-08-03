@@ -206,7 +206,7 @@
     }
   },
   {
-    "description": "multiple dynamic paths to the $dynamicRef keyword - raw, because `if`/`then`/`else` over `$ref` branches is not modeled",
+    "description": "multiple dynamic paths to the $dynamicRef keyword, each specialized through its own branch",
     "schema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "$id": "https://test.json-schema.org/dynamic-ref-with-multiple-paths/main",
@@ -303,64 +303,165 @@
         "valid": false
       }
     ],
-    "kind": "raw",
     "expected": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "$id": "https://test.json-schema.org/dynamic-ref-with-multiple-paths/main",
-      "if": {
-        "properties": {
-          "kindOfList": {
-            "const": "numbers"
-          }
-        },
-        "required": [
-          "kindOfList"
-        ]
-      },
-      "then": {
-        "$ref": "numberList"
-      },
-      "else": {
-        "$ref": "stringList"
-      },
       "$defs": {
-        "genericList": {
-          "$id": "genericList",
-          "properties": {
-            "list": {
-              "items": {
-                "$dynamicRef": "#itemType"
-              }
-            }
-          },
-          "$defs": {
-            "defaultItemType": {
-              "$comment": "Only needed to satisfy the bookending requirement",
-              "$dynamicAnchor": "itemType"
-            }
-          }
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-with-multiple-paths%2FgenericList%23itemType%7Cdyn%3DitemType%40https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-with-multiple-paths%2FnumberList": {
+          "type": "number"
         },
-        "numberList": {
-          "$id": "numberList",
-          "$defs": {
-            "itemType": {
-              "$dynamicAnchor": "itemType",
-              "type": "number"
-            }
-          },
-          "$ref": "genericList"
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-with-multiple-paths%2FgenericList%23itemType%7Cdyn%3DitemType%40https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-with-multiple-paths%2FstringList": {
+          "type": "string"
         },
-        "stringList": {
-          "$id": "stringList",
-          "$defs": {
-            "itemType": {
-              "$dynamicAnchor": "itemType",
-              "type": "string"
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-with-multiple-paths%2FgenericList%7Cdyn%3DitemType%40https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-with-multiple-paths%2FnumberList": {
+          "anyOf": [
+            {
+              "type": [
+                "null",
+                "boolean",
+                "number",
+                "string",
+                "array"
+              ]
+            },
+            {
+              "properties": {
+                "list": {
+                  "anyOf": [
+                    {
+                      "type": [
+                        "null",
+                        "boolean",
+                        "number",
+                        "string",
+                        "object"
+                      ]
+                    },
+                    {
+                      "items": {
+                        "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-with-multiple-paths%252FgenericList%2523itemType%257Cdyn%253DitemType%2540https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-with-multiple-paths%252FnumberList"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
             }
-          },
-          "$ref": "genericList"
+          ]
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-with-multiple-paths%2FgenericList%7Cdyn%3DitemType%40https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-with-multiple-paths%2FstringList": {
+          "anyOf": [
+            {
+              "type": [
+                "null",
+                "boolean",
+                "number",
+                "string",
+                "array"
+              ]
+            },
+            {
+              "properties": {
+                "list": {
+                  "anyOf": [
+                    {
+                      "type": [
+                        "null",
+                        "boolean",
+                        "number",
+                        "string",
+                        "object"
+                      ]
+                    },
+                    {
+                      "items": {
+                        "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-with-multiple-paths%252FgenericList%2523itemType%257Cdyn%253DitemType%2540https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-with-multiple-paths%252FstringList"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            }
+          ]
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-with-multiple-paths%2FnumberList": {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-with-multiple-paths%252FgenericList%257Cdyn%253DitemType%2540https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-with-multiple-paths%252FnumberList"
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Ftest.json-schema.org%2Fdynamic-ref-with-multiple-paths%2FstringList": {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-with-multiple-paths%252FgenericList%257Cdyn%253DitemType%2540https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-with-multiple-paths%252FstringList"
         }
-      }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "type": [
+                "null",
+                "boolean",
+                "number",
+                "string",
+                "array"
+              ]
+            },
+            {
+              "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-with-multiple-paths%252FnumberList"
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "properties": {
+                "kindOfList": {
+                  "anyOf": [
+                    {
+                      "type": [
+                        "null",
+                        "boolean",
+                        "number",
+                        "array",
+                        "object"
+                      ]
+                    },
+                    {
+                      "not": {
+                        "enum": [
+                          "numbers"
+                        ]
+                      },
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            {
+              "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-with-multiple-paths%252FstringList"
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "properties": {
+                "kindOfList": {
+                  "const": "numbers"
+                }
+              },
+              "required": [
+                "kindOfList"
+              ],
+              "type": "object"
+            },
+            {
+              "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Ftest.json-schema.org%252Fdynamic-ref-with-multiple-paths%252FnumberList"
+            }
+          ]
+        }
+      ]
     }
   },
   {

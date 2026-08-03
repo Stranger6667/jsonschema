@@ -1,5 +1,5 @@
 //! Structural complement of a canonical node.
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use serde_json::{Number, Value};
 
@@ -8,8 +8,9 @@ use crate::{
         algebra,
         context::CanonicalizationContext,
         ir::{
-            type_set_schema, ArrayLeaf, BoundNumber, CanonicalJson, ContainsFacet, Discrete,
-            Divisors, LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, StringLeaf,
+            type_set_schema, ArrayLeaf, AtLeastTwo, BoundNumber, CanonicalJson, ContainsFacet,
+            Discrete, Divisors, LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind,
+            StringLeaf,
         },
     },
     JsonType, JsonTypeSet,
@@ -61,17 +62,18 @@ pub(crate) fn negate(schema: &Schema, ctx: &CanonicalizationContext) -> Option<S
     }
 }
 
-/// Complement of a finite value set, expressible when every member is a null, boolean, or number:
-/// the untouched types stay whole, an unpaired boolean leaves the other one, and the numeric
-/// members carve rays and gaps out of the number line.
+/// Complement of a finite value set, expressible when no member is an array or object: the
+/// untouched types stay whole, an unpaired boolean leaves the other one, the numeric members carve
+/// rays and gaps out of the number line, and the string members become exclusions on the strings.
 /// ```text
 /// e.g.  {"not": {"const": null}}  =>  {"type": ["boolean", "number", "string", "array", "object"]}
-/// e.g.  {"not": {"const": "a"}}  =>  unchanged: string inequality is inexpressible
+/// e.g.  {"not": {"const": [1]}}  =>  unchanged: array inequality is inexpressible
 /// ```
 fn negate_finite_values(values: &[CanonicalJson], ctx: &CanonicalizationContext) -> Option<Schema> {
     let mut remaining = JsonTypeSet::all();
     let mut booleans = Vec::new();
     let mut numbers: Vec<Number> = Vec::new();
+    let mut strings: Vec<Arc<str>> = Vec::new();
     for value in values {
         match value.as_value() {
             Value::Null => remaining = remaining.remove(JsonType::Null),
@@ -83,7 +85,11 @@ fn negate_finite_values(values: &[CanonicalJson], ctx: &CanonicalizationContext)
                 remaining = remaining.remove(JsonType::Number).remove(JsonType::Integer);
                 numbers.push(number.clone());
             }
-            Value::String(_) | Value::Array(_) | Value::Object(_) => return None,
+            Value::String(text) => {
+                remaining = remaining.remove(JsonType::String);
+                strings.push(Arc::from(text.as_str()));
+            }
+            Value::Array(_) | Value::Object(_) => return None,
         }
     }
     let mut branches = vec![type_set_schema(remaining)];
@@ -93,6 +99,21 @@ fn negate_finite_values(values: &[CanonicalJson], ctx: &CanonicalizationContext)
         ))));
     }
     branches.extend(number_gaps(&numbers, ctx));
+    if !strings.is_empty() {
+        strings.sort();
+        strings.dedup();
+        branches.push(algebra::string_leaf(
+            StringLeaf {
+                lengths: LengthBounds::default(),
+                patterns: Vec::new(),
+                formats: Vec::new(),
+                content_media_types: Vec::new(),
+                content_encodings: Vec::new(),
+                excluded: strings,
+            },
+            ctx,
+        ));
+    }
     Some(algebra::union(branches, ctx))
 }
 
@@ -156,6 +177,20 @@ fn negate_number_leaf(leaf: &NumberLeaf, ctx: &CanonicalizationContext) -> Optio
     Some(algebra::union(branches, ctx))
 }
 
+/// A value set holding exactly these strings.
+fn finite_strings(values: &[Arc<str>]) -> Schema {
+    let members: Vec<CanonicalJson> = values
+        .iter()
+        .map(|value| CanonicalJson::from_value(&Value::String(value.to_string())))
+        .collect();
+    match AtLeastTwo::new(members) {
+        Ok(set) => Schema::new(SchemaKind::Enum(set)),
+        Err(mut single) => Schema::new(SchemaKind::Const(
+            single.pop().expect("a non-empty exclusion list"),
+        )),
+    }
+}
+
 /// The same limit admitting exactly the values the original end rejects.
 fn flipped(bound: &BoundNumber) -> BoundNumber {
     BoundNumber::new(&bound.to_number(), !bound.is_inclusive())
@@ -190,6 +225,17 @@ pub(crate) fn length_windows(lengths: &LengthBounds) -> Option<Vec<LengthBounds>
 ///       =>  anyOf: [<non-string types>, {"type": "string", "maxLength": 2}]
 /// ```
 fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Option<Schema> {
+    if !leaf.excluded.is_empty() {
+        // The dual of the arm above: a leaf that only excludes values complements to those values.
+        let mut branches = vec![type_set_schema(JsonTypeSet::all().remove(JsonType::String))];
+        branches.push(finite_strings(&leaf.excluded));
+        let positive = StringLeaf {
+            excluded: Vec::new(),
+            ..leaf.clone()
+        };
+        branches.push(negate_string_leaf(&positive, ctx)?);
+        return Some(algebra::union(branches, ctx));
+    }
     if !leaf.patterns.is_empty()
         || !leaf.formats.is_empty()
         || !leaf.content_media_types.is_empty()
@@ -207,6 +253,7 @@ fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Optio
                 formats: Vec::new(),
                 content_media_types: Vec::new(),
                 content_encodings: Vec::new(),
+                excluded: Vec::new(),
             },
             ctx,
         )

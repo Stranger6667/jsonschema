@@ -464,7 +464,7 @@
     ]
   },
   {
-    "description": "not of a string value set stays raw: value inequality is inexpressible",
+    "description": "`not` a string value set, whose complement excludes every member",
     "schema": {
       "not": {
         "enum": [
@@ -474,12 +474,27 @@
       }
     },
     "expected": {
-      "not": {
-        "enum": [
-          "a",
-          "b"
-        ]
-      }
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "array",
+            "object"
+          ]
+        },
+        {
+          "type": "string",
+          "not": {
+            "enum": [
+              "a",
+              "b"
+            ]
+          }
+        }
+      ]
     },
     "tests": [
       {
@@ -1961,6 +1976,332 @@
       {
         "data": "x",
         "valid": true
+      }
+    ]
+  },
+  {
+    "description": "`not` a string constant, whose complement is every other string beside the other types",
+    "schema": {
+      "not": {
+        "const": "a"
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "array",
+            "object"
+          ]
+        },
+        {
+          "type": "string",
+          "not": {
+            "enum": [
+              "a"
+            ]
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": false
+      },
+      {
+        "data": "b",
+        "valid": true
+      },
+      {
+        "data": "",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": null,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "An excluded value the length window already rejects, which the leaf drops",
+    "schemas": [
+      {
+        "allOf": [
+          {
+            "type": "string",
+            "minLength": 2
+          },
+          {
+            "not": {
+              "const": "a"
+            }
+          }
+        ]
+      },
+      {
+        "type": "string",
+        "minLength": 2
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "minLength": 2
+    },
+    "tests": [
+      {
+        "data": "ab",
+        "valid": true
+      },
+      {
+        "data": "a",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "A value set narrowed by an exclusion, which drops the member rather than keeping a facet",
+    "schema": {
+      "allOf": [
+        {
+          "enum": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "not": {
+            "const": "a"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": "b"
+    },
+    "tests": [
+      {
+        "data": "b",
+        "valid": true
+      },
+      {
+        "data": "a",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "A constant excluded by its own complement",
+    "schema": {
+      "allOf": [
+        {
+          "const": "a"
+        },
+        {
+          "not": {
+            "const": "a"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {
+        "data": "a",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "The only string a window admits, excluded",
+    "schema": {
+      "allOf": [
+        {
+          "type": "string",
+          "maxLength": 0
+        },
+        {
+          "not": {
+            "const": ""
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {
+        "data": "",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "Double complement of a string constant",
+    "schema": {
+      "not": {
+        "not": {
+          "const": "a"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": "a"
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": true
+      },
+      {
+        "data": "b",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "`not` a string constant under Draft 4, spelled with `enum` in every draft",
+    "draft": "draft4",
+    "schema": {
+      "not": {
+        "enum": [
+          "a"
+        ]
+      }
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "array",
+            "object"
+          ]
+        },
+        {
+          "type": "string",
+          "not": {
+            "enum": [
+              "a"
+            ]
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": false
+      },
+      {
+        "data": "b",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "An excluded value a sibling pattern already rejects, which the leaf drops",
+    "schemas": [
+      {
+        "allOf": [
+          {
+            "type": "string",
+            "pattern": "^a"
+          },
+          {
+            "not": {
+              "const": "b"
+            }
+          }
+        ]
+      },
+      {
+        "type": "string",
+        "pattern": "^a"
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "pattern": "^a"
+    },
+    "tests": [
+      {
+        "data": "ab",
+        "valid": true
+      },
+      {
+        "data": "b",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "An excluded value a sibling pattern admits, which the leaf keeps",
+    "schema": {
+      "allOf": [
+        {
+          "type": "string",
+          "pattern": "^a"
+        },
+        {
+          "not": {
+            "const": "ab"
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "pattern": "^a",
+      "not": {
+        "enum": [
+          "ab"
+        ]
+      }
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": true
+      },
+      {
+        "data": "ab",
+        "valid": false
+      },
+      {
+        "data": "ac",
+        "valid": true
+      },
+      {
+        "data": "b",
+        "valid": false
       }
     ]
   }

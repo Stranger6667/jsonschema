@@ -215,6 +215,18 @@ fn emit_string(leaf: &StringLeaf) -> Value {
                 .map(|encoding| keyed("contentEncoding", Value::String(encoding.to_string()))),
         ),
     }
+    // `enum` in every draft, so one spelling covers Draft 4 as well.
+    if !leaf.excluded.is_empty() {
+        let members = Value::Array(
+            leaf.excluded
+                .iter()
+                .map(|value| Value::String(value.to_string()))
+                .collect(),
+        );
+        let mut inner = Map::new();
+        inner.insert("enum".into(), members);
+        map.insert("not".into(), Value::Object(inner));
+    }
     if !conjuncts.is_empty() {
         map.insert("allOf".into(), Value::Array(conjuncts));
     }

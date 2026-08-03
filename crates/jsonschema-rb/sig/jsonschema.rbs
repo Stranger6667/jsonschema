@@ -86,6 +86,7 @@ module JSONSchema
       def formats: () -> Array[String]
       def content_media_types: () -> Array[String]
       def content_encodings: () -> Array[String]
+      def excluded: () -> Array[String]
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end

@@ -742,7 +742,8 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             && leaf.patterns.is_empty()
             && leaf.formats.is_empty()
             && leaf.content_media_types.is_empty()
-            && leaf.content_encodings.is_empty();
+            && leaf.content_encodings.is_empty()
+            && leaf.excluded.is_empty();
         if spans_domain {
             widened = union_type_sets(widened, JsonTypeSet::from(JsonType::String));
         }
@@ -1072,6 +1073,7 @@ fn lift_degenerate_member(
                 formats: Vec::new(),
                 content_media_types: Vec::new(),
                 content_encodings: Vec::new(),
+                excluded: Vec::new(),
             });
             true
         }
@@ -1948,14 +1950,16 @@ fn union_type_sets(left: JsonTypeSet, right: JsonTypeSet) -> JsonTypeSet {
 }
 
 /// A `String` node, collapsed to `False` when its length window is empty.
-pub(crate) fn string_leaf(leaf: StringLeaf, ctx: &CanonicalizationContext) -> Schema {
+pub(crate) fn string_leaf(mut leaf: StringLeaf, ctx: &CanonicalizationContext) -> Schema {
     if formats_conflict(&leaf, ctx) {
         return Schema::new(SchemaKind::False);
     }
+    prune_excluded(&mut leaf, ctx);
     let Some(leaf) = NonEmpty::new(leaf) else {
         return Schema::new(SchemaKind::False);
     };
-    // `maxLength: 0` accepts the empty string and nothing else.
+    // `maxLength: 0` accepts the empty string and nothing else. A leaf this narrow is spelled as
+    // the constant before anything can exclude from it, so exclusions cannot reach here.
     // e.g.  {"type": "string", "maxLength": 0}  =>  {"const": ""}
     if leaf.get().patterns.is_empty()
         && leaf.get().formats.is_empty()
@@ -1973,6 +1977,32 @@ pub(crate) fn string_leaf(leaf: StringLeaf, ctx: &CanonicalizationContext) -> Sc
         )));
     }
     Schema::new(SchemaKind::String(leaf))
+}
+
+/// Drop excluded values the rest of the leaf already rejects, so one value set keeps one form. An
+/// undecided verdict keeps the value: dropping one widens the leaf.
+fn prune_excluded(leaf: &mut StringLeaf, ctx: &CanonicalizationContext) {
+    if leaf.excluded.is_empty() {
+        return;
+    }
+    let regexes: Vec<Arc<CompiledMatcher>> = leaf
+        .patterns
+        .iter()
+        .map(|pattern| {
+            ctx.compile_regex(pattern)
+                .expect("pattern validated during parsing")
+        })
+        .collect();
+    let excluded = std::mem::take(&mut leaf.excluded);
+    leaf.excluded = excluded
+        .into_iter()
+        .filter(|value| {
+            !matches!(
+                string_leaf_admits_text(leaf, &regexes, value, ctx),
+                Verdict::Rejects
+            )
+        })
+        .collect();
 }
 
 /// Tighten two integer leaves to the values both admit: the narrower interval and a divisor every
@@ -3509,12 +3539,17 @@ fn intersect_string_leaves(first: StringLeaf, second: StringLeaf) -> StringLeaf 
     content_encodings.extend(second.content_encodings);
     content_encodings.sort();
     content_encodings.dedup();
+    let mut excluded = first.excluded;
+    excluded.extend(second.excluded);
+    excluded.sort();
+    excluded.dedup();
     StringLeaf {
         lengths: first.lengths.intersect(second.lengths),
         patterns,
         formats,
         content_media_types,
         content_encodings,
+        excluded,
     }
 }
 
@@ -3561,7 +3596,10 @@ fn string_leaf_admits_text(
     ctx: &CanonicalizationContext,
 ) -> Verdict {
     let length = BoundCardinality::from(bytecount::num_chars(text.as_bytes()) as u64);
-    if !leaf.lengths.contains(&length) || !regexes.iter().all(|regex| regex.is_match(text)) {
+    if !leaf.lengths.contains(&length)
+        || !regexes.iter().all(|regex| regex.is_match(text))
+        || leaf.excluded.iter().any(|value| value.as_ref() == text)
+    {
         return Verdict::Rejects;
     }
     Verdict::all(

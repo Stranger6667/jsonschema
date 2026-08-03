@@ -2286,20 +2286,31 @@
       }
     ],
     "expected": {
-      "allOf": [
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "anyOf": [
         {
-          "not": {
-            "enum": [
-              1
-            ]
-          }
+          "type": [
+            "null",
+            "boolean",
+            "array",
+            "object"
+          ]
         },
         {
+          "type": "string",
           "not": {
             "enum": [
               "x"
             ]
           }
+        },
+        {
+          "type": "number",
+          "exclusiveMaximum": 1
+        },
+        {
+          "type": "number",
+          "exclusiveMinimum": 1
         }
       ]
     }

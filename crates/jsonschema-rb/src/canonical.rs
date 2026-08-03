@@ -151,6 +151,7 @@ impl RbCanonicalSchema {
                     formats: view.formats,
                     content_media_types: view.content_media_types,
                     content_encodings: view.content_encodings,
+                    excluded: view.excluded,
                 })
                 .as_value(),
             CanonicalView::Number(view) => ruby
@@ -396,6 +397,7 @@ pub struct StringView {
     formats: Vec<String>,
     content_media_types: Vec<String>,
     content_encodings: Vec<String>,
+    excluded: Vec<String>,
 }
 
 impl DataTypeFunctions for StringView {}
@@ -425,15 +427,20 @@ impl StringView {
         strings_to_ruby(ruby, &rb_self.content_encodings)
     }
 
+    fn excluded(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        strings_to_ruby(ruby, &rb_self.excluded)
+    }
+
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
-            "#<JSONSchema::Canonical::StringView min_length={} max_length={} patterns={} formats={} content_media_types={} content_encodings={}>",
+            "#<JSONSchema::Canonical::StringView min_length={} max_length={} patterns={} formats={} content_media_types={} content_encodings={} excluded={}>",
             Self::min_length(ruby, rb_self)?.inspect(),
             Self::max_length(ruby, rb_self)?.inspect(),
             Self::patterns(ruby, rb_self)?.inspect(),
             Self::formats(ruby, rb_self)?.inspect(),
             Self::content_media_types(ruby, rb_self)?.inspect(),
-            Self::content_encodings(ruby, rb_self)?.inspect()
+            Self::content_encodings(ruby, rb_self)?.inspect(),
+            Self::excluded(ruby, rb_self)?.inspect()
         ))
     }
 
@@ -451,6 +458,7 @@ impl StringView {
             ruby.sym_new("content_encodings"),
             Self::content_encodings(ruby, rb_self)?,
         )?;
+        hash.aset(ruby.sym_new("excluded"), Self::excluded(ruby, rb_self)?)?;
         Ok(hash)
     }
 }
@@ -1186,6 +1194,7 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
         "content_encodings",
         method!(StringView::content_encodings, 0),
     )?;
+    string_view.define_method("excluded", method!(StringView::excluded, 0))?;
     string_view.define_method("inspect", method!(StringView::inspect, 0))?;
     string_view.define_method("deconstruct_keys", method!(StringView::deconstruct_keys, 1))?;
 
