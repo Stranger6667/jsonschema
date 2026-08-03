@@ -106,6 +106,24 @@ mod bench {
 
         let chained_refs = chained_ref_defs(160);
 
+        // Each `if` complements into a union, and the conjunction takes their product, so the same
+        // pair of branches is intersected over and over.
+        let negated_branches_in_allof = json!({"allOf": (0..3_usize)
+            .map(|i| json!({
+                "if": {"type": "object", "properties": {"kind": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "anyOf": [
+                        {"contains": {"const": format!("c{i}")}},
+                        {"contains": {"const": format!("prefix:c{i}")}},
+                    ],
+                }}},
+                "then": {"type": "object", "properties": {
+                    "payload": {"type": "string", "minLength": i + 1},
+                }},
+            }))
+            .collect::<Vec<_>>()});
+
         let open_api = read_json(OPEN_API);
         let swagger = read_json(SWAGGER);
         let geojson = read_json(GEOJSON);
@@ -120,6 +138,7 @@ mod bench {
                 "many_small_allofs_inside_object",
                 &many_small_allofs_inside_object,
             ),
+            ("negated_branches_in_allof", &negated_branches_in_allof),
             ("wide_numeric_grid", &wide_numeric_grid),
             ("object_with_properties", &object_with_properties),
             ("chained_refs", &chained_refs),

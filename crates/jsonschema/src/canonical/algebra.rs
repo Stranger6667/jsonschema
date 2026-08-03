@@ -21,6 +21,19 @@ use crate::{
 
 /// The schema accepting exactly the values that BOTH `left` and `right` accept (set intersection, `allOf`).
 pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationContext) -> Schema {
+    // A node reached from two places is a node the product will reach again, and answering from the
+    // first visit stops the whole subtree below it from being walked a second time. A node held
+    // nowhere else cannot come back, so remembering it would only cost the room.
+    if let Some(remembered) = ctx.recall_intersection(&left, &right) {
+        return remembered;
+    }
+    let key = (left.clone(), right.clone());
+    let result = intersect_pair(left, right, ctx);
+    ctx.remember_intersection(key.0, key.1, &result);
+    result
+}
+
+fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) -> Schema {
     match (left.into_kind(), right.into_kind()) {
         // `False` accepts no value, so nothing satisfies both sides.
         (SchemaKind::False, _)
