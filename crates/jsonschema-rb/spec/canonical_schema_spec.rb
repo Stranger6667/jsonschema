@@ -388,6 +388,55 @@ RSpec.describe "JSONSchema.canonicalize" do
     expect(canonical.definitions["#/$defs/a"].kind).to eq(:true) # rubocop:disable Lint/BooleanSymbol
   end
 
+  [
+    [{ "type" => "string" }, { "minLength" => 4 },
+     { "$schema" => DRAFT202012, "type" => "string", "minLength" => 4 }],
+    [{ "const" => "A" }, { "pattern" => "^A$" }, { "$schema" => DRAFT202012, "const" => "A" }],
+    [{ "const" => "A" }, { "const" => "B" }, { "$schema" => DRAFT202012, "not" => {} }]
+  ].each do |left, right, expected|
+    it "intersects #{left.inspect} with #{right.inspect}" do
+      result = JSONSchema.canonicalize(left).intersect(JSONSchema.canonicalize(right))
+      expect(result).to be_a(JSONSchema::Canonical::CanonicalSchema)
+      expect(result.to_json_schema).to eq(expected)
+    end
+  end
+
+  it "intersect keeps references resolvable" do
+    root = JSONSchema.canonicalize(
+      { "$defs" => { "a" => { "type" => "string" }, "b" => { "minLength" => 4 } },
+        "allOf" => [{ "$ref" => "#/$defs/a" }, { "$ref" => "#/$defs/b" }] }
+    )
+    left, right = root.view.branches
+    expect(left.intersect(right).definitions.keys).to eq(root.definitions.keys)
+  end
+
+  { "on the left" => false, "on the right" => true }.each do |side, swap|
+    it "intersect rejects an unmodeled operand #{side}" do
+      raw = JSONSchema.canonicalize(UNMODELED)
+      modeled = JSONSchema.canonicalize({ "type" => "string" })
+      left, right = swap ? [modeled, raw] : [raw, modeled]
+      expect { left.intersect(right) }.to raise_error(JSONSchema::Canonical::UnmodeledOperand)
+    end
+  end
+
+  it "intersect rejects a draft mismatch" do
+    left = JSONSchema.canonicalize({ "type" => "string" }, draft: :draft7)
+    right = JSONSchema.canonicalize({ "type" => "string" }, draft: :draft202012)
+    expect { left.intersect(right) }.to raise_error(JSONSchema::Canonical::IncompatibleOperands)
+  end
+
+  it "intersect rejects distinct definition maps" do
+    left = JSONSchema.canonicalize({ "$defs" => { "a" => { "type" => "string" } }, "$ref" => "#/$defs/a" })
+    right = JSONSchema.canonicalize({ "$defs" => { "b" => { "minLength" => 4 } }, "$ref" => "#/$defs/b" })
+    expect { left.intersect(right) }.to raise_error(JSONSchema::Canonical::IncompatibleOperands)
+  end
+
+  it "definition looks up one reference target" do
+    canonical = JSONSchema.canonicalize({ "$defs" => { "a" => { "type" => "string" } }, "$ref" => "#/$defs/a" })
+    expect(canonical.definition("#/$defs/a")).to eq(canonical.definitions["#/$defs/a"])
+    expect(canonical.definition("#/$defs/absent")).to be_nil
+  end
+
   it "raises ValidationError when meta-validation fails" do
     expect { JSONSchema.canonicalize({ "type" => 123 }) }.to raise_error(JSONSchema::ValidationError)
   end

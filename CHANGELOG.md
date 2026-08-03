@@ -6,11 +6,17 @@
 
 - Canonicalization of `unevaluatedItems` beside `contains`, where the elements it matches are evaluated and the tail admits either.
 - Canonicalization of `unevaluated*` beside `anyOf` or `oneOf`, where every branch evaluating the same keys or indexes pins what is left over.
+- `CanonicalSchema::intersect`, the values both schemas admit.
+- `CanonicalSchema::definition`, one reference target by URI.
 
 ### Fixed
 
 - An integer past `i64` admitted by a fractional bound `f64` rounds it onto, such as `-10000000000000000000000000` under `{"maximum": -10000000000000000000000000.1}`.
 - A `contains` subschema beside both `minContains` and `maxContains` overwriting a sibling keyword of the same name, such as `items`.
+
+### Performance
+
+- `CanonicalSchema` hashing and equality cost the node instead of the whole document.
 
 ## [0.49.3] - 2026-08-02
 

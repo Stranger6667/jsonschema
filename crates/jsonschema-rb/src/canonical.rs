@@ -47,6 +47,8 @@ macro_rules! canonical_error_class {
 canonical_error_class!(CANONICALIZATION_ERROR_CLASS, "CanonicalizationError");
 canonical_error_class!(INVALID_SCHEMA_TYPE_CLASS, "InvalidSchemaType");
 canonical_error_class!(INVALID_PATTERN_CLASS, "InvalidPattern");
+canonical_error_class!(INCOMPATIBLE_OPERANDS_CLASS, "IncompatibleOperands");
+canonical_error_class!(UNMODELED_OPERAND_CLASS, "UnmodeledOperand");
 
 fn canonicalization_error(ruby: &Ruby, error: CanonicalizationError) -> Error {
     if let CanonicalizationError::ValidationError(validation_error) = error {
@@ -59,6 +61,12 @@ fn canonicalization_error(ruby: &Ruby, error: CanonicalizationError) -> Error {
         }
         CanonicalizationError::InvalidPattern { .. } => {
             Error::new(ruby.get_inner(&INVALID_PATTERN_CLASS), message)
+        }
+        CanonicalizationError::IncompatibleOperands(_) => {
+            Error::new(ruby.get_inner(&INCOMPATIBLE_OPERANDS_CLASS), message)
+        }
+        CanonicalizationError::UnmodeledOperand => {
+            Error::new(ruby.get_inner(&UNMODELED_OPERAND_CLASS), message)
         }
         // `ValidationError` returns above; future variants fall back to the base canonical error.
         _ => Error::new(ruby.get_inner(&CANONICALIZATION_ERROR_CLASS), message),
@@ -189,6 +197,22 @@ impl RbCanonicalSchema {
             CanonicalView::Reference(uri) => ruby.obj_wrap(ReferenceView { uri }).as_value(),
             CanonicalView::Raw(schema) => ruby.obj_wrap(RawView { schema }).as_value(),
         }
+    }
+
+    fn intersect(ruby: &Ruby, rb_self: &Self, other: &Self) -> Result<Value, Error> {
+        rb_self
+            .inner
+            .intersect(&other.inner)
+            .map(|inner| ruby.obj_wrap(RbCanonicalSchema { inner }).as_value())
+            .map_err(|error| canonicalization_error(ruby, error))
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    fn definition(ruby: &Ruby, rb_self: &Self, uri: String) -> Option<Value> {
+        rb_self
+            .inner
+            .definition(&uri)
+            .map(|inner| ruby.obj_wrap(RbCanonicalSchema { inner }).as_value())
     }
 
     fn definitions(ruby: &Ruby, rb_self: &Self) -> Result<RHash, Error> {
@@ -1083,6 +1107,8 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
         canonical_module.define_error("CanonicalizationError", ruby.exception_standard_error())?;
     canonical_module.define_error("InvalidSchemaType", base_error)?;
     canonical_module.define_error("InvalidPattern", base_error)?;
+    canonical_module.define_error("IncompatibleOperands", base_error)?;
+    canonical_module.define_error("UnmodeledOperand", base_error)?;
 
     let canonical_schema = canonical_module.define_class("CanonicalSchema", ruby.class_object())?;
     canonical_schema.define_method(
@@ -1102,6 +1128,8 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
         method!(<RbCanonicalSchema as typed_data::Hash>::hash, 0),
     )?;
     canonical_schema.define_method("view", method!(RbCanonicalSchema::view, 0))?;
+    canonical_schema.define_method("intersect", method!(RbCanonicalSchema::intersect, 1))?;
+    canonical_schema.define_method("definition", method!(RbCanonicalSchema::definition, 1))?;
     canonical_schema.define_method("definitions", method!(RbCanonicalSchema::definitions, 0))?;
     canonical_schema.define_method("satisfiable?", method!(RbCanonicalSchema::satisfiable, 0))?;
 

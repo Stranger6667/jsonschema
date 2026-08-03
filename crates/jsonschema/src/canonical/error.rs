@@ -1,4 +1,40 @@
+use referencing::Draft;
+
 use crate::ValidationError;
+
+/// Why two operands of a set operation cannot be combined.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum OperandMismatch {
+    /// The operands were canonicalized under different drafts.
+    Drafts {
+        /// Draft of the receiver.
+        left: Draft,
+        /// Draft of the argument.
+        right: Draft,
+    },
+    /// One operand asserts `format`, the other annotates it.
+    FormatAssertions,
+    /// The operands were canonicalized with different pattern engines.
+    PatternEngine,
+    /// The operands resolve references through different definition maps.
+    Definitions,
+}
+
+impl std::fmt::Display for OperandMismatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Drafts { left, right } => {
+                write!(f, "operands canonicalized under {left:?} and {right:?}")
+            }
+            Self::FormatAssertions => f.write_str("operands disagree on whether `format` asserts"),
+            Self::PatternEngine => {
+                f.write_str("operands canonicalized with different pattern engines")
+            }
+            Self::Definitions => f.write_str("operands carry different definition maps"),
+        }
+    }
+}
 
 /// Why a schema document could not be canonicalized.
 #[derive(Debug)]
@@ -15,6 +51,10 @@ pub enum CanonicalizationError {
         /// The offending pattern.
         pattern: String,
     },
+    /// Operands of a set operation cannot be combined.
+    IncompatibleOperands(OperandMismatch),
+    /// A set operation reached a schema the canonical form does not model.
+    UnmodeledOperand,
 }
 
 impl std::fmt::Display for CanonicalizationError {
@@ -28,6 +68,8 @@ impl std::fmt::Display for CanonicalizationError {
             Self::InvalidPattern { pattern } => {
                 write!(f, "invalid regular expression: {pattern:?}")
             }
+            Self::IncompatibleOperands(mismatch) => mismatch.fmt(f),
+            Self::UnmodeledOperand => f.write_str("operand is not modeled in canonical form"),
         }
     }
 }
@@ -37,7 +79,10 @@ impl std::error::Error for CanonicalizationError {
         match self {
             Self::ReferenceResolution(error) => Some(error),
             Self::ValidationError(error) => Some(error),
-            Self::InvalidSchemaType(_) | Self::InvalidPattern { .. } => None,
+            Self::InvalidSchemaType(_)
+            | Self::InvalidPattern { .. }
+            | Self::IncompatibleOperands(_)
+            | Self::UnmodeledOperand => None,
         }
     }
 }

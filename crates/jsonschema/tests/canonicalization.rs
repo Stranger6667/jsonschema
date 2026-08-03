@@ -1,7 +1,11 @@
-use std::{cmp::Ordering, collections::HashSet};
+use std::{
+    cmp::Ordering,
+    collections::{hash_map::DefaultHasher, HashSet},
+    hash::{Hash, Hasher},
+};
 
 use jsonschema::{
-    canonical::{options, CanonicalKind, CanonicalSchema, CanonicalView},
+    canonical::{options, CanonicalKind, CanonicalSchema, CanonicalView, OperandMismatch},
     canonicalize, CanonicalizationError, Draft, JsonType, PatternOptions, Registry,
 };
 use serde_json::{json, Map, Number, Value};
@@ -1459,4 +1463,222 @@ fn an_invalid_schema_type_error_has_no_cause() {
     let error = canonicalize(&json!([])).expect_err("an array is not a schema");
 
     assert!(std::error::Error::source(&error).is_none());
+}
+
+#[test]
+fn definition_looks_up_one_target() {
+    let schema = canonicalize(&json!({
+        "$defs": {"A": {"type": "string"}},
+        "$ref": "#/$defs/A"
+    }))
+    .expect("canonicalizes");
+    let (uri, expected) = schema.definitions().next().expect("one definition");
+    assert_eq!(schema.definition(&uri), Some(expected));
+    assert_eq!(schema.definition("#/$defs/absent"), None);
+}
+
+// Same `Reference` root, different targets: unequal handles the hash no longer separates.
+#[test]
+fn hash_ignores_the_definition_map() {
+    fn digest(schema: &jsonschema::canonical::CanonicalSchema) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        schema.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    let string_target = canonicalize(&json!({
+        "$id": "https://example.com/s",
+        "$defs": {"A": {"type": "string"}},
+        "$ref": "#/$defs/A"
+    }))
+    .expect("canonicalizes");
+    let integer_target = canonicalize(&json!({
+        "$id": "https://example.com/s",
+        "$defs": {"A": {"type": "integer"}},
+        "$ref": "#/$defs/A"
+    }))
+    .expect("canonicalizes");
+
+    assert_ne!(string_target, integer_target);
+    assert_eq!(digest(&string_target), digest(&integer_target));
+}
+
+#[test_case(&json!({"type": "string"}), &json!({"minLength": 4}), &json!({"type": "string", "minLength": 4}); "bound folds into the string leaf")]
+#[test_case(&json!({"const": "A"}), &json!({"pattern": "^A$"}), &json!({"const": "A"}); "matching pattern keeps the constant")]
+#[test_case(&json!({"const": "A"}), &json!({"const": "B"}), &json!({"not": {}}); "disjoint constants fold to false")]
+fn intersect_folds(left: &Value, right: &Value, expected: &Value) {
+    let left = canonicalize(left).expect("canonicalizes");
+    let right = canonicalize(right).expect("canonicalizes");
+    let mut expected = expected.as_object().expect("object").clone();
+    expected.insert(
+        "$schema".into(),
+        json!("https://json-schema.org/draft/2020-12/schema"),
+    );
+    assert_eq!(
+        left.intersect(&right).expect("intersects").to_json_schema(),
+        Value::Object(expected)
+    );
+}
+
+// A pattern the canonical form does not model keeps the whole document raw.
+fn unmodeled() -> Value {
+    json!({"if": {}, "unevaluatedProperties": false})
+}
+
+#[test]
+fn intersect_rejects_a_raw_root() {
+    let raw = canonicalize(&unmodeled()).expect("canonicalizes");
+    let modeled = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
+    let error = raw.intersect(&modeled).expect_err("the left side is raw");
+    assert!(matches!(error, CanonicalizationError::UnmodeledOperand));
+    assert_eq!(
+        error.to_string(),
+        "operand is not modeled in canonical form"
+    );
+    assert!(matches!(
+        modeled.intersect(&raw),
+        Err(CanonicalizationError::UnmodeledOperand)
+    ));
+}
+
+// An unmodeled `$ref` target takes the whole document raw rather than leaving a raw entry beside a
+// modeled root, so the handle a consumer resolves from carries no definitions at all.
+#[test]
+fn intersect_rejects_a_raw_reference_target() {
+    let document = json!({
+        "properties": {"a": {"$ref": "#/$defs/A"}},
+        "$defs": {"A": unmodeled()}
+    });
+    let raw = canonicalize(&document).expect("canonicalizes");
+    assert_eq!(raw.kind(), CanonicalKind::Raw);
+    assert_eq!(raw.definitions().next(), None);
+    let modeled = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
+    assert!(matches!(
+        raw.intersect(&modeled),
+        Err(CanonicalizationError::UnmodeledOperand)
+    ));
+}
+
+// Two children of one root share the map, so both references resolve through the result.
+#[test]
+fn intersect_keeps_references_resolvable_within_one_document() {
+    let root = canonicalize(&json!({
+        "type": "object",
+        "$defs": {"A": {"type": "string"}, "B": {"minLength": 2}},
+        "properties": {"a": {"$ref": "#/$defs/A"}, "b": {"$ref": "#/$defs/B"}}
+    }))
+    .expect("canonicalizes");
+    let CanonicalView::Object(view) = root.view() else {
+        panic!("expected an Object view");
+    };
+    let left = view.properties.get("a").expect("property a").clone();
+    let right = view.properties.get("b").expect("property b").clone();
+    let merged = left.intersect(&right).expect("intersects");
+    assert!(merged.definition("#/$defs/A").is_some());
+    assert!(merged.definition("#/$defs/B").is_some());
+}
+
+#[test]
+fn intersect_rejects_operands_from_different_drafts() {
+    let draft7 = options()
+        .with_draft(Draft::Draft7)
+        .canonicalize(&json!({"type": "string"}))
+        .expect("canonicalizes");
+    let latest = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
+    let error = draft7.intersect(&latest).expect_err("the drafts differ");
+    assert!(matches!(
+        error,
+        CanonicalizationError::IncompatibleOperands(OperandMismatch::Drafts {
+            left: Draft::Draft7,
+            right: Draft::Draft202012
+        })
+    ));
+    assert_eq!(
+        error.to_string(),
+        "operands canonicalized under Draft7 and Draft202012"
+    );
+}
+
+// 2020-12 annotates formats by default, so asserting them is the deliberate mismatch.
+#[test]
+fn intersect_rejects_operands_with_different_format_assertion_policy() {
+    let asserting = options()
+        .should_validate_formats(true)
+        .canonicalize(&json!({"type": "string"}))
+        .expect("canonicalizes");
+    let annotating = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
+    let error = asserting
+        .intersect(&annotating)
+        .expect_err("the format policies differ");
+    assert!(matches!(
+        error,
+        CanonicalizationError::IncompatibleOperands(OperandMismatch::FormatAssertions)
+    ));
+    assert_eq!(
+        error.to_string(),
+        "operands disagree on whether `format` asserts"
+    );
+}
+
+// `regex` is the deliberate mismatch against the default `fancy-regex` engine.
+#[test]
+fn intersect_rejects_operands_with_different_pattern_engines() {
+    let regex_engine = options()
+        .with_pattern_options(PatternOptions::regex())
+        .canonicalize(&json!({"type": "string"}))
+        .expect("canonicalizes");
+    let fancy_engine = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
+    let error = regex_engine
+        .intersect(&fancy_engine)
+        .expect_err("the pattern engines differ");
+    assert!(matches!(
+        error,
+        CanonicalizationError::IncompatibleOperands(OperandMismatch::PatternEngine)
+    ));
+    assert_eq!(
+        error.to_string(),
+        "operands canonicalized with different pattern engines"
+    );
+}
+
+// A side with no definitions of its own adopts the other's map, whichever side it is.
+#[test_case(false; "empty map on the right")]
+#[test_case(true; "empty map on the left")]
+fn intersect_adopts_the_only_definition_map(swap: bool) {
+    let referencing = canonicalize(&json!({
+        "$defs": {"A": {"type": "string"}},
+        "$ref": "#/$defs/A"
+    }))
+    .expect("canonicalizes");
+    let plain = canonicalize(&json!({"minLength": 4})).expect("canonicalizes");
+    let merged = if swap {
+        plain.intersect(&referencing)
+    } else {
+        referencing.intersect(&plain)
+    }
+    .expect("intersects");
+    assert!(merged.definition("#/$defs/A").is_some());
+}
+
+#[test]
+fn intersect_rejects_operands_with_distinct_definition_maps() {
+    let left = canonicalize(&json!({
+        "$defs": {"A": {"type": "string"}},
+        "$ref": "#/$defs/A"
+    }))
+    .expect("canonicalizes");
+    let right = canonicalize(&json!({
+        "$defs": {"B": {"minLength": 4}},
+        "$ref": "#/$defs/B"
+    }))
+    .expect("canonicalizes");
+    let error = left.intersect(&right).expect_err("the maps differ");
+    assert!(matches!(
+        error,
+        CanonicalizationError::IncompatibleOperands(OperandMismatch::Definitions)
+    ));
+    assert_eq!(
+        error.to_string(),
+        "operands carry different definition maps"
+    );
 }
