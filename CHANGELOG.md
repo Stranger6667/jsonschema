@@ -16,6 +16,7 @@
 ### Fixed
 
 - An integer past `i64` admitted by a fractional bound `f64` rounds it onto, such as `-10000000000000000000000000` under `{"maximum": -10000000000000000000000000.1}`.
+- An integer past `2^53` admitted by a bound `f64` rounds onto it, such as `9007199254740992` under `{"minimum": 9007199254740993}`.
 - A `contains` subschema beside both `minContains` and `maxContains` overwriting a sibling keyword of the same name, such as `items`.
 
 ### Performance
