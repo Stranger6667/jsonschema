@@ -3,7 +3,10 @@ use std::{cell::RefCell, collections::HashMap, sync::Arc};
 
 use referencing::Draft;
 
-use crate::options::PatternEngineOptions;
+use crate::{canonical::ir::Schema, options::PatternEngineOptions};
+
+/// Past this many remembered pairs a run keeps recomputing rather than grow without end.
+const INTERSECTION_CACHE_CAPACITY: usize = 1 << 20;
 
 pub(crate) enum CompiledMatcher {
     Regex(regex::Regex),
@@ -28,6 +31,9 @@ pub(crate) struct CanonicalizationContext {
     validate_formats: bool,
     /// `None` caches a rejected pattern so callers don't recompile it.
     regex_cache: RefCell<HashMap<Arc<str>, Option<Arc<CompiledMatcher>>>>,
+    /// A conjunction over unions takes the product of their branches, which reaches the same pair
+    /// of nodes over and over - on a schema of five such conjunctions, 431 times per distinct pair.
+    intersections: RefCell<HashMap<(Schema, Schema), Schema>>,
 }
 
 impl CanonicalizationContext {
@@ -41,6 +47,7 @@ impl CanonicalizationContext {
             pattern_options,
             validate_formats,
             regex_cache: RefCell::new(HashMap::new()),
+            intersections: RefCell::new(HashMap::new()),
         }
     }
 
@@ -63,6 +70,21 @@ impl CanonicalizationContext {
             .borrow_mut()
             .insert(Arc::clone(pattern), compiled.clone());
         compiled
+    }
+
+    /// The intersection of these two, from an earlier run of the same pair.
+    pub(crate) fn recall_intersection(&self, left: &Schema, right: &Schema) -> Option<Schema> {
+        self.intersections
+            .borrow()
+            .get(&(left.clone(), right.clone()))
+            .cloned()
+    }
+
+    pub(crate) fn remember_intersection(&self, left: Schema, right: Schema, result: &Schema) {
+        let mut intersections = self.intersections.borrow_mut();
+        if intersections.len() < INTERSECTION_CACHE_CAPACITY {
+            intersections.insert((left, right), result.clone());
+        }
     }
 }
 
