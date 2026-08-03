@@ -132,6 +132,7 @@ impl PyCanonicalSchema {
                         .transpose()?,
                     patterns: view.patterns,
                     formats: view.formats,
+                    excluded_formats: view.excluded_formats,
                     content_media_types: view.content_media_types,
                     content_encodings: view.content_encodings,
                     excluded: view.excluded,
@@ -416,6 +417,8 @@ pub(crate) struct StringView {
     #[pyo3(get)]
     formats: Vec<String>,
     #[pyo3(get)]
+    excluded_formats: Vec<String>,
+    #[pyo3(get)]
     content_media_types: Vec<String>,
     #[pyo3(get)]
     content_encodings: Vec<String>,
@@ -434,12 +437,14 @@ impl StringView {
         &'static str,
         &'static str,
         &'static str,
+        &'static str,
     ) {
         (
             "min_length",
             "max_length",
             "patterns",
             "formats",
+            "excluded_formats",
             "content_media_types",
             "content_encodings",
             "excluded",

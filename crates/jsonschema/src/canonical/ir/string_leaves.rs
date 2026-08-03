@@ -77,6 +77,7 @@ impl IntoIterator for StringLeaves {
 struct Facets {
     patterns: Vec<Arc<str>>,
     formats: Vec<Arc<str>>,
+    excluded_formats: Vec<Arc<str>>,
     content_media_types: Vec<Arc<str>>,
     content_encodings: Vec<Arc<str>>,
     excluded: Vec<Arc<str>>,
@@ -101,6 +102,7 @@ fn merge(mut leaves: Vec<StringLeaf>) -> Vec<StringLeaf> {
         (
             &left.patterns,
             &left.formats,
+            &left.excluded_formats,
             &left.content_media_types,
             &left.content_encodings,
             &left.excluded,
@@ -108,6 +110,7 @@ fn merge(mut leaves: Vec<StringLeaf>) -> Vec<StringLeaf> {
             .cmp(&(
                 &right.patterns,
                 &right.formats,
+                &right.excluded_formats,
                 &right.content_media_types,
                 &right.content_encodings,
                 &right.excluded,
@@ -120,6 +123,7 @@ fn merge(mut leaves: Vec<StringLeaf>) -> Vec<StringLeaf> {
         if facets.as_ref().is_none_or(|group| {
             group.patterns != leaf.patterns
                 || group.formats != leaf.formats
+                || group.excluded_formats != leaf.excluded_formats
                 || group.content_media_types != leaf.content_media_types
                 || group.content_encodings != leaf.content_encodings
                 || group.excluded != leaf.excluded
@@ -128,6 +132,7 @@ fn merge(mut leaves: Vec<StringLeaf>) -> Vec<StringLeaf> {
             facets = Some(Facets {
                 patterns: leaf.patterns,
                 formats: leaf.formats,
+                excluded_formats: leaf.excluded_formats,
                 content_media_types: leaf.content_media_types,
                 content_encodings: leaf.content_encodings,
                 excluded: leaf.excluded,
@@ -153,6 +158,7 @@ fn flush_group(
     let Some(Facets {
         patterns,
         formats,
+        excluded_formats,
         content_media_types,
         content_encodings,
         excluded,
@@ -167,6 +173,7 @@ fn flush_group(
             lengths: window,
             patterns: patterns.clone(),
             formats: formats.clone(),
+            excluded_formats: excluded_formats.clone(),
             content_media_types: content_media_types.clone(),
             content_encodings: content_encodings.clone(),
             excluded: excluded.clone(),
@@ -176,6 +183,7 @@ fn flush_group(
         lengths: last,
         patterns,
         formats,
+        excluded_formats,
         content_media_types,
         content_encodings,
         excluded,
@@ -208,6 +216,10 @@ fn drop_subsumed(leaves: &mut Vec<StringLeaf>) {
                     .iter()
                     .all(|format| leaf.formats.contains(format))
                 && other
+                    .excluded_formats
+                    .iter()
+                    .all(|format| leaf.excluded_formats.contains(format))
+                && other
                     .content_media_types
                     .iter()
                     .all(|media_type| leaf.content_media_types.contains(media_type))
@@ -222,6 +234,7 @@ fn drop_subsumed(leaves: &mut Vec<StringLeaf>) {
             let facets = |leaf: &StringLeaf| {
                 leaf.patterns.len()
                     + leaf.formats.len()
+                    + leaf.excluded_formats.len()
                     + leaf.content_media_types.len()
                     + leaf.content_encodings.len()
                     + leaf.excluded.len()

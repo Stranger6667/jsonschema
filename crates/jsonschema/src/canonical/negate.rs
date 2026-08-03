@@ -141,6 +141,7 @@ fn negate_finite_values(values: &[CanonicalJson], ctx: &CanonicalizationContext)
                 lengths: LengthBounds::default(),
                 patterns: Vec::new(),
                 formats: Vec::new(),
+                excluded_formats: Vec::new(),
                 content_media_types: Vec::new(),
                 content_encodings: Vec::new(),
                 excluded: strings,
@@ -279,7 +280,6 @@ fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Optio
         return Some(algebra::union(branches, ctx));
     }
     if !leaf.patterns.is_empty()
-        || !leaf.formats.is_empty()
         || !leaf.content_media_types.is_empty()
         || !leaf.content_encodings.is_empty()
     {
@@ -291,11 +291,27 @@ fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Optio
         algebra::string_leaf(
             StringLeaf {
                 lengths,
-                patterns: Vec::new(),
-                formats: Vec::new(),
-                content_media_types: Vec::new(),
-                content_encodings: Vec::new(),
-                excluded: Vec::new(),
+                ..StringLeaf::default()
+            },
+            ctx,
+        )
+    }));
+    // A string fails a run of formats as soon as it fails one of them, so each gets its own branch
+    // - and a branch barring one format says nothing about the length or the others.
+    branches.extend(leaf.formats.iter().map(|format| {
+        algebra::string_leaf(
+            StringLeaf {
+                excluded_formats: vec![Arc::clone(format)],
+                ..StringLeaf::default()
+            },
+            ctx,
+        )
+    }));
+    branches.extend(leaf.excluded_formats.iter().map(|format| {
+        algebra::string_leaf(
+            StringLeaf {
+                formats: vec![Arc::clone(format)],
+                ..StringLeaf::default()
             },
             ctx,
         )

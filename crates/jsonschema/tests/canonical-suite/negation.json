@@ -2435,5 +2435,116 @@
       {"data": {"a": 1}, "valid": false},
       {"data": {}, "valid": true}
     ]
+  },
+  {
+    "description": "not a format leaf keeps the strings that fail it",
+    "validate_formats": true,
+    "schema": {"not": {"type": "string", "format": "date"}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": ["null", "boolean", "number", "array", "object"]}, {"type": "string", "allOf": [{"not": {"format": "date"}}]}]},
+    "tests": [
+      {"data": "2020-01-01", "valid": false},
+      {"data": "nope", "valid": true},
+      {"data": "", "valid": true},
+      {"data": 1, "valid": true},
+      {"data": null, "valid": true},
+      {"data": [], "valid": true}
+    ]
+  },
+  {
+    "description": "a string barred from one format still carries the other",
+    "validate_formats": true,
+    "schema": {"allOf": [{"type": "string", "format": "ipv4"}, {"not": {"format": "date"}}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "format": "ipv4", "allOf": [{"not": {"format": "date"}}]},
+    "tests": [
+      {"data": "1.2.3.4", "valid": true},
+      {"data": "2020-01-01", "valid": false},
+      {"data": "nope", "valid": false},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "a format barred from itself admits no string",
+    "validate_formats": true,
+    "schema": {"allOf": [{"type": "string", "format": "date"}, {"not": {"format": "date"}}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": "2020-01-01", "valid": false},
+      {"data": "nope", "valid": false}
+    ]
+  },
+  {
+    "description": "not a format leaf under a length window keeps the strings outside it",
+    "validate_formats": true,
+    "schema": {"not": {"type": "string", "format": "date", "minLength": 4}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": ["null", "boolean", "number", "array", "object"]}, {"type": "string", "allOf": [{"not": {"format": "date"}}]}, {"type": "string", "maxLength": 3}]},
+    "tests": [
+      {"data": "2020-01-01", "valid": false},
+      {"data": "abc", "valid": true},
+      {"data": "nope", "valid": true},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "a value the barred format matches is no value at all",
+    "validate_formats": true,
+    "schema": {"allOf": [{"const": "2020-01-01"}, {"not": {"format": "date"}}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": "2020-01-01", "valid": false}
+    ]
+  },
+  {
+    "description": "an excluded value the barred format already rejects drops out",
+    "validate_formats": true,
+    "schemas": [
+      {"allOf": [{"type": "string"}, {"not": {"format": "date"}}, {"not": {"const": "2020-01-01"}}]},
+      {"allOf": [{"type": "string"}, {"not": {"format": "date"}}]}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "allOf": [{"not": {"format": "date"}}]},
+    "tests": [
+      {"data": "2020-01-01", "valid": false},
+      {"data": "nope", "valid": true},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "barring a format twice over leaves the strings that match it",
+    "validate_formats": true,
+    "schema": {"not": {"allOf": [{"type": "string"}, {"not": {"format": "date"}}]}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": ["null", "boolean", "number", "array", "object"]}, {"type": "string", "format": "date"}]},
+    "tests": [
+      {"data": "2020-01-01", "valid": true},
+      {"data": "nope", "valid": false},
+      {"data": "", "valid": false},
+      {"data": 1, "valid": true},
+      {"data": null, "valid": true}
+    ]
+  },
+  {
+    "description": "a barred format no string in the window could match drops out",
+    "validate_formats": true,
+    "schemas": [
+      {"allOf": [{"type": "string", "maxLength": 3}, {"not": {"format": "date"}}]},
+      {"type": "string", "maxLength": 3}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "maxLength": 3},
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": "abcd", "valid": false},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "not a two-format leaf keeps the strings failing either one",
+    "validate_formats": true,
+    "schema": {"not": {"allOf": [{"type": "string", "format": "uri"}, {"format": "uri-reference"}]}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": ["null", "boolean", "number", "array", "object"]}, {"type": "string", "allOf": [{"not": {"format": "uri"}}]}, {"type": "string", "allOf": [{"not": {"format": "uri-reference"}}]}]},
+    "tests": [
+      {"data": "http://example.com", "valid": false},
+      {"data": "\\\\", "valid": true},
+      {"data": 1, "valid": true}
+    ]
   }
 ]

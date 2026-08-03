@@ -754,6 +754,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         let spans_domain = leaf.lengths.is_unbounded()
             && leaf.patterns.is_empty()
             && leaf.formats.is_empty()
+            && leaf.excluded_formats.is_empty()
             && leaf.content_media_types.is_empty()
             && leaf.content_encodings.is_empty()
             && leaf.excluded.is_empty();
@@ -1095,6 +1096,7 @@ fn lift_degenerate_member(
                 },
                 patterns: Vec::new(),
                 formats: Vec::new(),
+                excluded_formats: Vec::new(),
                 content_media_types: Vec::new(),
                 content_encodings: Vec::new(),
                 excluded: Vec::new(),
@@ -1979,6 +1981,7 @@ pub(crate) fn string_leaf(mut leaf: StringLeaf, ctx: &CanonicalizationContext) -
         return Schema::new(SchemaKind::False);
     }
     absorb_empty_exclusion(&mut leaf);
+    prune_excluded_formats(&mut leaf, ctx);
     prune_excluded(&mut leaf, ctx);
     let Some(leaf) = NonEmpty::new(leaf) else {
         return Schema::new(SchemaKind::False);
@@ -2228,6 +2231,32 @@ fn absorb_empty_exclusion(leaf: &mut StringLeaf) {
     };
     leaf.excluded.remove(index);
     leaf.lengths.minimum = Some(BoundCardinality::from(1));
+}
+
+/// Drop a barred format no string the leaf admits could match anyway, so one value set keeps one
+/// form. A format whose grammar pins a length cannot bite on a window that misses it.
+/// e.g.  allOf [
+///         {"type": "string", "maxLength": 3},
+///         {"not": {"format": "date"}}
+///       ]  =>  {"type": "string", "maxLength": 3}
+fn prune_excluded_formats(leaf: &mut StringLeaf, ctx: &CanonicalizationContext) {
+    if leaf.excluded_formats.is_empty() {
+        return;
+    }
+    let lengths = leaf.lengths.clone();
+    leaf.excluded_formats.retain(|format| {
+        let Some((minimum, maximum)) = crate::keywords::format::length_window(ctx.draft(), format)
+        else {
+            return true;
+        };
+        !lengths
+            .clone()
+            .intersect(LengthBounds {
+                minimum: Some(BoundCardinality::from(minimum)),
+                maximum: Some(BoundCardinality::from(maximum)),
+            })
+            .is_empty()
+    });
 }
 
 /// Drop excluded values the rest of the leaf already rejects, so one value set keeps one form. An
@@ -3782,6 +3811,10 @@ fn intersect_string_leaves(first: StringLeaf, second: StringLeaf) -> StringLeaf 
     formats.extend(second.formats);
     formats.sort();
     formats.dedup();
+    let mut excluded_formats = first.excluded_formats;
+    excluded_formats.extend(second.excluded_formats);
+    excluded_formats.sort();
+    excluded_formats.dedup();
     let mut content_media_types = first.content_media_types;
     content_media_types.extend(second.content_media_types);
     content_media_types.sort();
@@ -3798,6 +3831,7 @@ fn intersect_string_leaves(first: StringLeaf, second: StringLeaf) -> StringLeaf 
         lengths: first.lengths.intersect(second.lengths),
         patterns,
         formats,
+        excluded_formats,
         content_media_types,
         content_encodings,
         excluded,
@@ -3811,6 +3845,13 @@ fn intersect_string_leaves(first: StringLeaf, second: StringLeaf) -> StringLeaf 
 ///         {"type": "string", "format": "uuid"}
 ///       ]  =>  false
 fn formats_conflict(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> bool {
+    if leaf
+        .excluded_formats
+        .iter()
+        .any(|format| leaf.formats.contains(format))
+    {
+        return true;
+    }
     let mut window = leaf.lengths.clone();
     for format in &leaf.formats {
         let Some((minimum, maximum)) = crate::keywords::format::length_window(ctx.draft(), format)
@@ -3862,6 +3903,12 @@ fn string_leaf_admits_text(
                     None => Verdict::Unknown,
                 },
             )
+            .chain(leaf.excluded_formats.iter().map(
+                |format| match crate::keywords::format::is_valid(ctx.draft(), format, text) {
+                    Some(admitted) => Verdict::from_bool(!admitted),
+                    None => Verdict::Unknown,
+                },
+            ))
             .chain(leaf.content_media_types.iter().map(|media_type| {
                 match crate::content_media_type::DEFAULT_CONTENT_MEDIA_TYPE_CHECKS
                     .get(media_type.as_ref())

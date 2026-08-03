@@ -4,6 +4,7 @@
 
 ### Added
 
+- Canonicalization of `not` a string format, which the string leaf carries as barred formats.
 - Canonicalization of `not` an existential demand, which an array fails exactly when no element matches.
 - Canonicalization of `not` a string value set, which the string leaf carries as excluded values.
 - Canonicalization of `unevaluatedItems` beside `contains`, where the elements it matches are evaluated and the tail admits either.

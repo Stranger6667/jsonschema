@@ -149,6 +149,7 @@ impl RbCanonicalSchema {
                     max_length: view.max_length,
                     patterns: view.patterns,
                     formats: view.formats,
+                    excluded_formats: view.excluded_formats,
                     content_media_types: view.content_media_types,
                     content_encodings: view.content_encodings,
                     excluded: view.excluded,
@@ -395,6 +396,7 @@ pub struct StringView {
     max_length: Option<serde_json::Number>,
     patterns: Vec<String>,
     formats: Vec<String>,
+    excluded_formats: Vec<String>,
     content_media_types: Vec<String>,
     content_encodings: Vec<String>,
     excluded: Vec<String>,
@@ -419,6 +421,10 @@ impl StringView {
         strings_to_ruby(ruby, &rb_self.formats)
     }
 
+    fn excluded_formats(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        strings_to_ruby(ruby, &rb_self.excluded_formats)
+    }
+
     fn content_media_types(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
         strings_to_ruby(ruby, &rb_self.content_media_types)
     }
@@ -433,11 +439,12 @@ impl StringView {
 
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
-            "#<JSONSchema::Canonical::StringView min_length={} max_length={} patterns={} formats={} content_media_types={} content_encodings={} excluded={}>",
+            "#<JSONSchema::Canonical::StringView min_length={} max_length={} patterns={} formats={} excluded_formats={} content_media_types={} content_encodings={} excluded={}>",
             Self::min_length(ruby, rb_self)?.inspect(),
             Self::max_length(ruby, rb_self)?.inspect(),
             Self::patterns(ruby, rb_self)?.inspect(),
             Self::formats(ruby, rb_self)?.inspect(),
+            Self::excluded_formats(ruby, rb_self)?.inspect(),
             Self::content_media_types(ruby, rb_self)?.inspect(),
             Self::content_encodings(ruby, rb_self)?.inspect(),
             Self::excluded(ruby, rb_self)?.inspect()
@@ -450,6 +457,10 @@ impl StringView {
         hash.aset(ruby.sym_new("max_length"), Self::max_length(ruby, rb_self)?)?;
         hash.aset(ruby.sym_new("patterns"), Self::patterns(ruby, rb_self)?)?;
         hash.aset(ruby.sym_new("formats"), Self::formats(ruby, rb_self)?)?;
+        hash.aset(
+            ruby.sym_new("excluded_formats"),
+            Self::excluded_formats(ruby, rb_self)?,
+        )?;
         hash.aset(
             ruby.sym_new("content_media_types"),
             Self::content_media_types(ruby, rb_self)?,
@@ -1186,6 +1197,7 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     string_view.define_method("max_length", method!(StringView::max_length, 0))?;
     string_view.define_method("patterns", method!(StringView::patterns, 0))?;
     string_view.define_method("formats", method!(StringView::formats, 0))?;
+    string_view.define_method("excluded_formats", method!(StringView::excluded_formats, 0))?;
     string_view.define_method(
         "content_media_types",
         method!(StringView::content_media_types, 0),

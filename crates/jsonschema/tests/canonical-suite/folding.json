@@ -578,5 +578,19 @@
       {"data": "zzzz", "valid": true},
       {"data": "zz", "valid": false}
     ]
+  },
+  {
+    "description": "ir: a lone allOf branch folds when a oneOf sits under items",
+    "draft": "draft4",
+    "schema": {"allOf": [{"properties": {"r": {"items": {"oneOf": [{}, {"properties": {"u": {"format": "uri"}}}]}}}}]},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [{"type": ["null", "boolean", "number", "string", "array"]}, {"type": "object", "properties": {"r": {"anyOf": [{"type": ["null", "boolean", "number", "string", "object"]}, {"type": "array", "items": {"type": "object", "required": ["u"], "properties": {"u": {"type": "string", "allOf": [{"not": {"format": "uri"}}]}}}}]}}}]},
+    "tests": [
+      {"data": {"r": []}, "valid": true},
+      {"data": {"r": "x"}, "valid": true},
+      {"data": {}, "valid": true},
+      {"data": 1, "valid": true},
+      {"data": {"r": [1]}, "valid": false},
+      {"data": {"r": [{"u": "http://x"}]}, "valid": false}
+    ]
   }
 ]
