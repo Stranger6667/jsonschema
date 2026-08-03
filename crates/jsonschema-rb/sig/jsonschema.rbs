@@ -32,12 +32,20 @@ module JSONSchema
     class InvalidPattern < CanonicalizationError
     end
 
+    class IncompatibleOperands < CanonicalizationError
+    end
+
+    class UnmodeledOperand < CanonicalizationError
+    end
+
     # A schema reduced to canonical form: schemas accepting the same values share one form.
     class CanonicalSchema
       def to_json_schema: () -> untyped
       def draft: () -> JSONSchema::draft
       def kind: () -> kind
       def view: () -> view
+      def intersect: (CanonicalSchema other) -> CanonicalSchema
+      def definition: (String uri) -> CanonicalSchema?
       def definitions: () -> Hash[String, CanonicalSchema]
       def satisfiable?: () -> bool
       def inspect: () -> String

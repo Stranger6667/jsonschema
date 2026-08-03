@@ -10,8 +10,12 @@ use serde_json::Value;
 
 use crate::{
     canonical::{
+        algebra,
+        context::CanonicalizationContext,
         emit,
+        error::OperandMismatch,
         ir::{Schema, SchemaKind},
+        CanonicalizationError,
     },
     options::PatternEngineOptions,
 };
@@ -35,7 +39,8 @@ impl PartialEq for CanonicalSchema {
         self.validate_formats == other.validate_formats
             && self.draft == other.draft
             && self.inner == other.inner
-            && self.definitions == other.definitions
+            && (Arc::ptr_eq(&self.definitions, &other.definitions)
+                || self.definitions == other.definitions)
     }
 }
 
@@ -57,12 +62,13 @@ impl Ord for CanonicalSchema {
     }
 }
 
+// The definition map is left out so a handle does not hash its whole document; handles differing
+// only in their targets collide.
 impl Hash for CanonicalSchema {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.inner.hash(state);
         self.draft.hash(state);
         self.validate_formats.hash(state);
-        self.definitions.hash(state);
     }
 }
 
@@ -121,11 +127,77 @@ impl CanonicalSchema {
         )
     }
 
+    /// The reference target registered under `uri`.
+    #[must_use]
+    pub fn definition(&self, uri: &str) -> Option<CanonicalSchema> {
+        self.definitions.get(uri).map(|body| self.wrap_child(body))
+    }
+
     /// Every reachable reference target known to this document, keyed by its URI.
     #[must_use]
     pub fn definitions(&self) -> impl ExactSizeIterator<Item = (String, CanonicalSchema)> + '_ {
         self.definitions
             .iter()
             .map(|(uri, body)| (uri.to_string(), self.wrap_child(body)))
+    }
+
+    /// Every value both schemas admit.
+    ///
+    /// # Errors
+    ///
+    /// [`CanonicalizationError::IncompatibleOperands`] when the operands cannot be combined, and
+    /// [`CanonicalizationError::UnmodeledOperand`] when either side is unmodeled.
+    pub fn intersect(&self, other: &Self) -> Result<Self, CanonicalizationError> {
+        self.check_operands(other)?;
+        let definitions = self.merged_definitions(other)?;
+        let context =
+            CanonicalizationContext::new(self.draft, self.pattern_options, self.validate_formats);
+        let inner = algebra::intersect(self.inner.clone(), other.inner.clone(), &context);
+        Ok(Self::new(
+            inner,
+            self.draft,
+            self.pattern_options,
+            self.validate_formats,
+            definitions,
+        ))
+    }
+
+    fn check_operands(&self, other: &Self) -> Result<(), CanonicalizationError> {
+        // An unknown `$schema` canonicalizes to `Raw` under `Draft::Unknown`, so the modeling check
+        // comes first or that document reports a draft mismatch instead.
+        if matches!(self.schema_kind(), SchemaKind::Raw(_))
+            || matches!(other.schema_kind(), SchemaKind::Raw(_))
+        {
+            return Err(CanonicalizationError::UnmodeledOperand);
+        }
+        let mismatch = if self.draft != other.draft {
+            OperandMismatch::Drafts {
+                left: self.draft,
+                right: other.draft,
+            }
+        } else if self.validate_formats != other.validate_formats {
+            OperandMismatch::FormatAssertions
+        } else if self.pattern_options != other.pattern_options {
+            OperandMismatch::PatternEngine
+        } else {
+            return Ok(());
+        };
+        Err(CanonicalizationError::IncompatibleOperands(mismatch))
+    }
+
+    /// The map the result resolves references through.
+    fn merged_definitions(
+        &self,
+        other: &Self,
+    ) -> Result<Arc<DefinitionMap>, CanonicalizationError> {
+        if Arc::ptr_eq(&self.definitions, &other.definitions) || other.definitions.is_empty() {
+            return Ok(Arc::clone(&self.definitions));
+        }
+        if self.definitions.is_empty() {
+            return Ok(Arc::clone(&other.definitions));
+        }
+        Err(CanonicalizationError::IncompatibleOperands(
+            OperandMismatch::Definitions,
+        ))
     }
 }

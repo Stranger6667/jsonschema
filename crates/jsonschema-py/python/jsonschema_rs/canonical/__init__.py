@@ -66,6 +66,14 @@ class InvalidPattern(CanonicalizationError):
     """A ``pattern`` value is not a valid regular expression."""
 
 
+class IncompatibleOperands(CanonicalizationError):
+    """Operands of a set operation cannot be combined."""
+
+
+class UnmodeledOperand(CanonicalizationError):
+    """A set operation reached a schema the canonical form does not model."""
+
+
 __all__ = [
     "AllOfView",
     "AnyOfView",
@@ -76,6 +84,7 @@ __all__ = [
     "ContainsView",
     "EnumView",
     "FalseView",
+    "IncompatibleOperands",
     "IntegerView",
     "InvalidPattern",
     "InvalidSchemaType",
@@ -89,6 +98,7 @@ __all__ = [
     "NumberView",
     "TrueView",
     "TypedGroupView",
+    "UnmodeledOperand",
     "json",
     "schema",
 ]

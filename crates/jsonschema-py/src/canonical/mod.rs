@@ -293,6 +293,19 @@ impl PyCanonicalSchema {
         })
     }
 
+    /// Every value both schemas admit.
+    fn intersect(&self, py: Python<'_>, other: &Self) -> PyResult<Self> {
+        self.inner
+            .intersect(&other.inner)
+            .map(|inner| Self { inner })
+            .map_err(|error| canonicalization_error(py, error))
+    }
+
+    /// The reference target registered under `uri`.
+    fn definition(&self, uri: &str) -> Option<Self> {
+        self.inner.definition(uri).map(|inner| Self { inner })
+    }
+
     /// Map of reference URI -> canonical target for every known target reachable from this schema.
     fn definitions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
         let dict = pyo3::types::PyDict::new(py);
@@ -736,6 +749,8 @@ fn canonicalization_error(
     let name = match &error {
         CanonicalizationError::InvalidSchemaType(_) => "InvalidSchemaType",
         CanonicalizationError::InvalidPattern { .. } => "InvalidPattern",
+        CanonicalizationError::IncompatibleOperands(_) => "IncompatibleOperands",
+        CanonicalizationError::UnmodeledOperand => "UnmodeledOperand",
         _ => "CanonicalizationError",
     };
     let built = py.import("jsonschema_rs").and_then(|module| {
