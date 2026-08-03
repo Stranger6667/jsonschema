@@ -1437,10 +1437,25 @@ fn degrade_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> Op
         }
     }
     if let Some(value) = degraded.remove("unevaluatedItems") {
-        // `contains` marks the elements it matches evaluated, which no `additional*` twin spells.
-        if map.contains_key("contains") {
-            return None;
-        }
+        // An element `contains` matches is evaluated by it, so the tail takes either.
+        // e.g.  {"contains": {"type": "integer"}, "unevaluatedItems": {"type": "string"}}
+        //       =>  {"contains": {"type": "integer"},
+        //            "items": {"anyOf": [{"type": "integer"}, {"type": "string"}]}}
+        let value = match map.get("contains") {
+            Some(contains @ (Value::Object(_) | Value::Bool(_))) => {
+                let mut tail = serde_json::Map::new();
+                tail.insert(
+                    "anyOf".to_string(),
+                    Value::Array(vec![contains.clone(), value]),
+                );
+                Value::Object(tail)
+            }
+            // A `contains` that is not a schema keeps the document raw anyway.
+            Some(Value::Array(_) | Value::Null | Value::Number(_) | Value::String(_)) => {
+                return None
+            }
+            None => value,
+        };
         let mut cover = ItemCover::default();
         if let Some(Value::Array(branches)) = map.get("allOf") {
             for branch in branches {

@@ -749,19 +749,21 @@
     }
   },
   {
-    "description": "raw: contains marks the elements it matches evaluated",
+    "description": "ir: contains marks the elements it matches evaluated",
     "schema": {"type": "array", "contains": {"const": 2}, "unevaluatedItems": false},
-    "kind": "raw",
     "tests": [
       {"data": [2], "valid": true},
       {"data": [2, 3], "valid": false}
     ],
     "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "contains": {
         "const": 2
       },
-      "type": "array",
-      "unevaluatedItems": false
+      "items": {
+        "const": 2
+      },
+      "type": "array"
     }
   },
   {
@@ -813,6 +815,158 @@
         "const": "a"
       },
       "type": "object"
+    }
+  },
+  {
+    "description": "ir: unevaluatedItems:false beside contains admits only what contains matches",
+    "schema": {"type": "array", "contains": {"type": "integer"}, "unevaluatedItems": false},
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1, 2], "valid": true},
+      {"data": [], "valid": false},
+      {"data": ["x"], "valid": false},
+      {"data": [1, "x"], "valid": false},
+      {"data": ["x", 1], "valid": false}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "contains": {
+        "type": "integer"
+      },
+      "items": {
+        "type": "integer"
+      },
+      "type": "array"
+    }
+  },
+  {
+    "description": "ir: unevaluatedItems beside contains admits either",
+    "schema": {"type": "array", "contains": {"type": "integer"}, "unevaluatedItems": {"type": "string"}},
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1, "x"], "valid": true},
+      {"data": ["x", 1], "valid": true},
+      {"data": ["x"], "valid": false},
+      {"data": [], "valid": false},
+      {"data": [1, true], "valid": false}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "contains": {
+        "type": "integer"
+      },
+      "items": {
+        "type": ["integer", "string"]
+      },
+      "type": "array"
+    }
+  },
+  {
+    "description": "ir: contains matching every element leaves unevaluatedItems inert",
+    "schemas": [
+      {"type": "array", "contains": true, "unevaluatedItems": false},
+      {"type": "array", "minItems": 1}
+    ],
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": ["x", null], "valid": true},
+      {"data": [], "valid": false}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  {
+    "description": "ir: minContains:0 beside unevaluatedItems:false still bounds every element",
+    "schemas": [
+      {"type": "array", "contains": {"type": "integer"}, "minContains": 0, "unevaluatedItems": false},
+      {"type": "array", "items": {"type": "integer"}}
+    ],
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1, 2], "valid": true},
+      {"data": ["x"], "valid": false}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "type": "integer"
+      },
+      "type": "array"
+    }
+  },
+  {
+    "description": "ir: maxContains beside unevaluatedItems:false pins the length",
+    "schema": {"type": "array", "contains": {"type": "integer"}, "maxContains": 1, "unevaluatedItems": false},
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [], "valid": false},
+      {"data": [1, 2], "valid": false},
+      {"data": ["x"], "valid": false}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "contains": {
+        "type": "integer"
+      },
+      "items": {
+        "type": "integer"
+      },
+      "maxContains": 1,
+      "type": "array"
+    }
+  },
+  {
+    "description": "ir: a tuple beside contains and unevaluatedItems:false keeps both",
+    "schema": {
+      "type": "array",
+      "prefixItems": [{"type": "boolean"}],
+      "contains": {"type": "integer"},
+      "unevaluatedItems": false
+    },
+    "tests": [
+      {"data": [true, 1], "valid": true},
+      {"data": [true, 1, 2], "valid": true},
+      {"data": [true], "valid": false},
+      {"data": [1], "valid": false},
+      {"data": [true, "x"], "valid": false}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "contains": {
+        "type": "integer"
+      },
+      "items": {
+        "type": "integer"
+      },
+      "prefixItems": [
+        {
+          "type": "boolean"
+        }
+      ],
+      "type": "array"
+    }
+  },
+  {
+    "description": "ir: 2019-09 spells the contains tail additionalItems",
+    "draft": "draft2019-09",
+    "schema": {"type": "array", "contains": {"type": "integer"}, "unevaluatedItems": false},
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [], "valid": false},
+      {"data": ["x"], "valid": false}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "contains": {
+        "type": "integer"
+      },
+      "items": {
+        "type": "integer"
+      },
+      "type": "array"
     }
   }
 ]
