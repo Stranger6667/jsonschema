@@ -552,3 +552,55 @@ def test_definition():
     uri, target = next(iter(schema.definitions().items()))
     assert schema.definition(uri) == target
     assert schema.definition("#/$defs/absent") is None
+
+
+@pytest.mark.parametrize(
+    ("schema", "expected"),
+    [
+        (
+            {"type": "string", "minLength": 5},
+            {
+                "$schema": DRAFT202012,
+                "anyOf": [
+                    {"type": ["null", "boolean", "number", "array", "object"]},
+                    {"type": "string", "maxLength": 4},
+                ],
+            },
+        ),
+        (
+            {"type": "number", "minimum": 5},
+            {
+                "$schema": DRAFT202012,
+                "anyOf": [
+                    {"type": ["null", "boolean", "string", "array", "object"]},
+                    {"type": "number", "exclusiveMaximum": 5},
+                ],
+            },
+        ),
+    ],
+)
+def test_negate(schema, expected):
+    result = canonicalize(schema).negate()
+    assert isinstance(result, CanonicalSchema)
+    assert result.to_json_schema() == expected
+
+
+# The decline set is contract: a caller sizes its fallback on it.
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"type": "integer"},
+        {"type": "integer", "minimum": 0},
+        {"$schema": "http://json-schema.org/draft-04/schema#", "type": "integer", "enum": [1, 2]},
+        UNMODELED,
+    ],
+)
+def test_negate_declines(schema):
+    assert canonicalize(schema).negate() is None
+
+
+def test_negate_keeps_a_reference_symbolic():
+    schema = canonicalize({"$defs": {"A": {"type": "string"}}, "$ref": "#/$defs/A"})
+    complement = schema.negate()
+    assert complement.kind == "not"
+    assert complement.definition("#/$defs/A") == schema.definition("#/$defs/A")

@@ -437,6 +437,42 @@ RSpec.describe "JSONSchema.canonicalize" do
     expect(canonical.definition("#/$defs/absent")).to be_nil
   end
 
+  [
+    [{ "type" => "string", "minLength" => 5 },
+     { "$schema" => DRAFT202012,
+       "anyOf" => [{ "type" => %w[null boolean number array object] },
+                   { "type" => "string", "maxLength" => 4 }] }],
+    [{ "type" => "number", "minimum" => 5 },
+     { "$schema" => DRAFT202012,
+       "anyOf" => [{ "type" => %w[null boolean string array object] },
+                   { "type" => "number", "exclusiveMaximum" => 5 }] }]
+  ].each do |schema, expected|
+    it "negates #{schema.inspect}" do
+      result = JSONSchema.canonicalize(schema).negate
+      expect(result).to be_a(JSONSchema::Canonical::CanonicalSchema)
+      expect(result.to_json_schema).to eq(expected)
+    end
+  end
+
+  # The decline set is contract: a caller sizes its fallback on it.
+  [
+    { "type" => "integer" },
+    { "type" => "integer", "minimum" => 0 },
+    { "$schema" => "http://json-schema.org/draft-04/schema#", "type" => "integer", "enum" => [1, 2] },
+    UNMODELED
+  ].each do |schema|
+    it "declines to negate #{schema.inspect}" do
+      expect(JSONSchema.canonicalize(schema).negate).to be_nil
+    end
+  end
+
+  it "negate keeps a reference symbolic" do
+    schema = JSONSchema.canonicalize({ "$defs" => { "a" => { "type" => "string" } }, "$ref" => "#/$defs/a" })
+    complement = schema.negate
+    expect(complement.kind).to eq(:not)
+    expect(complement.definition("#/$defs/a")).to eq(schema.definition("#/$defs/a"))
+  end
+
   it "raises ValidationError when meta-validation fails" do
     expect { JSONSchema.canonicalize({ "type" => 123 }) }.to raise_error(JSONSchema::ValidationError)
   end

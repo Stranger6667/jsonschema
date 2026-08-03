@@ -207,6 +207,13 @@ impl RbCanonicalSchema {
             .map_err(|error| canonicalization_error(ruby, error))
     }
 
+    fn negate(ruby: &Ruby, rb_self: &Self) -> Option<Value> {
+        rb_self
+            .inner
+            .negate()
+            .map(|inner| ruby.obj_wrap(RbCanonicalSchema { inner }).as_value())
+    }
+
     #[allow(clippy::needless_pass_by_value)]
     fn definition(ruby: &Ruby, rb_self: &Self, uri: String) -> Option<Value> {
         rb_self
@@ -1129,6 +1136,7 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     )?;
     canonical_schema.define_method("view", method!(RbCanonicalSchema::view, 0))?;
     canonical_schema.define_method("intersect", method!(RbCanonicalSchema::intersect, 1))?;
+    canonical_schema.define_method("negate", method!(RbCanonicalSchema::negate, 0))?;
     canonical_schema.define_method("definition", method!(RbCanonicalSchema::definition, 1))?;
     canonical_schema.define_method("definitions", method!(RbCanonicalSchema::definitions, 0))?;
     canonical_schema.define_method("satisfiable?", method!(RbCanonicalSchema::satisfiable, 0))?;
