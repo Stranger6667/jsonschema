@@ -74,6 +74,8 @@ pub struct StringView {
     pub max_length: Option<Number>,
     pub patterns: Vec<String>,
     pub formats: Vec<String>,
+    /// Formats the string must fail.
+    pub excluded_formats: Vec<String>,
     pub content_media_types: Vec<String>,
     pub content_encodings: Vec<String>,
     /// Values the string must differ from.
@@ -315,6 +317,11 @@ fn string_view(leaf: &StringLeaf) -> StringView {
             .map(BoundCardinality::to_number),
         patterns: leaf.patterns.iter().map(ToString::to_string).collect(),
         formats: leaf.formats.iter().map(ToString::to_string).collect(),
+        excluded_formats: leaf
+            .excluded_formats
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
         content_media_types: leaf
             .content_media_types
             .iter()

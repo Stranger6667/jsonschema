@@ -150,6 +150,12 @@ const fn definition_keyword(draft: Draft) -> &'static str {
 /// Emit a string leaf as `{"type":"string"}` plus its length bounds and patterns. A single pattern is
 /// inline; several become an `allOf` of `{"pattern": ...}`, since one leaf can hold only one `pattern`.
 fn emit_string(leaf: &StringLeaf) -> Value {
+    debug_assert!(
+        leaf.excluded_formats
+            .iter()
+            .all(|format| !leaf.formats.contains(format)),
+        "a format both demanded and barred leaves no string, which is `False`"
+    );
     let mut map = Map::new();
     map.insert("type".into(), Value::String("string".into()));
     if let Some(min) = &leaf.lengths.minimum {
@@ -181,6 +187,13 @@ fn emit_string(leaf: &StringLeaf) -> Value {
                 .map(|format| keyed("format", Value::String(format.to_string()))),
         ),
     }
+    // Every barred format goes into its own `allOf` branch: the main object already spells the
+    // formats a string must satisfy, and one `not` slot cannot hold several of them.
+    conjuncts.extend(leaf.excluded_formats.iter().map(|format| {
+        let mut inner = Map::new();
+        inner.insert("format".into(), Value::String(format.to_string()));
+        keyed("not", Value::Object(inner))
+    }));
     // A media type and an encoding sharing one schema object decode-then-check under the runtime
     // dispatch (`compile_media_type` reads its sibling `contentEncoding`), which would silently
     // recompose two facets this leaf keeps independent - so whenever both are present, every value
