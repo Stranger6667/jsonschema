@@ -61,6 +61,31 @@ jobs:
           mode: "simulation"
           token: ${{ secrets.CODSPEED_TOKEN }}
 
+  # Simulation cannot see changes that trade memory locality rather than work.
+  rust-walltime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    name: "Run benchmarks (jsonschema, walltime)"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+          key: jsonschema-walltime
+
+      - run: cargo install cargo-codspeed --force
+
+      - run: cargo codspeed build -m walltime -p jsonschema --features macros --bench jsonschema
+
+      - uses: CodSpeedHQ/action@88472375d0a4572cf70a9f1fe3a4e0ab8da1b924 # v5.0.1
+        with:
+          run: cargo codspeed run -p jsonschema
+          mode: "walltime"
+          token: ${{ secrets.CODSPEED_TOKEN }}
+
   python:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
