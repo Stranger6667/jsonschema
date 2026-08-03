@@ -1724,6 +1724,8 @@ fn negate_spells_the_complement(schema: &Value, expected: &Value) {
 #[test_case(&json!({"type": "number", "minimum": 5}); "number leaf")]
 #[test_case(&json!({"type": "object", "required": ["a"]}); "object leaf")]
 #[test_case(&json!({"const": 1.5}); "numeric constant")]
+#[test_case(&json!({"type": "array", "items": {"type": "string"}}); "array element schema")]
+#[test_case(&json!({"type": "array", "maxItems": 2, "items": {"type": "string"}}); "array element schema beside a size bound")]
 fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
     let complement = canonicalize(schema)
         .expect("canonicalizes")
@@ -1741,6 +1743,10 @@ fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
         json!("abcd"),
         json!("abcde"),
         json!([]),
+        json!(["a"]),
+        json!(["a", "b", "c"]),
+        json!(["a", 1]),
+        json!([1]),
         json!({}),
         json!({"a": 1}),
     ] {
@@ -1760,6 +1766,10 @@ fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
     "typed group"
 )]
 #[test_case(&json!({"if": {}, "unevaluatedProperties": false}); "raw document")]
+#[test_case(
+    &json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": "array", "items": {"type": "string"}});
+    "draft 4 array element schema"
+)]
 fn negate_declines(schema: &Value) {
     assert_eq!(canonicalize(schema).expect("canonicalizes").negate(), None);
 }

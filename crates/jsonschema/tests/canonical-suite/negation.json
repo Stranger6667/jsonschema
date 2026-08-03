@@ -1707,5 +1707,261 @@
         "valid": false
       }
     ]
+  },
+  {
+    "description": "`not` an element schema, where an array fails it exactly when one element violates it",
+    "schema": {
+      "not": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "object"
+          ]
+        },
+        {
+          "type": "array",
+          "contains": {
+            "type": [
+              "null",
+              "boolean",
+              "number",
+              "array",
+              "object"
+            ]
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": [],
+        "valid": false
+      },
+      {
+        "data": [
+          "a"
+        ],
+        "valid": false
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          "a",
+          1
+        ],
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": {},
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "`not` an element schema beside a size bound, where each facet fails on its own",
+    "schema": {
+      "not": {
+        "type": "array",
+        "maxItems": 2,
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "object"
+          ]
+        },
+        {
+          "type": "array",
+          "contains": {
+            "type": [
+              "null",
+              "boolean",
+              "number",
+              "array",
+              "object"
+            ]
+          }
+        },
+        {
+          "type": "array",
+          "minItems": 3
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": [],
+        "valid": false
+      },
+      {
+        "data": [
+          "a",
+          "b"
+        ],
+        "valid": false
+      },
+      {
+        "data": [
+          "a",
+          "b",
+          "c"
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "`not` an element schema every value meets, which no element can violate",
+    "schema": {
+      "not": {
+        "type": "array",
+        "items": true
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": [
+        "null",
+        "boolean",
+        "number",
+        "string",
+        "object"
+      ]
+    },
+    "tests": [
+      {
+        "data": [],
+        "valid": false
+      },
+      {
+        "data": [
+          1,
+          2
+        ],
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "`not` a `uniqueItems` array, whose complement needs a duplicate the form cannot spell",
+    "schema": {
+      "not": {
+        "type": "array",
+        "uniqueItems": true
+      }
+    },
+    "expected": {
+      "not": {
+        "type": "array",
+        "uniqueItems": true
+      }
+    },
+    "tests": [
+      {
+        "data": [
+          1,
+          1
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1,
+          2
+        ],
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "`not` an element schema under Draft 4, which has no `contains` to carry the complement",
+    "draft": "draft4",
+    "schema": {
+      "not": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "expected": {
+      "not": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": [],
+        "valid": false
+      },
+      {
+        "data": [
+          "a"
+        ],
+        "valid": false
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": true
+      },
+      {
+        "data": "x",
+        "valid": true
+      }
+    ]
   }
 ]

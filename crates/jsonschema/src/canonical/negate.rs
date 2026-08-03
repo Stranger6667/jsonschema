@@ -8,8 +8,8 @@ use crate::{
         algebra,
         context::CanonicalizationContext,
         ir::{
-            type_set_schema, ArrayLeaf, BoundNumber, CanonicalJson, Discrete, Divisors,
-            LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, StringLeaf,
+            type_set_schema, ArrayLeaf, BoundNumber, CanonicalJson, ContainsFacet, Discrete,
+            Divisors, LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, StringLeaf,
         },
     },
     JsonType, JsonTypeSet,
@@ -214,16 +214,41 @@ fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Optio
     Some(algebra::union(branches, ctx))
 }
 
+/// An element schema fails on an array exactly when one element violates it, which is a `contains`
+/// demand for its complement.
 /// ```text
 /// e.g.  {"not": {"type": "array", "maxItems": 2}}
 ///       =>  anyOf: [<non-array types>, {"type": "array", "minItems": 3}]
+/// e.g.  {"not": {"type": "array", "items": {"type": "string"}}}
+///       =>  anyOf: [<non-array types>,
+///                   {"type": "array", "contains": {"type": <every type but string>}}]
 /// ```
 fn negate_array_leaf(leaf: &ArrayLeaf, ctx: &CanonicalizationContext) -> Option<Schema> {
-    if leaf.unique || !leaf.prefix.is_empty() || leaf.items.is_some() || !leaf.contains.is_empty() {
+    if leaf.unique || !leaf.prefix.is_empty() || !leaf.contains.is_empty() {
         return None;
     }
     let windows = length_windows(&leaf.lengths)?;
     let mut branches = vec![type_set_schema(JsonTypeSet::all().remove(JsonType::Array))];
+    if let Some(items) = &leaf.items {
+        // Draft 4 has no `contains`, so a validator there ignores the branch and admits every array.
+        if !ctx.draft().is_known_keyword("contains") {
+            return None;
+        }
+        branches.push(algebra::array_leaf(
+            ArrayLeaf {
+                lengths: LengthBounds::default(),
+                unique: false,
+                prefix: Vec::new(),
+                items: None,
+                contains: vec![ContainsFacet {
+                    schema: negate(items, ctx)?,
+                    minimum: None,
+                    maximum: None,
+                }],
+            },
+            ctx,
+        ));
+    }
     branches.extend(windows.into_iter().map(|lengths| {
         algebra::array_leaf(
             ArrayLeaf {

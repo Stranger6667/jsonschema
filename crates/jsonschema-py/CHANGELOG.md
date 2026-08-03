@@ -6,6 +6,7 @@
 
 - Canonicalization of `unevaluatedItems` beside `contains`, where the elements it matches are evaluated and the tail admits either.
 - Canonicalization of `unevaluated*` beside `anyOf` or `oneOf`, where every branch evaluating the same keys or indexes pins what is left over.
+- Canonicalization of `not` an array element schema, which an array fails exactly when one element violates it.
 - `CanonicalSchema.intersect`, the values both schemas admit.
 - `CanonicalSchema.negate`, the values a schema rejects.
 - `CanonicalSchema.definition`, one reference target by URI.
