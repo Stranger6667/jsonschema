@@ -788,8 +788,10 @@
       "contains": {
         "type": "string"
       },
-      "type": "array",
-      "unevaluatedItems": false
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   {

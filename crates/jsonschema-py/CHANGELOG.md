@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Canonicalization of `unevaluatedItems` beside `contains`, where the elements it matches are evaluated and the tail admits either.
+
 ### Fixed
 
 - An integer past `i64` admitted by a fractional bound `f64` rounds it onto, such as `-10000000000000000000000000` under `{"maximum": -10000000000000000000000000.1}`.
