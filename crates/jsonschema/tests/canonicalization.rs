@@ -1682,3 +1682,99 @@ fn intersect_rejects_operands_with_distinct_definition_maps() {
         "operands carry different definition maps"
     );
 }
+
+#[test_case(
+    &json!({"type": "string", "minLength": 5}),
+    &json!({"anyOf": [
+        {"type": ["null", "boolean", "number", "array", "object"]},
+        {"type": "string", "maxLength": 4}
+    ]});
+    "string leaf"
+)]
+#[test_case(
+    &json!({"type": "number", "minimum": 5}),
+    &json!({"anyOf": [
+        {"type": ["null", "boolean", "string", "array", "object"]},
+        {"type": "number", "exclusiveMaximum": 5}
+    ]});
+    "number leaf"
+)]
+#[test_case(
+    &json!({"type": "object", "required": ["a"]}),
+    &json!({"anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "properties": {"a": false}}
+    ]});
+    "object leaf"
+)]
+fn negate_spells_the_complement(schema: &Value, expected: &Value) {
+    let canonical = canonicalize(schema).expect("canonicalizes");
+    let mut expected = expected.as_object().expect("object").clone();
+    expected.insert(
+        "$schema".into(),
+        json!("https://json-schema.org/draft/2020-12/schema"),
+    );
+    assert_eq!(
+        canonical.negate().expect("negates").to_json_schema(),
+        Value::Object(expected)
+    );
+}
+
+#[test_case(&json!({"type": "string", "minLength": 5}); "string leaf")]
+#[test_case(&json!({"type": "number", "minimum": 5}); "number leaf")]
+#[test_case(&json!({"type": "object", "required": ["a"]}); "object leaf")]
+#[test_case(&json!({"const": 1.5}); "numeric constant")]
+fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
+    let complement = canonicalize(schema)
+        .expect("canonicalizes")
+        .negate()
+        .expect("negates")
+        .to_json_schema();
+    let source = jsonschema::validator_for(schema).expect("source builds");
+    let complement = jsonschema::validator_for(&complement).expect("complement builds");
+    for instance in [
+        json!(null),
+        json!(true),
+        json!(4),
+        json!(5),
+        json!(1.5),
+        json!("abcd"),
+        json!("abcde"),
+        json!([]),
+        json!({}),
+        json!({"a": 1}),
+    ] {
+        assert_ne!(
+            source.is_valid(&instance),
+            complement.is_valid(&instance),
+            "{instance} lands on the same side of both"
+        );
+    }
+}
+
+// The decline set is contract: a caller sizes its fallback on it, so widening it is a visible change.
+#[test_case(&json!({"type": "integer"}); "integer leaf")]
+#[test_case(&json!({"type": "integer", "minimum": 0}); "bounded integer leaf")]
+#[test_case(
+    &json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": "integer", "enum": [1, 2]});
+    "typed group"
+)]
+#[test_case(&json!({"if": {}, "unevaluatedProperties": false}); "raw document")]
+fn negate_declines(schema: &Value) {
+    assert_eq!(canonicalize(schema).expect("canonicalizes").negate(), None);
+}
+
+#[test]
+fn negate_keeps_a_reference_symbolic() {
+    let schema = canonicalize(&json!({
+        "$defs": {"A": {"type": "string"}},
+        "$ref": "#/$defs/A"
+    }))
+    .expect("canonicalizes");
+    let complement = schema.negate().expect("negates");
+    assert_eq!(complement.kind(), CanonicalKind::Not);
+    assert_eq!(
+        complement.definition("#/$defs/A"),
+        schema.definition("#/$defs/A")
+    );
+}

@@ -301,6 +301,11 @@ impl PyCanonicalSchema {
             .map_err(|error| canonicalization_error(py, error))
     }
 
+    /// Every value this schema rejects, or `None` where the canonical form cannot spell it exactly.
+    fn negate(&self) -> Option<Self> {
+        self.inner.negate().map(|inner| Self { inner })
+    }
+
     /// The reference target registered under `uri`.
     fn definition(&self, uri: &str) -> Option<Self> {
         self.inner.definition(uri).map(|inner| Self { inner })

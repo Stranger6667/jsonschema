@@ -15,7 +15,7 @@ use crate::{
         emit,
         error::OperandMismatch,
         ir::{Schema, SchemaKind},
-        CanonicalizationError,
+        negate, CanonicalizationError,
     },
     options::PatternEngineOptions,
 };
@@ -159,6 +159,21 @@ impl CanonicalSchema {
             self.pattern_options,
             self.validate_formats,
             definitions,
+        ))
+    }
+
+    /// Every value this schema rejects, or `None` where the canonical form cannot spell it exactly.
+    #[must_use]
+    pub fn negate(&self) -> Option<Self> {
+        let context =
+            CanonicalizationContext::new(self.draft, self.pattern_options, self.validate_formats);
+        let inner = negate::negate(&self.inner, &context)?;
+        Some(Self::new(
+            inner,
+            self.draft,
+            self.pattern_options,
+            self.validate_formats,
+            Arc::clone(&self.definitions),
         ))
     }
 
