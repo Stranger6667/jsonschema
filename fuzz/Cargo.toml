@@ -42,6 +42,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "canonical"
+path = "fuzz_targets/canonical.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "codegen"
 path = "fuzz_targets/codegen.rs"
 test = false
