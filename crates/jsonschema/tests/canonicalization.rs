@@ -1394,3 +1394,69 @@ fn bundled_metaschemas_are_modeled() {
     }
     assert!(raw.is_empty(), "these metaschemas stayed raw: {raw:#?}");
 }
+
+// A registry resource never passes metaschema validation - only the referring document does. A
+// reference into a malformed one must degrade to `Raw` rather than error or panic.
+#[test_case(&json!({"type": 5}); "type is not a name")]
+#[test_case(&json!({"if": 5}); "subschema is not a schema")]
+#[test_case(&json!({"dependencies": {"a": 5}}); "dependency is neither schema nor name list")]
+#[test_case(&json!({"dependentRequired": {"a": ["x", 1]}}); "dependent requirement is not a name")]
+#[test_case(&json!({"dependentSchemas": {"a": 5}}); "dependent schema is not a schema")]
+#[test_case(&json!({"items": [true]}); "2020-12 items is not a tuple")]
+#[test_case(
+    &json!({"contains": 5, "unevaluatedItems": false});
+    "contains beside unevaluated items is not a schema"
+)]
+#[test_case(
+    &json!({"allOf": [5], "unevaluatedProperties": false});
+    "property cover branch is not a schema"
+)]
+#[test_case(
+    &json!({"allOf": [5], "unevaluatedItems": false});
+    "item cover branch is not a schema"
+)]
+#[test_case(
+    &json!({"allOf": [{"properties": {"a": true}}], "properties": 5, "unevaluatedProperties": false});
+    "hoisted properties is not an object"
+)]
+#[test_case(
+    &json!({"allOf": [{"prefixItems": [true]}], "prefixItems": 5, "unevaluatedItems": false});
+    "padded tuple is not an array"
+)]
+#[test_case(
+    &json!({"$schema": "http://json-schema.org/draft-07/schema#", "type": "integer"});
+    "target declares another draft"
+)]
+fn unvalidated_registry_target_keeps_the_document_raw(target: &Value) {
+    let registry = Registry::new()
+        .add("https://example.com/target", target)
+        .expect("resource URI is valid")
+        .prepare()
+        .expect("registry prepares");
+    let document = json!({"$ref": "https://example.com/target"});
+    let canonical = options()
+        .with_draft(Draft::Draft202012)
+        .with_registry(&registry)
+        .canonicalize(&document)
+        .expect("canonicalizes");
+
+    assert_eq!(canonical.kind(), CanonicalKind::Raw);
+    assert_eq!(canonical.to_json_schema(), document);
+}
+
+// The suite pins the error variant; these pin what a caller reads off it.
+#[test]
+fn a_resolution_error_carries_its_cause() {
+    let error = canonicalize(&json!({"$ref": "#/$defs/%FF", "$defs": {"a": true}}))
+        .expect_err("the pointer does not decode");
+
+    assert!(error.to_string().contains("valid UTF-8"), "{error}");
+    assert!(std::error::Error::source(&error).is_some());
+}
+
+#[test]
+fn an_invalid_schema_type_error_has_no_cause() {
+    let error = canonicalize(&json!([])).expect_err("an array is not a schema");
+
+    assert!(std::error::Error::source(&error).is_none());
+}

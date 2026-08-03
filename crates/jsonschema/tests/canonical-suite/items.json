@@ -706,5 +706,64 @@
       {"data": [2, 1], "valid": false},
       {"data": [1, 1], "valid": false}
     ]
+  },
+  {
+    "description": "raw: an unmodeled subschema in a prefixItems tuple keeps the document raw",
+    "schema": {
+      "prefixItems": [
+        {
+          "$schema": "http://json-schema.org/draft-06/schema#"
+        }
+      ]
+    },
+    "draft": "draft2020-12",
+    "kind": "raw",
+    "expected": {
+      "prefixItems": [
+        {
+          "$schema": "http://json-schema.org/draft-06/schema#"
+        }
+      ]
+    }
+  },
+  {
+    "description": "raw: an unmodeled subschema in a draft 7 items tuple keeps the document raw",
+    "schema": {
+      "items": [
+        {
+          "$schema": "http://json-schema.org/draft-06/schema#"
+        }
+      ]
+    },
+    "draft": "draft7",
+    "kind": "raw",
+    "expected": {
+      "items": [
+        {
+          "$schema": "http://json-schema.org/draft-06/schema#"
+        }
+      ]
+    }
+  },
+  {
+    "description": "raw: an unmodeled additionalItems beside a tuple keeps the document raw",
+    "schema": {
+      "items": [
+        true
+      ],
+      "additionalItems": {
+        "$schema": "http://json-schema.org/draft-06/schema#"
+      }
+    },
+    "draft": "draft2019-09",
+    "kind": "raw",
+    "expected": {
+      "items": [
+        true
+      ],
+      "additionalItems": {
+        "$schema": "http://json-schema.org/draft-06/schema#"
+      }
+    }
   }
 ]

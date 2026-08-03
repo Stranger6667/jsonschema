@@ -967,5 +967,163 @@
         }
       ]
     }
+  },
+  {
+    "description": "two branches parted by one property merge, keeping only the requirements both make",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "b"
+          ],
+          "properties": {
+            "a": {
+              "type": "integer"
+            },
+            "b": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "a",
+            "b"
+          ],
+          "properties": {
+            "a": {
+              "type": "string"
+            },
+            "b": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "required": [
+        "b"
+      ],
+      "properties": {
+        "a": {
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "b": {
+          "type": "string"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "b": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1,
+          "b": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": "s",
+          "b": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": true,
+          "b": "x"
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a size ceiling at the counter ceiling has no window above it, so the branch keeps its bound",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "object",
+          "maxProperties": 18446744073709551615,
+          "properties": {
+            "a": false
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "b": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "properties": {
+            "b": {
+              "type": "null"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "maxProperties": 18446744073709551615,
+          "properties": {
+            "a": false
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "b": null
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1,
+          "b": 1
+        },
+        "valid": false
+      }
+    ]
   }
 ]
