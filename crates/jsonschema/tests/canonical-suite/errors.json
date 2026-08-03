@@ -115,5 +115,15 @@
       "multipleOf": -3.0
     },
     "error": "ValidationError"
+  },
+  {
+    "description": "a reference whose pointer does not decode is a resolution error",
+    "schema": {
+      "$ref": "#/$defs/%FF",
+      "$defs": {
+        "a": true
+      }
+    },
+    "error": "ReferenceResolution"
   }
 ]

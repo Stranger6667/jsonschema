@@ -1092,5 +1092,59 @@
       {"data": "a", "valid": false},
       {"data": 1.5, "valid": false}
     ]
+  },
+  {
+    "description": "a duplicate branch without a complement keeps the exclusivity symbolic",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "$ref": "#/$defs/a"
+        }
+      ],
+      "$defs": {
+        "a": {
+          "type": "string"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "a": {
+          "type": "string"
+        }
+      },
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "$ref": "#/$defs/a"
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 5,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": true,
+        "valid": false
+      }
+    ]
   }
 ]

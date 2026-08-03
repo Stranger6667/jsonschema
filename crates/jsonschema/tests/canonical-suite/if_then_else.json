@@ -230,5 +230,54 @@
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema"
     }
+  },
+  {
+    "description": "raw: an unmodeled subschema under `if` keeps the document raw",
+    "schema": {
+      "if": {
+        "$schema": "http://json-schema.org/draft-06/schema#"
+      }
+    },
+    "draft": "draft2020-12",
+    "kind": "raw",
+    "expected": {
+      "if": {
+        "$schema": "http://json-schema.org/draft-06/schema#"
+      }
+    }
+  },
+  {
+    "description": "raw: an unmodeled subschema under `then` keeps the document raw",
+    "schema": {
+      "if": true,
+      "then": {
+        "$schema": "http://json-schema.org/draft-06/schema#"
+      }
+    },
+    "draft": "draft2020-12",
+    "kind": "raw",
+    "expected": {
+      "if": true,
+      "then": {
+        "$schema": "http://json-schema.org/draft-06/schema#"
+      }
+    }
+  },
+  {
+    "description": "raw: an unmodeled subschema under `else` keeps the document raw",
+    "schema": {
+      "if": true,
+      "else": {
+        "$schema": "http://json-schema.org/draft-06/schema#"
+      }
+    },
+    "draft": "draft2020-12",
+    "kind": "raw",
+    "expected": {
+      "if": true,
+      "else": {
+        "$schema": "http://json-schema.org/draft-06/schema#"
+      }
+    }
   }
 ]

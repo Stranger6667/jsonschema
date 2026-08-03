@@ -1550,5 +1550,64 @@
       {"data": {"a": 1}, "valid": true},
       {"data": null, "valid": false}
     ]
+  },
+  {
+    "description": "a length bound that rejects a constant cannot absorb it, so both branches stay",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "array",
+          "maxItems": 1
+        },
+        {
+          "const": [
+            1,
+            2
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "maxItems": 1,
+          "type": "array"
+        },
+        {
+          "const": [
+            1,
+            2
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": [
+          1
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1,
+          2
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1,
+          2,
+          3
+        ],
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
   }
 ]

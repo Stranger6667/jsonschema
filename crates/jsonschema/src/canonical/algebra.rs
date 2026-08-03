@@ -1687,9 +1687,6 @@ fn widen_entry_covered_by_sibling(
                         widened.properties.remove(&key);
                     }
                 }
-                if widened == leaves[index] {
-                    continue;
-                }
                 let mut gained = widened.clone();
                 match leaves[sibling].properties.get(&key) {
                     Some(other) => {
@@ -1920,12 +1917,12 @@ fn leaf_absorbs_member(
 ) -> bool {
     match member.as_value() {
         // Absorbing a member narrows the schema, so only a definite admission absorbs one.
-        Value::Array(_) => arrays
+        Value::Array(items) => arrays
             .iter()
-            .any(|leaf| matches!(array_leaf_admits(leaf, member, ctx), Verdict::Admits)),
-        Value::Object(_) => objects
+            .any(|leaf| matches!(array_leaf_admits(leaf, items, ctx), Verdict::Admits)),
+        Value::Object(map) => objects
             .iter()
-            .any(|leaf| matches!(object_leaf_admits(leaf, member, ctx), Verdict::Admits)),
+            .any(|leaf| matches!(object_leaf_admits(leaf, map, ctx), Verdict::Admits)),
         Value::String(_) => strings.iter().any(|(leaf, regexes)| {
             matches!(
                 string_leaf_admits(leaf, regexes, member, ctx),
@@ -2411,16 +2408,9 @@ fn has_duplicate_elements(elements: &[Value]) -> bool {
         .any(|(index, element)| elements[..index].contains(element))
 }
 
-/// Whether `member` is an array whose length sits in the window, whose every element the item
-/// schema admits, and with distinct items when asked.
-fn array_leaf_admits(
-    leaf: &ArrayLeaf,
-    member: &CanonicalJson,
-    ctx: &CanonicalizationContext,
-) -> Verdict {
-    let Value::Array(items) = member.as_value() else {
-        return Verdict::Rejects;
-    };
+/// Whether `items` has a length in the window, every element the item schema admits, and distinct
+/// elements when asked.
+fn array_leaf_admits(leaf: &ArrayLeaf, items: &[Value], ctx: &CanonicalizationContext) -> Verdict {
     if !leaf
         .lengths
         .contains(&BoundCardinality::from(items.len() as u64))
@@ -2750,9 +2740,10 @@ fn expand_additional_over_admitted_keys(leaf: &mut ObjectLeaf) {
     let Some(keys) = admitted_keys(leaf) else {
         return;
     };
-    let Some(shield) = leaf.additional.take() else {
-        return;
-    };
+    let shield = leaf
+        .additional
+        .take()
+        .expect("the early return proved a shield present");
     for key in keys {
         leaf.properties.entry(key).or_insert_with(|| shield.clone());
     }
@@ -3254,16 +3245,13 @@ fn restrict_object_member(
     ))
 }
 
-/// Whether `member` is an object carrying every required key, every key admitted by the key
-/// constraint, and its property count in the window.
+/// Whether `map` carries every required key, every key admitted by the key constraint, and a
+/// property count in the window.
 fn object_leaf_admits(
     leaf: &ObjectLeaf,
-    member: &CanonicalJson,
+    map: &serde_json::Map<String, Value>,
     ctx: &CanonicalizationContext,
 ) -> Verdict {
-    let Value::Object(map) = member.as_value() else {
-        return Verdict::Rejects;
-    };
     if !leaf
         .sizes
         .contains(&BoundCardinality::from(map.len() as u64))

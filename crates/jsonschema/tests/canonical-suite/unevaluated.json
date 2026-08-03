@@ -968,5 +968,237 @@
       },
       "type": "array"
     }
+  },
+  {
+    "description": "raw: unevaluatedItems beside an instance-dependent branch stays unmodeled",
+    "schema": {
+      "allOf": [
+        {
+          "if": {
+            "type": "array"
+          },
+          "then": true
+        }
+      ],
+      "unevaluatedItems": false
+    },
+    "draft": "draft2020-12",
+    "kind": "raw",
+    "expected": {
+      "allOf": [
+        {
+          "if": {
+            "type": "array"
+          },
+          "then": true
+        }
+      ],
+      "unevaluatedItems": false
+    }
+  },
+  {
+    "description": "ir: a boolean allOf branch evaluates nothing, so unevaluatedProperties sees only the local keys",
+    "schema": {
+      "allOf": [
+        true
+      ],
+      "properties": {
+        "a": {}
+      },
+      "unevaluatedProperties": false
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "propertyNames": {
+            "const": "a"
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": 5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "ir: a boolean allOf branch evaluates no index, so unevaluatedItems closes the array",
+    "schema": {
+      "allOf": [
+        true
+      ],
+      "unevaluatedItems": false
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "object"
+          ]
+        },
+        {
+          "const": []
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": [],
+        "valid": true
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": false
+      },
+      {
+        "data": 5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "ir: a branch's own unevaluatedItems reaches every index, leaving the outer one inert",
+    "schema": {
+      "allOf": [
+        {
+          "unevaluatedItems": false
+        }
+      ],
+      "unevaluatedItems": {
+        "type": "integer"
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "object"
+          ]
+        },
+        {
+          "const": []
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": [],
+        "valid": true
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": false
+      },
+      {
+        "data": 5,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "ir: a branch tuple pads the local tuple so the twin starts past the evaluated indexes",
+    "schema": {
+      "allOf": [
+        {
+          "prefixItems": [
+            {
+              "type": "integer"
+            }
+          ]
+        }
+      ],
+      "unevaluatedItems": false
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "object"
+          ]
+        },
+        {
+          "maxItems": 1,
+          "prefixItems": [
+            {
+              "type": "integer"
+            }
+          ],
+          "type": "array"
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": [],
+        "valid": true
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          "x"
+        ],
+        "valid": false
+      },
+      {
+        "data": [
+          1,
+          2
+        ],
+        "valid": false
+      }
+    ]
   }
 ]

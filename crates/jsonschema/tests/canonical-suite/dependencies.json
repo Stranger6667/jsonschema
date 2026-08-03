@@ -280,5 +280,43 @@
         }
       ]
     }
+  },
+  {
+    "description": "raw: an unmodeled dependentSchemas consequent keeps the document raw",
+    "schema": {
+      "dependentSchemas": {
+        "a": {
+          "$schema": "http://json-schema.org/draft-06/schema#"
+        }
+      }
+    },
+    "draft": "draft2020-12",
+    "kind": "raw",
+    "expected": {
+      "dependentSchemas": {
+        "a": {
+          "$schema": "http://json-schema.org/draft-06/schema#"
+        }
+      }
+    }
+  },
+  {
+    "description": "raw: an unmodeled schema dependency keeps the document raw",
+    "schema": {
+      "dependencies": {
+        "a": {
+          "$schema": "http://json-schema.org/draft-06/schema#"
+        }
+      }
+    },
+    "draft": "draft7",
+    "kind": "raw",
+    "expected": {
+      "dependencies": {
+        "a": {
+          "$schema": "http://json-schema.org/draft-06/schema#"
+        }
+      }
+    }
   }
 ]
