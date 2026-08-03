@@ -8,9 +8,9 @@ use crate::{
         algebra,
         context::CanonicalizationContext,
         ir::{
-            type_set_schema, ArrayLeaf, AtLeastTwo, BoundNumber, CanonicalJson, ContainsFacet,
-            Discrete, Divisors, LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind,
-            StringLeaf,
+            type_set_schema, ArrayLeaf, AtLeastTwo, BoundCardinality, BoundNumber, CanonicalJson,
+            ContainsFacet, Discrete, Divisors, LengthBounds, NumberLeaf, ObjectLeaf, Schema,
+            SchemaKind, StringLeaf,
         },
     },
     JsonType, JsonTypeSet,
@@ -262,16 +262,20 @@ fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Optio
 }
 
 /// An element schema fails on an array exactly when one element violates it, which is a `contains`
-/// demand for its complement.
+/// demand for its complement. A demand for one match fails exactly when every element violates it,
+/// which is the same trade the other way round.
 /// ```text
 /// e.g.  {"not": {"type": "array", "maxItems": 2}}
 ///       =>  anyOf: [<non-array types>, {"type": "array", "minItems": 3}]
 /// e.g.  {"not": {"type": "array", "items": {"type": "string"}}}
 ///       =>  anyOf: [<non-array types>,
 ///                   {"type": "array", "contains": {"type": <every type but string>}}]
+/// e.g.  {"not": {"type": "array", "contains": {"type": "string"}}}
+///       =>  anyOf: [<non-array types>,
+///                   {"type": "array", "items": {"type": <every type but string>}}]
 /// ```
 fn negate_array_leaf(leaf: &ArrayLeaf, ctx: &CanonicalizationContext) -> Option<Schema> {
-    if leaf.unique || !leaf.prefix.is_empty() || !leaf.contains.is_empty() {
+    if leaf.unique || !leaf.prefix.is_empty() {
         return None;
     }
     let windows = length_windows(&leaf.lengths)?;
@@ -292,6 +296,23 @@ fn negate_array_leaf(leaf: &ArrayLeaf, ctx: &CanonicalizationContext) -> Option<
                     minimum: None,
                     maximum: None,
                 }],
+            },
+            ctx,
+        ));
+    }
+    for facet in &leaf.contains {
+        // Missing a window on the count means landing anywhere else in it, and an element schema
+        // holding for every element can only say "nowhere".
+        if facet.maximum.is_some() || facet.effective_minimum() != BoundCardinality::from(1) {
+            return None;
+        }
+        branches.push(algebra::array_leaf(
+            ArrayLeaf {
+                lengths: LengthBounds::default(),
+                unique: false,
+                prefix: Vec::new(),
+                items: Some(negate(&facet.schema, ctx)?),
+                contains: Vec::new(),
             },
             ctx,
         ));
