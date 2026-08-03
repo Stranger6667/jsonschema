@@ -390,6 +390,42 @@
     ]
   },
   {
+    "description": "ir: excluding the empty string is the length floor above it",
+    "schemas": [
+      {"type": "string", "not": {"enum": [""]}},
+      {"type": "string", "minLength": 1}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "minLength": 1},
+    "tests": [
+      {"data": "", "valid": false},
+      {"data": "a", "valid": true},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: excluding the empty string under a ceiling keeps the ceiling",
+    "schemas": [
+      {"type": "string", "maxLength": 3, "not": {"enum": [""]}},
+      {"type": "string", "minLength": 1, "maxLength": 3}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "minLength": 1, "maxLength": 3},
+    "tests": [
+      {"data": "", "valid": false},
+      {"data": "abc", "valid": true},
+      {"data": "abcd", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an exclusion above the floor stays an exclusion",
+    "schema": {"type": "string", "not": {"enum": ["a"]}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "not": {"enum": ["a"]}},
+    "tests": [
+      {"data": "", "valid": true},
+      {"data": "a", "valid": false},
+      {"data": "b", "valid": true}
+    ]
+  },
+  {
     "description": "ir: intersecting string leaves can produce an empty length window",
     "schema": {
       "allOf": [

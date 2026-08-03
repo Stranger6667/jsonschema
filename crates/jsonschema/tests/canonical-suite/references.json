@@ -1,5 +1,150 @@
 [
   {
+    "description": "a conjunction of references absorbs the stricter conjunction built from it",
+    "schemas": [
+      {
+        "anyOf": [
+          {"allOf": [{"$ref": "#/$defs/integer"}, {"$ref": "#/$defs/string"}]},
+          {"allOf": [{"type": "object"}, {"$ref": "#/$defs/integer"}, {"$ref": "#/$defs/string"}]}
+        ],
+        "$defs": {"integer": {"type": "integer"}, "string": {"type": "string"}}
+      },
+      {
+        "allOf": [{"$ref": "#/$defs/integer"}, {"$ref": "#/$defs/string"}],
+        "$defs": {"integer": {"type": "integer"}, "string": {"type": "string"}}
+      }
+    ],
+    "kind": "all_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [{"$ref": "#/$defs/integer"}, {"$ref": "#/$defs/string"}],
+      "$defs": {"integer": {"type": "integer"}, "string": {"type": "string"}}
+    },
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": "x", "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "a property alternative a sibling already covers leaves the entry",
+    "schemas": [
+      {
+        "anyOf": [
+          {"type": "object", "properties": {"a": {"$ref": "#/$defs/null"}}},
+          {"allOf": [
+            {"type": "object", "properties": {"a": {"anyOf": [{"$ref": "#/$defs/integer"}, {"$ref": "#/$defs/null"}]}}},
+            {"$ref": "#/$defs/integer"}
+          ]}
+        ],
+        "$defs": {"integer": {"type": "integer"}, "null": {"type": "null"}}
+      },
+      {
+        "anyOf": [
+          {"type": "object", "properties": {"a": {"$ref": "#/$defs/null"}}},
+          {"allOf": [
+            {"type": "object", "properties": {"a": {"$ref": "#/$defs/integer"}}},
+            {"$ref": "#/$defs/integer"}
+          ]}
+        ],
+        "$defs": {"integer": {"type": "integer"}, "null": {"type": "null"}}
+      }
+    ],
+    "kind": "any_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "properties": {"a": {"$ref": "#/$defs/null"}}},
+        {"allOf": [
+          {"type": "object", "properties": {"a": {"$ref": "#/$defs/integer"}}},
+          {"$ref": "#/$defs/integer"}
+        ]}
+      ],
+      "$defs": {"integer": {"type": "integer"}, "null": {"type": "null"}}
+    },
+    "tests": [
+      {"data": {"a": null}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "a sibling covering one conjunct covers the whole conjunction",
+    "schemas": [
+      {
+        "anyOf": [
+          {"allOf": [{"type": "object", "required": ["b"], "properties": {"a": false}}, {"$ref": "#/$defs/integer"}]},
+          {"type": "object", "properties": {"a": false}}
+        ],
+        "$defs": {"integer": {"type": "integer"}}
+      },
+      {
+        "type": "object",
+        "properties": {"a": false},
+        "$defs": {"integer": {"type": "integer"}}
+      }
+    ],
+    "kind": "object",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": false}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"b": 1}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "a reference beside its own complement leaves no value out",
+    "schema": {
+      "anyOf": [{"$ref": "#/$defs/integer"}, {"not": {"$ref": "#/$defs/integer"}}],
+      "$defs": {"integer": {"type": "integer"}}
+    },
+    "kind": "true",
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": "x", "valid": true},
+      {"data": null, "valid": true}
+    ]
+  },
+  {
+    "description": "a complement branch drops its own reference from a sibling conjunction",
+    "schemas": [
+      {
+        "anyOf": [
+          {"not": {"$ref": "#/$defs/integer"}},
+          {"allOf": [{"$ref": "#/$defs/integer"}, {"$ref": "#/$defs/string"}]}
+        ],
+        "$defs": {"integer": {"type": "integer"}, "string": {"type": "string"}}
+      },
+      {
+        "anyOf": [
+          {"not": {"$ref": "#/$defs/integer"}},
+          {"$ref": "#/$defs/string"}
+        ],
+        "$defs": {"integer": {"type": "integer"}, "string": {"type": "string"}}
+      }
+    ],
+    "kind": "any_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"not": {"$ref": "#/$defs/integer"}},
+        {"$ref": "#/$defs/string"}
+      ],
+      "$defs": {"integer": {"type": "integer"}, "string": {"type": "string"}}
+    },
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": "x", "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
     "description": "same-document ref keeps a canonical reachable definition",
     "schema": {
       "$ref": "#/$defs/user",

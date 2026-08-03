@@ -2374,5 +2374,66 @@
         "valid": true
       }
     ]
+  },
+  {
+    "description": "`not` the empty object, which every non-object and every object holding a key meets",
+    "schema": {"not": {"const": {}}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "minProperties": 1}
+      ]
+    },
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"a": 1}, "valid": true},
+      {"data": [], "valid": true},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "`not` the empty array, which every non-array and every array holding an element meets",
+    "schema": {"not": {"const": []}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "object"]},
+        {"type": "array", "minItems": 1}
+      ]
+    },
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": [1], "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "`not` a value set holding both empty containers",
+    "schema": {"not": {"enum": [[], {}]}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string"]},
+        {"type": "array", "minItems": 1},
+        {"type": "object", "minProperties": 1}
+      ]
+    },
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": {}, "valid": false},
+      {"data": [1], "valid": true},
+      {"data": {"a": 1}, "valid": true},
+      {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "`not` a non-empty object stays raw: the values differing in one key have no form",
+    "schema": {"not": {"const": {"a": 1}}},
+    "expected": {"not": {"const": {"a": 1}}},
+    "tests": [
+      {"data": {"a": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
   }
 ]

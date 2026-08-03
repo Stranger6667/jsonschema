@@ -209,14 +209,14 @@
     ]
   },
   {
-    "description": "an unmodeled if schema keeps the document raw",
+    "description": "an if schema with no expressible complement keeps the document raw",
     "schema": {
-      "if": {"unevaluatedProperties": false},
+      "if": {"type": "integer"},
       "then": true
     },
     "expected": {
       "if": {
-        "unevaluatedProperties": false
+        "type": "integer"
       },
       "then": true
     }
