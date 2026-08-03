@@ -937,9 +937,7 @@
       "$defs": {
         "target": {
           "$dynamicAnchor": "n",
-          "anyOf": [
-            {}
-          ],
+          "if": {},
           "unevaluatedProperties": false
         },
         "use": {
@@ -958,9 +956,7 @@
       "$defs": {
         "target": {
           "$dynamicAnchor": "n",
-          "anyOf": [
-            {}
-          ],
+          "if": {},
           "unevaluatedProperties": false
         },
         "use": {

@@ -271,22 +271,31 @@
     }
   },
   {
-    "description": "raw: an instance-dependent applicator can annotate keys the unevaluatedProperties would see",
+    "description": "ir: a lone alternative always contributes its keys",
     "schema": {"anyOf": [{"properties": {"a": {}}}], "unevaluatedProperties": false},
-    "kind": "raw",
     "tests": [
       {"data": {"a": 1}, "valid": true},
       {"data": {"b": 1}, "valid": false}
     ],
     "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "anyOf": [
         {
-          "properties": {
-            "a": {}
-          }
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "propertyNames": {
+            "const": "a"
+          },
+          "type": "object"
         }
-      ],
-      "unevaluatedProperties": false
+      ]
     }
   },
   {
@@ -1200,5 +1209,174 @@
         "valid": false
       }
     ]
+  },
+  {
+    "description": "ir: alternatives that evaluate nothing leave every key unevaluated",
+    "schema": {"type": "object", "oneOf": [{}], "unevaluatedProperties": false},
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": {}
+    }
+  },
+  {
+    "description": "ir: alternatives naming the same key agree on what they evaluate",
+    "schema": {
+      "type": "object",
+      "anyOf": [
+        {"properties": {"a": {"type": "integer"}}},
+        {"properties": {"a": {"type": "boolean"}}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": true}, "valid": true},
+      {"data": {}, "valid": true},
+      {"data": {"b": 1}, "valid": false},
+      {"data": {"a": "x"}, "valid": false}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "a": {
+          "type": [
+            "boolean",
+            "integer"
+          ]
+        }
+      },
+      "propertyNames": {
+        "const": "a"
+      },
+      "type": "object"
+    }
+  },
+  {
+    "description": "raw: alternatives naming different keys leave the evaluated set to the instance",
+    "schema": {
+      "type": "object",
+      "anyOf": [
+        {"properties": {"a": {"type": "integer"}}, "required": ["a"]},
+        {"properties": {"b": {"type": "integer"}}, "required": ["b"]}
+      ],
+      "unevaluatedProperties": false
+    },
+    "kind": "raw",
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": 1}, "valid": true},
+      {"data": {"a": 1, "b": 1}, "valid": true},
+      {"data": {"c": 1}, "valid": false}
+    ],
+    "expected": {
+      "anyOf": [
+        {
+          "properties": {
+            "a": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "a"
+          ]
+        },
+        {
+          "properties": {
+            "b": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "b"
+          ]
+        }
+      ],
+      "type": "object",
+      "unevaluatedProperties": false
+    }
+  },
+  {
+    "description": "ir: alternatives that reach every key leave the unevaluatedProperties inert",
+    "schemas": [
+      {
+        "type": "object",
+        "anyOf": [
+          {"additionalProperties": {"type": "integer"}},
+          {"additionalProperties": {"type": "integer"}}
+        ],
+        "unevaluatedProperties": false
+      },
+      {"type": "object", "additionalProperties": {"type": "integer"}}
+    ],
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {}, "valid": true}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "type": "object"
+    }
+  },
+  {
+    "description": "ir: alternatives that evaluate no index leave every element unevaluated",
+    "schema": {"type": "array", "oneOf": [{}], "unevaluatedItems": false},
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1], "valid": false}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": []
+    }
+  },
+  {
+    "description": "raw: alternatives with different tuple lengths leave the evaluated indexes to the instance",
+    "schema": {
+      "type": "array",
+      "anyOf": [
+        {"prefixItems": [{"type": "integer"}], "minItems": 1},
+        {"prefixItems": [{"type": "integer"}, {"type": "integer"}], "minItems": 2}
+      ],
+      "unevaluatedItems": false
+    },
+    "kind": "raw",
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1, 2], "valid": true},
+      {"data": [1, 2, 3], "valid": false}
+    ],
+    "expected": {
+      "anyOf": [
+        {
+          "minItems": 1,
+          "prefixItems": [
+            {
+              "type": "integer"
+            }
+          ]
+        },
+        {
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        }
+      ],
+      "type": "array",
+      "unevaluatedItems": false
+    }
   }
 ]
