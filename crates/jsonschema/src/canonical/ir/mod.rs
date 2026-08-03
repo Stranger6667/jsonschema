@@ -408,6 +408,9 @@ pub(crate) struct StringLeaf {
     /// Sorted, deduplicated. A string must satisfy every encoding. Empty outside Draft 6/7, where
     /// `contentEncoding` is an annotation.
     pub(crate) content_encodings: Vec<Arc<str>>,
+    /// Sorted, deduplicated. A string must differ from every member. Members the rest of the leaf
+    /// already rejects are dropped, so one value set has one form.
+    pub(crate) excluded: Vec<Arc<str>>,
 }
 
 /// Sorted, deduplicated, and holding at least two elements; fewer collapses to a simpler node.

@@ -67,7 +67,7 @@ pub struct TypedGroupView {
 }
 
 /// Payload of [`CanonicalView::String`]: the `minLength`/`maxLength` bounds, patterns, formats,
-/// media types, and encodings on a string value.
+/// media types, encodings, and excluded values on a string value.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StringView {
     pub min_length: Option<Number>,
@@ -76,6 +76,8 @@ pub struct StringView {
     pub formats: Vec<String>,
     pub content_media_types: Vec<String>,
     pub content_encodings: Vec<String>,
+    /// Values the string must differ from.
+    pub excluded: Vec<String>,
 }
 
 /// Payload of [`CanonicalView::Number`]: the interval bounds on a number value, each with whether
@@ -323,6 +325,7 @@ fn string_view(leaf: &StringLeaf) -> StringView {
             .iter()
             .map(ToString::to_string)
             .collect(),
+        excluded: leaf.excluded.iter().map(ToString::to_string).collect(),
     }
 }
 

@@ -1008,6 +1008,7 @@ fn parse_schema_in_scope<'a>(
             formats,
             content_media_types,
             content_encodings,
+            excluded: Vec::new(),
         };
         conjuncts.push(string_facet_schema(leaf, ctx));
     }
@@ -1111,6 +1112,7 @@ fn parse_schema_in_scope<'a>(
                     formats: Vec::new(),
                     content_media_types: Vec::new(),
                     content_encodings: Vec::new(),
+                    excluded: Vec::new(),
                 },
                 ctx,
             ));

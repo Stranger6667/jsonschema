@@ -1726,6 +1726,9 @@ fn negate_spells_the_complement(schema: &Value, expected: &Value) {
 #[test_case(&json!({"const": 1.5}); "numeric constant")]
 #[test_case(&json!({"type": "array", "items": {"type": "string"}}); "array element schema")]
 #[test_case(&json!({"type": "array", "maxItems": 2, "items": {"type": "string"}}); "array element schema beside a size bound")]
+#[test_case(&json!({"const": "a"}); "string constant")]
+#[test_case(&json!({"enum": ["a", "b"]}); "string value set")]
+#[test_case(&json!({"type": "string", "minLength": 2}); "excluded value under a window")]
 fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
     let complement = canonicalize(schema)
         .expect("canonicalizes")
@@ -1787,4 +1790,17 @@ fn negate_keeps_a_reference_symbolic() {
         complement.definition("#/$defs/A"),
         schema.definition("#/$defs/A")
     );
+}
+
+#[test_case(&json!({"const": "a"}); "string constant")]
+#[test_case(&json!({"enum": ["a", "b"]}); "string value set")]
+#[test_case(&json!({"type": "string", "minLength": 2}); "string window")]
+fn negate_is_an_involution(schema: &Value) {
+    let canonical = canonicalize(schema).expect("canonicalizes");
+    let doubled = canonical
+        .negate()
+        .expect("negates")
+        .negate()
+        .expect("negates back");
+    assert_eq!(doubled, canonical);
 }
