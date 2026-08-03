@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.49.4] - 2026-08-04
+
 ### Added
 
 - Canonicalization of `not` a string format, which the string leaf carries as barred formats.
@@ -1205,7 +1207,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.3...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.4...HEAD
+[0.49.4]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.3...python-v0.49.4
 [0.49.3]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.2...python-v0.49.3
 [0.49.2]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.1...python-v0.49.2
 [0.49.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.0...python-v0.49.1
