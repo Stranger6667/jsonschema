@@ -997,8 +997,17 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         out.push(value_set);
     }
 
+    // Shedding a conjunct leaves a branch the absorptions below can then take whole, so the
+    // rewrite goes first.
+    drop_conjuncts_a_complement_branch_covers(&mut out);
     // A direct branch absorbs every stricter conjunction containing it: `A or (A and B) = A`.
     let top_level: ahash::AHashSet<Schema> = out.iter().cloned().collect();
+    // A branch beside its own complement leaves no value out: `A or (not A) = true`.
+    if out.iter().any(
+        |branch| matches!(branch.kind(), SchemaKind::Not(operand) if top_level.contains(operand)),
+    ) {
+        return Schema::new(SchemaKind::True);
+    }
     out.retain(|branch| {
         let SchemaKind::AllOf(conjuncts) = branch.kind() else {
             return true;
@@ -1008,6 +1017,8 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             .iter()
             .any(|conjunct| top_level.contains(conjunct))
     });
+    drop_covered_conjunctions(&mut out, ctx);
+    drop_property_alternatives_covered_by_sibling(&mut out, ctx);
 
     // Zero branches accept nothing, so the union is `False`; one branch needs no `anyOf` wrapper.
     match AtLeastTwo::new(out) {
@@ -1967,6 +1978,7 @@ pub(crate) fn string_leaf(mut leaf: StringLeaf, ctx: &CanonicalizationContext) -
     if formats_conflict(&leaf, ctx) {
         return Schema::new(SchemaKind::False);
     }
+    absorb_empty_exclusion(&mut leaf);
     prune_excluded(&mut leaf, ctx);
     let Some(leaf) = NonEmpty::new(leaf) else {
         return Schema::new(SchemaKind::False);
@@ -1990,6 +2002,232 @@ pub(crate) fn string_leaf(mut leaf: StringLeaf, ctx: &CanonicalizationContext) -
         )));
     }
     Schema::new(SchemaKind::String(leaf))
+}
+
+/// A complement branch takes every value its own operand rejects, so a sibling conjunction holding
+/// that operand says nothing by holding it: `(not A) or (A and B) = (not A) or B`. A conjunction
+/// made entirely of covered operands keeps its form, since the union around it is then every value.
+fn drop_conjuncts_a_complement_branch_covers(branches: &mut [Schema]) {
+    let complemented: ahash::AHashSet<Schema> = branches
+        .iter()
+        .filter_map(|branch| {
+            if let SchemaKind::Not(operand) = branch.kind() {
+                Some(operand.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    if complemented.is_empty() {
+        return;
+    }
+    for branch in branches.iter_mut() {
+        let SchemaKind::AllOf(conjuncts) = branch.kind() else {
+            continue;
+        };
+        let kept: Vec<Schema> = conjuncts
+            .as_slice()
+            .iter()
+            .filter(|conjunct| !complemented.contains(*conjunct))
+            .cloned()
+            .collect();
+        if kept.is_empty() || kept.len() == conjuncts.as_slice().len() {
+            continue;
+        }
+        *branch = match AtLeastTwo::new(kept) {
+            Ok(remaining) => Schema::new(SchemaKind::AllOf(remaining)),
+            Err(mut lone) => lone.pop().expect("a non-empty conjunct list"),
+        };
+    }
+}
+
+/// Narrow a property entry spelling several alternatives down to the ones its own branch needs: the
+/// values an alternative adds are the branch restricted to it, and a sibling holding all of them
+/// makes the alternative say nothing here.
+/// ```text
+/// e.g.  anyOf [
+///         {"type": "object", "properties": {"a": {"$ref": "#/$defs/null"}}},
+///         allOf [{"type": "object",
+///                 "properties": {"a": {"anyOf": [{"$ref": "#/$defs/integer"},
+///                                                {"$ref": "#/$defs/null"}]}}},
+///                {"$ref": "#/$defs/integer"}]
+///       ]  =>  the second entry keeps only the `integer` alternative
+/// ```
+fn drop_property_alternatives_covered_by_sibling(
+    branches: &mut [Schema],
+    ctx: &CanonicalizationContext,
+) {
+    for index in 0..branches.len() {
+        let Some(narrowed) = narrow_branch_entries(branches, index, ctx) else {
+            continue;
+        };
+        branches[index] = narrowed;
+    }
+}
+
+/// The branch at `index` with every covered alternative dropped, or `None` when it keeps them all.
+fn narrow_branch_entries(
+    branches: &[Schema],
+    index: usize,
+    ctx: &CanonicalizationContext,
+) -> Option<Schema> {
+    let SchemaKind::AllOf(conjuncts) = branches[index].kind() else {
+        return None;
+    };
+    let mut rebuilt = conjuncts.as_slice().to_vec();
+    let mut narrowed = false;
+    let mut slot = 0;
+    while slot < rebuilt.len() {
+        let SchemaKind::Object(leaf) = rebuilt[slot].kind() else {
+            slot += 1;
+            continue;
+        };
+        for (key, entry) in &leaf.get().properties {
+            let SchemaKind::AnyOf(alternatives) = entry.kind() else {
+                continue;
+            };
+            let kept: Vec<Schema> = alternatives
+                .as_slice()
+                .iter()
+                .filter(|alternative| {
+                    !alternative_is_covered(branches, index, slot, key, alternative, ctx)
+                })
+                .cloned()
+                .collect();
+            if kept.len() == alternatives.as_slice().len() {
+                continue;
+            }
+            let mut narrower = leaf.get().clone();
+            narrower
+                .properties
+                .insert(Arc::clone(key), union(kept, ctx));
+            rebuilt[slot] = object_leaf(narrower, ctx);
+            narrowed = true;
+            break;
+        }
+        slot += 1;
+    }
+    if !narrowed {
+        return None;
+    }
+    Some(conjoin(rebuilt, ctx))
+}
+
+/// Whether the values one alternative adds - this branch with the entry pinned to it - are all held
+/// by a sibling.
+fn alternative_is_covered(
+    branches: &[Schema],
+    index: usize,
+    slot: usize,
+    key: &Arc<str>,
+    alternative: &Schema,
+    ctx: &CanonicalizationContext,
+) -> bool {
+    let mut restricted = demands(&branches[index]).to_vec();
+    let SchemaKind::Object(leaf) = restricted[slot].kind() else {
+        return false;
+    };
+    let mut pinned = leaf.get().clone();
+    pinned
+        .properties
+        .insert(Arc::clone(key), alternative.clone());
+    restricted[slot] = object_leaf(pinned, ctx);
+    let piece = conjoin(restricted, ctx);
+    branches
+        .iter()
+        .enumerate()
+        .filter(|(sibling, _)| *sibling != index)
+        .any(|(_, sibling)| intersect(piece.clone(), sibling.clone(), ctx) == piece)
+}
+
+/// Drop every conjunction a sibling branch already covers: each demand the sibling makes is met by
+/// a demand of the conjunction, so the conjunction admits nothing the sibling misses.
+/// ```text
+/// e.g.  anyOf [
+///         allOf [{"type": "object", "required": ["b"], "properties": {"a": false}},
+///                {"$ref": "#/$defs/integer"}],
+///         {"type": "object", "properties": {"a": false}}
+///       ]  =>  {"type": "object", "properties": {"a": false}}
+/// e.g.  anyOf [
+///         allOf [{"type": "object"}, {"$ref": "#/$defs/integer"}],
+///         allOf [{"type": ["object", "string"]}, {"$ref": "#/$defs/integer"}]
+///       ]  =>  allOf [{"type": ["object", "string"]}, {"$ref": "#/$defs/integer"}]
+/// ```
+fn drop_covered_conjunctions(branches: &mut Vec<Schema>, ctx: &CanonicalizationContext) {
+    // A branch that is not a conjunction is weighed against its own kind in the leaf pools.
+    if !branches
+        .iter()
+        .any(|branch| matches!(branch.kind(), SchemaKind::AllOf(_)))
+    {
+        return;
+    }
+    let mut index = 0;
+    while index < branches.len() {
+        if conjunction_is_covered(branches, index, ctx) {
+            branches.remove(index);
+        } else {
+            index += 1;
+        }
+    }
+}
+
+/// The values every member admits, built through the algebra so the result stays in normal form.
+fn conjoin(members: Vec<Schema>, ctx: &CanonicalizationContext) -> Schema {
+    members
+        .into_iter()
+        .fold(Schema::new(SchemaKind::True), |held, member| {
+            intersect(held, member, ctx)
+        })
+}
+
+/// The demands a branch makes, which is the branch itself unless it spells several.
+fn demands(branch: &Schema) -> &[Schema] {
+    if let SchemaKind::AllOf(conjuncts) = branch.kind() {
+        conjuncts.as_slice()
+    } else {
+        std::slice::from_ref(branch)
+    }
+}
+
+/// Whether the conjunction at `index` has, for every demand of some sibling, a demand of its own
+/// that intersecting with it leaves untouched - each of the sibling's demands already met.
+fn conjunction_is_covered(
+    branches: &[Schema],
+    index: usize,
+    ctx: &CanonicalizationContext,
+) -> bool {
+    if !matches!(branches[index].kind(), SchemaKind::AllOf(_)) {
+        return false;
+    }
+    let covered = demands(&branches[index]);
+    branches
+        .iter()
+        .enumerate()
+        .filter(|(sibling, _)| *sibling != index)
+        .any(|(_, sibling)| {
+            demands(sibling).iter().all(|wanted| {
+                covered
+                    .iter()
+                    .any(|held| intersect(held.clone(), wanted.clone(), ctx) == *held)
+            })
+        })
+}
+
+/// The empty string is the only string of its length, so excluding it is the floor above it and
+/// both spellings land on one form.
+/// ```text
+/// e.g.  {"type": "string", "not": {"enum": [""]}}  =>  {"type": "string", "minLength": 1}
+/// e.g.  {"type": "string", "not": {"enum": ["a"]}}  =>  unchanged: other lengths hold more strings
+/// ```
+fn absorb_empty_exclusion(leaf: &mut StringLeaf) {
+    if leaf.lengths.minimum.is_some() {
+        return;
+    }
+    let Some(index) = leaf.excluded.iter().position(|value| value.is_empty()) else {
+        return;
+    };
+    leaf.excluded.remove(index);
+    leaf.lengths.minimum = Some(BoundCardinality::from(1));
 }
 
 /// Drop excluded values the rest of the leaf already rejects, so one value set keeps one form. An

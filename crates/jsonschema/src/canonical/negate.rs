@@ -62,11 +62,13 @@ pub(crate) fn negate(schema: &Schema, ctx: &CanonicalizationContext) -> Option<S
     }
 }
 
-/// Complement of a finite value set, expressible when no member is an array or object: the
-/// untouched types stay whole, an unpaired boolean leaves the other one, the numeric members carve
-/// rays and gaps out of the number line, and the string members become exclusions on the strings.
+/// Complement of a finite value set: the untouched types stay whole, an unpaired boolean leaves the
+/// other one, the numeric members carve rays and gaps out of the number line, the string members
+/// become exclusions on the strings, and an empty container leaves the sizes above it.
 /// ```text
 /// e.g.  {"not": {"const": null}}  =>  {"type": ["boolean", "number", "string", "array", "object"]}
+/// e.g.  {"not": {"const": []}}
+///       =>  anyOf: [<non-array types>, {"type": "array", "minItems": 1}]
 /// e.g.  {"not": {"const": [1]}}  =>  unchanged: array inequality is inexpressible
 /// ```
 fn negate_finite_values(values: &[CanonicalJson], ctx: &CanonicalizationContext) -> Option<Schema> {
@@ -74,6 +76,8 @@ fn negate_finite_values(values: &[CanonicalJson], ctx: &CanonicalizationContext)
     let mut booleans = Vec::new();
     let mut numbers: Vec<Number> = Vec::new();
     let mut strings: Vec<Arc<str>> = Vec::new();
+    let mut empty_array = false;
+    let mut empty_object = false;
     for value in values {
         match value.as_value() {
             Value::Null => remaining = remaining.remove(JsonType::Null),
@@ -89,10 +93,40 @@ fn negate_finite_values(values: &[CanonicalJson], ctx: &CanonicalizationContext)
                 remaining = remaining.remove(JsonType::String);
                 strings.push(Arc::from(text.as_str()));
             }
+            // An empty container is the only one of its size, so the sizes above it are the rest of
+            // its type. Any other one needs a value to differ somewhere, which no facet spells.
+            Value::Array(items) if items.is_empty() => {
+                remaining = remaining.remove(JsonType::Array);
+                empty_array = true;
+            }
+            Value::Object(entries) if entries.is_empty() => {
+                remaining = remaining.remove(JsonType::Object);
+                empty_object = true;
+            }
             Value::Array(_) | Value::Object(_) => return None,
         }
     }
     let mut branches = vec![type_set_schema(remaining)];
+    if empty_array {
+        branches.push(algebra::array_leaf(
+            ArrayLeaf {
+                lengths: above_empty(),
+                unique: false,
+                prefix: Vec::new(),
+                items: None,
+                contains: Vec::new(),
+            },
+            ctx,
+        ));
+    }
+    if empty_object {
+        branches.push(object_branch(
+            above_empty(),
+            Vec::new(),
+            BTreeMap::new(),
+            ctx,
+        ));
+    }
     if let [member] = booleans.as_slice() {
         branches.push(Schema::new(SchemaKind::Const(CanonicalJson::from_value(
             &Value::Bool(!member),
@@ -175,6 +209,14 @@ fn negate_number_leaf(leaf: &NumberLeaf, ctx: &CanonicalizationContext) -> Optio
         branches.push(number_window(Some(flipped(maximum)), None, ctx));
     }
     Some(algebra::union(branches, ctx))
+}
+
+/// The sizes a container holding something can take.
+fn above_empty() -> LengthBounds {
+    LengthBounds {
+        minimum: Some(BoundCardinality::from(1)),
+        maximum: None,
+    }
 }
 
 /// A value set holding exactly these strings.
