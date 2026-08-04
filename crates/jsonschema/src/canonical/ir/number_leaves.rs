@@ -41,6 +41,7 @@ impl NumberLeaves {
                 && outer
                     .not_multiple_of
                     .bars_no_more_than(&inner.not_multiple_of)
+                && (!outer.excludes_integers || inner.excludes_integers)
         });
         self.canonical = true;
         // `is_empty` reads the batch without canonicalizing, which relies on this.
@@ -111,6 +112,7 @@ fn merge(mut leaves: Vec<NumberLeaf>) -> Vec<NumberLeaf> {
         left.multiple_of
             .cmp(&right.multiple_of)
             .then_with(|| left.not_multiple_of.cmp(&right.not_multiple_of))
+            .then_with(|| left.excludes_integers.cmp(&right.excludes_integers))
             .then_with(|| match (&left.minimum, &right.minimum) {
                 (Some(left), Some(right)) if left.to_number() == right.to_number() => {
                     right.is_inclusive().cmp(&left.is_inclusive())
@@ -124,6 +126,7 @@ fn merge(mut leaves: Vec<NumberLeaf>) -> Vec<NumberLeaf> {
             Some(last)
                 if last.multiple_of == leaf.multiple_of
                     && last.not_multiple_of == leaf.not_multiple_of
+                    && last.excludes_integers == leaf.excludes_integers
                     && reaches(last, &leaf) =>
             {
                 *last = hull(std::mem::take(last), leaf);
@@ -188,9 +191,14 @@ fn hull(last: NumberLeaf, next: NumberLeaf) -> NumberLeaf {
         last.not_multiple_of, next.not_multiple_of,
         "folding intervals under different exclusions"
     );
+    debug_assert_eq!(
+        last.excludes_integers, next.excludes_integers,
+        "folding intervals under different integer exclusions"
+    );
     NumberLeaf {
         multiple_of: last.multiple_of,
         not_multiple_of: last.not_multiple_of,
+        excludes_integers: last.excludes_integers,
         minimum: last.minimum,
         maximum: match (last.maximum, next.maximum) {
             (Some(left), Some(right)) => Some(if left.is_tighter_than(&right, Side::Upper) {

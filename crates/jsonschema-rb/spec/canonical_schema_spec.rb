@@ -316,7 +316,8 @@ RSpec.describe "JSONSchema.canonicalize" do
     "IntegerView" => [{ "type" => "integer", "minimum" => 2, "maximum" => 9 },
                       %i[minimum maximum multiple_of not_multiple_of]],
     "NumberView" => [{ "type" => "number", "minimum" => 2 },
-                     %i[minimum exclusive_minimum maximum exclusive_maximum multiple_of not_multiple_of]],
+                     %i[minimum exclusive_minimum maximum exclusive_maximum multiple_of not_multiple_of
+                        excludes_integers]],
     "ArrayView" => [{ "type" => "array", "minItems" => 1 }, %i[min_items max_items unique_items prefix_items items contains]],
     "ObjectView" => [{ "type" => "object", "minProperties" => 1 },
                      %i[min_properties max_properties required property_names properties pattern_properties]],
@@ -492,9 +493,19 @@ RSpec.describe "JSONSchema.canonicalize" do
     end
   end
 
+  it "negates a draft 4 integer type" do
+    schema = { "$schema" => "http://json-schema.org/draft-04/schema#", "type" => "integer" }
+    result = JSONSchema.canonicalize(schema).negate
+    expect(result).to be_a(JSONSchema::Canonical::CanonicalSchema)
+    expect(result.to_json_schema).to eq(
+      { "$schema" => "http://json-schema.org/draft-04/schema#",
+        "anyOf" => [{ "type" => %w[null boolean string array object] },
+                    { "type" => "number", "not" => { "type" => "integer" } }] }
+    )
+  end
+
   # The decline set is contract: a caller sizes its fallback on it.
   [
-    { "$schema" => "http://json-schema.org/draft-04/schema#", "type" => "integer" },
     { "$schema" => "http://json-schema.org/draft-04/schema#", "type" => "integer", "enum" => [1, 2] },
     UNMODELED
   ].each do |schema|

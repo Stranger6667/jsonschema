@@ -1,7 +1,6 @@
 //! Structural complement of a canonical node.
 use std::{collections::BTreeMap, sync::Arc};
 
-use referencing::Draft;
 use serde_json::{Number, Value};
 
 use crate::{
@@ -10,9 +9,8 @@ use crate::{
         context::CanonicalizationContext,
         ir::{
             type_set_schema, ArrayLeaf, AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber,
-            BoundRational, CanonicalJson, ContainsFacet, Discrete, Divisors, ExcludedDivisors,
-            IntegerBounds, IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind,
-            StringLeaf,
+            CanonicalJson, ContainsFacet, Discrete, Divisors, ExcludedDivisors, IntegerBounds,
+            IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, StringLeaf,
         },
     },
     JsonType, JsonTypeSet,
@@ -187,6 +185,7 @@ fn number_window(
             maximum,
             multiple_of: Divisors::default(),
             not_multiple_of: ExcludedDivisors::default(),
+            excludes_integers: false,
         },
         ctx,
     )
@@ -213,6 +212,9 @@ fn negate_number_leaf(leaf: &NumberLeaf, ctx: &CanonicalizationContext) -> Schem
     }
     if let Some(maximum) = &leaf.maximum {
         branches.push(number_window(Some(flipped(maximum)), None, ctx));
+    }
+    if leaf.excludes_integers {
+        branches.push(type_set_schema(JsonTypeSet::from(JsonType::Integer)));
     }
     branches.extend(leaf.multiple_of.as_slice().iter().map(|step| {
         algebra::number_leaf(
@@ -244,11 +246,6 @@ fn negate_number_leaf(leaf: &NumberLeaf, ctx: &CanonicalizationContext) -> Schem
 ///                   {"type": "number", "not": {"multipleOf": 1}}]
 /// ```
 fn negate_integer_leaf(leaf: &IntegerLeaf, ctx: &CanonicalizationContext) -> Option<Schema> {
-    // Draft 4 tells `1` and `1.0` apart, so its non-integer numbers are not the non-whole ones and
-    // no numeric facet spells them.
-    if matches!(ctx.draft(), Draft::Draft4) {
-        return None;
-    }
     let mut branches = vec![type_set_schema(
         JsonTypeSet::all()
             .remove(JsonType::Number)
@@ -285,12 +282,11 @@ fn negate_integer_leaf(leaf: &IntegerLeaf, ctx: &CanonicalizationContext) -> Opt
     Some(algebra::union(branches, ctx))
 }
 
-/// The numbers no integer facet reaches: every integer is a multiple of one, and no other number is.
+/// The numbers outside the draft's integers.
 fn non_integer_number(ctx: &CanonicalizationContext) -> Schema {
-    let one = BoundRational::new(&Number::from(1)).expect("one is a representable divisor");
     algebra::number_leaf(
         NumberLeaf {
-            not_multiple_of: ExcludedDivisors::one(one),
+            excludes_integers: true,
             ..NumberLeaf::default()
         },
         ctx,
@@ -571,10 +567,6 @@ fn negate_type_set(set: JsonTypeSet, ctx: &CanonicalizationContext) -> Option<Sc
         }
     }
     if set.contains(JsonType::Integer) && !set.contains(JsonType::Number) {
-        // Draft 4 tells `1` and `1.0` apart, so its non-integer numbers are not the non-whole ones.
-        if matches!(ctx.draft(), Draft::Draft4) {
-            return None;
-        }
         let mut branches = vec![non_integer_number(ctx)];
         if !complement.is_empty() {
             branches.push(type_set_schema(complement));
@@ -600,7 +592,7 @@ mod tests {
     use serde_json::{json, Value};
 
     use super::*;
-    use crate::options::PatternEngineOptions;
+    use crate::{canonical::ir::BoundRational, options::PatternEngineOptions};
 
     fn context() -> CanonicalizationContext {
         CanonicalizationContext::new(Draft::Draft202012, PatternEngineOptions::default(), false)

@@ -268,6 +268,16 @@ def test_view_integer_not_multiple_of():
             pytest.fail(f"unexpected view: {other!r}")
 
 
+def test_view_number_excludes_integers():
+    schema = {"$schema": "http://json-schema.org/draft-04/schema#", "type": "number", "not": {"type": "integer"}}
+    match canonicalize(schema).view():
+        case canonical.NumberView(excludes_integers=excludes_integers, not_multiple_of=not_multiple_of):
+            assert excludes_integers is True
+            assert not_multiple_of == []
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
 def test_view_number_interval():
     match canonicalize({"type": "number", "minimum": 2, "exclusiveMaximum": 5}).view():
         case canonical.NumberView(
@@ -637,13 +647,25 @@ def test_negate(schema, expected):
 @pytest.mark.parametrize(
     "schema",
     [
-        {"$schema": "http://json-schema.org/draft-04/schema#", "type": "integer"},
         {"$schema": "http://json-schema.org/draft-04/schema#", "type": "integer", "enum": [1, 2]},
         UNMODELED,
     ],
 )
 def test_negate_declines(schema):
     assert canonicalize(schema).negate() is None
+
+
+def test_negate_draft4_integer_type():
+    schema = {"$schema": "http://json-schema.org/draft-04/schema#", "type": "integer"}
+    result = canonicalize(schema).negate()
+    assert isinstance(result, CanonicalSchema)
+    assert result.to_json_schema() == {
+        "$schema": "http://json-schema.org/draft-04/schema#",
+        "anyOf": [
+            {"type": ["null", "boolean", "string", "array", "object"]},
+            {"type": "number", "not": {"type": "integer"}},
+        ],
+    }
 
 
 def test_negate_integer_leaf():

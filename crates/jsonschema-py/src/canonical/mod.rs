@@ -158,6 +158,7 @@ impl PyCanonicalSchema {
                     exclusive_maximum: view.exclusive_maximum,
                     multiple_of: divisors_to_python(py, view.multiple_of)?,
                     not_multiple_of: divisors_to_python(py, view.not_multiple_of)?,
+                    excludes_integers: view.excludes_integers,
                 },
             )?
             .into_any(),
@@ -579,12 +580,15 @@ pub(crate) struct NumberView {
     multiple_of: Vec<Py<PyAny>>,
     #[pyo3(get)]
     not_multiple_of: Vec<Py<PyAny>>,
+    #[pyo3(get)]
+    excludes_integers: bool,
 }
 
 #[pymethods]
 impl NumberView {
     #[classattr]
     fn __match_args__() -> (
+        &'static str,
         &'static str,
         &'static str,
         &'static str,
@@ -599,6 +603,7 @@ impl NumberView {
             "exclusive_maximum",
             "multiple_of",
             "not_multiple_of",
+            "excludes_integers",
         )
     }
 }

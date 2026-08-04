@@ -249,6 +249,10 @@ fn emit_string(leaf: &StringLeaf) -> Value {
 /// Emit a number leaf as `{"type":"number"}` plus its interval bounds, using the exclusive spelling
 /// for an endpoint the interval does not admit.
 fn emit_number(leaf: &NumberLeaf, draft: Draft) -> Value {
+    debug_assert!(
+        !leaf.excludes_integers || matches!(draft, Draft::Draft4),
+        "the integer exclusion survives normalization only under Draft 4"
+    );
     let mut map = Map::new();
     map.insert("type".into(), Value::String("number".into()));
     // Draft 4 spells exclusivity as a boolean flag beside the bound; later drafts give it its own
@@ -271,7 +275,12 @@ fn emit_number(leaf: &NumberLeaf, draft: Draft) -> Value {
             map.insert(exclusive_key.into(), limit);
         }
     }
-    emit_divisors(&mut map, &leaf.multiple_of, &leaf.not_multiple_of);
+    emit_divisors(
+        &mut map,
+        &leaf.multiple_of,
+        &leaf.not_multiple_of,
+        leaf.excludes_integers,
+    );
     Value::Object(map)
 }
 
@@ -525,13 +534,18 @@ fn emit_integer(leaf: &IntegerLeaf) -> Value {
     if let Some(max) = &leaf.bounds.maximum {
         map.insert("maximum".into(), Value::Number(max.to_number()));
     }
-    emit_divisors(&mut map, &leaf.multiple_of, &leaf.not_multiple_of);
+    emit_divisors(&mut map, &leaf.multiple_of, &leaf.not_multiple_of, false);
     Value::Object(map)
 }
 
-/// A lone divisor sits beside the other facets, and a lone barred one under `not`; several of
-/// either are spelled as an `allOf`, since one keyword slot cannot carry them.
-fn emit_divisors(map: &mut Map<String, Value>, divisors: &Divisors, barred: &ExcludedDivisors) {
+/// A lone divisor sits beside the other facets, and a lone barred constraint under `not`; several
+/// of either are spelled as an `allOf`, since one keyword slot cannot carry them.
+fn emit_divisors(
+    map: &mut Map<String, Value>,
+    divisors: &Divisors,
+    barred: &ExcludedDivisors,
+    excludes_integers: bool,
+) {
     let step_object = |step: &BoundRational| {
         let mut object = Map::new();
         object.insert("multipleOf".into(), Value::Number(step.to_number()));
@@ -545,12 +559,16 @@ fn emit_divisors(map: &mut Map<String, Value>, divisors: &Divisors, barred: &Exc
         }
         steps => conjuncts.extend(steps.iter().map(step_object)),
     }
-    match barred.as_slice() {
-        [] => {}
-        [step] => {
-            map.insert("not".into(), step_object(step));
+    let mut negated: Vec<Value> = Vec::new();
+    if excludes_integers {
+        negated.push(keyed("type", Value::String("integer".into())));
+    }
+    negated.extend(barred.as_slice().iter().map(step_object));
+    match <[Value; 1]>::try_from(negated) {
+        Ok([sole]) => {
+            map.insert("not".into(), sole);
         }
-        steps => conjuncts.extend(steps.iter().map(|step| keyed("not", step_object(step)))),
+        Err(negated) => conjuncts.extend(negated.into_iter().map(|inner| keyed("not", inner))),
     }
     if !conjuncts.is_empty() {
         map.insert("allOf".into(), Value::Array(conjuncts));

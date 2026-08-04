@@ -219,6 +219,9 @@ pub(crate) struct NumberLeaf {
     pub(crate) multiple_of: Divisors,
     /// Divisors no admitted value is a multiple of.
     pub(crate) not_multiple_of: ExcludedDivisors,
+    /// No admitted value is one of the draft's integers. Survives only under Draft 4, whose
+    /// token integers no divisor can name; later drafts respell it as a barred divisor of one.
+    pub(crate) excludes_integers: bool,
 }
 
 impl NumberLeaf {

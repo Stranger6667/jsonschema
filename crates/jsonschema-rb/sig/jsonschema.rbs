@@ -100,6 +100,7 @@ module JSONSchema
       def exclusive_maximum: () -> bool
       def multiple_of: () -> Array[Integer | Float]
       def not_multiple_of: () -> Array[Integer | Float]
+      def excludes_integers: () -> bool
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end

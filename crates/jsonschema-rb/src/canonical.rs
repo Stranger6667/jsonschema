@@ -163,6 +163,7 @@ impl RbCanonicalSchema {
                     exclusive_maximum: view.exclusive_maximum,
                     multiple_of: view.multiple_of,
                     not_multiple_of: view.not_multiple_of,
+                    excludes_integers: view.excludes_integers,
                 })
                 .as_value(),
             CanonicalView::Integer(view) => ruby
@@ -493,6 +494,7 @@ pub struct NumberView {
     exclusive_maximum: bool,
     multiple_of: Vec<serde_json::Number>,
     not_multiple_of: Vec<serde_json::Number>,
+    excludes_integers: bool,
 }
 
 impl DataTypeFunctions for NumberView {}
@@ -522,15 +524,20 @@ impl NumberView {
         divisors_to_ruby(ruby, &rb_self.not_multiple_of)
     }
 
+    fn excludes_integers(ruby: &Ruby, rb_self: &Self) -> Value {
+        ruby.into_value(rb_self.excludes_integers)
+    }
+
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
-            "#<JSONSchema::Canonical::NumberView minimum={} exclusive_minimum={} maximum={} exclusive_maximum={} multiple_of={} not_multiple_of={}>",
+            "#<JSONSchema::Canonical::NumberView minimum={} exclusive_minimum={} maximum={} exclusive_maximum={} multiple_of={} not_multiple_of={} excludes_integers={}>",
             Self::minimum(ruby, rb_self)?.inspect(),
             Self::exclusive_minimum(ruby, rb_self).inspect(),
             Self::maximum(ruby, rb_self)?.inspect(),
             Self::exclusive_maximum(ruby, rb_self).inspect(),
             Self::multiple_of(ruby, rb_self)?.inspect(),
-            Self::not_multiple_of(ruby, rb_self)?.inspect()
+            Self::not_multiple_of(ruby, rb_self)?.inspect(),
+            Self::excludes_integers(ruby, rb_self).inspect()
         ))
     }
 
@@ -553,6 +560,10 @@ impl NumberView {
         hash.aset(
             ruby.sym_new("not_multiple_of"),
             Self::not_multiple_of(ruby, rb_self)?,
+        )?;
+        hash.aset(
+            ruby.sym_new("excludes_integers"),
+            Self::excludes_integers(ruby, rb_self),
         )?;
         Ok(hash)
     }
@@ -1253,6 +1264,10 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     )?;
     number_view.define_method("multiple_of", method!(NumberView::multiple_of, 0))?;
     number_view.define_method("not_multiple_of", method!(NumberView::not_multiple_of, 0))?;
+    number_view.define_method(
+        "excludes_integers",
+        method!(NumberView::excludes_integers, 0),
+    )?;
     number_view.define_method("inspect", method!(NumberView::inspect, 0))?;
     number_view.define_method("deconstruct_keys", method!(NumberView::deconstruct_keys, 1))?;
 
