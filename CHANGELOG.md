@@ -20,6 +20,7 @@
 - Two spellings of one number canonicalizing to different texts under `arbitrary-precision` when the fraction exceeds the expansion cap.
 - Numeric bounds and `multipleOf` comparing values through a lossy `f64` conversion under `arbitrary-precision`, such as `1e-400` passing `{"maximum": 0}`.
 - A union branch left unabsorbed when a sibling complement shed a conjunct from another branch.
+- A union keeping an integer branch beside a number branch that admits every value of it.
 
 ## [0.49.4] - 2026-08-04
 
