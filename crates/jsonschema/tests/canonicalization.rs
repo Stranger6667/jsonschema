@@ -1687,6 +1687,140 @@ fn intersect_rejects_operands_with_distinct_definition_maps() {
     );
 }
 
+// A shield governs every key the other side's patterns match, so the meet has to reach into those
+// pattern entries; leaving them alone admits values the conjunction rejects.
+#[test_case(
+    &json!({"patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": false}),
+    &json!({"additionalProperties": {"type": "string"}});
+    "closed pattern map meets a shield"
+)]
+#[test_case(
+    &json!({"additionalProperties": {"type": "string"}}),
+    &json!({"patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": false});
+    "shield meets a closed pattern map"
+)]
+#[test_case(
+    &json!({"patternProperties": {"^a": {"type": "integer"}}}),
+    &json!({"additionalProperties": {"type": "string"}});
+    "open pattern map meets a shield"
+)]
+#[test_case(
+    &json!({"additionalProperties": {"type": "string"}}),
+    &json!({"patternProperties": {"^a": {"type": "integer"}}});
+    "shield meets an open pattern map"
+)]
+#[test_case(
+    &json!({"patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": false}),
+    &json!({"properties": {"a1": {"type": "string"}}, "additionalProperties": {"type": "string"}});
+    "closed pattern map meets a shield naming a matched key"
+)]
+#[test_case(
+    &json!({"patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": false}),
+    &json!({"patternProperties": {"^a": {"minimum": 3}}, "additionalProperties": false});
+    "two closed pattern maps"
+)]
+fn intersect_object_shield_and_patterns_keeps_validation_parity(left: &Value, right: &Value) {
+    let merged = canonicalize(left)
+        .expect("canonicalizes")
+        .intersect(&canonicalize(right).expect("canonicalizes"))
+        .expect("intersects")
+        .to_json_schema();
+    let document = canonicalize(&json!({"allOf": [left, right]}))
+        .expect("canonicalizes")
+        .to_json_schema();
+
+    let left_validator = validator_for(left).expect("compiles");
+    let right_validator = validator_for(right).expect("compiles");
+    let merged_validator = validator_for(&merged).expect("compiles");
+    let document_validator = validator_for(&document).expect("compiles");
+    for instance in [
+        json!({"a1": 5}),
+        json!({"a1": "s"}),
+        json!({"b": "s"}),
+        json!({"b": 5}),
+        json!({}),
+        json!(1),
+    ] {
+        let conjunction = left_validator.is_valid(&instance) && right_validator.is_valid(&instance);
+        assert_eq!(
+            merged_validator.is_valid(&instance),
+            conjunction,
+            "{instance}"
+        );
+        assert_eq!(
+            document_validator.is_valid(&instance),
+            conjunction,
+            "{instance}"
+        );
+    }
+}
+
+#[test]
+fn intersect_object_shield_meets_the_pattern_entries_it_governs() {
+    let patterns = canonicalize(&json!({"patternProperties": {"^a": {"type": "integer"}}}))
+        .expect("canonicalizes");
+    let shield =
+        canonicalize(&json!({"additionalProperties": {"type": "string"}})).expect("canonicalizes");
+
+    assert_eq!(
+        patterns
+            .intersect(&shield)
+            .expect("intersects")
+            .to_json_schema(),
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "anyOf": [
+                {"type": ["null", "boolean", "number", "string", "array"]},
+                {
+                    "type": "object",
+                    "patternProperties": {"^a": false},
+                    "additionalProperties": {"type": "string"}
+                }
+            ]
+        })
+    );
+}
+
+// A key only one pattern map matches answers to the other map's shield, and a key both match
+// answers to neither, so placing the shields needs to know which keys the two patterns share.
+#[test]
+fn intersect_declines_pattern_maps_on_both_sides_of_a_shield() {
+    let shield =
+        canonicalize(&json!({"additionalProperties": {"type": "string"}})).expect("canonicalizes");
+    let left =
+        canonicalize(&json!({"patternProperties": {"^a": {"type": "string", "minLength": 2}}}))
+            .expect("canonicalizes")
+            .intersect(&shield)
+            .expect("intersects");
+    let right =
+        canonicalize(&json!({"patternProperties": {"^b": {"type": "string", "maxLength": 5}}}))
+            .expect("canonicalizes")
+            .intersect(&shield)
+            .expect("intersects");
+
+    assert!(matches!(
+        left.intersect(&right),
+        Err(CanonicalizationError::UnmodeledOperand)
+    ));
+}
+
+// `a1` is outside the shield that names it, so meeting that shield into the `^a` entry would
+// demand of `a1` something neither side does.
+#[test]
+fn intersect_declines_a_shield_naming_a_key_its_own_entry_leaves_the_pattern() {
+    let patterns = canonicalize(&json!({"patternProperties": {"^a": {"type": "integer"}}}))
+        .expect("canonicalizes");
+    let shield = canonicalize(
+        &json!({"properties": {"a1": {"type": "number"}}, "additionalProperties": {"type": "string"}}),
+    )
+    .expect("canonicalizes");
+
+    assert!(matches!(
+        patterns.intersect(&shield),
+        Err(CanonicalizationError::UnmodeledOperand)
+    ));
+}
+
 fn draft4(body: &Value) -> Value {
     let mut map = body.as_object().expect("object").clone();
     map.insert(
@@ -1765,6 +1899,11 @@ fn intersect_draft4_closed_pattern_maps_emits_a_closed_map_per_pattern() {
     &json!({"properties": {"x": {"type": "integer"}}, "patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": false}),
     &json!({"properties": {"x": {"type": "integer"}}, "patternProperties": {"^b": {"type": "integer"}}, "additionalProperties": false});
     "shared key beside disjoint patterns"
+)]
+#[test_case(
+    &json!({"patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": false}),
+    &json!({"additionalProperties": {"type": "string"}});
+    "closed pattern map meets a shield"
 )]
 fn intersect_draft4_object_leaves_keeps_validation_parity(left: &Value, right: &Value) {
     let left = draft4(left);

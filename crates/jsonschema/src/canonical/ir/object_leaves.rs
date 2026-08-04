@@ -348,15 +348,16 @@ fn drop_subsumed(leaves: &mut Vec<ObjectLeaf>) {
             let looser_keys = other.property_names.is_none() && leaf.property_names.is_some();
             // A strict submap with equal schemas on the shared keys constrains strictly less: the
             // extra entries only remove objects. Equality per key needs no schema subsumption.
-            // Under a shield the reading inverts - a dropped entry sends its key to the shield -
-            // so there the maps must be equal.
+            // Under a shield the reading inverts - a dropped key or pattern sends the keys it
+            // covers to the shield - so there the maps must be equal.
             let looser_properties = leaf.additional.is_none()
                 && other.properties.len() < leaf.properties.len()
                 && other
                     .properties
                     .iter()
                     .all(|(key, schema)| leaf.properties.get(key) == Some(schema));
-            let looser_patterns = other.pattern_properties.len() < leaf.pattern_properties.len()
+            let looser_patterns = leaf.additional.is_none()
+                && other.pattern_properties.len() < leaf.pattern_properties.len()
                 && other
                     .pattern_properties
                     .iter()

@@ -146,13 +146,17 @@ impl CanonicalSchema {
     /// # Errors
     ///
     /// [`CanonicalizationError::IncompatibleOperands`] when the operands cannot be combined, and
-    /// [`CanonicalizationError::UnmodeledOperand`] when either side is unmodeled.
+    /// [`CanonicalizationError::UnmodeledOperand`] when either side is unmodeled or the canonical
+    /// form has no exact spelling for their meet.
     pub fn intersect(&self, other: &Self) -> Result<Self, CanonicalizationError> {
         self.check_operands(other)?;
         let definitions = self.merged_definitions(other)?;
         let context =
             CanonicalizationContext::new(self.draft, self.pattern_options, self.validate_formats);
         let inner = algebra::intersect(self.inner.clone(), other.inner.clone(), &context);
+        if context.saw_unspellable_meet() {
+            return Err(CanonicalizationError::UnmodeledOperand);
+        }
         Ok(Self::new(
             inner,
             self.draft,

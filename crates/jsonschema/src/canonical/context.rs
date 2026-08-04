@@ -1,5 +1,9 @@
 //! Shared state for one canonicalization run: draft, pattern engine, and a compiled-regex cache.
-use std::{cell::RefCell, collections::HashMap, sync::Arc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashMap,
+    sync::Arc,
+};
 
 use referencing::Draft;
 
@@ -34,6 +38,9 @@ pub(crate) struct CanonicalizationContext {
     /// A conjunction over unions takes the product of their branches, which reaches the same pair
     /// of nodes over and over - on a schema of five such conjunctions, 431 times per distinct pair.
     intersections: RefCell<HashMap<(Schema, Schema), Schema>>,
+    /// A meet reached during this run that the canonical form has no exact spelling for. Nodes
+    /// built around it may already be wrong, so the whole run is discarded rather than the site.
+    unspellable_meet: Cell<bool>,
 }
 
 impl CanonicalizationContext {
@@ -48,11 +55,20 @@ impl CanonicalizationContext {
             validate_formats,
             regex_cache: RefCell::new(HashMap::new()),
             intersections: RefCell::new(HashMap::new()),
+            unspellable_meet: Cell::new(false),
         }
     }
 
     pub(crate) fn draft(&self) -> Draft {
         self.draft
+    }
+
+    pub(crate) fn record_unspellable_meet(&self) {
+        self.unspellable_meet.set(true);
+    }
+
+    pub(crate) fn saw_unspellable_meet(&self) -> bool {
+        self.unspellable_meet.get()
     }
 
     pub(crate) fn validate_formats(&self) -> bool {
