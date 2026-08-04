@@ -2876,5 +2876,60 @@
       {"data": "cc", "valid": false},
       {"data": 1, "valid": true}
     ]
+  },
+  {
+    "description": "not of a typed integer value set under draft 4 keeps the members' float spellings",
+    "draft": "draft4",
+    "schema": {"not": {"type": "integer", "enum": [1, 2]}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [{"type": ["null", "boolean", "string", "array", "object"]}, {"type": "integer", "maximum": 0}, {"type": "integer", "minimum": 3}, {"type": "number", "not": {"type": "integer"}}]},
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": 2, "valid": false},
+      {"data": 1.0, "valid": true},
+      {"data": 2.0, "valid": true},
+      {"data": 1.5, "valid": true},
+      {"data": 0, "valid": true},
+      {"data": 3, "valid": true},
+      {"data": "x", "valid": true},
+      {"data": null, "valid": true}
+    ]
+  },
+  {
+    "description": "not of a typed union of value sets under draft 4",
+    "draft": "draft4",
+    "schema": {"not": {"type": "integer", "oneOf": [{"enum": [1, "a"]}, {"enum": [2, null]}]}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [{"type": ["null", "boolean", "string", "array", "object"]}, {"type": "integer", "maximum": 0}, {"type": "integer", "minimum": 3}, {"type": "number", "not": {"type": "integer"}}]},
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": 2, "valid": false},
+      {"data": "a", "valid": true},
+      {"data": null, "valid": true},
+      {"data": 1.0, "valid": true}
+    ]
+  },
+  {
+    "description": "double negation of a typed integer value set under draft 4",
+    "draft": "draft4",
+    "schema": {"not": {"not": {"type": "integer", "enum": [1, 2]}}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "integer", "enum": [1, 2]},
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": 2, "valid": true},
+      {"data": 1.0, "valid": false},
+      {"data": 1.5, "valid": false},
+      {"data": 3, "valid": false}
+    ]
+  },
+  {
+    "description": "a typed integer value set conflicts with its own negation under draft 4",
+    "draft": "draft4",
+    "schema": {"allOf": [{"type": "integer", "enum": [1, 2]}, {"not": {"type": "integer", "enum": [1, 2]}}]},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": 1.0, "valid": false},
+      {"data": "x", "valid": false}
+    ]
   }
 ]

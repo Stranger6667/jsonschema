@@ -716,14 +716,23 @@
       ]
     },
     "expected": {
-      "oneOf": [
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
         {
-          "enum": [
-            1.0
-          ]
+          "maximum": 0,
+          "type": "integer"
         },
         {
+          "minimum": 2,
           "type": "integer"
+        },
+        {
+          "maximum": 1,
+          "minimum": 1,
+          "not": {
+            "type": "integer"
+          },
+          "type": "number"
         }
       ]
     },
@@ -738,6 +747,14 @@
       },
       {
         "data": 2,
+        "valid": true
+      },
+      {
+        "data": 2.0,
+        "valid": false
+      },
+      {
+        "data": 0,
         "valid": true
       },
       {

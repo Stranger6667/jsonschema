@@ -644,13 +644,7 @@ def test_negate(schema, expected):
 
 
 # The decline set is contract: a caller sizes its fallback on it.
-@pytest.mark.parametrize(
-    "schema",
-    [
-        {"$schema": "http://json-schema.org/draft-04/schema#", "type": "integer", "enum": [1, 2]},
-        UNMODELED,
-    ],
-)
+@pytest.mark.parametrize("schema", [UNMODELED])
 def test_negate_declines(schema):
     assert canonicalize(schema).negate() is None
 
@@ -663,6 +657,21 @@ def test_negate_draft4_integer_type():
         "$schema": "http://json-schema.org/draft-04/schema#",
         "anyOf": [
             {"type": ["null", "boolean", "string", "array", "object"]},
+            {"type": "number", "not": {"type": "integer"}},
+        ],
+    }
+
+
+def test_negate_draft4_typed_group():
+    schema = {"$schema": "http://json-schema.org/draft-04/schema#", "type": "integer", "enum": [1, 2]}
+    result = canonicalize(schema).negate()
+    assert isinstance(result, CanonicalSchema)
+    assert result.to_json_schema() == {
+        "$schema": "http://json-schema.org/draft-04/schema#",
+        "anyOf": [
+            {"type": ["null", "boolean", "string", "array", "object"]},
+            {"type": "integer", "maximum": 0},
+            {"type": "integer", "minimum": 3},
             {"type": "number", "not": {"type": "integer"}},
         ],
     }
