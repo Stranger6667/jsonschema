@@ -300,5 +300,30 @@
       {"data": "xyzxyzxyz", "valid": false},
       {"data": 1, "valid": true}
     ]
+  },
+  {
+    "description": "the negative arm dissolves once the consequent sheds against a complement sibling",
+    "schema": {
+      "$defs": {"t": {"type": "integer"}},
+      "anyOf": [
+        {"type": "object", "if": {"required": ["a"]}, "then": {"$ref": "#/$defs/t"}},
+        {"not": {"$ref": "#/$defs/t"}}
+      ]
+    },
+    "draft": "draft2019-09",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "$defs": {"t": {"type": "integer"}},
+      "anyOf": [
+        {"type": "object"},
+        {"not": {"$ref": "#/$defs/t"}}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {}, "valid": true},
+      {"data": "x", "valid": true},
+      {"data": 5, "valid": false}
+    ]
   }
 ]

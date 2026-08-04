@@ -995,9 +995,23 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         out.push(value_set);
     }
 
-    // Shedding a conjunct leaves a branch the absorptions below can then take whole, so the
-    // rewrite goes first.
-    drop_conjuncts_a_complement_branch_covers(&mut out);
+    // Shedding a conjunct leaves a plain leaf where a conjunction stood, and leaves are weighed
+    // against each other in the pools this pass has already run, so the pass runs again over the
+    // shed branches. Every shed lowers the number of conjuncts the branches hold and a pass mints
+    // no conjunction of its own, which bounds the recursion.
+    // e.g.  anyOf [
+    //         {"type": "object", "properties": {"a": false}},
+    //         allOf [{"type": "object"}, {"$ref": "#/$defs/integer"}],
+    //         {"not": {"$ref": "#/$defs/integer"}}
+    //       ]  =>  anyOf [{"type": "object"}, {"not": {"$ref": "#/$defs/integer"}}]
+    let held = conjuncts_held(&out);
+    if drop_conjuncts_a_complement_branch_covers(&mut out) {
+        debug_assert!(
+            conjuncts_held(&out) < held,
+            "shedding left the branches as they were"
+        );
+        return union(out, ctx);
+    }
     // A direct branch absorbs every stricter conjunction containing it: `A or (A and B) = A`.
     let top_level: ahash::AHashSet<Schema> = out.iter().cloned().collect();
     // A branch beside its own complement leaves no value out: `A or (not A) = true`.
@@ -2089,7 +2103,8 @@ pub(crate) fn string_leaf(mut leaf: StringLeaf, ctx: &CanonicalizationContext) -
 /// A complement branch takes every value its own operand rejects, so a sibling conjunction holding
 /// that operand says nothing by holding it: `(not A) or (A and B) = (not A) or B`. A conjunction
 /// made entirely of covered operands keeps its form, since the union around it is then every value.
-fn drop_conjuncts_a_complement_branch_covers(branches: &mut [Schema]) {
+/// Reports whether a branch shed anything.
+fn drop_conjuncts_a_complement_branch_covers(branches: &mut [Schema]) -> bool {
     let complemented: ahash::AHashSet<Schema> = branches
         .iter()
         .filter_map(|branch| {
@@ -2101,8 +2116,9 @@ fn drop_conjuncts_a_complement_branch_covers(branches: &mut [Schema]) {
         })
         .collect();
     if complemented.is_empty() {
-        return;
+        return false;
     }
+    let mut shed = false;
     for branch in branches.iter_mut() {
         let SchemaKind::AllOf(conjuncts) = branch.kind() else {
             continue;
@@ -2120,7 +2136,15 @@ fn drop_conjuncts_a_complement_branch_covers(branches: &mut [Schema]) {
             Ok(remaining) => Schema::new(SchemaKind::AllOf(remaining)),
             Err(mut lone) => lone.pop().expect("a non-empty conjunct list"),
         };
+        shed = true;
     }
+    shed
+}
+
+/// How many conjuncts the branches hold between them, counting a branch that is not a conjunction
+/// as the single demand it makes.
+fn conjuncts_held(branches: &[Schema]) -> usize {
+    branches.iter().map(|branch| demands(branch).len()).sum()
 }
 
 /// Narrow a property entry spelling several alternatives down to the ones its own branch needs: the
