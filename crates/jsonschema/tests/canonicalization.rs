@@ -666,6 +666,8 @@ fn object_view_exposes_property_names() {
 #[test_case(&json!({"type": "array", "items": {"type": "string", "format": "only-ok"}}), &json!(["nope"]); "item schema")]
 #[test_case(&json!({"type": "array", "contains": {"type": "string", "format": "only-ok"}}), &json!(["nope"]); "contains schema")]
 #[test_case(&json!({"type": "object", "properties": {"a": {"type": "array", "contains": {"type": "string", "format": "only-ok"}}}}), &json!({"a": ["nope"]}); "contains under a property")]
+#[test_case(&json!({"type": "object", "properties": {"a": {"type": "object", "additionalProperties": {"format": "only-ok"}}}}), &json!({"a": {"b": "nope"}}); "additional properties shield")]
+#[test_case(&json!({"type": "object", "properties": {"a": {"type": "array", "contains": {"not": {"format": "only-ok"}}, "minContains": 0, "maxContains": 1}}}), &json!({"a": ["nope", "other"]}); "barred format under a contains ceiling")]
 fn uncheckable_format_keeps_the_value_beside_the_leaf(leaf: &Value, instance: &Value) {
     let schema = json!({"anyOf": [{"const": instance}, leaf]});
     let canonical = options()

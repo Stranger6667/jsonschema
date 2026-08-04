@@ -12,7 +12,8 @@ use crate::{
             AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber, BoundRational, CanonicalJson,
             ContainsFacet, Discrete, Divisors, ExcludedDivisors, IntegerBounds, IntegerLeaf,
             IntegerLeaves, LengthBounds, NonEmpty, NumberLeaf, NumberLeaves, ObjectLeaf,
-            ObjectLeaves, Round, Schema, SchemaKind, Side, StringLeaf, StringLeaves, Verdict,
+            ObjectLeaves, Round, Schema, SchemaKind, Side, StringLeaf, StringLeaves,
+            UncheckableFacet, Verdict,
         },
         negate, oracle, parse,
     },
@@ -1804,10 +1805,17 @@ fn restrict_members(
             let matchers = StringMatchers::compile(leaf.get(), ctx);
             let kept = members
                 .into_iter()
-                // Dropping a member narrows the schema, so only a definite rejection drops one.
+                // A value set holds no facet, so a facet no checker covers cannot survive beside a
+                // member and reads here the way a validator without a checker reads it.
                 .filter(|member| {
                     !matches!(
-                        string_leaf_admits(leaf.get(), &matchers, member, ctx),
+                        string_leaf_admits(
+                            leaf.get(),
+                            &matchers,
+                            member,
+                            UncheckableFacet::Skipped,
+                            ctx
+                        ),
                         Verdict::Rejects
                     )
                 })
@@ -1952,7 +1960,7 @@ fn leaf_absorbs_member(
             .any(|leaf| matches!(object_leaf_admits(leaf, map, ctx), Verdict::Admits)),
         Value::String(_) => strings.iter().any(|(leaf, matchers)| {
             matches!(
-                string_leaf_admits(leaf, matchers, member, ctx),
+                string_leaf_admits(leaf, matchers, member, UncheckableFacet::Undecided, ctx),
                 Verdict::Admits
             )
         }),
@@ -2274,7 +2282,7 @@ fn prune_excluded(leaf: &mut StringLeaf, ctx: &CanonicalizationContext) {
         .into_iter()
         .filter(|value| {
             !matches!(
-                string_leaf_admits_text(leaf, &matchers, value, ctx),
+                string_leaf_admits_text(leaf, &matchers, value, UncheckableFacet::Undecided, ctx),
                 Verdict::Rejects
             )
         })
@@ -2749,12 +2757,15 @@ fn array_leaf_admits(leaf: &ArrayLeaf, items: &[Value], ctx: &CanonicalizationCo
     if leaf.unique && has_duplicate_elements(items) {
         return Verdict::Rejects;
     }
-    contains_verdict(&leaf.contains, items, ctx).and(Verdict::all(items.iter().enumerate().map(
-        |(index, element)| match element_schema(leaf, index) {
-            Some(schema) => admits_value(schema, element, ctx),
-            None => Verdict::Admits,
-        },
-    )))
+    contains_verdict(&leaf.contains, items, UncheckableFacet::Undecided, ctx).and(Verdict::all(
+        items
+            .iter()
+            .enumerate()
+            .map(|(index, element)| match element_schema(leaf, index) {
+                Some(schema) => admits_value(schema, element, UncheckableFacet::Undecided, ctx),
+                None => Verdict::Admits,
+            }),
+    ))
 }
 
 /// How the `contains` demands read `elements`. An undecided element leaves the matching count an
@@ -2763,6 +2774,7 @@ fn array_leaf_admits(leaf: &ArrayLeaf, items: &[Value], ctx: &CanonicalizationCo
 fn contains_verdict(
     facets: &[ContainsFacet],
     elements: &[Value],
+    uncheckable: UncheckableFacet,
     ctx: &CanonicalizationContext,
 ) -> Verdict {
     let mut verdict = Verdict::Admits;
@@ -2770,7 +2782,7 @@ fn contains_verdict(
         let mut definite: u64 = 0;
         let mut possible: u64 = 0;
         for element in elements {
-            match admits_value(&facet.schema, element, ctx) {
+            match admits_value(&facet.schema, element, uncheckable, ctx) {
                 Verdict::Admits => {
                     definite += 1;
                     possible += 1;
@@ -2827,19 +2839,21 @@ fn restrict_array_member(
     if leaf.unique && has_duplicate_elements(elements) {
         return MemberRestriction::Empty;
     }
-    let contains_symbolic_reference = leaf
-        .contains
-        .iter()
-        .any(|facet| contains_reference(&facet.schema));
-    // Dropping the member narrows the schema, so only a definite `contains` rejection drops it.
-    // An uncheckable format is ignored by validation, while a symbolic reference must survive.
-    let (mut full, contains) = match contains_verdict(&leaf.contains, elements, ctx) {
-        Verdict::Rejects => return MemberRestriction::Empty,
-        Verdict::Unknown if contains_symbolic_reference => (false, leaf.contains.clone()),
-        Verdict::Admits | Verdict::Unknown => (true, Vec::new()),
-    };
+    // Counting the elements of a finite member leaves the demand undecided only across a symbolic
+    // reference, which must survive on the member. A facet no checker covers already counted, both
+    // toward the floor and toward the ceiling.
+    let (mut full, contains) =
+        match contains_verdict(&leaf.contains, elements, UncheckableFacet::Skipped, ctx) {
+            Verdict::Rejects => return MemberRestriction::Empty,
+            Verdict::Unknown => (false, leaf.contains.clone()),
+            Verdict::Admits => (true, Vec::new()),
+        };
     debug_assert!(
-        contains.is_empty() || contains_symbolic_reference,
+        contains.is_empty()
+            || leaf
+                .contains
+                .iter()
+                .any(|facet| contains_reference(&facet.schema)),
         "only reference-bearing contains facets survive an undecidable finite member"
     );
     let mut restricted = Vec::with_capacity(elements.len());
@@ -3237,9 +3251,11 @@ fn admits_key(names: &Schema, key: &str, ctx: &CanonicalizationContext) -> Verdi
                 .iter()
                 .any(|value| matches!(value.as_value(), Value::String(text) if text == key)),
         ),
+        // A key constraint survives on an object leaf, so an undecided facet needs no reading of
+        // its own here: the leaf that keeps it hands it to the validator.
         SchemaKind::String(leaf) => {
             let matchers = StringMatchers::compile(leaf.get(), ctx);
-            string_leaf_admits_text(leaf.get(), &matchers, key, ctx)
+            string_leaf_admits_text(leaf.get(), &matchers, key, UncheckableFacet::Undecided, ctx)
         }
         SchemaKind::AnyOf(branches) => Verdict::any(
             branches
@@ -3276,6 +3292,7 @@ fn admits_key(names: &Schema, key: &str, ctx: &CanonicalizationContext) -> Verdi
 pub(crate) fn admits_value(
     schema: &Schema,
     value: &Value,
+    uncheckable: UncheckableFacet,
     ctx: &CanonicalizationContext,
 ) -> Verdict {
     if contains_reference(schema) {
@@ -3288,9 +3305,11 @@ pub(crate) fn admits_value(
     if intersect(schema.clone(), member.clone(), ctx) != member {
         return Verdict::Rejects;
     }
-    // Intersection reads a format or content check no checker covers as admitting, so its "yes" is
-    // definite only when the schema carries none.
-    if has_uncheckable_string_facet(schema, ctx) {
+    // Intersection reads a facet no checker covers the way a validator without one does, so its
+    // "yes" is definite only when the schema carries none.
+    if matches!(uncheckable, UncheckableFacet::Undecided)
+        && has_uncheckable_string_facet(schema, ctx)
+    {
         return Verdict::Unknown;
     }
     Verdict::Admits
@@ -3371,13 +3390,14 @@ pub(crate) fn contains_reference(schema: &Schema) -> bool {
     }
 }
 
-/// Whether `schema` asserts a format, media type, or encoding this draft has no checker for.
+/// Whether `schema` demands or bars a format, media type, or encoding this draft has no checker for.
 fn has_uncheckable_string_facet(schema: &Schema, ctx: &CanonicalizationContext) -> bool {
     match schema.kind() {
         SchemaKind::String(leaf) => {
             leaf.get()
                 .formats
                 .iter()
+                .chain(leaf.get().excluded_formats.iter())
                 .any(|format| crate::keywords::format::is_valid(ctx.draft(), format, "").is_none())
                 || leaf
                     .get()
@@ -3405,6 +3425,7 @@ fn has_uncheckable_string_facet(schema: &Schema, ctx: &CanonicalizationContext) 
             .iter()
             .chain(leaf.get().properties.values())
             .chain(leaf.get().pattern_properties.values())
+            .chain(leaf.get().additional.iter())
             .any(|nested| has_uncheckable_string_facet(nested, ctx)),
         SchemaKind::Array(leaf) => leaf
             .get()
@@ -3593,8 +3614,8 @@ fn object_leaf_admits(
     }
     let values = Verdict::all(map.iter().map(|(key, value)| {
         let named = match (leaf.properties.get(key.as_str()), &leaf.additional) {
-            (Some(schema), _) => admits_value(schema, value, ctx),
-            (None, Some(shield)) => admits_value(shield, value, ctx),
+            (Some(schema), _) => admits_value(schema, value, UncheckableFacet::Undecided, ctx),
+            (None, Some(shield)) => admits_value(shield, value, UncheckableFacet::Undecided, ctx),
             (None, None) => Verdict::Admits,
         };
         if named == Verdict::Rejects {
@@ -3603,7 +3624,7 @@ fn object_leaf_admits(
         named.and(Verdict::all(leaf.pattern_properties.iter().map(
             |(pattern, schema)| {
                 if matches_key(pattern, key, ctx) {
-                    admits_value(schema, value, ctx)
+                    admits_value(schema, value, UncheckableFacet::Undecided, ctx)
                 } else {
                     Verdict::Admits
                 }
@@ -3991,12 +4012,13 @@ fn string_leaf_admits(
     leaf: &StringLeaf,
     matchers: &StringMatchers,
     member: &CanonicalJson,
+    uncheckable: UncheckableFacet,
     ctx: &CanonicalizationContext,
 ) -> Verdict {
     let Value::String(text) = member.as_value() else {
         return Verdict::Rejects;
     };
-    string_leaf_admits_text(leaf, matchers, text, ctx)
+    string_leaf_admits_text(leaf, matchers, text, uncheckable, ctx)
 }
 
 /// Whether `text` falls within the leaf's length window, matches every required pattern and no
@@ -4005,6 +4027,7 @@ fn string_leaf_admits_text(
     leaf: &StringLeaf,
     matchers: &StringMatchers,
     text: &str,
+    uncheckable: UncheckableFacet,
     ctx: &CanonicalizationContext,
 ) -> Verdict {
     let length = BoundCardinality::from(bytecount::num_chars(text.as_bytes()) as u64);
@@ -4015,36 +4038,40 @@ fn string_leaf_admits_text(
     {
         return Verdict::Rejects;
     }
+    // A checker that is not there admits every string it was asked about and so meets a demand and
+    // breaks a bar, which is why the two resolve to opposite verdicts.
+    let demanded = |checked: Option<bool>| match (checked, uncheckable) {
+        (Some(admitted), _) => Verdict::from_bool(admitted),
+        (None, UncheckableFacet::Skipped) => Verdict::Admits,
+        (None, UncheckableFacet::Undecided) => Verdict::Unknown,
+    };
+    let barred = |checked: Option<bool>| match (checked, uncheckable) {
+        (Some(admitted), _) => Verdict::from_bool(!admitted),
+        (None, UncheckableFacet::Skipped) => Verdict::Rejects,
+        (None, UncheckableFacet::Undecided) => Verdict::Unknown,
+    };
     Verdict::all(
         leaf.formats
             .iter()
-            .map(
-                |format| match crate::keywords::format::is_valid(ctx.draft(), format, text) {
-                    Some(admitted) => Verdict::from_bool(admitted),
-                    None => Verdict::Unknown,
-                },
+            .map(|format| demanded(crate::keywords::format::is_valid(ctx.draft(), format, text)))
+            .chain(
+                leaf.excluded_formats.iter().map(|format| {
+                    barred(crate::keywords::format::is_valid(ctx.draft(), format, text))
+                }),
             )
-            .chain(leaf.excluded_formats.iter().map(
-                |format| match crate::keywords::format::is_valid(ctx.draft(), format, text) {
-                    Some(admitted) => Verdict::from_bool(!admitted),
-                    None => Verdict::Unknown,
-                },
-            ))
             .chain(leaf.content_media_types.iter().map(|media_type| {
-                match crate::content_media_type::DEFAULT_CONTENT_MEDIA_TYPE_CHECKS
-                    .get(media_type.as_ref())
-                {
-                    Some(check) => Verdict::from_bool(check(text)),
-                    None => Verdict::Unknown,
-                }
+                demanded(
+                    crate::content_media_type::DEFAULT_CONTENT_MEDIA_TYPE_CHECKS
+                        .get(media_type.as_ref())
+                        .map(|check| check(text)),
+                )
             }))
             .chain(leaf.content_encodings.iter().map(|encoding| {
-                match crate::content_encoding::DEFAULT_CONTENT_ENCODING_CHECKS_AND_CONVERTERS
-                    .get(encoding.as_ref())
-                {
-                    Some((check, _)) => Verdict::from_bool(check(text)),
-                    None => Verdict::Unknown,
-                }
+                demanded(
+                    crate::content_encoding::DEFAULT_CONTENT_ENCODING_CHECKS_AND_CONVERTERS
+                        .get(encoding.as_ref())
+                        .map(|(check, _)| check(text)),
+                )
             })),
     )
 }

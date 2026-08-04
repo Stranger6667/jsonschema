@@ -2931,5 +2931,35 @@
       {"data": 1.0, "valid": false},
       {"data": "x", "valid": false}
     ]
+  },
+  {
+    "description": "a barred format no checker covers leaves no value beside it",
+    "draft": "draft7",
+    "validate_formats": true,
+    "schema": {"allOf": [{"const": "x"}, {"not": {"format": "unknownfmt"}}]},
+    "expected": {"$schema": "http://json-schema.org/draft-07/schema#", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": "x", "valid": false},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "a union keeps an array value beside an element barring a format no checker covers",
+    "draft": "draft2020-12",
+    "validate_formats": true,
+    "schema": {"anyOf": [{"const": ["x"]}, {"type": "array", "items": {"not": {"format": "bogus-format"}}}]},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "array", "items": {"type": "string", "allOf": [{"not": {"format": "bogus-format"}}]}},
+        {"const": ["x"]}
+      ]
+    },
+    "tests": [
+      {"data": ["x"], "valid": true},
+      {"data": [], "valid": true},
+      {"data": [1], "valid": false}
+    ]
   }
 ]

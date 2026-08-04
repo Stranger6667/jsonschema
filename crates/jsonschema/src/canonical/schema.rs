@@ -14,7 +14,7 @@ use crate::{
         context::CanonicalizationContext,
         emit,
         error::OperandMismatch,
-        ir::{Schema, SchemaKind, Verdict},
+        ir::{Schema, SchemaKind, UncheckableFacet, Verdict},
         negate, oracle, CanonicalizationError,
     },
     options::PatternEngineOptions,
@@ -185,7 +185,12 @@ impl CanonicalSchema {
             return Ok(None);
         };
         let refuted = values.iter().any(|value| {
-            algebra::admits_value(&other.inner, value.as_value(), &context) == Verdict::Rejects
+            algebra::admits_value(
+                &other.inner,
+                value.as_value(),
+                UncheckableFacet::Undecided,
+                &context,
+            ) == Verdict::Rejects
         });
         Ok(refuted.then_some(false))
     }

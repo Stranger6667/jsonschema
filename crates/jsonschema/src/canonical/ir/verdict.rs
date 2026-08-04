@@ -8,6 +8,16 @@ pub(crate) enum Verdict {
     Unknown,
 }
 
+/// How a facet no checker covers reads. A validator without a checker skips the keyword, so a
+/// demanded facet passes the value and a barred one rejects it; a value set carries no facet of its
+/// own, so intersection can spell only that reading. Union keeps such a facet undecided instead,
+/// because absorbing a branch on a guess drops values a checker would have kept.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum UncheckableFacet {
+    Skipped,
+    Undecided,
+}
+
 impl Verdict {
     pub(crate) fn from_bool(admitted: bool) -> Self {
         if admitted {
