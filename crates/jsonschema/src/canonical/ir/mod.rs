@@ -30,7 +30,7 @@ pub(crate) use bound_integer::{BoundInteger, Round};
 pub(crate) use bound_number::{BoundNumber, Side};
 pub(crate) use bound_rational::BoundRational;
 pub(crate) use constructors::{canonicalize_value_set, type_set_schema, typed_group};
-pub(crate) use divisors::Divisors;
+pub(crate) use divisors::{Divisors, ExcludedDivisors};
 pub(crate) use integer_leaves::IntegerLeaves;
 pub(crate) use number_leaves::NumberLeaves;
 pub(crate) use object_leaves::ObjectLeaves;
@@ -217,11 +217,17 @@ pub(crate) struct NumberLeaf {
     pub(crate) maximum: Option<BoundNumber>,
     /// Divisors every admitted value is a multiple of.
     pub(crate) multiple_of: Divisors,
+    /// Divisors no admitted value is a multiple of.
+    pub(crate) not_multiple_of: ExcludedDivisors,
 }
 
 impl NumberLeaf {
     /// Whether no real value fits between the two ends.
     pub(crate) fn is_vacant(&self) -> bool {
+        // A demanded divisor whose multiples are all barred leaves nothing.
+        if self.not_multiple_of.conflicts(&self.multiple_of) {
+            return true;
+        }
         // An interval holding no multiple of the divisor admits nothing either.
         if !self
             .multiple_of
@@ -249,11 +255,17 @@ pub(crate) struct IntegerLeaf {
     pub(crate) bounds: IntegerBounds,
     /// Divisors every admitted value is a multiple of.
     pub(crate) multiple_of: Divisors,
+    /// Divisors no admitted value is a multiple of.
+    pub(crate) not_multiple_of: ExcludedDivisors,
 }
 
 impl MaybeEmpty for IntegerLeaf {
     fn is_empty(&self) -> bool {
         self.bounds.is_empty()
+            || self.not_multiple_of.conflicts(&self.multiple_of)
+            // Every integer is a multiple of one, so barring a divisor that covers the whole grid
+            // leaves no integer.
+            || self.not_multiple_of.empties_integers()
     }
 }
 

@@ -313,8 +313,10 @@ RSpec.describe "JSONSchema.canonicalize" do
     "StringView" => [{ "type" => "string", "minLength" => 2, "pattern" => "^a" },
                      %i[min_length max_length patterns formats excluded_formats content_media_types
                         content_encodings excluded]],
-    "IntegerView" => [{ "type" => "integer", "minimum" => 2, "maximum" => 9 }, %i[minimum maximum multiple_of]],
-    "NumberView" => [{ "type" => "number", "minimum" => 2 }, %i[minimum exclusive_minimum maximum exclusive_maximum multiple_of]],
+    "IntegerView" => [{ "type" => "integer", "minimum" => 2, "maximum" => 9 },
+                      %i[minimum maximum multiple_of not_multiple_of]],
+    "NumberView" => [{ "type" => "number", "minimum" => 2 },
+                     %i[minimum exclusive_minimum maximum exclusive_maximum multiple_of not_multiple_of]],
     "ArrayView" => [{ "type" => "array", "minItems" => 1 }, %i[min_items max_items unique_items prefix_items items contains]],
     "ObjectView" => [{ "type" => "object", "minProperties" => 1 },
                      %i[min_properties max_properties required property_names properties pattern_properties]],
@@ -476,7 +478,12 @@ RSpec.describe "JSONSchema.canonicalize" do
     [{ "type" => "number", "minimum" => 5 },
      { "$schema" => DRAFT202012,
        "anyOf" => [{ "type" => %w[null boolean string array object] },
-                   { "type" => "number", "exclusiveMaximum" => 5 }] }]
+                   { "type" => "number", "exclusiveMaximum" => 5 }] }],
+    [{ "type" => "integer", "minimum" => 0 },
+     { "$schema" => DRAFT202012,
+       "anyOf" => [{ "type" => %w[null boolean string array object] },
+                   { "type" => "integer", "maximum" => -1 },
+                   { "type" => "number", "not" => { "multipleOf" => 1 } }] }]
   ].each do |schema, expected|
     it "negates #{schema.inspect}" do
       result = JSONSchema.canonicalize(schema).negate
@@ -487,8 +494,7 @@ RSpec.describe "JSONSchema.canonicalize" do
 
   # The decline set is contract: a caller sizes its fallback on it.
   [
-    { "type" => "integer" },
-    { "type" => "integer", "minimum" => 0 },
+    { "$schema" => "http://json-schema.org/draft-04/schema#", "type" => "integer" },
     { "$schema" => "http://json-schema.org/draft-04/schema#", "type" => "integer", "enum" => [1, 2] },
     UNMODELED
   ].each do |schema|

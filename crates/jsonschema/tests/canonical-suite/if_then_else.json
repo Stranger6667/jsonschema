@@ -157,14 +157,18 @@
     ]
   },
   {
-    "description": "if with an inexpressible complement beside a then stays raw: the condition has no complement",
+    "description": "if over an integer condition folds into the complement union",
     "schema": {
       "if": { "type": "integer" },
       "then": { "minimum": 5 }
     },
     "expected": {
-      "if": { "type": "integer" },
-      "then": { "minimum": 5 }
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        { "type": ["null", "boolean", "string", "array", "object"] },
+        { "type": "number", "not": { "multipleOf": 1 } },
+        { "type": "number", "minimum": 5 }
+      ]
     },
     "tests": [
       { "data": 5, "valid": true },
@@ -209,16 +213,13 @@
     ]
   },
   {
-    "description": "an if schema with no expressible complement keeps the document raw",
+    "description": "an if whose then admits everything collapses away",
     "schema": {
       "if": {"type": "integer"},
       "then": true
     },
     "expected": {
-      "if": {
-        "type": "integer"
-      },
-      "then": true
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
     }
   },
   {

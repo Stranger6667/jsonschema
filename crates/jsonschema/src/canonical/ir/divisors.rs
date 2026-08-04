@@ -112,6 +112,88 @@ impl Divisors {
     }
 }
 
+/// Divisors no admitted value is a multiple of.
+///
+/// The dual of [`Divisors`]: each member bars its multiples, so the set is a conjunction of
+/// exclusions and folds the other way — a member whose multiples another member's already cover is
+/// dropped, where [`Divisors`] folds a pair up to their least common multiple.
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct ExcludedDivisors {
+    members: Vec<BoundRational>,
+}
+
+impl ExcludedDivisors {
+    pub(crate) fn one(step: BoundRational) -> Self {
+        Self::from_members(vec![step])
+    }
+
+    /// The only way to build a set, so the dominated members can never linger.
+    /// e.g.  not multipleOf 2, not multipleOf 4  =>  not multipleOf 2
+    ///       (every multiple of 4 is a multiple of 2, so the wider bar covers it)
+    fn from_members(mut members: Vec<BoundRational>) -> Self {
+        members.sort();
+        members.dedup();
+        // A divisor is at most its multiples, so a dominator sorts before what it dominates and one
+        // forward pass keeps exactly the undominated members.
+        let mut kept: Vec<BoundRational> = Vec::with_capacity(members.len());
+        for member in members {
+            if !kept
+                .iter()
+                .any(|prior| prior.shares_arithmetic(&member) && prior.divides_divisor(&member))
+            {
+                kept.push(member);
+            }
+        }
+        Self { members: kept }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.members.is_empty()
+    }
+
+    pub(crate) fn as_slice(&self) -> &[BoundRational] {
+        &self.members
+    }
+
+    /// The exclusions barring exactly the values either set bars.
+    pub(crate) fn intersect(mut self, other: Self) -> Self {
+        self.members.extend(other.members);
+        Self::from_members(self.members)
+    }
+
+    /// Whether `value` is a multiple of any barred divisor, as the validator decides it.
+    pub(crate) fn bars(&self, value: &serde_json::Number) -> bool {
+        self.members.iter().any(|step| step.divides(value))
+    }
+
+    /// Whether every value the demanded divisors admit is barred, which leaves the leaf empty.
+    pub(crate) fn conflicts(&self, demanded: &Divisors) -> bool {
+        self.members.iter().any(|barred| {
+            demanded
+                .as_slice()
+                .iter()
+                .any(|step| barred.shares_arithmetic(step) && barred.divides_divisor(step))
+        })
+    }
+
+    /// Whether every integer is a multiple of some barred divisor, which leaves no integer at all.
+    pub(crate) fn empties_integers(&self) -> bool {
+        self.members
+            .iter()
+            .any(BoundRational::is_vacuous_over_integers)
+    }
+
+    /// Whether every value these exclusions bar, `other` bars too.
+    pub(crate) fn bars_no_more_than(&self, other: &Self) -> bool {
+        self.members.iter().all(|barred| {
+            other
+                .members
+                .iter()
+                .any(|finer| finer.shares_arithmetic(barred) && finer.divides_divisor(barred))
+        })
+    }
+}
+
 /// Fold pairs one divisor can stand for until none is left. Folding starts from the sorted set and
 /// always takes the first foldable pair, so the divisors a leaf was built from decide the result
 /// and the order they arrived in does not.

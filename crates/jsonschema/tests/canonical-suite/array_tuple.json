@@ -182,10 +182,10 @@
     ]
   },
   {
-    "description": "ir: an unmodeled additionalItems schema keeps the document raw",
+    "description": "ir: a negated-integer additionalItems schema models as the integer complement",
     "schema": {"type": "array", "items": [{"type": "integer"}], "additionalItems": {"not": {"type": "integer"}}},
     "draft": "draft7",
-    "expected": {"type": "array", "items": [{"type": "integer"}], "additionalItems": {"not": {"type": "integer"}}},
+    "expected": {"$schema": "http://json-schema.org/draft-07/schema#", "type": "array", "items": [{"type": "integer"}], "additionalItems": {"anyOf": [{"type": ["null", "boolean", "string", "array", "object"]}, {"type": "number", "not": {"multipleOf": 1}}]}},
     "tests": [
       {"data": [1], "valid": true},
       {"data": [1, "x"], "valid": true},

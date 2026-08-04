@@ -1,6 +1,7 @@
 //! Structural complement of a canonical node.
 use std::{collections::BTreeMap, sync::Arc};
 
+use referencing::Draft;
 use serde_json::{Number, Value};
 
 use crate::{
@@ -8,9 +9,10 @@ use crate::{
         algebra,
         context::CanonicalizationContext,
         ir::{
-            type_set_schema, ArrayLeaf, AtLeastTwo, BoundCardinality, BoundNumber, CanonicalJson,
-            ContainsFacet, Discrete, Divisors, LengthBounds, NumberLeaf, ObjectLeaf, Schema,
-            SchemaKind, StringLeaf,
+            type_set_schema, ArrayLeaf, AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber,
+            BoundRational, CanonicalJson, ContainsFacet, Discrete, Divisors, ExcludedDivisors,
+            IntegerBounds, IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind,
+            StringLeaf,
         },
     },
     JsonType, JsonTypeSet,
@@ -22,10 +24,11 @@ pub(crate) fn negate(schema: &Schema, ctx: &CanonicalizationContext) -> Option<S
     match schema.kind() {
         SchemaKind::True => Some(Schema::new(SchemaKind::False)),
         SchemaKind::False => Some(Schema::new(SchemaKind::True)),
-        SchemaKind::MultiType(set) => negate_type_set(*set),
+        SchemaKind::MultiType(set) => negate_type_set(*set, ctx),
         SchemaKind::Const(value) => negate_finite_values(std::slice::from_ref(value), ctx),
         SchemaKind::Enum(values) => negate_finite_values(values.as_slice(), ctx),
-        SchemaKind::Number(leaf) => negate_number_leaf(leaf.get(), ctx),
+        SchemaKind::Number(leaf) => Some(negate_number_leaf(leaf.get(), ctx)),
+        SchemaKind::Integer(leaf) => negate_integer_leaf(leaf.get(), ctx),
         SchemaKind::String(leaf) => negate_string_leaf(leaf.get(), ctx),
         SchemaKind::Array(leaf) => negate_array_leaf(leaf.get(), ctx),
         SchemaKind::Object(leaf) => negate_object_leaf(leaf.get(), ctx),
@@ -58,7 +61,7 @@ pub(crate) fn negate(schema: &Schema, ctx: &CanonicalizationContext) -> Option<S
         SchemaKind::OneOf(_) | SchemaKind::Reference(_) => {
             Some(Schema::new(SchemaKind::Not(schema.clone())))
         }
-        SchemaKind::TypedGroup { .. } | SchemaKind::Integer(_) | SchemaKind::Raw(_) => None,
+        SchemaKind::TypedGroup { .. } | SchemaKind::Raw(_) => None,
     }
 }
 
@@ -183,21 +186,23 @@ fn number_window(
             minimum,
             maximum,
             multiple_of: Divisors::default(),
+            not_multiple_of: ExcludedDivisors::default(),
         },
         ctx,
     )
 }
 
 /// Complement of a number window: the values of every other type plus the outer rays, each
-/// endpoint's inclusivity flipped.
+/// endpoint's inclusivity flipped. A value escapes a run of divisors as soon as it misses one, and
+/// a run of exclusions as soon as it lands on one, so each divisor flips into its dual on its own
+/// branch.
 /// ```text
 /// e.g.  {"not": {"type": "number", "minimum": 5}}
 ///       =>  anyOf: [<non-number types>, {"type": "number", "exclusiveMaximum": 5}]
+/// e.g.  {"not": {"type": "number", "multipleOf": 0.5}}
+///       =>  anyOf: [<non-number types>, {"type": "number", "not": {"multipleOf": 0.5}}]
 /// ```
-fn negate_number_leaf(leaf: &NumberLeaf, ctx: &CanonicalizationContext) -> Option<Schema> {
-    if !leaf.multiple_of.is_empty() {
-        return None;
-    }
+fn negate_number_leaf(leaf: &NumberLeaf, ctx: &CanonicalizationContext) -> Schema {
     let mut branches = vec![type_set_schema(
         JsonTypeSet::all()
             .remove(JsonType::Number)
@@ -209,7 +214,101 @@ fn negate_number_leaf(leaf: &NumberLeaf, ctx: &CanonicalizationContext) -> Optio
     if let Some(maximum) = &leaf.maximum {
         branches.push(number_window(Some(flipped(maximum)), None, ctx));
     }
+    branches.extend(leaf.multiple_of.as_slice().iter().map(|step| {
+        algebra::number_leaf(
+            NumberLeaf {
+                not_multiple_of: ExcludedDivisors::one(step.clone()),
+                ..NumberLeaf::default()
+            },
+            ctx,
+        )
+    }));
+    branches.extend(leaf.not_multiple_of.as_slice().iter().map(|step| {
+        algebra::number_leaf(
+            NumberLeaf {
+                multiple_of: Divisors::one(step.clone()),
+                ..NumberLeaf::default()
+            },
+            ctx,
+        )
+    }));
+    algebra::union(branches, ctx)
+}
+
+/// Complement of an integer window: every other type, the non-integer numbers, and one branch per
+/// facet violation, or `None` where the canonical form cannot spell it exactly.
+/// ```text
+/// e.g.  {"not": {"type": "integer", "minimum": 0}}
+///       =>  anyOf: [<non-number types>,
+///                   {"type": "integer", "maximum": -1},
+///                   {"type": "number", "not": {"multipleOf": 1}}]
+/// ```
+fn negate_integer_leaf(leaf: &IntegerLeaf, ctx: &CanonicalizationContext) -> Option<Schema> {
+    // Draft 4 tells `1` and `1.0` apart, so its non-integer numbers are not the non-whole ones and
+    // no numeric facet spells them.
+    if matches!(ctx.draft(), Draft::Draft4) {
+        return None;
+    }
+    let mut branches = vec![type_set_schema(
+        JsonTypeSet::all()
+            .remove(JsonType::Number)
+            .remove(JsonType::Integer),
+    )];
+    branches.push(non_integer_number(ctx));
+    // An end at the edge of this build's integer range leaves the ray beyond it unspellable.
+    if let Some(minimum) = &leaf.bounds.minimum {
+        let below = minimum.clone().checked_decrement()?;
+        branches.push(integer_window(None, Some(below), ctx));
+    }
+    if let Some(maximum) = &leaf.bounds.maximum {
+        let above = maximum.clone().checked_increment()?;
+        branches.push(integer_window(Some(above), None, ctx));
+    }
+    branches.extend(leaf.multiple_of.as_slice().iter().map(|step| {
+        algebra::integer_leaf(
+            IntegerLeaf {
+                not_multiple_of: ExcludedDivisors::one(step.clone()),
+                ..IntegerLeaf::default()
+            },
+            ctx,
+        )
+    }));
+    branches.extend(leaf.not_multiple_of.as_slice().iter().map(|step| {
+        algebra::integer_leaf(
+            IntegerLeaf {
+                multiple_of: Divisors::one(step.clone()),
+                ..IntegerLeaf::default()
+            },
+            ctx,
+        )
+    }));
     Some(algebra::union(branches, ctx))
+}
+
+/// The numbers no integer facet reaches: every integer is a multiple of one, and no other number is.
+fn non_integer_number(ctx: &CanonicalizationContext) -> Schema {
+    let one = BoundRational::new(&Number::from(1)).expect("one is a representable divisor");
+    algebra::number_leaf(
+        NumberLeaf {
+            not_multiple_of: ExcludedDivisors::one(one),
+            ..NumberLeaf::default()
+        },
+        ctx,
+    )
+}
+
+fn integer_window(
+    minimum: Option<BoundInteger>,
+    maximum: Option<BoundInteger>,
+    ctx: &CanonicalizationContext,
+) -> Schema {
+    algebra::integer_leaf(
+        IntegerLeaf {
+            bounds: IntegerBounds { minimum, maximum },
+            ..IntegerLeaf::default()
+        },
+        ctx,
+    )
 }
 
 /// The sizes a container holding something can take.
@@ -451,15 +550,14 @@ fn object_branch(
     )
 }
 
-/// Complement of a type set over the value space. `None` when the set admits `integer` but not
-/// `number`: the complement then admits non-integer numbers, which no type set can name.
+/// Complement of a type set over the value space. A set admitting `integer` but not `number`
+/// leaves the non-integer numbers to a numeric facet no type set can name.
 /// ```text
 /// e.g.  {"not": {"type": "string"}}  =>  {"type": ["null", "boolean", "number", "array", "object"]}
+/// e.g.  {"not": {"type": "integer"}}
+///       =>  anyOf: [<non-number types>, {"type": "number", "not": {"multipleOf": 1}}]
 /// ```
-fn negate_type_set(set: JsonTypeSet) -> Option<Schema> {
-    if set.contains(JsonType::Integer) && !set.contains(JsonType::Number) {
-        return None;
-    }
+fn negate_type_set(set: JsonTypeSet, ctx: &CanonicalizationContext) -> Option<Schema> {
     let mut complement = JsonTypeSet::empty();
     for ty in [
         JsonType::Null,
@@ -471,6 +569,17 @@ fn negate_type_set(set: JsonTypeSet) -> Option<Schema> {
         if !set.contains(ty) {
             complement = complement.insert(ty);
         }
+    }
+    if set.contains(JsonType::Integer) && !set.contains(JsonType::Number) {
+        // Draft 4 tells `1` and `1.0` apart, so its non-integer numbers are not the non-whole ones.
+        if matches!(ctx.draft(), Draft::Draft4) {
+            return None;
+        }
+        let mut branches = vec![non_integer_number(ctx)];
+        if !complement.is_empty() {
+            branches.push(type_set_schema(complement));
+        }
+        return Some(algebra::union(branches, ctx));
     }
     // A set carrying `number` admits every number, so its complement admits none; a set carrying
     // neither numeric type admits no number, so its complement admits all of them.
@@ -537,7 +646,8 @@ mod tests {
     }
 
     // Membership for the canonical shapes a complement can take: a type set, its boolean-schema
-    // collapses, and the value-set spellings of a lone `null` or `boolean` type.
+    // collapses, the value-set spellings of a lone `null` or `boolean` type, and the
+    // non-integer-number leaf beside its union.
     #[allow(clippy::wildcard_enum_match_arm)]
     fn complement_admits(schema: &Schema, value: &Value) -> bool {
         match schema.kind() {
@@ -557,6 +667,24 @@ mod tests {
                 assert_eq!(members, [&Value::Bool(false), &Value::Bool(true)]);
                 value.is_boolean()
             }
+            SchemaKind::AnyOf(branches) => branches
+                .as_slice()
+                .iter()
+                .any(|branch| complement_admits(branch, value)),
+            SchemaKind::Number(leaf) => {
+                assert!(leaf.get().minimum.is_none());
+                assert!(leaf.get().maximum.is_none());
+                assert!(leaf.get().multiple_of.is_empty());
+                let barred: Vec<Number> = leaf
+                    .get()
+                    .not_multiple_of
+                    .as_slice()
+                    .iter()
+                    .map(BoundRational::to_number)
+                    .collect();
+                assert_eq!(barred, [Number::from(1)]);
+                matches!(value, Value::Number(number) if !number.is_i64() && !number.is_u64())
+            }
             other => {
                 panic!("scaffold complement of a type set is a type-set shape, got {other:?}")
             }
@@ -564,8 +692,8 @@ mod tests {
     }
 
     // The scaffold's domain is finite, so the complement-membership law is proven exhaustively: for
-    // every one of the 128 type sets, either negate declines (integer without number) or its result
-    // admits a value exactly when the original does not.
+    // every one of the 128 type sets, the complement admits a value exactly when the original does
+    // not.
     #[test]
     fn type_set_complement_partitions_the_value_space() {
         let ctx = context();
@@ -577,15 +705,7 @@ mod tests {
                 }
             }
             let schema = Schema::new(SchemaKind::MultiType(set));
-            let complement = negate(&schema, &ctx);
-            if set.contains(JsonType::Integer) && !set.contains(JsonType::Number) {
-                assert!(
-                    complement.is_none(),
-                    "integer-only set {set:?} must decline"
-                );
-                continue;
-            }
-            let complement = complement.expect("expressible complement");
+            let complement = negate(&schema, &ctx).expect("expressible complement");
             for value in &representatives() {
                 assert_ne!(
                     admits(set, value),

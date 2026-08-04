@@ -1,4 +1,6 @@
-use crate::canonical::ir::{drop_subsumed, Bounds, Divisors, IntegerBounds, IntegerLeaf};
+use crate::canonical::ir::{
+    drop_subsumed, Bounds, Divisors, ExcludedDivisors, IntegerBounds, IntegerLeaf,
+};
 
 /// Integer leaves merged per divisor and free of subsumed intervals. Inserts are batched; the form
 /// is restored before any read, so the order in which leaves arrive cannot change the result.
@@ -35,7 +37,11 @@ impl IntegerLeaves {
         //         {"type": "integer", "multipleOf": 4}
         //       ]  =>  {"type": "integer", "multipleOf": 2}
         drop_subsumed(&mut self.leaves, |outer, inner| {
-            outer.bounds.covers(&inner.bounds) && outer.multiple_of.divide_all(&inner.multiple_of)
+            outer.bounds.covers(&inner.bounds)
+                && outer.multiple_of.divide_all(&inner.multiple_of)
+                && outer
+                    .not_multiple_of
+                    .bars_no_more_than(&inner.not_multiple_of)
         });
         self.canonical = true;
         // `is_empty` reads the batch without canonicalizing, which relies on this.
@@ -78,9 +84,10 @@ impl IntoIterator for IntegerLeaves {
     }
 }
 
-/// The divisor shared by a merge group; only the interval differs within one.
+/// The divisors shared by a merge group; only the interval differs within one.
 struct Group {
     divisor: Divisors,
+    barred: ExcludedDivisors,
 }
 
 /// Fold the intervals of leaves carrying the same divisor.
@@ -98,18 +105,22 @@ fn merge(mut leaves: Vec<IntegerLeaf>) -> Vec<IntegerLeaf> {
     if leaves.len() < 2 {
         return leaves;
     }
-    leaves.sort_by(|left, right| left.multiple_of.cmp(&right.multiple_of));
+    leaves.sort_by(|left, right| {
+        left.multiple_of
+            .cmp(&right.multiple_of)
+            .then_with(|| left.not_multiple_of.cmp(&right.not_multiple_of))
+    });
     let mut merged: Vec<IntegerLeaf> = Vec::with_capacity(leaves.len());
     let mut windows: Vec<IntegerBounds> = Vec::new();
     let mut group: Option<Group> = None;
     for leaf in leaves {
-        if group
-            .as_ref()
-            .is_none_or(|open| open.divisor != leaf.multiple_of)
-        {
+        if group.as_ref().is_none_or(|open| {
+            open.divisor != leaf.multiple_of || open.barred != leaf.not_multiple_of
+        }) {
             flush_group(&mut merged, group.take(), &mut windows);
             group = Some(Group {
                 divisor: leaf.multiple_of,
+                barred: leaf.not_multiple_of,
             });
         }
         windows.push(leaf.bounds);
@@ -127,6 +138,7 @@ fn flush_group(
 ) {
     let Some(Group {
         divisor: multiple_of,
+        barred: not_multiple_of,
     }) = group
     else {
         return;
@@ -135,6 +147,7 @@ fn flush_group(
         merged.push(IntegerLeaf {
             bounds,
             multiple_of: multiple_of.clone(),
+            not_multiple_of: not_multiple_of.clone(),
         });
     }
 }

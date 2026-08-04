@@ -6,7 +6,8 @@ use crate::{
     canonical::{
         ir::{
             ArrayLeaf, BoundCardinality, BoundInteger, BoundNumber, BoundRational, CanonicalJson,
-            Divisors, IntegerLeaf, NumberLeaf, ObjectLeaf, SchemaKind, StringLeaf,
+            Divisors, ExcludedDivisors, IntegerLeaf, NumberLeaf, ObjectLeaf, SchemaKind,
+            StringLeaf,
         },
         CanonicalSchema,
     },
@@ -91,6 +92,8 @@ pub struct NumberView {
     pub maximum: Option<Number>,
     pub exclusive_maximum: bool,
     pub multiple_of: Vec<Number>,
+    /// Divisors no admitted value is a multiple of.
+    pub not_multiple_of: Vec<Number>,
 }
 
 /// Payload of [`CanonicalView::Array`]: the constraints on an array value.
@@ -139,6 +142,8 @@ pub struct IntegerView {
     pub minimum: Option<Number>,
     pub maximum: Option<Number>,
     pub multiple_of: Vec<Number>,
+    /// Divisors no admitted value is a multiple of.
+    pub not_multiple_of: Vec<Number>,
 }
 
 impl CanonicalSchema {
@@ -246,6 +251,7 @@ fn number_view(leaf: &NumberLeaf) -> NumberView {
         maximum: leaf.maximum.as_ref().map(BoundNumber::to_number),
         exclusive_maximum: leaf.maximum.as_ref().is_some_and(|b| !b.is_inclusive()),
         multiple_of: divisor_numbers(&leaf.multiple_of),
+        not_multiple_of: excluded_divisor_numbers(&leaf.not_multiple_of),
     }
 }
 
@@ -254,7 +260,16 @@ fn integer_view(leaf: &IntegerLeaf) -> IntegerView {
         minimum: leaf.bounds.minimum.as_ref().map(BoundInteger::to_number),
         maximum: leaf.bounds.maximum.as_ref().map(BoundInteger::to_number),
         multiple_of: divisor_numbers(&leaf.multiple_of),
+        not_multiple_of: excluded_divisor_numbers(&leaf.not_multiple_of),
     }
+}
+
+fn excluded_divisor_numbers(barred: &ExcludedDivisors) -> Vec<Number> {
+    barred
+        .as_slice()
+        .iter()
+        .map(BoundRational::to_number)
+        .collect()
 }
 
 // The element-schema children need the schema-level wrapping only the caller can do, so they arrive

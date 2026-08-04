@@ -886,7 +886,7 @@
     ]
   },
   {
-    "description": "an overlapping integer branch stays raw: its complement is inexpressible",
+    "description": "an integer branch inside a wider number branch leaves the non-integer numbers",
     "schema": {
       "oneOf": [
         {
@@ -898,14 +898,9 @@
       ]
     },
     "expected": {
-      "oneOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "number"
-        }
-      ]
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "not": {"multipleOf": 1}
     },
     "tests": [
       {
@@ -1094,7 +1089,7 @@
     ]
   },
   {
-    "description": "a duplicate branch without a complement keeps the exclusivity symbolic",
+    "description": "duplicate integer branches bar the integers from the remaining branch",
     "schema": {
       "oneOf": [
         {
@@ -1120,15 +1115,27 @@
           "type": "string"
         }
       },
-      "oneOf": [
+      "anyOf": [
         {
-          "type": "integer"
+          "allOf": [
+            {
+              "type": ["null", "boolean", "string", "array", "object"]
+            },
+            {
+              "$ref": "#/$defs/a"
+            }
+          ]
         },
         {
-          "type": "integer"
-        },
-        {
-          "$ref": "#/$defs/a"
+          "allOf": [
+            {
+              "type": "number",
+              "not": {"multipleOf": 1}
+            },
+            {
+              "$ref": "#/$defs/a"
+            }
+          ]
         }
       ]
     },

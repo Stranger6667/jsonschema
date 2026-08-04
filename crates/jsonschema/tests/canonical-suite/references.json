@@ -1767,7 +1767,7 @@
     ]
   },
   {
-    "description": "a hypothesis meeting an inexpressible complement leaves the cycle symbolic",
+    "description": "an unguarded self-reference under a required key admits nothing",
     "schema": {
       "type": "object",
       "required": ["a"],
@@ -1776,8 +1776,8 @@
         "b": {"not": {"oneOf": [{"$ref": "#"}, {"type": "integer", "minimum": 5}]}}
       }
     },
-    "satisfiable": true,
-    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "required": ["a"], "properties": {"a": {"$ref": "#"}, "b": {"not": {"oneOf": [{"type": "integer", "minimum": 5}, {"$ref": "#"}]}}}},
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
     "tests": [
       {"data": 1, "valid": false},
       {"data": {}, "valid": false},

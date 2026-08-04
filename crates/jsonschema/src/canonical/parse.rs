@@ -13,8 +13,9 @@ use crate::{
         emptiness,
         ir::{
             canonicalize_value_set, type_set_schema, typed_group, ArrayLeaf, BoundCardinality,
-            BoundNumber, BoundRational, CanonicalJson, ContainsFacet, Divisors, IntegerLeaf,
-            LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, Side, StringLeaf,
+            BoundNumber, BoundRational, CanonicalJson, ContainsFacet, Divisors, ExcludedDivisors,
+            IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, Side,
+            StringLeaf,
         },
         negate, CanonicalizationError, DefinitionMap, CANONICAL_REFERENCE_PREFIX,
         ROOT_DEFINITION_KEY,
@@ -1156,6 +1157,7 @@ fn parse_schema_in_scope<'a>(
             minimum: real_minimum,
             maximum: real_maximum,
             multiple_of,
+            not_multiple_of: ExcludedDivisors::default(),
         };
         // The integers the interval admits must be representable: the interval may still meet
         // `integer` through an `allOf`, and there it is the only form left to express.
@@ -1167,6 +1169,7 @@ fn parse_schema_in_scope<'a>(
                 IntegerLeaf {
                     bounds,
                     multiple_of: leaf.multiple_of,
+                    not_multiple_of: ExcludedDivisors::default(),
                 },
                 ctx,
             ));

@@ -184,25 +184,10 @@
       }
     ],
     "expected": {
-      "allOf": [
-        {
-          "const": "x"
-        },
-        {
-          "not": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "format": "email",
-                "type": "string"
-              }
-            ]
-          }
-        }
-      ]
-    }
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false
   },
   {
     "description": "admits oracle coverage - allOf const true not anyof format parity and satisfiability",
@@ -244,24 +229,8 @@
       }
     ],
     "expected": {
-      "allOf": [
-        {
-          "const": true
-        },
-        {
-          "not": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "format": "email",
-                "type": "string"
-              }
-            ]
-          }
-        }
-      ]
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": true
     }
   },
   {
@@ -1143,10 +1112,11 @@
       }
     ],
     "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "number",
       "not": {
-        "type": "integer"
-      },
-      "type": "number"
+        "multipleOf": 1
+      }
     }
   },
   {
@@ -2506,19 +2476,8 @@
       }
     ],
     "expected": {
-      "allOf": [
-        {
-          "not": {
-            "type": [
-              "integer",
-              "string"
-            ]
-          }
-        },
-        {
-          "const": 1.5
-        }
-      ]
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": 1.5
     }
   },
   {

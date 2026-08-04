@@ -250,6 +250,24 @@ def test_view_number_multiple_of():
             pytest.fail(f"unexpected view: {other!r}")
 
 
+def test_view_number_not_multiple_of():
+    match canonicalize({"type": "number", "not": {"multipleOf": 0.5}}).view():
+        case canonical.NumberView(multiple_of=multiple_of, not_multiple_of=not_multiple_of):
+            assert multiple_of == []
+            assert not_multiple_of == [0.5]
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
+def test_view_integer_not_multiple_of():
+    match canonicalize({"type": "integer", "not": {"multipleOf": 3}}).view():
+        case canonical.IntegerView(multiple_of=multiple_of, not_multiple_of=not_multiple_of):
+            assert multiple_of == []
+            assert not_multiple_of == [3]
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
 def test_view_number_interval():
     match canonicalize({"type": "number", "minimum": 2, "exclusiveMaximum": 5}).view():
         case canonical.NumberView(
@@ -619,14 +637,26 @@ def test_negate(schema, expected):
 @pytest.mark.parametrize(
     "schema",
     [
-        {"type": "integer"},
-        {"type": "integer", "minimum": 0},
+        {"$schema": "http://json-schema.org/draft-04/schema#", "type": "integer"},
         {"$schema": "http://json-schema.org/draft-04/schema#", "type": "integer", "enum": [1, 2]},
         UNMODELED,
     ],
 )
 def test_negate_declines(schema):
     assert canonicalize(schema).negate() is None
+
+
+def test_negate_integer_leaf():
+    result = canonicalize({"type": "integer", "minimum": 0}).negate()
+    assert isinstance(result, CanonicalSchema)
+    assert result.to_json_schema() == {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+            {"type": ["null", "boolean", "string", "array", "object"]},
+            {"type": "integer", "maximum": -1},
+            {"type": "number", "not": {"multipleOf": 1}},
+        ],
+    }
 
 
 def test_negate_keeps_a_reference_symbolic():
