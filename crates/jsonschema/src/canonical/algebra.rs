@@ -1332,7 +1332,8 @@ fn collapse_object_leaves_covering_domain(
         pattern_properties: BTreeMap::new(),
         additional: None,
     };
-    if !split_piece_is_covered(piece.clone(), leaves, &keys, ctx) {
+    let packed = packed_leaves(leaves, ctx);
+    if !split_piece_is_covered(piece.clone(), &packed, &keys, ctx) {
         return false;
     }
     leaves.clear();
@@ -1340,22 +1341,70 @@ fn collapse_object_leaves_covering_domain(
     true
 }
 
+/// Pack every leaf into a node once. The coverage walk below tests one node against the same set of
+/// leaves at every step of a split, and packing carries a full copy of the property map.
+fn packed_leaves(leaves: &[ObjectLeaf], ctx: &CanonicalizationContext) -> Vec<Schema> {
+    leaves
+        .iter()
+        .map(|leaf| object_leaf(leaf.clone(), ctx))
+        .collect()
+}
+
+/// The packed leaves other than `index`.
+fn siblings_of(packed: &[Schema], index: usize) -> Vec<Schema> {
+    packed
+        .iter()
+        .enumerate()
+        .filter(|(sibling, _)| *sibling != index)
+        .map(|(_, schema)| schema.clone())
+        .collect()
+}
+
+/// Every key the leaves other than `index` name, sorted and deduplicated.
+fn keys_beside(leaves: &[ObjectLeaf], index: usize) -> Vec<Arc<str>> {
+    let mut keys: Vec<Arc<str>> = leaves
+        .iter()
+        .enumerate()
+        .filter(|(sibling, _)| *sibling != index)
+        .flat_map(|(_, leaf)| leaf.required.iter().chain(leaf.properties.keys()).cloned())
+        .collect();
+    keys.sort();
+    keys.dedup();
+    keys
+}
+
 /// Whether some leaf admits the whole piece, or both halves of a key-presence split do
 /// recursively. The key list shrinks with each split, which bounds the recursion.
 fn split_piece_is_covered(
     piece: ObjectLeaf,
-    leaves: &[ObjectLeaf],
+    leaves: &[Schema],
     keys: &[Arc<str>],
     ctx: &CanonicalizationContext,
 ) -> bool {
+    debug_assert!(
+        keys.windows(2).all(|pair| pair[0] < pair[1]),
+        "the split keys are sorted and deduplicated"
+    );
     let schema = object_leaf(piece.clone(), ctx);
     if matches!(schema.kind(), SchemaKind::False) {
         return true;
     }
-    if leaves.iter().any(|leaf| {
-        oracle::covers(&schema, &object_leaf(leaf.clone(), ctx), ctx) == Verdict::Admits
-    }) {
-        return true;
+    let mut any_within_reach = false;
+    for leaf in leaves {
+        if !piece_meets_demands(&schema, leaf) {
+            continue;
+        }
+        any_within_reach = true;
+        if oracle::covers(&schema, leaf, ctx) == Verdict::Admits {
+            return true;
+        }
+    }
+    // Barring a key leaves the required list alone, so a leaf out of reach here is out of reach for
+    // every piece down the chain of missing halves. That chain ends out of keys, uncovered, and -
+    // when barring cannot empty a piece - still admitting something, so it answers no, and one no
+    // settles the conjunction below.
+    if !any_within_reach && barring_keys_keeps_the_piece(&piece, keys) {
+        return false;
     }
     let Some((key, rest)) = keys.split_first() else {
         return false;
@@ -1372,6 +1421,40 @@ fn split_piece_is_covered(
         && split_piece_is_covered(missing, leaves, rest, ctx)
 }
 
+/// Whether the piece demands every key the leaf does, both already packed by [`object_leaf`].
+///
+/// A leaf failing this cannot admit the piece: the intersection unions the two required lists and
+/// packing never touches that list, so a key only the leaf demands survives into the result and
+/// tells the two apart. Deciding it reads the required lists alone, where the intersection would
+/// merge the property maps - the part that costs, a piece carrying one entry per split key.
+fn piece_meets_demands(piece: &Schema, leaf: &Schema) -> bool {
+    let (SchemaKind::Object(piece_leaf), SchemaKind::Object(other)) = (piece.kind(), leaf.kind())
+    else {
+        return true;
+    };
+    let demanded = &piece_leaf.get().required;
+    other
+        .get()
+        .required
+        .iter()
+        .all(|key| demanded.binary_search(key).is_ok())
+}
+
+/// Whether barring any of these keys leaves the piece saying the same thing about its required
+/// list and still admitting something. A key constraint, a shield, a pattern map or a size ceiling
+/// read the key set as a whole, so under any of them a barred key reaches further than the entry it
+/// adds; and barring a key the piece demands empties it outright.
+fn barring_keys_keeps_the_piece(piece: &ObjectLeaf, keys: &[Arc<str>]) -> bool {
+    piece.property_names.is_none()
+        && piece.additional.is_none()
+        && piece.pattern_properties.is_empty()
+        && piece.sizes.maximum.is_none()
+        && piece
+            .required
+            .iter()
+            .all(|key| keys.binary_search(key).is_err())
+}
+
 /// Drop a size bound when the region it excludes - the leaf's other facets on the outer ray - is
 /// jointly covered by the siblings, so the wider window admits nothing new.
 /// ```text
@@ -1386,6 +1469,7 @@ fn widen_size_window_covered_by_siblings(
     leaves: &mut [ObjectLeaf],
     ctx: &CanonicalizationContext,
 ) -> bool {
+    let packed = packed_leaves(leaves, ctx);
     for index in 0..leaves.len() {
         let Some(rays) = negate::length_windows(&leaves[index].sizes) else {
             continue;
@@ -1393,18 +1477,8 @@ fn widen_size_window_covered_by_siblings(
         if rays.is_empty() {
             continue;
         }
-        let siblings: Vec<ObjectLeaf> = leaves
-            .iter()
-            .enumerate()
-            .filter(|(sibling, _)| *sibling != index)
-            .map(|(_, leaf)| leaf.clone())
-            .collect();
-        let mut keys: Vec<Arc<str>> = siblings
-            .iter()
-            .flat_map(|leaf| leaf.required.iter().chain(leaf.properties.keys()).cloned())
-            .collect();
-        keys.sort();
-        keys.dedup();
+        let siblings = siblings_of(&packed, index);
+        let keys = keys_beside(leaves, index);
         for ray in rays {
             let drops_minimum = ray.minimum.is_none();
             let mut piece = leaves[index].clone();
@@ -1439,19 +1513,10 @@ fn drop_object_branch_covered_by_siblings(
     leaves: &mut Vec<ObjectLeaf>,
     ctx: &CanonicalizationContext,
 ) -> bool {
+    let packed = packed_leaves(leaves, ctx);
     for index in 0..leaves.len() {
-        let siblings: Vec<ObjectLeaf> = leaves
-            .iter()
-            .enumerate()
-            .filter(|(sibling, _)| *sibling != index)
-            .map(|(_, leaf)| leaf.clone())
-            .collect();
-        let mut keys: Vec<Arc<str>> = siblings
-            .iter()
-            .flat_map(|leaf| leaf.required.iter().chain(leaf.properties.keys()).cloned())
-            .collect();
-        keys.sort();
-        keys.dedup();
+        let siblings = siblings_of(&packed, index);
+        let keys = keys_beside(leaves, index);
         if split_piece_is_covered(leaves[index].clone(), &siblings, &keys, ctx) {
             leaves.remove(index);
             return true;
@@ -1464,14 +1529,17 @@ fn drop_object_branch_covered_by_siblings(
         //         {"type": "object", "minProperties": 2, "properties": {"a": {"type": "string"}}}
         //       ]  =>  the first branch dissolves: at one key the entry says nothing beside the
         //              filled slots, above that the third branch holds it
-        for divider in 0..siblings.len() {
-            let Some(mut windows) = negate::length_windows(&siblings[divider].sizes) else {
+        for divider in 0..leaves.len() {
+            if divider == index {
+                continue;
+            }
+            let Some(mut windows) = negate::length_windows(&leaves[divider].sizes) else {
                 continue;
             };
             if windows.is_empty() {
                 continue;
             }
-            windows.push(siblings[divider].sizes.clone());
+            windows.push(leaves[divider].sizes.clone());
             let all_covered = windows.iter().all(|window| {
                 let mut piece = leaves[index].clone();
                 piece.sizes = LengthBounds {
