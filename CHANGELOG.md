@@ -12,6 +12,10 @@
 - `CanonicalSchema::is_subset_of`, whether the other schema admits every value this one admits.
 - Canonicalization of a reference cycle carrying no assertion, which admits every value.
 
+### Fixed
+
+- A satisfiable `multipleOf` schema collapsing to the empty set when `f64` rounds its bounds together.
+
 ## [0.49.4] - 2026-08-04
 
 ### Added

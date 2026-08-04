@@ -1281,5 +1281,92 @@
       ]
     },
     "expected_arbitrary_precision": { "$schema": "https://json-schema.org/draft/2020-12/schema", "not": {} }
+  },
+  {
+    "description": "ends rounding together past f64 precision keep the multiple the validator reads between them",
+    "schema": {
+      "type": "number",
+      "minimum": 18014398509481995,
+      "exclusiveMaximum": 18014398509481997,
+      "multipleOf": 0.5
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "minimum": 18014398509481995,
+      "exclusiveMaximum": 18014398509481997,
+      "multipleOf": 0.5
+    },
+    "expected_arbitrary_precision": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "minimum": 18014398509481995,
+      "maximum": 18014398509481996.5,
+      "multipleOf": 0.5
+    },
+    "tests": [
+      { "data": 18014398509481995, "valid": true },
+      { "data": 18014398509481996, "valid": true },
+      { "data": 18014398509481997, "valid": false },
+      { "data": 18014398509482000, "valid": false }
+    ]
+  },
+  {
+    "description": "excluded ends rounding together past f64 precision keep the multiple the validator reads between them",
+    "schema": {
+      "type": "number",
+      "exclusiveMinimum": 18014398509481995,
+      "exclusiveMaximum": 18014398509481997,
+      "multipleOf": 0.5
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "exclusiveMinimum": 18014398509481995,
+      "exclusiveMaximum": 18014398509481997,
+      "multipleOf": 0.5
+    },
+    "expected_arbitrary_precision": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "minimum": 18014398509481995.5,
+      "maximum": 18014398509481996.5,
+      "multipleOf": 0.5
+    },
+    "tests": [
+      { "data": 18014398509481995, "valid": false },
+      { "data": 18014398509481996, "valid": true },
+      { "data": 18014398509481997, "valid": false },
+      { "data": 18014398509482000, "valid": false }
+    ]
+  },
+  {
+    "description": "an excluded start past f64 precision keeps the multiples lying beyond it",
+    "schema": {
+      "type": "number",
+      "exclusiveMinimum": 18014398509481995,
+      "maximum": 18014398509481997,
+      "multipleOf": 0.5
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "exclusiveMinimum": 18014398509481995,
+      "maximum": 18014398509481997,
+      "multipleOf": 0.5
+    },
+    "expected_arbitrary_precision": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "minimum": 18014398509481995.5,
+      "maximum": 18014398509481997,
+      "multipleOf": 0.5
+    },
+    "tests": [
+      { "data": 18014398509481995, "valid": false },
+      { "data": 18014398509481996, "valid": true },
+      { "data": 18014398509481997, "valid": true },
+      { "data": 18014398509482000, "valid": false }
+    ]
   }
 ]

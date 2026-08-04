@@ -33,7 +33,7 @@ impl BoundRational {
     pub(crate) fn new(limit: &Number) -> Option<Self> {
         let limit = normalized_number(limit);
         limit.as_f64()?;
-        let value = exact(&limit).filter(|value| decimal(value).as_ref() == Some(&limit));
+        let value = denoted(&limit);
         Some(Self { limit, value })
     }
 
@@ -110,9 +110,11 @@ impl BoundRational {
         let Some(step) = self.exact_value() else {
             return true;
         };
+        // An end no rational this build spells back to is not the end the validator compares
+        // against, so the interval is left holding a multiple rather than called empty.
         let (Some(low), Some((maximum, high))) = (
-            minimum.and_then(|bound| exact(&bound.to_number())),
-            maximum.and_then(|bound| Some((bound, exact(&bound.to_number())?))),
+            minimum.and_then(|bound| denoted(&bound.to_number())),
+            maximum.and_then(|bound| Some((bound, denoted(&bound.to_number())?))),
         ) else {
             return true;
         };
@@ -167,8 +169,7 @@ impl BoundRational {
         direction: super::Round,
     ) -> Option<super::BoundNumber> {
         let step = self.exact_value()?;
-        let spelling = bound.to_number();
-        let limit = exact(&spelling).filter(|limit| decimal(limit).as_ref() == Some(&spelling))?;
+        let limit = denoted(&bound.to_number())?;
         let mut index = step_index(&limit, step, direction)?;
         let mut candidate = grid_point(step, &index)?;
         // An end the interval excludes cannot keep a multiple sitting on it. One step along the grid
@@ -289,7 +290,14 @@ fn grid_point(divisor: &BigFraction, index: &BigInt) -> Option<BigFraction> {
     Some(BigFraction::new_raw_signed(sign, numerator, denominator))
 }
 
-/// The exact rational a JSON number denotes.
+/// The rational a JSON number denotes, when this build reads one that spells back to it. Exact
+/// arithmetic may only stand in for a spelling it reproduces: past `f64` precision `exact` rounds,
+/// and the rounded value is not what the validator compares against.
+fn denoted(number: &Number) -> Option<BigFraction> {
+    exact(number).filter(|value| decimal(value).as_ref() == Some(number))
+}
+
+/// The rational this build reads a JSON number as, which past `f64` precision is a rounded one.
 fn exact(number: &Number) -> Option<BigFraction> {
     #[cfg(feature = "arbitrary-precision")]
     {
