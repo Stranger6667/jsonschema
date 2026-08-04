@@ -1783,5 +1783,163 @@
       {"data": {}, "valid": false},
       {"data": {"a": {}}, "valid": false}
     ]
+  },
+  {
+    "description": "a bare self-reference admits every value",
+    "schema": {"$ref": "#"},
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": "a", "valid": true},
+      {"data": null, "valid": true},
+      {"data": [], "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "a self-reference wrapped in allOf admits every value",
+    "schema": {"allOf": [{"$ref": "#"}]},
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": "a", "valid": true},
+      {"data": [], "valid": true}
+    ]
+  },
+  {
+    "description": "a definition pointing back at the root admits every value",
+    "schema": {"$ref": "#/$defs/a", "$defs": {"a": {"$ref": "#"}}},
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": "a", "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "two definitions pointing at each other admit every value",
+    "schema": {"$ref": "#/$defs/a", "$defs": {"a": {"$ref": "#/$defs/b"}, "b": {"$ref": "#/$defs/a"}}},
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": null, "valid": true},
+      {"data": [], "valid": true}
+    ]
+  },
+  {
+    "description": "an allOf of references that all cycle admits every value",
+    "schema": {"$ref": "#/$defs/a", "$defs": {"a": {"allOf": [{"$ref": "#"}, {"$ref": "#/$defs/b"}]}, "b": {"$ref": "#"}}},
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": "a", "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "an anyOf of references that all cycle admits every value",
+    "schema": {"$ref": "#/$defs/a", "$defs": {"a": {"anyOf": [{"$ref": "#"}, {"$ref": "#/$defs/b"}]}, "b": {"$ref": "#"}}},
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": "a", "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "a required key naming a self-referencing definition demands only the key",
+    "schema": {"type": "object", "required": ["a"], "properties": {"a": {"$ref": "#/$defs/x"}}, "$defs": {"x": {"$ref": "#/$defs/x"}}},
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "required": ["a"]},
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": null}, "valid": true},
+      {"data": {}, "valid": false},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "a dynamic reference closing on its own anchor admits every value",
+    "schema": {"$id": "https://example.com/dynamic-cycle", "$dynamicAnchor": "m", "$dynamicRef": "#m"},
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": "a", "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "a cycle closed across two resources admits every value",
+    "schema": {"$id": "https://example.com/root", "$ref": "sub", "$defs": {"s": {"$id": "https://example.com/sub", "$ref": "https://example.com/root"}}},
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": "a", "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "a cycle sharing an allOf with a well-founded reference stays symbolic",
+    "schema": {"$ref": "#/$defs/a", "$defs": {"a": {"allOf": [{"$ref": "#"}, {"$ref": "#/$defs/s"}]}, "s": {"type": "string"}}},
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "$ref": "#/$defs/a", "$defs": {"a": {"allOf": [{"$ref": "#"}, {"$ref": "#/$defs/s"}]}, "s": {"type": "string"}}},
+    "tests": [
+      {"data": "a", "valid": true},
+      {"data": 1, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "a cycle referenced from inside a oneOf keeps its reference symbolic",
+    "schema": {
+      "$defs": {
+        "d0": {"properties": {"p": {"allOf": [{"$ref": "#"}, {"$ref": "#/$defs/d1"}]}}, "required": ["p"]},
+        "d1": {"$ref": "#/$defs/d1"},
+        "d2": {"$ref": "#"}
+      },
+      "oneOf": [
+        {"allOf": [{"$ref": "#/$defs/d0"}, {"$ref": "#/$defs/d1"}]},
+        {"oneOf": [{"$ref": "#/$defs/d1"}, {"$ref": "#/$defs/d2"}]}
+      ]
+    },
+    "satisfiable": true,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "d0": {"anyOf": [{"type": ["null", "boolean", "number", "string", "array"]}, {"properties": {"p": {"allOf": [{"$ref": "#"}, {"$ref": "#/$defs/d1"}]}}, "required": ["p"], "type": "object"}]},
+        "d1": {"$ref": "#/$defs/d1"},
+        "d2": {"$ref": "#"}
+      },
+      "oneOf": [
+        {"allOf": [{"$ref": "#/$defs/d0"}, {"$ref": "#/$defs/d1"}]},
+        {"oneOf": [{"$ref": "#/$defs/d1"}, {"$ref": "#/$defs/d2"}]}
+      ]
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": 1, "valid": true},
+      {"data": "a", "valid": true},
+      {"data": null, "valid": true}
+    ]
+  },
+  {
+    "description": "a recursive reference closing on the root admits every value",
+    "draft": "draft2019-09",
+    "schema": {"$recursiveAnchor": true, "$recursiveRef": "#"},
+    "satisfiable": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2019-09/schema"},
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": "a", "valid": true},
+      {"data": {}, "valid": true}
+    ]
   }
 ]

@@ -943,6 +943,8 @@ enum Link {
     ContainsMixed,
     /// Terminates the ring.
     Base,
+    /// A bare reference, carrying no assertion at all.
+    Bare,
 }
 
 /// Links that always consume structure, so every cycle they build is well founded.
@@ -972,6 +974,7 @@ const ALL_LINKS: &[Link] = &[
     Link::AnyOfMixed,
     Link::ContainsMixed,
     Link::Base,
+    Link::Bare,
 ];
 
 fn draw_link(tc: &TestCase, well_founded: bool) -> Link {
@@ -995,6 +998,7 @@ fn definition_body(link: Link, next: &str, second: &str) -> Value {
         Link::PropertyName => {
             json!({"type": "object", "minProperties": 1, "propertyNames": {"$ref": next}})
         }
+        Link::Bare => json!({"$ref": next}),
         Link::InPlace => json!({"allOf": [{"$ref": next}, {"type": "integer"}]}),
         Link::InPlaceBranch => json!({"anyOf": [{"$ref": next}, {"type": "integer"}]}),
         // Two outgoing references, which one target per body can never produce - and which every
