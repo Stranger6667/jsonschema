@@ -6,6 +6,7 @@
 
 - Canonicalization of `not` a `multipleOf`, which numeric leaves carry as barred divisors.
 - Canonicalization of `not` an integer schema, where a barred divisor of one spells the non-integer numbers.
+- Canonicalization of `not` a `pattern`, which string leaves carry as barred patterns.
 - `CanonicalSchema#is_subset_of`, whether the other schema admits every value this one admits.
 
 ## [0.49.4] - 2026-08-04

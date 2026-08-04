@@ -412,6 +412,9 @@ pub(crate) struct StringLeaf {
     pub(crate) lengths: LengthBounds,
     /// Sorted, deduplicated. A string must match every pattern.
     pub(crate) patterns: Vec<Arc<str>>,
+    /// Sorted, deduplicated. A string must match none of these patterns. Only syntactic equality
+    /// against `patterns` is decided, so a leaf can be spelled and still admit nothing.
+    pub(crate) excluded_patterns: Vec<Arc<str>>,
     /// Sorted, deduplicated. A string must satisfy every format. Empty unless formats assert.
     pub(crate) formats: Vec<Arc<str>>,
     /// Sorted, deduplicated. A string must satisfy none of these formats. Empty unless formats

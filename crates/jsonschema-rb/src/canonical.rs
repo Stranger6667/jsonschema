@@ -148,6 +148,7 @@ impl RbCanonicalSchema {
                     min_length: view.min_length,
                     max_length: view.max_length,
                     patterns: view.patterns,
+                    excluded_patterns: view.excluded_patterns,
                     formats: view.formats,
                     excluded_formats: view.excluded_formats,
                     content_media_types: view.content_media_types,
@@ -396,14 +397,14 @@ fn strings_to_ruby(ruby: &Ruby, values: &[String]) -> Result<Value, Error> {
     Ok(array.as_value())
 }
 
-/// A string value within a length window, matching every pattern, format, media type, and
-/// encoding.
+/// A string value within a length window, matching every required facet and no barred one.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::StringView", free_immediately)]
 pub struct StringView {
     min_length: Option<serde_json::Number>,
     max_length: Option<serde_json::Number>,
     patterns: Vec<String>,
+    excluded_patterns: Vec<String>,
     formats: Vec<String>,
     excluded_formats: Vec<String>,
     content_media_types: Vec<String>,
@@ -424,6 +425,10 @@ impl StringView {
 
     fn patterns(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
         strings_to_ruby(ruby, &rb_self.patterns)
+    }
+
+    fn excluded_patterns(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        strings_to_ruby(ruby, &rb_self.excluded_patterns)
     }
 
     fn formats(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
@@ -448,10 +453,11 @@ impl StringView {
 
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
-            "#<JSONSchema::Canonical::StringView min_length={} max_length={} patterns={} formats={} excluded_formats={} content_media_types={} content_encodings={} excluded={}>",
+            "#<JSONSchema::Canonical::StringView min_length={} max_length={} patterns={} excluded_patterns={} formats={} excluded_formats={} content_media_types={} content_encodings={} excluded={}>",
             Self::min_length(ruby, rb_self)?.inspect(),
             Self::max_length(ruby, rb_self)?.inspect(),
             Self::patterns(ruby, rb_self)?.inspect(),
+            Self::excluded_patterns(ruby, rb_self)?.inspect(),
             Self::formats(ruby, rb_self)?.inspect(),
             Self::excluded_formats(ruby, rb_self)?.inspect(),
             Self::content_media_types(ruby, rb_self)?.inspect(),
@@ -465,6 +471,10 @@ impl StringView {
         hash.aset(ruby.sym_new("min_length"), Self::min_length(ruby, rb_self)?)?;
         hash.aset(ruby.sym_new("max_length"), Self::max_length(ruby, rb_self)?)?;
         hash.aset(ruby.sym_new("patterns"), Self::patterns(ruby, rb_self)?)?;
+        hash.aset(
+            ruby.sym_new("excluded_patterns"),
+            Self::excluded_patterns(ruby, rb_self)?,
+        )?;
         hash.aset(ruby.sym_new("formats"), Self::formats(ruby, rb_self)?)?;
         hash.aset(
             ruby.sym_new("excluded_formats"),
@@ -1226,6 +1236,10 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     string_view.define_method("min_length", method!(StringView::min_length, 0))?;
     string_view.define_method("max_length", method!(StringView::max_length, 0))?;
     string_view.define_method("patterns", method!(StringView::patterns, 0))?;
+    string_view.define_method(
+        "excluded_patterns",
+        method!(StringView::excluded_patterns, 0),
+    )?;
     string_view.define_method("formats", method!(StringView::formats, 0))?;
     string_view.define_method("excluded_formats", method!(StringView::excluded_formats, 0))?;
     string_view.define_method(

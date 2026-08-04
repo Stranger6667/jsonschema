@@ -67,13 +67,15 @@ pub struct TypedGroupView {
     pub body: CanonicalSchema,
 }
 
-/// Payload of [`CanonicalView::String`]: the `minLength`/`maxLength` bounds, patterns, formats,
-/// media types, encodings, and excluded values on a string value.
+/// Payload of [`CanonicalView::String`]: the `minLength`/`maxLength` bounds and the required and
+/// barred facets on a string value.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StringView {
     pub min_length: Option<Number>,
     pub max_length: Option<Number>,
     pub patterns: Vec<String>,
+    /// Patterns the string must not match.
+    pub excluded_patterns: Vec<String>,
     pub formats: Vec<String>,
     /// Formats the string must fail.
     pub excluded_formats: Vec<String>,
@@ -331,6 +333,11 @@ fn string_view(leaf: &StringLeaf) -> StringView {
             .as_ref()
             .map(BoundCardinality::to_number),
         patterns: leaf.patterns.iter().map(ToString::to_string).collect(),
+        excluded_patterns: leaf
+            .excluded_patterns
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
         formats: leaf.formats.iter().map(ToString::to_string).collect(),
         excluded_formats: leaf
             .excluded_formats

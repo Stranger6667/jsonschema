@@ -147,14 +147,21 @@ const fn definition_keyword(draft: Draft) -> &'static str {
     }
 }
 
-/// Emit a string leaf as `{"type":"string"}` plus its length bounds and patterns. A single pattern is
-/// inline; several become an `allOf` of `{"pattern": ...}`, since one leaf can hold only one `pattern`.
+/// Emit a string leaf as `{"type":"string"}` plus its length bounds and facets. A single pattern or
+/// format is inline; the rest become `allOf` conjuncts, since one leaf holds only one `pattern`, one
+/// `format`, and one `not`.
 fn emit_string(leaf: &StringLeaf) -> Value {
     debug_assert!(
         leaf.excluded_formats
             .iter()
             .all(|format| !leaf.formats.contains(format)),
         "a format both demanded and barred leaves no string, which is `False`"
+    );
+    debug_assert!(
+        leaf.excluded_patterns
+            .iter()
+            .all(|pattern| !leaf.patterns.contains(pattern)),
+        "a pattern both demanded and barred leaves no string, which is `False`"
     );
     let mut map = Map::new();
     map.insert("type".into(), Value::String("string".into()));
@@ -187,11 +194,16 @@ fn emit_string(leaf: &StringLeaf) -> Value {
                 .map(|format| keyed("format", Value::String(format.to_string()))),
         ),
     }
-    // Every barred format goes into its own `allOf` branch: the main object already spells the
-    // formats a string must satisfy, and one `not` slot cannot hold several of them.
+    // Every barred facet goes into its own `allOf` branch: the main object already spells what a
+    // string must satisfy, and one `not` slot cannot hold several of them.
     conjuncts.extend(leaf.excluded_formats.iter().map(|format| {
         let mut inner = Map::new();
         inner.insert("format".into(), Value::String(format.to_string()));
+        keyed("not", Value::Object(inner))
+    }));
+    conjuncts.extend(leaf.excluded_patterns.iter().map(|pattern| {
+        let mut inner = Map::new();
+        inner.insert("pattern".into(), Value::String(pattern.to_string()));
         keyed("not", Value::Object(inner))
     }));
     // A media type and an encoding sharing one schema object decode-then-check under the runtime
@@ -482,11 +494,15 @@ fn collect_closed_coverage(
             let [pattern] = leaf.patterns.as_slice() else {
                 return None;
             };
+            // The barred facets are defensive: no synthesis path reaches here carrying one.
             if leaf.lengths.minimum.is_some()
                 || leaf.lengths.maximum.is_some()
                 || !leaf.formats.is_empty()
+                || !leaf.excluded_formats.is_empty()
                 || !leaf.content_media_types.is_empty()
                 || !leaf.content_encodings.is_empty()
+                || !leaf.excluded_patterns.is_empty()
+                || !leaf.excluded.is_empty()
             {
                 return None;
             }

@@ -442,5 +442,24 @@
       {"data": "a", "valid": false},
       {"data": "abcdef", "valid": false}
     ]
+  },
+  {
+    "description": "not a pattern bars it on the string branch and admits every other type",
+    "schemas": [
+      {"not": {"type": "string", "pattern": "^a"}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "array", "object"]},
+        {"type": "string", "allOf": [{"not": {"pattern": "^a"}}]}
+      ]
+    },
+    "tests": [
+      {"data": "abc", "valid": false},
+      {"data": "xyz", "valid": true},
+      {"data": 1, "valid": true},
+      {"data": null, "valid": true}
+    ]
   }
 ]

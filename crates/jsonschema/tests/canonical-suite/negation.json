@@ -1010,7 +1010,7 @@
     ]
   },
   {
-    "description": "not of a pattern-carrying string stays raw: pattern complement is inexpressible",
+    "description": "not of a pattern-carrying string bars the pattern on the string branch",
     "schema": {
       "not": {
         "type": "string",
@@ -1018,10 +1018,22 @@
       }
     },
     "expected": {
-      "not": {
-        "type": "string",
-        "pattern": "^a"
-      }
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": ["null", "boolean", "number", "array", "object"]
+        },
+        {
+          "type": "string",
+          "allOf": [
+            {
+              "not": {
+                "pattern": "^a"
+              }
+            }
+          ]
+        }
+      ]
     },
     "tests": [
       {
@@ -2695,6 +2707,23 @@
     "tests": [
       {"data": 3, "valid": false},
       {"data": 4, "valid": true}
+    ]
+  },
+  {
+    "description": "double negation of a pattern returns the pattern",
+    "schemas": [
+      {"not": {"not": {"type": "string", "pattern": "^a"}}},
+      {"type": "string", "pattern": "^a"}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "pattern": "^a"
+    },
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": "xyz", "valid": false},
+      {"data": 1, "valid": false}
     ]
   }
 ]

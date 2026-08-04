@@ -311,8 +311,8 @@ RSpec.describe "JSONSchema.canonicalize" do
     "MultiTypeView" => [{ "type" => %w[integer string] }, %i[types]],
     "TypedGroupView" => [{ "type" => "integer", "enum" => [1, 2] }, %i[type_name]],
     "StringView" => [{ "type" => "string", "minLength" => 2, "pattern" => "^a" },
-                     %i[min_length max_length patterns formats excluded_formats content_media_types
-                        content_encodings excluded]],
+                     %i[min_length max_length patterns excluded_patterns formats excluded_formats
+                        content_media_types content_encodings excluded]],
     "IntegerView" => [{ "type" => "integer", "minimum" => 2, "maximum" => 9 },
                       %i[minimum maximum multiple_of not_multiple_of]],
     "NumberView" => [{ "type" => "number", "minimum" => 2 },

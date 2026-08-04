@@ -143,6 +143,7 @@ fn negate_finite_values(values: &[CanonicalJson], ctx: &CanonicalizationContext)
             StringLeaf {
                 lengths: LengthBounds::default(),
                 patterns: Vec::new(),
+                excluded_patterns: Vec::new(),
                 formats: Vec::new(),
                 excluded_formats: Vec::new(),
                 content_media_types: Vec::new(),
@@ -362,9 +363,14 @@ pub(crate) fn length_windows(lengths: &LengthBounds) -> Option<Vec<LengthBounds>
     Some(windows)
 }
 
+/// A demanded pattern inverts into a barred one and a barred pattern inverts back into a demanded
+/// one, so each pattern the leaf names contributes its own branch - exactly as formats do.
 /// ```text
 /// e.g.  {"not": {"type": "string", "minLength": 3}}
 ///       =>  anyOf: [<non-string types>, {"type": "string", "maxLength": 2}]
+/// e.g.  {"not": {"type": "string", "pattern": "^a"}}
+///       =>  anyOf: [<non-string types>,
+///                   {"type": "string", "allOf": [{"not": {"pattern": "^a"}}]}]
 /// ```
 fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Option<Schema> {
     if !leaf.excluded.is_empty() {
@@ -378,10 +384,7 @@ fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Optio
         branches.push(negate_string_leaf(&positive, ctx)?);
         return Some(algebra::union(branches, ctx));
     }
-    if !leaf.patterns.is_empty()
-        || !leaf.content_media_types.is_empty()
-        || !leaf.content_encodings.is_empty()
-    {
+    if !leaf.content_media_types.is_empty() || !leaf.content_encodings.is_empty() {
         return None;
     }
     let windows = length_windows(&leaf.lengths)?;
@@ -410,6 +413,26 @@ fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Optio
         algebra::string_leaf(
             StringLeaf {
                 formats: vec![Arc::clone(format)],
+                ..StringLeaf::default()
+            },
+            ctx,
+        )
+    }));
+    // A string fails a run of patterns as soon as it fails one of them, so each gets its own branch
+    // - and a branch barring one pattern says nothing about the length or the others.
+    branches.extend(leaf.patterns.iter().map(|pattern| {
+        algebra::string_leaf(
+            StringLeaf {
+                excluded_patterns: vec![Arc::clone(pattern)],
+                ..StringLeaf::default()
+            },
+            ctx,
+        )
+    }));
+    branches.extend(leaf.excluded_patterns.iter().map(|pattern| {
+        algebra::string_leaf(
+            StringLeaf {
+                patterns: vec![Arc::clone(pattern)],
                 ..StringLeaf::default()
             },
             ctx,
