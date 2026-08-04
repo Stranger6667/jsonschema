@@ -1,4 +1,4 @@
-use crate::canonical::ir::{drop_subsumed, BoundNumber, NumberLeaf, Side};
+use crate::canonical::ir::{drop_subsumed, BoundNumber, Divisors, NumberLeaf, Round, Side};
 
 /// Number leaves kept sorted, pairwise unmergeable, and free of leaves another already admits.
 /// Inserts are batched; the form is restored before any read, so the order in which leaves arrive
@@ -90,6 +90,12 @@ impl IntoIterator for NumberLeaves {
 ///         {"type": "number", "minimum": 2, "maximum": 4}
 ///       ]  =>  {"type": "number", "minimum": 0, "maximum": 4}
 ///
+/// A gap the progression steps across holds no admitted value either, so those intervals fold too.
+/// e.g.  anyOf [
+///         {"type": "number", "multipleOf": 1.5, "maximum": 3},
+///         {"type": "number", "multipleOf": 1.5, "minimum": 4}
+///       ]  =>  {"type": "number", "multipleOf": 1.5}
+///
 /// Two intervals meeting on a point neither admits leave a hole, so they stay apart.
 /// e.g.  anyOf [
 ///         {"type": "number", "maximum": 2, "exclusiveMaximum": 2},
@@ -156,16 +162,43 @@ fn covers(outer: &NumberLeaf, inner: &NumberLeaf) -> bool {
     minimum && maximum
 }
 
-/// Whether the two leave no real value between them. `next` starts no lower than `last`.
+/// Whether the two leave no value the leaf admits between them. `next` starts no lower than `last`.
 fn reaches(last: &NumberLeaf, next: &NumberLeaf) -> bool {
+    // The gap is read off `last` alone, which only a shared progression lets it speak for.
+    debug_assert_eq!(
+        last.multiple_of, next.multiple_of,
+        "intervals compared under different divisors"
+    );
     let (Some(end), Some(start)) = (&last.maximum, &next.minimum) else {
         return true;
     };
-    if end.to_number() == start.to_number() {
+    let touches = if end.to_number() == start.to_number() {
         // They meet on one point, which closes the gap only if either side admits it.
-        return end.is_inclusive() || start.is_inclusive();
-    }
-    end.admits(&start.to_number(), Side::Upper)
+        end.is_inclusive() || start.is_inclusive()
+    } else {
+        end.admits(&start.to_number(), Side::Upper)
+    };
+    touches || steps_over(&last.multiple_of, end, start)
+}
+
+/// Whether the progression carries no value into the gap the two ends leave. Only a lone divisor
+/// gives a progression to walk, and a multiple no decimal spells leaves the answer unknown, which
+/// keeps the intervals apart.
+fn steps_over(divisor: &Divisors, end: &BoundNumber, start: &BoundNumber) -> bool {
+    let Some(step) = divisor.sole() else {
+        return false;
+    };
+    // The gap opens where the interval below it closes, so each end is admitted by the gap exactly
+    // when the interval leaves it out.
+    let opens = flipped(end);
+    let closes = flipped(start);
+    step.multiple_beyond(&opens, Round::Up)
+        .is_some_and(|multiple| !closes.admits(&multiple.to_number(), Side::Upper))
+}
+
+/// The same limit with the value on it admitted the other way round.
+fn flipped(bound: &BoundNumber) -> BoundNumber {
+    BoundNumber::new(&bound.to_number(), !bound.is_inclusive())
 }
 
 /// The narrowest interval holding both. An absent bound is unbounded, so it swallows the present one.
