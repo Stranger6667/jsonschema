@@ -15,6 +15,7 @@
 ### Fixed
 
 - A satisfiable `multipleOf` schema collapsing to the empty set when `f64` rounds its bounds together.
+- Two spellings of one number canonicalizing to different texts under `arbitrary-precision` when the fraction exceeds the expansion cap.
 
 ## [0.49.4] - 2026-08-04
 

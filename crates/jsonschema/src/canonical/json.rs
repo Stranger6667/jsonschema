@@ -305,13 +305,16 @@ pub fn canonical_number(raw: &str) -> Option<Cow<'_, str>> {
     };
 
     let integer_within_cap = integer_end - integer_start <= MAX_EXPANDED_INTEGER_DIGITS;
+    let fraction_within_cap = fraction_end - fraction_start <= MAX_EXPANDED_INTEGER_DIGITS;
 
     if !has_fraction && !has_exponent && integer_within_cap {
         return Some(Cow::Borrowed(raw));
     }
 
-    // In-cap plain decimal with a non-zero last digit is already canonical.
-    if !has_exponent && integer_within_cap && bytes[fraction_end - 1] != b'0' {
+    // In-cap plain decimal with a non-zero last digit is already canonical: nothing is left to strip,
+    // so the fraction run is exactly the point offset the expansion carries, under the same cap.
+    if !has_exponent && integer_within_cap && fraction_within_cap && bytes[fraction_end - 1] != b'0'
+    {
         return Some(Cow::Borrowed(raw));
     }
 
@@ -675,13 +678,23 @@ mod tests {
     }
 
     // A plain decimal past the digit cap re-dispatches to scientific form with no explicit exponent,
-    // sharing one text with the equivalent scientific spelling. The trailing `0` defeats the
-    // already-canonical fast path so the value reaches the expansion cap.
+    // sharing one text with the equivalent scientific spelling. A non-zero last digit must not let the
+    // already-canonical fast path keep the unexpanded spelling.
+    #[cfg(feature = "arbitrary-precision")]
+    #[test_case(&format!("0.{}10", "0".repeat(1 << 20)), "1e-1048577" ; "trailing zero")]
+    #[test_case(&format!("0.{}1", "0".repeat(1 << 20)), "1e-1048577" ; "non zero last digit")]
+    #[test_case(&format!("-0.{}1", "0".repeat(1 << 20)), "-1e-1048577" ; "negative non zero last digit")]
+    fn oversized_plain_decimal_matches_scientific(plain: &str, scientific: &str) {
+        assert_eq!(canonical(plain), scientific);
+        assert_eq!(canonical(plain), canonical(scientific));
+    }
+
+    // At the cap the plain decimal is the normal form, and the scientific spelling expands into it.
     #[cfg(feature = "arbitrary-precision")]
     #[test]
-    fn oversized_plain_decimal_matches_scientific() {
-        let plain = format!("0.{}10", "0".repeat(1 << 20)); // 10^-1048577
-        assert_eq!(canonical(&plain), "1e-1048577");
-        assert_eq!(canonical(&plain), canonical("1e-1048577"));
+    fn fraction_at_the_cap_stays_plain() {
+        let plain = format!("0.{}1", "0".repeat((1 << 20) - 1));
+        assert_eq!(canonical(&plain), plain);
+        assert_eq!(canonical("1e-1048576"), plain);
     }
 }
