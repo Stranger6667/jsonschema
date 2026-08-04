@@ -532,5 +532,22 @@
       {"data": ["a", "b"], "valid": true},
       {"data": ["a", 1], "valid": false}
     ]
+  },
+  {
+    "description": "a contains ceiling counts an element whose format no checker covers",
+    "draft": "draft2020-12",
+    "validate_formats": true,
+    "schema": {
+      "allOf": [
+        {"const": ["a", "b"]},
+        {"type": "array", "contains": {"type": "string", "format": "bogus-format"}, "maxContains": 1}
+      ]
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": ["a", "b"], "valid": false},
+      {"data": ["a"], "valid": false}
+    ]
   }
 ]
