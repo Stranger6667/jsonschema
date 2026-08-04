@@ -94,6 +94,9 @@ pub struct NumberView {
     pub multiple_of: Vec<Number>,
     /// Divisors no admitted value is a multiple of.
     pub not_multiple_of: Vec<Number>,
+    /// No admitted value is one of the draft's integers (Draft 4 only; later drafts respell this
+    /// as a barred divisor of one).
+    pub excludes_integers: bool,
 }
 
 /// Payload of [`CanonicalView::Array`]: the constraints on an array value.
@@ -252,6 +255,7 @@ fn number_view(leaf: &NumberLeaf) -> NumberView {
         exclusive_maximum: leaf.maximum.as_ref().is_some_and(|b| !b.is_inclusive()),
         multiple_of: divisor_numbers(&leaf.multiple_of),
         not_multiple_of: excluded_divisor_numbers(&leaf.not_multiple_of),
+        excludes_integers: leaf.excludes_integers,
     }
 }
 

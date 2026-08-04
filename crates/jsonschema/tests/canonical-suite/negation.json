@@ -2668,14 +2668,118 @@
     ]
   },
   {
-    "description": "not of an integer type stays raw under draft 4: 1.0 is not an integer there",
+    "description": "not of an integer type under draft 4 keeps the non-integer tokens",
     "draft": "draft4",
     "schema": {"not": {"type": "integer"}},
-    "expected": {"not": {"type": "integer"}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [{"type": ["null", "boolean", "string", "array", "object"]}, {"type": "number", "not": {"type": "integer"}}]},
     "tests": [
       {"data": 1, "valid": false},
+      {"data": 1.0, "valid": true},
       {"data": 1.5, "valid": true},
       {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "not of a bounded integer under draft 4 adds the integers outside the window",
+    "draft": "draft4",
+    "schema": {"not": {"type": "integer", "minimum": 0}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [{"type": ["null", "boolean", "string", "array", "object"]}, {"type": "integer", "maximum": -1}, {"type": "number", "not": {"type": "integer"}}]},
+    "tests": [
+      {"data": -1, "valid": true},
+      {"data": 0, "valid": false},
+      {"data": 0.0, "valid": true},
+      {"data": 1.5, "valid": true}
+    ]
+  },
+  {
+    "description": "a number barring the integers under draft 4 keeps its spelling",
+    "draft": "draft4",
+    "schema": {"type": "number", "not": {"type": "integer"}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "number", "not": {"type": "integer"}},
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": 1.0, "valid": true},
+      {"data": 1.5, "valid": true},
+      {"data": "x", "valid": false}
+    ]
+  },
+  {
+    "description": "a bound survives beside the barred integers under draft 4",
+    "draft": "draft4",
+    "schema": {"type": "number", "minimum": 1, "not": {"type": "integer"}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "number", "minimum": 1, "not": {"type": "integer"}},
+    "tests": [
+      {"data": 1.5, "valid": true},
+      {"data": 2, "valid": false},
+      {"data": 0.5, "valid": false}
+    ]
+  },
+  {
+    "description": "not of an integer-valued property under draft 4 holds the key with a non-integer token",
+    "draft": "draft4",
+    "schema": {"not": {"properties": {"a": {"type": "integer"}}}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "object", "properties": {"a": {"anyOf": [{"type": ["null", "boolean", "string", "array", "object"]}, {"type": "number", "not": {"type": "integer"}}]}}, "required": ["a"]},
+    "tests": [
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": 1.0}, "valid": true},
+      {"data": {"a": 1.5}, "valid": true},
+      {"data": {}, "valid": false},
+      {"data": "x", "valid": false}
+    ]
+  },
+  {
+    "description": "not of the barred integers restores the integer type under draft 4",
+    "draft": "draft4",
+    "schema": {"not": {"type": "number", "not": {"type": "integer"}}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "type": ["null", "boolean", "integer", "string", "array", "object"]},
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": 1.5, "valid": false},
+      {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "an integer type meeting the barred integers under draft 4 admits nothing",
+    "draft": "draft4",
+    "schema": {"allOf": [{"type": "integer"}, {"not": {"type": "integer"}}]},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": 1.5, "valid": false}
+    ]
+  },
+  {
+    "description": "a whole enum member meeting the barred integers keeps its float spelling under draft 4",
+    "draft": "draft4",
+    "schema": {"enum": [1, 2.5], "not": {"type": "integer"}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [{"type": "number", "minimum": 1, "maximum": 1, "not": {"type": "integer"}}, {"enum": [2.5]}]},
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": 1.0, "valid": true},
+      {"data": 2.5, "valid": true},
+      {"data": "x", "valid": false}
+    ]
+  },
+  {
+    "description": "a whole enum member outside the window vanishes with its float spelling under draft 4",
+    "draft": "draft4",
+    "schema": {"allOf": [{"enum": [3, 7.5]}, {"type": "number", "minimum": 5, "not": {"type": "integer"}}]},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "enum": [7.5]},
+    "tests": [
+      {"data": 3, "valid": false},
+      {"data": 3.0, "valid": false},
+      {"data": 7.5, "valid": true},
+      {"data": 6.5, "valid": false}
+    ]
+  },
+  {
+    "description": "a whole enum member meeting the barred integers folds outside draft 4",
+    "schema": {"enum": [1, 2.5], "not": {"type": "integer"}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "const": 2.5},
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": 2.5, "valid": true}
     ]
   },
   {

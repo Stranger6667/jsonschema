@@ -748,7 +748,8 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         let spans_domain = leaf.minimum.is_none()
             && leaf.maximum.is_none()
             && leaf.multiple_of.is_empty()
-            && leaf.not_multiple_of.is_empty();
+            && leaf.not_multiple_of.is_empty()
+            && !leaf.excludes_integers;
         if spans_domain {
             widened = union_type_sets(widened, JsonTypeSet::from(JsonType::Number));
         }
@@ -1140,6 +1141,7 @@ fn lift_degenerate_member(
                 maximum: Some(bound),
                 multiple_of: Divisors::default(),
                 not_multiple_of: ExcludedDivisors::default(),
+                excludes_integers: false,
             };
             let collapses_back = matches!(
                 number_leaf(window.clone(), ctx).kind(),
@@ -1852,13 +1854,21 @@ fn restrict_members(
             typed_group(ty, canonicalize_value_set(kept))
         }
         // Intersect dispatch already handled `True`/`False`/`AnyOf`/`Raw`, so `other` is a leaf here.
-        // `other` is a number interval: keep the numeric members it admits.
+        // `other` is a number interval: keep the numeric members it fully admits, and pin a member
+        // the leaf admits only outside its integer tokens to the leaf shape carrying that.
         SchemaKind::Number(leaf) => {
-            let kept = members
-                .into_iter()
-                .filter(|member| number_leaf_admits(leaf.get(), member))
-                .collect();
-            canonicalize_value_set(kept)
+            let mut kept = Vec::new();
+            let mut partial = Vec::new();
+            for member in members {
+                match restrict_number_member(leaf.get(), &member, ctx) {
+                    MemberRestriction::Full => kept.push(member),
+                    MemberRestriction::Empty => {}
+                    MemberRestriction::Partial(schema) => partial.push(schema),
+                }
+            }
+            let mut branches = vec![canonicalize_value_set(kept)];
+            branches.extend(partial);
+            union(branches, ctx)
         }
         // `other` is an array leaf: keep the array members it fully admits, and pin a member an
         // element schema only partially admits to the admitted part of its equality class.
@@ -2307,6 +2317,19 @@ fn intersect_integer_leaves(first: IntegerLeaf, second: IntegerLeaf) -> IntegerL
 /// the number domain, so the value needs no type guard.
 /// e.g.  {"type": "number", "minimum": 5, "maximum": 5}  =>  {"const": 5}
 pub(crate) fn number_leaf(leaf: NumberLeaf, ctx: &CanonicalizationContext) -> Schema {
+    // Outside Draft 4 the draft's integers are exactly the multiples of one, so the exclusion
+    // respells as a barred divisor and both spellings land on one form.
+    let leaf = if leaf.excludes_integers && !matches!(ctx.draft(), Draft::Draft4) {
+        NumberLeaf {
+            not_multiple_of: leaf
+                .not_multiple_of
+                .intersect(ExcludedDivisors::one(whole_divisor())),
+            excludes_integers: false,
+            ..leaf
+        }
+    } else {
+        leaf
+    };
     let leaf = snap_to_progression(leaf);
     // Every draft after 4 counts `2.0` as an integer, so a whole divisor already restricts the leaf
     // to the integers it admits and both spellings denote one set.
@@ -2335,6 +2358,11 @@ pub(crate) fn number_leaf(leaf: NumberLeaf, ctx: &CanonicalizationContext) -> Sc
     if let (Some(min), Some(max)) = (&leaf.get().minimum, &leaf.get().maximum) {
         if min.is_inclusive() && max.is_inclusive() && min.to_number() == max.to_number() {
             let point = min.to_number();
+            // A whole point under the exclusion still admits its non-integer tokens, which only
+            // the leaf shape can say.
+            if leaf.get().excludes_integers && jsonschema_value::types::number_is_integer(&point) {
+                return Schema::new(SchemaKind::Number(leaf));
+            }
             return if leaf.get().multiple_of.divide(&point)
                 && !leaf.get().not_multiple_of.bars(&point)
             {
@@ -3620,7 +3648,13 @@ fn intersect_number_leaves(first: NumberLeaf, second: NumberLeaf) -> NumberLeaf 
         // Meeting both sets of divisors is meeting their union, and likewise the exclusions.
         multiple_of: first.multiple_of.intersect(second.multiple_of),
         not_multiple_of: first.not_multiple_of.intersect(second.not_multiple_of),
+        excludes_integers: first.excludes_integers || second.excludes_integers,
     }
+}
+
+/// The divisor every whole-valued number is a multiple of.
+fn whole_divisor() -> BoundRational {
+    BoundRational::new(&serde_json::Number::from(1)).expect("one is a representable divisor")
 }
 
 /// Pull each end onto the progression, so an interval and its divisor have one spelling. Only a
@@ -3640,6 +3674,7 @@ fn snap_to_progression(leaf: NumberLeaf) -> NumberLeaf {
         maximum: snap(leaf.maximum, Round::Down),
         multiple_of: leaf.multiple_of,
         not_multiple_of: leaf.not_multiple_of,
+        excludes_integers: leaf.excludes_integers,
     }
 }
 
@@ -3660,6 +3695,9 @@ fn tightest(
 
 /// The integers a number interval admits. Endpoints are whole here, so an excluded one steps by one.
 fn integer_within(leaf: &NumberLeaf, ctx: &CanonicalizationContext) -> Schema {
+    if leaf.excludes_integers {
+        return Schema::new(SchemaKind::False);
+    }
     let bounds = integer_bounds_within(leaf)
         .expect("interval bounds hold representable integers, checked during parsing");
     integer_leaf(
@@ -3715,6 +3753,48 @@ fn number_leaf_admits(leaf: &NumberLeaf, member: &CanonicalJson) -> bool {
             .is_none_or(|max| max.admits(number, Side::Upper))
         && leaf.multiple_of.divide(number)
         && !leaf.not_multiple_of.bars(number)
+        && !(leaf.excludes_integers && jsonschema_value::types::number_is_integer(number))
+}
+
+/// Restrict `member` to the numbers the leaf admits. `Partial` arises under Draft 4, where a
+/// whole member barred as an integer keeps its float tokens and only the leaf shape carries them.
+fn restrict_number_member(
+    leaf: &NumberLeaf,
+    member: &CanonicalJson,
+    ctx: &CanonicalizationContext,
+) -> MemberRestriction {
+    if number_leaf_admits(leaf, member) {
+        return MemberRestriction::Full;
+    }
+    let Value::Number(number) = member.as_value() else {
+        return MemberRestriction::Empty;
+    };
+    if !(leaf.excludes_integers && jsonschema_value::types::number_is_integer(number)) {
+        return MemberRestriction::Empty;
+    }
+    // The member's whole point, narrowed by every facet of the leaf — a bound the point misses
+    // empties the window rather than being replaced by it.
+    let point = BoundNumber::new(number, true);
+    let window = intersect_number_leaves(
+        NumberLeaf {
+            minimum: Some(point.clone()),
+            maximum: Some(point),
+            multiple_of: Divisors::default(),
+            not_multiple_of: ExcludedDivisors::default(),
+            excludes_integers: false,
+        },
+        leaf.clone(),
+    );
+    debug_assert!(
+        matches!(ctx.draft(), Draft::Draft4),
+        "the integer exclusion survives normalization only under Draft 4"
+    );
+    let restricted = number_leaf(window, ctx);
+    if matches!(restricted.kind(), SchemaKind::False) {
+        MemberRestriction::Empty
+    } else {
+        MemberRestriction::Partial(restricted)
+    }
 }
 
 /// An `Integer` node, collapsed to `False` when its interval is empty and to the value itself when the

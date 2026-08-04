@@ -1158,6 +1158,7 @@ fn parse_schema_in_scope<'a>(
             maximum: real_maximum,
             multiple_of,
             not_multiple_of: ExcludedDivisors::default(),
+            excludes_integers: false,
         };
         // The integers the interval admits must be representable: the interval may still meet
         // `integer` through an `allOf`, and there it is the only form left to express.
