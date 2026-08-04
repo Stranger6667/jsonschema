@@ -572,7 +572,19 @@ impl<T: Ord> Bounds<T> {
 
 impl<T: Discrete> Bounds<T> {
     /// Fold windows that overlap or touch into one; windows with a value between them stay apart.
-    pub(crate) fn merge_all(mut windows: Vec<Self>) -> Vec<Self> {
+    pub(crate) fn merge_all(windows: Vec<Self>) -> Vec<Self> {
+        // The window bounds are all that decides membership here, so every value between two of them
+        // is one the pair leaves out.
+        Self::merge_all_across_vacant_gaps(windows, |_, _| false)
+    }
+
+    /// [`Bounds::merge_all`], folding a pair as well when `gap_is_vacant` reports that the values
+    /// strictly between the two ends it is handed are all rejected anyway. Their hull then admits
+    /// nothing the pair did not, so the windows are as good as touching.
+    pub(crate) fn merge_all_across_vacant_gaps(
+        mut windows: Vec<Self>,
+        gap_is_vacant: impl Fn(&T, &T) -> bool,
+    ) -> Vec<Self> {
         if windows.len() < 2 {
             return windows;
         }
@@ -583,14 +595,14 @@ impl<T: Discrete> Bounds<T> {
         let mut merged: Vec<Self> = Vec::with_capacity(windows.len());
         for window in windows {
             match merged.last_mut() {
-                Some(last) if last.reaches(&window) => {
+                Some(last) if last.reaches(&window, &gap_is_vacant) => {
                     *last = std::mem::take(last).hull(window);
                 }
                 _ => merged.push(window),
             }
         }
         debug_assert!(
-            Self::is_canonical(&merged),
+            Self::is_canonical(&merged, &gap_is_vacant),
             "windows left unsorted or mergeable"
         );
         debug_assert!(merged.len() <= count, "merging invented a window");
@@ -599,15 +611,16 @@ impl<T: Discrete> Bounds<T> {
     }
 
     /// Sorted by minimum, with no two neighbours left to merge.
-    fn is_canonical(windows: &[Self]) -> bool {
-        windows
-            .windows(2)
-            .all(|pair| pair[0].minimum <= pair[1].minimum && !pair[0].reaches(&pair[1]))
+    fn is_canonical(windows: &[Self], gap_is_vacant: &impl Fn(&T, &T) -> bool) -> bool {
+        windows.windows(2).all(|pair| {
+            pair[0].minimum <= pair[1].minimum && !pair[0].reaches(&pair[1], gap_is_vacant)
+        })
     }
 
     /// Whether `self` and a window starting no lower than it leave no value between them. The domain
-    /// is discrete, so windows that merely touch (`..=5` and `6..`) also have nothing between.
-    fn reaches(&self, next: &Self) -> bool {
+    /// is discrete, so windows that merely touch (`..=5` and `6..`) also have nothing between, and a
+    /// gap `gap_is_vacant` empties counts as none either.
+    fn reaches(&self, next: &Self, gap_is_vacant: &impl Fn(&T, &T) -> bool) -> bool {
         // Merging the pair takes their hull, which would invent values between two windows compared
         // the wrong way round.
         debug_assert!(
@@ -617,9 +630,15 @@ impl<T: Discrete> Bounds<T> {
         let (Some(end), Some(start)) = (self.maximum.as_ref(), next.minimum.as_ref()) else {
             return true;
         };
-        end.clone()
+        if end
+            .clone()
             .checked_increment()
             .is_none_or(|above| *start <= above)
+        {
+            return true;
+        }
+        // Only a genuine gap reaches here, so `gap_is_vacant` never sees an empty range.
+        gap_is_vacant(end, start)
     }
 }
 
