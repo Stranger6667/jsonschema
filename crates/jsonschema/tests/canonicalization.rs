@@ -1821,6 +1821,66 @@ fn intersect_declines_a_shield_naming_a_key_its_own_entry_leaves_the_pattern() {
     ));
 }
 
+// Containment is proved by meeting the two sides, so a meet `intersect` will not hand out cannot
+// carry a verdict either: it stands in for the real one and may be wider than it.
+#[test]
+fn is_subset_of_declines_what_only_an_unspellable_meet_would_prove() {
+    let shield =
+        canonicalize(&json!({"additionalProperties": {"type": "string"}})).expect("canonicalizes");
+    let wide = canonicalize(
+        &json!({"patternProperties": {"^a": {"type": "string"}, "^b": {"type": "string"}}}),
+    )
+    .expect("canonicalizes")
+    .intersect(&shield)
+    .expect("intersects");
+    let narrow = canonicalize(&json!({"patternProperties": {"^a": {"type": "string"}}}))
+        .expect("canonicalizes")
+        .intersect(&shield)
+        .expect("intersects");
+
+    assert!(matches!(
+        wide.intersect(&narrow),
+        Err(CanonicalizationError::UnmodeledOperand)
+    ));
+    assert_eq!(wide.is_subset_of(&narrow).expect("compares"), None);
+}
+
+// Matching pattern maps leave no key one side matches and the other does not, so neither shield
+// can reach past the entries and the meet needs no pattern-overlap reasoning.
+#[test]
+fn intersect_meets_pattern_maps_naming_the_same_patterns_beside_shields() {
+    let shield =
+        canonicalize(&json!({"additionalProperties": {"minLength": 2}})).expect("canonicalizes");
+    let left = canonicalize(&json!({"patternProperties": {"^a": {"type": "string"}}}))
+        .expect("canonicalizes")
+        .intersect(&shield)
+        .expect("intersects");
+    let right = canonicalize(&json!({"patternProperties": {"^a": {"maxLength": 4}}}))
+        .expect("canonicalizes")
+        .intersect(&shield)
+        .expect("intersects");
+    let merged = left.intersect(&right).expect("intersects").to_json_schema();
+
+    let left_validator = validator_for(&left.to_json_schema()).expect("compiles");
+    let right_validator = validator_for(&right.to_json_schema()).expect("compiles");
+    let merged_validator = validator_for(&merged).expect("compiles");
+    for instance in [
+        json!({"a1": "abc"}),
+        json!({"a1": "abcde"}),
+        json!({"a1": "a"}),
+        json!({"a1": 5}),
+        json!({"b": "abc"}),
+        json!({"b": "a"}),
+        json!({}),
+    ] {
+        assert_eq!(
+            merged_validator.is_valid(&instance),
+            left_validator.is_valid(&instance) && right_validator.is_valid(&instance),
+            "{instance}"
+        );
+    }
+}
+
 fn draft4(body: &Value) -> Value {
     let mut map = body.as_object().expect("object").clone();
     map.insert(
