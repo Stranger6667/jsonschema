@@ -1808,6 +1808,64 @@ fn is_subset_of_decides(left: &Value, right: &Value, expected: Option<bool>) {
     assert_eq!(left.is_subset_of(&right).expect("compares"), expected);
 }
 
+#[test_case(&json!({
+    "anyOf": [
+        {"type": "array", "contains": {"type": "null"}},
+        {"type": "array", "items": {"$ref": "#/$defs/a"}}
+    ],
+    "$defs": {"a": {"type": "integer"}}
+}); "array union of a contains branch and a referencing items branch")]
+#[test_case(&json!({
+    "anyOf": [
+        {"type": "array", "contains": {"type": "null"}},
+        {"type": "array", "items": {"type": "integer"}}
+    ]
+}); "array union of a contains branch and an items branch")]
+#[test_case(&json!({
+    "anyOf": [
+        {"type": "array", "contains": {"type": "string"}},
+        {"type": "array", "prefixItems": [{"type": "integer"}]}
+    ]
+}); "array union of a contains branch and a prefix branch")]
+#[test_case(&json!({
+    "anyOf": [
+        {"type": "array", "contains": {"type": "null"}, "minItems": 2},
+        {"type": "array", "items": {"type": "string"}, "maxItems": 3}
+    ]
+}); "array union of sized contains and items branches")]
+#[test_case(&json!({
+    "anyOf": [
+        {"type": "array", "contains": {"type": "null"}},
+        {"type": "array", "contains": {"type": "boolean"}}
+    ]
+}); "array union of two contains branches")]
+#[test_case(&json!({"type": "array", "contains": {"type": "null"}}); "single array leaf with contains")]
+#[test_case(&json!({"type": "array", "items": {"$ref": "#/$defs/a"}, "$defs": {"a": {"type": "integer"}}}); "array items behind a reference")]
+#[test_case(&json!({"type": "array", "prefixItems": [{"type": "integer"}], "items": {"type": "string"}}); "array with a prefix and a tail")]
+#[test_case(&json!({
+    "anyOf": [
+        {"type": "object", "properties": {"a": {"type": "integer"}}, "required": ["a"]},
+        {"type": "object", "properties": {"b": {"type": "string"}}, "required": ["b"]}
+    ]
+}); "object union of two required-key branches")]
+#[test_case(&json!({
+    "anyOf": [
+        {"type": "object", "additionalProperties": {"$ref": "#/$defs/a"}},
+        {"type": "object", "required": ["b"]}
+    ],
+    "$defs": {"a": {"type": "integer"}}
+}); "object union of a referencing value branch and a required-key branch")]
+#[test_case(&json!({"anyOf": [{"type": "string", "minLength": 2}, {"type": "string", "pattern": "^a"}]}); "string union of a length branch and a pattern branch")]
+#[test_case(&json!({"anyOf": [{"type": "string", "format": "date"}, {"type": "string", "maxLength": 4}]}); "string union of a format branch and a length branch")]
+#[test_case(&json!({"anyOf": [{"type": "array", "contains": {"type": "null"}}, {"type": "string", "pattern": "^a"}, {"type": "integer", "minimum": 3}]}); "union across three types")]
+fn is_subset_of_proves_a_schema_a_subset_of_itself(schema: &Value) {
+    let canonical = canonicalize(schema).expect("canonicalizes");
+    assert_eq!(
+        canonical.is_subset_of(&canonical).expect("compares"),
+        Some(true)
+    );
+}
+
 // Two symbolic references are not compared through their targets.
 #[test]
 fn is_subset_of_declines_distinct_references() {
