@@ -758,6 +758,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     strings.retain(|leaf| {
         let spans_domain = leaf.lengths.is_unbounded()
             && leaf.patterns.is_empty()
+            && leaf.excluded_patterns.is_empty()
             && leaf.formats.is_empty()
             && leaf.excluded_formats.is_empty()
             && leaf.content_media_types.is_empty()
@@ -816,20 +817,10 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             || !arrays.is_empty()
             || !objects.is_empty())
     {
-        let compiled: Vec<(&StringLeaf, Vec<Arc<CompiledMatcher>>)> = strings
+        let compiled: Vec<(&StringLeaf, StringMatchers)> = strings
             .as_slice()
             .iter()
-            .map(|leaf| {
-                let regexes = leaf
-                    .patterns
-                    .iter()
-                    .map(|pattern| {
-                        ctx.compile_regex(pattern)
-                            .expect("pattern validated during parsing")
-                    })
-                    .collect();
-                (leaf, regexes)
-            })
+            .map(|leaf| (leaf, StringMatchers::compile(leaf, ctx)))
             .collect();
         let windows = integers.as_slice();
         let intervals = numbers.as_slice();
@@ -1100,6 +1091,7 @@ fn lift_degenerate_member(
                     maximum: Some(BoundCardinality::from(0)),
                 },
                 patterns: Vec::new(),
+                excluded_patterns: Vec::new(),
                 formats: Vec::new(),
                 excluded_formats: Vec::new(),
                 content_media_types: Vec::new(),
@@ -1809,21 +1801,13 @@ fn restrict_members(
         SchemaKind::MultiType(set) => parse::restrict_values_to_types(members, set, ctx),
         // `other` is a string leaf: keep the members that fit its window and match every pattern.
         SchemaKind::String(leaf) => {
-            let regexes: Vec<_> = leaf
-                .get()
-                .patterns
-                .iter()
-                .map(|pattern| {
-                    ctx.compile_regex(pattern)
-                        .expect("pattern validated during parsing")
-                })
-                .collect();
+            let matchers = StringMatchers::compile(leaf.get(), ctx);
             let kept = members
                 .into_iter()
                 // Dropping a member narrows the schema, so only a definite rejection drops one.
                 .filter(|member| {
                     !matches!(
-                        string_leaf_admits(leaf.get(), &regexes, member, ctx),
+                        string_leaf_admits(leaf.get(), &matchers, member, ctx),
                         Verdict::Rejects
                     )
                 })
@@ -1950,7 +1934,7 @@ fn value_set_admits_group(value_set: &Schema, body: &Schema) -> bool {
 // The arms are guarded on the draft, so they cannot be enumerated.
 #[allow(clippy::wildcard_enum_match_arm)]
 fn leaf_absorbs_member(
-    strings: &[(&StringLeaf, Vec<Arc<CompiledMatcher>>)],
+    strings: &[(&StringLeaf, StringMatchers)],
     integers: &[IntegerLeaf],
     numbers: &[NumberLeaf],
     arrays: &[ArrayLeaf],
@@ -1966,9 +1950,9 @@ fn leaf_absorbs_member(
         Value::Object(map) => objects
             .iter()
             .any(|leaf| matches!(object_leaf_admits(leaf, map, ctx), Verdict::Admits)),
-        Value::String(_) => strings.iter().any(|(leaf, regexes)| {
+        Value::String(_) => strings.iter().any(|(leaf, matchers)| {
             matches!(
-                string_leaf_admits(leaf, regexes, member, ctx),
+                string_leaf_admits(leaf, matchers, member, ctx),
                 Verdict::Admits
             )
         }),
@@ -1992,19 +1976,23 @@ fn union_type_sets(left: JsonTypeSet, right: JsonTypeSet) -> JsonTypeSet {
 
 /// A `String` node, collapsed to `False` when its length window is empty.
 pub(crate) fn string_leaf(mut leaf: StringLeaf, ctx: &CanonicalizationContext) -> Schema {
-    if formats_conflict(&leaf, ctx) {
+    if formats_conflict(&leaf, ctx) || patterns_conflict(&leaf) {
         return Schema::new(SchemaKind::False);
     }
     absorb_empty_exclusion(&mut leaf);
+    // No barred-pattern counterpart: a format has a length window to test against, a regex has
+    // none, so nothing prunes one that cannot bite.
     prune_excluded_formats(&mut leaf, ctx);
     prune_excluded(&mut leaf, ctx);
     let Some(leaf) = NonEmpty::new(leaf) else {
         return Schema::new(SchemaKind::False);
     };
     // `maxLength: 0` accepts the empty string and nothing else. A leaf this narrow is spelled as
-    // the constant before anything can exclude from it, so exclusions cannot reach here.
+    // the constant before anything can exclude from it, so exclusions cannot reach here. Nothing
+    // prunes a barred pattern against the window, so the collapse gives way to one.
     // e.g.  {"type": "string", "maxLength": 0}  =>  {"const": ""}
     if leaf.get().patterns.is_empty()
+        && leaf.get().excluded_patterns.is_empty()
         && leaf.get().formats.is_empty()
         && leaf.get().content_media_types.is_empty()
         && leaf.get().content_encodings.is_empty()
@@ -2280,20 +2268,13 @@ fn prune_excluded(leaf: &mut StringLeaf, ctx: &CanonicalizationContext) {
     if leaf.excluded.is_empty() {
         return;
     }
-    let regexes: Vec<Arc<CompiledMatcher>> = leaf
-        .patterns
-        .iter()
-        .map(|pattern| {
-            ctx.compile_regex(pattern)
-                .expect("pattern validated during parsing")
-        })
-        .collect();
+    let matchers = StringMatchers::compile(leaf, ctx);
     let excluded = std::mem::take(&mut leaf.excluded);
     leaf.excluded = excluded
         .into_iter()
         .filter(|value| {
             !matches!(
-                string_leaf_admits_text(leaf, &regexes, value, ctx),
+                string_leaf_admits_text(leaf, &matchers, value, ctx),
                 Verdict::Rejects
             )
         })
@@ -3257,16 +3238,8 @@ fn admits_key(names: &Schema, key: &str, ctx: &CanonicalizationContext) -> Verdi
                 .any(|value| matches!(value.as_value(), Value::String(text) if text == key)),
         ),
         SchemaKind::String(leaf) => {
-            let regexes: Vec<_> = leaf
-                .get()
-                .patterns
-                .iter()
-                .map(|pattern| {
-                    ctx.compile_regex(pattern)
-                        .expect("pattern validated during parsing")
-                })
-                .collect();
-            string_leaf_admits_text(leaf.get(), &regexes, key, ctx)
+            let matchers = StringMatchers::compile(leaf.get(), ctx);
+            string_leaf_admits_text(leaf.get(), &matchers, key, ctx)
         }
         SchemaKind::AnyOf(branches) => Verdict::any(
             branches
@@ -3912,6 +3885,10 @@ fn intersect_string_leaves(first: StringLeaf, second: StringLeaf) -> StringLeaf 
     patterns.extend(second.patterns);
     patterns.sort();
     patterns.dedup();
+    let mut excluded_patterns = first.excluded_patterns;
+    excluded_patterns.extend(second.excluded_patterns);
+    excluded_patterns.sort();
+    excluded_patterns.dedup();
     let mut formats = first.formats;
     formats.extend(second.formats);
     formats.sort();
@@ -3935,6 +3912,7 @@ fn intersect_string_leaves(first: StringLeaf, second: StringLeaf) -> StringLeaf 
     StringLeaf {
         lengths: first.lengths.intersect(second.lengths),
         patterns,
+        excluded_patterns,
         formats,
         excluded_formats,
         content_media_types,
@@ -3971,30 +3949,68 @@ fn formats_conflict(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> bool {
     window.is_empty()
 }
 
-/// Whether the string `member` falls within the leaf's length window and matches every pattern.
+/// Whether the leaf both demands and bars one pattern, which no string can satisfy. Syntactic, so
+/// `^a` against `^a.*` is not caught - see [`StringLeaf::excluded_patterns`].
+/// e.g.  allOf [
+///         {"type": "string", "pattern": "^a"},
+///         {"not": {"pattern": "^a"}}
+///       ]  =>  false
+fn patterns_conflict(leaf: &StringLeaf) -> bool {
+    leaf.excluded_patterns
+        .iter()
+        .any(|pattern| leaf.patterns.contains(pattern))
+}
+
+/// A leaf's compiled patterns, built once so a scan over many members compiles nothing per member.
+struct StringMatchers {
+    required: Vec<Arc<CompiledMatcher>>,
+    barred: Vec<Arc<CompiledMatcher>>,
+}
+
+impl StringMatchers {
+    fn compile(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Self {
+        let compile_all = |patterns: &[Arc<str>]| {
+            patterns
+                .iter()
+                .map(|pattern| {
+                    ctx.compile_regex(pattern)
+                        .expect("pattern validated during parsing")
+                })
+                .collect()
+        };
+        Self {
+            required: compile_all(&leaf.patterns),
+            barred: compile_all(&leaf.excluded_patterns),
+        }
+    }
+}
+
+/// Whether the string `member` falls within the leaf's length window and matches every required
+/// pattern and no barred one.
 fn string_leaf_admits(
     leaf: &StringLeaf,
-    regexes: &[Arc<CompiledMatcher>],
+    matchers: &StringMatchers,
     member: &CanonicalJson,
     ctx: &CanonicalizationContext,
 ) -> Verdict {
     let Value::String(text) = member.as_value() else {
         return Verdict::Rejects;
     };
-    string_leaf_admits_text(leaf, regexes, text, ctx)
+    string_leaf_admits_text(leaf, matchers, text, ctx)
 }
 
-/// Whether `text` falls within the leaf's length window and matches every pattern, format, media
-/// type, and encoding.
+/// Whether `text` falls within the leaf's length window, matches every required pattern and no
+/// barred one, and meets every format, media type, and encoding.
 fn string_leaf_admits_text(
     leaf: &StringLeaf,
-    regexes: &[Arc<CompiledMatcher>],
+    matchers: &StringMatchers,
     text: &str,
     ctx: &CanonicalizationContext,
 ) -> Verdict {
     let length = BoundCardinality::from(bytecount::num_chars(text.as_bytes()) as u64);
     if !leaf.lengths.contains(&length)
-        || !regexes.iter().all(|regex| regex.is_match(text))
+        || !matchers.required.iter().all(|regex| regex.is_match(text))
+        || matchers.barred.iter().any(|regex| regex.is_match(text))
         || leaf.excluded.iter().any(|value| value.as_ref() == text)
     {
         return Verdict::Rejects;

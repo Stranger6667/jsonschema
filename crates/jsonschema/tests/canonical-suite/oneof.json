@@ -1153,5 +1153,64 @@
         "valid": false
       }
     ]
+  },
+  {
+    "description": "oneOf over two overlapping patterns bars the other pattern on each branch",
+    "schemas": [
+      {"oneOf": [{"type": "string", "pattern": "^a"}, {"type": "string", "pattern": "b$"}]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "string", "pattern": "^a", "allOf": [{"not": {"pattern": "b$"}}]},
+        {"type": "string", "pattern": "b$", "allOf": [{"not": {"pattern": "^a"}}]}
+      ]
+    },
+    "tests": [
+      {"data": "ac", "valid": true},
+      {"data": "cb", "valid": true},
+      {"data": "ab", "valid": false},
+      {"data": "cc", "valid": false},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "oneOf over one pattern twice matches nothing",
+    "schemas": [
+      {"oneOf": [{"type": "string", "pattern": "^a"}, {"type": "string", "pattern": "^a"}]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {"data": "abc", "valid": false},
+      {"data": "xyz", "valid": false}
+    ]
+  },
+  {
+    "description": "a pattern inside an open object property no longer blocks the oneOf",
+    "schemas": [
+      {
+        "oneOf": [
+          {"type": "object", "properties": {"a": {"type": "string", "pattern": "^x"}}},
+          {"type": "object", "properties": {"a": {"type": "string"}}}
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "a": {"type": "string", "allOf": [{"not": {"pattern": "^x"}}]}
+      },
+      "required": ["a"]
+    },
+    "tests": [
+      {"data": {"a": "yes"}, "valid": true},
+      {"data": {"a": "xes"}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
   }
 ]

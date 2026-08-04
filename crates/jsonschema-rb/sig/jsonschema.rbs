@@ -84,7 +84,9 @@ module JSONSchema
       def min_length: () -> Integer?
       def max_length: () -> Integer?
       def patterns: () -> Array[String]
+      def excluded_patterns: () -> Array[String]
       def formats: () -> Array[String]
+      def excluded_formats: () -> Array[String]
       def content_media_types: () -> Array[String]
       def content_encodings: () -> Array[String]
       def excluded: () -> Array[String]

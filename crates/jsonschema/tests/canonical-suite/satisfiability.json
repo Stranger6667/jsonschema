@@ -516,19 +516,38 @@
         }
       ]
     },
+    "tests": [
+      {
+        "data": "fa-solid",
+        "valid": true
+      },
+      {
+        "data": "zzz",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
+    ],
     "expected": {
-      "oneOf": [
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
         {
-          "pattern": "^(?:fa[bdlrs] )?fa-(?!-)[a-z0-9-]+$"
+          "type": "string",
+          "allOf": [
+            {
+              "not": {
+                "pattern": "^(?:fa[bdlrs] )?fa-(?!-)[a-z0-9-]+$"
+              }
+            }
+          ]
         },
         {
-          "format": "uri-reference",
-          "not": {
-            "pattern": "^(?:fa[bdlrs] )?fa-(?!-)[a-z0-9-]+$"
-          }
+          "type": "string",
+          "pattern": "^(?:fa[bdlrs] )?fa-(?!-)[a-z0-9-]+$"
         }
-      ],
-      "type": "string"
+      ]
     }
   },
   {

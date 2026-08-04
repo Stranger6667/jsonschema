@@ -1006,6 +1006,7 @@ fn parse_schema_in_scope<'a>(
                 maximum: max_length,
             },
             patterns,
+            excluded_patterns: Vec::new(),
             formats,
             excluded_formats: Vec::new(),
             content_media_types,
@@ -1111,6 +1112,7 @@ fn parse_schema_in_scope<'a>(
                 StringLeaf {
                     lengths: LengthBounds::default(),
                     patterns: vec![Arc::clone(pattern)],
+                    excluded_patterns: Vec::new(),
                     formats: Vec::new(),
                     excluded_formats: Vec::new(),
                     content_media_types: Vec::new(),
