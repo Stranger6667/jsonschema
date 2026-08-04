@@ -1,6 +1,6 @@
 [package]
 name = "jsonschema-value"
-version = "0.49.4"
+version = "0.49.5"
 description = "JSON value representations and semantics shared by the jsonschema validator and its bindings"
 readme = "README.md"
 rust-version.workspace = true
