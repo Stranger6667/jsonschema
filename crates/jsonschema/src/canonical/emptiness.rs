@@ -1,7 +1,7 @@
-//! Deciding which `$ref` targets denote the empty set.
+//! Deciding which `$ref` targets denote the empty set, and which constrain nothing at all.
 //!
-//! `$ref` stays symbolic, so a contradiction behind one is invisible to leaf normalization.
-//! Proving a target empty lets `parse` substitute `False` and the existing pipeline fold.
+//! `$ref` stays symbolic, so what sits behind one is invisible to leaf normalization. Settling a
+//! target lets `parse` substitute `False` or `True` and the existing pipeline fold.
 
 use std::sync::Arc;
 
@@ -13,7 +13,7 @@ use serde_json::Value;
 use crate::canonical::{
     context::CanonicalizationContext,
     ir::{BoundCardinality, Schema, SchemaKind},
-    parse::{self, ParseOutput},
+    parse::{self, Assumptions, ParseOutput},
     schema::DefinitionMap,
     CanonicalizationError, ROOT_DEFINITION_KEY,
 };
@@ -280,34 +280,160 @@ fn strongly_connected(edges: &ReferenceEdges) -> Vec<Vec<Arc<str>>> {
     components
 }
 
-/// `value`'s canonical form with every provably empty target folded away.
+/// `value`'s canonical form with every settled target folded away.
 ///
 /// The whole pass behind one signature: applying a proof folds definitions it did not name, which
 /// can expose a cycle the previous round could not see, so this repeats until nothing new is
-/// proven. That makes the result a fixed point of the pass rather than a document whose own
+/// settled. That makes the result a fixed point of the pass rather than a document whose own
 /// re-canonicalization folds further.
-pub(crate) fn fold_empty_definitions<'a>(
+pub(crate) fn fold_definitions<'a>(
     mut parsed: ParseOutput,
     value: &'a Value,
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'a>,
 ) -> Result<ParseOutput, CanonicalizationError> {
-    // Terminates because `empty` only grows, into the document's finite set of keys.
-    let mut empty = AHashSet::default();
+    // Terminates because both sets only grow, into the document's finite set of keys.
+    let mut assumptions = Assumptions::default();
     loop {
-        let proven = resolve_empty_definitions(&parsed, value, ctx, resolver, &empty)?;
         let mut grew = false;
-        for uri in proven {
-            grew |= empty.insert(uri);
+        // Proving a target empty can leave a cycle with nothing on it, and folding one away can
+        // leave a target provably empty, so neither ordering settles - only running both to a
+        // fixed point does.
+        // An inversion cannot appear over a round that already resolved a target as `true`: that
+        // only ever replaces a reference with `true`, and neither `allOf` nor `anyOf` - the only
+        // operators a qualifying body is built from - can turn one into an inversion.
+        debug_assert!(
+            !inverts_an_operand(&parsed) || assumptions.admits_all.is_empty(),
+            "resolving a target as `true` never puts an inversion over a later round"
+        );
+        for uri in unconstrained_members(&parsed) {
+            grew |= assumptions.admits_all.insert(uri);
+        }
+        for uri in resolve_empty_definitions(&parsed, value, ctx, resolver, &assumptions)? {
+            grew |= assumptions.empty.insert(uri);
         }
         if !grew {
             return Ok(parsed);
         }
         // Degrading to `Raw` leaves the proofs unapplied: an under-claim, and safe.
-        let Some(refolded) = parse::parse_with_empty(value, ctx, resolver, &empty)? else {
+        let Some(refolded) = parse::parse_with(value, ctx, resolver, &assumptions)? else {
             return Ok(parsed);
         };
         parsed = refolded;
+    }
+}
+
+/// Keys whose body names nothing but other such keys.
+///
+/// Closed under the reference edges and free of assertions, so every walk out of a member stays
+/// inside the set forever without meeting one.
+fn unconstrained_members(parsed: &ParseOutput) -> AHashSet<Arc<str>> {
+    // `reference_to_definition` is the only producer of `Reference`, so without one no body
+    // qualifies. `not` and `oneOf` invert their operand, so a reference resolved to `true` under
+    // one can reject a value the validator admits - and a member is named from anywhere in the
+    // document, not only from the bodies this walk keeps. Both gates read the current IR, so a
+    // later round still folds what an earlier one declined.
+    if !parsed.has_references || inverts_an_operand(parsed) {
+        return AHashSet::default();
+    }
+    let mut members: AHashSet<Arc<str>> = std::iter::once(Arc::from(ROOT_DEFINITION_KEY))
+        .chain(parsed.definitions.keys().map(Arc::clone))
+        .collect();
+    // Who names each key, so dropping one revisits only the bodies that named it rather than
+    // re-testing every member - a plain alias chain drops one key per sweep otherwise.
+    let mut named_by: AHashMap<Arc<str>, Vec<Arc<str>>> = AHashMap::default();
+    for key in &members {
+        let Some(body) = body_of(parsed, key) else {
+            continue;
+        };
+        let mut found = Vec::new();
+        collect_classified_references(body, Position::InPlace, &mut found);
+        for (target, _) in found {
+            named_by
+                .entry(Arc::clone(target))
+                .or_default()
+                .push(Arc::clone(key));
+        }
+    }
+    // Terminates because a key is enqueued once at the start and once per removal, and removals
+    // are bounded by the member count.
+    let mut queue: Vec<Arc<str>> = members.iter().map(Arc::clone).collect();
+    while let Some(key) = queue.pop() {
+        if !members.contains(&key) {
+            continue;
+        }
+        if body_of(parsed, &key).is_some_and(|body| names_only(body, &members)) {
+            continue;
+        }
+        members.remove(&key);
+        if let Some(dependents) = named_by.get(&key) {
+            queue.extend(dependents.iter().map(Arc::clone));
+        }
+    }
+    members
+}
+
+/// Whether anything anywhere in the document inverts its operand.
+fn inverts_an_operand(parsed: &ParseOutput) -> bool {
+    inverts(&parsed.root) || parsed.definitions.values().any(inverts)
+}
+
+fn inverts(schema: &Schema) -> bool {
+    match schema.kind() {
+        SchemaKind::Not(_) | SchemaKind::OneOf(_) => true,
+        SchemaKind::TypedGroup { body, .. } => inverts(body),
+        SchemaKind::AllOf(branches) | SchemaKind::AnyOf(branches) => {
+            branches.as_slice().iter().any(inverts)
+        }
+        SchemaKind::Array(leaf) => {
+            let leaf = leaf.get();
+            leaf.prefix.iter().any(inverts)
+                || leaf.items.as_ref().is_some_and(inverts)
+                || leaf.contains.iter().any(|facet| inverts(&facet.schema))
+        }
+        SchemaKind::Object(leaf) => {
+            let leaf = leaf.get();
+            leaf.property_names.as_ref().is_some_and(inverts)
+                || leaf.properties.values().any(inverts)
+                || leaf.pattern_properties.values().any(inverts)
+                || leaf.additional.as_ref().is_some_and(inverts)
+        }
+        SchemaKind::Reference(_)
+        | SchemaKind::MultiType(_)
+        | SchemaKind::String(_)
+        | SchemaKind::Integer(_)
+        | SchemaKind::Number(_)
+        | SchemaKind::Const(_)
+        | SchemaKind::Enum(_)
+        | SchemaKind::True
+        | SchemaKind::False
+        | SchemaKind::Raw(_) => false,
+    }
+}
+
+/// Whether `schema` is built solely from references into `members`.
+fn names_only(schema: &Schema, members: &AHashSet<Arc<str>>) -> bool {
+    match schema.kind() {
+        SchemaKind::Reference(uri) => members.contains(uri.as_ref()),
+        SchemaKind::AllOf(branches) | SchemaKind::AnyOf(branches) => branches
+            .as_slice()
+            .iter()
+            .all(|branch| names_only(branch, members)),
+        // `not` and `oneOf` invert their operand, so a cycle through one has no fixed point at all.
+        SchemaKind::Not(_)
+        | SchemaKind::OneOf(_)
+        | SchemaKind::TypedGroup { .. }
+        | SchemaKind::Array(_)
+        | SchemaKind::Object(_)
+        | SchemaKind::MultiType(_)
+        | SchemaKind::String(_)
+        | SchemaKind::Integer(_)
+        | SchemaKind::Number(_)
+        | SchemaKind::Const(_)
+        | SchemaKind::Enum(_)
+        | SchemaKind::True
+        | SchemaKind::False
+        | SchemaKind::Raw(_) => false,
     }
 }
 
@@ -325,7 +451,7 @@ fn resolve_empty_definitions<'a>(
     value: &'a Value,
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'a>,
-    proven: &AHashSet<Arc<str>>,
+    proven: &Assumptions,
 ) -> Result<AHashSet<Arc<str>>, CanonicalizationError> {
     // `resolve_reference` is the only producer of `Reference`, so without one there is no graph,
     // no cycle, and nothing to prove.
@@ -333,11 +459,17 @@ fn resolve_empty_definitions<'a>(
         return Ok(AHashSet::default());
     }
     let edges = reference_edges(&parsed.root, &parsed.definitions);
-    let assumed = guarded_members(&edges);
+    let mut assumed = guarded_members(&edges);
+    // A target resolved as `true` cannot also be resolved as `false`: `reference_to_definition`
+    // reads one set before the other, so an overlap would silently pick a winner.
+    assumed.retain(|key| !proven.admits_all.contains(key));
     let mut assumed = plausible_assumptions(parsed, assumed);
     // Terminates because a continuing round drops at least one assumption.
     while !assumed.is_empty() {
-        let hypothesis: AHashSet<Arc<str>> = proven.union(&assumed).cloned().collect();
+        let hypothesis = Assumptions {
+            empty: proven.empty.union(&assumed).cloned().collect(),
+            admits_all: proven.admits_all.clone(),
+        };
         // A hypothesis that keeps the document `Raw` proves nothing; giving up is an under-claim.
         let Some(hypothetical) = parse::parse_hypothesis(value, ctx, resolver, &hypothesis)? else {
             return Ok(AHashSet::default());

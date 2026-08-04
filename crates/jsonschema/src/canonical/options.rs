@@ -129,7 +129,7 @@ fn build(
     let context = CanonicalizationContext::new(draft, pattern_options, validate_formats);
     let (inner, definitions) = match parse::parse(value, &context, &resolver)? {
         Some(parsed) => {
-            let parsed = emptiness::fold_empty_definitions(parsed, value, &context, &resolver)?;
+            let parsed = emptiness::fold_definitions(parsed, value, &context, &resolver)?;
             (parsed.root, Arc::new(parsed.definitions))
         }
         None => (

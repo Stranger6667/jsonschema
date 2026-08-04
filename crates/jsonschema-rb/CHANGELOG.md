@@ -10,6 +10,7 @@
 - Canonicalization of `not` a `pattern`, which string leaves carry as barred patterns.
 - Canonicalization of `not` a typed value set under Draft 4, such as `{"type": "integer", "enum": [1, 2]}`.
 - `CanonicalSchema#is_subset_of`, whether the other schema admits every value this one admits.
+- Canonicalization of a reference cycle carrying no assertion, which admits every value.
 
 ## [0.49.4] - 2026-08-04
 

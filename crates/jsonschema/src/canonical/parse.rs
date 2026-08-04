@@ -27,8 +27,9 @@ use crate::{
 pub(crate) struct ParseOutput {
     pub(crate) root: Schema,
     pub(crate) definitions: DefinitionMap,
-    /// Whether any `$ref` resolved during this parse. `resolve_reference` is the only producer of
-    /// `SchemaKind::Reference`, so `false` means the emptiness pass has no graph to build.
+    /// Whether any `$ref` resolved during this parse. `reference_to_definition` is the only
+    /// producer of `SchemaKind::Reference`, so `false` means the emptiness pass has no graph to
+    /// build.
     pub(crate) has_references: bool,
 }
 
@@ -40,22 +41,37 @@ pub(crate) fn parse<'a>(
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'a>,
 ) -> Result<Option<ParseOutput>, CanonicalizationError> {
-    parse_inner(value, ctx, resolver, None, Pruning::Prune)
+    parse_inner(
+        value,
+        ctx,
+        resolver,
+        &Assumptions::default(),
+        Pruning::Prune,
+    )
 }
 
-/// [`parse`], resolving every target in `assumed_empty` to `false` instead of to a `Reference`.
+/// Targets a parse resolves to a fixed body rather than to a symbolic `Reference`.
+#[derive(Default, Clone)]
+pub(crate) struct Assumptions {
+    /// Resolved as `false`.
+    pub(crate) empty: AHashSet<Arc<str>>,
+    /// Resolved as `true`.
+    pub(crate) admits_all: AHashSet<Arc<str>>,
+}
+
+/// [`parse`] under `assumptions`.
 ///
 /// One parse applies a whole round's hypothesis, so every body comes back canonicalized under it.
-pub(crate) fn parse_with_empty<'a>(
+pub(crate) fn parse_with<'a>(
     value: &'a Value,
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'a>,
-    assumed_empty: &'a AHashSet<Arc<str>>,
+    assumptions: &Assumptions,
 ) -> Result<Option<ParseOutput>, CanonicalizationError> {
-    parse_inner(value, ctx, resolver, Some(assumed_empty), Pruning::Prune)
+    parse_inner(value, ctx, resolver, assumptions, Pruning::Prune)
 }
 
-/// [`parse_with_empty`] keeping every body, including those the hypothesis made unreachable.
+/// [`parse_with`] keeping every body, including those the hypothesis made unreachable.
 ///
 /// Folding every reference to a key is what makes it unreachable, and the fixpoint reads that body
 /// to decide whether the assumption held - so pruning here would delete the evidence.
@@ -63,9 +79,9 @@ pub(crate) fn parse_hypothesis<'a>(
     value: &'a Value,
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'a>,
-    assumed_empty: &'a AHashSet<Arc<str>>,
+    assumptions: &Assumptions,
 ) -> Result<Option<ParseOutput>, CanonicalizationError> {
-    parse_inner(value, ctx, resolver, Some(assumed_empty), Pruning::Keep)
+    parse_inner(value, ctx, resolver, assumptions, Pruning::Keep)
 }
 
 /// Whether to drop the definitions the emitted IR no longer references.
@@ -79,14 +95,14 @@ fn parse_inner<'a>(
     value: &'a Value,
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'a>,
-    assumed_empty: Option<&AHashSet<Arc<str>>>,
+    assumptions: &Assumptions,
     pruning: Pruning,
 ) -> Result<Option<ParseOutput>, CanonicalizationError> {
     // A body that came out `false` denotes the empty set, so every reference to it folds as well -
     // but `resolve_reference` can only fold a target whose body already finished parsing, which
     // makes that dependent on the order definitions were registered in. Re-parsing with the folded
     // keys added, until none are new, settles it: the result no longer depends on the order.
-    let mut folded: AHashSet<Arc<str>> = assumed_empty.cloned().unwrap_or_default();
+    let mut folded = assumptions.clone();
     let mut tracks = spells_dynamic_reference(value, ctx.draft());
     loop {
         let attempt = parse_once(value, ctx, resolver, &folded, pruning, tracks)?;
@@ -105,7 +121,7 @@ fn parse_inner<'a>(
         let mut grew = false;
         for (key, body) in &parsed.definitions {
             if matches!(body.kind(), SchemaKind::False) {
-                grew |= folded.insert(Arc::clone(key));
+                grew |= folded.empty.insert(Arc::clone(key));
             }
         }
         if !grew {
@@ -124,11 +140,11 @@ fn parse_once<'a>(
     value: &'a Value,
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'a>,
-    assumed_empty: &AHashSet<Arc<str>>,
+    assumptions: &'a Assumptions,
     pruning: Pruning,
     tracks_dynamic_scope: bool,
 ) -> Result<DocumentParse, CanonicalizationError> {
-    let mut state = ParseState::new(value, resolver.base_uri().as_str(), assumed_empty);
+    let mut state = ParseState::new(value, resolver.base_uri().as_str(), assumptions);
     state.facts.merges_object_leaves =
         matches!(ctx.draft(), Draft::Draft4) && merges_object_leaves(value);
     if !tracks_dynamic_scope {
@@ -180,8 +196,8 @@ struct ParseState<'a> {
     in_progress: AHashSet<Arc<str>>,
     /// The target each definition key was minted for, so a key cannot be reused for another one.
     sources: AHashMap<Arc<str>, &'a Value>,
-    /// Targets to resolve as `False`. Empty on every parse outside the emptiness fixpoint.
-    assumed_empty: &'a AHashSet<Arc<str>>,
+    /// Empty on every parse outside the definition fixpoint.
+    assumptions: &'a Assumptions,
     dynamic_scope: DynamicScope,
 }
 
@@ -196,7 +212,8 @@ struct DocumentFacts {
     pattern_properties: bool,
     /// Set only under Draft 4, where it decides whether a pattern coverage can survive the algebra.
     merges_object_leaves: bool,
-    /// `resolve_reference` is the only producer of `Reference`, so this gates the emptiness pass.
+    /// `reference_to_definition` is the only producer of `Reference`, so this gates the emptiness
+    /// pass.
     has_references: bool,
 }
 
@@ -230,7 +247,7 @@ impl DynamicScope {
 }
 
 impl<'a> ParseState<'a> {
-    fn new(root: &'a Value, root_base_uri: &str, assumed_empty: &'a AHashSet<Arc<str>>) -> Self {
+    fn new(root: &'a Value, root_base_uri: &str, assumptions: &'a Assumptions) -> Self {
         Self {
             root,
             root_base_uri: Arc::from(root_base_uri),
@@ -238,14 +255,19 @@ impl<'a> ParseState<'a> {
             definitions: DefinitionMap::new(),
             in_progress: AHashSet::new(),
             sources: AHashMap::default(),
-            assumed_empty,
+            assumptions,
             dynamic_scope: DynamicScope::Tracked,
         }
     }
 
     /// Whether `key` is being resolved as `false` for this parse.
     fn assumes_empty(&self, key: &str) -> bool {
-        self.assumed_empty.contains(key)
+        self.assumptions.empty.contains(key)
+    }
+
+    /// Whether `key` is being resolved as `true` for this parse.
+    fn assumes_admits_all(&self, key: &str) -> bool {
+        self.assumptions.admits_all.contains(key)
     }
 }
 
@@ -1647,7 +1669,6 @@ fn resolve_reference<'a>(
     resolver: &Resolver<'a>,
     state: &mut ParseState<'a>,
 ) -> Result<Option<Schema>, CanonicalizationError> {
-    state.facts.has_references = true;
     let base_uri = resolver.base_uri();
     let location = resolver.resolve_uri(&base_uri.borrow(), reference)?;
     let resolved = resolver.lookup(reference)?;
@@ -1665,6 +1686,7 @@ fn reference_to_definition<'a>(
     ctx: &CanonicalizationContext,
     state: &mut ParseState<'a>,
 ) -> Result<Option<Schema>, CanonicalizationError> {
+    state.facts.has_references = true;
     let (target, target_resolver, target_draft) = resolved.into_inner();
     let env = if state.dynamic_scope.tracked() {
         dynamic_scope_digest(&target_resolver, ctx.draft())?
@@ -1682,6 +1704,9 @@ fn reference_to_definition<'a>(
         // The root is never keyed, so the fixpoint names it by the spelling emitted here.
         if state.assumes_empty(ROOT_DEFINITION_KEY) {
             return Ok(Some(Schema::new(SchemaKind::False)));
+        }
+        if state.assumes_admits_all(ROOT_DEFINITION_KEY) {
+            return Ok(Some(Schema::new(SchemaKind::True)));
         }
         return Ok(Some(Schema::new(SchemaKind::Reference(Arc::from(
             ROOT_DEFINITION_KEY,
@@ -1704,6 +1729,9 @@ fn reference_to_definition<'a>(
     // subresource is keyed by a minted URI, and exempting it would leave it live once proven empty.
     if state.assumes_empty(&key) {
         return Ok(Some(Schema::new(SchemaKind::False)));
+    }
+    if state.assumes_admits_all(&key) {
+        return Ok(Some(Schema::new(SchemaKind::True)));
     }
     // Folding an empty target lets the surrounding leaf normalization see the contradiction:
     // `required: ["a"]` beside `properties: {"a": false}` collapses, a symbolic `Reference` does
