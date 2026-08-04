@@ -3719,7 +3719,14 @@ fn spells_shielded_meet(
     ctx: &CanonicalizationContext,
 ) -> bool {
     if !first.pattern_properties.is_empty() && !second.pattern_properties.is_empty() {
-        return first.additional.is_none() && second.additional.is_none();
+        // Maps naming the same patterns match the same keys, so no key reaches one map's shield
+        // without reaching the other's, and the entries carry both sides for every key either
+        // matches. Shields on neither side leave nothing to place in the first place.
+        let same_keys = first
+            .pattern_properties
+            .keys()
+            .eq(second.pattern_properties.keys());
+        return same_keys || (first.additional.is_none() && second.additional.is_none());
     }
     shield_spares_named_keys(first, second, properties, ctx)
         && shield_spares_named_keys(second, first, properties, ctx)
