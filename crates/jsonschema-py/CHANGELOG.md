@@ -12,6 +12,10 @@
 - `CanonicalSchema.is_subset_of`, whether the other schema admits every value this one admits.
 - Canonicalization of a reference cycle carrying no assertion, which admits every value.
 
+### Fixed
+
+- Two spellings of one number canonicalizing to different texts when the fraction exceeds the expansion cap.
+
 ## [0.49.4] - 2026-08-04
 
 ### Added

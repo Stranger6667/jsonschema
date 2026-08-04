@@ -1031,6 +1031,8 @@ fn negated_type_set_complement_converges_with_direct_spelling() {
 #[test_case(r#"{"type":"number","minimum":1e999999999999999999999}"#; "huge_exponent_bound")]
 #[test_case(r#"{"type":"number","multipleOf":1e999999999999999999999}"#; "huge_exponent_divisor")]
 #[test_case(&format!(r#"{{"const":1{}}}"#, "0".repeat((1 << 20) + 1)); "huge_digit_count")]
+#[test_case(&format!(r#"{{"const":0.{}1}}"#, "0".repeat(1 << 20)); "huge_fraction_digit_count")]
+#[test_case(&format!(r#"{{"enum":[0.{}1]}}"#, "0".repeat(1 << 20)); "huge_fraction_digit_count_enum")]
 fn numerals_without_exact_comparison_stay_raw(text: &str) {
     let schema: Value = serde_json::from_str(text).expect("valid schema JSON");
     let canonical = canonicalize(&schema).expect("canonicalizes");
