@@ -1448,5 +1448,234 @@
         "valid": false
       }
     ]
+  },
+  {
+    "description": "a branch adding an item schema to a sibling's member demand drops out of the union",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "array",
+            "contains": {
+              "type": "null"
+            }
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/a"
+            }
+          }
+        ],
+        "$defs": {
+          "a": {
+            "type": "integer"
+          }
+        }
+      },
+      {
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "type": "array",
+                "contains": {
+                  "type": "null"
+                }
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/a"
+                }
+              }
+            ]
+          },
+          {
+            "anyOf": [
+              {
+                "type": "array",
+                "contains": {
+                  "type": "null"
+                }
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/a"
+                }
+              }
+            ]
+          }
+        ],
+        "$defs": {
+          "a": {
+            "type": "integer"
+          }
+        }
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "a": {
+          "type": "integer"
+        }
+      },
+      "anyOf": [
+        {
+          "type": "array",
+          "contains": {
+            "type": "null"
+          }
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/a"
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": [],
+        "valid": true
+      },
+      {
+        "data": [
+          null
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1,
+          2
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          "x"
+        ],
+        "valid": false
+      },
+      {
+        "data": [
+          null,
+          "x"
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1,
+          "x"
+        ],
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a branch demanding both members drops beside the branch demanding one",
+    "schemas": [
+      {
+        "anyOf": [
+          {
+            "type": "array",
+            "contains": {
+              "type": "null"
+            }
+          },
+          {
+            "type": "array",
+            "contains": {
+              "type": "boolean"
+            }
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "type": "array",
+            "contains": {
+              "type": "null"
+            }
+          },
+          {
+            "type": "array",
+            "contains": {
+              "type": "boolean"
+            }
+          },
+          {
+            "allOf": [
+              {
+                "type": "array",
+                "contains": {
+                  "type": "null"
+                }
+              },
+              {
+                "type": "array",
+                "contains": {
+                  "type": "boolean"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "array",
+          "contains": {
+            "type": "null"
+          }
+        },
+        {
+          "type": "array",
+          "contains": {
+            "type": "boolean"
+          }
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": [],
+        "valid": false
+      },
+      {
+        "data": [
+          null
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          true
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          null,
+          true
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": false
+      }
+    ]
   }
 ]
