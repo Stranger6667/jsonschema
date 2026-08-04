@@ -2961,5 +2961,62 @@
       {"data": [], "valid": true},
       {"data": [1], "valid": false}
     ]
+  },
+  {
+    "description": "not of a member past this build's integers leaves the gaps unspellable beside a type of integer",
+    "schema": {"type": "integer", "not": {"enum": [1e300]}},
+    "expected": {"type": "integer", "not": {"enum": [1e300]}},
+    "expected_arbitrary_precision": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "integer", "maximum": 999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999},
+        {"type": "integer", "minimum": 1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001}
+      ]
+    },
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": 9223372036854775806, "valid": true},
+      {"data": 1e300, "valid": false},
+      {"data": 1.5, "valid": false},
+      {"data": "x", "valid": false}
+    ]
+  },
+  {
+    "description": "not of a member below this build's integers leaves the gaps unspellable beside a type of integer",
+    "schema": {"type": "integer", "not": {"enum": [-1e300]}},
+    "expected": {"type": "integer", "not": {"enum": [-1e300]}},
+    "expected_arbitrary_precision": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "integer", "maximum": -1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001},
+        {"type": "integer", "minimum": -999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999}
+      ]
+    },
+    "tests": [
+      {"data": -1, "valid": true},
+      {"data": -9223372036854775806, "valid": true},
+      {"data": -1e300, "valid": false},
+      {"data": -1.5, "valid": false},
+      {"data": "x", "valid": false}
+    ]
+  },
+  {
+    "description": "not of the largest representable integer leaves the ray above it unspellable",
+    "schema": {"type": "integer", "not": {"enum": [9223372036854775807]}},
+    "expected": {"type": "integer", "not": {"enum": [9223372036854775807]}},
+    "expected_arbitrary_precision": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "integer", "maximum": 9223372036854775806},
+        {"type": "integer", "minimum": 9223372036854775808}
+      ]
+    },
+    "tests": [
+      {"data": 0, "valid": true},
+      {"data": 9223372036854775806, "valid": true},
+      {"data": 9223372036854775807, "valid": false},
+      {"data": 1.5, "valid": false},
+      {"data": "x", "valid": false}
+    ]
   }
 ]

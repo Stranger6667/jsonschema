@@ -25,7 +25,7 @@ pub(crate) fn negate(schema: &Schema, ctx: &CanonicalizationContext) -> Option<S
         SchemaKind::MultiType(set) => negate_type_set(*set, ctx),
         SchemaKind::Const(value) => negate_finite_values(std::slice::from_ref(value), ctx),
         SchemaKind::Enum(values) => negate_finite_values(values.as_slice(), ctx),
-        SchemaKind::Number(leaf) => Some(negate_number_leaf(leaf.get(), ctx)),
+        SchemaKind::Number(leaf) => negate_number_leaf(leaf.get(), ctx),
         SchemaKind::Integer(leaf) => negate_integer_leaf(leaf.get(), ctx),
         SchemaKind::String(leaf) => negate_string_leaf(leaf.get(), ctx),
         SchemaKind::Array(leaf) => negate_array_leaf(leaf.get(), ctx),
@@ -148,7 +148,7 @@ fn negate_finite_values(values: &[CanonicalJson], ctx: &CanonicalizationContext)
             &Value::Bool(!member),
         ))));
     }
-    branches.extend(number_gaps(&numbers, ctx));
+    branches.extend(number_gaps(&numbers, ctx)?);
     if !strings.is_empty() {
         strings.sort();
         strings.dedup();
@@ -171,9 +171,11 @@ fn negate_finite_values(values: &[CanonicalJson], ctx: &CanonicalizationContext)
 
 /// The number-line complement of a finite set of numbers: the outer rays and the open gaps
 /// between neighbours. Empty input adds nothing - the whole `number` type then stays remaining.
-fn number_gaps(numbers: &[Number], ctx: &CanonicalizationContext) -> Vec<Schema> {
+/// A gap the integers cannot spell declines the whole complement; dropping that one branch would
+/// narrow the union.
+fn number_gaps(numbers: &[Number], ctx: &CanonicalizationContext) -> Option<Vec<Schema>> {
     if numbers.is_empty() {
-        return Vec::new();
+        return Some(Vec::new());
     }
     let mut ends: Vec<BoundNumber> = numbers
         .iter()
@@ -183,51 +185,53 @@ fn number_gaps(numbers: &[Number], ctx: &CanonicalizationContext) -> Vec<Schema>
     let mut branches = Vec::with_capacity(ends.len() + 1);
     let mut lower: Option<BoundNumber> = None;
     for end in ends {
-        branches.push(number_window(lower.take(), Some(end.clone()), ctx));
+        branches.push(number_window(lower.take(), Some(end.clone()), ctx)?);
         lower = Some(end);
     }
-    branches.push(number_window(lower, None, ctx));
-    branches
+    branches.push(number_window(lower, None, ctx)?);
+    Some(branches)
 }
 
+/// A window over the reals, or `None` when the integers it admits fall outside this build's range.
+/// Such a window can still meet `type: integer`, where an integer window is the only form left to
+/// carry it; clamping its ends into range would drop integers the window keeps.
 fn number_window(
     minimum: Option<BoundNumber>,
     maximum: Option<BoundNumber>,
     ctx: &CanonicalizationContext,
-) -> Schema {
-    algebra::number_leaf(
-        NumberLeaf {
-            minimum,
-            maximum,
-            multiple_of: Divisors::default(),
-            not_multiple_of: ExcludedDivisors::default(),
-            excludes_integers: false,
-        },
-        ctx,
-    )
+) -> Option<Schema> {
+    let leaf = NumberLeaf {
+        minimum,
+        maximum,
+        multiple_of: Divisors::default(),
+        not_multiple_of: ExcludedDivisors::default(),
+        excludes_integers: false,
+    };
+    algebra::integer_bounds_within(&leaf)?;
+    Some(algebra::number_leaf(leaf, ctx))
 }
 
 /// Complement of a number window: the values of every other type plus the outer rays, each
 /// endpoint's inclusivity flipped. A value escapes a run of divisors as soon as it misses one, and
 /// a run of exclusions as soon as it lands on one, so each divisor flips into its dual on its own
-/// branch.
+/// branch. `None` where a flipped end leaves a ray the canonical form cannot spell.
 /// ```text
 /// e.g.  {"not": {"type": "number", "minimum": 5}}
 ///       =>  anyOf: [<non-number types>, {"type": "number", "exclusiveMaximum": 5}]
 /// e.g.  {"not": {"type": "number", "multipleOf": 0.5}}
 ///       =>  anyOf: [<non-number types>, {"type": "number", "not": {"multipleOf": 0.5}}]
 /// ```
-fn negate_number_leaf(leaf: &NumberLeaf, ctx: &CanonicalizationContext) -> Schema {
+fn negate_number_leaf(leaf: &NumberLeaf, ctx: &CanonicalizationContext) -> Option<Schema> {
     let mut branches = vec![type_set_schema(
         JsonTypeSet::all()
             .remove(JsonType::Number)
             .remove(JsonType::Integer),
     )];
     if let Some(minimum) = &leaf.minimum {
-        branches.push(number_window(None, Some(flipped(minimum)), ctx));
+        branches.push(number_window(None, Some(flipped(minimum)), ctx)?);
     }
     if let Some(maximum) = &leaf.maximum {
-        branches.push(number_window(Some(flipped(maximum)), None, ctx));
+        branches.push(number_window(Some(flipped(maximum)), None, ctx)?);
     }
     if leaf.excludes_integers {
         branches.push(type_set_schema(JsonTypeSet::from(JsonType::Integer)));
@@ -250,7 +254,7 @@ fn negate_number_leaf(leaf: &NumberLeaf, ctx: &CanonicalizationContext) -> Schem
             ctx,
         )
     }));
-    algebra::union(branches, ctx)
+    Some(algebra::union(branches, ctx))
 }
 
 /// Complement of an integer window: every other type, the non-integer numbers, and one branch per

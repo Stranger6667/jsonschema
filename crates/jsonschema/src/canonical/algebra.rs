@@ -2363,6 +2363,11 @@ pub(crate) fn number_leaf(leaf: NumberLeaf, ctx: &CanonicalizationContext) -> Sc
             };
         }
     }
+    // Paired with the `expect` in `integer_within`, whose leaf always comes from a node built here.
+    debug_assert!(
+        leaf.get().excludes_integers || integer_bounds_within(leaf.get()).is_some(),
+        "a number leaf admitting integers holds ends the integer bounds can spell"
+    );
     Schema::new(SchemaKind::Number(leaf))
 }
 
@@ -3693,7 +3698,7 @@ fn integer_within(leaf: &NumberLeaf, ctx: &CanonicalizationContext) -> Schema {
         return Schema::new(SchemaKind::False);
     }
     let bounds = integer_bounds_within(leaf)
-        .expect("interval bounds hold representable integers, checked during parsing");
+        .expect("a number leaf admitting integers holds ends the integer bounds can spell");
     integer_leaf(
         IntegerLeaf {
             bounds,
