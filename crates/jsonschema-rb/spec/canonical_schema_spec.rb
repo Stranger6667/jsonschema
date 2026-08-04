@@ -504,9 +504,21 @@ RSpec.describe "JSONSchema.canonicalize" do
     )
   end
 
+  it "negates a draft 4 typed group" do
+    schema = { "$schema" => "http://json-schema.org/draft-04/schema#", "type" => "integer", "enum" => [1, 2] }
+    result = JSONSchema.canonicalize(schema).negate
+    expect(result).to be_a(JSONSchema::Canonical::CanonicalSchema)
+    expect(result.to_json_schema).to eq(
+      { "$schema" => "http://json-schema.org/draft-04/schema#",
+        "anyOf" => [{ "type" => %w[null boolean string array object] },
+                    { "type" => "integer", "maximum" => 0 },
+                    { "type" => "integer", "minimum" => 3 },
+                    { "type" => "number", "not" => { "type" => "integer" } }] }
+    )
+  end
+
   # The decline set is contract: a caller sizes its fallback on it.
   [
-    { "$schema" => "http://json-schema.org/draft-04/schema#", "type" => "integer", "enum" => [1, 2] },
     UNMODELED
   ].each do |schema|
     it "declines to negate #{schema.inspect}" do

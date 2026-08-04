@@ -59,8 +59,27 @@ pub(crate) fn negate(schema: &Schema, ctx: &CanonicalizationContext) -> Option<S
         SchemaKind::OneOf(_) | SchemaKind::Reference(_) => {
             Some(Schema::new(SchemaKind::Not(schema.clone())))
         }
-        SchemaKind::TypedGroup { .. } | SchemaKind::Raw(_) => None,
+        SchemaKind::TypedGroup { ty, body } => negate_typed_group(*ty, body, ctx),
+        SchemaKind::Raw(_) => None,
     }
+}
+
+/// De Morgan over the conjunction a typed group spells: the values off the type, and the values of
+/// the type that the body rejects.
+/// ```text
+/// e.g.  draft 4: {"not": {"type": "integer", "enum": [1, 2]}}
+///       =>  anyOf: [<non-integer types>, {"type": "integer", "maximum": 0},
+///                   {"type": "integer", "minimum": 3}, {"type": "number", "not": {"type": "integer"}}]
+/// ```
+fn negate_typed_group(
+    ty: JsonType,
+    body: &Schema,
+    ctx: &CanonicalizationContext,
+) -> Option<Schema> {
+    let off_type = negate_type_set(JsonTypeSet::from(ty), ctx)?;
+    let off_body = negate(body, ctx)?;
+    let within = algebra::intersect(type_set_schema(JsonTypeSet::from(ty)), off_body, ctx);
+    Some(algebra::union(vec![off_type, within], ctx))
 }
 
 /// Complement of a finite value set: the untouched types stay whole, an unpaired boolean leaves the
