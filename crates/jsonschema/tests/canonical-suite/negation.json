@@ -2829,5 +2829,52 @@
       {"data": "xyz", "valid": false},
       {"data": 1, "valid": false}
     ]
+  },
+  {
+    "description": "negating a leaf that already bars a pattern demands the pattern back",
+    "schemas": [
+      {"not": {"type": "string", "not": {"pattern": "^a"}}},
+      {"not": {"allOf": [{"type": "string"}, {"not": {"pattern": "^a"}}]}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "array", "object"]},
+        {"type": "string", "pattern": "^a"}
+      ]
+    },
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": "xyz", "valid": false},
+      {"data": "", "valid": false},
+      {"data": 1, "valid": true},
+      {"data": null, "valid": true}
+    ]
+  },
+  {
+    "description": "negating a leaf barring two patterns demands either one back",
+    "schemas": [
+      {
+        "not": {
+          "type": "string",
+          "allOf": [{"not": {"pattern": "^a"}}, {"not": {"pattern": "b$"}}]
+        }
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "array", "object"]},
+        {"type": "string", "pattern": "^a"},
+        {"type": "string", "pattern": "b$"}
+      ]
+    },
+    "tests": [
+      {"data": "ac", "valid": true},
+      {"data": "cb", "valid": true},
+      {"data": "ab", "valid": true},
+      {"data": "cc", "valid": false},
+      {"data": 1, "valid": true}
+    ]
   }
 ]
