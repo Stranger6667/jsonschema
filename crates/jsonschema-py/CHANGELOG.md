@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `CanonicalSchema.is_subset_of`, whether the other schema admits every value this one admits.
+
 ## [0.49.4] - 2026-08-04
 
 ### Added

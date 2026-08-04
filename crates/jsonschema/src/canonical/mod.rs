@@ -89,6 +89,7 @@ pub(crate) mod error;
 pub(crate) mod ir;
 pub(crate) mod negate;
 pub(crate) mod options;
+pub(crate) mod oracle;
 pub(crate) mod parse;
 pub(crate) mod schema;
 pub(crate) mod view;

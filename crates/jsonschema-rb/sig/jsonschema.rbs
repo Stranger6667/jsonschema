@@ -45,6 +45,7 @@ module JSONSchema
       def kind: () -> kind
       def view: () -> view
       def intersect: (CanonicalSchema other) -> CanonicalSchema
+      def is_subset_of: (CanonicalSchema other) -> bool?
       def negate: () -> CanonicalSchema?
       def definition: (String uri) -> CanonicalSchema?
       def definitions: () -> Hash[String, CanonicalSchema]

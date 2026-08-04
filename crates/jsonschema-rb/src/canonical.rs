@@ -209,6 +209,13 @@ impl RbCanonicalSchema {
             .map_err(|error| canonicalization_error(ruby, error))
     }
 
+    fn is_subset_of(ruby: &Ruby, rb_self: &Self, other: &Self) -> Result<Option<bool>, Error> {
+        rb_self
+            .inner
+            .is_subset_of(&other.inner)
+            .map_err(|error| canonicalization_error(ruby, error))
+    }
+
     fn negate(ruby: &Ruby, rb_self: &Self) -> Option<Value> {
         rb_self
             .inner
@@ -1155,6 +1162,7 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     )?;
     canonical_schema.define_method("view", method!(RbCanonicalSchema::view, 0))?;
     canonical_schema.define_method("intersect", method!(RbCanonicalSchema::intersect, 1))?;
+    canonical_schema.define_method("is_subset_of", method!(RbCanonicalSchema::is_subset_of, 1))?;
     canonical_schema.define_method("negate", method!(RbCanonicalSchema::negate, 0))?;
     canonical_schema.define_method("definition", method!(RbCanonicalSchema::definition, 1))?;
     canonical_schema.define_method("definitions", method!(RbCanonicalSchema::definitions, 0))?;

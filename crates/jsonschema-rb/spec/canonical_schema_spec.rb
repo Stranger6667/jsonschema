@@ -432,6 +432,36 @@ RSpec.describe "JSONSchema.canonicalize" do
     expect { left.intersect(right) }.to raise_error(JSONSchema::Canonical::IncompatibleOperands)
   end
 
+  [
+    [{ "type" => "integer" }, { "type" => "integer" }, true],
+    [{ "const" => 1 }, { "type" => "integer" }, true],
+    [{ "enum" => [1, 2] }, { "type" => "integer" }, true],
+    [{ "const" => "x" }, { "type" => "integer" }, false],
+    [{ "enum" => [1, "x"] }, { "type" => "integer" }, false],
+    [{ "type" => "string" }, { "type" => "integer" }, nil],
+    [{ "type" => "integer" }, { "type" => "integer", "minimum" => 5 }, nil]
+  ].each do |left, right, expected|
+    it "decides whether #{left.inspect} is a subset of #{right.inspect}" do
+      result = JSONSchema.canonicalize(left).is_subset_of(JSONSchema.canonicalize(right))
+      expect(result).to eq(expected)
+    end
+  end
+
+  { "on the left" => false, "on the right" => true }.each do |side, swap|
+    it "is_subset_of rejects an unmodeled operand #{side}" do
+      raw = JSONSchema.canonicalize(UNMODELED)
+      modeled = JSONSchema.canonicalize({ "type" => "string" })
+      left, right = swap ? [modeled, raw] : [raw, modeled]
+      expect { left.is_subset_of(right) }.to raise_error(JSONSchema::Canonical::UnmodeledOperand)
+    end
+  end
+
+  it "is_subset_of rejects a draft mismatch" do
+    left = JSONSchema.canonicalize({ "type" => "string" }, draft: :draft7)
+    right = JSONSchema.canonicalize({ "type" => "string" }, draft: :draft202012)
+    expect { left.is_subset_of(right) }.to raise_error(JSONSchema::Canonical::IncompatibleOperands)
+  end
+
   it "definition looks up one reference target" do
     canonical = JSONSchema.canonicalize({ "$defs" => { "a" => { "type" => "string" } }, "$ref" => "#/$defs/a" })
     expect(canonical.definition("#/$defs/a")).to eq(canonical.definitions["#/$defs/a"])

@@ -1683,6 +1683,91 @@ fn intersect_rejects_operands_with_distinct_definition_maps() {
     );
 }
 
+#[test_case(&json!({"type": "integer"}), &json!({"type": "integer"}), Some(true); "identical forms")]
+#[test_case(&json!({"const": 1}), &json!({"type": "integer"}), Some(true); "constant inside a type")]
+#[test_case(&json!({"enum": [1, 2]}), &json!({"type": "integer"}), Some(true); "enum inside a type")]
+#[test_case(&json!({"type": "integer", "minimum": 5}), &json!({"type": "integer"}), Some(true); "bounded inside unbounded")]
+#[test_case(&json!({"const": "x"}), &json!({"type": "integer"}), Some(false); "constant witness refutes")]
+#[test_case(&json!({"enum": [1, "x"]}), &json!({"type": "integer"}), Some(false); "enum member witness refutes")]
+#[test_case(&json!({"type": "string"}), &json!({"type": "integer"}), None; "disjoint types without a witness")]
+#[test_case(&json!({"type": "integer"}), &json!({"type": "integer", "minimum": 5}), None; "unbounded against bounded")]
+fn is_subset_of_decides(left: &Value, right: &Value, expected: Option<bool>) {
+    let left = canonicalize(left).expect("canonicalizes");
+    let right = canonicalize(right).expect("canonicalizes");
+    assert_eq!(left.is_subset_of(&right).expect("compares"), expected);
+}
+
+// Two symbolic references are not compared through their targets.
+#[test]
+fn is_subset_of_declines_distinct_references() {
+    let root = canonicalize(&json!({
+        "type": "object",
+        "$defs": {"A": {"type": "string"}, "B": {"type": "string"}},
+        "properties": {"a": {"$ref": "#/$defs/A"}, "b": {"$ref": "#/$defs/B"}}
+    }))
+    .expect("canonicalizes");
+    let CanonicalView::Object(view) = root.view() else {
+        panic!("expected an Object view");
+    };
+    let left = view.properties.get("a").expect("property a").clone();
+    let right = view.properties.get("b").expect("property b").clone();
+    assert_eq!(left.is_subset_of(&right).expect("compares"), None);
+}
+
+#[test_case(false; "raw on the left")]
+#[test_case(true; "raw on the right")]
+fn is_subset_of_rejects_a_raw_operand(swap: bool) {
+    let raw = canonicalize(&unmodeled()).expect("canonicalizes");
+    let modeled = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
+    let (left, right) = if swap {
+        (&modeled, &raw)
+    } else {
+        (&raw, &modeled)
+    };
+    assert!(matches!(
+        left.is_subset_of(right),
+        Err(CanonicalizationError::UnmodeledOperand)
+    ));
+}
+
+#[test]
+fn is_subset_of_rejects_operands_from_different_drafts() {
+    let draft7 = options()
+        .with_draft(Draft::Draft7)
+        .canonicalize(&json!({"type": "string"}))
+        .expect("canonicalizes");
+    let latest = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
+    assert!(matches!(
+        draft7.is_subset_of(&latest),
+        Err(CanonicalizationError::IncompatibleOperands(
+            OperandMismatch::Drafts {
+                left: Draft::Draft7,
+                right: Draft::Draft202012
+            }
+        ))
+    ));
+}
+
+#[test]
+fn is_subset_of_rejects_operands_with_distinct_definition_maps() {
+    let left = canonicalize(&json!({
+        "$defs": {"A": {"type": "string"}},
+        "$ref": "#/$defs/A"
+    }))
+    .expect("canonicalizes");
+    let right = canonicalize(&json!({
+        "$defs": {"B": {"minLength": 4}},
+        "$ref": "#/$defs/B"
+    }))
+    .expect("canonicalizes");
+    assert!(matches!(
+        left.is_subset_of(&right),
+        Err(CanonicalizationError::IncompatibleOperands(
+            OperandMismatch::Definitions
+        ))
+    ));
+}
+
 #[test_case(
     &json!({"type": "string", "minLength": 5}),
     &json!({"anyOf": [

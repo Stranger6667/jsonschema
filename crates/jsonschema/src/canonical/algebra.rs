@@ -14,7 +14,7 @@ use crate::{
             LengthBounds, NonEmpty, NumberLeaf, NumberLeaves, ObjectLeaf, ObjectLeaves, Round,
             Schema, SchemaKind, Side, StringLeaf, StringLeaves, Verdict,
         },
-        negate, parse,
+        negate, oracle, parse,
     },
     JsonType, JsonTypeSet,
 };
@@ -1352,10 +1352,9 @@ fn split_piece_is_covered(
     if matches!(schema.kind(), SchemaKind::False) {
         return true;
     }
-    if leaves
-        .iter()
-        .any(|leaf| intersect(schema.clone(), object_leaf(leaf.clone(), ctx), ctx) == schema)
-    {
+    if leaves.iter().any(|leaf| {
+        oracle::covers(&schema, &object_leaf(leaf.clone(), ctx), ctx) == Verdict::Admits
+    }) {
         return true;
     }
     let Some((key, rest)) = keys.split_first() else {
@@ -3262,7 +3261,11 @@ fn admits_key(names: &Schema, key: &str, ctx: &CanonicalizationContext) -> Verdi
 }
 
 /// Whether `schema` admits every value in `value`'s equality class.
-fn admits_value(schema: &Schema, value: &Value, ctx: &CanonicalizationContext) -> Verdict {
+pub(crate) fn admits_value(
+    schema: &Schema,
+    value: &Value,
+    ctx: &CanonicalizationContext,
+) -> Verdict {
     if contains_reference(schema) {
         return Verdict::Unknown;
     }
