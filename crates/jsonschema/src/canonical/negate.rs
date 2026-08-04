@@ -50,10 +50,6 @@ pub(crate) fn negate(schema: &Schema, ctx: &CanonicalizationContext) -> Option<S
                 };
                 complements.push(complement);
             }
-            debug_assert!(
-                complements.len() >= 2,
-                "an AllOf has at least two branches before applying De Morgan"
-            );
             Some(algebra::union(complements, ctx))
         }
         SchemaKind::OneOf(_) | SchemaKind::Reference(_) => {

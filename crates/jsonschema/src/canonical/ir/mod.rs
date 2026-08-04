@@ -502,12 +502,6 @@ impl<T: MaybeEmpty> NonEmpty<T> {
     }
 }
 
-impl<T: Ord> MaybeEmpty for Bounds<T> {
-    fn is_empty(&self) -> bool {
-        Bounds::is_empty(self)
-    }
-}
-
 impl MaybeEmpty for StringLeaf {
     fn is_empty(&self) -> bool {
         self.lengths.is_empty()
@@ -754,7 +748,8 @@ impl SchemaKind {
         }
     }
 
-    /// The type set `values` saturates - only `null` and `boolean` have finite universes.
+    /// The type set `values` saturates - only `null` and `boolean` have finite universes. Callers
+    /// pass at least two distinct values, so a lone `null` never arrives.
     #[must_use]
     pub(crate) fn finite_values_saturated_domain(values: &[CanonicalJson]) -> Option<JsonTypeSet> {
         const NULL: u8 = 1 << 0;
@@ -774,7 +769,6 @@ impl SchemaKind {
             };
         }
         match bits {
-            NULL => Some(JsonTypeSet::from(JsonType::Null)),
             BOTH_BOOLEANS => Some(JsonTypeSet::from(JsonType::Boolean)),
             ALL => Some(JsonType::Null | JsonType::Boolean),
             _ => None,

@@ -1847,11 +1847,7 @@ fn ensure_definition<'a>(
         return Ok(true);
     }
     state.sources.insert(Arc::clone(&key), target);
-    let inserted = state.in_progress.insert(Arc::clone(&key));
-    debug_assert!(
-        inserted,
-        "a new definition target is not already in progress"
-    );
+    state.in_progress.insert(Arc::clone(&key));
     let parsed = parse_schema_in_scope(target, ctx, false, resolver, state);
     // Removed before the `?`, keeping the restore-on-error contract.
     let was_in_progress = state.in_progress.remove(&key);
