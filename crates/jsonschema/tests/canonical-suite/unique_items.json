@@ -707,5 +707,25 @@
     "tests": [
       {"data": ["a"], "valid": false}
     ]
+  },
+  {
+    "description": "ir: a window of at most one item drops into a wider one demanding distinctness",
+    "schema": {"anyOf": [
+      {"type": "array", "maxItems": 1, "prefixItems": [{"type": "array"}]},
+      {"type": "array", "maxItems": 4, "uniqueItems": true}
+    ]},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "maxItems": 4,
+      "uniqueItems": true
+    },
+    "satisfiable": true,
+    "tests": [
+      {"data": [[1]], "valid": true},
+      {"data": ["a", "b", "c", "d"], "valid": true},
+      {"data": ["a", "a"], "valid": false},
+      {"data": [1, 2, 3, 4, 5], "valid": false}
+    ]
   }
 ]

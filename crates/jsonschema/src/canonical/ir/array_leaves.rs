@@ -386,8 +386,15 @@ fn drop_subsumed(leaves: &mut Vec<ArrayLeaf>) {
             let same_elements = other.prefix == leaf.prefix
                 && other.items == leaf.items
                 && other.contains == leaf.contains;
+            // A window of at most one item holds nothing that can repeat, so distinctness is met
+            // there whatever the leaf says.
+            let distinct_already = leaf
+                .lengths
+                .maximum
+                .as_ref()
+                .is_some_and(|max| *max <= BoundCardinality::from(1));
             let wider = other.lengths.covers(&leaf.lengths)
-                && (!other.unique || leaf.unique)
+                && (!other.unique || leaf.unique || distinct_already)
                 && (looser_items || same_elements);
             // Leaves agreeing on every facet but the window were folded by merging, so one of the
             // facets is strictly looser here and decides which leaf goes.

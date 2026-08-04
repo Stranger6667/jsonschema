@@ -1,6 +1,9 @@
 #![cfg(not(target_arch = "wasm32"))]
 use hegel::{extras::serde_json as json_gs, generators as gs, TestCase};
-use jsonschema::{canonical::CanonicalView, Draft};
+use jsonschema::{
+    canonical::{CanonicalSchema, CanonicalView},
+    Draft, JsonType,
+};
 use serde_json::{json, Value};
 
 fn draw_draft(tc: &TestCase) -> Draft {
@@ -585,24 +588,168 @@ fn canonical_form_preserves_validation(tc: TestCase) {
     );
 }
 
-// `not not s` accepts exactly what `s` accepts, so when the double complement is modeled both
-// spellings land on one canonical form. A raw result round-trips the document verbatim and
-// carries no claim to check.
+// The complement of a complement accepts what the schema accepts. Taking it through the algebra
+// runs both steps: spelling the pair as nested `not` keywords cancels them before either one runs,
+// leaving nothing to check.
 #[hegel::test(test_cases = 5_000)]
-fn double_negation_converges(tc: TestCase) {
+fn negating_a_complement_restores_the_accepted_values(tc: TestCase) {
     let draft = draw_draft(&tc);
+    let validate_formats = tc.draw(gs::booleans());
     let schema = draw_schema(&tc, 2);
-    let (schema_body, definitions) = split_root_definitions(&schema);
-    let doubled = attach_root_definitions(json!({ "not": { "not": schema_body } }), definitions);
-    let Some(via_double) = canonicalize(&doubled, draft) else {
+    let instance = tc.draw(arbitrary_instance());
+    let Ok(canonical) = jsonschema::canonical::options()
+        .with_draft(draft)
+        .should_validate_formats(validate_formats)
+        .canonicalize(&schema)
+    else {
         return;
     };
-    if via_double == doubled {
+    let Some(complement) = canonical.negate() else {
         return;
+    };
+    let Some(restored) = complement.negate() else {
+        return;
+    };
+    let build = |value: &Value| {
+        jsonschema::options()
+            .with_draft(draft)
+            .should_validate_formats(validate_formats)
+            .build(value)
+    };
+    let emitted = restored.to_json_schema();
+    let (Ok(raw), Ok(twice)) = (build(&schema), build(&emitted)) else {
+        return;
+    };
+    assert_eq!(
+        raw.is_valid(&instance),
+        twice.is_valid(&instance),
+        "schema = {schema}\n  restored = {emitted}\n  instance = {instance}"
+    );
+}
+
+// A pool in normal form keeps no leaf a sibling of its own kind already holds: an intersection that
+// leaves the leaf untouched proves every value it admits lies in the sibling, so the fold that
+// drops it was left undone. Leaves of different kinds sit in different pools, which the union
+// assembles side by side without weighing one against the other.
+#[hegel::test(test_cases = 5_000)]
+fn a_union_keeps_no_leaf_a_sibling_of_its_kind_already_holds(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    let validate_formats = tc.draw(gs::booleans());
+    let seed = draw_schema(&tc, 2);
+    let (body, definitions) = split_root_definitions(&seed);
+    // A branch beside a narrowing of itself: the narrowing adds nothing, so the union must shed it.
+    let mut branches = vec![body.clone(), json!({ "allOf": [body, draw_leaf(&tc)] })];
+    let count = tc.draw(gs::integers::<usize>().min_value(0).max_value(2));
+    for _ in 0..count {
+        branches.push(draw_schema_node(&tc, 2));
     }
-    let direct =
-        canonicalize(&schema, draft).expect("a modeled double complement implies a modeled child");
-    assert_eq!(direct, via_double, "{schema}");
+    let schema = attach_root_definitions(json!({ "anyOf": branches }), definitions);
+    let Ok(canonical) = jsonschema::canonical::options()
+        .with_draft(draft)
+        .should_validate_formats(validate_formats)
+        .canonicalize(&schema)
+    else {
+        return;
+    };
+    let mut nodes = Vec::new();
+    collect_nodes(&canonical, &mut nodes);
+    for node in &nodes {
+        let CanonicalView::AnyOf(branches) = node.view() else {
+            continue;
+        };
+        for branch in &branches {
+            let Some(pool) = leaf_pool(branch) else {
+                continue;
+            };
+            for sibling in &branches {
+                if leaf_pool(sibling) != Some(pool) || sibling == branch {
+                    continue;
+                }
+                // One divisor standing for another is decided by the arithmetic their spellings
+                // share, which is a wider question than the facets a pool weighs.
+                if divisors(branch) != divisors(sibling) {
+                    continue;
+                }
+                assert!(
+                    !matches!(branch.is_subset_of(sibling), Ok(Some(true))),
+                    "schema = {schema}\n  branch = {}\n  sibling = {}",
+                    branch.to_json_schema(),
+                    sibling.to_json_schema()
+                );
+            }
+        }
+    }
+}
+
+/// The divisors a numeric leaf carries, required and barred.
+fn divisors(schema: &CanonicalSchema) -> (Vec<serde_json::Number>, Vec<serde_json::Number>) {
+    match schema.view() {
+        CanonicalView::Integer(leaf) => (leaf.multiple_of, leaf.not_multiple_of),
+        CanonicalView::Number(leaf) => (leaf.multiple_of, leaf.not_multiple_of),
+        _ => (Vec::new(), Vec::new()),
+    }
+}
+
+/// The pool a union collects this branch into, or `None` for a leaf whose pool weighs nested
+/// schemas rather than facets alone - the algebra compares a nested schema only against itself.
+fn leaf_pool(schema: &CanonicalSchema) -> Option<JsonType> {
+    match schema.view() {
+        CanonicalView::String(_) => Some(JsonType::String),
+        CanonicalView::Integer(_) => Some(JsonType::Integer),
+        CanonicalView::Number(_) => Some(JsonType::Number),
+        _ => None,
+    }
+}
+
+// Every node of a canonical form, the root included.
+fn collect_nodes(schema: &CanonicalSchema, into: &mut Vec<CanonicalSchema>) {
+    into.push(schema.clone());
+    match schema.view() {
+        CanonicalView::TypedGroup(group) => collect_nodes(&group.body, into),
+        CanonicalView::Not(operand) => collect_nodes(&operand, into),
+        CanonicalView::AllOf(branches)
+        | CanonicalView::AnyOf(branches)
+        | CanonicalView::OneOf(branches) => {
+            for branch in &branches {
+                collect_nodes(branch, into);
+            }
+        }
+        CanonicalView::Array(array) => {
+            for item in &array.prefix_items {
+                collect_nodes(item, into);
+            }
+            if let Some(items) = &array.items {
+                collect_nodes(items, into);
+            }
+            for facet in &array.contains {
+                collect_nodes(&facet.schema, into);
+            }
+        }
+        CanonicalView::Object(object) => {
+            if let Some(names) = &object.property_names {
+                collect_nodes(names, into);
+            }
+            for entry in object.properties.values() {
+                collect_nodes(entry, into);
+            }
+            for entry in object.pattern_properties.values() {
+                collect_nodes(entry, into);
+            }
+            if let Some(additional) = &object.additional_properties {
+                collect_nodes(additional, into);
+            }
+        }
+        CanonicalView::MultiType(_)
+        | CanonicalView::String(_)
+        | CanonicalView::Integer(_)
+        | CanonicalView::Number(_)
+        | CanonicalView::Const(_)
+        | CanonicalView::Enum(_)
+        | CanonicalView::Reference(_)
+        | CanonicalView::True
+        | CanonicalView::False
+        | CanonicalView::Raw(_) => {}
+    }
 }
 
 // A value set intersected with an integer bound preserves validation on its own members and their

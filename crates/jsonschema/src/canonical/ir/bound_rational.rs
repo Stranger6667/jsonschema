@@ -340,10 +340,9 @@ fn decimal(value: &BigFraction) -> Option<Number> {
         rest /= &five;
         fives += 1;
     }
-    debug_assert!(
-        rest.is_one(),
-        "a JSON number's denominator is a power of ten"
-    );
+    if !rest.is_one() {
+        return None;
+    }
     let places = twos.max(fives);
     let text = spelled(numerator, denominator, places, value.is_sign_negative());
     debug_assert_eq!(
