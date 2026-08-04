@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.49.5] - 2026-08-05
+
 ### Added
 
 - Canonicalization of `not` an integer schema under Draft 4, which the number leaf carries as barred integers.
@@ -302,7 +304,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.4...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.5...HEAD
+[0.49.5]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.4...ruby-v0.49.5
 [0.49.4]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.3...ruby-v0.49.4
 [0.49.3]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.2...ruby-v0.49.3
 [0.49.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.1...ruby-v0.49.2
