@@ -6,7 +6,7 @@ use std::{
 
 use jsonschema::{
     canonical::{options, CanonicalKind, CanonicalSchema, CanonicalView, OperandMismatch},
-    canonicalize, CanonicalizationError, Draft, JsonType, PatternOptions, Registry,
+    canonicalize, validator_for, CanonicalizationError, Draft, JsonType, PatternOptions, Registry,
 };
 use serde_json::{json, Map, Number, Value};
 use test_case::test_case;
@@ -1685,6 +1685,113 @@ fn intersect_rejects_operands_with_distinct_definition_maps() {
         error.to_string(),
         "operands carry different definition maps"
     );
+}
+
+fn draft4(body: &Value) -> Value {
+    let mut map = body.as_object().expect("object").clone();
+    map.insert(
+        "$schema".into(),
+        json!("http://json-schema.org/draft-04/schema#"),
+    );
+    Value::Object(map)
+}
+
+fn draft4_closed_pattern_map(pattern: &str) -> Value {
+    draft4(&json!({
+        "patternProperties": {pattern: {"type": "integer"}},
+        "additionalProperties": false
+    }))
+}
+
+// Draft 4 has no `propertyNames`, so meeting two closed pattern maps must keep a spelling a Draft 4
+// validator reads - emitting one it ignores would admit every key the meet forbids.
+#[test_case(&json!({"c": 1}); "key outside both patterns")]
+#[test_case(&json!({"a1": 5}); "key inside one pattern only")]
+#[test_case(&json!({}); "no key at all")]
+fn intersect_draft4_closed_pattern_maps_keeps_validation_parity(instance: &Value) {
+    let left = draft4_closed_pattern_map("^a");
+    let right = draft4_closed_pattern_map("^b");
+    let merged = canonicalize(&left)
+        .expect("canonicalizes")
+        .intersect(&canonicalize(&right).expect("canonicalizes"))
+        .expect("intersects")
+        .to_json_schema();
+
+    let both = validator_for(&left).expect("compiles").is_valid(instance)
+        && validator_for(&right).expect("compiles").is_valid(instance);
+    assert_eq!(
+        validator_for(&merged).expect("compiles").is_valid(instance),
+        both
+    );
+}
+
+#[test]
+fn intersect_draft4_closed_pattern_maps_emits_a_closed_map_per_pattern() {
+    let merged = canonicalize(&draft4_closed_pattern_map("^a"))
+        .expect("canonicalizes")
+        .intersect(&canonicalize(&draft4_closed_pattern_map("^b")).expect("canonicalizes"))
+        .expect("intersects");
+    assert_eq!(
+        merged.to_json_schema(),
+        json!({
+            "$schema": "http://json-schema.org/draft-04/schema#",
+            "anyOf": [
+                {"type": ["null", "boolean", "number", "string", "array"]},
+                {
+                    "type": "object",
+                    "patternProperties": {"^a": {"type": "integer"}, "^b": {"type": "integer"}},
+                    "allOf": [
+                        {"patternProperties": {"^a": {}}, "additionalProperties": false},
+                        {"patternProperties": {"^b": {}}, "additionalProperties": false}
+                    ]
+                }
+            ]
+        })
+    );
+}
+
+// Meeting two documents reshapes a key constraint past the closed map either was parsed from.
+#[test_case(
+    &json!({"patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": false}),
+    &json!({"patternProperties": {"^c": {"type": "string"}}});
+    "pattern entry outside the closed map"
+)]
+#[test_case(
+    &json!({"patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": false}),
+    &json!({"properties": {"a1": {"type": "string"}}});
+    "named entry a pattern admits"
+)]
+#[test_case(
+    &json!({"properties": {"x": {"type": "integer"}}, "patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": false}),
+    &json!({"properties": {"x": {"type": "integer"}}, "patternProperties": {"^b": {"type": "integer"}}, "additionalProperties": false});
+    "shared key beside disjoint patterns"
+)]
+fn intersect_draft4_object_leaves_keeps_validation_parity(left: &Value, right: &Value) {
+    let left = draft4(left);
+    let right = draft4(right);
+    let merged = canonicalize(&left)
+        .expect("canonicalizes")
+        .intersect(&canonicalize(&right).expect("canonicalizes"))
+        .expect("intersects")
+        .to_json_schema();
+
+    let left_validator = validator_for(&left).expect("compiles");
+    let right_validator = validator_for(&right).expect("compiles");
+    let merged_validator = validator_for(&merged).expect("compiles");
+    for instance in [
+        json!({}),
+        json!({"a1": 5}),
+        json!({"a1": "s"}),
+        json!({"b1": 5}),
+        json!({"c": 1}),
+        json!({"x": 1}),
+    ] {
+        assert_eq!(
+            merged_validator.is_valid(&instance),
+            left_validator.is_valid(&instance) && right_validator.is_valid(&instance),
+            "{instance}"
+        );
+    }
 }
 
 #[test_case(&json!({"type": "integer"}), &json!({"type": "integer"}), Some(true); "identical forms")]
