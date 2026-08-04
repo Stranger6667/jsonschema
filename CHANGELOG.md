@@ -16,6 +16,7 @@
 
 - A satisfiable `multipleOf` schema collapsing to the empty set when `f64` rounds its bounds together.
 - Two spellings of one number canonicalizing to different texts under `arbitrary-precision` when the fraction exceeds the expansion cap.
+- Numeric bounds and `multipleOf` comparing values through a lossy `f64` conversion under `arbitrary-precision`, such as `1e-400` passing `{"maximum": 0}`.
 
 ## [0.49.4] - 2026-08-04
 
