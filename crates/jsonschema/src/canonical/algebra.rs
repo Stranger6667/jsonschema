@@ -806,6 +806,41 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         );
     }
 
+    // An integer branch whose values a real interval also accepts adds nothing beside it. A divisor
+    // of one over a whole number leaves every integer a multiple, so an interval spanning the window
+    // under such a divisor takes it entire.
+    // e.g.  anyOf [
+    //         {"type": "integer", "minimum": -5},
+    //         {"type": "number", "multipleOf": 0.1}
+    //       ]  =>  {"type": "number", "multipleOf": 0.1}
+    // A divisor the window's integers step past keeps the two apart.
+    // e.g.  anyOf [
+    //         {"type": "integer", "minimum": -5},
+    //         {"type": "number", "multipleOf": 1.5}
+    //       ]  =>  unchanged
+    if !numbers.is_empty() {
+        let intervals = numbers.as_slice();
+        integers.retain(|window| {
+            !intervals
+                .iter()
+                .any(|interval| number_leaf_covers_integer_leaf(interval, window))
+        });
+        // Draft 4 keeps a whole value under an `integer` guard, where `7` does not match `7.0`. The
+        // interval matches both, so it still holds everything the guard leaves.
+        // e.g.  Draft 4, anyOf [
+        //         {"type": "integer", "enum": [1, 2]},
+        //         {"type": "number", "multipleOf": 0.5}
+        //       ]  =>  {"type": "number", "multipleOf": 0.5}
+        groups.retain(|(ty, values)| {
+            *ty != JsonType::Integer
+                || !values.iter().all(|member| {
+                    intervals
+                        .iter()
+                        .any(|leaf| number_leaf_admits(leaf, member))
+                })
+        });
+    }
+
     // A value one of the surviving windows already accepts adds nothing beside it.
     // e.g.  anyOf [
     //         {"type": "string", "minLength": 1},
@@ -3929,6 +3964,30 @@ pub(crate) fn integer_bounds_within(leaf: &NumberLeaf) -> Option<IntegerBounds> 
         None => None,
     };
     Some(IntegerBounds { minimum, maximum })
+}
+
+/// Whether the interval admits every integer the window does. Dropping the window narrows the union,
+/// so a divisor the exact arithmetic cannot compare leaves the two apart.
+fn number_leaf_covers_integer_leaf(interval: &NumberLeaf, window: &IntegerLeaf) -> bool {
+    // An interval barring the draft's integers holds none of them, whatever the window spans.
+    if interval.excludes_integers {
+        return false;
+    }
+    // Ends past the representable range leave no integer bounds to compare against.
+    let Some(reach) = integer_bounds_within(interval) else {
+        return false;
+    };
+    reach.covers(&window.bounds)
+        // The divisors every integer already meets leave no work; the window's own must imply the
+        // rest.
+        && interval
+            .multiple_of
+            .clone()
+            .over_integers()
+            .divide_all(&window.multiple_of)
+        && interval
+            .not_multiple_of
+            .bars_no_more_than(&window.not_multiple_of)
 }
 
 /// Whether `member` is a number the interval admits.

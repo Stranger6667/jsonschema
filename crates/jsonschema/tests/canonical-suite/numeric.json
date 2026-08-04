@@ -946,9 +946,10 @@
     ]
   },
   {
-    "description": "ir: branches whose divisors take different arithmetic both survive",
+    "description": "ir: branches fold across divisor kinds only where one arithmetic reads both",
     "schema": {"anyOf": [{"type": "number", "multipleOf": 1.5}, {"type": "number", "multipleOf": 3}]},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": "integer", "multipleOf": 3}, {"type": "number", "multipleOf": 1.5}]},
+    "expected_arbitrary_precision": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "multipleOf": 1.5},
     "tests": [
       {"data": 1.5, "valid": true},
       {"data": 3, "valid": true},
@@ -1536,6 +1537,144 @@
       {"data": 6, "valid": true},
       {"data": 4.5, "valid": false},
       {"data": 4, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an integer window every value of a number interval admits folds into it",
+    "schema": {"anyOf": [{"type": "integer", "minimum": -5}, {"type": "number", "multipleOf": 0.1}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "number", "multipleOf": 0.1},
+    "tests": [
+      {"data": -5, "valid": true},
+      {"data": -6, "valid": true},
+      {"data": 3, "valid": true},
+      {"data": 0.1, "valid": true},
+      {"data": 0.15, "valid": false},
+      {"data": "a", "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an integer window inside a bounded number interval folds into it",
+    "schema": {"anyOf": [
+      {"type": "integer", "minimum": 0, "maximum": 10},
+      {"type": "number", "minimum": -1, "maximum": 20, "multipleOf": 0.5}
+    ]},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "number",
+      "minimum": -1,
+      "maximum": 20,
+      "multipleOf": 0.5
+    },
+    "tests": [
+      {"data": 0, "valid": true},
+      {"data": 10, "valid": true},
+      {"data": 11, "valid": true},
+      {"data": -0.5, "valid": true},
+      {"data": 20.5, "valid": false},
+      {"data": 0.25, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an integer window reaching past a number interval stays apart",
+    "schema": {"anyOf": [
+      {"type": "integer", "minimum": 0},
+      {"type": "number", "minimum": 0, "maximum": 10, "multipleOf": 0.5}
+    ]},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "integer", "minimum": 0},
+        {"type": "number", "minimum": 0, "maximum": 10, "multipleOf": 0.5}
+      ]
+    },
+    "tests": [
+      {"data": 11, "valid": true},
+      {"data": 0.5, "valid": true},
+      {"data": 10.5, "valid": false},
+      {"data": -1, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an integer window a number progression steps over stays apart",
+    "schema": {"anyOf": [{"type": "integer", "minimum": -5}, {"type": "number", "multipleOf": 1.5}]},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "integer", "minimum": -5},
+        {"type": "number", "multipleOf": 1.5}
+      ]
+    },
+    "tests": [
+      {"data": -5, "valid": true},
+      {"data": 1.5, "valid": true},
+      {"data": 4.5, "valid": true},
+      {"data": -7, "valid": false},
+      {"data": 0.5, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: an integer window a barred divisor reaches stays apart",
+    "schema": {"anyOf": [
+      {"type": "integer", "minimum": 0},
+      {"type": "number", "multipleOf": 0.1, "not": {"multipleOf": 0.3}}
+    ]},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "integer", "minimum": 0},
+        {"type": "number", "multipleOf": 0.1, "not": {"multipleOf": 0.3}}
+      ]
+    },
+    "tests": [
+      {"data": 3, "valid": true},
+      {"data": 0.1, "valid": true},
+      {"data": -0.1, "valid": true},
+      {"data": 0.3, "valid": false},
+      {"data": -3, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: Draft 4, an integer window every value of a number interval admits folds into it",
+    "draft": "draft4",
+    "schema": {"anyOf": [{"type": "integer", "minimum": -5}, {"type": "number", "multipleOf": 0.1}]},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "number", "multipleOf": 0.1},
+    "tests": [
+      {"data": -5, "valid": true},
+      {"data": -6, "valid": true},
+      {"data": 1.0, "valid": true},
+      {"data": 0.15, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: Draft 4, an integer group every value of a number interval admits folds into it",
+    "draft": "draft4",
+    "schema": {"anyOf": [{"type": "integer", "enum": [1, 2]}, {"type": "number", "multipleOf": 0.5}]},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "number", "multipleOf": 0.5},
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": 3, "valid": true},
+      {"data": 1.0, "valid": true},
+      {"data": 0.5, "valid": true},
+      {"data": 0.25, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: Draft 4, an integer window stays beside a number interval barring the integers",
+    "draft": "draft4",
+    "schema": {"anyOf": [{"type": "integer", "minimum": 0}, {"type": "number", "not": {"type": "integer"}}]},
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {"type": "integer", "minimum": 0},
+        {"type": "number", "not": {"type": "integer"}}
+      ]
+    },
+    "tests": [
+      {"data": 0, "valid": true},
+      {"data": 0.5, "valid": true},
+      {"data": 1.0, "valid": true},
+      {"data": -1.5, "valid": true},
+      {"data": -1, "valid": false}
     ]
   }
 ]
