@@ -6,8 +6,8 @@ use serde_json::{json, Map, Value};
 use crate::{
     canonical::{
         ir::{
-            ArrayLeaf, BoundCardinality, CanonicalJson, ContainsFacet, Divisors, IntegerLeaf,
-            NumberLeaf, ObjectLeaf, Schema, SchemaKind, StringLeaf,
+            ArrayLeaf, BoundCardinality, BoundRational, CanonicalJson, ContainsFacet, Divisors,
+            ExcludedDivisors, IntegerLeaf, NumberLeaf, ObjectLeaf, Schema, SchemaKind, StringLeaf,
         },
         DefinitionMap, CANONICAL_REFERENCE_PREFIX,
     },
@@ -271,7 +271,7 @@ fn emit_number(leaf: &NumberLeaf, draft: Draft) -> Value {
             map.insert(exclusive_key.into(), limit);
         }
     }
-    emit_divisors(&mut map, &leaf.multiple_of);
+    emit_divisors(&mut map, &leaf.multiple_of, &leaf.not_multiple_of);
     Value::Object(map)
 }
 
@@ -525,29 +525,35 @@ fn emit_integer(leaf: &IntegerLeaf) -> Value {
     if let Some(max) = &leaf.bounds.maximum {
         map.insert("maximum".into(), Value::Number(max.to_number()));
     }
-    emit_divisors(&mut map, &leaf.multiple_of);
+    emit_divisors(&mut map, &leaf.multiple_of, &leaf.not_multiple_of);
     Value::Object(map)
 }
 
-/// A lone divisor sits beside the other facets; several are spelled as an `allOf`, since one
-/// `multipleOf` cannot carry them.
-fn emit_divisors(map: &mut Map<String, Value>, divisors: &Divisors) {
+/// A lone divisor sits beside the other facets, and a lone barred one under `not`; several of
+/// either are spelled as an `allOf`, since one keyword slot cannot carry them.
+fn emit_divisors(map: &mut Map<String, Value>, divisors: &Divisors, barred: &ExcludedDivisors) {
+    let step_object = |step: &BoundRational| {
+        let mut object = Map::new();
+        object.insert("multipleOf".into(), Value::Number(step.to_number()));
+        Value::Object(object)
+    };
+    let mut conjuncts: Vec<Value> = Vec::new();
     match divisors.as_slice() {
         [] => {}
         [step] => {
             map.insert("multipleOf".into(), Value::Number(step.to_number()));
         }
-        steps => {
-            let conjuncts = steps
-                .iter()
-                .map(|step| {
-                    let mut object = Map::new();
-                    object.insert("multipleOf".into(), Value::Number(step.to_number()));
-                    Value::Object(object)
-                })
-                .collect();
-            map.insert("allOf".into(), Value::Array(conjuncts));
+        steps => conjuncts.extend(steps.iter().map(step_object)),
+    }
+    match barred.as_slice() {
+        [] => {}
+        [step] => {
+            map.insert("not".into(), step_object(step));
         }
+        steps => conjuncts.extend(steps.iter().map(|step| keyed("not", step_object(step)))),
+    }
+    if !conjuncts.is_empty() {
+        map.insert("allOf".into(), Value::Array(conjuncts));
     }
 }
 

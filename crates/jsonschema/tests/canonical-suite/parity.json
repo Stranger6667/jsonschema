@@ -283,15 +283,16 @@
       5
     ],
     "expected": {
-      "else": {
-        "type": "string"
-      },
-      "if": {
-        "type": "integer"
-      },
-      "then": {
-        "minimum": 0
-      }
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer",
+          "minimum": 0
+        }
+      ]
     }
   },
   {
@@ -1689,10 +1690,11 @@
       }
     ],
     "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "number",
       "not": {
-        "type": "integer"
-      },
-      "type": "number"
+        "multipleOf": 1
+      }
     }
   },
   {
@@ -2297,12 +2299,20 @@
       }
     ],
     "expected": {
-      "if": {
-        "type": "integer"
-      },
-      "then": {
-        "minimum": 0
-      }
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": ["null", "boolean", "string", "array", "object"]
+        },
+        {
+          "type": "number",
+          "not": {"multipleOf": 1}
+        },
+        {
+          "type": "number",
+          "minimum": 0
+        }
+      ]
     }
   },
   {

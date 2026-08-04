@@ -1824,6 +1824,10 @@ fn negate_spells_the_complement(schema: &Value, expected: &Value) {
     &json!({"type": "array", "items": {"type": "string"}, "contains": {"const": "a"}});
     "array existential demand beside an element schema"
 )]
+#[test_case(&json!({"type": "integer"}); "integer leaf")]
+#[test_case(&json!({"type": "integer", "minimum": 0}); "bounded integer leaf")]
+#[test_case(&json!({"type": "integer", "multipleOf": 3}); "integer leaf with a divisor")]
+#[test_case(&json!({"type": "number", "multipleOf": 0.5}); "number leaf with a divisor")]
 fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
     let complement = canonicalize(schema)
         .expect("canonicalizes")
@@ -1857,8 +1861,10 @@ fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
 }
 
 // The decline set is contract: a caller sizes its fallback on it, so widening it is a visible change.
-#[test_case(&json!({"type": "integer"}); "integer leaf")]
-#[test_case(&json!({"type": "integer", "minimum": 0}); "bounded integer leaf")]
+#[test_case(
+    &json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": "integer"});
+    "draft 4 integer leaf"
+)]
 #[test_case(
     &json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": "integer", "enum": [1, 2]});
     "typed group"

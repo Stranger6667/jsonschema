@@ -10,9 +10,9 @@ use crate::{
         ir::{
             canonicalize_value_set, tighter, type_set_schema, typed_group, ArrayLeaf, ArrayLeaves,
             AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber, BoundRational, CanonicalJson,
-            ContainsFacet, Discrete, Divisors, IntegerBounds, IntegerLeaf, IntegerLeaves,
-            LengthBounds, NonEmpty, NumberLeaf, NumberLeaves, ObjectLeaf, ObjectLeaves, Round,
-            Schema, SchemaKind, Side, StringLeaf, StringLeaves, Verdict,
+            ContainsFacet, Discrete, Divisors, ExcludedDivisors, IntegerBounds, IntegerLeaf,
+            IntegerLeaves, LengthBounds, NonEmpty, NumberLeaf, NumberLeaves, ObjectLeaf,
+            ObjectLeaves, Round, Schema, SchemaKind, Side, StringLeaf, StringLeaves, Verdict,
         },
         negate, oracle, parse,
     },
@@ -736,15 +736,19 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     }
     let mut widened = types;
     integers.retain(|leaf| {
-        let spans_domain = leaf.bounds.is_unbounded() && leaf.multiple_of.is_empty();
+        let spans_domain = leaf.bounds.is_unbounded()
+            && leaf.multiple_of.is_empty()
+            && leaf.not_multiple_of.is_empty();
         if spans_domain {
             widened = union_type_sets(widened, JsonTypeSet::from(JsonType::Integer));
         }
         !spans_domain
     });
     numbers.retain(|leaf| {
-        let spans_domain =
-            leaf.minimum.is_none() && leaf.maximum.is_none() && leaf.multiple_of.is_empty();
+        let spans_domain = leaf.minimum.is_none()
+            && leaf.maximum.is_none()
+            && leaf.multiple_of.is_empty()
+            && leaf.not_multiple_of.is_empty();
         if spans_domain {
             widened = union_type_sets(widened, JsonTypeSet::from(JsonType::Number));
         }
@@ -1117,6 +1121,7 @@ fn lift_degenerate_member(
                     maximum: Some(bound),
                 },
                 multiple_of: Divisors::default(),
+                not_multiple_of: ExcludedDivisors::default(),
             });
             true
         }
@@ -1134,6 +1139,7 @@ fn lift_degenerate_member(
                 minimum: Some(bound.clone()),
                 maximum: Some(bound),
                 multiple_of: Divisors::default(),
+                not_multiple_of: ExcludedDivisors::default(),
             };
             let collapses_back = matches!(
                 number_leaf(window.clone(), ctx).kind(),
@@ -2291,6 +2297,8 @@ fn intersect_integer_leaves(first: IntegerLeaf, second: IntegerLeaf) -> IntegerL
     IntegerLeaf {
         bounds: first.bounds.intersect(second.bounds),
         multiple_of: first.multiple_of.intersect(second.multiple_of),
+        // Meeting both sets of exclusions is meeting their union.
+        not_multiple_of: first.not_multiple_of.intersect(second.not_multiple_of),
     }
 }
 
@@ -2315,6 +2323,7 @@ pub(crate) fn number_leaf(leaf: NumberLeaf, ctx: &CanonicalizationContext) -> Sc
                 IntegerLeaf {
                     bounds,
                     multiple_of: leaf.multiple_of,
+                    not_multiple_of: leaf.not_multiple_of,
                 },
                 ctx,
             );
@@ -2326,7 +2335,9 @@ pub(crate) fn number_leaf(leaf: NumberLeaf, ctx: &CanonicalizationContext) -> Sc
     if let (Some(min), Some(max)) = (&leaf.get().minimum, &leaf.get().maximum) {
         if min.is_inclusive() && max.is_inclusive() && min.to_number() == max.to_number() {
             let point = min.to_number();
-            return if leaf.get().multiple_of.divide(&point) {
+            return if leaf.get().multiple_of.divide(&point)
+                && !leaf.get().not_multiple_of.bars(&point)
+            {
                 Schema::new(SchemaKind::Const(CanonicalJson::from_value(
                     &Value::Number(point),
                 )))
@@ -3606,8 +3617,9 @@ fn intersect_number_leaves(first: NumberLeaf, second: NumberLeaf) -> NumberLeaf 
     NumberLeaf {
         minimum: tightest(first.minimum, second.minimum, Side::Lower),
         maximum: tightest(first.maximum, second.maximum, Side::Upper),
-        // Meeting both sets of divisors is meeting their union.
+        // Meeting both sets of divisors is meeting their union, and likewise the exclusions.
         multiple_of: first.multiple_of.intersect(second.multiple_of),
+        not_multiple_of: first.not_multiple_of.intersect(second.not_multiple_of),
     }
 }
 
@@ -3627,6 +3639,7 @@ fn snap_to_progression(leaf: NumberLeaf) -> NumberLeaf {
         minimum: snap(leaf.minimum, Round::Up),
         maximum: snap(leaf.maximum, Round::Down),
         multiple_of: leaf.multiple_of,
+        not_multiple_of: leaf.not_multiple_of,
     }
 }
 
@@ -3653,6 +3666,7 @@ fn integer_within(leaf: &NumberLeaf, ctx: &CanonicalizationContext) -> Schema {
         IntegerLeaf {
             bounds,
             multiple_of: leaf.multiple_of.clone(),
+            not_multiple_of: leaf.not_multiple_of.clone(),
         },
         ctx,
     )
@@ -3700,6 +3714,7 @@ fn number_leaf_admits(leaf: &NumberLeaf, member: &CanonicalJson) -> bool {
             .as_ref()
             .is_none_or(|max| max.admits(number, Side::Upper))
         && leaf.multiple_of.divide(number)
+        && !leaf.not_multiple_of.bars(number)
 }
 
 /// An `Integer` node, collapsed to `False` when its interval is empty and to the value itself when the
@@ -3711,7 +3726,10 @@ pub(crate) fn integer_leaf(leaf: IntegerLeaf, ctx: &CanonicalizationContext) -> 
     };
     // A leaf no facet survives on admits every integer, which the bare type set already spells;
     // keeping the leaf shape would give one value set two IR forms.
-    if leaf.bounds.minimum.is_none() && leaf.bounds.maximum.is_none() && leaf.multiple_of.is_empty()
+    if leaf.bounds.minimum.is_none()
+        && leaf.bounds.maximum.is_none()
+        && leaf.multiple_of.is_empty()
+        && leaf.not_multiple_of.is_empty()
     {
         return type_set_schema(JsonTypeSet::from(JsonType::Integer));
     }
@@ -3722,7 +3740,7 @@ pub(crate) fn integer_leaf(leaf: IntegerLeaf, ctx: &CanonicalizationContext) -> 
         if min == max {
             let point = min.to_number();
             // Only a divisor snapping could not pull onto the progression is left to check here.
-            if !leaf.get().multiple_of.divide(&point) {
+            if !leaf.get().multiple_of.divide(&point) || leaf.get().not_multiple_of.bars(&point) {
                 return Schema::new(SchemaKind::False);
             }
             let value = Schema::new(SchemaKind::Const(CanonicalJson::from_value(
@@ -3766,6 +3784,7 @@ fn snap_to_multiples(leaf: IntegerLeaf) -> Option<IntegerLeaf> {
     Some(IntegerLeaf {
         bounds: IntegerBounds { minimum, maximum },
         multiple_of: leaf.multiple_of,
+        not_multiple_of: leaf.not_multiple_of,
     })
 }
 
@@ -3774,6 +3793,9 @@ fn integer_leaf_admits(leaf: &IntegerLeaf, member: &CanonicalJson) -> bool {
     let Value::Number(number) = member.as_value() else {
         return false;
     };
+    if leaf.not_multiple_of.bars(number) {
+        return false;
+    }
     match BoundInteger::from_number(number) {
         Some(value) => leaf.bounds.contains(&value) && leaf.multiple_of.divide(number),
         // A value past the representable range still gets a divisor verdict from the validator's

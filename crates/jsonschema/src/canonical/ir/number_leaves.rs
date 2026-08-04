@@ -36,7 +36,11 @@ impl NumberLeaves {
         //         {"type": "number", "multipleOf": 1.5}
         //       ]  =>  {"type": "number", "multipleOf": 0.5}
         drop_subsumed(&mut self.leaves, |outer, inner| {
-            covers(outer, inner) && outer.multiple_of.divide_all(&inner.multiple_of)
+            covers(outer, inner)
+                && outer.multiple_of.divide_all(&inner.multiple_of)
+                && outer
+                    .not_multiple_of
+                    .bars_no_more_than(&inner.not_multiple_of)
         });
         self.canonical = true;
         // `is_empty` reads the batch without canonicalizing, which relies on this.
@@ -104,19 +108,24 @@ fn merge(mut leaves: Vec<NumberLeaf>) -> Vec<NumberLeaf> {
     // an absent minimum is unbounded below, and on a shared limit the inclusive end starts earlier
     // than the excluded one.
     leaves.sort_by(|left, right| {
-        left.multiple_of.cmp(&right.multiple_of).then_with(|| {
-            match (&left.minimum, &right.minimum) {
+        left.multiple_of
+            .cmp(&right.multiple_of)
+            .then_with(|| left.not_multiple_of.cmp(&right.not_multiple_of))
+            .then_with(|| match (&left.minimum, &right.minimum) {
                 (Some(left), Some(right)) if left.to_number() == right.to_number() => {
                     right.is_inclusive().cmp(&left.is_inclusive())
                 }
                 (left, right) => left.cmp(right),
-            }
-        })
+            })
     });
     let mut merged: Vec<NumberLeaf> = Vec::with_capacity(leaves.len());
     for leaf in leaves {
         match merged.last_mut() {
-            Some(last) if last.multiple_of == leaf.multiple_of && reaches(last, &leaf) => {
+            Some(last)
+                if last.multiple_of == leaf.multiple_of
+                    && last.not_multiple_of == leaf.not_multiple_of
+                    && reaches(last, &leaf) =>
+            {
                 *last = hull(std::mem::take(last), leaf);
             }
             _ => merged.push(leaf),
@@ -170,13 +179,18 @@ fn hull(last: NumberLeaf, next: NumberLeaf) -> NumberLeaf {
                 && !right.is_tighter_than(left, Side::Lower)),
         "the tighter minimum sorted first"
     );
-    // `merge` folds only leaves carrying the same divisor, so `last` speaks for both.
+    // `merge` folds only leaves carrying the same divisors, so `last` speaks for both.
     debug_assert_eq!(
         last.multiple_of, next.multiple_of,
         "folding intervals under different divisors"
     );
+    debug_assert_eq!(
+        last.not_multiple_of, next.not_multiple_of,
+        "folding intervals under different exclusions"
+    );
     NumberLeaf {
         multiple_of: last.multiple_of,
+        not_multiple_of: last.not_multiple_of,
         minimum: last.minimum,
         maximum: match (last.maximum, next.maximum) {
             (Some(left), Some(right)) => Some(if left.is_tighter_than(&right, Side::Upper) {

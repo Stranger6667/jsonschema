@@ -151,16 +151,23 @@
     ]
   },
   {
-    "description": "not of an integer type stays raw: the complement needs a non-integer-number facet",
+    "description": "not of an integer type carves the non-integer numbers out of the number line",
     "schema": {
       "not": {
         "type": "integer"
       }
     },
     "expected": {
-      "not": {
-        "type": "integer"
-      }
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": ["null", "boolean", "string", "array", "object"]
+        },
+        {
+          "type": "number",
+          "not": {"multipleOf": 1}
+        }
+      ]
     },
     "tests": [
       {
@@ -964,7 +971,7 @@
     ]
   },
   {
-    "description": "not of a number window carrying a divisor stays raw: the complement needs a negative divisor",
+    "description": "not of a number window carrying a divisor bars the divisor",
     "schema": {
       "not": {
         "type": "number",
@@ -972,10 +979,20 @@
       }
     },
     "expected": {
-      "not": {
-        "type": "number",
-        "multipleOf": 2
-      }
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": ["null", "boolean", "string", "array", "object"]
+        },
+        {
+          "type": "integer",
+          "not": {"multipleOf": 2}
+        },
+        {
+          "type": "number",
+          "not": {"multipleOf": 1}
+        }
+      ]
     },
     "tests": [
       {
@@ -1394,7 +1411,7 @@
     ]
   },
   {
-    "description": "not of an integer-valued property stays raw: the child complement needs a non-integer number",
+    "description": "not of an integer-valued property holds the key with a non-integer value",
     "schema": {
       "not": {
         "type": "object",
@@ -1406,14 +1423,29 @@
       }
     },
     "expected": {
-      "not": {
-        "type": "object",
-        "properties": {
-          "a": {
-            "type": "integer"
-          }
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": ["null", "boolean", "number", "string", "array"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "a": {
+              "anyOf": [
+                {
+                  "type": ["null", "boolean", "string", "array", "object"]
+                },
+                {
+                  "type": "number",
+                  "not": {"multipleOf": 1}
+                }
+              ]
+            }
+          },
+          "required": ["a"]
         }
-      }
+      ]
     },
     "tests": [
       {
@@ -1555,7 +1587,7 @@
     ]
   },
   {
-    "description": "not of a union with an integer branch stays raw: one branch complement is inexpressible",
+    "description": "not of a union with an integer branch intersects the branch complements",
     "schema": {
       "not": {
         "anyOf": [
@@ -1569,16 +1601,16 @@
       }
     },
     "expected": {
-      "not": {
-        "anyOf": [
-          {
-            "type": "integer"
-          },
-          {
-            "type": "string"
-          }
-        ]
-      }
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": ["null", "boolean", "array", "object"]
+        },
+        {
+          "type": "number",
+          "not": {"multipleOf": 1}
+        }
+      ]
     },
     "tests": [
       {
@@ -2545,6 +2577,124 @@
       {"data": "http://example.com", "valid": false},
       {"data": "\\\\", "valid": true},
       {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "not of a bare multipleOf keeps the numbers off the grid",
+    "schema": {"not": {"multipleOf": 3}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": "integer", "not": {"multipleOf": 3}}, {"type": "number", "not": {"multipleOf": 1}}]},
+    "tests": [
+      {"data": 3, "valid": false},
+      {"data": 4, "valid": true},
+      {"data": 1.5, "valid": true},
+      {"data": "x", "valid": false}
+    ]
+  },
+  {
+    "description": "a divisor demanded and barred at once admits no number",
+    "schema": {"type": "number", "multipleOf": 3, "not": {"multipleOf": 3}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": 3, "valid": false},
+      {"data": 4, "valid": false}
+    ]
+  },
+  {
+    "description": "a barred divisor covering another folds the pair",
+    "schema": {"type": "number", "allOf": [{"not": {"multipleOf": 2}}, {"not": {"multipleOf": 4}}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": "integer", "not": {"multipleOf": 2}}, {"type": "number", "not": {"multipleOf": 1}}]},
+    "tests": [
+      {"data": 4, "valid": false},
+      {"data": 2, "valid": false},
+      {"data": 6, "valid": false},
+      {"data": 3, "valid": true},
+      {"data": 1.5, "valid": true}
+    ]
+  },
+  {
+    "description": "not of a bounded integer adds the integers outside the window",
+    "schema": {"not": {"type": "integer", "minimum": 0}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": ["null", "boolean", "string", "array", "object"]}, {"type": "integer", "maximum": -1}, {"type": "number", "not": {"multipleOf": 1}}]},
+    "tests": [
+      {"data": -1, "valid": true},
+      {"data": 0, "valid": false},
+      {"data": 5, "valid": false},
+      {"data": 1.5, "valid": true},
+      {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "not of a divisor-bearing integer bars the divisor over the integers",
+    "schema": {"not": {"type": "integer", "multipleOf": 3}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": ["null", "boolean", "string", "array", "object"]}, {"type": "integer", "not": {"multipleOf": 3}}, {"type": "number", "not": {"multipleOf": 1}}]},
+    "tests": [
+      {"data": 6, "valid": false},
+      {"data": 4, "valid": true},
+      {"data": 1.5, "valid": true}
+    ]
+  },
+  {
+    "description": "not of a type set missing number keeps the non-integer numbers",
+    "schema": {"not": {"type": ["integer", "string"]}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": ["null", "boolean", "array", "object"]}, {"type": "number", "not": {"multipleOf": 1}}]},
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": "x", "valid": false},
+      {"data": 1.5, "valid": true},
+      {"data": true, "valid": true}
+    ]
+  },
+  {
+    "description": "not of a barred divisor restores the demanded one",
+    "schema": {"not": {"type": "number", "not": {"multipleOf": 3}}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": ["null", "boolean", "string", "array", "object"]}, {"type": "integer", "multipleOf": 3}]},
+    "tests": [
+      {"data": 3, "valid": true},
+      {"data": 4, "valid": false},
+      {"data": 1.5, "valid": false},
+      {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "an integer window and its complement leave nothing",
+    "schema": {"allOf": [{"allOf": [{"type": "integer"}, {"minimum": 0}]}, {"not": {"type": "integer", "minimum": 0}}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": 0, "valid": false},
+      {"data": -1, "valid": false},
+      {"data": 1.5, "valid": false}
+    ]
+  },
+  {
+    "description": "not of an integer type stays raw under draft 4: 1.0 is not an integer there",
+    "draft": "draft4",
+    "schema": {"not": {"type": "integer"}},
+    "expected": {"not": {"type": "integer"}},
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": 1.5, "valid": true},
+      {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "a fractional divisor demanded and barred at once admits no number",
+    "schema": {"type": "number", "multipleOf": 0.5, "not": {"multipleOf": 0.5}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": 0.5, "valid": false},
+      {"data": 0.75, "valid": false}
+    ]
+  },
+  {
+    "description": "a barred divisor drops the value-set members on its grid",
+    "schema": {"enum": [3, 4], "type": "integer", "not": {"multipleOf": 3}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "const": 4},
+    "tests": [
+      {"data": 3, "valid": false},
+      {"data": 4, "valid": true}
     ]
   }
 ]

@@ -162,6 +162,7 @@ impl RbCanonicalSchema {
                     maximum: view.maximum,
                     exclusive_maximum: view.exclusive_maximum,
                     multiple_of: view.multiple_of,
+                    not_multiple_of: view.not_multiple_of,
                 })
                 .as_value(),
             CanonicalView::Integer(view) => ruby
@@ -169,6 +170,7 @@ impl RbCanonicalSchema {
                     minimum: view.minimum,
                     maximum: view.maximum,
                     multiple_of: view.multiple_of,
+                    not_multiple_of: view.not_multiple_of,
                 })
                 .as_value(),
             CanonicalView::Array(view) => ruby
@@ -490,6 +492,7 @@ pub struct NumberView {
     maximum: Option<serde_json::Number>,
     exclusive_maximum: bool,
     multiple_of: Vec<serde_json::Number>,
+    not_multiple_of: Vec<serde_json::Number>,
 }
 
 impl DataTypeFunctions for NumberView {}
@@ -515,14 +518,19 @@ impl NumberView {
         divisors_to_ruby(ruby, &rb_self.multiple_of)
     }
 
+    fn not_multiple_of(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        divisors_to_ruby(ruby, &rb_self.not_multiple_of)
+    }
+
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
-            "#<JSONSchema::Canonical::NumberView minimum={} exclusive_minimum={} maximum={} exclusive_maximum={} multiple_of={}>",
+            "#<JSONSchema::Canonical::NumberView minimum={} exclusive_minimum={} maximum={} exclusive_maximum={} multiple_of={} not_multiple_of={}>",
             Self::minimum(ruby, rb_self)?.inspect(),
             Self::exclusive_minimum(ruby, rb_self).inspect(),
             Self::maximum(ruby, rb_self)?.inspect(),
             Self::exclusive_maximum(ruby, rb_self).inspect(),
-            Self::multiple_of(ruby, rb_self)?.inspect()
+            Self::multiple_of(ruby, rb_self)?.inspect(),
+            Self::not_multiple_of(ruby, rb_self)?.inspect()
         ))
     }
 
@@ -542,6 +550,10 @@ impl NumberView {
             ruby.sym_new("multiple_of"),
             Self::multiple_of(ruby, rb_self)?,
         )?;
+        hash.aset(
+            ruby.sym_new("not_multiple_of"),
+            Self::not_multiple_of(ruby, rb_self)?,
+        )?;
         Ok(hash)
     }
 }
@@ -553,6 +565,7 @@ pub struct IntegerView {
     minimum: Option<serde_json::Number>,
     maximum: Option<serde_json::Number>,
     multiple_of: Vec<serde_json::Number>,
+    not_multiple_of: Vec<serde_json::Number>,
 }
 
 impl DataTypeFunctions for IntegerView {}
@@ -570,12 +583,17 @@ impl IntegerView {
         divisors_to_ruby(ruby, &rb_self.multiple_of)
     }
 
+    fn not_multiple_of(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        divisors_to_ruby(ruby, &rb_self.not_multiple_of)
+    }
+
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
-            "#<JSONSchema::Canonical::IntegerView minimum={} maximum={} multiple_of={}>",
+            "#<JSONSchema::Canonical::IntegerView minimum={} maximum={} multiple_of={} not_multiple_of={}>",
             Self::minimum(ruby, rb_self)?.inspect(),
             Self::maximum(ruby, rb_self)?.inspect(),
-            Self::multiple_of(ruby, rb_self)?.inspect()
+            Self::multiple_of(ruby, rb_self)?.inspect(),
+            Self::not_multiple_of(ruby, rb_self)?.inspect()
         ))
     }
 
@@ -586,6 +604,10 @@ impl IntegerView {
         hash.aset(
             ruby.sym_new("multiple_of"),
             Self::multiple_of(ruby, rb_self)?,
+        )?;
+        hash.aset(
+            ruby.sym_new("not_multiple_of"),
+            Self::not_multiple_of(ruby, rb_self)?,
         )?;
         Ok(hash)
     }
@@ -1230,6 +1252,7 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
         method!(NumberView::exclusive_maximum, 0),
     )?;
     number_view.define_method("multiple_of", method!(NumberView::multiple_of, 0))?;
+    number_view.define_method("not_multiple_of", method!(NumberView::not_multiple_of, 0))?;
     number_view.define_method("inspect", method!(NumberView::inspect, 0))?;
     number_view.define_method("deconstruct_keys", method!(NumberView::deconstruct_keys, 1))?;
 
@@ -1237,6 +1260,7 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     integer_view.define_method("minimum", method!(IntegerView::minimum, 0))?;
     integer_view.define_method("maximum", method!(IntegerView::maximum, 0))?;
     integer_view.define_method("multiple_of", method!(IntegerView::multiple_of, 0))?;
+    integer_view.define_method("not_multiple_of", method!(IntegerView::not_multiple_of, 0))?;
     integer_view.define_method("inspect", method!(IntegerView::inspect, 0))?;
     integer_view.define_method(
         "deconstruct_keys",
