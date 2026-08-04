@@ -280,5 +280,25 @@
         "$schema": "http://json-schema.org/draft-06/schema#"
       }
     }
+  },
+  {
+    "description": "a barred pattern in the if branch demands the pattern on the negative arm",
+    "schemas": [
+      {"if": {"type": "string", "not": {"pattern": "^a"}}, "then": {"maxLength": 5}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "array", "object"]},
+        {"type": "string", "pattern": "^a"},
+        {"type": "string", "maxLength": 5}
+      ]
+    },
+    "tests": [
+      {"data": "abcdefghij", "valid": true},
+      {"data": "xyz", "valid": true},
+      {"data": "xyzxyzxyz", "valid": false},
+      {"data": 1, "valid": true}
+    ]
   }
 ]

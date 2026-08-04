@@ -1212,5 +1212,30 @@
       {"data": {"a": "xes"}, "valid": false},
       {"data": {}, "valid": false}
     ]
+  },
+  {
+    "description": "oneOf over a barred pattern and a length window swaps each branch's exclusion",
+    "schemas": [
+      {
+        "oneOf": [
+          {"type": "string", "not": {"pattern": "^a"}},
+          {"type": "string", "minLength": 3}
+        ]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "string", "maxLength": 2, "allOf": [{"not": {"pattern": "^a"}}]},
+        {"type": "string", "minLength": 3, "pattern": "^a"}
+      ]
+    },
+    "tests": [
+      {"data": "xy", "valid": true},
+      {"data": "abc", "valid": true},
+      {"data": "xyz", "valid": false},
+      {"data": "ab", "valid": false},
+      {"data": 1, "valid": false}
+    ]
   }
 ]
