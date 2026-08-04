@@ -564,6 +564,13 @@ mod tests {
     #[test_case(r#"{"minimum": 18446744073709551615}"#, r"18446744073709551616"; "minimum valid just above u64_max limit")]
     #[test_case(r#"{"maximum": 1e2000000}"#, r"18446744073709551616"; "bigint instance below infinity maximum")]
     #[test_case(r#"{"minimum": -1e2000000}"#, r"-9223372036854775809"; "bigint instance above negative infinity minimum")]
+    // Exponents below the f64 subnormal range underflow to a signed zero; the exact value still
+    // sits strictly on one side of the limit.
+    #[test_case(r#"{"exclusiveMinimum": 0}"#, "1e-400"; "underflowing positive above exclusive zero minimum")]
+    #[test_case(r#"{"exclusiveMaximum": 0}"#, "-1e-400"; "underflowing negative below exclusive zero maximum")]
+    #[test_case(r#"{"minimum": 0}"#, "1e-400"; "underflowing positive above zero minimum")]
+    #[test_case(r#"{"maximum": 0}"#, "-1e-400"; "underflowing negative below zero maximum")]
+    #[test_case(r#"{"maximum": 1}"#, "0.99999999999999999999999"; "instance f64 rounds onto an integer maximum")]
     fn is_valid_arbitrary_precision(schema_json: &str, instance_json: &str) {
         let schema = parse_json(schema_json);
         let instance = parse_json(instance_json);
@@ -598,6 +605,13 @@ mod tests {
     #[test_case(r#"{"maximum": -1e2000000}"#, r"-9223372036854775809"; "bigint instance above negative infinity maximum")]
     #[test_case(r#"{"maximum": -10000000000000000000000000.1}"#, r"-10000000000000000000000000"; "bigint instance above a fractional maximum f64 rounds onto it")]
     #[test_case(r#"{"minimum": 10000000000000000000000000.1}"#, r"10000000000000000000000000"; "bigint instance below a fractional minimum f64 rounds onto it")]
+    // Exponents below the f64 subnormal range underflow to a signed zero; the exact value still
+    // sits strictly on one side of the limit.
+    #[test_case(r#"{"maximum": 0}"#, "1e-400"; "underflowing positive above zero maximum")]
+    #[test_case(r#"{"minimum": 0}"#, "-1e-400"; "underflowing negative below zero minimum")]
+    #[test_case(r#"{"exclusiveMaximum": 0}"#, "1e-400"; "underflowing positive above exclusive zero maximum")]
+    #[test_case(r#"{"exclusiveMinimum": 0}"#, "-1e-400"; "underflowing negative below exclusive zero minimum")]
+    #[test_case(r#"{"minimum": 1}"#, "0.99999999999999999999999"; "instance f64 rounds onto an integer minimum")]
     fn is_not_valid_arbitrary_precision(schema_json: &str, instance_json: &str) {
         let schema = parse_json(schema_json);
         let instance = parse_json(instance_json);

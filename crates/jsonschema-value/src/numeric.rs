@@ -11,6 +11,27 @@ use fraction::{BigFraction, One, Zero};
 #[cfg(feature = "arbitrary-precision")]
 use std::cmp::Ordering;
 
+/// Exact ordering of `value` against `limit`, given `rounded`, the instance's `f64` form.
+///
+/// Rounding to `f64` is monotone, so an instance landing strictly to one side of the limit is on
+/// that side exactly. Disagreement needs a conversion that saturates, underflows to a signed
+/// zero, or lands on the limit itself, and only those take the exact route.
+/// `None` leaves the caller on `f64`.
+#[cfg(feature = "arbitrary-precision")]
+#[inline]
+fn exact_ordering<N, T>(value: &N, rounded: f64, limit: T) -> Option<Ordering>
+where
+    N: crate::JsonNumber,
+    T: Copy + num_traits::ToPrimitive,
+    f64: num_cmp::NumCmp<T>,
+{
+    let saturated = rounded <= i64::MIN as f64 || rounded >= u64::MAX as f64;
+    if !saturated && !num_cmp::NumCmp::num_eq(rounded, limit) {
+        return None;
+    }
+    bignum::compare_to_limit(&value.to_number(), limit)
+}
+
 macro_rules! define_num_cmp {
     ($($trait_fn:ident => $fn_name:ident, $op:tt, $infinity_positive:literal, $ord_pat:pat),* $(,)?) => {
         $(
@@ -27,15 +48,9 @@ macro_rules! define_num_cmp {
                 } else if let Some(v) = value.as_i64() {
                     num_cmp::NumCmp::$trait_fn(v, limit)
                 } else if let Some(v) = value.as_f64() {
-                    // Integers outside u64/i64 lose precision in `as_f64` and can round exactly
-                    // onto the limit (e.g. -9223372036854775809 -> -2^63); compare them exactly.
                     #[cfg(feature = "arbitrary-precision")]
-                    if v <= i64::MIN as f64 || v >= u64::MAX as f64 {
-                        if let Some(big_value) = bignum::try_parse_bigint(&value.to_number()) {
-                            if let Some(ordering) = bignum::compare_bigint_to_limit(&big_value, limit) {
-                                return matches!(ordering, $ord_pat);
-                            }
-                        }
+                    if let Some(ordering) = exact_ordering(value, v, limit) {
+                        return matches!(ordering, $ord_pat);
                     }
                     num_cmp::NumCmp::$trait_fn(v, limit)
                 } else {
@@ -86,6 +101,10 @@ where
     } else if let Some(v) = value.as_i64() {
         num_cmp::NumCmp::num_eq(v, limit)
     } else if let Some(v) = value.as_f64() {
+        #[cfg(feature = "arbitrary-precision")]
+        if let Some(ordering) = exact_ordering(value, v, limit) {
+            return ordering == Ordering::Equal;
+        }
         num_cmp::NumCmp::num_eq(v, limit)
     } else {
         #[cfg(feature = "arbitrary-precision")]
@@ -160,6 +179,13 @@ pub fn is_multiple_of_integer<N: crate::JsonNumber>(value: &N, multiple: f64) ->
     }
 
     if let Some(value_f64) = value.as_f64() {
+        // A magnitude below the smallest subnormal underflows to zero, which the modulo below
+        // would read as the divisor dividing evenly; such a value is a proper fraction of any
+        // whole divisor.
+        #[cfg(feature = "arbitrary-precision")]
+        if value_f64 == 0.0 && !bignum::is_zero_literal(&value.to_number()) {
+            return false;
+        }
         // As the divisor has its fractional part as zero, then any value with a non-zero
         // fractional part can't be a multiple of this divisor, therefore it is short-circuited
         value_f64.fract() == 0. && (value_f64 % multiple) == 0.
@@ -499,6 +525,46 @@ pub mod bignum {
             return Some(Ordering::Greater);
         }
         None
+    }
+
+    /// The limit as an exact fraction, for instances that only have a rational form.
+    ///
+    /// `None` where the limit itself is not an exact integer, leaving the caller on `f64`.
+    fn limit_as_bigfraction<T>(limit: T) -> Option<BigFraction>
+    where
+        T: Copy + ToPrimitive,
+    {
+        if limit.to_f64()?.fract() != 0.0 {
+            return None;
+        }
+        if let Some(limit_int) = limit.to_i64() {
+            return Some(BigFraction::from(limit_int));
+        }
+        limit.to_u64().map(BigFraction::from)
+    }
+
+    /// Exact ordering of a JSON number literal against a numeric limit.
+    ///
+    /// `None` means no exact form is available on one side and the caller should fall back to
+    /// `f64` comparison.
+    pub(crate) fn compare_to_limit<T>(num: &Number, limit: T) -> Option<std::cmp::Ordering>
+    where
+        T: Copy + ToPrimitive,
+    {
+        if let Some(big) = try_parse_bigint(num) {
+            return compare_bigint_to_limit(&big, limit);
+        }
+        let value = try_parse_bigfraction(num)?;
+        value.partial_cmp(&limit_as_bigfraction(limit)?)
+    }
+
+    /// Whether a JSON number literal denotes exactly zero.
+    ///
+    /// Magnitudes below the smallest `f64` subnormal underflow to a signed zero, so the `f64`
+    /// value alone cannot tell a true zero from a tiny one.
+    pub(crate) fn is_zero_literal(num: &Number) -> bool {
+        DecimalComponents::parse(num.as_str())
+            .is_some_and(|components| digits_are_zero(&components.digits))
     }
 
     macro_rules! define_bigint_cmp {

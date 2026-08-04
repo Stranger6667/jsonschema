@@ -516,6 +516,12 @@ mod tests {
         #[test_case(r#"{"exclusiveMaximum": 18446744073709551616}"#, "1e10", true; "bigint exclusive max")]
         #[test_case(r#"{"minimum": 18446744073709551616}"#, "100", false; "small number below bigint min")]
         #[test_case(r#"{"maximum": 18446744073709551616}"#, "99999999999999999999", false; "large number above bigint max")]
+        // A divisor below the f64 subnormal range is a positive rational, so the schema is valid
+        // and the exact divisibility still decides each instance.
+        #[test_case(r#"{"multipleOf": 1e-400}"#, "1e-400", true; "underflowing divisor divides itself")]
+        #[test_case(r#"{"multipleOf": 1e-400}"#, "3e-400", true; "underflowing divisor divides a triple")]
+        #[test_case(r#"{"multipleOf": 1e-400}"#, "1e-401", false; "underflowing divisor does not divide a tenth")]
+        #[test_case(r#"{"multipleOf": 3}"#, "1e-400", false; "underflowing instance is not a multiple of three")]
         fn arbitrary_precision_validation(schema_json: &str, instance_json: &str, expected: bool) {
             let schema = parse_json(schema_json);
             let instance = parse_json(instance_json);
