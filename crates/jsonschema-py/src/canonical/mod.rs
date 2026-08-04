@@ -303,6 +303,13 @@ impl PyCanonicalSchema {
             .map_err(|error| canonicalization_error(py, error))
     }
 
+    /// Whether `other` admits every value this schema admits, or `None` when undecided.
+    fn is_subset_of(&self, py: Python<'_>, other: &Self) -> PyResult<Option<bool>> {
+        self.inner
+            .is_subset_of(&other.inner)
+            .map_err(|error| canonicalization_error(py, error))
+    }
+
     /// Every value this schema rejects, or `None` where the canonical form cannot spell it exactly.
     fn negate(&self) -> Option<Self> {
         self.inner.negate().map(|inner| Self { inner })

@@ -617,6 +617,10 @@ class CanonicalSchema:
         """Every value both schemas admit."""
         ...
 
+    def is_subset_of(self, other: CanonicalSchema) -> bool | None:
+        """Whether ``other`` admits every value this schema admits; ``None`` means undecided."""
+        ...
+
     def negate(self) -> CanonicalSchema | None:
         """Every value this schema rejects, or ``None`` where it cannot be spelled exactly."""
         ...

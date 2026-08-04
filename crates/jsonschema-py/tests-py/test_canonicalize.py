@@ -547,6 +547,36 @@ def test_intersect_rejects_distinct_definition_maps():
         left.intersect(right)
 
 
+@pytest.mark.parametrize(
+    ("left", "right", "expected"),
+    [
+        ({"type": "integer"}, {"type": "integer"}, True),
+        ({"const": 1}, {"type": "integer"}, True),
+        ({"enum": [1, 2]}, {"type": "integer"}, True),
+        ({"const": "x"}, {"type": "integer"}, False),
+        ({"enum": [1, "x"]}, {"type": "integer"}, False),
+        ({"type": "string"}, {"type": "integer"}, None),
+        ({"type": "integer"}, {"type": "integer", "minimum": 5}, None),
+    ],
+)
+def test_is_subset_of(left, right, expected):
+    assert canonicalize(left).is_subset_of(canonicalize(right)) is expected
+
+
+@pytest.mark.parametrize("swap", [False, True])
+def test_is_subset_of_rejects_unmodeled_operand(swap):
+    raw = canonicalize(UNMODELED)
+    modeled = canonicalize({"type": "string"})
+    left, right = (modeled, raw) if swap else (raw, modeled)
+    with pytest.raises(canonical.UnmodeledOperand):
+        left.is_subset_of(right)
+
+
+def test_is_subset_of_rejects_draft_mismatch():
+    with pytest.raises(canonical.IncompatibleOperands):
+        canonicalize({"type": "string"}, draft=7).is_subset_of(canonicalize({"type": "string"}, draft=20))
+
+
 def test_definition():
     schema = canonicalize({"$defs": {"A": {"type": "string"}}, "$ref": "#/$defs/A"})
     uri, target = next(iter(schema.definitions().items()))
