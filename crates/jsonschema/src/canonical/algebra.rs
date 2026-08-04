@@ -3276,11 +3276,12 @@ fn admitted_keys(leaf: &ObjectLeaf) -> Option<Vec<Arc<str>>> {
 
 /// What the leaf demands of `key`: its property schema met with every pattern schema matching it.
 fn key_schema(leaf: &ObjectLeaf, key: &str, ctx: &CanonicalizationContext) -> Schema {
-    let mut schema = leaf.properties.get(key).cloned().unwrap_or_else(|| {
-        leaf.additional
-            .clone()
-            .unwrap_or_else(|| Schema::new(SchemaKind::True))
-    });
+    let mut schema = leaf
+        .properties
+        .get(key)
+        .or_else(|| governing_shield(leaf, key, ctx))
+        .cloned()
+        .unwrap_or_else(|| Schema::new(SchemaKind::True));
     for (pattern, pattern_schema) in &leaf.pattern_properties {
         if matches_key(pattern, key, ctx) {
             schema = intersect(schema, pattern_schema.clone(), ctx);
@@ -3560,6 +3561,11 @@ fn intersect_object_leaves(
     second: ObjectLeaf,
     ctx: &CanonicalizationContext,
 ) -> ObjectLeaf {
+    let properties = intersect_property_entries(&first, &second, ctx);
+    let pattern_properties = intersect_pattern_entries(&first, &second, ctx);
+    if !spells_shielded_meet(&first, &second, &properties, ctx) {
+        ctx.record_unspellable_meet();
+    }
     let mut required = first.required;
     required.extend(second.required);
     required.sort();
@@ -3568,45 +3574,10 @@ fn intersect_object_leaves(
         (Some(left), Some(right)) => Some(intersect(left, right, ctx)),
         (names, None) | (None, names) => names,
     };
-    // A key named on one side only still answers to the other side's `additionalProperties`
-    // schema, so the merged entry meets it; a key named on both is shielded on both.
-    let first_shield = first.additional;
-    let second_shield = second.additional;
-    let mut properties = first.properties;
-    let first_named: Vec<Arc<str>> = properties.keys().cloned().collect();
-    let mut second_named: Vec<Arc<str>> = Vec::with_capacity(second.properties.len());
-    for (key, schema) in second.properties {
-        second_named.push(Arc::clone(&key));
-        let entry = match (properties.remove(&key), &first_shield) {
-            (Some(existing), _) => intersect(existing, schema, ctx),
-            (None, Some(shield)) => intersect(shield.clone(), schema, ctx),
-            (None, None) => schema,
-        };
-        properties.insert(key, entry);
-    }
-    if let Some(shield) = &second_shield {
-        for key in &first_named {
-            if !second_named.contains(key) {
-                let entry = properties
-                    .remove(key)
-                    .map(|entry| intersect(entry, shield.clone(), ctx));
-                if let Some(entry) = entry {
-                    properties.insert(Arc::clone(key), entry);
-                }
-            }
-        }
-    }
-    let additional = match (first_shield, second_shield) {
+    let additional = match (first.additional, second.additional) {
         (Some(left), Some(right)) => Some(intersect(left, right, ctx)),
         (shield, None) | (None, shield) => shield,
     };
-    let mut pattern_properties = first.pattern_properties;
-    for (pattern, schema) in second.pattern_properties {
-        match pattern_properties.remove(&pattern) {
-            Some(existing) => pattern_properties.insert(pattern, intersect(existing, schema, ctx)),
-            None => pattern_properties.insert(pattern, schema),
-        };
-    }
     ObjectLeaf {
         sizes: first.sizes.intersect(second.sizes),
         required,
@@ -3615,6 +3586,133 @@ fn intersect_object_leaves(
         pattern_properties,
         additional,
     }
+}
+
+/// What one leaf's `additionalProperties` demands of `key`, which is nothing unless that leaf
+/// leaves the key to the shield - naming it or matching it with a pattern takes it away.
+fn governing_shield<'leaf>(
+    leaf: &'leaf ObjectLeaf,
+    key: &str,
+    ctx: &CanonicalizationContext,
+) -> Option<&'leaf Schema> {
+    let shield = leaf.additional.as_ref()?;
+    if leaf.properties.contains_key(key) {
+        return None;
+    }
+    (!leaf
+        .pattern_properties
+        .keys()
+        .any(|pattern| matches_key(pattern, key, ctx)))
+    .then_some(shield)
+}
+
+/// The entry for every key either leaf names, meeting what both sides demand of it: the stored
+/// entry where the side names the key, and the side's shield where it leaves the key to one.
+fn intersect_property_entries(
+    first: &ObjectLeaf,
+    second: &ObjectLeaf,
+    ctx: &CanonicalizationContext,
+) -> BTreeMap<Arc<str>, Schema> {
+    let mut keys: Vec<&Arc<str>> = first
+        .properties
+        .keys()
+        .chain(second.properties.keys())
+        .collect();
+    keys.sort();
+    keys.dedup();
+    let mut entries = BTreeMap::new();
+    for key in keys {
+        let mut entry = Schema::new(SchemaKind::True);
+        for applicable in [
+            first.properties.get(key),
+            governing_shield(first, key, ctx),
+            second.properties.get(key),
+            governing_shield(second, key, ctx),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            entry = intersect(entry, applicable.clone(), ctx);
+        }
+        entries.insert(Arc::clone(key), entry);
+    }
+    entries
+}
+
+/// The pattern entries of both leaves, met where they share a pattern. A side carrying no pattern
+/// of its own sends every key the other side's patterns match to its shield, so that shield meets
+/// each of those entries.
+fn intersect_pattern_entries(
+    first: &ObjectLeaf,
+    second: &ObjectLeaf,
+    ctx: &CanonicalizationContext,
+) -> BTreeMap<Arc<str>, Schema> {
+    let mut entries = first.pattern_properties.clone();
+    for (pattern, schema) in &second.pattern_properties {
+        let entry = match entries.remove(pattern) {
+            Some(existing) => intersect(existing, schema.clone(), ctx),
+            None => schema.clone(),
+        };
+        entries.insert(Arc::clone(pattern), entry);
+    }
+    let shield = match (
+        first.pattern_properties.is_empty(),
+        second.pattern_properties.is_empty(),
+    ) {
+        (true, false) => first.additional.as_ref(),
+        (false, true) => second.additional.as_ref(),
+        (true, true) | (false, false) => None,
+    };
+    if let Some(shield) = shield {
+        for entry in entries.values_mut() {
+            *entry = intersect(entry.clone(), shield.clone(), ctx);
+        }
+    }
+    entries
+}
+
+/// Whether the merged entries say exactly what both leaves demand of every key.
+///
+/// Two pattern maps beside a shield would need to know which keys the patterns share, since a key
+/// only one map matches answers to the other map's shield and a key both match answers to neither.
+/// A key the shield's own side names is outside that shield, so an entry the shield already
+/// admits keeps the pattern it was met into faithful and anything narrower does not.
+fn spells_shielded_meet(
+    first: &ObjectLeaf,
+    second: &ObjectLeaf,
+    properties: &BTreeMap<Arc<str>, Schema>,
+    ctx: &CanonicalizationContext,
+) -> bool {
+    if !first.pattern_properties.is_empty() && !second.pattern_properties.is_empty() {
+        return first.additional.is_none() && second.additional.is_none();
+    }
+    shield_spares_named_keys(first, second, properties, ctx)
+        && shield_spares_named_keys(second, first, properties, ctx)
+}
+
+/// Whether `shielded`'s shield, met into every pattern entry `patterned` carries, leaves the keys
+/// `shielded` names as they were.
+fn shield_spares_named_keys(
+    shielded: &ObjectLeaf,
+    patterned: &ObjectLeaf,
+    properties: &BTreeMap<Arc<str>, Schema>,
+    ctx: &CanonicalizationContext,
+) -> bool {
+    let Some(shield) = &shielded.additional else {
+        return true;
+    };
+    if patterned.pattern_properties.is_empty() {
+        return true;
+    }
+    shielded.properties.keys().all(|key| {
+        !patterned
+            .pattern_properties
+            .keys()
+            .any(|pattern| matches_key(pattern, key, ctx))
+            || properties
+                .get(key)
+                .is_some_and(|entry| oracle::covers(entry, shield, ctx) == Verdict::Admits)
+    })
 }
 
 /// Restrict `member` to the objects the leaf admits. `Partial` arises only under Draft 4, where a
@@ -3710,7 +3808,10 @@ fn object_leaf_admits(
         return Verdict::Rejects;
     }
     let values = Verdict::all(map.iter().map(|(key, value)| {
-        let named = match (leaf.properties.get(key.as_str()), &leaf.additional) {
+        let named = match (
+            leaf.properties.get(key.as_str()),
+            governing_shield(leaf, key, ctx),
+        ) {
             (Some(schema), _) => admits_value(schema, value, UncheckableFacet::Undecided, ctx),
             (None, Some(shield)) => admits_value(shield, value, UncheckableFacet::Undecided, ctx),
             (None, None) => Verdict::Admits,

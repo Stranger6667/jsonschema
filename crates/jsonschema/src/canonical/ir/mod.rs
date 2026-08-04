@@ -335,8 +335,8 @@ pub(crate) struct ObjectLeaf {
     pub(crate) properties: BTreeMap<Arc<str>, Schema>,
     /// The schema every key matching the pattern must satisfy when the object carries it.
     pub(crate) pattern_properties: BTreeMap<Arc<str>, Schema>,
-    /// The schema every key `properties` does not name must satisfy; never `True` or `False`
-    /// (normalized away), and never beside `pattern_properties`.
+    /// The schema every key `properties` does not name and no pattern in `pattern_properties`
+    /// matches must satisfy; never `True` (normalized away).
     pub(crate) additional: Option<Schema>,
 }
 
