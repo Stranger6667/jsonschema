@@ -1882,10 +1882,36 @@ fn prune_unreachable_definitions(root: &Schema, definitions: &mut DefinitionMap)
     }
     drop(pending);
     definitions.retain(|uri, _| reachable.contains(uri));
-    debug_assert!(
-        definitions.keys().all(|uri| reachable.contains(uri)),
-        "the retained definition map contains only targets reachable from the canonical root"
-    );
+    #[cfg(debug_assertions)]
+    {
+        // Emit turns every surviving `Reference` into a `$ref` into the definition map, so a
+        // dropped key leaves the emitted document pointing at nothing. The root is never keyed.
+        // Walked through `collect_classified_references` rather than the collector the liveness
+        // pass uses: a check sharing that collector cannot see it miss a field.
+        let mut surviving = Vec::new();
+        emptiness::collect_classified_references(
+            root,
+            emptiness::Position::InPlace,
+            &mut surviving,
+        );
+        for schema in definitions.values() {
+            emptiness::collect_classified_references(
+                schema,
+                emptiness::Position::InPlace,
+                &mut surviving,
+            );
+        }
+        for (uri, _) in surviving {
+            // The root carries no definition entry of its own.
+            if uri.as_ref() == ROOT_DEFINITION_KEY {
+                continue;
+            }
+            debug_assert!(
+                definitions.contains_key(uri),
+                "a reference surviving the prune names a retained definition, got `{uri}`"
+            );
+        }
+    }
 }
 
 /// Whether the document holds a keyword that can bring two object leaves together.
