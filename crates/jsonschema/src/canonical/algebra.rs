@@ -3277,8 +3277,8 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
     };
     // A ceiling of zero present keys accepts the empty object and nothing else, whether spelled as
     // `maxProperties: 0` or as a finite key set whose every key is forbidden; a required key would
-    // have emptied the leaf above. A demand needs a key present, which the empty object cannot
-    // carry, so the ceiling leaves it nothing to admit.
+    // have emptied the leaf above, and a demand would have collapsed against the slot check, which
+    // reads the same ceiling and passes vacuously without required keys.
     // e.g.  {"type": "object", "maxProperties": 0}  =>  {"const": {}}
     // e.g.  {"type": "object", "propertyNames": {"const": "a"}, "properties": {"a": false}}
     //       =>  {"const": {}}
@@ -3289,12 +3289,13 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
         .as_ref()
         .is_some_and(BoundCardinality::is_zero)
     {
-        if leaf.get().violations.is_empty() {
-            return Schema::new(SchemaKind::Const(CanonicalJson::from_value(
-                &Value::Object(serde_json::Map::new()),
-            )));
-        }
-        return Schema::new(SchemaKind::False);
+        debug_assert!(
+            leaf.get().violations.is_empty(),
+            "a demand survived a zero ceiling past the slot check"
+        );
+        return Schema::new(SchemaKind::Const(CanonicalJson::from_value(
+            &Value::Object(serde_json::Map::new()),
+        )));
     }
     Schema::new(SchemaKind::Object(leaf))
 }
