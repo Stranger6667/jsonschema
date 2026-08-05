@@ -8,6 +8,7 @@
 - `CanonicalSchema#negate` through references, where the complement of the resolved target takes the reference's place.
 - Canonicalization of negated `propertyNames` and `additionalProperties`, where the complement spells the violating-key demand instead of a `not` residual.
 - Canonicalization of negated `additionalProperties` under Draft 4, where the violating-key demand spells the closed property map.
+- Canonicalization of `not` a reference, where the complement of the resolved target takes the pointer's place.
 
 ### Fixed
 

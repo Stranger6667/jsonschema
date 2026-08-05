@@ -302,7 +302,7 @@ RSpec.describe "JSONSchema.canonicalize" do
   it "view returns NotView with a symbolic reference" do
     schema = {
       "not" => { "$ref" => "#/$defs/other" },
-      "$defs" => { "other" => { "type" => "string" } }
+      "$defs" => { "other" => { "type" => "object", "properties" => { "child" => { "$ref" => "#/$defs/other" } } } }
     }
     case JSONSchema.canonicalize(schema).view
     in JSONSchema::Canonical::NotView[schema: inner]

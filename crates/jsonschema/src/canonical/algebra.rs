@@ -15,7 +15,7 @@ use crate::{
             ObjectLeaves, ObjectViolation, Round, Schema, SchemaKind, Side, StringLeaf,
             StringLeaves, UncheckableFacet, Verdict,
         },
-        negate, oracle, parse,
+        negate, oracle, parse, DefinitionMap,
     },
     JsonType, JsonTypeSet,
 };
@@ -404,9 +404,13 @@ fn partition_by_multiplicity(branches: &[Schema]) -> (Vec<Schema>, Vec<Schema>) 
 ///
 /// A reference is opaque to intersection and negation, so a branch holding one keeps the
 /// exclusivity symbolic instead of expanding it; the rest take [`concrete_one_of`].
-pub(crate) fn one_of(mut branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Option<Schema> {
+pub(crate) fn one_of(
+    mut branches: Vec<Schema>,
+    definitions: &DefinitionMap,
+    ctx: &CanonicalizationContext,
+) -> Option<Schema> {
     if !branches.iter().any(contains_reference) {
-        return concrete_one_of(branches, ctx);
+        return concrete_one_of(branches, definitions, ctx);
     }
     // A branch accepting nothing can never be the single match.
     branches.retain(|branch| !matches!(branch.kind(), SchemaKind::False));
@@ -422,7 +426,7 @@ pub(crate) fn one_of(mut branches: Vec<Schema>, ctx: &CanonicalizationContext) -
         let mut complements = Vec::with_capacity(duplicates.len());
         for duplicate in &duplicates {
             // All or nothing: dropping a duplicate whose exclusion is never restated is unsound.
-            let Some(complement) = negate::negate(duplicate, ctx) else {
+            let Some(complement) = negate::negate_in_place(duplicate, definitions, ctx) else {
                 complements.clear();
                 break;
             };
@@ -432,7 +436,7 @@ pub(crate) fn one_of(mut branches: Vec<Schema>, ctx: &CanonicalizationContext) -
             // Survivors re-enter from the top, not wrapped in a `OneOf` here: the duplicates may
             // have held the only references, and a reference-free remainder must take the concrete
             // route or it emits a form that canonicalizes to something else.
-            let mut result = one_of(singles, ctx)?;
+            let mut result = one_of(singles, definitions, ctx)?;
             for complement in complements {
                 result = intersect(result, complement, ctx);
             }
@@ -454,11 +458,19 @@ pub(crate) fn one_of(mut branches: Vec<Schema>, ctx: &CanonicalizationContext) -
 /// [`one_of`] over branches none of which holds a reference: some branch matches and no two-branch
 /// overlap does, so only the overlaps need complements — a branch overlapping nothing is never
 /// negated. `None` when an overlap's complement is inexpressible.
-fn concrete_one_of(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Option<Schema> {
+fn concrete_one_of(
+    branches: Vec<Schema>,
+    definitions: &DefinitionMap,
+    ctx: &CanonicalizationContext,
+) -> Option<Schema> {
     let overlaps = pairwise_overlaps(&branches, ctx);
     let mut result = union(branches, ctx);
     for overlap in overlaps {
-        result = intersect(result, negate::negate(&overlap, ctx)?, ctx);
+        result = intersect(
+            result,
+            negate::negate_in_place(&overlap, definitions, ctx)?,
+            ctx,
+        );
     }
     Some(result)
 }

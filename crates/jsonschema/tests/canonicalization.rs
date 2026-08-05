@@ -527,7 +527,7 @@ fn symbolic_reference_operations_have_distinct_views() {
 
     let complement = canonicalize(&json!({
         "not": {"$ref": "#/$defs/other"},
-        "$defs": {"other": {"type": "integer"}}
+        "$defs": {"other": {"type": "object", "properties": {"child": {"$ref": "#/$defs/other"}}}}
     }))
     .expect("canonicalizes");
     let CanonicalView::Not(inner) = complement.view() else {
@@ -2482,24 +2482,45 @@ fn negate_resolves_a_reference() {
     );
 }
 
-// A barred pointer stays symbolic in the document, and negating the reference it wraps resolves
-// through the shared definitions.
+// A pointer whose target is still being parsed stays symbolic, and the surrounding cycle leaves
+// its complement inexpressible at every later attempt too.
 #[test]
-fn negating_a_barred_pointer_makes_progress() {
+fn a_barred_pointer_reaching_a_cycle_stays_symbolic() {
     let schema = canonicalize(&json!({
-        "$defs": {"A": {"type": "string"}},
-        "not": {"$ref": "#/$defs/A"}
+        "$defs": {
+            "K": {"type": "object", "properties": {"m": {"$ref": "#/$defs/M"}}},
+            "M": {"not": {"$ref": "#/$defs/K"}}
+        },
+        "$ref": "#/$defs/M"
     }))
     .expect("canonicalizes");
-    let CanonicalView::Not(barred) = schema.view() else {
-        panic!("the barred pointer stays symbolic, got {:?}", schema.kind());
+    let named = schema.definition("#/$defs/M").expect("named");
+    let CanonicalView::Not(barred) = named.view() else {
+        panic!("the barred pointer stays symbolic, got {:?}", named.kind());
     };
     assert_eq!(barred.kind(), CanonicalKind::Reference);
+    assert_eq!(barred.negate(), None);
+}
+
+// The corpus spelling puts the barred pointer inside a property, so the fold runs wherever `not`
+// is parsed and not only at the document root.
+#[test]
+fn negated_pointer_inside_a_property_resolves() {
+    let canonical = canonicalize(&json!({
+        "$defs": {"a": {"type": "string", "minLength": 2}},
+        "type": "object",
+        "properties": {"p": {"not": {"allOf": [{"$ref": "#/$defs/a"}, {"description": "x"}]}}}
+    }))
+    .expect("canonicalizes");
     assert_eq!(
-        barred.negate().expect("negates").to_json_schema(),
+        canonical.to_json_schema(),
         json!({
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": ["null", "boolean", "number", "array", "object"]
+            "type": "object",
+            "properties": {"p": {"anyOf": [
+                {"type": ["null", "boolean", "number", "array", "object"]},
+                {"type": "string", "maxLength": 1}
+            ]}}
         })
     );
 }

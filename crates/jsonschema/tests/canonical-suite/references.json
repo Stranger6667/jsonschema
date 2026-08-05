@@ -100,8 +100,8 @@
   {
     "description": "a reference beside its own complement leaves no value out",
     "schema": {
-      "anyOf": [{"$ref": "#/$defs/integer"}, {"not": {"$ref": "#/$defs/integer"}}],
-      "$defs": {"integer": {"type": "integer"}}
+      "anyOf": [{"$ref": "#/$defs/node"}, {"not": {"$ref": "#/$defs/node"}}],
+      "$defs": {"node": {"type": "object", "properties": {"child": {"$ref": "#/$defs/node"}}}}
     },
     "kind": "true",
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
@@ -116,32 +116,41 @@
     "schemas": [
       {
         "anyOf": [
-          {"not": {"$ref": "#/$defs/integer"}},
-          {"allOf": [{"$ref": "#/$defs/integer"}, {"$ref": "#/$defs/string"}]}
+          {"not": {"$ref": "#/$defs/node"}},
+          {"allOf": [{"$ref": "#/$defs/node"}, {"$ref": "#/$defs/string"}]}
         ],
-        "$defs": {"integer": {"type": "integer"}, "string": {"type": "string"}}
+        "$defs": {
+          "node": {"type": "object", "properties": {"child": {"$ref": "#/$defs/node"}}},
+          "string": {"type": "string"}
+        }
       },
       {
         "anyOf": [
-          {"not": {"$ref": "#/$defs/integer"}},
+          {"not": {"$ref": "#/$defs/node"}},
           {"$ref": "#/$defs/string"}
         ],
-        "$defs": {"integer": {"type": "integer"}, "string": {"type": "string"}}
+        "$defs": {
+          "node": {"type": "object", "properties": {"child": {"$ref": "#/$defs/node"}}},
+          "string": {"type": "string"}
+        }
       }
     ],
     "kind": "any_of",
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "anyOf": [
-        {"not": {"$ref": "#/$defs/integer"}},
+        {"not": {"$ref": "#/$defs/node"}},
         {"$ref": "#/$defs/string"}
       ],
-      "$defs": {"integer": {"type": "integer"}, "string": {"type": "string"}}
+      "$defs": {
+        "node": {"type": "object", "properties": {"child": {"$ref": "#/$defs/node"}}},
+        "string": {"type": "string"}
+      }
     },
     "tests": [
-      {"data": 1, "valid": false},
+      {"data": 1, "valid": true},
       {"data": "x", "valid": true},
-      {"data": {}, "valid": true}
+      {"data": {}, "valid": false}
     ]
   },
   {
@@ -455,7 +464,7 @@
     "schema": {
       "allOf": [
         {
-          "if": {"$ref": "#/$defs/integer"},
+          "if": {"$ref": "#/$defs/node"},
           "then": {"$ref": "#/$defs/string"}
         },
         {
@@ -464,7 +473,7 @@
         }
       ],
       "$defs": {
-        "integer": {"type": "integer"},
+        "node": {"type": "object", "properties": {"child": {"$ref": "#/$defs/node"}}},
         "string": {"type": "string"},
         "null": {"type": "null"}
       }
@@ -476,7 +485,7 @@
         {
           "allOf": [
             {"type": "null"},
-            {"not": {"$ref": "#/$defs/integer"}},
+            {"not": {"$ref": "#/$defs/node"}},
             {"$ref": "#/$defs/null"}
           ]
         },
@@ -489,7 +498,7 @@
         }
       ],
       "$defs": {
-        "integer": {"type": "integer"},
+        "node": {"type": "object", "properties": {"child": {"$ref": "#/$defs/node"}}},
         "null": {"type": "null"},
         "string": {"type": "string"}
       }
@@ -501,23 +510,48 @@
     ]
   },
   {
-    "description": "not of a reference stays as an opaque complement",
+    "description": "not of a reference takes the complement of its target",
+    "schemas": [
+      {
+        "not": {"$ref": "#/$defs/value"},
+        "$defs": {
+          "value": {"const": 1}
+        }
+      },
+      {"not": {"const": 1}}
+    ],
+    "kind": "any_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "string", "array", "object"]},
+        {"type": "number", "exclusiveMaximum": 1},
+        {"type": "number", "exclusiveMinimum": 1}
+      ]
+    },
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": 2, "valid": true}
+    ]
+  },
+  {
+    "description": "not of a reference the walk cannot open keeps the pointer barred",
     "schema": {
-      "not": {"$ref": "#/$defs/value"},
+      "not": {"$ref": "#/$defs/node"},
       "$defs": {
-        "value": {"const": 1}
+        "node": {"type": "object", "properties": {"child": {"$ref": "#/$defs/node"}}}
       }
     },
     "kind": "not",
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "not": {"$ref": "#/$defs/value"},
+      "not": {"$ref": "#/$defs/node"},
       "$defs": {
-        "value": {"const": 1}
+        "node": {"type": "object", "properties": {"child": {"$ref": "#/$defs/node"}}}
       }
     },
     "tests": [
-      {"data": 1, "valid": false},
+      {"data": {}, "valid": false},
       {"data": 2, "valid": true}
     ]
   },
@@ -695,7 +729,7 @@
         {"not": {"$ref": "#/$defs/value"}}
       ],
       "$defs": {
-        "value": {"type": "integer"}
+        "value": {"type": "object", "properties": {"child": {"$ref": "#/$defs/value"}}}
       }
     },
     "kind": "false",
@@ -768,7 +802,7 @@
       "if": {"$ref": "#/$defs/condition"},
       "then": {"const": 1},
       "$defs": {
-        "condition": {"type": "integer"}
+        "condition": {"type": "object", "properties": {"child": {"$ref": "#/$defs/condition"}}}
       }
     },
     "kind": "any_of",
@@ -779,8 +813,35 @@
         {"not": {"$ref": "#/$defs/condition"}}
       ],
       "$defs": {
-        "condition": {"type": "integer"}
+        "condition": {"type": "object", "properties": {"child": {"$ref": "#/$defs/condition"}}}
       }
+    },
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": {}, "valid": false},
+      {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "a reference condition the walk can open takes the complement of its target",
+    "schemas": [
+      {
+        "if": {"$ref": "#/$defs/condition"},
+        "then": {"const": 1},
+        "$defs": {
+          "condition": {"type": "integer"}
+        }
+      },
+      {"if": {"type": "integer"}, "then": {"const": 1}}
+    ],
+    "kind": "any_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "string", "array", "object"]},
+        {"type": "number", "not": {"multipleOf": 1}},
+        {"const": 1}
+      ]
     },
     "tests": [
       {"data": 1, "valid": true},

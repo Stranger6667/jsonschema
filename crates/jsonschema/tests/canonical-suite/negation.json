@@ -3718,5 +3718,99 @@
       {"data": {"c": 1}, "valid": false},
       {"data": {"a": 1}, "valid": false}
     ]
+  },
+  {
+    "description": "a negated pointer resolves through its definition",
+    "schemas": [
+      {"$defs": {"a": {"type": "string", "minLength": 2}},
+        "not": {"allOf": [{"$ref": "#/$defs/a"}, {"description": "x"}]}},
+      {"$defs": {"a": {"type": "string", "minLength": 2}}, "not": {"$ref": "#/$defs/a"}},
+      {"not": {"type": "string", "minLength": 2}}
+    ],
+    "kind": "any_of",
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
+      {"type": ["null", "boolean", "number", "array", "object"]},
+      {"type": "string", "maxLength": 1}
+    ]},
+    "tests": [
+      {"data": "a", "valid": true},
+      {"data": "ab", "valid": false},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "a negated pointer to an object target under draft 4",
+    "draft": "draft4",
+    "schemas": [
+      {"definitions": {"t": {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}},
+        "not": {"allOf": [{"$ref": "#/definitions/t"}, {"description": "x"}]}},
+      {"not": {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}}
+    ],
+    "kind": "any_of",
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "array"]},
+      {"type": "object", "properties": {"a": {"type": ["null", "boolean", "number", "array", "object"]}}}
+    ]},
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {"a": 1}, "valid": true},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "a negated pointer to a string target under draft 4",
+    "draft": "draft4",
+    "schemas": [
+      {"definitions": {"t": {"type": "string", "minLength": 1, "maxLength": 8, "pattern": "^a"}},
+        "not": {"allOf": [{"$ref": "#/definitions/t"}, {"description": "x"}]}},
+      {"not": {"type": "string", "minLength": 1, "maxLength": 8, "pattern": "^a"}}
+    ],
+    "kind": "any_of",
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [
+      {"type": ["null", "boolean", "number", "array", "object"]},
+      {"type": "string", "allOf": [{"not": {"pattern": "^a"}}]},
+      {"type": "string", "minLength": 9},
+      {"enum": [""]}
+    ]},
+    "tests": [
+      {"data": "b", "valid": true},
+      {"data": "ab", "valid": false},
+      {"data": "", "valid": true},
+      {"data": "abcdefghi", "valid": true},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "a negated pointer to an array target under draft 4 keeps the pointer barred",
+    "draft": "draft4",
+    "schema": {"definitions": {"t": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 4}},
+      "not": {"allOf": [{"$ref": "#/definitions/t"}, {"description": "x"}]}},
+    "kind": "not",
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#",
+      "definitions": {"t": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 4}},
+      "not": {"$ref": "#/definitions/t"}},
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": ["a"], "valid": false},
+      {"data": [1], "valid": true}
+    ]
+  },
+  {
+    "description": "a negated pointer reaching a cycle keeps the pointer barred from either entry",
+    "schemas": [
+      {"$defs": {"K": {"type": "object", "properties": {"m": {"$ref": "#/$defs/M"}}},
+        "M": {"not": {"$ref": "#/$defs/K"}}},
+        "allOf": [{"$ref": "#/$defs/K"}, {"$ref": "#/$defs/M"}]},
+      {"$defs": {"K": {"type": "object", "properties": {"m": {"$ref": "#/$defs/M"}}},
+        "M": {"not": {"$ref": "#/$defs/K"}}},
+        "allOf": [{"$ref": "#/$defs/M"}, {"$ref": "#/$defs/K"}]}
+    ],
+    "kind": "all_of",
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {"K": {"type": "object", "properties": {"m": {"$ref": "#/$defs/M"}}},
+        "M": {"not": {"$ref": "#/$defs/K"}}},
+      "allOf": [{"$ref": "#/$defs/K"}, {"$ref": "#/$defs/M"}]},
+    "tests": [5, {}, {"m": 1}]
   }
 ]

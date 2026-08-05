@@ -411,7 +411,7 @@ def test_view_not_with_symbolic_reference():
     match canonicalize(
         {
             "not": {"$ref": "#/$defs/other"},
-            "$defs": {"other": {"type": "string"}},
+            "$defs": {"other": {"type": "object", "properties": {"child": {"$ref": "#/$defs/other"}}}},
         }
     ).view():
         case canonical.NotView(schema=inner):
