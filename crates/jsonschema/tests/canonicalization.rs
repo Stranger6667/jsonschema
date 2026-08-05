@@ -2418,6 +2418,19 @@ fn negate_spells_the_draft_4_complement(schema: &Value, expected: &Value) {
         "items": {"type": "string"}, "minItems": 1, "maxItems": 4});
     "draft 4 array element schema in a length window"
 )]
+#[test_case(&json!({"type": "array", "prefixItems": [{"type": "string"}]}); "array tuple")]
+#[test_case(
+    &json!({"type": "array", "prefixItems": [{"type": "string"}, {"type": "integer"}]});
+    "two-position array tuple"
+)]
+#[test_case(
+    &json!({"type": "array", "prefixItems": [{"type": "string"}], "items": false});
+    "array tuple with a closed tail"
+)]
+#[test_case(
+    &json!({"type": "array", "prefixItems": [{"type": "string"}], "minItems": 1, "maxItems": 2});
+    "array tuple within a size window"
+)]
 #[test_case(&json!({"type": "integer"}); "integer leaf")]
 #[test_case(&json!({"type": "integer", "minimum": 0}); "bounded integer leaf")]
 #[test_case(
@@ -2569,6 +2582,14 @@ fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
 #[test_case(
     &json!({"type": "object", "patternProperties": {"^a": {"type": "string"}}});
     "pattern properties"
+)]
+#[test_case(
+    &json!({"type": "array", "prefixItems": [{"type": "string"}], "items": {"type": "integer"}});
+    "array tuple with an open tail"
+)]
+#[test_case(
+    &json!({"type": "array", "prefixItems": [{"enum": [[1]]}]});
+    "array tuple over an array value"
 )]
 fn negate_declines(schema: &Value) {
     assert_eq!(canonicalize(schema).expect("canonicalizes").negate(), None);
@@ -2799,6 +2820,7 @@ fn negated_value_shield_keeps_the_definition() {
     &json!({"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}});
     "value shield beside a declared property"
 )]
+#[test_case(&json!({"type": "array", "prefixItems": [{"type": "string"}]}); "array tuple")]
 fn negate_is_an_involution(schema: &Value) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     let doubled = canonical
