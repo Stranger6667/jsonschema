@@ -15,7 +15,7 @@ use crate::{
         emit,
         error::OperandMismatch,
         ir::{Schema, SchemaKind, UncheckableFacet, Verdict},
-        negate, oracle, CanonicalizationError,
+        negate, oracle, parse, CanonicalizationError,
     },
     options::PatternEngineOptions,
 };
@@ -204,13 +204,17 @@ impl CanonicalSchema {
     pub fn negate(&self) -> Option<Self> {
         let context =
             CanonicalizationContext::new(self.draft, self.pattern_options, self.validate_formats);
-        let inner = negate::negate(&self.inner, &context)?;
+        let inner = negate::negate_with_definitions(&self.inner, &self.definitions, &context)?;
+        // A resolved complement may name fewer targets than the source; carrying the dead ones
+        // would emit unreferenced definitions and block combination with other documents.
+        let mut definitions = (*self.definitions).clone();
+        parse::prune_unreachable_definitions(&inner, &mut definitions);
         Some(Self::new(
             inner,
             self.draft,
             self.pattern_options,
             self.validate_formats,
-            Arc::clone(&self.definitions),
+            Arc::new(definitions),
         ))
     }
 

@@ -7,18 +7,79 @@ use crate::{
     canonical::{
         algebra,
         context::CanonicalizationContext,
+        emptiness,
         ir::{
             type_set_schema, ArrayLeaf, AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber,
             CanonicalJson, ContainsFacet, Discrete, Divisors, ExcludedDivisors, IntegerBounds,
             IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, StringLeaf,
         },
+        DefinitionMap, ROOT_DEFINITION_KEY,
     },
     JsonType, JsonTypeSet,
 };
 
+/// Resolutions one walk may spend before declining: a complement growing past this many inlined
+/// targets costs more to spell than the caller can put to use, and the recursion it would take
+/// runs ahead of the stack.
+const RESOLUTION_BUDGET: usize = 1024;
+
+/// State of one resolving negation walk.
+struct NegationWalk<'a> {
+    definitions: &'a DefinitionMap,
+    /// References being negated on the current path.
+    active: Vec<Arc<str>>,
+    /// Resolutions left before the walk declines.
+    budget: usize,
+}
+
 /// The complement schema, or `None` when the IR cannot spell it and the caller keeps the document
-/// `Raw`. Negation has no safe default direction, so every arm is exact or declines.
+/// `Raw`. Negation has no safe default direction, so every arm is exact or declines. References
+/// stay symbolic: their complement is the exact `Not` re-wrap.
 pub(crate) fn negate(schema: &Schema, ctx: &CanonicalizationContext) -> Option<Schema> {
+    let detached = DefinitionMap::new();
+    let mut walk = NegationWalk {
+        definitions: &detached,
+        active: Vec::new(),
+        budget: RESOLUTION_BUDGET,
+    };
+    negate_within(schema, &mut walk, ctx)
+}
+
+/// [`negate`], with references resolved through `definitions` for a complement that replaces the
+/// document root. A walk that reaches a reference already being negated on the current path has
+/// no finite complement and declines; a complement still naming the root would name the wrong
+/// document once it takes the root's place, and declines as well.
+pub(crate) fn negate_with_definitions(
+    schema: &Schema,
+    definitions: &DefinitionMap,
+    ctx: &CanonicalizationContext,
+) -> Option<Schema> {
+    let mut walk = NegationWalk {
+        definitions,
+        active: Vec::new(),
+        budget: RESOLUTION_BUDGET,
+    };
+    let complement = negate_within(schema, &mut walk, ctx)?;
+    let mut references = Vec::new();
+    emptiness::collect_classified_references(
+        &complement,
+        emptiness::Position::InPlace,
+        &mut references,
+    );
+    if references
+        .iter()
+        .any(|(uri, _)| uri.as_ref() == ROOT_DEFINITION_KEY)
+    {
+        return None;
+    }
+    Some(complement)
+}
+
+fn negate_within(
+    schema: &Schema,
+    walk: &mut NegationWalk<'_>,
+    ctx: &CanonicalizationContext,
+) -> Option<Schema> {
     match schema.kind() {
         SchemaKind::True => Some(Schema::new(SchemaKind::False)),
         SchemaKind::False => Some(Schema::new(SchemaKind::True)),
@@ -28,15 +89,23 @@ pub(crate) fn negate(schema: &Schema, ctx: &CanonicalizationContext) -> Option<S
         SchemaKind::Number(leaf) => negate_number_leaf(leaf.get(), ctx),
         SchemaKind::Integer(leaf) => negate_integer_leaf(leaf.get(), ctx),
         SchemaKind::String(leaf) => negate_string_leaf(leaf.get(), ctx),
-        SchemaKind::Array(leaf) => negate_array_leaf(leaf.get(), ctx),
-        SchemaKind::Object(leaf) => negate_object_leaf(leaf.get(), ctx),
-        SchemaKind::Not(inner) => Some(inner.clone()),
+        SchemaKind::Array(leaf) => negate_array_leaf(leaf.get(), walk, ctx),
+        SchemaKind::Object(leaf) => negate_object_leaf(leaf.get(), walk, ctx),
+        SchemaKind::Not(inner) => {
+            // A target spelling its own complement leaves nothing consistent to return.
+            if let SchemaKind::Reference(uri) = inner.kind() {
+                if walk.active.iter().any(|name| name == uri) {
+                    return None;
+                }
+            }
+            Some(inner.clone())
+        }
         // De Morgan: the complement of a union is the intersection of the branch complements, so
         // one inexpressible branch declines the whole node.
         SchemaKind::AnyOf(branches) => {
             let mut result = Schema::new(SchemaKind::True);
             for branch in branches.as_slice() {
-                result = algebra::intersect(result, negate(branch, ctx)?, ctx);
+                result = algebra::intersect(result, negate_within(branch, walk, ctx)?, ctx);
             }
             Some(result)
         }
@@ -45,19 +114,51 @@ pub(crate) fn negate(schema: &Schema, ctx: &CanonicalizationContext) -> Option<S
         SchemaKind::AllOf(branches) => {
             let mut complements = Vec::with_capacity(branches.as_slice().len());
             for branch in branches.as_slice() {
-                let Some(complement) = negate(branch, ctx) else {
+                let Some(complement) = negate_within(branch, walk, ctx) else {
                     return Some(Schema::new(SchemaKind::Not(schema.clone())));
                 };
                 complements.push(complement);
             }
             Some(algebra::union(complements, ctx))
         }
-        SchemaKind::OneOf(_) | SchemaKind::Reference(_) => {
-            Some(Schema::new(SchemaKind::Not(schema.clone())))
-        }
-        SchemaKind::TypedGroup { ty, body } => negate_typed_group(*ty, body, ctx),
+        SchemaKind::OneOf(_) => Some(Schema::new(SchemaKind::Not(schema.clone()))),
+        SchemaKind::Reference(uri) => negate_reference(schema, uri, walk, ctx),
+        SchemaKind::TypedGroup { ty, body } => negate_typed_group(*ty, body, walk, ctx),
         SchemaKind::Raw(_) => None,
     }
+}
+
+/// The complement of the reference's target. A target already being negated on the current path
+/// admits no finite complement; a target this map does not name keeps the reference symbolic under
+/// an exact `Not`. A complement that merely re-wraps the target hands the caller back the problem
+/// it asked about, so it declines instead.
+fn negate_reference(
+    schema: &Schema,
+    uri: &Arc<str>,
+    walk: &mut NegationWalk<'_>,
+    ctx: &CanonicalizationContext,
+) -> Option<Schema> {
+    if walk.active.iter().any(|name| name == uri) {
+        return None;
+    }
+    let Some(target) = walk.definitions.get(uri.as_ref()) else {
+        return Some(Schema::new(SchemaKind::Not(schema.clone())));
+    };
+    walk.budget = walk.budget.checked_sub(1)?;
+    // Every active entry is a distinct key of the map, so the walk is bounded by its size.
+    debug_assert!(
+        walk.active.len() < walk.definitions.len(),
+        "more active negations than definitions"
+    );
+    walk.active.push(Arc::clone(uri));
+    let complement = negate_within(target, walk, ctx);
+    let finished = walk.active.pop();
+    debug_assert_eq!(finished.as_ref(), Some(uri), "unbalanced negation path");
+    let complement = complement?;
+    if matches!(complement.kind(), SchemaKind::Not(inner) if inner == target) {
+        return None;
+    }
+    Some(complement)
 }
 
 /// De Morgan over the conjunction a typed group spells: the values off the type, and the values of
@@ -70,10 +171,11 @@ pub(crate) fn negate(schema: &Schema, ctx: &CanonicalizationContext) -> Option<S
 fn negate_typed_group(
     ty: JsonType,
     body: &Schema,
+    walk: &mut NegationWalk<'_>,
     ctx: &CanonicalizationContext,
 ) -> Option<Schema> {
     let off_type = negate_type_set(JsonTypeSet::from(ty), ctx)?;
-    let off_body = negate(body, ctx)?;
+    let off_body = negate_within(body, walk, ctx)?;
     let within = algebra::intersect(type_set_schema(JsonTypeSet::from(ty)), off_body, ctx);
     Some(algebra::union(vec![off_type, within], ctx))
 }
@@ -469,7 +571,11 @@ fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Optio
 ///       =>  anyOf: [<non-array types>,
 ///                   {"type": "array", "items": {"type": <every type but string>}}]
 /// ```
-fn negate_array_leaf(leaf: &ArrayLeaf, ctx: &CanonicalizationContext) -> Option<Schema> {
+fn negate_array_leaf(
+    leaf: &ArrayLeaf,
+    walk: &mut NegationWalk<'_>,
+    ctx: &CanonicalizationContext,
+) -> Option<Schema> {
     if leaf.unique || !leaf.prefix.is_empty() {
         return None;
     }
@@ -487,7 +593,7 @@ fn negate_array_leaf(leaf: &ArrayLeaf, ctx: &CanonicalizationContext) -> Option<
                 prefix: Vec::new(),
                 items: None,
                 contains: vec![ContainsFacet {
-                    schema: negate(items, ctx)?,
+                    schema: negate_within(items, walk, ctx)?,
                     minimum: None,
                     maximum: None,
                 }],
@@ -506,7 +612,7 @@ fn negate_array_leaf(leaf: &ArrayLeaf, ctx: &CanonicalizationContext) -> Option<
                 lengths: LengthBounds::default(),
                 unique: false,
                 prefix: Vec::new(),
-                items: Some(negate(&facet.schema, ctx)?),
+                items: Some(negate_within(&facet.schema, walk, ctx)?),
                 contains: Vec::new(),
             },
             ctx,
@@ -536,7 +642,11 @@ fn negate_array_leaf(leaf: &ArrayLeaf, ctx: &CanonicalizationContext) -> Option<
 ///                   {"type": "object", "properties": {"a": false}},
 ///                   {"type": "object", "maxProperties": 1}]
 /// ```
-fn negate_object_leaf(leaf: &ObjectLeaf, ctx: &CanonicalizationContext) -> Option<Schema> {
+fn negate_object_leaf(
+    leaf: &ObjectLeaf,
+    walk: &mut NegationWalk<'_>,
+    ctx: &CanonicalizationContext,
+) -> Option<Schema> {
     if leaf.property_names.is_some()
         || !leaf.pattern_properties.is_empty()
         || leaf.additional.is_some()
@@ -557,7 +667,7 @@ fn negate_object_leaf(leaf: &ObjectLeaf, ctx: &CanonicalizationContext) -> Optio
         ));
     }
     for (key, schema) in &leaf.properties {
-        let violating = negate(schema, ctx)?;
+        let violating = negate_within(schema, walk, ctx)?;
         let held = BTreeMap::from([(key.clone(), violating)]);
         branches.push(object_branch(
             LengthBounds::default(),

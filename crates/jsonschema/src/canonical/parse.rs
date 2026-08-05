@@ -1868,7 +1868,7 @@ fn ensure_definition<'a>(
 
 /// Retain definitions referenced by the final IR. The registry resolves source references before algebra, but cannot know which
 /// symbolic references survive canonical rewriting, so this is a linear liveness walk over already-resolved definition keys.
-fn prune_unreachable_definitions(root: &Schema, definitions: &mut DefinitionMap) {
+pub(crate) fn prune_unreachable_definitions(root: &Schema, definitions: &mut DefinitionMap) {
     let mut pending = Vec::new();
     collect_live_definition_references(root, &mut pending);
     let mut reachable = AHashSet::new();

@@ -690,8 +690,10 @@ def test_negate_integer_leaf():
     }
 
 
-def test_negate_keeps_a_reference_symbolic():
+def test_negate_resolves_a_reference():
     schema = canonicalize({"$defs": {"A": {"type": "string"}}, "$ref": "#/$defs/A"})
     complement = schema.negate()
-    assert complement.kind == "not"
-    assert complement.definition("#/$defs/A") == schema.definition("#/$defs/A")
+    assert complement.to_json_schema() == {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": ["null", "boolean", "number", "array", "object"],
+    }
