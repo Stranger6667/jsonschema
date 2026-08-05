@@ -2,7 +2,7 @@ pub(crate) mod json;
 
 use std::hash::{Hash, Hasher};
 
-use jsonschema::canonical::{CanonicalSchema, CanonicalView};
+use jsonschema::canonical::{CanonicalSchema, CanonicalView, ObjectViolationView};
 
 use pyo3::prelude::*;
 
@@ -284,6 +284,11 @@ impl PyCanonicalSchema {
                         .additional_properties
                         .map(|shield| Py::new(py, PyCanonicalSchema { inner: shield }))
                         .transpose()?,
+                    violations: view
+                        .violations
+                        .into_iter()
+                        .map(|violation| object_violation_to_python(py, violation))
+                        .collect::<PyResult<_>>()?,
                 },
             )?
             .into_any(),
@@ -544,12 +549,15 @@ pub(crate) struct ObjectView {
     pattern_properties: std::collections::BTreeMap<String, Py<PyCanonicalSchema>>,
     #[pyo3(get)]
     additional_properties: Option<Py<PyCanonicalSchema>>,
+    #[pyo3(get)]
+    violations: Vec<Py<PyAny>>,
 }
 
 #[pymethods]
 impl ObjectView {
     #[classattr]
     fn __match_args__() -> (
+        &'static str,
         &'static str,
         &'static str,
         &'static str,
@@ -566,7 +574,48 @@ impl ObjectView {
             "properties",
             "pattern_properties",
             "additional_properties",
+            "violations",
         )
+    }
+}
+
+/// One demand produced by negation: the object must hold at least one entry that breaks the
+/// stored rule. Some key's name fails the schema.
+#[pyclass(frozen, name = "NameFailsView", module = "jsonschema_rs.canonical")]
+pub(crate) struct NameFailsView {
+    #[pyo3(get)]
+    schema: Py<PyCanonicalSchema>,
+}
+
+#[pymethods]
+impl NameFailsView {
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("schema",)
+    }
+}
+
+/// One demand produced by negation: some key outside `names` and matching none of `patterns`
+/// has a value failing `additional`.
+#[pyclass(
+    frozen,
+    name = "UndeclaredValueFailsView",
+    module = "jsonschema_rs.canonical"
+)]
+pub(crate) struct UndeclaredValueFailsView {
+    #[pyo3(get)]
+    names: Vec<String>,
+    #[pyo3(get)]
+    patterns: Vec<String>,
+    #[pyo3(get)]
+    additional: Py<PyCanonicalSchema>,
+}
+
+#[pymethods]
+impl UndeclaredValueFailsView {
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("names", "patterns", "additional")
     }
 }
 
@@ -817,6 +866,8 @@ pub(crate) fn init_module(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyRes
     canonical_module.add_class::<ArrayView>()?;
     canonical_module.add_class::<ContainsView>()?;
     canonical_module.add_class::<ObjectView>()?;
+    canonical_module.add_class::<NameFailsView>()?;
+    canonical_module.add_class::<UndeclaredValueFailsView>()?;
     canonical_module.add_class::<NumberView>()?;
     canonical_module.add_class::<NotView>()?;
     canonical_module.add_class::<AllOfView>()?;
@@ -853,4 +904,32 @@ fn divisors_to_python(
         .into_iter()
         .map(|number| crate::value_to_python(py, &serde_json::Value::Number(number)))
         .collect()
+}
+
+fn object_violation_to_python(
+    py: Python<'_>,
+    violation: ObjectViolationView,
+) -> PyResult<Py<PyAny>> {
+    Ok(match violation {
+        ObjectViolationView::NameFails(schema) => Py::new(
+            py,
+            NameFailsView {
+                schema: Py::new(py, PyCanonicalSchema { inner: schema })?,
+            },
+        )?
+        .into_any(),
+        ObjectViolationView::UndeclaredValueFails {
+            names,
+            patterns,
+            additional,
+        } => Py::new(
+            py,
+            UndeclaredValueFailsView {
+                names,
+                patterns,
+                additional: Py::new(py, PyCanonicalSchema { inner: additional })?,
+            },
+        )?
+        .into_any(),
+    })
 }

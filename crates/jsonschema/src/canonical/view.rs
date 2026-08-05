@@ -6,8 +6,8 @@ use crate::{
     canonical::{
         ir::{
             ArrayLeaf, BoundCardinality, BoundInteger, BoundNumber, BoundRational, CanonicalJson,
-            Divisors, ExcludedDivisors, IntegerLeaf, NumberLeaf, ObjectLeaf, SchemaKind,
-            StringLeaf,
+            Divisors, ExcludedDivisors, IntegerLeaf, NumberLeaf, ObjectLeaf, ObjectViolation,
+            SchemaKind, StringLeaf,
         },
         CanonicalSchema,
     },
@@ -139,6 +139,23 @@ pub struct ObjectView {
     pub pattern_properties: BTreeMap<String, CanonicalSchema>,
     /// The schema every key `properties` does not name satisfies.
     pub additional_properties: Option<CanonicalSchema>,
+    /// The object must break each of these rules: negation stores the rule itself, so emitting
+    /// wraps it in `not` verbatim.
+    pub violations: Vec<ObjectViolationView>,
+}
+
+/// One demand produced by negation: the object must hold at least one entry that breaks the
+/// stored rule.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ObjectViolationView {
+    /// Some key's name fails the schema.
+    NameFails(CanonicalSchema),
+    /// Some key outside `names` and matching none of `patterns` has a value failing `additional`.
+    UndeclaredValueFails {
+        names: Vec<String>,
+        patterns: Vec<String>,
+        additional: CanonicalSchema,
+    },
 }
 
 /// Payload of [`CanonicalView::Integer`]: the interval bounds and divisor on an integer value.
@@ -205,6 +222,24 @@ impl CanonicalSchema {
                     .additional
                     .as_ref()
                     .map(|shield| self.wrap_child(shield)),
+                leaf.get()
+                    .violations
+                    .iter()
+                    .map(|violation| match violation {
+                        ObjectViolation::NameFails(violated) => {
+                            ObjectViolationView::NameFails(self.wrap_child(violated))
+                        }
+                        ObjectViolation::UndeclaredValueFails {
+                            names,
+                            patterns,
+                            additional,
+                        } => ObjectViolationView::UndeclaredValueFails {
+                            names: names.iter().map(ToString::to_string).collect(),
+                            patterns: patterns.iter().map(ToString::to_string).collect(),
+                            additional: self.wrap_child(additional),
+                        },
+                    })
+                    .collect(),
             )),
             SchemaKind::Const(value) => CanonicalView::Const(value.to_value()),
             SchemaKind::Enum(values) => CanonicalView::Enum(
@@ -312,6 +347,7 @@ fn object_view(
     properties: BTreeMap<String, CanonicalSchema>,
     pattern_properties: BTreeMap<String, CanonicalSchema>,
     additional_properties: Option<CanonicalSchema>,
+    violations: Vec<ObjectViolationView>,
 ) -> ObjectView {
     ObjectView {
         min_properties: leaf.sizes.minimum.as_ref().map(BoundCardinality::to_number),
@@ -321,6 +357,7 @@ fn object_view(
         properties,
         pattern_properties,
         additional_properties,
+        violations,
     }
 }
 

@@ -242,6 +242,22 @@ def test_view_object_pattern_properties():
             pytest.fail(f"unexpected view: {other!r}")
 
 
+def test_object_view_violations():
+    schema = canonicalize(
+        {
+            "type": "object",
+            "minProperties": 1,
+            "properties": {"filter": {"type": "string"}},
+            "not": {"additionalProperties": False, "properties": {"filter": {"type": "string"}}},
+        }
+    )
+    view = schema.view()
+    assert len(view.violations) == 1
+    [violation] = view.violations
+    assert isinstance(violation, canonical.NameFailsView)
+    assert violation.schema.to_json_schema()["const"] == "filter"
+
+
 def test_view_number_multiple_of():
     match canonicalize({"type": "number", "multipleOf": 0.5}).view():
         case canonical.NumberView(multiple_of=multiple_of):

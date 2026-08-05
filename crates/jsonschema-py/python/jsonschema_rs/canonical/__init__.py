@@ -12,6 +12,8 @@ IntegerView = _canonical.IntegerView
 ArrayView = _canonical.ArrayView
 ContainsView = _canonical.ContainsView
 ObjectView = _canonical.ObjectView
+NameFailsView = _canonical.NameFailsView
+UndeclaredValueFailsView = _canonical.UndeclaredValueFailsView
 NotView = _canonical.NotView
 AllOfView = _canonical.AllOfView
 AnyOfView = _canonical.AnyOfView
@@ -89,6 +91,7 @@ __all__ = [
     "InvalidPattern",
     "InvalidSchemaType",
     "MultiTypeView",
+    "NameFailsView",
     "NotView",
     "ObjectView",
     "OneOfView",
@@ -98,6 +101,7 @@ __all__ = [
     "NumberView",
     "TrueView",
     "TypedGroupView",
+    "UndeclaredValueFailsView",
     "UnmodeledOperand",
     "json",
     "schema",

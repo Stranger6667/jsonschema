@@ -1,6 +1,6 @@
 [
   {
-    "description": "finite domain integer interval over domain cap stays satisfiable - admits a witness",
+    "description": "finite domain integer interval over domain cap stays satisfiable - admits a value",
     "schema": {
       "type": "integer",
       "minimum": 0,
@@ -20,7 +20,7 @@
     }
   },
   {
-    "description": "finite domain anyof disjoint integer ranges under cap stays satisfiable - admits a witness",
+    "description": "finite domain anyof disjoint integer ranges under cap stays satisfiable - admits a value",
     "schema": {
       "anyOf": [
         {
@@ -58,7 +58,7 @@
     }
   },
   {
-    "description": "finite domain anyof disjoint integer ranges over cap stays satisfiable - admits a witness",
+    "description": "finite domain anyof disjoint integer ranges over cap stays satisfiable - admits a value",
     "schema": {
       "anyOf": [
         {

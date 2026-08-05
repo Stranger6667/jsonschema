@@ -1501,7 +1501,7 @@
     ]
   },
   {
-    "description": "a Draft 4 recursive definition with no finite witness admits nothing",
+    "description": "a Draft 4 recursive definition with no finite satisfying instance admits nothing",
     "draft": "draft4",
     "schema": {
       "$ref": "#/definitions/a",

@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use std::collections::BTreeMap;
 
-use crate::canonical::ir::{BoundCardinality, Bounds, LengthBounds, ObjectLeaf, Schema};
+use crate::canonical::ir::{
+    BoundCardinality, Bounds, LengthBounds, ObjectLeaf, ObjectViolation, Schema,
+};
 
 /// Object leaves merged per required-key set. Inserts are batched; the form is restored before any
 /// read, so the order in which leaves arrive cannot change the result.
@@ -74,6 +76,7 @@ struct Facets {
     properties: BTreeMap<Arc<str>, Schema>,
     pattern_properties: BTreeMap<Arc<str>, Schema>,
     additional: Option<Schema>,
+    violations: Vec<ObjectViolation>,
 }
 
 /// Fold the size windows of leaves demanding the same keys under the same key constraint.
@@ -102,6 +105,7 @@ fn merge(mut leaves: Vec<ObjectLeaf>) -> Vec<ObjectLeaf> {
             &left.properties,
             &left.pattern_properties,
             &left.additional,
+            &left.violations,
         )
             .cmp(&(
                 &right.required,
@@ -109,6 +113,7 @@ fn merge(mut leaves: Vec<ObjectLeaf>) -> Vec<ObjectLeaf> {
                 &right.properties,
                 &right.pattern_properties,
                 &right.additional,
+                &right.violations,
             ))
     });
     let mut merged: Vec<ObjectLeaf> = Vec::with_capacity(leaves.len());
@@ -121,6 +126,9 @@ fn merge(mut leaves: Vec<ObjectLeaf>) -> Vec<ObjectLeaf> {
                 || group.properties != leaf.properties
                 || group.pattern_properties != leaf.pattern_properties
                 || group.additional != leaf.additional
+                // Unequal violations are unequal demands; folding their windows together would
+                // silently keep only one side's constraint.
+                || group.violations != leaf.violations
         }) {
             flush_group(&mut merged, facets.take(), &mut windows);
             facets = Some(Facets {
@@ -129,6 +137,7 @@ fn merge(mut leaves: Vec<ObjectLeaf>) -> Vec<ObjectLeaf> {
                 properties: leaf.properties,
                 pattern_properties: leaf.pattern_properties,
                 additional: leaf.additional,
+                violations: leaf.violations,
             });
         }
         windows.push(leaf.sizes);
@@ -149,6 +158,7 @@ fn flush_group(
         properties,
         pattern_properties,
         additional,
+        violations,
     }) = facets
     else {
         return;
@@ -163,6 +173,7 @@ fn flush_group(
             properties: properties.clone(),
             pattern_properties: pattern_properties.clone(),
             additional: additional.clone(),
+            violations: violations.clone(),
         });
     }
     merged.push(ObjectLeaf {
@@ -172,6 +183,7 @@ fn flush_group(
         properties,
         pattern_properties,
         additional,
+        violations,
     });
 }
 
@@ -188,6 +200,8 @@ fn flush_group(
 ///       ]
 /// ```
 fn extend_over_bare_windows(leaves: &mut [ObjectLeaf]) {
+    // A violation demands a key that breaks a rule, so its window admits only some objects of
+    // that size, not every one of them - it is a facet, not a bare window.
     let bare: Vec<LengthBounds> = leaves
         .iter()
         .filter(|leaf| {
@@ -196,6 +210,7 @@ fn extend_over_bare_windows(leaves: &mut [ObjectLeaf]) {
                 && leaf.properties.is_empty()
                 && leaf.pattern_properties.is_empty()
                 && leaf.additional.is_none()
+                && leaf.violations.is_empty()
         })
         .map(|leaf| leaf.sizes.clone())
         .collect();
@@ -208,6 +223,7 @@ fn extend_over_bare_windows(leaves: &mut [ObjectLeaf]) {
             && leaf.properties.is_empty()
             && leaf.pattern_properties.is_empty()
             && leaf.additional.is_none()
+            && leaf.violations.is_empty()
         {
             continue;
         }
@@ -243,8 +259,10 @@ fn extend_over_bare_windows(leaves: &mut [ObjectLeaf]) {
 ///       ]
 /// ```
 fn hand_off_empty(leaves: &mut [ObjectLeaf]) {
+    // A violation demands a key present, so the empty object never satisfies it, whatever `sizes` says.
     if !leaves.iter().any(|leaf| {
         leaf.required.is_empty()
+            && leaf.violations.is_empty()
             && leaf
                 .sizes
                 .minimum

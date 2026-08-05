@@ -7,7 +7,8 @@ use crate::{
     canonical::{
         ir::{
             ArrayLeaf, BoundCardinality, BoundRational, CanonicalJson, ContainsFacet, Divisors,
-            ExcludedDivisors, IntegerLeaf, NumberLeaf, ObjectLeaf, Schema, SchemaKind, StringLeaf,
+            ExcludedDivisors, IntegerLeaf, NumberLeaf, ObjectLeaf, ObjectViolation, Schema,
+            SchemaKind, StringLeaf,
         },
         DefinitionMap, CANONICAL_REFERENCE_PREFIX,
     },
@@ -424,6 +425,68 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
     }
     if let Some(max) = &leaf.sizes.maximum {
         map.insert("maxProperties".into(), Value::Number(max.to_number()));
+    }
+    let mut violated: Vec<Value> = leaf
+        .violations
+        .iter()
+        .map(|violation| match violation {
+            ObjectViolation::NameFails(violated) => {
+                let mut inner = Map::new();
+                inner.insert("propertyNames".into(), emit(violated.kind(), draft));
+                let mut wrapper = Map::new();
+                wrapper.insert("not".into(), Value::Object(inner));
+                Value::Object(wrapper)
+            }
+            ObjectViolation::UndeclaredValueFails {
+                names,
+                patterns,
+                additional,
+            } => {
+                let mut inner = Map::new();
+                if !names.is_empty() {
+                    inner.insert(
+                        "properties".into(),
+                        Value::Object(
+                            names
+                                .iter()
+                                .map(|name| (name.to_string(), Value::Bool(true)))
+                                .collect(),
+                        ),
+                    );
+                }
+                if !patterns.is_empty() {
+                    inner.insert(
+                        "patternProperties".into(),
+                        Value::Object(
+                            patterns
+                                .iter()
+                                .map(|pattern| (pattern.to_string(), Value::Bool(true)))
+                                .collect(),
+                        ),
+                    );
+                }
+                inner.insert(
+                    "additionalProperties".into(),
+                    emit(additional.kind(), draft),
+                );
+                let mut wrapper = Map::new();
+                wrapper.insert("not".into(), Value::Object(inner));
+                Value::Object(wrapper)
+            }
+        })
+        .collect();
+    if violated.len() == 1 {
+        let Value::Object(wrapper) = violated.remove(0) else {
+            unreachable!("violation wrappers are objects")
+        };
+        map.extend(wrapper);
+    } else if !violated.is_empty() {
+        // Draft 4 never holds violations, so this never collides with the split-clause `allOf`.
+        debug_assert!(
+            !map.contains_key("allOf"),
+            "violations beside a Draft 4 key spelling"
+        );
+        map.insert("allOf".into(), Value::Array(violated));
     }
     Value::Object(map)
 }

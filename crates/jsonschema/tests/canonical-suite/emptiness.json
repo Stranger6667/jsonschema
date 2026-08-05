@@ -1,6 +1,6 @@
 [
   {
-    "description": "number intersect multitype with integer is not empty - admits integer witness",
+    "description": "number intersect multitype with integer is not empty - admits an integer value",
     "schema": {
       "allOf": [
         {
