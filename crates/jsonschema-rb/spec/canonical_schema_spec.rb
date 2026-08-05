@@ -526,11 +526,13 @@ RSpec.describe "JSONSchema.canonicalize" do
     end
   end
 
-  it "negate keeps a reference symbolic" do
+  it "negate resolves a reference" do
     schema = JSONSchema.canonicalize({ "$defs" => { "a" => { "type" => "string" } }, "$ref" => "#/$defs/a" })
     complement = schema.negate
-    expect(complement.kind).to eq(:not)
-    expect(complement.definition("#/$defs/a")).to eq(schema.definition("#/$defs/a"))
+    expect(complement.to_json_schema).to eq(
+      { "$schema" => "https://json-schema.org/draft/2020-12/schema",
+        "type" => %w[null boolean number array object] }
+    )
   end
 
   it "raises ValidationError when meta-validation fails" do

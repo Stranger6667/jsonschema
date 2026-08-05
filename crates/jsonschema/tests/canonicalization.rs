@@ -2204,6 +2204,7 @@ fn negate_spells_the_complement(schema: &Value, expected: &Value) {
     &json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": "integer", "enum": [1, 2]});
     "draft 4 typed group"
 )]
+#[test_case(&reference_chain_schema(); "reference chain")]
 fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
     let complement = canonicalize(schema)
         .expect("canonicalizes")
@@ -2231,6 +2232,10 @@ fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
         json!([1]),
         json!({}),
         json!({"a": 1}),
+        json!({"inner": 3}),
+        json!({"inner": {}}),
+        json!({"inner": {"x": "s"}}),
+        json!({"inner": {"x": 1}}),
     ] {
         assert_ne!(
             source.is_valid(&instance),
@@ -2250,22 +2255,190 @@ fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
     &json!({"type": "array", "contains": {"type": "string"}, "minContains": 2});
     "counted array existential demand"
 )]
+#[test_case(
+    &json!({
+        "$defs": {
+            "A": {"type": "object", "properties": {"a": {"$ref": "#/$defs/A"}}}
+        },
+        "$ref": "#/$defs/A"
+    });
+    "self-recursive reference"
+)]
+#[test_case(
+    &json!({
+        "$defs": {
+            "A": {"type": "object", "properties": {"b": {"$ref": "#/$defs/B"}}},
+            "B": {"type": "object", "properties": {"a": {"$ref": "#/$defs/A"}}}
+        },
+        "$ref": "#/$defs/A"
+    });
+    "mutually recursive references"
+)]
+#[test_case(
+    &json!({
+        "$defs": {"A": {"type": "array", "items": {"$ref": "#/$defs/A"}}},
+        "$ref": "#/$defs/A"
+    });
+    "recursive array reference"
+)]
+#[test_case(
+    &json!({
+        "$defs": {"node": {"oneOf": [
+            {"type": "string"},
+            {"type": "object", "properties": {"next": {"$ref": "#/$defs/node"}}, "required": ["next"]}
+        ]}},
+        "$ref": "#/$defs/node"
+    });
+    "recursive choice reference"
+)]
+#[test_case(
+    &json!({"type": "object", "properties": {"a": {"$ref": "#"}}});
+    "root self-reference"
+)]
+#[test_case(
+    &json!({"type": "object", "properties": {"a": {"not": {"$ref": "#"}}}});
+    "barred root self-reference"
+)]
+#[test_case(
+    &json!({
+        "$defs": {"A": {"not": {"$ref": "#/$defs/A"}}},
+        "$ref": "#/$defs/A"
+    });
+    "reference through its own complement"
+)]
 fn negate_declines(schema: &Value) {
     assert_eq!(canonicalize(schema).expect("canonicalizes").negate(), None);
 }
 
+// Each definition resolves twice per level, so the complement's size doubles with depth; the walk
+// declines rather than spelling a complement exponentially larger than the source.
 #[test]
-fn negate_keeps_a_reference_symbolic() {
+fn negate_declines_past_the_resolution_budget() {
+    let mut definitions = Map::new();
+    definitions.insert("d0".into(), json!({"type": "string"}));
+    for level in 1..13 {
+        definitions.insert(
+            format!("d{level}"),
+            json!({"type": "object", "properties": {
+                "left": {"$ref": format!("#/$defs/d{}", level - 1)},
+                "right": {"$ref": format!("#/$defs/d{}", level - 1)}
+            }}),
+        );
+    }
+    let schema = json!({"$defs": definitions, "$ref": "#/$defs/d12"});
+    assert_eq!(canonicalize(&schema).expect("canonicalizes").negate(), None);
+}
+
+// A fully resolved complement names no definitions, so it carries none - and a handle with an
+// empty map stays combinable with documents holding their own.
+#[test]
+fn negated_complement_drops_dead_definitions_and_intersects() {
+    let complement = canonicalize(&json!({
+        "$defs": {"A": {"type": "string"}},
+        "$ref": "#/$defs/A"
+    }))
+    .expect("canonicalizes")
+    .negate()
+    .expect("negates");
+    assert_eq!(complement.definitions().len(), 0);
+    let other = canonicalize(&json!({
+        "$defs": {"B": {"type": "integer"}},
+        "type": "object",
+        "properties": {"b": {"$ref": "#/$defs/B"}}
+    }))
+    .expect("canonicalizes");
+    let met = complement.intersect(&other).expect("intersects");
+    assert_eq!(
+        met.to_json_schema(),
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {"B": {"type": "integer"}},
+            "type": "object",
+            "properties": {"b": {"$ref": "#/$defs/B"}}
+        })
+    );
+}
+
+#[test]
+fn negate_resolves_a_reference() {
     let schema = canonicalize(&json!({
         "$defs": {"A": {"type": "string"}},
         "$ref": "#/$defs/A"
     }))
     .expect("canonicalizes");
     let complement = schema.negate().expect("negates");
-    assert_eq!(complement.kind(), CanonicalKind::Not);
     assert_eq!(
-        complement.definition("#/$defs/A"),
-        schema.definition("#/$defs/A")
+        complement.to_json_schema(),
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": ["null", "boolean", "number", "array", "object"]
+        })
+    );
+}
+
+// A barred pointer stays symbolic in the document, and negating the reference it wraps resolves
+// through the shared definitions.
+#[test]
+fn negating_a_barred_pointer_makes_progress() {
+    let schema = canonicalize(&json!({
+        "$defs": {"A": {"type": "string"}},
+        "not": {"$ref": "#/$defs/A"}
+    }))
+    .expect("canonicalizes");
+    let CanonicalView::Not(barred) = schema.view() else {
+        panic!("the barred pointer stays symbolic, got {:?}", schema.kind());
+    };
+    assert_eq!(barred.kind(), CanonicalKind::Reference);
+    assert_eq!(
+        barred.negate().expect("negates").to_json_schema(),
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": ["null", "boolean", "number", "array", "object"]
+        })
+    );
+}
+
+fn reference_chain_schema() -> Value {
+    json!({
+        "$defs": {
+            "outer": {
+                "type": "object",
+                "properties": {"inner": {"$ref": "#/$defs/inner"}},
+                "required": ["inner"]
+            },
+            "inner": {
+                "type": "object",
+                "properties": {"x": {"type": "string"}},
+                "required": ["x"]
+            }
+        },
+        "$ref": "#/$defs/outer"
+    })
+}
+
+// Negating a pointer chain resolves every hop, so both definitions' complements inline.
+#[test]
+fn negate_resolves_a_reference_chain() {
+    let schema = canonicalize(&reference_chain_schema()).expect("canonicalizes");
+    let complement = schema.negate().expect("negates").to_json_schema();
+    assert_eq!(
+        complement,
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "anyOf": [
+                {"type": ["null", "boolean", "number", "string", "array"]},
+                {
+                    "type": "object",
+                    "properties": {"inner": {"anyOf": [
+                        {"type": ["null", "boolean", "number", "string", "array"]},
+                        {
+                            "type": "object",
+                            "properties": {"x": {"type": ["null", "boolean", "number", "array", "object"]}}
+                        }
+                    ]}}
+                }
+            ]
+        })
     );
 }
 

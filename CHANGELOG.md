@@ -5,6 +5,11 @@
 ### Added
 
 - Canonicalization of `contains` demands sharing no value, where their counts add up into a length floor.
+- `CanonicalSchema::negate` through references, where the complement of the resolved target takes the reference's place.
+
+### Fixed
+
+- `CanonicalSchema::negate` keeping a root self-reference in the complement, where it points at the complement instead of the source.
 
 ## [0.49.5] - 2026-08-05
 
