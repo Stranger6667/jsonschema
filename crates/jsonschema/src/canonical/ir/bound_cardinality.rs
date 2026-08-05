@@ -61,6 +61,18 @@ impl BoundCardinality {
         }
     }
 
+    /// The sum of two counts; `None` past the representable range in the default build.
+    pub(crate) fn checked_add(self, other: &Self) -> Option<Self> {
+        #[cfg(not(feature = "arbitrary-precision"))]
+        {
+            self.0.checked_add(other.0).map(Self)
+        }
+        #[cfg(feature = "arbitrary-precision")]
+        {
+            Some(Self(self.0 + &other.0))
+        }
+    }
+
     pub(crate) fn is_zero(&self) -> bool {
         #[cfg(not(feature = "arbitrary-precision"))]
         {
