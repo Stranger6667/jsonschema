@@ -2230,6 +2230,40 @@ fn negate_spells_the_complement(schema: &Value, expected: &Value) {
     );
 }
 
+#[test_case(
+    &json!({"type": "object", "additionalProperties": {"type": "string"}}),
+    &json!({"anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "not": {"additionalProperties": {"type": "string"}}}
+    ]});
+    "value shield"
+)]
+#[test_case(
+    &json!({"type": "object", "properties": {"a": {"type": "string"}}, "additionalProperties": false}),
+    &json!({"anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "not": {"properties": {"a": {}}, "additionalProperties": false}},
+        {"type": "object", "required": ["a"],
+         "properties": {"a": {"type": ["null", "boolean", "number", "array", "object"]}}}
+    ]});
+    "closed object"
+)]
+fn negate_spells_the_draft_4_complement(schema: &Value, expected: &Value) {
+    let canonical = options()
+        .with_draft(Draft::Draft4)
+        .canonicalize(schema)
+        .expect("canonicalizes");
+    let mut expected = expected.as_object().expect("object").clone();
+    expected.insert(
+        "$schema".into(),
+        json!("http://json-schema.org/draft-04/schema#"),
+    );
+    assert_eq!(
+        canonical.negate().expect("negates").to_json_schema(),
+        Value::Object(expected)
+    );
+}
+
 #[test_case(&json!({"type": "string", "minLength": 5}); "string leaf")]
 #[test_case(&json!({"type": "number", "minimum": 5}); "number leaf")]
 #[test_case(&json!({"type": "object", "required": ["a"]}); "object leaf")]
@@ -2373,14 +2407,6 @@ fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
         "$ref": "#/$defs/A"
     });
     "reference through its own complement"
-)]
-#[test_case(
-    &json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": "object", "additionalProperties": {"type": "string"}});
-    "draft 4 value shield"
-)]
-#[test_case(
-    &json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": "object", "properties": {"a": {"type": "string"}}, "additionalProperties": false});
-    "draft 4 closed object"
 )]
 #[test_case(
     &json!({"type": "object", "patternProperties": {"^a": {"type": "string"}}});

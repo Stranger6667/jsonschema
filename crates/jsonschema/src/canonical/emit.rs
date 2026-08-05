@@ -431,11 +431,7 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
         .iter()
         .map(|violation| match violation {
             ObjectViolation::NameFails(violated) => {
-                let mut inner = Map::new();
-                inner.insert("propertyNames".into(), emit(violated.kind(), draft));
-                let mut wrapper = Map::new();
-                wrapper.insert("not".into(), Value::Object(inner));
-                Value::Object(wrapper)
+                keyed("not", emit_every_key_holds(violated, draft))
             }
             ObjectViolation::UndeclaredValueFails {
                 names,
@@ -449,7 +445,7 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
                         Value::Object(
                             names
                                 .iter()
-                                .map(|name| (name.to_string(), Value::Bool(true)))
+                                .map(|name| (name.to_string(), emit(&SchemaKind::True, draft)))
                                 .collect(),
                         ),
                     );
@@ -460,7 +456,9 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
                         Value::Object(
                             patterns
                                 .iter()
-                                .map(|pattern| (pattern.to_string(), Value::Bool(true)))
+                                .map(|pattern| {
+                                    (pattern.to_string(), emit(&SchemaKind::True, draft))
+                                })
                                 .collect(),
                         ),
                     );
@@ -481,7 +479,9 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
         };
         map.extend(wrapper);
     } else if !violated.is_empty() {
-        // Draft 4 never holds violations, so this never collides with the split-clause `allOf`.
+        // A demand rides on a keyword bringing two object leaves together, which is what makes a
+        // Draft 4 key constraint keep only the keys it names, and one closed map names those; the
+        // split spelling and its `allOf` therefore never appear beside a demand.
         debug_assert!(
             !map.contains_key("allOf"),
             "violations beside a Draft 4 key spelling"
@@ -575,6 +575,40 @@ fn emit_closed_clause(clause: &KeyClause) -> Value {
     }
     map.insert("additionalProperties".into(), Value::Bool(false));
     Value::Object(map)
+}
+
+/// The schema an object meets exactly when every key it carries holds `names`.
+///
+/// ```text
+/// e.g.  {"const": "a"}  under Draft 4
+///       =>  {"properties": {"a": {}}, "additionalProperties": false}
+/// ```
+fn emit_every_key_holds(names: &Schema, draft: Draft) -> Value {
+    // Draft 4 has no `propertyNames`, so the constraint is spelled as the closed maps it takes to
+    // name exactly the keys it admits.
+    let clauses = matches!(draft, Draft::Draft4)
+        .then(|| draft4_key_clauses(names))
+        .flatten();
+    let Some(clauses) = clauses else {
+        // Draft 4 ignores `propertyNames`, so reaching it there would leave a demand no object can
+        // break; every key constraint Draft 4 can hold has a closed-map spelling.
+        debug_assert!(
+            !matches!(draft, Draft::Draft4),
+            "a Draft 4 key constraint reached emit without a closed-map spelling"
+        );
+        return keyed("propertyNames", emit(names.kind(), draft));
+    };
+    debug_assert!(
+        !clauses.is_empty(),
+        "a key constraint spells at least one closed map"
+    );
+    match clauses.as_slice() {
+        [clause] => emit_closed_clause(clause),
+        several => keyed(
+            "allOf",
+            Value::Array(several.iter().map(emit_closed_clause).collect()),
+        ),
+    }
 }
 
 /// The keys and patterns one closed map names: a key is admitted when it is named or matched.

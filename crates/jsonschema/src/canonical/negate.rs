@@ -654,11 +654,6 @@ fn negate_object_leaf(
     if !leaf.pattern_properties.is_empty() {
         return None;
     }
-    if (leaf.property_names.is_some() || leaf.additional.is_some())
-        && !ctx.draft().is_known_keyword("propertyNames")
-    {
-        return None;
-    }
     let mut branches = vec![type_set_schema(JsonTypeSet::all().remove(JsonType::Object))];
     for sizes in length_windows(&leaf.sizes)? {
         branches.push(object_branch(sizes, Vec::new(), BTreeMap::new(), ctx));
