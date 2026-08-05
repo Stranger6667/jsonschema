@@ -31,25 +31,54 @@ struct NegationWalk<'a> {
     active: Vec<Arc<str>>,
     /// Resolutions left before the walk declines.
     budget: usize,
+    unspellable: Unspellable,
 }
 
-/// The complement schema, or `None` when the IR cannot spell it and the caller keeps the document
-/// `Raw`. Negation has no safe default direction, so every arm is exact or declines. References
-/// stay symbolic: their complement is the exact `Not` re-wrap.
-pub(crate) fn negate(schema: &Schema, ctx: &CanonicalizationContext) -> Option<Schema> {
+/// What the walk does where the complement has no structural form: either the exact `Not` re-wrap,
+/// or nothing at all.
+#[derive(Clone, Copy)]
+enum Unspellable {
+    /// The node keeps its complement symbolic under `Not`.
+    Bar,
+    /// The walk declines, so nothing it returns depends on which targets are already known.
+    Decline,
+}
+
+/// The complement of a node, taking that node's place inside the document being canonicalized, or
+/// `None` when the IR cannot spell it and the caller keeps the document `Raw`. Negation has no safe
+/// default direction, so every arm is exact or declines.
+///
+/// A walk reaching every target it needs through `definitions` inlines their complements; one that
+/// cannot keeps the whole node symbolic rather than resolving the part it reached, so the form
+/// follows the document's reference graph and not the order its targets were canonicalized in.
+pub(crate) fn negate_in_place(
+    schema: &Schema,
+    definitions: &DefinitionMap,
+    ctx: &CanonicalizationContext,
+) -> Option<Schema> {
+    let mut walk = NegationWalk {
+        definitions,
+        active: Vec::new(),
+        budget: RESOLUTION_BUDGET,
+        unspellable: Unspellable::Decline,
+    };
+    if let Some(complement) = negate_within(schema, &mut walk, ctx) {
+        return Some(complement);
+    }
     let detached = DefinitionMap::new();
     let mut walk = NegationWalk {
         definitions: &detached,
         active: Vec::new(),
         budget: RESOLUTION_BUDGET,
+        unspellable: Unspellable::Bar,
     };
     negate_within(schema, &mut walk, ctx)
 }
 
-/// [`negate`], with references resolved through `definitions` for a complement that replaces the
-/// document root. A walk that reaches a reference already being negated on the current path has
-/// no finite complement and declines; a complement still naming the root would name the wrong
-/// document once it takes the root's place, and declines as well.
+/// [`negate_in_place`], for a complement that replaces the document root instead. A walk that
+/// reaches a reference already being negated on the current path has no finite complement and
+/// declines; a complement still naming the root would name the wrong document once it takes the
+/// root's place, and declines as well.
 pub(crate) fn negate_with_definitions(
     schema: &Schema,
     definitions: &DefinitionMap,
@@ -59,6 +88,7 @@ pub(crate) fn negate_with_definitions(
         definitions,
         active: Vec::new(),
         budget: RESOLUTION_BUDGET,
+        unspellable: Unspellable::Bar,
     };
     let complement = negate_within(schema, &mut walk, ctx)?;
     let mut references = Vec::new();
@@ -74,6 +104,14 @@ pub(crate) fn negate_with_definitions(
         return None;
     }
     Some(complement)
+}
+
+/// The exact `Not` re-wrap of a node the walk cannot open, for a walk that accepts one.
+fn bar(schema: &Schema, walk: &NegationWalk<'_>) -> Option<Schema> {
+    match walk.unspellable {
+        Unspellable::Bar => Some(Schema::new(SchemaKind::Not(schema.clone()))),
+        Unspellable::Decline => None,
+    }
 }
 
 fn negate_within(
@@ -111,18 +149,18 @@ fn negate_within(
             Some(result)
         }
         // De Morgan in the other direction restores a union when every branch has an exact
-        // structural complement. Otherwise `Not` preserves the opaque conjunction exactly.
+        // structural complement. Otherwise the whole conjunction stays opaque.
         SchemaKind::AllOf(branches) => {
             let mut complements = Vec::with_capacity(branches.as_slice().len());
             for branch in branches.as_slice() {
                 let Some(complement) = negate_within(branch, walk, ctx) else {
-                    return Some(Schema::new(SchemaKind::Not(schema.clone())));
+                    return bar(schema, walk);
                 };
                 complements.push(complement);
             }
             Some(algebra::union(complements, ctx))
         }
-        SchemaKind::OneOf(_) => Some(Schema::new(SchemaKind::Not(schema.clone()))),
+        SchemaKind::OneOf(_) => bar(schema, walk),
         SchemaKind::Reference(uri) => negate_reference(schema, uri, walk, ctx),
         SchemaKind::TypedGroup { ty, body } => negate_typed_group(*ty, body, walk, ctx),
         SchemaKind::Raw(_) => None,
@@ -130,9 +168,9 @@ fn negate_within(
 }
 
 /// The complement of the reference's target. A target already being negated on the current path
-/// admits no finite complement; a target this map does not name keeps the reference symbolic under
-/// an exact `Not`. A complement that merely re-wraps the target hands the caller back the problem
-/// it asked about, so it declines instead.
+/// admits no finite complement, and a target this map does not name leaves the reference opaque.
+/// A complement that merely re-wraps the target hands the caller back the problem it asked about,
+/// so it declines instead.
 fn negate_reference(
     schema: &Schema,
     uri: &Arc<str>,
@@ -143,7 +181,7 @@ fn negate_reference(
         return None;
     }
     let Some(target) = walk.definitions.get(uri.as_ref()) else {
-        return Some(Schema::new(SchemaKind::Not(schema.clone())));
+        return bar(schema, walk);
     };
     walk.budget = walk.budget.checked_sub(1)?;
     // Every active entry is a distinct key of the map, so the walk is bounded by its size.
@@ -912,7 +950,8 @@ mod tests {
                 }
             }
             let schema = Schema::new(SchemaKind::MultiType(set));
-            let complement = negate(&schema, &ctx).expect("expressible complement");
+            let complement = negate_in_place(&schema, &DefinitionMap::new(), &ctx)
+                .expect("expressible complement");
             for value in &representatives() {
                 assert_ne!(
                     admits(set, value),
@@ -927,11 +966,13 @@ mod tests {
     fn boolean_schemas_negate_to_each_other() {
         let ctx = context();
         assert!(matches!(
-            negate(&Schema::new(SchemaKind::True), &ctx).map(|s| s.kind().clone()),
+            negate_in_place(&Schema::new(SchemaKind::True), &DefinitionMap::new(), &ctx)
+                .map(|s| s.kind().clone()),
             Some(SchemaKind::False)
         ));
         assert!(matches!(
-            negate(&Schema::new(SchemaKind::False), &ctx).map(|s| s.kind().clone()),
+            negate_in_place(&Schema::new(SchemaKind::False), &DefinitionMap::new(), &ctx)
+                .map(|s| s.kind().clone()),
             Some(SchemaKind::True)
         ));
     }

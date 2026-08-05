@@ -322,7 +322,7 @@
   {
     "description": "ir: the trigger-absent branch dissolves once the consequent sheds against a complement sibling",
     "schema": {
-      "$defs": {"t": {"type": "integer"}},
+      "$defs": {"t": {"type": "array", "items": {"$ref": "#/$defs/t"}}},
       "anyOf": [
         {"type": "object", "dependentSchemas": {"a": {"$ref": "#/$defs/t"}}},
         {"not": {"$ref": "#/$defs/t"}}
@@ -331,7 +331,7 @@
     "draft": "draft2019-09",
     "expected": {
       "$schema": "https://json-schema.org/draft/2019-09/schema",
-      "$defs": {"t": {"type": "integer"}},
+      "$defs": {"t": {"type": "array", "items": {"$ref": "#/$defs/t"}}},
       "anyOf": [
         {"type": "object"},
         {"not": {"$ref": "#/$defs/t"}}
@@ -341,13 +341,13 @@
       {"data": {"a": 1}, "valid": true},
       {"data": {}, "valid": true},
       {"data": "x", "valid": true},
-      {"data": 5, "valid": false}
+      {"data": [], "valid": false}
     ]
   },
   {
     "description": "ir: the trigger-absent branch dissolves the same way for a draft 4 schema dependency",
     "schema": {
-      "definitions": {"t": {"type": "integer"}},
+      "definitions": {"t": {"type": "array", "items": {"$ref": "#/definitions/t"}}},
       "anyOf": [
         {"type": "object", "dependencies": {"a": {"$ref": "#/definitions/t"}}},
         {"not": {"$ref": "#/definitions/t"}}
@@ -356,7 +356,7 @@
     "draft": "draft4",
     "expected": {
       "$schema": "http://json-schema.org/draft-04/schema#",
-      "definitions": {"t": {"type": "integer"}},
+      "definitions": {"t": {"type": "array", "items": {"$ref": "#/definitions/t"}}},
       "anyOf": [
         {"type": "object"},
         {"not": {"$ref": "#/definitions/t"}}
@@ -366,7 +366,7 @@
       {"data": {"a": 1}, "valid": true},
       {"data": {}, "valid": true},
       {"data": "x", "valid": true},
-      {"data": 5, "valid": false}
+      {"data": [], "valid": false}
     ]
   }
 ]

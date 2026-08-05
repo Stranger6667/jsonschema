@@ -1033,17 +1033,18 @@
   },
   {
     "description": "a repeated symbolic oneOf branch becomes the complement of the survivors",
-    "schema": {"oneOf": [{"$ref": "#/$defs/x"}, {"$ref": "#/$defs/x"}, {"type": "integer"}], "$defs": {"x": {"type": "string"}}},
+    "schema": {"oneOf": [{"$ref": "#/$defs/x"}, {"$ref": "#/$defs/x"}, {"type": "integer"}], "$defs": {"x": {"type": "object", "properties": {"child": {"$ref": "#/$defs/x"}}}}},
     "satisfiable": true,
     "tests": [
       {"data": 1, "valid": true},
-      {"data": "a", "valid": false},
+      {"data": {}, "valid": false},
       {"data": true, "valid": false}
     ],
     "expected": {
       "$defs": {
         "x": {
-          "type": "string"
+          "type": "object",
+          "properties": {"child": {"$ref": "#/$defs/x"}}
         }
       },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1068,25 +1069,8 @@
       {"data": "a", "valid": false}
     ],
     "expected": {
-      "$defs": {
-        "x": {
-          "type": "string"
-        }
-      },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "allOf": [
-        {
-          "type": [
-            "integer",
-            "string"
-          ]
-        },
-        {
-          "not": {
-            "$ref": "#/$defs/x"
-          }
-        }
-      ]
+      "type": "integer"
     }
   },
   {
@@ -1095,8 +1079,7 @@
     "satisfiable": true,
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "allOf": [{"type": ["boolean", "integer"]}, {"not": {"$ref": "#/$defs/x"}}],
-      "$defs": {"x": {"type": "string"}}
+      "type": ["boolean", "integer"]
     },
     "tests": [
       {"data": 1, "valid": true},

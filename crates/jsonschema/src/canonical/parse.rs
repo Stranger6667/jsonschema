@@ -622,7 +622,7 @@ fn parse_schema_in_scope<'a>(
                         None => return Ok(None),
                     }
                 }
-                match algebra::one_of(branches, ctx) {
+                match algebra::one_of(branches, &state.definitions, ctx) {
                     Some(schema) => conjuncts.push(schema),
                     None => return Ok(None),
                 }
@@ -983,7 +983,7 @@ fn parse_schema_in_scope<'a>(
             // an inexpressible complement keeps the whole document raw.
             ("not", value) if ctx.draft().is_known_keyword("not") => {
                 match parse_schema(value, ctx, false, resolver, state)? {
-                    Some(child) => match negate::negate(&child, ctx) {
+                    Some(child) => match negate::negate_in_place(&child, &state.definitions, ctx) {
                         Some(complement) => conjuncts.push(complement),
                         None => return Ok(None),
                     },
@@ -1208,24 +1208,28 @@ fn parse_schema_in_scope<'a>(
     match (if_schema, then_schema, else_schema) {
         (None, _, _) | (Some(_), None, None) => {}
         // ¬if ∨ then: a value the condition rejects needs nothing further.
-        (Some(condition), Some(then), None) => match negate::negate(&condition, ctx) {
-            Some(complement) => conjuncts.push(algebra::union(vec![complement, then], ctx)),
-            None => return Ok(None),
-        },
+        (Some(condition), Some(then), None) => {
+            match negate::negate_in_place(&condition, &state.definitions, ctx) {
+                Some(complement) => conjuncts.push(algebra::union(vec![complement, then], ctx)),
+                None => return Ok(None),
+            }
+        }
         // if ∨ else: a value the condition admits needs nothing further, so the complement is
         // never needed - unlike every other arm here, this one cannot force the document raw.
         (Some(condition), None, Some(else_branch)) => {
             conjuncts.push(algebra::union(vec![condition, else_branch], ctx));
         }
         // (if ∧ then) ∨ (¬if ∧ else)
-        (Some(condition), Some(then), Some(else_branch)) => match negate::negate(&condition, ctx) {
-            Some(complement) => {
-                let holds = algebra::intersect(condition, then, ctx);
-                let fails = algebra::intersect(complement, else_branch, ctx);
-                conjuncts.push(algebra::union(vec![holds, fails], ctx));
+        (Some(condition), Some(then), Some(else_branch)) => {
+            match negate::negate_in_place(&condition, &state.definitions, ctx) {
+                Some(complement) => {
+                    let holds = algebra::intersect(condition, then, ctx);
+                    let fails = algebra::intersect(complement, else_branch, ctx);
+                    conjuncts.push(algebra::union(vec![holds, fails], ctx));
+                }
+                None => return Ok(None),
             }
-            None => return Ok(None),
-        },
+        }
     }
 
     let base = match (type_set, admitted_values(enum_values, const_value)) {
