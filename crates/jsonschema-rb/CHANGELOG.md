@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Canonicalization of `contains` demands sharing no value, where their counts add up into a length floor.
+
 ## [0.49.5] - 2026-08-05
 
 ### Added

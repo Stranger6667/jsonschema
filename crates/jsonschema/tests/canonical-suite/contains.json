@@ -549,5 +549,96 @@
       {"data": ["a", "b"], "valid": false},
       {"data": ["a"], "valid": false}
     ]
+  },
+  {
+    "description": "ir: contains demands no element meets together floor the length",
+    "schemas": [
+      {"type": "array", "allOf": [{"contains": {"const": 1}}, {"contains": {"const": 2}}]},
+      {
+        "type": "array",
+        "minItems": 2,
+        "allOf": [{"contains": {"const": 1}}, {"contains": {"const": 2}}]
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "contains": {"const": 1},
+      "allOf": [{"contains": {"const": 2}}]
+    },
+    "satisfiable": true,
+    "tests": [
+      {"data": [1, 2], "valid": true},
+      {"data": [1], "valid": false},
+      {"data": [], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a length ceiling under that floor is unsatisfiable",
+    "schema": {
+      "type": "array",
+      "maxItems": 1,
+      "allOf": [{"contains": {"const": 1}}, {"contains": {"const": 2}}]
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": [1], "valid": false},
+      {"data": [1, 2], "valid": false},
+      {"data": [], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: the floor sums every demand no two of which one element meets",
+    "schema": {
+      "type": "array",
+      "maxItems": 2,
+      "allOf": [
+        {"contains": {"const": 1}},
+        {"contains": {"const": 2}},
+        {"contains": {"const": 3}}
+      ]
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": [1, 2], "valid": false},
+      {"data": [1, 2, 3], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: the largest count survives a demand overlapping it",
+    "schema": {
+      "type": "array",
+      "maxItems": 2,
+      "contains": {"type": "number"},
+      "allOf": [{"contains": {"type": "integer", "minimum": 0}, "minContains": 3}]
+    },
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": [1, 2], "valid": false},
+      {"data": [1, 2, 3], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: demands one element can meet together leave the length alone",
+    "schema": {
+      "type": "array",
+      "maxItems": 1,
+      "allOf": [{"contains": {"type": "integer"}}, {"contains": {"const": 1}}]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "maxItems": 1,
+      "contains": {"type": "integer"},
+      "allOf": [{"contains": {"const": 1}}]
+    },
+    "satisfiable": true,
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [2], "valid": false}
+    ]
   }
 ]

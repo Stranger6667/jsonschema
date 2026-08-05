@@ -2504,7 +2504,7 @@ pub(crate) fn array_leaf(mut leaf: ArrayLeaf, ctx: &CanonicalizationContext) -> 
         return Schema::new(SchemaKind::False);
     }
     normalize_items(&mut leaf);
-    if !reconcile_contains_window(&mut leaf) {
+    if !reconcile_contains_window(&mut leaf, ctx) {
         return Schema::new(SchemaKind::False);
     }
     if !reconcile_contains_positions(&leaf, ctx) {
@@ -2634,15 +2634,10 @@ fn normalize_contains(leaf: &mut ArrayLeaf) -> bool {
 }
 
 /// Check the `contains` demands against the settled length window: matching elements are elements,
-/// so the largest demanded count must fit under the ceiling, and any item minimum it implies is
-/// dropped as redundant.
-fn reconcile_contains_window(leaf: &mut ArrayLeaf) -> bool {
-    let Some(implied) = leaf
-        .contains
-        .iter()
-        .map(ContainsFacet::effective_minimum)
-        .max()
-    else {
+/// so the count they imply must fit under the ceiling, and any item minimum it implies is dropped as
+/// redundant.
+fn reconcile_contains_window(leaf: &mut ArrayLeaf, ctx: &CanonicalizationContext) -> bool {
+    let Some(implied) = implied_length_floor(&leaf.contains, ctx) else {
         return true;
     };
     if leaf
@@ -2661,7 +2656,66 @@ fn reconcile_contains_window(leaf: &mut ArrayLeaf) -> bool {
     {
         leaf.lengths.minimum = None;
     }
+    debug_assert!(
+        leaf.lengths
+            .minimum
+            .as_ref()
+            .is_none_or(|min| *min > implied),
+        "a length minimum the demands already imply is dropped"
+    );
     true
+}
+
+/// The shortest array the `contains` demands admit: one element cannot meet two demands sharing no
+/// value, so the counts of demands that are pairwise disjoint add up.
+/// ```text
+/// e.g.  {"type": "array", "contains": {"const": 1}, "allOf": [{"contains": {"const": 2}}]}
+///       =>  floor 2
+///
+///       {"type": "array", "contains": {"type": "integer"}, "allOf": [{"contains": {"const": 1}}]}
+///       =>  floor 1
+/// ```
+fn implied_length_floor(
+    demands: &[ContainsFacet],
+    ctx: &CanonicalizationContext,
+) -> Option<BoundCardinality> {
+    // Taking the demands in descending order keeps the widest one, so the floor is never below the
+    // largest single count.
+    let mut order: Vec<&ContainsFacet> = demands.iter().collect();
+    order.sort_by_key(|facet| std::cmp::Reverse(facet.effective_minimum()));
+    let mut summed: Vec<&Schema> = Vec::new();
+    let mut floor: Option<BoundCardinality> = None;
+    for facet in order {
+        let minimum = facet.effective_minimum();
+        if minimum.is_zero() {
+            continue;
+        }
+        let disjoint = summed.iter().all(|counted| {
+            matches!(
+                intersect((*counted).clone(), facet.schema.clone(), ctx).kind(),
+                SchemaKind::False
+            )
+        });
+        if !disjoint {
+            continue;
+        }
+        floor = match floor {
+            // Past the representable range the floor stays where it is, which only understates it.
+            Some(current) => current.clone().checked_add(&minimum).or(Some(current)),
+            None => Some(minimum),
+        };
+        summed.push(&facet.schema);
+    }
+    debug_assert!(
+        demands
+            .iter()
+            .map(ContainsFacet::effective_minimum)
+            .max()
+            .unwrap_or_default()
+            <= floor.clone().unwrap_or_default(),
+        "the floor holds at least the largest single demanded count"
+    );
+    floor
 }
 
 /// The longest array `uniqueItems` admits when the tail draws from a finite domain: every element
