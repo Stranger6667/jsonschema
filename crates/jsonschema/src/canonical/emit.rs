@@ -321,8 +321,9 @@ fn emit_array(leaf: &ArrayLeaf, draft: Draft) -> Value {
         };
         map.insert(key.into(), emit(items.kind(), draft));
     }
-    // One `contains` demand sits inline; the keyword is single-valued, so the rest conjoin as
-    // single-demand `allOf` branches.
+    // What cannot share a key with the leaf's own map takes a clause of its own. The clauses
+    // conjoin under one `allOf` beside it, so the leaf's `type` reaches every one of them.
+    let mut surplus: Vec<Value> = Vec::new();
     debug_assert!(
         leaf.contains
             .windows(2)
@@ -338,17 +339,13 @@ fn emit_array(leaf: &ArrayLeaf, draft: Draft) -> Value {
     );
     let mut facets = leaf.contains.iter();
     if let Some(facet) = facets.next() {
+        // A demand's spelling is single-valued, so one sits inline and the rest take clauses.
         insert_contains(&mut map, facet, draft);
-        let rest: Vec<Value> = facets
-            .map(|facet| {
-                let mut entry = Map::new();
-                insert_contains(&mut entry, facet, draft);
-                Value::Object(entry)
-            })
-            .collect();
-        if !rest.is_empty() {
-            map.insert("allOf".into(), Value::Array(rest));
-        }
+        surplus.extend(facets.map(|facet| {
+            let mut entry = Map::new();
+            insert_contains(&mut entry, facet, draft);
+            Value::Object(entry)
+        }));
     }
     if leaf.unique {
         map.insert("uniqueItems".into(), Value::Bool(true));
@@ -359,12 +356,43 @@ fn emit_array(leaf: &ArrayLeaf, draft: Draft) -> Value {
     if let Some(max) = &leaf.lengths.maximum {
         map.insert("maxItems".into(), Value::Number(max.to_number()));
     }
+    if !surplus.is_empty() {
+        map.insert("allOf".into(), Value::Array(surplus));
+    }
+    // An element schema holds over a non-array, so barring one bars every non-array; the type is
+    // what keeps the demands to arrays.
+    debug_assert_eq!(
+        map.get("type"),
+        Some(&Value::String("array".to_owned())),
+        "an array leaf emits its type beside the clauses conjoined with it"
+    );
     Value::Object(map)
 }
 
-/// Emit one `contains` demand into `map`; the count window keys appear only where a draft put them.
+/// Emit one existential demand into `map`, spelled as the draft carries it; the count window keys
+/// appear only where a draft put them.
+///
+/// ```text
+/// e.g.  a demand for a string, under Draft 4
+///       =>  {"not": {"items": {"not": {"type": "string"}}}}
+/// ```
 fn insert_contains(map: &mut Map<String, Value>, facet: &ContainsFacet, draft: Draft) {
-    map.insert("contains".into(), emit(facet.schema.kind(), draft));
+    let demand = emit(facet.schema.kind(), draft);
+    if matches!(draft, Draft::Draft4) {
+        // Draft 4 has no `contains`: an array holds a matching element exactly when its elements
+        // do not all fail the demand, which `not` and `items` spell between them.
+        debug_assert!(
+            facet.minimum.is_none(),
+            "a Draft 4 demand carries no count floor"
+        );
+        debug_assert!(
+            facet.maximum.is_none(),
+            "a Draft 4 demand carries no count ceiling"
+        );
+        map.insert("not".into(), keyed("items", keyed("not", demand)));
+        return;
+    }
+    map.insert("contains".into(), demand);
     if let Some(minimum) = &facet.minimum {
         map.insert("minContains".into(), Value::Number(minimum.to_number()));
     }

@@ -677,10 +677,6 @@ fn negate_array_leaf(
     let windows = length_windows(&leaf.lengths)?;
     let mut branches = vec![type_set_schema(JsonTypeSet::all().remove(JsonType::Array))];
     if let Some(items) = &leaf.items {
-        // Draft 4 has no `contains`, so a validator there ignores the branch and admits every array.
-        if !ctx.draft().is_known_keyword("contains") {
-            return None;
-        }
         branches.push(algebra::array_leaf(
             ArrayLeaf {
                 lengths: LengthBounds::default(),
