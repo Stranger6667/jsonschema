@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use crate::canonical::{
     context::CanonicalizationContext,
-    ir::{BoundCardinality, Schema, SchemaKind},
+    ir::{BoundCardinality, ObjectViolation, Schema, SchemaKind},
     parse::{self, Assumptions, ParseOutput},
     schema::DefinitionMap,
     CanonicalizationError, ROOT_DEFINITION_KEY,
@@ -80,6 +80,16 @@ pub(crate) fn collect_classified_references<'a>(
             }
             if let Some(schema) = &leaf.additional {
                 collect_classified_references(schema, Position::Consuming, out);
+            }
+            for violation in &leaf.violations {
+                match violation {
+                    ObjectViolation::NameFails(schema) => {
+                        collect_classified_references(schema, Position::Consuming, out);
+                    }
+                    ObjectViolation::UndeclaredValueFails { additional, .. } => {
+                        collect_classified_references(additional, Position::Consuming, out);
+                    }
+                }
             }
         }
         SchemaKind::MultiType(_)
@@ -393,10 +403,14 @@ fn inverts(schema: &Schema) -> bool {
         }
         SchemaKind::Object(leaf) => {
             let leaf = leaf.get();
+            // `NameFails(S)` is `not(for every key, S(key))`: anti-monotone in `S` regardless of
+            // what `S` holds, so any violation demand at all inverts, not only one whose own body
+            // does.
             leaf.property_names.as_ref().is_some_and(inverts)
                 || leaf.properties.values().any(inverts)
                 || leaf.pattern_properties.values().any(inverts)
                 || leaf.additional.as_ref().is_some_and(inverts)
+                || !leaf.violations.is_empty()
         }
         SchemaKind::Reference(_)
         | SchemaKind::MultiType(_)
@@ -536,10 +550,15 @@ fn may_fold(schema: &Schema, assumed: &AHashSet<Arc<str>>) -> bool {
                     .as_ref()
                     .is_some_and(|minimum| !minimum.is_zero());
             let demanded_names = demands_a_key
-                && leaf
+                && (leaf
                     .property_names
                     .as_ref()
-                    .is_some_and(|schema| may_fold(schema, assumed));
+                    .is_some_and(|schema| may_fold(schema, assumed))
+                    // A violation records a rule the object must break, never a key it must carry.
+                    || leaf.violations.iter().any(|violation| match violation {
+                        ObjectViolation::NameFails(_)
+                        | ObjectViolation::UndeclaredValueFails { .. } => false,
+                    }));
             // A key must come from the catch-all when nothing names one, so `minProperties` alone
             // demands it. Deciding which pattern claims a key needs the pattern engine, so any of
             // them counts - and left tight deliberately: widening this to named properties would

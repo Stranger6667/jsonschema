@@ -1,6 +1,7 @@
 use jsonschema::{
     canonical::{
         CanonicalSchema, CanonicalView, CanonicalizationError, ContainsView as CoreContainsView,
+        ObjectViolationView as CoreObjectViolationView,
     },
     JsonType,
 };
@@ -194,6 +195,7 @@ impl RbCanonicalSchema {
                     properties: view.properties,
                     pattern_properties: view.pattern_properties,
                     additional_properties: view.additional_properties,
+                    violations: view.violations,
                 })
                 .as_value(),
             CanonicalView::Not(schema) => ruby.obj_wrap(NotView { schema: *schema }).as_value(),
@@ -783,6 +785,116 @@ impl ContainsView {
     }
 }
 
+// The violation list needs the same lazy Ruby-object conversion `ContainsView::from_core` does,
+// so this stays a free function rather than a method on either violation view class.
+fn object_violation_to_ruby(ruby: &Ruby, violation: &CoreObjectViolationView) -> Value {
+    match violation {
+        CoreObjectViolationView::NameFails(schema) => ruby
+            .obj_wrap(NameFailsView {
+                schema: schema.clone(),
+            })
+            .as_value(),
+        CoreObjectViolationView::UndeclaredValueFails {
+            names,
+            patterns,
+            additional,
+        } => ruby
+            .obj_wrap(UndeclaredValueFailsView {
+                names: names.clone(),
+                patterns: patterns.clone(),
+                additional: additional.clone(),
+            })
+            .as_value(),
+    }
+}
+
+/// Some key's name fails the schema.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::NameFailsView", free_immediately)]
+pub struct NameFailsView {
+    schema: CanonicalSchema,
+}
+
+impl DataTypeFunctions for NameFailsView {}
+
+impl NameFailsView {
+    fn schema(ruby: &Ruby, rb_self: &Self) -> Value {
+        ruby.obj_wrap(RbCanonicalSchema {
+            inner: rb_self.schema.clone(),
+        })
+        .as_value()
+    }
+
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> String {
+        format!(
+            "#<JSONSchema::Canonical::NameFailsView schema={}>",
+            Self::schema(ruby, rb_self).inspect()
+        )
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("schema"), Self::schema(ruby, rb_self))?;
+        Ok(hash)
+    }
+}
+
+/// Some key outside `names` and matching none of `patterns` has a value failing `additional`.
+#[derive(magnus::TypedData)]
+#[magnus(
+    class = "JSONSchema::Canonical::UndeclaredValueFailsView",
+    free_immediately
+)]
+pub struct UndeclaredValueFailsView {
+    names: Vec<String>,
+    patterns: Vec<String>,
+    additional: CanonicalSchema,
+}
+
+impl DataTypeFunctions for UndeclaredValueFailsView {}
+
+impl UndeclaredValueFailsView {
+    fn names(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        let array = ruby.ary_new_capa(rb_self.names.len());
+        for name in &rb_self.names {
+            array.push(ruby.str_new(name))?;
+        }
+        Ok(array.as_value())
+    }
+
+    fn patterns(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        let array = ruby.ary_new_capa(rb_self.patterns.len());
+        for pattern in &rb_self.patterns {
+            array.push(ruby.str_new(pattern))?;
+        }
+        Ok(array.as_value())
+    }
+
+    fn additional(ruby: &Ruby, rb_self: &Self) -> Value {
+        ruby.obj_wrap(RbCanonicalSchema {
+            inner: rb_self.additional.clone(),
+        })
+        .as_value()
+    }
+
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
+        Ok(format!(
+            "#<JSONSchema::Canonical::UndeclaredValueFailsView names={} patterns={} additional={}>",
+            Self::names(ruby, rb_self)?.inspect(),
+            Self::patterns(ruby, rb_self)?.inspect(),
+            Self::additional(ruby, rb_self).inspect()
+        ))
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("names"), Self::names(ruby, rb_self)?)?;
+        hash.aset(ruby.sym_new("patterns"), Self::patterns(ruby, rb_self)?)?;
+        hash.aset(ruby.sym_new("additional"), Self::additional(ruby, rb_self))?;
+        Ok(hash)
+    }
+}
+
 /// An object value's constraints.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::ObjectView", free_immediately)]
@@ -794,6 +906,7 @@ pub struct ObjectView {
     properties: std::collections::BTreeMap<String, CanonicalSchema>,
     pattern_properties: std::collections::BTreeMap<String, CanonicalSchema>,
     additional_properties: Option<CanonicalSchema>,
+    violations: Vec<CoreObjectViolationView>,
 }
 
 impl DataTypeFunctions for ObjectView {}
@@ -859,6 +972,14 @@ impl ObjectView {
         }
     }
 
+    fn violations(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        let array = ruby.ary_new_capa(rb_self.violations.len());
+        for violation in &rb_self.violations {
+            array.push(object_violation_to_ruby(ruby, violation))?;
+        }
+        Ok(array.as_value())
+    }
+
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
             "#<JSONSchema::Canonical::ObjectView min_properties={} max_properties={} required={} property_names={} properties={} pattern_properties={}>",
@@ -895,6 +1016,7 @@ impl ObjectView {
             ruby.sym_new("additional_properties"),
             Self::additional_properties(ruby, rb_self),
         )?;
+        hash.aset(ruby.sym_new("violations"), Self::violations(ruby, rb_self)?)?;
         Ok(hash)
     }
 }
@@ -1315,6 +1437,31 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
         method!(ContainsView::deconstruct_keys, 1),
     )?;
 
+    let name_fails_view = canonical_module.define_class("NameFailsView", ruby.class_object())?;
+    name_fails_view.define_method("schema", method!(NameFailsView::schema, 0))?;
+    name_fails_view.define_method("inspect", method!(NameFailsView::inspect, 0))?;
+    name_fails_view.define_method(
+        "deconstruct_keys",
+        method!(NameFailsView::deconstruct_keys, 1),
+    )?;
+
+    let undeclared_value_fails_view =
+        canonical_module.define_class("UndeclaredValueFailsView", ruby.class_object())?;
+    undeclared_value_fails_view
+        .define_method("names", method!(UndeclaredValueFailsView::names, 0))?;
+    undeclared_value_fails_view
+        .define_method("patterns", method!(UndeclaredValueFailsView::patterns, 0))?;
+    undeclared_value_fails_view.define_method(
+        "additional",
+        method!(UndeclaredValueFailsView::additional, 0),
+    )?;
+    undeclared_value_fails_view
+        .define_method("inspect", method!(UndeclaredValueFailsView::inspect, 0))?;
+    undeclared_value_fails_view.define_method(
+        "deconstruct_keys",
+        method!(UndeclaredValueFailsView::deconstruct_keys, 1),
+    )?;
+
     let object_view = canonical_module.define_class("ObjectView", ruby.class_object())?;
     object_view.define_method("min_properties", method!(ObjectView::min_properties, 0))?;
     object_view.define_method("max_properties", method!(ObjectView::max_properties, 0))?;
@@ -1329,6 +1476,7 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
         "additional_properties",
         method!(ObjectView::additional_properties, 0),
     )?;
+    object_view.define_method("violations", method!(ObjectView::violations, 0))?;
     object_view.define_method("inspect", method!(ObjectView::inspect, 0))?;
     object_view.define_method("deconstruct_keys", method!(ObjectView::deconstruct_keys, 1))?;
 

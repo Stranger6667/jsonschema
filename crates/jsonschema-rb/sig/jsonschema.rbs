@@ -146,6 +146,24 @@ module JSONSchema
       def property_names: () -> CanonicalSchema?
       def properties: () -> Hash[String, CanonicalSchema]
       def pattern_properties: () -> Hash[String, CanonicalSchema]
+      def additional_properties: () -> CanonicalSchema?
+      def violations: () -> Array[NameFailsView | UndeclaredValueFailsView]
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # Some key's name fails the schema.
+    class NameFailsView
+      def schema: () -> CanonicalSchema
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # Some key outside `names` and matching none of `patterns` has a value failing `additional`.
+    class UndeclaredValueFailsView
+      def names: () -> Array[String]
+      def patterns: () -> Array[String]
+      def additional: () -> CanonicalSchema
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end

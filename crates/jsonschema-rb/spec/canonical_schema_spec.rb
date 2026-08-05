@@ -218,6 +218,22 @@ RSpec.describe "JSONSchema.canonicalize" do
     end
   end
 
+  it "view returns ObjectView with a NameFails violation" do
+    schema = {
+      "type" => "object", "minProperties" => 1,
+      "properties" => { "filter" => { "type" => "string" } },
+      "not" => { "additionalProperties" => false, "properties" => { "filter" => { "type" => "string" } } }
+    }
+    case JSONSchema.canonicalize(schema).view
+    in JSONSchema::Canonical::ObjectView[violations:]
+      expect(violations.length).to eq(1)
+      case violations.first
+      in JSONSchema::Canonical::NameFailsView[schema: name_schema]
+        expect(name_schema.to_json_schema["const"]).to eq("filter")
+      end
+    end
+  end
+
   it "view exposes the divisor of a number leaf" do
     case JSONSchema.canonicalize({ "type" => "number", "multipleOf" => 0.5 }).view
     in JSONSchema::Canonical::NumberView[multiple_of:]

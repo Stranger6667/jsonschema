@@ -1171,6 +1171,7 @@ fn parse_schema_in_scope<'a>(
                 properties,
                 pattern_properties,
                 additional: additional_schema,
+                violations: Vec::new(),
             },
             ctx,
         ));
@@ -1979,6 +1980,7 @@ fn dependency_conjunct(key: &str, consequent: Schema, ctx: &CanonicalizationCont
             properties: BTreeMap::from([(Arc::from(key), Schema::new(SchemaKind::False))]),
             pattern_properties: BTreeMap::new(),
             additional: None,
+            violations: Vec::new(),
         },
         ctx,
     );
@@ -1995,6 +1997,7 @@ fn object_with_required(required: Vec<Arc<str>>, ctx: &CanonicalizationContext) 
             properties: BTreeMap::new(),
             pattern_properties: BTreeMap::new(),
             additional: None,
+            violations: Vec::new(),
         },
         ctx,
     )

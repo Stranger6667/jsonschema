@@ -1386,7 +1386,7 @@
     ]
   },
   {
-    "description": "not of a key constraint stays raw: the admitted keys have no complement",
+    "description": "not of a key constraint demands a key that violates it",
     "schema": {
       "not": {
         "type": "object",
@@ -1396,12 +1396,21 @@
       }
     },
     "expected": {
-      "not": {
-        "type": "object",
-        "propertyNames": {
-          "maxLength": 2
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": ["null", "boolean", "number", "string", "array"]
+        },
+        {
+          "type": "object",
+          "not": {
+            "propertyNames": {
+              "maxLength": 2,
+              "type": "string"
+            }
+          }
         }
-      }
+      ]
     },
     "tests": [
       {
@@ -3017,6 +3026,326 @@
       {"data": 9223372036854775807, "valid": false},
       {"data": 1.5, "valid": false},
       {"data": "x", "valid": false}
+    ]
+  },
+  {
+    "description": "negated closed object with a declared property",
+    "schema": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {"filter": {"type": "string"}},
+      "not": {"additionalProperties": false, "properties": {"filter": {"type": "string"}}}
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"filter": {"type": "string"}},
+      "not": {"propertyNames": {"const": "filter"}}
+    },
+    "tests": [
+      {"data": {"x": 1}, "valid": true},
+      {"data": {"filter": "ok"}, "valid": false},
+      {"data": {"filter": "ok", "x": 1}, "valid": true},
+      {"data": {"filter": 1}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "negated key constraint",
+    "schema": {"not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "not": {"propertyNames": {"enum": ["a", "b"]}}}
+      ]
+    },
+    "tests": [
+      {"data": {"c": 1}, "valid": true},
+      {"data": {"a": 1, "c": 1}, "valid": true},
+      {"data": {"a": 1, "b": 2}, "valid": false},
+      {"data": {}, "valid": false},
+      {"data": "a", "valid": true}
+    ]
+  },
+  {
+    "description": "negated key pattern constraint",
+    "schema": {"not": {"type": "object", "propertyNames": {"pattern": "^a"}}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "not": {"propertyNames": {"pattern": "^a", "type": "string"}}}
+      ]
+    },
+    "tests": [
+      {"data": {"b": 1}, "valid": true},
+      {"data": {"ab": 1, "b": 2}, "valid": true},
+      {"data": {"a1": 1, "a2": 2}, "valid": false},
+      {"data": {}, "valid": false},
+      {"data": "x", "valid": true},
+      {"data": {"a1": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "negated value shield beside a declared property",
+    "schema": {"not": {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "not": {"properties": {"a": true}, "additionalProperties": {"type": "string"}}},
+        {"type": "object", "required": ["a"], "properties": {"a": {"anyOf": [
+          {"type": ["null", "boolean", "string", "array", "object"]},
+          {"type": "number", "not": {"multipleOf": 1}}
+        ]}}}
+      ]
+    },
+    "tests": [
+      {"data": {"b": 1}, "valid": true},
+      {"data": {"a": 1.5}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": 1, "b": "x"}, "valid": false},
+      {"data": {"b": "x"}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "a required key that always violates propertyNames folds the demand away",
+    "schemas": [
+      {"allOf": [{"not": {"type": "object", "propertyNames": {"maxLength": 2}}}, {"type": "object", "required": ["abc"]}]},
+      {"type": "object", "required": ["abc"]}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "required": ["abc"]},
+    "tests": [
+      {"data": {"abc": 1}, "valid": true},
+      {"data": {"abc": 1, "de": 2}, "valid": true},
+      {"data": {"ab": 1}, "valid": false},
+      {"data": {}, "valid": false},
+      {"data": "x", "valid": false}
+    ]
+  },
+  {
+    "description": "a required key the demand admits leaves no slot for another to carry it",
+    "schema": {"type": "object", "maxProperties": 1, "minProperties": 1, "required": ["a"],
+      "properties": {"a": {"type": "string"}},
+      "not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}},
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "negated value shield with no declared properties",
+    "schema": {"not": {"type": "object", "additionalProperties": {"type": "string"}}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "array"]},
+      {"type": "object", "not": {"additionalProperties": {"type": "string"}}}
+    ]},
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {"a": "x", "b": 2}, "valid": true},
+      {"data": {}, "valid": false},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "double negation of a key constraint restores it",
+    "schemas": [
+      {"not": {"not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}},
+      {"type": "object", "propertyNames": {"enum": ["a", "b"]}}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "propertyNames": {"enum": ["a", "b"]}},
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"c": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "double negation of a value shield beside a declared property restores it",
+    "schemas": [
+      {"not": {"not": {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}}}},
+      {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}},
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 1, "b": "x"}, "valid": true},
+      {"data": {"a": "s"}, "valid": false},
+      {"data": {"b": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "a key constraint beside its own negation admits nothing",
+    "schema": {"allOf": [
+      {"type": "object", "propertyNames": {"maxLength": 2}},
+      {"not": {"type": "object", "propertyNames": {"maxLength": 2}}}
+    ]},
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"ab": 1}, "valid": false},
+      {"data": {"abc": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "a finite key set whose every key the negated constraint admits leaves no key to break it",
+    "schema": {"allOf": [
+      {"type": "object", "propertyNames": {"const": "a"}},
+      {"not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}
+    ]},
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": {"a": 1}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "a value shield beside its own negation admits nothing",
+    "schema": {"allOf": [
+      {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}},
+      {"not": {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}}}
+    ]},
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"b": "x"}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "a negated tighter key constraint beside a looser one keeps both",
+    "schema": {"allOf": [
+      {"type": "object", "propertyNames": {"maxLength": 3}},
+      {"not": {"type": "object", "propertyNames": {"maxLength": 2}}}
+    ]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
+      "propertyNames": {"type": "string", "maxLength": 3},
+      "not": {"propertyNames": {"type": "string", "maxLength": 2}}},
+    "tests": [
+      {"data": {"abc": 1}, "valid": true},
+      {"data": {"abc": 1, "a": 2}, "valid": true},
+      {"data": {"ab": 1}, "valid": false},
+      {"data": {"abcd": 1}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "two negated key constraints on one object emit as a conjunction",
+    "schema": {"allOf": [
+      {"not": {"type": "object", "propertyNames": {"pattern": "^a"}}},
+      {"not": {"type": "object", "propertyNames": {"pattern": "^b"}}}
+    ]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "array"]},
+      {"type": "object", "allOf": [
+        {"not": {"propertyNames": {"type": "string", "pattern": "^a"}}},
+        {"not": {"propertyNames": {"type": "string", "pattern": "^b"}}}
+      ]}
+    ]},
+    "tests": [
+      {"data": {"c": 1}, "valid": true},
+      {"data": {"a1": 1}, "valid": false},
+      {"data": {"a1": 1, "b1": 2}, "valid": true},
+      {"data": {}, "valid": false},
+      {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "a negated finite key constraint beside a length-limited one keeps both",
+    "schema": {"allOf": [
+      {"type": "object", "propertyNames": {"maxLength": 4}},
+      {"not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}
+    ]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
+      "propertyNames": {"type": "string", "maxLength": 4},
+      "not": {"propertyNames": {"enum": ["a", "b"]}}},
+    "tests": [
+      {"data": {"xyz": 1}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"abcde": 1}, "valid": false},
+      {"data": {"a": 1, "xyz": 2}, "valid": true},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "a floor above the demanded key count survives the negated closed object",
+    "schema": {"type": "object", "minProperties": 2, "properties": {"filter": {"type": "string"}},
+      "not": {"additionalProperties": false, "properties": {"filter": {"type": "string"}}}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "minProperties": 2,
+      "properties": {"filter": {"type": "string"}},
+      "not": {"propertyNames": {"const": "filter"}}},
+    "tests": [
+      {"data": {"x": 1, "y": 2}, "valid": true},
+      {"data": {"x": 1}, "valid": false},
+      {"data": {"filter": "f", "x": 1}, "valid": true},
+      {"data": {"filter": "f"}, "valid": false},
+      {"data": {"filter": 1, "x": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "a negated key constraint nested under a property",
+    "schema": {"type": "object", "properties": {"x": {"not": {"type": "object", "propertyNames": {"pattern": "^a"}}}}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
+      "properties": {"x": {"anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "not": {"propertyNames": {"type": "string", "pattern": "^a"}}}
+      ]}}},
+    "tests": [
+      {"data": {"x": 5}, "valid": true},
+      {"data": {"x": {"b": 1}}, "valid": true},
+      {"data": {"x": {"a1": 1}}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "a ceiling with one slot beyond the required key keeps the demand satisfiable",
+    "schema": {"type": "object", "maxProperties": 2, "minProperties": 1, "required": ["a"],
+      "properties": {"a": {"type": "string"}},
+      "not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "maxProperties": 2,
+      "required": ["a"], "properties": {"a": {"type": "string"}},
+      "not": {"propertyNames": {"enum": ["a", "b"]}}},
+    "tests": [
+      {"data": {"a": "s", "c": 1}, "valid": true},
+      {"data": {"a": "s"}, "valid": false},
+      {"data": {"a": "s", "b": 1}, "valid": false},
+      {"data": {"a": 1, "c": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "a negated key constraint under draft 7",
+    "draft": "draft7",
+    "schema": {"not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}},
+    "expected": {"$schema": "http://json-schema.org/draft-07/schema#", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "array"]},
+      {"type": "object", "not": {"propertyNames": {"enum": ["a", "b"]}}}
+    ]},
+    "tests": [
+      {"data": {"c": 1}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "a negated closed object under draft 4 stays raw",
+    "draft": "draft4",
+    "schema": {"not": {"type": "object", "properties": {"a": {"type": "string"}}, "additionalProperties": false}},
+    "expected": {"not": {"type": "object", "properties": {"a": {"type": "string"}}, "additionalProperties": false}},
+    "tests": [
+      {"data": {"b": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {"a": "x", "b": 1}, "valid": true},
+      {"data": {}, "valid": false}
     ]
   }
 ]

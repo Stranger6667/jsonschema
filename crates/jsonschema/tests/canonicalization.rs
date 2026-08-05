@@ -5,7 +5,10 @@ use std::{
 };
 
 use jsonschema::{
-    canonical::{options, CanonicalKind, CanonicalSchema, CanonicalView, OperandMismatch},
+    canonical::{
+        options, CanonicalKind, CanonicalSchema, CanonicalView, ObjectViolationView,
+        OperandMismatch,
+    },
     canonicalize, validator_for, CanonicalizationError, Draft, JsonType, PatternOptions, Registry,
 };
 use serde_json::{json, Map, Number, Value};
@@ -654,6 +657,60 @@ fn object_view_exposes_property_names() {
             "type": "string",
             "maxLength": 4
         })
+    );
+}
+
+#[test]
+fn object_view_exposes_name_fails_violation() {
+    let CanonicalView::Object(view) = canonicalize(&json!({
+        "type": "object",
+        "minProperties": 1,
+        "properties": {"filter": {"type": "string"}},
+        "not": {"additionalProperties": false, "properties": {"filter": {"type": "string"}}}
+    }))
+    .unwrap()
+    .view() else {
+        panic!("expected an Object view");
+    };
+    let [ObjectViolationView::NameFails(schema)] = view.violations.as_slice() else {
+        panic!(
+            "expected a single NameFails violation, got {:?}",
+            view.violations
+        );
+    };
+    assert_eq!(
+        schema.to_json_schema(),
+        json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "const": "filter"})
+    );
+}
+
+#[test]
+fn object_view_exposes_undeclared_value_fails_violation() {
+    let CanonicalView::Object(view) = canonicalize(&json!({
+        "type": "object",
+        "properties": {"a": {}},
+        "not": {"properties": {"a": {}}, "additionalProperties": {"type": "string"}}
+    }))
+    .unwrap()
+    .view() else {
+        panic!("expected an Object view");
+    };
+    let [ObjectViolationView::UndeclaredValueFails {
+        names,
+        patterns,
+        additional,
+    }] = view.violations.as_slice()
+    else {
+        panic!(
+            "expected a single UndeclaredValueFails violation, got {:?}",
+            view.violations
+        );
+    };
+    assert_eq!(names, &vec!["a".to_string()]);
+    assert!(patterns.is_empty());
+    assert_eq!(
+        additional.to_json_schema(),
+        json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string"})
     );
 }
 
@@ -1997,9 +2054,9 @@ fn intersect_draft4_object_leaves_keeps_validation_parity(left: &Value, right: &
 #[test_case(&json!({"const": 1}), &json!({"type": "integer"}), Some(true); "constant inside a type")]
 #[test_case(&json!({"enum": [1, 2]}), &json!({"type": "integer"}), Some(true); "enum inside a type")]
 #[test_case(&json!({"type": "integer", "minimum": 5}), &json!({"type": "integer"}), Some(true); "bounded inside unbounded")]
-#[test_case(&json!({"const": "x"}), &json!({"type": "integer"}), Some(false); "constant witness refutes")]
-#[test_case(&json!({"enum": [1, "x"]}), &json!({"type": "integer"}), Some(false); "enum member witness refutes")]
-#[test_case(&json!({"type": "string"}), &json!({"type": "integer"}), None; "disjoint types without a witness")]
+#[test_case(&json!({"const": "x"}), &json!({"type": "integer"}), Some(false); "a constant outside the type refutes")]
+#[test_case(&json!({"enum": [1, "x"]}), &json!({"type": "integer"}), Some(false); "an enum member outside the type refutes")]
+#[test_case(&json!({"type": "string"}), &json!({"type": "integer"}), None; "disjoint types without a decisive counterexample")]
 #[test_case(&json!({"type": "integer"}), &json!({"type": "integer", "minimum": 5}), None; "unbounded against bounded")]
 fn is_subset_of_decides(left: &Value, right: &Value, expected: Option<bool>) {
     let left = canonicalize(left).expect("canonicalizes");
@@ -2205,6 +2262,17 @@ fn negate_spells_the_complement(schema: &Value, expected: &Value) {
     "draft 4 typed group"
 )]
 #[test_case(&reference_chain_schema(); "reference chain")]
+#[test_case(&json!({"type": "object", "propertyNames": {"enum": ["a", "b"]}}); "key constraint")]
+#[test_case(&json!({"type": "object", "propertyNames": {"pattern": "^a"}}); "key pattern constraint")]
+#[test_case(
+    &json!({"type": "object", "properties": {"a": {"type": "string"}}, "additionalProperties": false});
+    "closed object with a declared property"
+)]
+#[test_case(&json!({"type": "object", "additionalProperties": {"type": "string"}}); "value shield")]
+#[test_case(
+    &json!({"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}});
+    "value shield beside a declared property"
+)]
 fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
     let complement = canonicalize(schema)
         .expect("canonicalizes")
@@ -2305,6 +2373,18 @@ fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
         "$ref": "#/$defs/A"
     });
     "reference through its own complement"
+)]
+#[test_case(
+    &json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": "object", "additionalProperties": {"type": "string"}});
+    "draft 4 value shield"
+)]
+#[test_case(
+    &json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": "object", "properties": {"a": {"type": "string"}}, "additionalProperties": false});
+    "draft 4 closed object"
+)]
+#[test_case(
+    &json!({"type": "object", "patternProperties": {"^a": {"type": "string"}}});
+    "pattern properties"
 )]
 fn negate_declines(schema: &Value) {
     assert_eq!(canonicalize(schema).expect("canonicalizes").negate(), None);
@@ -2442,9 +2522,49 @@ fn negate_resolves_a_reference_chain() {
     );
 }
 
+#[test]
+fn negated_key_constraint_keeps_the_definition() {
+    // The reference reaches "#/$defs/K" only through the raw `not`, so parsing must walk the
+    // demand the `not` produces to keep the definition from being pruned as unreachable.
+    let canonical = canonicalize(&json!({
+        "$defs": {"K": {"enum": ["a", "b"]}},
+        "not": {"type": "object", "propertyNames": {"$ref": "#/$defs/K"}}
+    }))
+    .expect("canonicalizes");
+    assert!(canonical.definition("#/$defs/K").is_some());
+    jsonschema::validator_for(&canonical.to_json_schema()).expect("emitted schema builds");
+}
+
+#[test]
+fn negated_value_shield_keeps_the_definition() {
+    // The reference reaches "#/$defs/V" only through the raw `not`, so parsing must walk the
+    // demand the `not` produces to keep the definition from being pruned as unreachable.
+    let canonical = canonicalize(&json!({
+        "$defs": {"V": {"type": "string"}},
+        "not": {"type": "object", "additionalProperties": {"$ref": "#/$defs/V"}}
+    }))
+    .expect("canonicalizes");
+    assert!(canonical.definition("#/$defs/V").is_some());
+    jsonschema::validator_for(&canonical.to_json_schema()).expect("emitted schema builds");
+}
+
 #[test_case(&json!({"const": "a"}); "string constant")]
 #[test_case(&json!({"enum": ["a", "b"]}); "string value set")]
 #[test_case(&json!({"type": "string", "minLength": 2}); "string window")]
+#[test_case(&json!({"type": "object", "propertyNames": {"enum": ["a", "b"]}}); "key constraint")]
+#[test_case(
+    &json!({"type": "object", "properties": {"a": {"type": "string"}}, "additionalProperties": false});
+    "closed object with a declared property"
+)]
+#[test_case(
+    &json!({"type": "object", "propertyNames": {"pattern": "^a"}});
+    "key pattern constraint"
+)]
+#[test_case(&json!({"type": "object", "additionalProperties": {"type": "string"}}); "value shield")]
+#[test_case(
+    &json!({"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}});
+    "value shield beside a declared property"
+)]
 fn negate_is_an_involution(schema: &Value) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     let doubled = canonical
@@ -2453,4 +2573,152 @@ fn negate_is_an_involution(schema: &Value) {
         .negate()
         .expect("negates back");
     assert_eq!(doubled, canonical);
+}
+
+// "abc" has length 3, so it always fails `maxLength: 2`: the demand is implied by the required
+// key and folding it away leaves the same value set the direct spelling admits.
+#[test]
+fn required_key_violation_folds_when_it_always_fails_property_names() {
+    let composed = canonicalize(&json!({"allOf": [
+        {"not": {"type": "object", "propertyNames": {"maxLength": 2}}},
+        {"type": "object", "required": ["abc"]}
+    ]}))
+    .expect("canonicalizes");
+    let direct =
+        canonicalize(&json!({"type": "object", "required": ["abc"]})).expect("canonicalizes");
+    assert_eq!(composed.to_json_schema(), direct.to_json_schema());
+}
+
+// "ab" has length 2, which `maxLength: 2` admits, so the required key alone cannot satisfy the
+// demand: it must survive.
+#[test]
+fn required_key_violation_stays_when_it_can_satisfy_property_names() {
+    let composed = canonicalize(&json!({"allOf": [
+        {"not": {"type": "object", "propertyNames": {"maxLength": 2}}},
+        {"type": "object", "required": ["ab"]}
+    ]}))
+    .expect("canonicalizes");
+    let CanonicalView::Object(view) = composed.view() else {
+        panic!("expected an Object view");
+    };
+    assert_eq!(view.violations.len(), 1);
+    assert!(matches!(
+        view.violations[0],
+        ObjectViolationView::NameFails(_)
+    ));
+}
+
+// A required key the demand admits cannot itself carry the violation, and the size ceiling
+// gives it no room for a second key to carry it instead: no object can validate.
+#[test_case(
+    &json!({"type": "object", "maxProperties": 1, "minProperties": 1, "required": ["a"],
+            "properties": {"a": {"type": "string"}},
+            "not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}),
+    false;
+    "no room for the name-fails demand beyond the required key"
+)]
+#[test_case(
+    &json!({"type": "object", "maxProperties": 2, "minProperties": 1, "required": ["a"],
+            "properties": {"a": {"type": "string"}},
+            "not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}),
+    true;
+    "a second slot admits the violating key"
+)]
+#[test_case(
+    &json!({"type": "object", "maxProperties": 1, "minProperties": 1, "required": ["c"],
+            "properties": {"a": {"type": "string"}},
+            "not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}),
+    true;
+    "the required key itself already carries the violation"
+)]
+#[test_case(
+    &json!({"type": "object", "maxProperties": 1, "required": ["a"],
+            "properties": {"a": {"type": "integer"}},
+            "not": {"type": "object", "properties": {"a": {"type": "integer"}},
+                    "additionalProperties": {"type": "string"}}}),
+    false;
+    "no room for the undeclared-value-fails demand beyond the required key"
+)]
+fn a_required_key_the_demand_admits_needs_room_for_another(schema: &Value, satisfiable: bool) {
+    let canonical = canonicalize(schema).expect("canonicalizes");
+    assert_eq!(canonical.is_satisfiable(), satisfiable);
+}
+
+// The extra slot in the second case above is not just theoretical: an object using it validates.
+#[test]
+fn the_extra_slot_admits_a_validating_instance() {
+    let schema = json!({"type": "object", "maxProperties": 2, "minProperties": 1, "required": ["a"],
+        "properties": {"a": {"type": "string"}},
+        "not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}});
+    let validator = validator_for(&schema).expect("builds");
+    assert!(validator.is_valid(&json!({"a": "x", "c": 1})));
+}
+
+// The required key "c" already breaks the schema the demand names on its own, so the fold above
+// removes the demand entirely and the leaf is satisfiable with just that one key.
+#[test]
+fn the_folded_required_key_admits_a_validating_instance() {
+    let schema = json!({"type": "object", "maxProperties": 1, "minProperties": 1, "required": ["c"],
+        "properties": {"a": {"type": "string"}},
+        "not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}});
+    let validator = validator_for(&schema).expect("builds");
+    assert!(validator.is_valid(&json!({"c": 1})));
+}
+
+// "a" definitely satisfies the demand, but "z" only might: whether the custom format rejects it
+// is unknown to the checker, so the demand still needs a candidate and must survive. A caller
+// registering a checker that fails "z" makes it the violator, so the leaf stays satisfiable.
+#[test]
+fn a_required_key_left_undecided_keeps_the_demand_from_folding() {
+    let schema = json!({"type": "object", "maxProperties": 2, "required": ["a", "z"],
+    "properties": {"a": {}, "z": {}},
+    "not": {"type": "object", "propertyNames": {"anyOf": [
+        {"const": "a"}, {"format": "custom-uncheckable"}
+    ]}}});
+    let canonical = options()
+        .should_validate_formats(true)
+        .canonicalize(&schema)
+        .expect("canonicalizes");
+    assert!(canonical.is_satisfiable());
+    let validator = ::jsonschema::options()
+        .with_format("custom-uncheckable", |text: &str| text != "z")
+        .should_validate_formats(true)
+        .build(&schema)
+        .expect("builds");
+    assert!(validator.is_valid(&json!({"a": 1, "z": 2})));
+}
+
+// "a" is name-covered by the demand's scope, so it cannot carry the value-side violation, but "z"
+// is outside that scope and matches no pattern - it can carry it, so the demand must survive.
+#[test]
+fn a_required_key_outside_the_demand_names_keeps_it_from_folding() {
+    let schema = json!({"type": "object", "maxProperties": 2, "required": ["a", "z"],
+        "properties": {"a": {}, "z": {"type": "integer"}},
+        "not": {"type": "object", "properties": {"a": {}},
+                "additionalProperties": {"type": "string"}}});
+    let canonical = canonicalize(&schema).expect("canonicalizes");
+    assert!(canonical.is_satisfiable());
+    let validator = validator_for(&schema).expect("builds");
+    assert!(validator.is_valid(&json!({"a": 1, "z": 5})));
+}
+
+#[test_case(&json!({"type": "object", "propertyNames": {"enum": ["a", "b"]}}); "key constraint")]
+#[test_case(
+    &json!({"type": "object", "properties": {"a": {"type": "string"}}, "additionalProperties": false});
+    "closed object with a declared property"
+)]
+#[test_case(
+    &json!({"type": "object", "propertyNames": {"pattern": "^a"}});
+    "key pattern constraint"
+)]
+#[test_case(&json!({"type": "object", "additionalProperties": {"type": "string"}}); "value shield")]
+#[test_case(
+    &json!({"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}});
+    "value shield beside a declared property"
+)]
+fn complement_intersects_to_nothing(schema: &Value) {
+    let canonical = canonicalize(schema).expect("canonicalizes");
+    let complement = canonical.negate().expect("negates");
+    let meet = canonical.intersect(&complement).expect("intersects");
+    assert!(!meet.is_satisfiable());
 }

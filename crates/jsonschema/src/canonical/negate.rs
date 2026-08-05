@@ -11,7 +11,8 @@ use crate::{
         ir::{
             type_set_schema, ArrayLeaf, AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber,
             CanonicalJson, ContainsFacet, Discrete, Divisors, ExcludedDivisors, IntegerBounds,
-            IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, StringLeaf,
+            IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, ObjectViolation, Schema, SchemaKind,
+            StringLeaf,
         },
         DefinitionMap, ROOT_DEFINITION_KEY,
     },
@@ -635,21 +636,26 @@ fn negate_array_leaf(
 
 /// The leaf is a conjunction of facets over objects, so its complement is the union of the
 /// per-facet complements beside the non-object types: a size window flips into its outer rays, a
-/// required key into its absence, and a property schema into the key held with a violating value.
+/// required key into its absence, a property schema into the key held with a violating value, and a
+/// key constraint into a demand for a key that breaks it.
 /// ```text
 /// e.g.  {"not": {"type": "object", "required": ["a"], "minProperties": 2}}
 ///       =>  anyOf: [<non-object types>,
 ///                   {"type": "object", "properties": {"a": false}},
 ///                   {"type": "object", "maxProperties": 1}]
+/// e.g.  {"not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}
+///       =>  anyOf: [<non-object types>, {"type": "object", "not": {"propertyNames": {"enum": ["a", "b"]}}}]
 /// ```
 fn negate_object_leaf(
     leaf: &ObjectLeaf,
     walk: &mut NegationWalk<'_>,
     ctx: &CanonicalizationContext,
 ) -> Option<Schema> {
-    if leaf.property_names.is_some()
-        || !leaf.pattern_properties.is_empty()
-        || leaf.additional.is_some()
+    if !leaf.pattern_properties.is_empty() {
+        return None;
+    }
+    if (leaf.property_names.is_some() || leaf.additional.is_some())
+        && !ctx.draft().is_known_keyword("propertyNames")
     {
         return None;
     }
@@ -676,6 +682,67 @@ fn negate_object_leaf(
             ctx,
         ));
     }
+    // A key constraint fails on an object exactly when some key breaks it: that is exactly the
+    // demand recorded below.
+    if let Some(names) = &leaf.property_names {
+        branches.push(algebra::object_leaf(
+            ObjectLeaf {
+                violations: vec![ObjectViolation::NameFails(names.clone())],
+                ..ObjectLeaf::default()
+            },
+            ctx,
+        ));
+    }
+    // A value shield fails on an object exactly when some key outside `properties` and
+    // `patternProperties` holds a value it rejects: the demand records that declared key set so
+    // the shield's reach stays exact once reinstated.
+    if let Some(shield) = &leaf.additional {
+        branches.push(algebra::object_leaf(
+            ObjectLeaf {
+                violations: vec![ObjectViolation::UndeclaredValueFails {
+                    names: leaf.properties.keys().cloned().collect(),
+                    patterns: leaf.pattern_properties.keys().cloned().collect(),
+                    additional: shield.clone(),
+                }],
+                ..ObjectLeaf::default()
+            },
+            ctx,
+        ));
+    }
+    for violation in &leaf.violations {
+        match violation {
+            ObjectViolation::NameFails(violated) => {
+                branches.push(algebra::object_leaf(
+                    ObjectLeaf {
+                        property_names: Some(violated.clone()),
+                        ..ObjectLeaf::default()
+                    },
+                    ctx,
+                ));
+            }
+            ObjectViolation::UndeclaredValueFails {
+                names,
+                patterns,
+                additional,
+            } => {
+                branches.push(algebra::object_leaf(
+                    ObjectLeaf {
+                        properties: names
+                            .iter()
+                            .map(|name| (name.clone(), Schema::new(SchemaKind::True)))
+                            .collect(),
+                        pattern_properties: patterns
+                            .iter()
+                            .map(|pattern| (pattern.clone(), Schema::new(SchemaKind::True)))
+                            .collect(),
+                        additional: Some(additional.clone()),
+                        ..ObjectLeaf::default()
+                    },
+                    ctx,
+                ));
+            }
+        }
+    }
     Some(algebra::union(branches, ctx))
 }
 
@@ -693,6 +760,7 @@ fn object_branch(
             properties,
             pattern_properties: BTreeMap::new(),
             additional: None,
+            violations: Vec::new(),
         },
         ctx,
     )

@@ -322,6 +322,20 @@ impl MaybeEmpty for ArrayLeaf {
     }
 }
 
+/// One demand produced by negation: the object must hold at least one entry that breaks the
+/// stored rule.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum ObjectViolation {
+    /// Some key's name fails the schema.
+    NameFails(Schema),
+    /// Some key outside `names` and matching none of `patterns` has a value failing `additional`.
+    UndeclaredValueFails {
+        names: Vec<Arc<str>>,
+        patterns: Vec<Arc<str>>,
+        additional: Schema,
+    },
+}
+
 /// The constraints a [`SchemaKind::Object`] places on an object value. A required key implies a
 /// property, so `sizes.minimum` is kept above `required.len()` or absent - never a repeat of it.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -338,6 +352,8 @@ pub(crate) struct ObjectLeaf {
     /// The schema every key `properties` does not name and no pattern in `pattern_properties`
     /// matches must satisfy; never `True` (normalized away).
     pub(crate) additional: Option<Schema>,
+    /// Sorted, deduplicated. The object must break each of these rules.
+    pub(crate) violations: Vec<ObjectViolation>,
 }
 
 impl ObjectLeaf {
@@ -383,6 +399,7 @@ impl ObjectLeaf {
             && self.properties.is_empty()
             && self.pattern_properties.is_empty()
             && self.additional.is_none()
+            && self.violations.is_empty()
     }
 
     /// The keys an object must carry, as a count bound.

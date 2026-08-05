@@ -12,8 +12,8 @@ use crate::{
             AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber, BoundRational, CanonicalJson,
             ContainsFacet, Discrete, Divisors, ExcludedDivisors, IntegerBounds, IntegerLeaf,
             IntegerLeaves, LengthBounds, NonEmpty, NumberLeaf, NumberLeaves, ObjectLeaf,
-            ObjectLeaves, Round, Schema, SchemaKind, Side, StringLeaf, StringLeaves,
-            UncheckableFacet, Verdict,
+            ObjectLeaves, ObjectViolation, Round, Schema, SchemaKind, Side, StringLeaf,
+            StringLeaves, UncheckableFacet, Verdict,
         },
         negate, oracle, parse,
     },
@@ -1129,6 +1129,7 @@ fn lift_degenerate_member(
                 property_names: None,
                 properties: BTreeMap::new(),
                 pattern_properties: BTreeMap::new(),
+                violations: Vec::new(),
             });
             true
         }
@@ -1272,6 +1273,9 @@ fn united_sole_key(
     if left.sizes != right.sizes
         || left.property_names != right.property_names
         || left.pattern_properties != right.pattern_properties
+        // Merging with unequal violation lists would silently drop one side's constraint: with
+        // equal lists the merge distributes, `(A and v) or (B and v) = (A or B) and v`.
+        || left.violations != right.violations
     {
         return None;
     }
@@ -1313,6 +1317,7 @@ fn united_sole_key(
         properties,
         pattern_properties: left.pattern_properties.clone(),
         additional: None,
+        violations: left.violations.clone(),
     })
 }
 
@@ -1381,6 +1386,9 @@ fn collapse_object_leaves_covering_domain(
         properties: BTreeMap::new(),
         pattern_properties: BTreeMap::new(),
         additional: None,
+        // Coverage goes through `oracle::covers` (intersect plus structural equality), so a
+        // violation-carrying leaf never falsely covers a violation-free piece.
+        violations: Vec::new(),
     };
     let packed = packed_leaves(leaves, ctx);
     if !split_piece_is_covered(piece.clone(), &packed, &keys, ctx) {
@@ -3089,6 +3097,97 @@ fn restrict_array_member(
 pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -> Schema {
     normalize_additional(&mut leaf, ctx);
     normalize_property_names(&mut leaf, ctx);
+    // A demand no key can break admits nothing; negation never builds one, so reaching here is a
+    // constructor bug upstream.
+    debug_assert!(
+        !leaf.violations.iter().any(|violation| match violation {
+            ObjectViolation::NameFails(violated) => matches!(violated.kind(), SchemaKind::True)
+                || matches!(violated.kind(), SchemaKind::MultiType(set) if set.contains(JsonType::String)),
+            ObjectViolation::UndeclaredValueFails { additional, .. } => {
+                matches!(additional.kind(), SchemaKind::True)
+            }
+        }),
+        "a demand no key can break survived construction"
+    );
+    // Every key must satisfy the constraint, yet a demand needs one that breaks it.
+    if let Some(names) = &leaf.property_names {
+        for violation in &leaf.violations {
+            let ObjectViolation::NameFails(violated) = violation else {
+                continue;
+            };
+            if violated == names {
+                return Schema::new(SchemaKind::False);
+            }
+            if let Some(values) = names.kind().finite_values() {
+                if values.iter().all(|value| {
+                    matches!(value.as_value(), Value::String(key)
+                    if matches!(admits_key(violated, key, ctx), Verdict::Admits))
+                }) {
+                    return Schema::new(SchemaKind::False);
+                }
+            }
+        }
+    }
+    // Every undeclared key's value must satisfy the shield, yet a demand needs one that breaks it.
+    if let Some(shield) = &leaf.additional {
+        for violation in &leaf.violations {
+            if let ObjectViolation::UndeclaredValueFails {
+                names,
+                patterns,
+                additional,
+            } = violation
+            {
+                if additional == shield
+                    && leaf.properties.keys().eq(names.iter())
+                    && leaf.pattern_properties.keys().eq(patterns.iter())
+                {
+                    return Schema::new(SchemaKind::False);
+                }
+            }
+        }
+    }
+    // A required key already breaks the schema a `NameFails` demand names, so the key alone
+    // supplies the "some key breaks it" the demand needs; keeping the demand spells the same
+    // value set twice.
+    // e.g.  allOf [{"not": {"type": "object", "propertyNames": {"maxLength": 2}}},
+    //              {"type": "object", "required": ["abc"]}]
+    //       =>  {"type": "object", "required": ["abc"]}
+    let required = &leaf.required;
+    leaf.violations.retain(|violation| {
+        let ObjectViolation::NameFails(violated) = violation else {
+            return true;
+        };
+        !required
+            .iter()
+            .any(|key| matches!(admits_key(violated, key, ctx), Verdict::Rejects))
+    });
+    // A surviving demand needs a key none of the required ones can be, so it needs a key beyond
+    // them; the size ceiling then has to leave room for one, or no object can carry the violation.
+    // e.g.  {"type": "object", "maxProperties": 1, "minProperties": 1, "required": ["a"],
+    //        "properties": {"a": {"type": "string"}},
+    //        "not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}
+    //       =>  {"not": {}}
+    if leaf
+        .effective_sizes()
+        .maximum
+        .as_ref()
+        .is_some_and(|max| *max <= leaf.required_count())
+        && leaf.violations.iter().any(|violation| match violation {
+            ObjectViolation::NameFails(violated) => required
+                .iter()
+                .all(|key| matches!(admits_key(violated, key, ctx), Verdict::Admits)),
+            ObjectViolation::UndeclaredValueFails {
+                names, patterns, ..
+            } => required.iter().all(|key| {
+                names.contains(key)
+                    || patterns
+                        .iter()
+                        .any(|pattern| matches_key(pattern, key, ctx))
+            }),
+        })
+    {
+        return Schema::new(SchemaKind::False);
+    }
     expand_additional_over_admitted_keys(&mut leaf);
     // A leaf no facet survives on admits every object, which the bare type set already spells;
     // keeping the leaf shape would give one value set two IR forms.
@@ -3178,7 +3277,8 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
     };
     // A ceiling of zero present keys accepts the empty object and nothing else, whether spelled as
     // `maxProperties: 0` or as a finite key set whose every key is forbidden; a required key would
-    // have emptied the leaf above.
+    // have emptied the leaf above. A demand needs a key present, which the empty object cannot
+    // carry, so the ceiling leaves it nothing to admit.
     // e.g.  {"type": "object", "maxProperties": 0}  =>  {"const": {}}
     // e.g.  {"type": "object", "propertyNames": {"const": "a"}, "properties": {"a": false}}
     //       =>  {"const": {}}
@@ -3189,9 +3289,12 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
         .as_ref()
         .is_some_and(BoundCardinality::is_zero)
     {
-        return Schema::new(SchemaKind::Const(CanonicalJson::from_value(
-            &Value::Object(serde_json::Map::new()),
-        )));
+        if leaf.get().violations.is_empty() {
+            return Schema::new(SchemaKind::Const(CanonicalJson::from_value(
+                &Value::Object(serde_json::Map::new()),
+            )));
+        }
+        return Schema::new(SchemaKind::False);
     }
     Schema::new(SchemaKind::Object(leaf))
 }
@@ -3561,9 +3664,16 @@ pub(crate) fn contains_reference(schema: &Schema) -> bool {
                 }
             }
             if let Some(schema) = &leaf.additional {
-                return contains_reference(schema);
+                if contains_reference(schema) {
+                    return true;
+                }
             }
-            false
+            leaf.violations.iter().any(|violation| match violation {
+                ObjectViolation::NameFails(schema) => contains_reference(schema),
+                ObjectViolation::UndeclaredValueFails { additional, .. } => {
+                    contains_reference(additional)
+                }
+            })
         }
         SchemaKind::MultiType(_)
         | SchemaKind::String(_)
@@ -3606,14 +3716,27 @@ fn has_uncheckable_string_facet(schema: &Schema, ctx: &CanonicalizationContext) 
         SchemaKind::AllOf(_) | SchemaKind::OneOf(_) | SchemaKind::Not(_) => {
             unreachable!("a symbolic branch never reaches the facet scan")
         }
-        SchemaKind::Object(leaf) => leaf
-            .get()
-            .property_names
-            .iter()
-            .chain(leaf.get().properties.values())
-            .chain(leaf.get().pattern_properties.values())
-            .chain(leaf.get().additional.iter())
-            .any(|nested| has_uncheckable_string_facet(nested, ctx)),
+        SchemaKind::Object(leaf) => {
+            leaf.get()
+                .property_names
+                .iter()
+                .chain(leaf.get().properties.values())
+                .chain(leaf.get().pattern_properties.values())
+                .chain(leaf.get().additional.iter())
+                .any(|nested| has_uncheckable_string_facet(nested, ctx))
+                || leaf
+                    .get()
+                    .violations
+                    .iter()
+                    .any(|violation| match violation {
+                        ObjectViolation::NameFails(schema) => {
+                            has_uncheckable_string_facet(schema, ctx)
+                        }
+                        ObjectViolation::UndeclaredValueFails { additional, .. } => {
+                            has_uncheckable_string_facet(additional, ctx)
+                        }
+                    })
+        }
         SchemaKind::Array(leaf) => leaf
             .get()
             .prefix
@@ -3667,6 +3790,10 @@ fn intersect_object_leaves(
         (Some(left), Some(right)) => Some(intersect(left, right, ctx)),
         (shield, None) | (None, shield) => shield,
     };
+    let mut violations = first.violations;
+    violations.extend(second.violations);
+    violations.sort();
+    violations.dedup();
     ObjectLeaf {
         sizes: first.sizes.intersect(second.sizes),
         required,
@@ -3674,6 +3801,7 @@ fn intersect_object_leaves(
         properties,
         pattern_properties,
         additional,
+        violations,
     }
 }
 
@@ -3844,7 +3972,67 @@ fn restrict_object_member(
             }
         }
     }
-    let mut full = restricted_property_names.is_none();
+    let mut restricted_violations = Vec::new();
+    for violation in &leaf.violations {
+        match violation {
+            ObjectViolation::NameFails(violated) => {
+                let mut satisfied = Verdict::Rejects;
+                for key in map.keys() {
+                    match admits_key(violated, key, ctx) {
+                        Verdict::Rejects => {
+                            satisfied = Verdict::Admits;
+                            break;
+                        }
+                        Verdict::Unknown => satisfied = Verdict::Unknown,
+                        Verdict::Admits => {}
+                    }
+                }
+                match satisfied {
+                    Verdict::Admits => {}
+                    Verdict::Rejects => return MemberRestriction::Empty,
+                    Verdict::Unknown => {
+                        restricted_violations.push(ObjectViolation::NameFails(violated.clone()));
+                    }
+                }
+            }
+            ObjectViolation::UndeclaredValueFails {
+                names,
+                patterns,
+                additional,
+            } => {
+                let mut satisfied = Verdict::Rejects;
+                for (key, value) in map {
+                    if names.iter().any(|name| name.as_ref() == key.as_str())
+                        || patterns
+                            .iter()
+                            .any(|pattern| matches_key(pattern, key, ctx))
+                    {
+                        continue;
+                    }
+                    match admits_value(additional, value, UncheckableFacet::Undecided, ctx) {
+                        Verdict::Rejects => {
+                            satisfied = Verdict::Admits;
+                            break;
+                        }
+                        Verdict::Unknown => satisfied = Verdict::Unknown,
+                        Verdict::Admits => {}
+                    }
+                }
+                match satisfied {
+                    Verdict::Admits => {}
+                    Verdict::Rejects => return MemberRestriction::Empty,
+                    Verdict::Unknown => {
+                        restricted_violations.push(ObjectViolation::UndeclaredValueFails {
+                            names: names.clone(),
+                            patterns: patterns.clone(),
+                            additional: additional.clone(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    let mut full = restricted_property_names.is_none() && restricted_violations.is_empty();
     let mut restricted: BTreeMap<Arc<str>, Schema> = BTreeMap::new();
     for (key, value) in map {
         let pin = Schema::new(SchemaKind::Const(CanonicalJson::from_value(value)));
@@ -3877,6 +4065,7 @@ fn restrict_object_member(
             properties: restricted,
             pattern_properties: BTreeMap::new(),
             additional: None,
+            violations: restricted_violations,
         },
         ctx,
     ))
@@ -3903,6 +4092,44 @@ fn object_leaf_admits(
     if keys == Verdict::Rejects {
         return Verdict::Rejects;
     }
+    let violations = Verdict::all(leaf.violations.iter().map(|violation| match violation {
+        ObjectViolation::NameFails(violated) => {
+            let mut satisfied = Verdict::Rejects;
+            for key in map.keys() {
+                match admits_key(violated, key, ctx) {
+                    Verdict::Rejects => return Verdict::Admits,
+                    Verdict::Unknown => satisfied = Verdict::Unknown,
+                    Verdict::Admits => {}
+                }
+            }
+            satisfied
+        }
+        ObjectViolation::UndeclaredValueFails {
+            names,
+            patterns,
+            additional,
+        } => {
+            let mut satisfied = Verdict::Rejects;
+            for (key, value) in map {
+                if names.iter().any(|name| name.as_ref() == key.as_str())
+                    || patterns
+                        .iter()
+                        .any(|pattern| matches_key(pattern, key, ctx))
+                {
+                    continue;
+                }
+                match admits_value(additional, value, UncheckableFacet::Undecided, ctx) {
+                    Verdict::Rejects => return Verdict::Admits,
+                    Verdict::Unknown => satisfied = Verdict::Unknown,
+                    Verdict::Admits => {}
+                }
+            }
+            satisfied
+        }
+    }));
+    if violations == Verdict::Rejects {
+        return Verdict::Rejects;
+    }
     let values = Verdict::all(map.iter().map(|(key, value)| {
         let named = match (
             leaf.properties.get(key.as_str()),
@@ -3925,7 +4152,7 @@ fn object_leaf_admits(
             },
         )))
     }));
-    keys.and(values)
+    keys.and(values).and(violations)
 }
 
 /// The number leaf admitting exactly the values both admit.
