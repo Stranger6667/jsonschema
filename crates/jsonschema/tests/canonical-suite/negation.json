@@ -3337,10 +3337,15 @@
     ]
   },
   {
-    "description": "a negated closed object under draft 4 stays raw",
+    "description": "a negated closed object under draft 4 spells the violating key as a closed map",
     "draft": "draft4",
     "schema": {"not": {"type": "object", "properties": {"a": {"type": "string"}}, "additionalProperties": false}},
-    "expected": {"not": {"type": "object", "properties": {"a": {"type": "string"}}, "additionalProperties": false}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "array"]},
+      {"type": "object", "not": {"properties": {"a": {}}, "additionalProperties": false}},
+      {"type": "object", "required": ["a"],
+        "properties": {"a": {"type": ["null", "boolean", "number", "array", "object"]}}}
+    ]},
     "tests": [
       {"data": {"b": 1}, "valid": true},
       {"data": {"a": "x"}, "valid": false},
@@ -3627,6 +3632,91 @@
       {"data": {"x": 5}, "valid": true},
       {"data": {"x": {"a": 1}}, "valid": false},
       {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "a negated closed object beside its own property map under draft 4",
+    "draft": "draft4",
+    "schema": {"type": "object", "minProperties": 1, "properties": {"a": {"type": "string"}},
+      "not": {"additionalProperties": false, "properties": {"a": {"type": "string"}}, "required": ["a"]}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [
+      {"type": "object", "properties": {"a": {"type": "string"}},
+        "not": {"properties": {"a": {}}, "additionalProperties": false}},
+      {"type": "object", "minProperties": 1, "properties": {"a": {"not": {}}}}
+    ]},
+    "tests": [
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {"a": "x", "b": 1}, "valid": true},
+      {"data": {"b": 1}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "a negated closed object with a size ceiling under draft 4",
+    "draft": "draft4",
+    "schema": {"not": {"additionalProperties": false, "maxProperties": 3}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "object", "minProperties": 1},
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {}, "valid": false},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "a negated value shield under draft 4",
+    "draft": "draft4",
+    "schema": {"not": {"additionalProperties": {"type": "string"}, "properties": {"a": {"type": "string"}}}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [
+      {"type": "object", "not": {"properties": {"a": {}}, "additionalProperties": {"type": "string"}}},
+      {"type": "object", "required": ["a"],
+        "properties": {"a": {"type": ["null", "boolean", "number", "array", "object"]}}}
+    ]},
+    "tests": [
+      {"data": {"b": 1}, "valid": true},
+      {"data": {"b": "x"}, "valid": false},
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "a negated closed pattern map under draft 4 stays raw",
+    "draft": "draft4",
+    "schema": {"not": {"patternProperties": {"^a": {}}, "additionalProperties": false}},
+    "expected": {"not": {"patternProperties": {"^a": {}}, "additionalProperties": false}},
+    "tests": [
+      {"data": {"b": 1}, "valid": true},
+      {"data": {"ab": 1}, "valid": false},
+      {"data": {"ab": 1, "b": 2}, "valid": true},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "a negated closed object over two keys under draft 4",
+    "draft": "draft4",
+    "schema": {"not": {"properties": {"a": {}, "b": {}}, "additionalProperties": false}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "object",
+      "not": {"properties": {"a": {}, "b": {}}, "additionalProperties": false}},
+    "tests": [
+      {"data": {"c": 1}, "valid": true},
+      {"data": {"a": 1, "b": 2}, "valid": false},
+      {"data": {"a": 1, "c": 2}, "valid": true},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "a negated closed object beside a required key under draft 4",
+    "draft": "draft4",
+    "schema": {"type": "object", "required": ["a"],
+      "not": {"properties": {"a": {}, "b": {}}, "additionalProperties": false}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "object", "required": ["a"],
+      "not": {"properties": {"a": {}, "b": {}}, "additionalProperties": false}},
+    "tests": [
+      {"data": {"a": 1, "c": 2}, "valid": true},
+      {"data": {"a": 1, "b": 2}, "valid": false},
+      {"data": {"c": 1}, "valid": false},
+      {"data": {"a": 1}, "valid": false}
     ]
   }
 ]
