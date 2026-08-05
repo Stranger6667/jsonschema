@@ -1991,7 +1991,7 @@
     ]
   },
   {
-    "description": "`not` an element schema under Draft 4, which has no `contains` to carry the complement",
+    "description": "`not` an element schema under Draft 4, which spells the complement demand as a barred element schema",
     "draft": "draft4",
     "schema": {
       "not": {
@@ -2002,12 +2002,34 @@
       }
     },
     "expected": {
-      "not": {
-        "type": "array",
-        "items": {
-          "type": "string"
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "anyOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "object"
+          ]
+        },
+        {
+          "type": "array",
+          "not": {
+            "items": {
+              "not": {
+                "type": [
+                  "null",
+                  "boolean",
+                  "number",
+                  "array",
+                  "object"
+                ]
+              }
+            }
+          }
         }
-      }
+      ]
     },
     "tests": [
       {
@@ -3782,14 +3804,17 @@
     ]
   },
   {
-    "description": "a negated pointer to an array target under draft 4 keeps the pointer barred",
+    "description": "a negated pointer to an array target under draft 4 takes the target's complement",
     "draft": "draft4",
     "schema": {"definitions": {"t": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 4}},
       "not": {"allOf": [{"$ref": "#/definitions/t"}, {"description": "x"}]}},
-    "kind": "not",
-    "expected": {"$schema": "http://json-schema.org/draft-04/schema#",
-      "definitions": {"t": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 4}},
-      "not": {"$ref": "#/definitions/t"}},
+    "kind": "any_of",
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "object"]},
+      {"type": "array", "not": {"items": {"not": {"type": ["null", "boolean", "number", "array", "object"]}}}},
+      {"type": "array", "minItems": 5},
+      {"enum": [[]]}
+    ]},
     "tests": [
       {"data": [], "valid": true},
       {"data": ["a"], "valid": false},
@@ -3907,6 +3932,135 @@
       {"data": "x", "valid": false},
       {"data": {"ab": "y"}, "valid": false},
       {"data": null, "valid": true}
+    ]
+  },
+  {
+    "description": "a negated element schema under draft 4 spells the violating element as a barred element schema",
+    "draft": "draft4",
+    "schema": {"not": {"type": "array", "items": {"type": "string"}}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "object"]},
+      {"type": "array", "not": {"items": {"not": {"type": ["null", "boolean", "number", "array", "object"]}}}}
+    ]},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": ["a"], "valid": false},
+      {"data": ["a", "b"], "valid": false},
+      {"data": [1], "valid": true},
+      {"data": ["a", 1], "valid": true},
+      {"data": [[]], "valid": true},
+      {"data": "x", "valid": true},
+      {"data": null, "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "a negated element schema beside a length window under draft 4",
+    "draft": "draft4",
+    "schema": {"not": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 4}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "object"]},
+      {"type": "array", "not": {"items": {"not": {"type": ["null", "boolean", "number", "array", "object"]}}}},
+      {"type": "array", "minItems": 5},
+      {"enum": [[]]}
+    ]},
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": ["a"], "valid": false},
+      {"data": ["a", "b", "c", "d"], "valid": false},
+      {"data": ["a", "b", "c", "d", "e"], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "a negated element schema without a type under draft 4, which no non-array can break",
+    "draft": "draft4",
+    "schema": {"not": {"items": {"type": "string"}}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "array",
+      "not": {"items": {"not": {"type": ["null", "boolean", "number", "array", "object"]}}}},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": ["a"], "valid": false},
+      {"data": [1], "valid": true},
+      {"data": "x", "valid": false},
+      {"data": null, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "two negated element schemas under draft 4, where the second demand takes a clause of its own",
+    "draft": "draft4",
+    "schema": {"type": "array", "not": {"items": {"type": "string"}},
+      "allOf": [{"not": {"items": {"type": "object"}}}]},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "array",
+      "not": {"items": {"not": {"type": ["null", "boolean", "number", "string", "array"]}}},
+      "allOf": [{"not": {"items": {"not": {"type": ["null", "boolean", "number", "array", "object"]}}}}]},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": ["a"], "valid": false},
+      {"data": [{}], "valid": false},
+      {"data": [{}, "a"], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": "x", "valid": false}
+    ]
+  },
+  {
+    "description": "a negated existential demand under draft 4, where the barred element schema returns to an element schema",
+    "draft": "draft4",
+    "schema": {"not": {"not": {"type": "array", "items": {"type": "string"}}}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "array", "items": {"type": "string"}},
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": ["a"], "valid": true},
+      {"data": [1], "valid": false},
+      {"data": "x", "valid": false}
+    ]
+  },
+  {
+    "description": "a negated element schema over arrays under draft 4, whose demand carries a demand",
+    "draft": "draft4",
+    "schema": {"not": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "object"]},
+      {"type": "array", "not": {"items": {"not": {"anyOf": [
+        {"type": ["null", "boolean", "number", "string", "object"]},
+        {"type": "array", "not": {"items": {"not": {"type": ["null", "boolean", "number", "array", "object"]}}}}
+      ]}}}}
+    ]},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": [[]], "valid": false},
+      {"data": [["a"]], "valid": false},
+      {"data": [[1]], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "a negated element schema every value meets under draft 4, which no element can break",
+    "draft": "draft4",
+    "schema": {"not": {"type": "array", "items": {}}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#",
+      "type": ["null", "boolean", "number", "string", "object"]},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": ["a"], "valid": false},
+      {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "a negated element schema no value meets under draft 4, which every non-empty array breaks",
+    "draft": "draft4",
+    "schema": {"not": {"type": "array", "items": {"not": {}}}},
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "object"]},
+      {"type": "array", "minItems": 1}
+    ]},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": ["a"], "valid": true},
+      {"data": "x", "valid": true}
     ]
   }
 ]

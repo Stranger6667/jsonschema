@@ -2351,6 +2351,25 @@ fn negate_spells_the_complement(schema: &Value, expected: &Value) {
     ]});
     "closed object"
 )]
+#[test_case(
+    &json!({"type": "array", "items": {"type": "string"}}),
+    &json!({"anyOf": [
+        {"type": ["null", "boolean", "number", "string", "object"]},
+        {"type": "array",
+         "not": {"items": {"not": {"type": ["null", "boolean", "number", "array", "object"]}}}}
+    ]});
+    "element schema"
+)]
+#[test_case(
+    &json!({"type": "array", "items": {"type": "string"}, "maxItems": 2}),
+    &json!({"anyOf": [
+        {"type": ["null", "boolean", "number", "string", "object"]},
+        {"type": "array",
+         "not": {"items": {"not": {"type": ["null", "boolean", "number", "array", "object"]}}}},
+        {"type": "array", "minItems": 3}
+    ]});
+    "element schema beside a size bound"
+)]
 fn negate_spells_the_draft_4_complement(schema: &Value, expected: &Value) {
     let canonical = options()
         .with_draft(Draft::Draft4)
@@ -2385,6 +2404,19 @@ fn negate_spells_the_draft_4_complement(schema: &Value, expected: &Value) {
 #[test_case(
     &json!({"type": "array", "items": {"type": "string"}, "contains": {"const": "a"}});
     "array existential demand beside an element schema"
+)]
+#[test_case(
+    &json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": "array", "items": {"type": "string"}});
+    "draft 4 array element schema"
+)]
+#[test_case(
+    &json!({"$schema": "http://json-schema.org/draft-04/schema#", "items": {"type": "string"}});
+    "draft 4 untyped array element schema"
+)]
+#[test_case(
+    &json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": "array",
+        "items": {"type": "string"}, "minItems": 1, "maxItems": 4});
+    "draft 4 array element schema in a length window"
 )]
 #[test_case(&json!({"type": "integer"}); "integer leaf")]
 #[test_case(&json!({"type": "integer", "minimum": 0}); "bounded integer leaf")]
@@ -2463,10 +2495,6 @@ fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
 
 // The decline set is contract: a caller sizes its fallback on it, so widening it is a visible change.
 #[test_case(&json!({"if": {}, "unevaluatedProperties": false}); "raw document")]
-#[test_case(
-    &json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": "array", "items": {"type": "string"}});
-    "draft 4 array element schema"
-)]
 #[test_case(
     &json!({"type": "array", "contains": {"type": "string"}, "minContains": 2});
     "counted array existential demand"

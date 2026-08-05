@@ -10,6 +10,7 @@
 - Canonicalization of negated `additionalProperties` under Draft 4, where the violating-key demand spells the closed property map.
 - Canonicalization of `not` a reference, where the complement of the resolved target takes the pointer's place.
 - Canonicalization of a negated `oneOf`, where the complement spells the values no branch admits beside the values two branches share.
+- Canonicalization of negated `items` under Draft 4, where the violating-element demand spells the barred element schema.
 
 ### Fixed
 
