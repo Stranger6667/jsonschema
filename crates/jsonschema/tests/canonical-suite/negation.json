@@ -3347,5 +3347,286 @@
       {"data": {"a": "x", "b": 1}, "valid": true},
       {"data": {}, "valid": false}
     ]
+  },
+  {
+    "description": "a value set narrowed by a negated key constraint keeps only the breaking members",
+    "schema": {"allOf": [
+      {"enum": [{"x": 1}, {"a": 1}, {"a": 1, "x": 2}, 5]},
+      {"not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}
+    ]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "enum": [5, {"a": 1, "x": 2}, {"x": 1}]},
+    "tests": [
+      {"data": 5, "valid": true},
+      {"data": {"x": 1}, "valid": true},
+      {"data": {"a": 1, "x": 2}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"b": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "a value set narrowed by a negated value shield keeps only the breaking member",
+    "schema": {"allOf": [
+      {"enum": [{"c": 5}, {"c": "s"}, {"a": 1}]},
+      {"not": {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}}}
+    ]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "const": {"c": 5}},
+    "tests": [
+      {"data": {"c": 5}, "valid": true},
+      {"data": {"c": "s"}, "valid": false},
+      {"data": {"a": 1}, "valid": false},
+      {"data": 7, "valid": false}
+    ]
+  },
+  {
+    "description": "a constant the negated key constraint already admits folds into it",
+    "schema": {"anyOf": [
+      {"const": {"x": 1}},
+      {"not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}
+    ]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "array"]},
+      {"type": "object", "not": {"propertyNames": {"enum": ["a", "b"]}}}
+    ]},
+    "tests": [
+      {"data": {"x": 1}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "a constant the negated key constraint rejects stays its own branch",
+    "schema": {"anyOf": [
+      {"const": {"a": 1}},
+      {"not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}
+    ]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "array"]},
+      {"type": "object", "not": {"propertyNames": {"enum": ["a", "b"]}}},
+      {"const": {"a": 1}}
+    ]},
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"x": 1}, "valid": true},
+      {"data": {"a": 2}, "valid": false}
+    ]
+  },
+  {
+    "description": "a constant the negated value shield already admits folds into it",
+    "schema": {"anyOf": [
+      {"const": {"c": 5}},
+      {"not": {"type": "object", "additionalProperties": {"type": "string"}}}
+    ]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "array"]},
+      {"type": "object", "not": {"additionalProperties": {"type": "string"}}}
+    ]},
+    "tests": [
+      {"data": {"c": 5}, "valid": true},
+      {"data": {"c": "s"}, "valid": false},
+      {"data": {}, "valid": false},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "a constant the negated value shield rejects stays its own branch",
+    "schema": {"anyOf": [
+      {"const": {"c": "s"}},
+      {"not": {"type": "object", "additionalProperties": {"type": "string"}}}
+    ]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "array"]},
+      {"type": "object", "not": {"additionalProperties": {"type": "string"}}},
+      {"const": {"c": "s"}}
+    ]},
+    "tests": [
+      {"data": {"c": "s"}, "valid": true},
+      {"data": {"c": 5}, "valid": true},
+      {"data": {"d": "s"}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "double negation of an asserting key format restores it",
+    "validate_formats": true,
+    "schemas": [
+      {"not": {"not": {"type": "object", "propertyNames": {"format": "email"}}}},
+      {"type": "object", "propertyNames": {"format": "email"}}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
+      "propertyNames": {"type": "string", "format": "email"}},
+    "tests": [
+      {"data": {"a@b.co": 1}, "valid": true},
+      {"data": {"q": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "a value set narrowed by a negated asserting key format keeps the breaking member",
+    "validate_formats": true,
+    "schema": {"allOf": [
+      {"enum": [{"q": 1}]},
+      {"not": {"type": "object", "propertyNames": {"format": "email"}}}
+    ]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "const": {"q": 1}},
+    "tests": [
+      {"data": {"q": 1}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "a value set beside a negated referenced key constraint pins each member undecided",
+    "schema": {"$defs": {"K": {"enum": ["a", "b"]}}, "allOf": [
+      {"enum": [{"q": 1}, {"a": 1}]},
+      {"not": {"type": "object", "propertyNames": {"$ref": "#/$defs/K"}}}
+    ]},
+    "expected": {"$defs": {"K": {"enum": ["a", "b"]}}, "$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
+      {"type": "object", "maxProperties": 1, "required": ["a"], "properties": {"a": {"const": 1}},
+        "not": {"propertyNames": {"allOf": [{"type": "string"}, {"$ref": "#/$defs/K"}]}}},
+      {"type": "object", "maxProperties": 1, "required": ["q"], "properties": {"q": {"const": 1}},
+        "not": {"propertyNames": {"allOf": [{"type": "string"}, {"$ref": "#/$defs/K"}]}}}
+    ]},
+    "tests": [
+      {"data": {"q": 1}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"b": 1}, "valid": false},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "a constant beside a negated referenced key constraint stays its own branch",
+    "schema": {"$defs": {"K": {"enum": ["a", "b"]}}, "anyOf": [
+      {"const": {"q": 1}},
+      {"not": {"type": "object", "propertyNames": {"$ref": "#/$defs/K"}}}
+    ]},
+    "expected": {"$defs": {"K": {"enum": ["a", "b"]}}, "$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "array"]},
+      {"type": "object", "not": {"propertyNames": {"allOf": [{"type": "string"}, {"$ref": "#/$defs/K"}]}}},
+      {"const": {"q": 1}}
+    ]},
+    "tests": [
+      {"data": {"q": 1}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "a key constraint coexists with a negated value shield",
+    "schema": {"allOf": [
+      {"type": "object", "propertyNames": {"maxLength": 4}},
+      {"not": {"type": "object", "additionalProperties": {"type": "string"}}}
+    ]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
+      "propertyNames": {"type": "string", "maxLength": 4},
+      "not": {"additionalProperties": {"type": "string"}}},
+    "tests": [
+      {"data": {"ab": 1}, "valid": true},
+      {"data": {"ab": "s"}, "valid": false},
+      {"data": {"abcde": 1}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "a zero ceiling leaves no key to break the negated constraint",
+    "schema": {"allOf": [
+      {"type": "object", "maxProperties": 0},
+      {"not": {"type": "object", "propertyNames": {"const": "a"}}}
+    ]},
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"b": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "value shields meeting on no value close the map over the declared keys",
+    "schema": {"allOf": [
+      {"type": "object", "propertyNames": {"maxLength": 4}, "properties": {"ab": {}}, "additionalProperties": {"type": "string"}},
+      {"type": "object", "additionalProperties": {"type": "integer"}}
+    ]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
+      "propertyNames": {"const": "ab"}, "properties": {"ab": {"type": "integer"}}},
+    "tests": [
+      {"data": {"ab": 2}, "valid": true},
+      {"data": {"ab": "s"}, "valid": false},
+      {"data": {"cd": 2}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "a value set beside a negated referenced value shield pins its members undecided",
+    "schema": {"$defs": {"V": {"type": "string"}}, "allOf": [
+      {"enum": [{"c": 5}, {"c": true}]},
+      {"not": {"type": "object", "additionalProperties": {"$ref": "#/$defs/V"}}}
+    ]},
+    "expected": {"$defs": {"V": {"type": "string"}}, "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object", "maxProperties": 1, "required": ["c"],
+      "properties": {"c": {"enum": [true, 5]}},
+      "not": {"additionalProperties": {"$ref": "#/$defs/V"}}},
+    "tests": [
+      {"data": {"c": 5}, "valid": true},
+      {"data": {"c": true}, "valid": true},
+      {"data": {"c": "s"}, "valid": false},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "a constant beside a negated referenced value shield stays its own branch",
+    "schema": {"$defs": {"V": {"type": "string"}}, "anyOf": [
+      {"const": {"a": 1, "c": 5}},
+      {"not": {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"$ref": "#/$defs/V"}}}
+    ]},
+    "expected": {"$defs": {"V": {"type": "string"}}, "$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "array"]},
+      {"type": "object", "not": {"properties": {"a": true}, "additionalProperties": {"$ref": "#/$defs/V"}}},
+      {"type": "object", "required": ["a"], "properties": {"a": {"anyOf": [
+        {"type": ["null", "boolean", "string", "array", "object"]},
+        {"type": "number", "not": {"multipleOf": 1}}
+      ]}}},
+      {"const": {"a": 1, "c": 5}}
+    ]},
+    "tests": [
+      {"data": {"a": 1, "c": 5}, "valid": true},
+      {"data": {"a": 1.5}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": 1, "c": "x"}, "valid": false},
+      {"data": {"a": 1, "c": true}, "valid": true}
+    ]
+  },
+  {
+    "description": "a constant folds into a branch whose property holds a negated value shield",
+    "schema": {"anyOf": [
+      {"const": {"x": {"c": 5}}},
+      {"type": "object", "properties": {"x": {"not": {"type": "object", "additionalProperties": {"type": "string"}}}}}
+    ]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
+      "properties": {"x": {"anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "not": {"additionalProperties": {"type": "string"}}}
+      ]}}},
+    "tests": [
+      {"data": {"x": {"c": 5}}, "valid": true},
+      {"data": {"x": 5}, "valid": true},
+      {"data": {"x": {"c": "s"}}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "a constant folds into a branch whose property holds a negated key constraint",
+    "schema": {"anyOf": [
+      {"const": {"x": {"q": 1}}},
+      {"type": "object", "properties": {"x": {"not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}}}
+    ]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
+      "properties": {"x": {"anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "not": {"propertyNames": {"enum": ["a", "b"]}}}
+      ]}}},
+    "tests": [
+      {"data": {"x": {"q": 1}}, "valid": true},
+      {"data": {"x": 5}, "valid": true},
+      {"data": {"x": {"a": 1}}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
   }
 ]
