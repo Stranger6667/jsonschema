@@ -4,6 +4,7 @@
 
 ### Added
 
+- Canonicalization of a negated array tuple, where each position's complement stands under the length that reaches it.
 - Canonicalization of `contains` demands sharing no value, where their counts add up into a length floor.
 - `CanonicalSchema.negate` through references, where the complement of the resolved target takes the reference's place.
 - Canonicalization of negated `propertyNames` and `additionalProperties`, where the complement spells the violating-key demand instead of a `not` residual.

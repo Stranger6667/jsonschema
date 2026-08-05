@@ -4062,5 +4062,198 @@
       {"data": ["a"], "valid": true},
       {"data": "x", "valid": true}
     ]
+  },
+  {
+    "description": "a negated one-position tuple, where reaching the position takes a length floor",
+    "draft": "draft7",
+    "schema": {"not": {"type": "array", "items": [{"type": "string"}]}},
+    "kind": "any_of",
+    "expected": {"$schema": "http://json-schema.org/draft-07/schema#", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "object"]},
+      {"type": "array", "items": [{"type": ["null", "boolean", "number", "array", "object"]}], "minItems": 1}
+    ]},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": ["a"], "valid": false},
+      {"data": ["a", 1], "valid": false},
+      {"data": [1], "valid": true},
+      {"data": [1, "a"], "valid": true},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "a negated tuple closed by `additionalItems`, where the ceiling carries the tail",
+    "draft": "draft7",
+    "schema": {"not": {"type": "array", "items": [{"type": "string"}], "additionalItems": false}},
+    "kind": "any_of",
+    "expected": {"$schema": "http://json-schema.org/draft-07/schema#", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "object"]},
+      {"type": "array", "items": [{"type": ["null", "boolean", "number", "array", "object"]}], "minItems": 1},
+      {"type": "array", "minItems": 2}
+    ]},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": ["a"], "valid": false},
+      {"data": ["a", "b"], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "a negated `prefixItems` tuple, where the position complement stands under the same floor",
+    "schema": {"not": {"type": "array", "prefixItems": [{"type": "string"}]}},
+    "kind": "any_of",
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "object"]},
+      {"type": "array", "prefixItems": [{"type": ["null", "boolean", "number", "array", "object"]}], "minItems": 1}
+    ]},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": ["a"], "valid": false},
+      {"data": ["a", 1], "valid": false},
+      {"data": [1], "valid": true},
+      {"data": 5, "valid": true}
+    ]
+  },
+  {
+    "description": "a negated `prefixItems` tuple closed by `items`, where the ceiling carries the tail",
+    "schema": {"not": {"type": "array", "prefixItems": [{"type": "string"}], "items": false}},
+    "kind": "any_of",
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "object"]},
+      {"type": "array", "prefixItems": [{"type": ["null", "boolean", "number", "array", "object"]}], "minItems": 1},
+      {"type": "array", "minItems": 2}
+    ]},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": ["a"], "valid": false},
+      {"data": ["a", "b"], "valid": true},
+      {"data": [1], "valid": true},
+      {"data": "x", "valid": true}
+    ]
+  },
+  {
+    "description": "a negated two-position tuple, where each position carries its own floor",
+    "schema": {"not": {"type": "array", "prefixItems": [{"type": "string"}, {"type": "boolean"}]}},
+    "kind": "any_of",
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "object"]},
+      {"type": "array", "prefixItems": [{"type": ["null", "boolean", "number", "array", "object"]}], "minItems": 1},
+      {"type": "array", "prefixItems": [true, {"type": ["null", "number", "string", "array", "object"]}], "minItems": 2}
+    ]},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": ["a"], "valid": false},
+      {"data": ["a", true], "valid": false},
+      {"data": ["a", true, 5], "valid": false},
+      {"data": ["a", 1], "valid": true},
+      {"data": [true], "valid": true},
+      {"data": [1, true], "valid": true}
+    ]
+  },
+  {
+    "description": "a negated two-position tuple under draft 4, where an unconstrained position spells as the empty schema",
+    "draft": "draft4",
+    "schema": {"not": {"type": "array", "items": [{"type": "string"}, {"type": "boolean"}]}},
+    "kind": "any_of",
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "object"]},
+      {"type": "array", "items": [{"type": ["null", "boolean", "number", "array", "object"]}], "minItems": 1},
+      {"type": "array", "items": [{}, {"type": ["null", "number", "string", "array", "object"]}], "minItems": 2}
+    ]},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": ["a", true], "valid": false},
+      {"data": ["a", 1], "valid": true},
+      {"data": [1], "valid": true}
+    ]
+  },
+  {
+    "description": "a negated tuple within a length window, where the position branch takes over the ray below the floor",
+    "draft": "draft6",
+    "schema": {"not": {"type": "array", "items": [{"type": "string"}], "minItems": 1, "maxItems": 3}},
+    "kind": "any_of",
+    "expected": {"$schema": "http://json-schema.org/draft-06/schema#", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "object"]},
+      {"type": "array", "items": [{"type": ["null", "boolean", "number", "array", "object"]}]},
+      {"type": "array", "minItems": 4}
+    ]},
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": ["a"], "valid": false},
+      {"data": ["a", "b", "c"], "valid": false},
+      {"data": ["a", "b", "c", "d"], "valid": true},
+      {"data": [1], "valid": true}
+    ]
+  },
+  {
+    "description": "a negated tuple carrying a `contains` demand, where each keeps its own branch",
+    "schema": {"not": {"type": "array", "prefixItems": [{"type": "boolean"}], "contains": {"type": "string"}}},
+    "kind": "any_of",
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "object"]},
+      {"type": "array", "items": {"type": ["null", "boolean", "number", "array", "object"]}},
+      {"type": "array", "prefixItems": [{"type": ["null", "number", "string", "array", "object"]}]}
+    ]},
+    "tests": [
+      {"data": [true, "a"], "valid": false},
+      {"data": [true], "valid": true},
+      {"data": [], "valid": true},
+      {"data": ["a"], "valid": true},
+      {"data": [true, 1, "a"], "valid": false}
+    ]
+  },
+  {
+    "description": "a negated tuple with a leading unconstrained position, where that position bars nothing",
+    "draft": "draft2019-09",
+    "schema": {"not": {"type": "array", "items": [true, {"type": "string"}]}},
+    "kind": "any_of",
+    "expected": {"$schema": "https://json-schema.org/draft/2019-09/schema", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "object"]},
+      {"type": "array", "items": [true, {"type": ["null", "boolean", "number", "array", "object"]}], "minItems": 2}
+    ]},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": [1], "valid": false},
+      {"data": [1, "a"], "valid": false},
+      {"data": [1, 2], "valid": true}
+    ]
+  },
+  {
+    "description": "a negated tuple with an open tail stays barred, since no demand names a position",
+    "draft": "draft7",
+    "schema": {"not": {"type": "array", "items": [{"type": "string"}], "additionalItems": {"type": "integer"}}},
+    "kind": "raw",
+    "expected": {"not": {"type": "array", "items": [{"type": "string"}], "additionalItems": {"type": "integer"}}},
+    "tests": [
+      {"data": ["a"], "valid": false},
+      {"data": ["a", 1], "valid": false},
+      {"data": ["a", "b"], "valid": true},
+      {"data": [1], "valid": true}
+    ]
+  },
+  {
+    "description": "a negated `prefixItems` tuple with an open tail stays barred",
+    "schema": {"not": {"type": "array", "prefixItems": [{"type": "string"}], "items": {"type": "integer"}}},
+    "kind": "raw",
+    "expected": {"not": {"type": "array", "prefixItems": [{"type": "string"}], "items": {"type": "integer"}}},
+    "tests": [
+      {"data": ["a"], "valid": false},
+      {"data": ["a", 1], "valid": false},
+      {"data": ["a", "b"], "valid": true},
+      {"data": [1], "valid": true}
+    ]
+  },
+  {
+    "description": "a negated tuple whose position admits an array value stays barred",
+    "draft": "draft7",
+    "schema": {"not": {"type": "array", "items": [{"enum": [[1]]}]}},
+    "kind": "raw",
+    "expected": {"not": {"type": "array", "items": [{"enum": [[1]]}]}},
+    "tests": [
+      {"data": [[1]], "valid": false},
+      {"data": [[2]], "valid": true},
+      {"data": [], "valid": false}
+    ]
   }
 ]

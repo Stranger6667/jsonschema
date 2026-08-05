@@ -655,7 +655,8 @@ fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Optio
 
 /// An element schema fails on an array exactly when one element violates it, which is a `contains`
 /// demand for its complement. A demand for one match fails exactly when every element violates it,
-/// which is the same trade the other way round.
+/// which is the same trade the other way round. A positional schema constrains only the arrays long
+/// enough to reach its index, so its violation carries that length as a floor.
 /// ```text
 /// e.g.  {"not": {"type": "array", "maxItems": 2}}
 ///       =>  anyOf: [<non-array types>, {"type": "array", "minItems": 3}]
@@ -665,17 +666,47 @@ fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Optio
 /// e.g.  {"not": {"type": "array", "contains": {"type": "string"}}}
 ///       =>  anyOf: [<non-array types>,
 ///                   {"type": "array", "items": {"type": <every type but string>}}]
+/// e.g.  {"not": {"type": "array", "prefixItems": [{"type": "string"}]}}
+///       =>  anyOf: [<non-array types>,
+///                   {"type": "array", "prefixItems": [{"type": <every type but string>}],
+///                    "minItems": 1}]
 /// ```
 fn negate_array_leaf(
     leaf: &ArrayLeaf,
     walk: &mut NegationWalk<'_>,
     ctx: &CanonicalizationContext,
 ) -> Option<Schema> {
-    if leaf.unique || !leaf.prefix.is_empty() {
+    if leaf.unique {
+        return None;
+    }
+    // A demand names no position, so it cannot ask for a violation past the prefix and leave the
+    // positions in front of it alone.
+    if !leaf.prefix.is_empty() && leaf.items.is_some() {
         return None;
     }
     let windows = length_windows(&leaf.lengths)?;
     let mut branches = vec![type_set_schema(JsonTypeSet::all().remove(JsonType::Array))];
+    debug_assert!(
+        leaf.prefix.is_empty() || leaf.items.is_none(),
+        "a positional leaf reached the position branches carrying a tail"
+    );
+    for (index, schema) in leaf.prefix.iter().enumerate() {
+        let mut prefix = vec![Schema::new(SchemaKind::True); index];
+        prefix.push(negate_within(schema, walk, ctx)?);
+        branches.push(algebra::array_leaf(
+            ArrayLeaf {
+                lengths: LengthBounds {
+                    minimum: Some(BoundCardinality::from(index as u64 + 1)),
+                    maximum: None,
+                },
+                unique: false,
+                prefix,
+                items: None,
+                contains: Vec::new(),
+            },
+            ctx,
+        ));
+    }
     if let Some(items) = &leaf.items {
         branches.push(algebra::array_leaf(
             ArrayLeaf {
