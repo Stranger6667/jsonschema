@@ -438,6 +438,9 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
                 patterns,
                 additional,
             } => {
+                // A leaf carrying pattern entries has no complement, so the demand negation records
+                // beside a shield names keys and nothing else.
+                debug_assert!(patterns.is_empty(), "a value-shield demand names a pattern");
                 let mut inner = Map::new();
                 if !names.is_empty() {
                     inner.insert(
@@ -446,19 +449,6 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
                             names
                                 .iter()
                                 .map(|name| (name.to_string(), emit(&SchemaKind::True, draft)))
-                                .collect(),
-                        ),
-                    );
-                }
-                if !patterns.is_empty() {
-                    inner.insert(
-                        "patternProperties".into(),
-                        Value::Object(
-                            patterns
-                                .iter()
-                                .map(|pattern| {
-                                    (pattern.to_string(), emit(&SchemaKind::True, draft))
-                                })
                                 .collect(),
                         ),
                     );

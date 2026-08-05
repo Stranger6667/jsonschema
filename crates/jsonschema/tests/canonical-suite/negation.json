@@ -3812,5 +3812,101 @@
         "M": {"not": {"$ref": "#/$defs/K"}}},
       "allOf": [{"$ref": "#/$defs/K"}, {"$ref": "#/$defs/M"}]},
     "tests": [5, {}, {"m": 1}]
+  },
+  {
+    "description": "a negated choice between disjoint branches holds where no branch does",
+    "schema": {
+      "$defs": {"a": {"type": "string"}},
+      "not": {"oneOf": [{"$ref": "#/$defs/a"}, {"type": "integer"}]}
+    },
+    "kind": "any_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {"a": {"type": "string"}},
+      "anyOf": [
+        {"type": ["null", "boolean", "array", "object"]},
+        {"type": "number", "not": {"multipleOf": 1}},
+        {"allOf": [{"type": "integer"}, {"$ref": "#/$defs/a"}]}
+      ]
+    },
+    "tests": [
+      {"data": "x", "valid": false},
+      {"data": 5, "valid": false},
+      {"data": null, "valid": true},
+      {"data": true, "valid": true},
+      {"data": 1.5, "valid": true},
+      {"data": [], "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "a negated choice between overlapping branches holds on the values they share",
+    "schema": {
+      "$defs": {"a": {"type": "string", "minLength": 3}},
+      "not": {"oneOf": [{"$ref": "#/$defs/a"}, {"type": "string", "maxLength": 5}]}
+    },
+    "kind": "any_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {"a": {"type": "string", "minLength": 3}},
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "array", "object"]},
+        {"allOf": [{"type": "string", "maxLength": 5}, {"$ref": "#/$defs/a"}]}
+      ]
+    },
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": "abcde", "valid": true},
+      {"data": "ab", "valid": false},
+      {"data": "abcdef", "valid": false},
+      {"data": 5, "valid": true},
+      {"data": null, "valid": true}
+    ]
+  },
+  {
+    "description": "a negated choice under draft 7 resolves through the definitions spelling",
+    "draft": "draft7",
+    "schema": {
+      "definitions": {"a": {"type": "string"}},
+      "not": {"oneOf": [{"$ref": "#/definitions/a"}, {"type": "integer"}]}
+    },
+    "kind": "any_of",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {"a": {"type": "string"}},
+      "anyOf": [
+        {"type": ["null", "boolean", "array", "object"]},
+        {"type": "number", "not": {"multipleOf": 1}},
+        {"allOf": [{"type": "integer"}, {"$ref": "#/definitions/a"}]}
+      ]
+    },
+    "tests": [
+      {"data": "x", "valid": false},
+      {"data": 5, "valid": false},
+      {"data": null, "valid": true},
+      {"data": 1.5, "valid": true}
+    ]
+  },
+  {
+    "description": "a negated choice whose branch complement is inexpressible keeps the document raw",
+    "schema": {
+      "$defs": {"a": {"type": "string"}},
+      "not": {"oneOf": [
+        {"$ref": "#/$defs/a"},
+        {"type": "object", "patternProperties": {"^a": {"type": "string"}}}
+      ]}
+    },
+    "expected": {
+      "$defs": {"a": {"type": "string"}},
+      "not": {"oneOf": [
+        {"$ref": "#/$defs/a"},
+        {"type": "object", "patternProperties": {"^a": {"type": "string"}}}
+      ]}
+    },
+    "tests": [
+      {"data": "x", "valid": false},
+      {"data": {"ab": "y"}, "valid": false},
+      {"data": null, "valid": true}
+    ]
   }
 ]

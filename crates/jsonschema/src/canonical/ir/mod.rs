@@ -191,7 +191,7 @@ pub(crate) enum SchemaKind {
     Const(CanonicalJson),
     /// A sorted, deduplicated finite set of admitted values.
     Enum(AtLeastTwo<CanonicalJson>),
-    /// The exact complement of an opaque schema, preserving refs under `not`, conditionals, and `oneOf`.
+    /// The exact complement of an opaque schema, keeping the references it names symbolic.
     Not(Schema),
     /// A value matches iff every opaque branch matches.
     AllOf(AtLeastTwo<Schema>),

@@ -2001,6 +2001,63 @@ fn intersect_draft4_closed_pattern_maps_emits_a_closed_map_per_pattern() {
     );
 }
 
+fn draft4_closed_key_pattern(pattern: &str) -> Value {
+    draft4(&json!({
+        "patternProperties": {pattern: {}},
+        "additionalProperties": false
+    }))
+}
+
+// The meet's key constraint takes a closed map per pattern to spell, so the demand for a key
+// breaking it carries them all - the alternative is a `propertyNames` a Draft 4 validator ignores,
+// leaving a demand no object can break.
+#[test]
+fn negate_intersected_draft4_closed_pattern_maps_bars_every_closed_map() {
+    let complement = canonicalize(&draft4_closed_key_pattern("^a"))
+        .expect("canonicalizes")
+        .intersect(&canonicalize(&draft4_closed_key_pattern("b$")).expect("canonicalizes"))
+        .expect("intersects")
+        .negate()
+        .expect("negates");
+    assert_eq!(
+        complement.to_json_schema(),
+        json!({
+            "$schema": "http://json-schema.org/draft-04/schema#",
+            "type": "object",
+            "not": {"allOf": [
+                {"patternProperties": {"^a": {}}, "additionalProperties": false},
+                {"patternProperties": {"b$": {}}, "additionalProperties": false}
+            ]}
+        })
+    );
+}
+
+#[test_case(&json!({"ab": 1}); "key inside both patterns")]
+#[test_case(&json!({"a1": 1}); "key inside one pattern only")]
+#[test_case(&json!({"c": 1}); "key outside both patterns")]
+#[test_case(&json!({}); "no key at all")]
+#[test_case(&json!(5); "not an object")]
+fn negate_intersected_draft4_closed_pattern_maps_keeps_validation_parity(instance: &Value) {
+    let left = draft4_closed_key_pattern("^a");
+    let right = draft4_closed_key_pattern("b$");
+    let complement = canonicalize(&left)
+        .expect("canonicalizes")
+        .intersect(&canonicalize(&right).expect("canonicalizes"))
+        .expect("intersects")
+        .negate()
+        .expect("negates")
+        .to_json_schema();
+
+    let both = validator_for(&left).expect("compiles").is_valid(instance)
+        && validator_for(&right).expect("compiles").is_valid(instance);
+    assert_eq!(
+        validator_for(&complement)
+            .expect("compiles")
+            .is_valid(instance),
+        !both
+    );
+}
+
 // Meeting two documents reshapes a key constraint past the closed map either was parsed from.
 #[test_case(
     &json!({"patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": false}),
@@ -2217,6 +2274,52 @@ fn is_subset_of_rejects_operands_with_distinct_definition_maps() {
     ]});
     "object leaf"
 )]
+#[test_case(
+    &json!({"$defs": {"a": {"type": "string"}}, "oneOf": [{"$ref": "#/$defs/a"}, {"type": "integer"}]}),
+    &json!({
+        "$defs": {"a": {"type": "string"}},
+        "anyOf": [
+            {"type": ["null", "boolean", "array", "object"]},
+            {"type": "number", "not": {"multipleOf": 1}},
+            {"allOf": [{"type": "integer"}, {"$ref": "#/$defs/a"}]}
+        ]
+    });
+    "choice between disjoint branches"
+)]
+#[test_case(
+    &json!({
+        "$defs": {"a": {"type": "string", "minLength": 3}},
+        "oneOf": [{"$ref": "#/$defs/a"}, {"type": "string", "maxLength": 5}]
+    }),
+    &json!({
+        "$defs": {"a": {"type": "string", "minLength": 3}},
+        "anyOf": [
+            {"type": ["null", "boolean", "number", "array", "object"]},
+            {"allOf": [{"type": "string", "maxLength": 5}, {"$ref": "#/$defs/a"}]}
+        ]
+    });
+    "choice between overlapping branches"
+)]
+// A pointer at a choice resolves like any other, so the complement takes the pointer's place and
+// the target it named drops out of the definitions.
+#[test_case(
+    &json!({
+        "$defs": {
+            "a": {"type": "string"},
+            "node": {"oneOf": [{"$ref": "#/$defs/a"}, {"type": "integer"}]}
+        },
+        "$ref": "#/$defs/node"
+    }),
+    &json!({
+        "$defs": {"a": {"type": "string"}},
+        "anyOf": [
+            {"type": ["null", "boolean", "array", "object"]},
+            {"type": "number", "not": {"multipleOf": 1}},
+            {"allOf": [{"type": "integer"}, {"$ref": "#/$defs/a"}]}
+        ]
+    });
+    "pointer at a choice"
+)]
 fn negate_spells_the_complement(schema: &Value, expected: &Value) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     let mut expected = expected.as_object().expect("object").clone();
@@ -2296,6 +2399,17 @@ fn negate_spells_the_draft_4_complement(schema: &Value, expected: &Value) {
     "draft 4 typed group"
 )]
 #[test_case(&reference_chain_schema(); "reference chain")]
+#[test_case(
+    &json!({"$defs": {"a": {"type": "string"}}, "oneOf": [{"$ref": "#/$defs/a"}, {"type": "integer"}]});
+    "choice between disjoint branches"
+)]
+#[test_case(
+    &json!({
+        "$defs": {"a": {"type": "string", "minLength": 5}},
+        "oneOf": [{"$ref": "#/$defs/a"}, {"type": "string"}]
+    });
+    "choice between overlapping branches"
+)]
 #[test_case(&json!({"type": "object", "propertyNames": {"enum": ["a", "b"]}}); "key constraint")]
 #[test_case(&json!({"type": "object", "propertyNames": {"pattern": "^a"}}); "key pattern constraint")]
 #[test_case(
@@ -2394,6 +2508,22 @@ fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
     "recursive choice reference"
 )]
 #[test_case(
+    &json!({
+        "$defs": {
+            "left": {"oneOf": [
+                {"type": "string"},
+                {"type": "object", "properties": {"next": {"$ref": "#/$defs/right"}}, "required": ["next"]}
+            ]},
+            "right": {"oneOf": [
+                {"type": "integer"},
+                {"type": "object", "properties": {"back": {"$ref": "#/$defs/left"}}, "required": ["back"]}
+            ]}
+        },
+        "$ref": "#/$defs/left"
+    });
+    "mutually recursive choice references"
+)]
+#[test_case(
     &json!({"type": "object", "properties": {"a": {"$ref": "#"}}});
     "root self-reference"
 )]
@@ -2433,6 +2563,35 @@ fn negate_declines_past_the_resolution_budget() {
     }
     let schema = json!({"$defs": definitions, "$ref": "#/$defs/d12"});
     assert_eq!(canonicalize(&schema).expect("canonicalizes").negate(), None);
+}
+
+fn choice_over_pointers(count: usize) -> Value {
+    let mut definitions = Map::new();
+    let mut branches = Vec::new();
+    for index in 0..count {
+        definitions.insert(
+            format!("d{index}"),
+            json!({"type": "object", "required": [format!("k{index}")]}),
+        );
+        branches.push(json!({"$ref": format!("#/$defs/d{index}")}));
+    }
+    json!({"$defs": definitions, "oneOf": branches})
+}
+
+// Every pair of branches an intersection cannot rule out becomes a branch of the complement, so the
+// spelling grows with the square of the branch count and the walk declines once it outgrows use.
+#[test]
+fn negate_declines_past_the_overlap_budget() {
+    assert!(canonicalize(&choice_over_pointers(11))
+        .expect("canonicalizes")
+        .negate()
+        .is_some());
+    assert_eq!(
+        canonicalize(&choice_over_pointers(12))
+            .expect("canonicalizes")
+            .negate(),
+        None
+    );
 }
 
 // A fully resolved complement names no definitions, so it carries none - and a handle with an

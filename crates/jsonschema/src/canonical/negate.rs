@@ -24,6 +24,11 @@ use crate::{
 /// runs ahead of the stack.
 const RESOLUTION_BUDGET: usize = 1024;
 
+/// Shared regions one choice's complement may spell: their number grows with the square of the
+/// branch count, and a complement past this many costs more to assemble than the caller can put to
+/// use.
+const OVERLAP_BUDGET: usize = 64;
+
 /// State of one resolving negation walk.
 struct NegationWalk<'a> {
     definitions: &'a DefinitionMap,
@@ -160,11 +165,62 @@ fn negate_within(
             }
             Some(algebra::union(complements, ctx))
         }
-        SchemaKind::OneOf(_) => bar(schema, walk),
+        SchemaKind::OneOf(branches) => negate_one_of(branches, walk, ctx),
         SchemaKind::Reference(uri) => negate_reference(schema, uri, walk, ctx),
         SchemaKind::TypedGroup { ty, body } => negate_typed_group(*ty, body, walk, ctx),
         SchemaKind::Raw(_) => None,
     }
+}
+
+/// A choice holds where exactly one branch does, so its complement holds where no branch does and
+/// where two branches share the value. Intersection is total, so every shared region is expressible
+/// and only the half no branch matches rests on branch complements.
+/// ```text
+/// e.g.  {"not": {"oneOf": [{"$ref": "#/$defs/a"}, {"type": "integer"}]}}
+///       =>  anyOf: [{"allOf": [{"type": "integer"}, {"$ref": "#/$defs/a"}]},
+///                   {"allOf": [{"type": ["null", "boolean", "string", "array", "object"]},
+///                              {"not": {"$ref": "#/$defs/a"}}]},
+///                   {"allOf": [{"type": "number", "not": {"multipleOf": 1}},
+///                              {"not": {"$ref": "#/$defs/a"}}]}]
+/// ```
+fn negate_one_of(
+    branches: &[Schema],
+    walk: &mut NegationWalk<'_>,
+    ctx: &CanonicalizationContext,
+) -> Option<Schema> {
+    let mut regions = Vec::new();
+    for (index, left) in branches.iter().enumerate() {
+        for right in &branches[index + 1..] {
+            let shared = algebra::intersect(left.clone(), right.clone(), ctx);
+            if matches!(shared.kind(), SchemaKind::False) {
+                continue;
+            }
+            if regions.len() == OVERLAP_BUDGET {
+                return None;
+            }
+            regions.push(shared);
+        }
+    }
+    let depth = walk.active.len();
+    let budget = walk.budget;
+    let mut matched_by_none = Schema::new(SchemaKind::True);
+    for branch in branches {
+        matched_by_none =
+            algebra::intersect(matched_by_none, negate_within(branch, walk, ctx)?, ctx);
+    }
+    // The branch complements resolve references through the same walk, so they leave the path they
+    // found and can only have spent budget on it.
+    debug_assert_eq!(
+        walk.active.len(),
+        depth,
+        "a branch complement left the negation path unbalanced"
+    );
+    debug_assert!(
+        walk.budget <= budget,
+        "a branch complement refilled the resolution budget"
+    );
+    regions.push(matched_by_none);
+    Some(algebra::union(regions, ctx))
 }
 
 /// The complement of the reference's target. A target already being negated on the current path

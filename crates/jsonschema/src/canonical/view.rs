@@ -46,7 +46,7 @@ pub enum CanonicalView {
     Object(ObjectView),
     Const(Value),
     Enum(Vec<Value>),
-    /// The exact complement of an opaque schema, used when `not`, a conditional, or `oneOf` negates a symbolic ref.
+    /// The exact complement of an opaque schema, keeping the references it names symbolic.
     Not(Box<CanonicalSchema>),
     /// A value matches iff every opaque branch matches.
     AllOf(Vec<CanonicalSchema>),
