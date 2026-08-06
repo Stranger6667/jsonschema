@@ -31,6 +31,8 @@ pub(crate) struct ParseOutput {
     /// producer of `SchemaKind::Reference`, so `false` means the emptiness pass has no graph to
     /// build.
     pub(crate) has_references: bool,
+    /// The choices between pointers left undecided for want of a body still being parsed.
+    pub(crate) pending_choices: Vec<Vec<Schema>>,
 }
 
 /// Parse a document into structural IR when every construct is modeled; `Ok(None)` keeps it `Raw`.
@@ -57,6 +59,10 @@ pub(crate) struct Assumptions {
     pub(crate) empty: AHashSet<Arc<str>>,
     /// Resolved as `true`.
     pub(crate) admits_all: AHashSet<Arc<str>>,
+    /// Bodies a finished round produced, for the decisions a target still being parsed cannot
+    /// answer. A body only ever narrows between rounds, so a decision this map settles stays
+    /// settled the same way.
+    pub(crate) finished: DefinitionMap,
 }
 
 /// [`parse`] under `assumptions`.
@@ -104,6 +110,7 @@ fn parse_inner<'a>(
     // keys added, until none are new, settles it: the result no longer depends on the order.
     let mut folded = assumptions.clone();
     let mut tracks = spells_dynamic_reference(value, ctx.draft());
+    let mut reparsed_for_bodies = false;
     loop {
         let attempt = parse_once(value, ctx, resolver, &folded, pruning, tracks)?;
         if attempt.needs_dynamic_scope {
@@ -125,6 +132,20 @@ fn parse_inner<'a>(
             }
         }
         if !grew {
+            // A choice between pointers reads the bodies they name, and one still being parsed has
+            // none to read - which would make the form depend on the order the targets registered
+            // in. One re-parse with this round's bodies known settles every such choice: what the
+            // choice reads off a body is which types it admits, and folding one cannot change that.
+            let settles = !reparsed_for_bodies
+                && parsed
+                    .pending_choices
+                    .iter()
+                    .any(|branches| algebra::choice_folds(branches, &parsed.definitions, ctx));
+            if settles {
+                reparsed_for_bodies = true;
+                folded.finished = parsed.definitions.clone();
+                continue;
+            }
             return Ok(Some(parsed));
         }
     }
@@ -181,6 +202,7 @@ fn parse_once<'a>(
             root,
             definitions: state.definitions,
             has_references: state.facts.has_references,
+            pending_choices: state.facts.pending_choices,
         }),
         needs_dynamic_scope,
     })
@@ -215,6 +237,8 @@ struct DocumentFacts {
     /// `reference_to_definition` is the only producer of `Reference`, so this gates the emptiness
     /// pass.
     has_references: bool,
+    /// The choices between pointers left undecided for want of a body still being parsed.
+    pending_choices: Vec<Vec<Schema>>,
 }
 
 /// How a parse attempt treats the dynamic scope.
@@ -622,7 +646,13 @@ fn parse_schema_in_scope<'a>(
                         None => return Ok(None),
                     }
                 }
-                match algebra::one_of(branches, &state.definitions, ctx) {
+                match algebra::one_of(
+                    branches,
+                    &state.definitions,
+                    &state.assumptions.finished,
+                    &mut state.facts.pending_choices,
+                    ctx,
+                ) {
                     Some(schema) => conjuncts.push(schema),
                     None => return Ok(None),
                 }

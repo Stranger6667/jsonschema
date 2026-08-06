@@ -483,6 +483,7 @@ fn resolve_empty_definitions<'a>(
         let hypothesis = Assumptions {
             empty: proven.empty.union(&assumed).cloned().collect(),
             admits_all: proven.admits_all.clone(),
+            finished: proven.finished.clone(),
         };
         // A hypothesis that keeps the document `Raw` proves nothing; giving up is an under-claim.
         let Some(hypothetical) = parse::parse_hypothesis(value, ctx, resolver, &hypothesis)? else {

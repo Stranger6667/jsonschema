@@ -1256,5 +1256,164 @@
       {"data": 1.5, "valid": false},
       {"data": "x", "valid": false}
     ]
+  },
+  {
+    "description": "disjoint branches degrade to a union across a pointer",
+    "schema": {
+      "oneOf": [{"type": "array", "items": {"type": "string"}}, {"$ref": "#/$defs/count"}],
+      "$defs": {"count": {"type": "integer"}}
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {"count": {"type": "integer"}},
+      "anyOf": [{"type": "array", "items": {"type": "string"}}, {"$ref": "#/$defs/count"}]
+    },
+    "tests": [
+      {"data": 3, "valid": true},
+      {"data": ["a"], "valid": true},
+      {"data": "x", "valid": false},
+      {"data": 1.5, "valid": false}
+    ]
+  },
+  {
+    "description": "disjoint pointers on both branches degrade to a union",
+    "schema": {
+      "oneOf": [{"$ref": "#/$defs/s"}, {"$ref": "#/$defs/n"}],
+      "$defs": {"s": {"type": "string"}, "n": {"type": "integer"}}
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {"n": {"type": "integer"}, "s": {"type": "string"}},
+      "anyOf": [{"$ref": "#/$defs/n"}, {"$ref": "#/$defs/s"}]
+    },
+    "tests": [
+      {"data": "a", "valid": true},
+      {"data": 3, "valid": true},
+      {"data": true, "valid": false}
+    ]
+  },
+  {
+    "description": "a pointer chain reaching a disjoint target degrades to a union",
+    "schema": {
+      "oneOf": [{"$ref": "#/$defs/hop"}, {"type": "integer"}],
+      "$defs": {"hop": {"$ref": "#/$defs/end"}, "end": {"type": "string"}}
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {"end": {"type": "string"}, "hop": {"$ref": "#/$defs/end"}},
+      "anyOf": [{"type": "integer"}, {"$ref": "#/$defs/hop"}]
+    },
+    "tests": [
+      {"data": "a", "valid": true},
+      {"data": 3, "valid": true},
+      {"data": true, "valid": false}
+    ]
+  },
+  {
+    "description": "branches sharing values across a pointer keep the choice",
+    "schema": {
+      "oneOf": [{"$ref": "#/$defs/plain"}, {"$ref": "#/$defs/tight"}],
+      "$defs": {"plain": {"type": "string"}, "tight": {"type": "string", "pattern": "^[0-9a-f]{8}$"}}
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {"plain": {"type": "string"}, "tight": {"pattern": "^[0-9a-f]{8}$", "type": "string"}},
+      "oneOf": [{"$ref": "#/$defs/plain"}, {"$ref": "#/$defs/tight"}]
+    },
+    "tests": [
+      {"data": "hello", "valid": true},
+      {"data": "abcdef01", "valid": false},
+      {"data": 3, "valid": false}
+    ]
+  },
+  {
+    "description": "a branch whose target holds the type the other names keeps the choice",
+    "schema": {
+      "oneOf": [{"$ref": "#/$defs/node"}, {"type": "object"}],
+      "$defs": {"node": {"type": "object", "properties": {"next": {"$ref": "#/$defs/node"}}}}
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {"node": {"properties": {"next": {"$ref": "#/$defs/node"}}, "type": "object"}},
+      "oneOf": [{"type": "object"}, {"$ref": "#/$defs/node"}]
+    },
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": 3, "valid": false}
+    ]
+  },
+  {
+    "description": "a pointer chain closing on itself keeps the choice",
+    "schema": {
+      "oneOf": [{"$ref": "#/$defs/a"}, {"type": "integer"}],
+      "$defs": {"a": {"$ref": "#/$defs/b"}, "b": {"$ref": "#/$defs/a"}}
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {"a": {"$ref": "#/$defs/b"}, "b": {"$ref": "#/$defs/a"}},
+      "oneOf": [{"type": "integer"}, {"$ref": "#/$defs/a"}]
+    },
+    "tests": [
+      3
+    ]
+  },
+  {
+    "description": "a branch naming the document keeps the choice",
+    "schema": {
+      "oneOf": [{"$ref": "#"}, {"type": "string"}]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [{"type": "string"}, {"$ref": "#"}]
+    },
+    "tests": [
+      "a"
+    ]
+  },
+  {
+    "description": "scalar targets sharing a type but no value degrade to a union",
+    "schema": {
+      "oneOf": [{"$ref": "#/$defs/small"}, {"$ref": "#/$defs/large"}],
+      "$defs": {
+        "small": {"type": "integer", "maximum": 3},
+        "large": {"type": "integer", "minimum": 10}
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "large": {"minimum": 10, "type": "integer"},
+        "small": {"maximum": 3, "type": "integer"}
+      },
+      "anyOf": [{"$ref": "#/$defs/large"}, {"$ref": "#/$defs/small"}]
+    },
+    "tests": [
+      {"data": 1, "valid": true},
+      {"data": 11, "valid": true},
+      {"data": 5, "valid": false}
+    ]
+  },
+  {
+    "description": "object targets sharing no value keep the choice, which their bodies alone would settle",
+    "schema": {
+      "oneOf": [{"$ref": "#/$defs/counted"}, {"$ref": "#/$defs/named"}],
+      "$defs": {
+        "counted": {"type": "object", "required": ["x"], "properties": {"x": {"type": "integer"}}, "additionalProperties": false},
+        "named": {"type": "object", "required": ["x"], "properties": {"x": {"type": "string"}}, "additionalProperties": false}
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "counted": {"properties": {"x": {"type": "integer"}}, "propertyNames": {"const": "x"}, "required": ["x"], "type": "object"},
+        "named": {"properties": {"x": {"type": "string"}}, "propertyNames": {"const": "x"}, "required": ["x"], "type": "object"}
+      },
+      "oneOf": [{"$ref": "#/$defs/counted"}, {"$ref": "#/$defs/named"}]
+    },
+    "tests": [
+      {"data": {"x": 1}, "valid": true},
+      {"data": {"x": "a"}, "valid": true},
+      {"data": {}, "valid": false}
+    ]
   }
 ]

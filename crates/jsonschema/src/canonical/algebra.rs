@@ -403,10 +403,13 @@ fn partition_by_multiplicity(branches: &[Schema]) -> (Vec<Schema>, Vec<Schema>) 
 /// form. `None` when the exclusivity has no exact encoding, keeping the document raw.
 ///
 /// A reference is opaque to intersection and negation, so a branch holding one keeps the
-/// exclusivity symbolic instead of expanding it; the rest take [`concrete_one_of`].
+/// exclusivity symbolic instead of expanding it; the rest take [`concrete_one_of`]. `pending`
+/// collects the choices a target still being parsed left undecided.
 pub(crate) fn one_of(
     mut branches: Vec<Schema>,
     definitions: &DefinitionMap,
+    finished: &DefinitionMap,
+    pending: &mut Vec<Vec<Schema>>,
     ctx: &CanonicalizationContext,
 ) -> Option<Schema> {
     if !branches.iter().any(contains_reference) {
@@ -436,7 +439,7 @@ pub(crate) fn one_of(
             // Survivors re-enter from the top, not wrapped in a `OneOf` here: the duplicates may
             // have held the only references, and a reference-free remainder must take the concrete
             // route or it emits a form that canonicalizes to something else.
-            let mut result = one_of(singles, definitions, ctx)?;
+            let mut result = one_of(singles, definitions, finished, pending, ctx)?;
             for complement in complements {
                 result = intersect(result, complement, ctx);
             }
@@ -452,7 +455,176 @@ pub(crate) fn one_of(
         branches.windows(2).all(|pair| pair[0] <= pair[1]),
         "oneOf branches are sorted without deduplication"
     );
+    // Sharing no JSON type, no two branches hold a value in common, and "exactly one" is then "at
+    // least one". The types the targets admit decide that; the branches keep the references they
+    // were spelled with. Weighing the bodies themselves would mean intersecting them, which costs
+    // as much again as canonicalizing the document they came from.
+    // ```text
+    // e.g.  oneOf [{"$ref": "#/$defs/count"}, {"type": "array"}]  with  count = {"type": "integer"}
+    //       =>  anyOf [{"type": "array"}, {"$ref": "#/$defs/count"}]
+    //       oneOf [{"$ref": "#/$defs/plain"}, {"$ref": "#/$defs/tight"}]  => unchanged, both strings
+    // ```
+    let mut awaits_body = false;
+    // One resolution pass feeds both tests: a lookup walks the document's whole definition map, so
+    // resolving a branch twice is the expensive half of the check.
+    match pointer_targets(&branches, definitions, finished, &mut awaits_body) {
+        Some(targets)
+            if types_are_disjoint(&targets) || scalar_bodies_are_disjoint(&targets, ctx) =>
+        {
+            return Some(union(branches, ctx))
+        }
+        // A body the round has yet to produce leaves the choice for the caller to settle.
+        None if awaits_body => pending.push(branches.clone()),
+        Some(_) | None => {}
+    }
     Some(Schema::new(SchemaKind::OneOf(branches)))
+}
+
+/// Whether the choice these branches spell degrades to a union once every body they name is known.
+pub(crate) fn choice_folds(
+    branches: &[Schema],
+    definitions: &DefinitionMap,
+    ctx: &CanonicalizationContext,
+) -> bool {
+    let mut awaits_body = false;
+    let known = DefinitionMap::new();
+    pointer_targets(branches, definitions, &known, &mut awaits_body).is_some_and(|targets| {
+        types_are_disjoint(&targets) || scalar_bodies_are_disjoint(&targets, ctx)
+    })
+}
+
+/// The body a branch stands for, following a pointer that names another.
+fn pointer_target<'a>(
+    branch: &'a Schema,
+    definitions: &'a DefinitionMap,
+    finished: &'a DefinitionMap,
+    awaits_body: &mut bool,
+) -> Option<&'a Schema> {
+    let mut current = branch;
+    let mut walked: Vec<&Arc<str>> = Vec::new();
+    while let SchemaKind::Reference(uri) = current.kind() {
+        // A pointer reached twice on one path names a body that never arrives.
+        if walked.contains(&uri) {
+            return None;
+        }
+        // A target still being parsed has no body in this round's map; the previous round's stands
+        // in for it, and where neither holds one the caller re-parses to get it.
+        let target = definitions
+            .get(uri.as_ref())
+            .or_else(|| finished.get(uri.as_ref()));
+        let Some(target) = target else {
+            *awaits_body = true;
+            return None;
+        };
+        walked.push(uri);
+        // Every walked pointer named a definition, and no two of them are the same.
+        debug_assert!(
+            walked.len() <= definitions.len() + finished.len(),
+            "more pointers walked than the document defines"
+        );
+        current = target;
+    }
+    Some(current)
+}
+
+/// Whether the nodes share no value, weighed one against another. Only scalar bodies are weighed:
+/// an array or object body costs as much to intersect as the document it came from.
+fn scalar_bodies_are_disjoint(targets: &[&Schema], ctx: &CanonicalizationContext) -> bool {
+    let scalar = |schema: &Schema| {
+        matches!(
+            schema.kind(),
+            SchemaKind::Const(_)
+                | SchemaKind::Enum(_)
+                | SchemaKind::MultiType(_)
+                | SchemaKind::String(_)
+                | SchemaKind::Integer(_)
+                | SchemaKind::Number(_)
+        )
+    };
+    if !targets.iter().all(|target| scalar(target)) {
+        return false;
+    }
+    let scalars: Vec<Schema> = targets.iter().map(|target| (*target).clone()).collect();
+    pairwise_overlaps(&scalars, ctx).is_empty()
+}
+
+/// What each branch stands for, with a pointer replaced by the body it names, or `None` where one
+/// leads outside the document or back into itself.
+fn pointer_targets<'a>(
+    branches: &'a [Schema],
+    definitions: &'a DefinitionMap,
+    finished: &'a DefinitionMap,
+    awaits_body: &mut bool,
+) -> Option<Vec<&'a Schema>> {
+    let mut targets = Vec::with_capacity(branches.len());
+    for branch in branches {
+        targets.push(pointer_target(branch, definitions, finished, awaits_body)?);
+    }
+    Some(targets)
+}
+
+/// Whether no two of the nodes admit a value of the same JSON type.
+fn types_are_disjoint(targets: &[&Schema]) -> bool {
+    let mut covered = JsonTypeSet::empty();
+    for target in targets {
+        let types = admitted_types(target);
+        if !covered.intersect(types).is_empty() {
+            return false;
+        }
+        covered = covered.union(types);
+    }
+    true
+}
+
+/// The JSON types a node can admit, over-approximated: a node holding a reference or a complement
+/// stands for every type, which keeps a disjointness claim conservative.
+fn admitted_types(schema: &Schema) -> JsonTypeSet {
+    match schema.kind() {
+        SchemaKind::False => JsonTypeSet::empty(),
+        SchemaKind::MultiType(set) => SchemaKind::semantic_cover(*set),
+        SchemaKind::TypedGroup { ty, .. } => JsonTypeSet::from(*ty),
+        SchemaKind::String(_) => JsonTypeSet::from(JsonType::String),
+        SchemaKind::Integer(_) => JsonTypeSet::from(JsonType::Integer),
+        SchemaKind::Number(_) => SchemaKind::semantic_cover(JsonTypeSet::from(JsonType::Number)),
+        SchemaKind::Array(_) => JsonTypeSet::from(JsonType::Array),
+        SchemaKind::Object(_) => JsonTypeSet::from(JsonType::Object),
+        SchemaKind::Const(value) => value_types(std::slice::from_ref(value)),
+        SchemaKind::Enum(values) => value_types(values.as_slice()),
+        SchemaKind::AnyOf(branches) => branches
+            .as_slice()
+            .iter()
+            .fold(JsonTypeSet::empty(), |types, branch| {
+                types.union(admitted_types(branch))
+            }),
+        SchemaKind::OneOf(branches) => {
+            branches.iter().fold(JsonTypeSet::empty(), |types, branch| {
+                types.union(admitted_types(branch))
+            })
+        }
+        SchemaKind::True
+        | SchemaKind::Not(_)
+        | SchemaKind::AllOf(_)
+        | SchemaKind::Reference(_)
+        | SchemaKind::Raw(_) => JsonTypeSet::all(),
+    }
+}
+
+/// The types the values stand for. Draft 4 matches a whole number by equality, so `1` accepts the
+/// float spelling `1.0` its `integer` type rejects, and a numeric value stands for both.
+fn value_types(values: &[CanonicalJson]) -> JsonTypeSet {
+    values.iter().fold(JsonTypeSet::empty(), |types, value| {
+        let ty = value.json_type();
+        types.union(match ty {
+            JsonType::Integer | JsonType::Number => {
+                SchemaKind::semantic_cover(JsonTypeSet::from(JsonType::Number))
+            }
+            JsonType::Null
+            | JsonType::Boolean
+            | JsonType::String
+            | JsonType::Array
+            | JsonType::Object => JsonTypeSet::from(ty),
+        })
+    })
 }
 
 /// [`one_of`] over branches none of which holds a reference: some branch matches and no two-branch

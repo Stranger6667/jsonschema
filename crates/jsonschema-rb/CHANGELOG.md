@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Canonicalization of a `oneOf` whose branches name disjoint targets, which degrades to a union.
+
 ### Performance
 
 - Up to 150x faster canonicalization of `not` over a union of many branches.
