@@ -153,4 +153,5 @@ required-features = ["macros"]
 [[bench]]
 harness = false
 name = "canonicalize"
+required-features = ["macros"]
 
