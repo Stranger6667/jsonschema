@@ -8,6 +8,7 @@
 - 3% faster intersection of schemas where one side constrains nothing.
 - Up to 31x faster canonicalization of a `oneOf` whose many branches overlap.
 - Up to 14x faster canonicalization of a union whose object branches share no values.
+- 7% faster canonicalization of schemas that reach the same pair of nodes repeatedly.
 
 ### Added
 
