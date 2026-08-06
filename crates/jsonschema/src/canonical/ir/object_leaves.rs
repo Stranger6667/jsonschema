@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
-use std::collections::BTreeMap;
-
 use crate::canonical::ir::{
-    BoundCardinality, Bounds, LengthBounds, ObjectLeaf, ObjectViolation, Schema,
+    BoundCardinality, Bounds, LengthBounds, ObjectLeaf, ObjectViolation, PropertyMap, Schema,
 };
 
 /// Object leaves merged per required-key set. Inserts are batched; the form is restored before any
@@ -73,8 +71,8 @@ impl IntoIterator for ObjectLeaves {
 struct Facets {
     required: Vec<Arc<str>>,
     property_names: Option<Schema>,
-    properties: BTreeMap<Arc<str>, Schema>,
-    pattern_properties: BTreeMap<Arc<str>, Schema>,
+    properties: PropertyMap,
+    pattern_properties: PropertyMap,
     additional: Option<Schema>,
     violations: Vec<ObjectViolation>,
 }

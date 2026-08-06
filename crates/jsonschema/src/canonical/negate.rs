@@ -1,5 +1,5 @@
 //! Structural complement of a canonical node.
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use serde_json::{Number, Value};
 
@@ -12,7 +12,7 @@ use crate::{
             type_set_schema, ArrayLeaf, AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber,
             CanonicalJson, ContainsFacet, Discrete, Distinctness, Divisors, ExcludedDivisors,
             IntegerBounds, IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, ObjectViolation,
-            Schema, SchemaKind, StringLeaf,
+            PropertyMap, Schema, SchemaKind, StringLeaf,
         },
         DefinitionMap, ROOT_DEFINITION_KEY,
     },
@@ -364,7 +364,7 @@ fn negate_finite_values(values: &[CanonicalJson], ctx: &CanonicalizationContext)
         branches.push(object_branch(
             above_empty(),
             Vec::new(),
-            BTreeMap::new(),
+            PropertyMap::default(),
             ctx,
         ));
     }
@@ -824,10 +824,15 @@ fn negate_object_leaf(
     }
     let mut branches = vec![type_set_schema(JsonTypeSet::all().remove(JsonType::Object))];
     for sizes in length_windows(&leaf.sizes)? {
-        branches.push(object_branch(sizes, Vec::new(), BTreeMap::new(), ctx));
+        branches.push(object_branch(
+            sizes,
+            Vec::new(),
+            PropertyMap::default(),
+            ctx,
+        ));
     }
     for key in &leaf.required {
-        let absent = BTreeMap::from([(key.clone(), Schema::new(SchemaKind::False))]);
+        let absent = PropertyMap::from_iter([(key.clone(), Schema::new(SchemaKind::False))]);
         branches.push(object_branch(
             LengthBounds::default(),
             Vec::new(),
@@ -837,7 +842,7 @@ fn negate_object_leaf(
     }
     for (key, schema) in &leaf.properties {
         let violating = negate_within(schema, walk, ctx)?;
-        let held = BTreeMap::from([(key.clone(), violating)]);
+        let held = PropertyMap::from_iter([(key.clone(), violating)]);
         branches.push(object_branch(
             LengthBounds::default(),
             vec![key.clone()],
@@ -912,7 +917,7 @@ fn negate_object_leaf(
 fn object_branch(
     sizes: LengthBounds,
     required: Vec<std::sync::Arc<str>>,
-    properties: BTreeMap<std::sync::Arc<str>, Schema>,
+    properties: PropertyMap,
     ctx: &CanonicalizationContext,
 ) -> Schema {
     algebra::object_leaf(
@@ -921,7 +926,7 @@ fn object_branch(
             required,
             property_names: None,
             properties,
-            pattern_properties: BTreeMap::new(),
+            pattern_properties: PropertyMap::default(),
             additional: None,
             violations: Vec::new(),
         },
