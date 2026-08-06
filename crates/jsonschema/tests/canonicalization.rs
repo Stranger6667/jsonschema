@@ -6,7 +6,7 @@ use std::{
 
 use jsonschema::{
     canonical::{
-        options, CanonicalKind, CanonicalSchema, CanonicalView, ObjectViolationView,
+        options, CanonicalKind, CanonicalSchema, CanonicalView, Distinctness, ObjectViolationView,
         OperandMismatch,
     },
     canonicalize, validator_for, CanonicalizationError, Draft, JsonType, PatternOptions, Registry,
@@ -574,8 +574,22 @@ fn array_view_exposes_bounds() {
     };
     assert_eq!(view.min_items, Some(Number::from(1u64)));
     assert_eq!(view.max_items, Some(Number::from(3u64)));
-    assert!(view.unique_items);
+    assert_eq!(view.distinctness, Distinctness::AllDistinct);
     assert!(view.prefix_items.is_empty());
+}
+
+#[test]
+fn array_view_exposes_a_repeat_demand() {
+    let CanonicalView::Array(view) = canonicalize(
+        &json!({"type": "array", "allOf": [{"not": {"type": "array", "uniqueItems": true}}]}),
+    )
+    .unwrap()
+    .view() else {
+        panic!("expected an Array view");
+    };
+    assert_eq!(view.min_items, Some(Number::from(2u64)));
+    assert_eq!(view.distinctness, Distinctness::SomeRepeated);
+    assert_eq!(view.distinctness.as_str(), "some_repeated");
 }
 
 #[test]
@@ -2418,6 +2432,15 @@ fn negate_spells_the_draft_4_complement(schema: &Value, expected: &Value) {
         "items": {"type": "string"}, "minItems": 1, "maxItems": 4});
     "draft 4 array element schema in a length window"
 )]
+#[test_case(&json!({"type": "array", "uniqueItems": true}); "array distinctness demand")]
+#[test_case(
+    &json!({"type": "array", "uniqueItems": true, "minItems": 3});
+    "array distinctness demand above a size floor"
+)]
+#[test_case(
+    &json!({"type": "array", "allOf": [{"not": {"type": "array", "uniqueItems": true}}]});
+    "array repeat demand"
+)]
 #[test_case(&json!({"type": "array", "prefixItems": [{"type": "string"}]}); "array tuple")]
 #[test_case(
     &json!({"type": "array", "prefixItems": [{"type": "string"}, {"type": "integer"}]});
@@ -2489,8 +2512,10 @@ fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
         json!([]),
         json!(["a"]),
         json!(["a", "b", "c"]),
+        json!(["a", "a"]),
         json!(["a", 1]),
         json!([1]),
+        json!([1, 1]),
         json!({}),
         json!({"a": 1}),
         json!({"inner": 3}),

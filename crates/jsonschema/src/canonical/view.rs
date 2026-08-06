@@ -14,10 +14,18 @@ use crate::{
     JsonType, JsonTypeSet,
 };
 
-pub use crate::canonical::ir::CanonicalKind;
+pub use crate::canonical::ir::{CanonicalKind, Distinctness};
 
 impl CanonicalKind {
     /// Stable `snake_case` label of this kind (e.g. `"multi_type"`, `"raw"`).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+}
+
+impl Distinctness {
+    /// Stable `snake_case` label of this state (e.g. `"all_distinct"`).
     #[must_use]
     pub fn as_str(self) -> &'static str {
         self.into()
@@ -108,7 +116,8 @@ pub struct NumberView {
 pub struct ArrayView {
     pub min_items: Option<Number>,
     pub max_items: Option<Number>,
-    pub unique_items: bool,
+    /// What the array says about elements coinciding.
+    pub distinctness: Distinctness,
     /// Per-index schemas: the element at position `i` satisfies `prefix_items[i]`.
     pub prefix_items: Vec<CanonicalSchema>,
     /// The schema every element from `prefix_items.len()` onward satisfies.
@@ -335,7 +344,7 @@ fn array_view(
             .maximum
             .as_ref()
             .map(BoundCardinality::to_number),
-        unique_items: leaf.unique,
+        distinctness: leaf.distinctness,
     }
 }
 

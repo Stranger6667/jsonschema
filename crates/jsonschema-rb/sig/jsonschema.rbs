@@ -121,7 +121,7 @@ module JSONSchema
     class ArrayView
       def min_items: () -> Integer?
       def max_items: () -> Integer?
-      def unique_items: () -> bool
+      def distinctness: () -> (:unconstrained | :all_distinct | :some_repeated)
       def prefix_items: () -> Array[CanonicalSchema]
       def items: () -> CanonicalSchema?
       def contains: () -> Array[ContainsView]

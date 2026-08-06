@@ -1956,41 +1956,6 @@
     ]
   },
   {
-    "description": "`not` a `uniqueItems` array, whose complement needs a duplicate the form cannot spell",
-    "schema": {
-      "not": {
-        "type": "array",
-        "uniqueItems": true
-      }
-    },
-    "expected": {
-      "not": {
-        "type": "array",
-        "uniqueItems": true
-      }
-    },
-    "tests": [
-      {
-        "data": [
-          1,
-          1
-        ],
-        "valid": true
-      },
-      {
-        "data": [
-          1,
-          2
-        ],
-        "valid": false
-      },
-      {
-        "data": "x",
-        "valid": true
-      }
-    ]
-  },
-  {
     "description": "`not` an element schema under Draft 4, which spells the complement demand as a barred element schema",
     "draft": "draft4",
     "schema": {
@@ -4254,6 +4219,118 @@
       {"data": [[1]], "valid": false},
       {"data": [[2]], "valid": true},
       {"data": [], "valid": false}
+    ]
+    },
+  {
+    "description": "a negated distinctness demand, where the complement demands a repeat within a length floor",
+    "schema": {"not": {"type": "array", "uniqueItems": true}},
+    "kind": "any_of",
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "object"]},
+      {"type": "array", "minItems": 2, "allOf": [{"not": {"type": "array", "uniqueItems": true}}]}
+    ]},
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": [1], "valid": false},
+      {"data": [1, 2], "valid": false},
+      {"data": [1, 1], "valid": true},
+      {"data": [1, 2, 1], "valid": true},
+      {"data": "a", "valid": true}
+    ]
+  },
+  {
+    "description": "a negated distinctness demand under draft 4, spelled the same way",
+    "draft": "draft4",
+    "schema": {"not": {"type": "array", "uniqueItems": true}},
+    "kind": "any_of",
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [
+      {"type": ["null", "boolean", "number", "string", "object"]},
+      {"type": "array", "minItems": 2, "allOf": [{"not": {"type": "array", "uniqueItems": true}}]}
+    ]},
+    "tests": [
+      {"data": [1], "valid": false},
+      {"data": [1, 1], "valid": true},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "a repeat demand carries its own length floor, which an explicit one restates",
+    "schemas": [
+      {"type": "array", "allOf": [{"not": {"type": "array", "uniqueItems": true}}]},
+      {"type": "array", "minItems": 2, "allOf": [{"not": {"type": "array", "uniqueItems": true}}]}
+    ],
+    "kind": "array",
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array", "minItems": 2, "allOf": [{"not": {"type": "array", "uniqueItems": true}}]},
+    "tests": [
+      {"data": [1, 1], "valid": true},
+      {"data": [1, 2], "valid": false},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "a repeat demand beside a distinctness demand shares no array",
+    "schema": {"allOf": [{"type": "array", "uniqueItems": true}, {"not": {"type": "array", "uniqueItems": true}}]},
+    "kind": "false",
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": [1, 1], "valid": false},
+      {"data": [1, 2], "valid": false},
+      {"data": [], "valid": false}
+    ]
+  },
+  {
+    "description": "a repeat demand within a single-item window shares no array",
+    "schema": {"type": "array", "maxItems": 1, "allOf": [{"not": {"type": "array", "uniqueItems": true}}]},
+    "kind": "false",
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": [], "valid": false},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "a finite element domain caps no repeating array, since one value fills every slot",
+    "schema": {"type": "array", "items": {"type": "boolean"}, "allOf": [{"not": {"type": "array", "uniqueItems": true}}]},
+    "kind": "array",
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array", "items": {"type": "boolean"}, "minItems": 2,
+      "allOf": [{"not": {"type": "array", "uniqueItems": true}}]},
+    "tests": [
+      {"data": [true, true], "valid": true},
+      {"data": [true, true, false, false], "valid": true},
+      {"data": [true, false], "valid": false},
+      {"data": [1, 1], "valid": false}
+    ]
+  },
+  {
+    "description": "a repeat demand is a restriction, so an unconstrained sibling swallows it",
+    "schema": {"anyOf": [{"type": "array"}, {"type": "array", "allOf": [{"not": {"type": "array", "uniqueItems": true}}]}]},
+    "kind": "multi_type",
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "array"},
+    "tests": [
+      {"data": [1, 1], "valid": true},
+      {"data": [1, 2], "valid": true}
+    ]
+  },
+  {
+    "description": "a repeat demand beside a distinctness demand keeps both branches apart",
+    "schema": {"anyOf": [
+      {"type": "array", "uniqueItems": true, "minItems": 4},
+      {"type": "array", "allOf": [{"not": {"type": "array", "uniqueItems": true}}]}
+    ]},
+    "kind": "any_of",
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
+      {"type": "array", "minItems": 2, "allOf": [{"not": {"type": "array", "uniqueItems": true}}]},
+      {"type": "array", "uniqueItems": true, "minItems": 4}
+    ]},
+    "tests": [
+      {"data": [1, 2, 3, 4], "valid": true},
+      {"data": [1, 1], "valid": true},
+      {"data": [1, 2], "valid": false},
+      {"data": [1], "valid": false}
     ]
   }
 ]

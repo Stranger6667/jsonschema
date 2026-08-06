@@ -10,9 +10,9 @@ use crate::{
         ir::{
             canonicalize_value_set, tighter, type_set_schema, typed_group, ArrayLeaf, ArrayLeaves,
             AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber, BoundRational, CanonicalJson,
-            ContainsFacet, Discrete, Divisors, ExcludedDivisors, IntegerBounds, IntegerLeaf,
-            IntegerLeaves, LengthBounds, NonEmpty, NumberLeaf, NumberLeaves, ObjectLeaf,
-            ObjectLeaves, ObjectViolation, Round, Schema, SchemaKind, Side, StringLeaf,
+            ContainsFacet, Discrete, Distinctness, Divisors, ExcludedDivisors, IntegerBounds,
+            IntegerLeaf, IntegerLeaves, LengthBounds, NonEmpty, NumberLeaf, NumberLeaves,
+            ObjectLeaf, ObjectLeaves, ObjectViolation, Round, Schema, SchemaKind, Side, StringLeaf,
             StringLeaves, UncheckableFacet, Verdict,
         },
         negate, oracle, parse, DefinitionMap,
@@ -236,13 +236,13 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
                 Schema::new(SchemaKind::False)
             }
         }
-        // Two array leaves: keep the arrays both accept - the narrower window, and distinct items
-        // when either side asks for them.
+        // Two array leaves: keep the arrays both accept - the narrower window, and the distinctness
+        // both sides ask for.
         (SchemaKind::Array(first), SchemaKind::Array(second)) => {
-            array_leaf(
-                intersect_array_leaves(first.into_inner(), second.into_inner(), ctx),
-                ctx,
-            )
+            match intersect_array_leaves(first.into_inner(), second.into_inner(), ctx) {
+                Some(leaf) => array_leaf(leaf, ctx),
+                None => Schema::new(SchemaKind::False),
+            }
         }
         // An object leaf constrains object values. A type set keeps it only when the set covers
         // `object`; otherwise the two share no value, so `False`.
@@ -1121,7 +1121,7 @@ fn lift_degenerate_member(
                     minimum: None,
                     maximum: Some(BoundCardinality::from(0)),
                 },
-                unique: false,
+                distinctness: Distinctness::Unconstrained,
                 prefix: Vec::new(),
                 items: None,
                 contains: Vec::new(),
@@ -2530,32 +2530,51 @@ pub(crate) fn array_leaf(mut leaf: ArrayLeaf, ctx: &CanonicalizationContext) -> 
     if !reconcile_contains_positions(&leaf, ctx) {
         return Schema::new(SchemaKind::False);
     }
-    // Distinct elements cannot outnumber the values they are drawn from, so a finite item domain
-    // is a length ceiling.
-    // e.g.  {"type": "array", "items": {"type": "boolean"}, "uniqueItems": true}
-    //       =>  {"type": "array", "items": {"type": "boolean"}, "uniqueItems": true, "maxItems": 2}
-    if leaf.unique {
-        // The elements meeting a demand are distinct and all drawn from its own domain, so a demand
-        // asking for more matches than that domain holds cannot be met.
-        // e.g.  {"type": "array", "contains": {"type": "boolean"}, "minContains": 3, "uniqueItems": true}
-        //       =>  false
-        if leaf.contains.iter().any(|facet| {
-            facet
-                .schema
-                .kind()
-                .finite_domain_size()
-                .is_some_and(|domain| facet.effective_minimum() > BoundCardinality::from(domain))
-        }) {
-            return Schema::new(SchemaKind::False);
+    match leaf.distinctness {
+        Distinctness::Unconstrained => {}
+        // Distinct elements cannot outnumber the values they are drawn from, so a finite item
+        // domain is a length ceiling.
+        // e.g.  {"type": "array", "items": {"type": "boolean"}, "uniqueItems": true}
+        //       =>  {"type": "array", "items": {"type": "boolean"}, "uniqueItems": true, "maxItems": 2}
+        Distinctness::AllDistinct => {
+            // The elements meeting a demand are distinct and all drawn from its own domain, so a
+            // demand asking for more matches than that domain holds cannot be met.
+            // e.g.  {"type": "array", "contains": {"type": "boolean"}, "minContains": 3, "uniqueItems": true}
+            //       =>  false
+            if leaf.contains.iter().any(|facet| {
+                facet
+                    .schema
+                    .kind()
+                    .finite_domain_size()
+                    .is_some_and(|domain| {
+                        facet.effective_minimum() > BoundCardinality::from(domain)
+                    })
+            }) {
+                return Schema::new(SchemaKind::False);
+            }
+            if let Some(ceiling) = distinct_length_ceiling(&leaf, ctx) {
+                leaf.lengths.maximum = Some(match leaf.lengths.maximum.take() {
+                    Some(maximum) => maximum.min(ceiling),
+                    None => ceiling,
+                });
+            }
         }
-        if let Some(ceiling) = unique_length_ceiling(&leaf, ctx) {
-            leaf.lengths.maximum = Some(match leaf.lengths.maximum.take() {
-                Some(maximum) => maximum.min(ceiling),
-                None => ceiling,
+        // Two elements that coincide are two elements, so the demand floors the length. Spelling
+        // that floor is what keeps the demand alone and the demand beside `minItems: 2` together.
+        // e.g.  {"type": "array", "allOf": [{"not": {"type": "array", "uniqueItems": true}}]}
+        //       =>  {"type": "array", "minItems": 2,
+        //            "allOf": [{"not": {"type": "array", "uniqueItems": true}}]}
+        Distinctness::SomeRepeated => {
+            let floor = BoundCardinality::from(2);
+            leaf.lengths.minimum = Some(match leaf.lengths.minimum.take() {
+                Some(minimum) => minimum.max(floor),
+                None => floor,
             });
         }
     }
-    // An array of at most one item has nothing to repeat, so uniqueness says nothing more.
+    // An array of at most one item holds nothing that can repeat, so a demand for distinct
+    // elements says nothing more and a demand for a repeat cannot be met - the latter through the
+    // floor above, which leaves such a window empty.
     // e.g.  {"type": "array", "maxItems": 1, "uniqueItems": true}
     //       =>  {"type": "array", "maxItems": 1}
     if leaf
@@ -2564,7 +2583,14 @@ pub(crate) fn array_leaf(mut leaf: ArrayLeaf, ctx: &CanonicalizationContext) -> 
         .as_ref()
         .is_some_and(|max| *max <= BoundCardinality::from(1))
     {
-        leaf.unique = false;
+        match leaf.distinctness {
+            Distinctness::AllDistinct => leaf.distinctness = Distinctness::Unconstrained,
+            Distinctness::SomeRepeated => debug_assert!(
+                leaf.lengths.is_empty(),
+                "a repeat demand inside a single-item window survived its length floor"
+            ),
+            Distinctness::Unconstrained => {}
+        }
     }
     let Some(leaf) = NonEmpty::new(leaf) else {
         return Schema::new(SchemaKind::False);
@@ -2745,7 +2771,7 @@ fn implied_length_floor(
 /// e.g.  {"prefixItems": [{"const": true}], "items": {"type": "boolean"}, "uniqueItems": true}
 ///       =>  ceiling 2, not 3
 /// ```
-fn unique_length_ceiling(
+fn distinct_length_ceiling(
     leaf: &ArrayLeaf,
     ctx: &CanonicalizationContext,
 ) -> Option<BoundCardinality> {
@@ -2898,13 +2924,21 @@ fn cap_length(leaf: &mut ArrayLeaf, ceiling: usize) {
     leaf.items = None;
 }
 
-/// Keep the arrays both leaves accept: the narrower window, distinct items when either asks, and
-/// elements both leaves admit at every index.
+/// Keep the arrays both leaves accept: the narrower window, the distinctness both demand, and
+/// elements both leaves admit at every index. `None` when one side demands distinct elements and
+/// the other a repeat, which no array does at once.
 fn intersect_array_leaves(
     first: ArrayLeaf,
     second: ArrayLeaf,
     ctx: &CanonicalizationContext,
-) -> ArrayLeaf {
+) -> Option<ArrayLeaf> {
+    let distinctness = match (first.distinctness, second.distinctness) {
+        (Distinctness::Unconstrained, other) | (other, Distinctness::Unconstrained) => other,
+        (Distinctness::AllDistinct, Distinctness::AllDistinct) => Distinctness::AllDistinct,
+        (Distinctness::SomeRepeated, Distinctness::SomeRepeated) => Distinctness::SomeRepeated,
+        (Distinctness::AllDistinct, Distinctness::SomeRepeated)
+        | (Distinctness::SomeRepeated, Distinctness::AllDistinct) => return None,
+    };
     let length = first.prefix.len().max(second.prefix.len());
     let mut prefix = Vec::with_capacity(length);
     for index in 0..length {
@@ -2920,13 +2954,13 @@ fn intersect_array_leaves(
     };
     let mut contains = first.contains;
     contains.extend(second.contains);
-    ArrayLeaf {
+    Some(ArrayLeaf {
         lengths: first.lengths.intersect(second.lengths),
-        unique: first.unique || second.unique,
+        distinctness,
         prefix,
         items,
         contains,
-    }
+    })
 }
 
 /// The schema a leaf places on the element at `index`: its prefix schema there, or the tail once
@@ -2951,8 +2985,17 @@ fn has_duplicate_elements(elements: &[Value]) -> bool {
         .any(|(index, element)| elements[..index].contains(element))
 }
 
-/// Whether `items` has a length in the window, every element the item schema admits, and distinct
-/// elements when asked.
+/// Whether the elements sit on the side of coincidence the leaf demands.
+fn meets_distinctness(leaf: &ArrayLeaf, elements: &[Value]) -> bool {
+    match leaf.distinctness {
+        Distinctness::Unconstrained => true,
+        Distinctness::AllDistinct => !has_duplicate_elements(elements),
+        Distinctness::SomeRepeated => has_duplicate_elements(elements),
+    }
+}
+
+/// Whether `items` has a length in the window, every element the item schema admits, and the
+/// distinctness the leaf asks for.
 fn array_leaf_admits(leaf: &ArrayLeaf, items: &[Value], ctx: &CanonicalizationContext) -> Verdict {
     if !leaf
         .lengths
@@ -2960,7 +3003,7 @@ fn array_leaf_admits(leaf: &ArrayLeaf, items: &[Value], ctx: &CanonicalizationCo
     {
         return Verdict::Rejects;
     }
-    if leaf.unique && has_duplicate_elements(items) {
+    if !meets_distinctness(leaf, items) {
         return Verdict::Rejects;
     }
     contains_verdict(&leaf.contains, items, UncheckableFacet::Undecided, ctx).and(Verdict::all(
@@ -3042,7 +3085,7 @@ fn restrict_array_member(
     {
         return MemberRestriction::Empty;
     }
-    if leaf.unique && has_duplicate_elements(elements) {
+    if !meets_distinctness(leaf, elements) {
         return MemberRestriction::Empty;
     }
     // Counting the elements of a finite member leaves the demand undecided only across a symbolic
@@ -3094,9 +3137,9 @@ fn restrict_array_member(
                 minimum: Some(length.clone()),
                 maximum: Some(length),
             },
-            // Element pinning preserves elementwise equality, so the member's distinctness carries
-            // over and the pinned tuple needs no uniqueness of its own.
-            unique: false,
+            // Element pinning preserves elementwise equality, so the member's own coincidences
+            // carry over and the pinned tuple needs no distinctness demand of its own.
+            distinctness: Distinctness::Unconstrained,
             prefix: restricted,
             items: None,
             contains,

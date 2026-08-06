@@ -272,12 +272,28 @@ impl MaybeEmpty for IntegerLeaf {
     }
 }
 
+/// What an array leaf says about elements coinciding.
+///
+/// Exhaustive on purpose: a new state must break every consumer that reads it, the bindings
+/// included, rather than reaching a runtime fallback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+pub enum Distinctness {
+    /// Elements may coincide or not.
+    #[default]
+    Unconstrained,
+    /// No two elements are the same value.
+    AllDistinct,
+    /// Two elements are the same value.
+    SomeRepeated,
+}
+
 /// The constraints a [`SchemaKind::Array`] places on an array value. An array of at most one item
-/// is distinct on its own, so `unique` is set only when the window admits a second item.
+/// is distinct on its own, so distinctness is demanded only when the window admits a second item.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub(crate) struct ArrayLeaf {
     pub(crate) lengths: LengthBounds,
-    pub(crate) unique: bool,
+    pub(crate) distinctness: Distinctness,
     /// Per-index schemas: the element at position `i` must satisfy `prefix[i]`.
     pub(crate) prefix: Vec<Schema>,
     /// The schema every element from `prefix.len()` onward must satisfy.
@@ -291,7 +307,7 @@ impl ArrayLeaf {
     /// Every facet has to be listed here, or a union folds the leaf into the type set and drops it.
     pub(crate) fn spans_domain(&self) -> bool {
         self.lengths.is_unbounded()
-            && !self.unique
+            && matches!(self.distinctness, Distinctness::Unconstrained)
             && self.prefix.is_empty()
             && self.items.is_none()
             && self.contains.is_empty()

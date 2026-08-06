@@ -4,6 +4,7 @@
 
 ### Added
 
+- Canonicalization of a negated `uniqueItems`, where the complement demands a repeated element under the length floor two elements imply.
 - Canonicalization of a negated array tuple, where each position's complement stands under the length that reaches it.
 - Canonicalization of `contains` demands sharing no value, where their counts add up into a length floor.
 - `CanonicalSchema#negate` through references, where the complement of the resolved target takes the reference's place.
@@ -12,6 +13,10 @@
 - Canonicalization of `not` a reference, where the complement of the resolved target takes the pointer's place.
 - Canonicalization of a negated `oneOf`, where the complement spells the values no branch admits beside the values two branches share.
 - Canonicalization of negated `items` under Draft 4, where the violating-element demand spells the barred element schema.
+
+### Changed
+
+- `ArrayView` reports distinctness in three states, so an array demanding a repeated element reads apart from one demanding distinct elements.
 
 ### Fixed
 

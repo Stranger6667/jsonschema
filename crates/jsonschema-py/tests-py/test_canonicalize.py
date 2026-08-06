@@ -146,15 +146,31 @@ def test_view_array_lengths():
         case canonical.ArrayView(
             min_items=min_items,
             max_items=max_items,
-            unique_items=unique_items,
+            distinctness=distinctness,
             prefix_items=prefix_items,
             items=items,
         ):
             assert min_items == 1
             assert max_items == 3
-            assert unique_items is True
+            assert distinctness == "all_distinct"
             assert prefix_items == []
             assert items.to_json_schema() == {"$schema": DRAFT202012, "type": "integer"}
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
+@pytest.mark.parametrize(
+    ("schema", "expected"),
+    (
+        ({"type": "array", "minItems": 1}, "unconstrained"),
+        ({"type": "array", "uniqueItems": True}, "all_distinct"),
+        ({"type": "array", "allOf": [{"not": {"type": "array", "uniqueItems": True}}]}, "some_repeated"),
+    ),
+)
+def test_view_array_distinctness(schema, expected):
+    match canonicalize(schema).view():
+        case canonical.ArrayView(distinctness=distinctness):
+            assert distinctness == expected
         case other:
             pytest.fail(f"unexpected view: {other!r}")
 

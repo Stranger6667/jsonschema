@@ -128,14 +128,27 @@ RSpec.describe "JSONSchema.canonicalize" do
       "items" => { "type" => "integer" }
     }
     case JSONSchema.canonicalize(schema).view
-    in JSONSchema::Canonical::ArrayView[min_items:, max_items:, unique_items:, prefix_items:, items:]
+    in JSONSchema::Canonical::ArrayView[min_items:, max_items:, distinctness:, prefix_items:, items:]
       expect(min_items).to eq(1)
       expect(max_items).to eq(3)
-      expect(unique_items).to be(true)
+      expect(distinctness).to be(:all_distinct)
       expect(prefix_items).to eq([])
       expect(items.to_json_schema).to eq(
         { "$schema" => "https://json-schema.org/draft/2020-12/schema", "type" => "integer" }
       )
+    end
+  end
+
+  {
+    { "type" => "array", "minItems" => 1 } => :unconstrained,
+    { "type" => "array", "uniqueItems" => true } => :all_distinct,
+    { "type" => "array", "allOf" => [{ "not" => { "type" => "array", "uniqueItems" => true } }] } => :some_repeated
+  }.each do |schema, expected|
+    it "view returns ArrayView with distinctness #{expected}" do
+      case JSONSchema.canonicalize(schema).view
+      in JSONSchema::Canonical::ArrayView[distinctness:]
+        expect(distinctness).to be(expected)
+      end
     end
   end
 
@@ -334,7 +347,7 @@ RSpec.describe "JSONSchema.canonicalize" do
     "NumberView" => [{ "type" => "number", "minimum" => 2 },
                      %i[minimum exclusive_minimum maximum exclusive_maximum multiple_of not_multiple_of
                         excludes_integers]],
-    "ArrayView" => [{ "type" => "array", "minItems" => 1 }, %i[min_items max_items unique_items prefix_items items contains]],
+    "ArrayView" => [{ "type" => "array", "minItems" => 1 }, %i[min_items max_items distinctness prefix_items items contains]],
     "ObjectView" => [{ "type" => "object", "minProperties" => 1 },
                      %i[min_properties max_properties required property_names properties pattern_properties]],
     "ConstView" => [{ "const" => nil }, %i[value]],

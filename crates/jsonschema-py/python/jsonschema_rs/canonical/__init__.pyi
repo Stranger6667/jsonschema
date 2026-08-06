@@ -1,5 +1,5 @@
 from decimal import Decimal
-from typing import TypeAlias, final
+from typing import Literal, TypeAlias, final
 
 from . import json as json
 from . import schema as schema
@@ -99,7 +99,7 @@ class ArrayView:
     @property
     def max_items(self) -> int | None: ...
     @property
-    def unique_items(self) -> bool: ...
+    def distinctness(self) -> Literal["unconstrained", "all_distinct", "some_repeated"]: ...
     @property
     def prefix_items(self) -> list[CanonicalSchema]: ...
     @property

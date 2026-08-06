@@ -96,7 +96,7 @@ pub(crate) mod view;
 pub use error::{CanonicalizationError, OperandMismatch};
 pub use options::{options, CanonicalizeOptions};
 pub use schema::CanonicalSchema;
-pub use view::{CanonicalKind, CanonicalView, ContainsView, ObjectViolationView};
+pub use view::{CanonicalKind, CanonicalView, ContainsView, Distinctness, ObjectViolationView};
 
 pub(crate) const CANONICAL_REFERENCE_PREFIX: &str = "urn:jsonschema:canonical:";
 
