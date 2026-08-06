@@ -290,8 +290,8 @@ RSpec.describe "JSONSchema.canonicalize" do
 
   it "view returns OneOfView exposing each branch" do
     schema = {
-      "oneOf" => [{ "$ref" => "#/$defs/one" }, { "$ref" => "#/$defs/two" }],
-      "$defs" => { "one" => { "const" => 1 }, "two" => { "const" => 2 } }
+      "oneOf" => [{ "$ref" => "#/$defs/plain" }, { "$ref" => "#/$defs/tight" }],
+      "$defs" => { "plain" => { "type" => "string" }, "tight" => { "type" => "string", "minLength" => 3 } }
     }
     case JSONSchema.canonicalize(schema).view
     in JSONSchema::Canonical::OneOfView[branches:]

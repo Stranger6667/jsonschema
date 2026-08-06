@@ -3812,11 +3812,9 @@
     "kind": "any_of",
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "$defs": {"a": {"type": "string"}},
       "anyOf": [
         {"type": ["null", "boolean", "array", "object"]},
-        {"type": "number", "not": {"multipleOf": 1}},
-        {"allOf": [{"type": "integer"}, {"$ref": "#/$defs/a"}]}
+        {"type": "number", "not": {"multipleOf": 1}}
       ]
     },
     "tests": [
@@ -3863,11 +3861,9 @@
     "kind": "any_of",
     "expected": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "definitions": {"a": {"type": "string"}},
       "anyOf": [
         {"type": ["null", "boolean", "array", "object"]},
-        {"type": "number", "not": {"multipleOf": 1}},
-        {"allOf": [{"type": "integer"}, {"$ref": "#/definitions/a"}]}
+        {"type": "number", "not": {"multipleOf": 1}}
       ]
     },
     "tests": [

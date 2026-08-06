@@ -2291,11 +2291,9 @@ fn is_subset_of_rejects_operands_with_distinct_definition_maps() {
 #[test_case(
     &json!({"$defs": {"a": {"type": "string"}}, "oneOf": [{"$ref": "#/$defs/a"}, {"type": "integer"}]}),
     &json!({
-        "$defs": {"a": {"type": "string"}},
         "anyOf": [
             {"type": ["null", "boolean", "array", "object"]},
-            {"type": "number", "not": {"multipleOf": 1}},
-            {"allOf": [{"type": "integer"}, {"$ref": "#/$defs/a"}]}
+            {"type": "number", "not": {"multipleOf": 1}}
         ]
     });
     "choice between disjoint branches"
@@ -2325,11 +2323,9 @@ fn is_subset_of_rejects_operands_with_distinct_definition_maps() {
         "$ref": "#/$defs/node"
     }),
     &json!({
-        "$defs": {"a": {"type": "string"}},
         "anyOf": [
             {"type": ["null", "boolean", "array", "object"]},
-            {"type": "number", "not": {"multipleOf": 1}},
-            {"allOf": [{"type": "integer"}, {"$ref": "#/$defs/a"}]}
+            {"type": "number", "not": {"multipleOf": 1}}
         ]
     });
     "pointer at a choice"

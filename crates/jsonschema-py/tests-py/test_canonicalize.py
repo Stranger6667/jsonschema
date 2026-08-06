@@ -386,8 +386,8 @@ def test_view_any_of():
 
 def test_view_one_of():
     schema = {
-        "oneOf": [{"$ref": "#/$defs/one"}, {"$ref": "#/$defs/two"}],
-        "$defs": {"one": {"const": 1}, "two": {"const": 2}},
+        "oneOf": [{"$ref": "#/$defs/plain"}, {"$ref": "#/$defs/tight"}],
+        "$defs": {"plain": {"type": "string"}, "tight": {"type": "string", "minLength": 3}},
     }
     match canonicalize(schema).view():
         case canonical.OneOfView(branches=branches):

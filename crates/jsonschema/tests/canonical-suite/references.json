@@ -767,7 +767,7 @@
     ]
   },
   {
-    "description": "oneOf references stay as a compact symbolic exclusive union",
+    "description": "reference branches naming disjoint targets degrade to a union",
     "schema": {
       "oneOf": [
         {"$ref": "#/$defs/one"},
@@ -778,10 +778,10 @@
         "two": {"const": 2}
       }
     },
-    "kind": "one_of",
+    "kind": "any_of",
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "oneOf": [
+      "anyOf": [
         {"$ref": "#/$defs/one"},
         {"$ref": "#/$defs/two"}
       ],
@@ -1136,10 +1136,10 @@
         "d11": {"const": 11}
       }
     },
-    "kind": "one_of",
+    "kind": "any_of",
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "oneOf": [
+      "anyOf": [
         {"$ref": "#/$defs/d0"},
         {"$ref": "#/$defs/d1"},
         {"$ref": "#/$defs/d10"},
@@ -2001,6 +2001,38 @@
       {"data": 1, "valid": true},
       {"data": "a", "valid": true},
       {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "a choice inside a reference cycle settles the same way on either pass",
+    "schema": {
+      "$defs": {
+        "d0": {"type": "object", "properties": {"x": {"$ref": "#/$defs/d4"}}, "required": ["x"]},
+        "d1": {"type": "object", "properties": {"x": {"$ref": "#/$defs/d0"}}, "required": ["x"]},
+        "d2": {"allOf": [{"type": "array", "contains": {"$ref": "#/$defs/d0"}}, {"$ref": "#/$defs/d4"}]},
+        "d4": {"oneOf": [{"$ref": "#/$defs/d1"}, {"$ref": "#/$defs/d2"}]}
+      },
+      "allOf": [
+        {"$ref": "#/$defs/d1"},
+        {"type": "object", "properties": {"x": {"$ref": "#/$defs/d0"}}, "required": ["x"]}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "d0": {"type": "object", "properties": {"x": {"$ref": "#/$defs/d4"}}, "required": ["x"]},
+        "d1": {"type": "object", "properties": {"x": {"$ref": "#/$defs/d0"}}, "required": ["x"]},
+        "d2": {"allOf": [{"type": "array", "contains": {"$ref": "#/$defs/d0"}}, {"$ref": "#/$defs/d4"}]},
+        "d4": {"oneOf": [{"$ref": "#/$defs/d1"}, {"$ref": "#/$defs/d2"}]}
+      },
+      "allOf": [
+        {"type": "object", "properties": {"x": {"$ref": "#/$defs/d0"}}, "required": ["x"]},
+        {"$ref": "#/$defs/d1"}
+      ]
+    },
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": 3, "valid": false}
     ]
   }
 ]
