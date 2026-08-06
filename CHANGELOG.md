@@ -21,6 +21,7 @@
 ### Fixed
 
 - `CanonicalSchema::negate` keeping a root self-reference in the complement, where it points at the complement instead of the source.
+- An `additionalItems` that tails no tuple keeping the whole document unmodeled under Draft 2020-12.
 
 ## [0.49.5] - 2026-08-05
 

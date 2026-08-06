@@ -708,15 +708,11 @@ fn parse_schema_in_scope<'a>(
                     None => return Ok(None),
                 }
             }
-            // `additionalItems` constrains the elements beyond an array-form `items` tuple. It is
-            // inert when `items` is a schema or absent, and unknown in 2020-12, so its value is
-            // held raw and parsed only once a tuple makes it live.
-            ("additionalItems", value @ (Value::Object(_) | Value::Bool(_)))
-                if matches!(
-                    ctx.draft(),
-                    Draft::Draft4 | Draft::Draft6 | Draft::Draft7 | Draft::Draft201909
-                ) =>
-            {
+            // `additionalItems` constrains the elements beyond an array-form `items` tuple, and is
+            // inert when `items` is a schema or absent. Its value is held raw and parsed only once
+            // a tuple makes it live. 2020-12 spells the tuple `prefixItems`, which this keyword
+            // never tails, and an array-form `items` there keeps the document raw.
+            ("additionalItems", value @ (Value::Object(_) | Value::Bool(_))) => {
                 additional_items = Some(value);
             }
             ("contains", value @ (Value::Object(_) | Value::Bool(_)))
@@ -1065,8 +1061,20 @@ fn parse_schema_in_scope<'a>(
             };
             (prefix, tail)
         }
-        Some(prefix) => (prefix, items),
-        None => (Vec::new(), items),
+        Some(prefix) => {
+            debug_assert!(
+                !matches!(map.get("items"), Some(Value::Array(_))),
+                "a prefix spelled `prefixItems` leaves no array-form `items` for `additionalItems` to tail"
+            );
+            (prefix, items)
+        }
+        None => {
+            debug_assert!(
+                !matches!(map.get("items"), Some(Value::Array(_))),
+                "an array-form `items` either builds a prefix or keeps the document raw"
+            );
+            (Vec::new(), items)
+        }
     };
     // `minContains`/`maxContains` constrain the `contains` count and say nothing without it.
     let contains: Vec<ContainsFacet> = contains_schema
