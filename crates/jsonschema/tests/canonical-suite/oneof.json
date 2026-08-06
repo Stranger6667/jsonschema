@@ -1415,5 +1415,40 @@
       {"data": {"x": "a"}, "valid": true},
       {"data": {}, "valid": false}
     ]
+  },
+  {
+    "description": "a choice whose overlapping branches outrun the conjunction budget stays symbolic",
+    "schema": {
+      "oneOf": [
+        {"type": "object", "properties": {"kind": {"const": "K0"}, "f0": {"type": "string"}}},
+        {"type": "object", "properties": {"kind": {"const": "K1"}, "f1": {"type": "string"}}},
+        {"type": "object", "properties": {"kind": {"const": "K2"}, "f2": {"type": "string"}}},
+        {"type": "object", "properties": {"kind": {"const": "K3"}, "f3": {"type": "string"}}},
+        {"type": "object", "properties": {"kind": {"const": "K4"}, "f4": {"type": "string"}}},
+        {"type": "object", "properties": {"kind": {"const": "K5"}, "f5": {"type": "string"}}},
+        {"type": "object", "properties": {"kind": {"const": "K6"}, "f6": {"type": "string"}}},
+        {"type": "object", "properties": {"kind": {"const": "K7"}, "f7": {"type": "string"}}},
+        {"type": "object", "properties": {"kind": {"const": "K8"}, "f8": {"type": "string"}}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {"type": "object", "properties": {"kind": {"const": "K0"}, "f0": {"type": "string"}}},
+        {"type": "object", "properties": {"kind": {"const": "K1"}, "f1": {"type": "string"}}},
+        {"type": "object", "properties": {"kind": {"const": "K2"}, "f2": {"type": "string"}}},
+        {"type": "object", "properties": {"kind": {"const": "K3"}, "f3": {"type": "string"}}},
+        {"type": "object", "properties": {"kind": {"const": "K4"}, "f4": {"type": "string"}}},
+        {"type": "object", "properties": {"kind": {"const": "K5"}, "f5": {"type": "string"}}},
+        {"type": "object", "properties": {"kind": {"const": "K6"}, "f6": {"type": "string"}}},
+        {"type": "object", "properties": {"kind": {"const": "K7"}, "f7": {"type": "string"}}},
+        {"type": "object", "properties": {"kind": {"const": "K8"}, "f8": {"type": "string"}}}
+      ]
+    },
+    "tests": [
+      {"data": {"kind": "K0", "f0": "x"}, "valid": true},
+      {"data": {"kind": "K3"}, "valid": true},
+      {"data": {}, "valid": false}
+    ]
   }
 ]

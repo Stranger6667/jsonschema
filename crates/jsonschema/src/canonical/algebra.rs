@@ -643,6 +643,7 @@ fn concrete_one_of(
     ctx: &CanonicalizationContext,
 ) -> Option<Schema> {
     let overlaps = pairwise_overlaps(&branches, ctx);
+    let mut spelled = branches.clone();
     let mut result = union(branches, ctx);
     for overlap in overlaps {
         result = intersect(
@@ -650,6 +651,12 @@ fn concrete_one_of(
             negate::negate_in_place(&overlap, definitions, ctx)?,
             ctx,
         );
+        // Every shared region removed widens the union again, and the widths multiply, so past the
+        // budget the choice keeps the exactly-one spelling: it is exact and far smaller.
+        if negate::union_width(&result) > negate::CONJUNCTION_BUDGET {
+            spelled.sort();
+            return Some(Schema::new(SchemaKind::OneOf(spelled)));
+        }
     }
     Some(result)
 }
