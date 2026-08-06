@@ -1,5 +1,5 @@
 //! Set algebra over canonical IR nodes.
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use referencing::Draft;
 use serde_json::Value;
@@ -12,8 +12,8 @@ use crate::{
             AscendingMembership, AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber,
             BoundRational, CanonicalJson, ContainsFacet, Discrete, Distinctness, Divisors,
             ExcludedDivisors, IntegerBounds, IntegerLeaf, IntegerLeaves, LengthBounds, NonEmpty,
-            NumberLeaf, NumberLeaves, ObjectLeaf, ObjectLeaves, ObjectViolation, Round, Schema,
-            SchemaKind, Side, StringLeaf, StringLeaves, UncheckableFacet, Verdict,
+            NumberLeaf, NumberLeaves, ObjectLeaf, ObjectLeaves, ObjectViolation, PropertyMap,
+            Round, Schema, SchemaKind, Side, StringLeaf, StringLeaves, UncheckableFacet, Verdict,
         },
         negate, oracle, parse, DefinitionMap,
     },
@@ -1325,8 +1325,8 @@ fn lift_degenerate_member(
                 additional: None,
                 required: Vec::new(),
                 property_names: None,
-                properties: BTreeMap::new(),
-                pattern_properties: BTreeMap::new(),
+                properties: PropertyMap::default(),
+                pattern_properties: PropertyMap::default(),
                 violations: Vec::new(),
             });
             true
@@ -1581,8 +1581,8 @@ fn collapse_object_leaves_covering_domain(
         sizes: LengthBounds::default(),
         required: Vec::new(),
         property_names: None,
-        properties: BTreeMap::new(),
-        pattern_properties: BTreeMap::new(),
+        properties: PropertyMap::default(),
+        pattern_properties: PropertyMap::default(),
         additional: None,
         // Coverage goes through `oracle::covers` (intersect plus structural equality), so a
         // violation-carrying leaf never falsely covers a violation-free piece.
@@ -1973,8 +1973,7 @@ fn drop_size_bound_covered_by_sibling(
                     if enriched.required.binary_search(key).is_err() {
                         enriched
                             .properties
-                            .entry(Arc::clone(key))
-                            .or_insert_with(|| entry.clone());
+                            .or_insert_with(Arc::clone(key), || entry.clone());
                     }
                 }
                 let mut slice = enriched.clone();
@@ -2025,7 +2024,10 @@ fn widen_entry_covered_by_sibling(
                 if leaves[sibling].additional.is_some() {
                     continue;
                 }
-                let entry = &leaves[index].properties[&key];
+                let entry = leaves[index]
+                    .properties
+                    .get(&key)
+                    .expect("the key came from this leaf");
                 let sibling_entry = leaves[sibling].properties.get(&key);
                 // `None` spells the sibling admitting anything at the key, lifting the union to `True`.
                 let widened_entry = match sibling_entry {
@@ -2439,6 +2441,7 @@ fn narrow_branch_entries(
             slot += 1;
             continue;
         };
+        let mut replacement = None;
         for (key, entry) in &leaf.get().properties {
             let SchemaKind::AnyOf(alternatives) = entry.kind() else {
                 continue;
@@ -2455,12 +2458,14 @@ fn narrow_branch_entries(
                 continue;
             }
             let mut narrower = leaf.get().clone();
-            narrower
-                .properties
-                .insert(Arc::clone(key), union(kept, ctx));
+            let merged = union(kept, ctx);
+            narrower.properties.insert(Arc::clone(key), merged);
+            replacement = Some(narrower);
+            break;
+        }
+        if let Some(narrower) = replacement {
             rebuilt[slot] = object_leaf(narrower, ctx);
             narrowed = true;
-            break;
         }
         slot += 1;
     }
@@ -3629,7 +3634,7 @@ fn expand_additional_over_admitted_keys(leaf: &mut ObjectLeaf) {
         .take()
         .expect("the early return proved a shield present");
     for key in keys {
-        leaf.properties.entry(key).or_insert_with(|| shield.clone());
+        leaf.properties.or_insert_with(key, || shield.clone());
     }
 }
 
@@ -3691,8 +3696,8 @@ fn normalize_pattern_properties(leaf: &mut ObjectLeaf, ctx: &CanonicalizationCon
 
 /// Intersect into `properties` what every pattern matching `key` demands of it.
 fn merge_matching_patterns(
-    properties: &mut BTreeMap<Arc<str>, Schema>,
-    patterns: &BTreeMap<Arc<str>, Schema>,
+    properties: &mut PropertyMap,
+    patterns: &PropertyMap,
     key: &Arc<str>,
     ctx: &CanonicalizationContext,
 ) {
@@ -4089,7 +4094,7 @@ fn intersect_property_entries(
     first: &ObjectLeaf,
     second: &ObjectLeaf,
     ctx: &CanonicalizationContext,
-) -> BTreeMap<Arc<str>, Schema> {
+) -> PropertyMap {
     let mut keys: Vec<&Arc<str>> = first
         .properties
         .keys()
@@ -4097,7 +4102,7 @@ fn intersect_property_entries(
         .collect();
     keys.sort();
     keys.dedup();
-    let mut entries = BTreeMap::new();
+    let mut entries = PropertyMap::default();
     for key in keys {
         let entry = [
             first.properties.get(key),
@@ -4122,7 +4127,7 @@ fn intersect_pattern_entries(
     first: &ObjectLeaf,
     second: &ObjectLeaf,
     ctx: &CanonicalizationContext,
-) -> BTreeMap<Arc<str>, Schema> {
+) -> PropertyMap {
     let mut entries = first.pattern_properties.clone();
     for (pattern, schema) in &second.pattern_properties {
         let entry = match entries.remove(pattern) {
@@ -4156,7 +4161,7 @@ fn intersect_pattern_entries(
 fn spells_shielded_meet(
     first: &ObjectLeaf,
     second: &ObjectLeaf,
-    properties: &BTreeMap<Arc<str>, Schema>,
+    properties: &PropertyMap,
     ctx: &CanonicalizationContext,
 ) -> bool {
     if !first.pattern_properties.is_empty() && !second.pattern_properties.is_empty() {
@@ -4178,7 +4183,7 @@ fn spells_shielded_meet(
 fn shield_spares_named_keys(
     shielded: &ObjectLeaf,
     patterned: &ObjectLeaf,
-    properties: &BTreeMap<Arc<str>, Schema>,
+    properties: &PropertyMap,
     ctx: &CanonicalizationContext,
 ) -> bool {
     let Some(shield) = &shielded.additional else {
@@ -4292,7 +4297,7 @@ fn restrict_object_member(
         }
     }
     let mut full = restricted_property_names.is_none() && restricted_violations.is_empty();
-    let mut restricted: BTreeMap<Arc<str>, Schema> = BTreeMap::new();
+    let mut restricted = PropertyMap::default();
     for (key, value) in map {
         let pin = Schema::new(SchemaKind::Const(CanonicalJson::from_value(value)));
         let applicable = key_schema(leaf, key, ctx);
@@ -4322,7 +4327,7 @@ fn restrict_object_member(
             required: restricted.keys().cloned().collect(),
             property_names: restricted_property_names,
             properties: restricted,
-            pattern_properties: BTreeMap::new(),
+            pattern_properties: PropertyMap::default(),
             additional: None,
             violations: restricted_violations,
         },

@@ -1,6 +1,5 @@
 use std::{
     cmp::Ordering,
-    collections::BTreeMap,
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -20,6 +19,7 @@ mod divisors;
 mod integer_leaves;
 mod number_leaves;
 mod object_leaves;
+mod property_map;
 mod raw;
 mod string_leaves;
 mod verdict;
@@ -34,6 +34,7 @@ pub(crate) use divisors::{Divisors, ExcludedDivisors};
 pub(crate) use integer_leaves::IntegerLeaves;
 pub(crate) use number_leaves::NumberLeaves;
 pub(crate) use object_leaves::ObjectLeaves;
+pub(crate) use property_map::PropertyMap;
 pub(crate) use raw::RawJson;
 pub(crate) use string_leaves::StringLeaves;
 pub(crate) use verdict::{UncheckableFacet, Verdict};
@@ -362,9 +363,9 @@ pub(crate) struct ObjectLeaf {
     /// Every key must satisfy this schema, which is narrowed to the string domain.
     pub(crate) property_names: Option<Schema>,
     /// The schema each named key must satisfy when the object carries it.
-    pub(crate) properties: BTreeMap<Arc<str>, Schema>,
+    pub(crate) properties: PropertyMap,
     /// The schema every key matching the pattern must satisfy when the object carries it.
-    pub(crate) pattern_properties: BTreeMap<Arc<str>, Schema>,
+    pub(crate) pattern_properties: PropertyMap,
     /// The schema every key `properties` does not name and no pattern in `pattern_properties`
     /// matches must satisfy; never `True` (normalized away).
     pub(crate) additional: Option<Schema>,

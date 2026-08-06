@@ -1,5 +1,5 @@
 //! Parsing schema documents into structural IR; anything not modeled stays `Raw`.
-use std::{borrow::Cow, collections::BTreeMap, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
 
 use ahash::{AHashMap, AHashSet};
 
@@ -14,8 +14,8 @@ use crate::{
         ir::{
             canonicalize_value_set, type_set_schema, typed_group, ArrayLeaf, BoundCardinality,
             BoundNumber, BoundRational, CanonicalJson, ContainsFacet, Distinctness, Divisors,
-            ExcludedDivisors, IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, Schema,
-            SchemaKind, Side, StringLeaf,
+            ExcludedDivisors, IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, PropertyMap,
+            Schema, SchemaKind, Side, StringLeaf,
         },
         negate, CanonicalizationError, DefinitionMap, CANONICAL_REFERENCE_PREFIX,
         ROOT_DEFINITION_KEY,
@@ -578,8 +578,8 @@ fn parse_schema_in_scope<'a>(
     let mut additional_items: Option<&Value> = None;
     let mut required: Vec<Arc<str>> = Vec::new();
     let mut property_names: Option<Schema> = None;
-    let mut properties: BTreeMap<Arc<str>, Schema> = BTreeMap::new();
-    let mut pattern_properties: BTreeMap<Arc<str>, Schema> = BTreeMap::new();
+    let mut properties = PropertyMap::default();
+    let mut pattern_properties = PropertyMap::default();
     let mut forbid_unmatched_keys = false;
     let mut additional_schema: Option<Schema> = None;
     let mut min_properties: Option<BoundCardinality> = None;
@@ -1291,8 +1291,8 @@ fn parse_schema_in_scope<'a>(
 /// Move every pattern matching finitely many keys onto those keys, met into whatever the property
 /// map already demands of each, and drop the pattern.
 fn fold_finite_key_patterns(
-    pattern_properties: &mut BTreeMap<Arc<str>, Schema>,
-    properties: &mut BTreeMap<Arc<str>, Schema>,
+    pattern_properties: &mut PropertyMap,
+    properties: &mut PropertyMap,
     ctx: &CanonicalizationContext,
 ) {
     pattern_properties.retain(|pattern, schema| {
@@ -2023,8 +2023,8 @@ fn dependency_conjunct(key: &str, consequent: Schema, ctx: &CanonicalizationCont
             sizes: LengthBounds::default(),
             required: Vec::new(),
             property_names: None,
-            properties: BTreeMap::from([(Arc::from(key), Schema::new(SchemaKind::False))]),
-            pattern_properties: BTreeMap::new(),
+            properties: PropertyMap::from_iter([(Arc::from(key), Schema::new(SchemaKind::False))]),
+            pattern_properties: PropertyMap::default(),
             additional: None,
             violations: Vec::new(),
         },
@@ -2040,8 +2040,8 @@ fn object_with_required(required: Vec<Arc<str>>, ctx: &CanonicalizationContext) 
             sizes: LengthBounds::default(),
             required,
             property_names: None,
-            properties: BTreeMap::new(),
-            pattern_properties: BTreeMap::new(),
+            properties: PropertyMap::default(),
+            pattern_properties: PropertyMap::default(),
             additional: None,
             violations: Vec::new(),
         },
