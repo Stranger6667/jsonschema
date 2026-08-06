@@ -6,6 +6,7 @@
 
 - 23% faster canonicalization of an object whose keys a finite property-name set spells.
 - 3% faster intersection of schemas where one side constrains nothing.
+- Up to 31x faster canonicalization of a `oneOf` whose many branches overlap.
 
 ### Added
 

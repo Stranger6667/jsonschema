@@ -33,7 +33,7 @@ const OVERLAP_BUDGET: usize = 64;
 /// multiplies their branch counts, so a union of branches that each rule out a value in several
 /// independent ways has a union form exponential in the branch count. Past this many the symbolic
 /// complement is both exact and smaller.
-const CONJUNCTION_BUDGET: usize = 16;
+pub(crate) const CONJUNCTION_BUDGET: usize = 16;
 
 /// State of one resolving negation walk.
 struct NegationWalk<'a> {
@@ -124,7 +124,7 @@ fn keep_symbolic(schema: &Schema) -> Option<Schema> {
 }
 
 /// How many branches a node spells as a union.
-fn union_width(schema: &Schema) -> usize {
+pub(crate) fn union_width(schema: &Schema) -> usize {
     if let SchemaKind::AnyOf(branches) = schema.kind() {
         branches.as_slice().len()
     } else {
