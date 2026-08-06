@@ -10,9 +10,9 @@ use crate::{
         emptiness,
         ir::{
             type_set_schema, ArrayLeaf, AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber,
-            CanonicalJson, ContainsFacet, Discrete, Divisors, ExcludedDivisors, IntegerBounds,
-            IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, ObjectViolation, Schema, SchemaKind,
-            StringLeaf,
+            CanonicalJson, ContainsFacet, Discrete, Distinctness, Divisors, ExcludedDivisors,
+            IntegerBounds, IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, ObjectViolation,
+            Schema, SchemaKind, StringLeaf,
         },
         DefinitionMap, ROOT_DEFINITION_KEY,
     },
@@ -324,7 +324,7 @@ fn negate_finite_values(values: &[CanonicalJson], ctx: &CanonicalizationContext)
         branches.push(algebra::array_leaf(
             ArrayLeaf {
                 lengths: above_empty(),
-                unique: false,
+                distinctness: Distinctness::Unconstrained,
                 prefix: Vec::new(),
                 items: None,
                 contains: Vec::new(),
@@ -656,7 +656,8 @@ fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Optio
 /// An element schema fails on an array exactly when one element violates it, which is a `contains`
 /// demand for its complement. A demand for one match fails exactly when every element violates it,
 /// which is the same trade the other way round. A positional schema constrains only the arrays long
-/// enough to reach its index, so its violation carries that length as a floor.
+/// enough to reach its index, so its violation carries that length as a floor. Distinctness is its
+/// own dual: a demand that every element differ fails exactly when two of them coincide.
 /// ```text
 /// e.g.  {"not": {"type": "array", "maxItems": 2}}
 ///       =>  anyOf: [<non-array types>, {"type": "array", "minItems": 3}]
@@ -670,15 +671,16 @@ fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Optio
 ///       =>  anyOf: [<non-array types>,
 ///                   {"type": "array", "prefixItems": [{"type": <every type but string>}],
 ///                    "minItems": 1}]
+/// e.g.  {"not": {"type": "array", "uniqueItems": true}}
+///       =>  anyOf: [<non-array types>,
+///                   {"type": "array", "minItems": 2,
+///                    "allOf": [{"not": {"type": "array", "uniqueItems": true}}]}]
 /// ```
 fn negate_array_leaf(
     leaf: &ArrayLeaf,
     walk: &mut NegationWalk<'_>,
     ctx: &CanonicalizationContext,
 ) -> Option<Schema> {
-    if leaf.unique {
-        return None;
-    }
     // A demand names no position, so it cannot ask for a violation past the prefix and leave the
     // positions in front of it alone.
     if !leaf.prefix.is_empty() && leaf.items.is_some() {
@@ -686,6 +688,23 @@ fn negate_array_leaf(
     }
     let windows = length_windows(&leaf.lengths)?;
     let mut branches = vec![type_set_schema(JsonTypeSet::all().remove(JsonType::Array))];
+    let flipped = match leaf.distinctness {
+        Distinctness::Unconstrained => None,
+        Distinctness::AllDistinct => Some(Distinctness::SomeRepeated),
+        Distinctness::SomeRepeated => Some(Distinctness::AllDistinct),
+    };
+    if let Some(distinctness) = flipped {
+        branches.push(algebra::array_leaf(
+            ArrayLeaf {
+                lengths: LengthBounds::default(),
+                distinctness,
+                prefix: Vec::new(),
+                items: None,
+                contains: Vec::new(),
+            },
+            ctx,
+        ));
+    }
     debug_assert!(
         leaf.prefix.is_empty() || leaf.items.is_none(),
         "a positional leaf reached the position branches carrying a tail"
@@ -699,7 +718,7 @@ fn negate_array_leaf(
                     minimum: Some(BoundCardinality::from(index as u64 + 1)),
                     maximum: None,
                 },
-                unique: false,
+                distinctness: Distinctness::Unconstrained,
                 prefix,
                 items: None,
                 contains: Vec::new(),
@@ -711,7 +730,7 @@ fn negate_array_leaf(
         branches.push(algebra::array_leaf(
             ArrayLeaf {
                 lengths: LengthBounds::default(),
-                unique: false,
+                distinctness: Distinctness::Unconstrained,
                 prefix: Vec::new(),
                 items: None,
                 contains: vec![ContainsFacet {
@@ -732,7 +751,7 @@ fn negate_array_leaf(
         branches.push(algebra::array_leaf(
             ArrayLeaf {
                 lengths: LengthBounds::default(),
-                unique: false,
+                distinctness: Distinctness::Unconstrained,
                 prefix: Vec::new(),
                 items: Some(negate_within(&facet.schema, walk, ctx)?),
                 contains: Vec::new(),
@@ -744,7 +763,7 @@ fn negate_array_leaf(
         algebra::array_leaf(
             ArrayLeaf {
                 lengths,
-                unique: false,
+                distinctness: Distinctness::Unconstrained,
                 prefix: Vec::new(),
                 items: None,
                 contains: Vec::new(),

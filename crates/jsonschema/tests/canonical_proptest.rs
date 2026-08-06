@@ -150,7 +150,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(91)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(93)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -397,6 +397,11 @@ fn draw_leaf(tc: &TestCase) -> Value {
                 vec![first, second]
             };
             json!({ "type": types })
+        }
+        // A repeat demand: the dual of distinctness, which only a complement spells.
+        92 => json!({ "not": { "type": "array", "uniqueItems": true } }),
+        93 => {
+            json!({ "type": "array", "allOf": [{ "not": { "type": "array", "uniqueItems": true } }] })
         }
         _ => json!({ "type": ["string", "integer"] }),
     }

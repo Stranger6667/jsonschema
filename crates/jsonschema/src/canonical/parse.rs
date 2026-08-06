@@ -13,9 +13,9 @@ use crate::{
         emptiness,
         ir::{
             canonicalize_value_set, type_set_schema, typed_group, ArrayLeaf, BoundCardinality,
-            BoundNumber, BoundRational, CanonicalJson, ContainsFacet, Divisors, ExcludedDivisors,
-            IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, Schema, SchemaKind, Side,
-            StringLeaf,
+            BoundNumber, BoundRational, CanonicalJson, ContainsFacet, Distinctness, Divisors,
+            ExcludedDivisors, IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, Schema,
+            SchemaKind, Side, StringLeaf,
         },
         negate, CanonicalizationError, DefinitionMap, CANONICAL_REFERENCE_PREFIX,
         ROOT_DEFINITION_KEY,
@@ -543,7 +543,7 @@ fn parse_schema_in_scope<'a>(
     let mut const_value = None;
     let mut min_length: Option<BoundCardinality> = None;
     let mut max_length: Option<BoundCardinality> = None;
-    let mut unique_items = false;
+    let mut distinctness = Distinctness::Unconstrained;
     let mut min_items: Option<BoundCardinality> = None;
     let mut max_items: Option<BoundCardinality> = None;
     let mut items: Option<Schema> = None;
@@ -660,7 +660,11 @@ fn parse_schema_in_scope<'a>(
                 }
             }
             ("uniqueItems", Value::Bool(flag)) if ctx.draft().is_known_keyword("uniqueItems") => {
-                unique_items = *flag;
+                distinctness = if *flag {
+                    Distinctness::AllDistinct
+                } else {
+                    Distinctness::Unconstrained
+                };
             }
             ("minItems", Value::Number(number)) if ctx.draft().is_known_keyword("minItems") => {
                 match BoundCardinality::from_number(number) {
@@ -1075,7 +1079,7 @@ fn parse_schema_in_scope<'a>(
         .collect();
     if min_items.is_some()
         || max_items.is_some()
-        || unique_items
+        || !matches!(distinctness, Distinctness::Unconstrained)
         || !prefix.is_empty()
         || tail.is_some()
         || !contains.is_empty()
@@ -1086,7 +1090,7 @@ fn parse_schema_in_scope<'a>(
                     minimum: min_items,
                     maximum: max_items,
                 },
-                unique: unique_items,
+                distinctness,
                 prefix,
                 items: tail,
                 contains,

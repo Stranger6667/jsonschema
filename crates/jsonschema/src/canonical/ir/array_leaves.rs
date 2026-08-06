@@ -1,9 +1,9 @@
 use crate::canonical::ir::{
-    ArrayLeaf, BoundCardinality, Bounds, ContainsFacet, LengthBounds, Schema,
+    ArrayLeaf, BoundCardinality, Bounds, ContainsFacet, Distinctness, LengthBounds, Schema,
 };
 
-/// Array leaves merged per uniqueness flag and item schema, free of subsumed windows. Inserts are
-/// batched; the form is restored before any read, so the order in which leaves arrive cannot
+/// Array leaves merged per distinctness state and item schema, free of subsumed windows. Inserts
+/// are batched; the form is restored before any read, so the order in which leaves arrive cannot
 /// change the result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ArrayLeaves {
@@ -80,7 +80,7 @@ impl IntoIterator for ArrayLeaves {
     }
 }
 
-/// Fold the length windows of leaves that agree on uniqueness and the item schema.
+/// Fold the length windows of leaves that agree on distinctness and the item schema.
 /// e.g.  anyOf [
 ///         {"type": "array", "uniqueItems": true, "maxItems": 2},
 ///         {"type": "array", "uniqueItems": true, "minItems": 3}
@@ -96,8 +96,8 @@ fn merge(mut leaves: Vec<ArrayLeaf>) -> Vec<ArrayLeaf> {
         return leaves;
     }
     leaves.sort_by(|left, right| {
-        (left.unique, &left.prefix, &left.items, &left.contains).cmp(&(
-            right.unique,
+        (left.distinctness, &left.prefix, &left.items, &left.contains).cmp(&(
+            right.distinctness,
             &right.prefix,
             &right.items,
             &right.contains,
@@ -108,14 +108,14 @@ fn merge(mut leaves: Vec<ArrayLeaf>) -> Vec<ArrayLeaf> {
     let mut facets: Option<Facets> = None;
     for leaf in leaves {
         if facets.as_ref().is_none_or(|group| {
-            group.unique != leaf.unique
+            group.distinctness != leaf.distinctness
                 || group.prefix != leaf.prefix
                 || group.items != leaf.items
                 || group.contains != leaf.contains
         }) {
             flush_group(&mut merged, facets.take(), &mut windows);
             facets = Some(Facets {
-                unique: leaf.unique,
+                distinctness: leaf.distinctness,
                 prefix: leaf.prefix,
                 items: leaf.items,
                 contains: leaf.contains,
@@ -129,7 +129,7 @@ fn merge(mut leaves: Vec<ArrayLeaf>) -> Vec<ArrayLeaf> {
 
 /// The facets shared by a merge group; only the length window differs within one.
 struct Facets {
-    unique: bool,
+    distinctness: Distinctness,
     prefix: Vec<Schema>,
     items: Option<Schema>,
     contains: Vec<ContainsFacet>,
@@ -142,7 +142,7 @@ fn flush_group(
     windows: &mut Vec<LengthBounds>,
 ) {
     let Some(Facets {
-        unique,
+        distinctness,
         prefix,
         items,
         contains,
@@ -155,7 +155,7 @@ fn flush_group(
     for window in lengths {
         merged.push(ArrayLeaf {
             lengths: window,
-            unique,
+            distinctness,
             prefix: prefix.clone(),
             items: items.clone(),
             contains: contains.clone(),
@@ -163,11 +163,19 @@ fn flush_group(
     }
     merged.push(ArrayLeaf {
         lengths: last,
-        unique,
+        distinctness,
         prefix,
         items,
         contains,
     });
+}
+
+/// Whether the leaf admits every array whose length sits in its window.
+fn constrains_only_length(leaf: &ArrayLeaf) -> bool {
+    matches!(leaf.distinctness, Distinctness::Unconstrained)
+        && leaf.prefix.is_empty()
+        && leaf.items.is_none()
+        && leaf.contains.is_empty()
 }
 
 /// Widen a facet-carrying window over a bare sibling window it touches: the lengths gained lie
@@ -185,23 +193,14 @@ fn flush_group(
 fn extend_over_bare_windows(leaves: &mut [ArrayLeaf]) {
     let bare: Vec<LengthBounds> = leaves
         .iter()
-        .filter(|leaf| {
-            !leaf.unique
-                && leaf.prefix.is_empty()
-                && leaf.items.is_none()
-                && leaf.contains.is_empty()
-        })
+        .filter(|leaf| constrains_only_length(leaf))
         .map(|leaf| leaf.lengths.clone())
         .collect();
     if bare.is_empty() {
         return;
     }
     for leaf in leaves.iter_mut() {
-        if !leaf.unique
-            && leaf.prefix.is_empty()
-            && leaf.items.is_none()
-            && leaf.contains.is_empty()
-        {
+        if constrains_only_length(leaf) {
             continue;
         }
         // A grown window can reach the next bare window, so retry until none applies.
@@ -271,10 +270,7 @@ fn hand_off_empty(leaves: &mut [ArrayLeaf]) {
 ///       ]  =>  unchanged
 fn absorb_trivially_distinct(leaves: &mut Vec<ArrayLeaf>) {
     let Some(trivial) = leaves.iter().position(|leaf| {
-        !leaf.unique
-            && leaf.prefix.is_empty()
-            && leaf.items.is_none()
-            && leaf.contains.is_empty()
+        constrains_only_length(leaf)
             && leaf
                 .lengths
                 .maximum
@@ -288,7 +284,12 @@ fn absorb_trivially_distinct(leaves: &mut Vec<ArrayLeaf>) {
     // leaf cannot widen over arrays of one item, whose element it never checked; a `contains` leaf
     // cannot widen over the empty array, which its demand rejects.
     let Some((target, widened)) = leaves.iter().enumerate().find_map(|(index, leaf)| {
-        if !leaf.unique
+        // A demand for a repeat is not met there, so only a demand for distinct elements widens.
+        let met_by_short_arrays = match leaf.distinctness {
+            Distinctness::AllDistinct => true,
+            Distinctness::Unconstrained | Distinctness::SomeRepeated => false,
+        };
+        if !met_by_short_arrays
             || leaf.items.is_some()
             || !leaf.prefix.is_empty()
             || !leaf.contains.is_empty()
@@ -322,10 +323,7 @@ fn absorb_trivially_distinct(leaves: &mut Vec<ArrayLeaf>) {
 /// ```
 fn absorb_trivially_conforming(leaves: &mut Vec<ArrayLeaf>) {
     let Some(trivial) = leaves.iter().position(|leaf| {
-        !leaf.unique
-            && leaf.prefix.is_empty()
-            && leaf.items.is_none()
-            && leaf.contains.is_empty()
+        constrains_only_length(leaf)
             && leaf
                 .lengths
                 .maximum
@@ -357,8 +355,8 @@ fn absorb_trivially_conforming(leaves: &mut Vec<ArrayLeaf>) {
     leaves.remove(trivial);
 }
 
-/// Drop a leaf whose arrays another leaf already admits: a window that contains it, not demanding
-/// distinctness unless it does too.
+/// Drop a leaf whose arrays another leaf already admits: a window that contains it, saying nothing
+/// about distinctness the leaf does not say too.
 /// e.g.  anyOf [
 ///         {"type": "array"},
 ///         {"type": "array", "uniqueItems": true}
@@ -391,23 +389,36 @@ fn drop_subsumed(leaves: &mut Vec<ArrayLeaf>) {
             let same_elements = other.prefix == leaf.prefix
                 && other.items == leaf.items
                 && other.contains == leaf.contains;
-            // A window of at most one item holds nothing that can repeat, so distinctness is met
-            // there whatever the leaf says.
+            // A window of at most one item holds nothing that can repeat, so a demand for distinct
+            // elements is met there whatever the leaf says.
             let distinct_already = leaf
                 .lengths
                 .maximum
                 .as_ref()
                 .is_some_and(|max| *max <= BoundCardinality::from(1));
+            let looser_distinctness = match other.distinctness {
+                Distinctness::Unconstrained => true,
+                Distinctness::AllDistinct => match leaf.distinctness {
+                    Distinctness::AllDistinct => true,
+                    Distinctness::Unconstrained | Distinctness::SomeRepeated => distinct_already,
+                },
+                Distinctness::SomeRepeated => match leaf.distinctness {
+                    Distinctness::SomeRepeated => true,
+                    Distinctness::Unconstrained | Distinctness::AllDistinct => false,
+                },
+            };
             let wider = other.lengths.covers(&leaf.lengths)
-                && (!other.unique || leaf.unique || distinct_already)
+                && looser_distinctness
                 && (looser_items || same_elements);
             // Leaves agreeing on every facet but the window were folded by merging, so one of the
             // facets is strictly looser here and decides which leaf goes.
             debug_assert!(
-                !wider || other.unique != leaf.unique || !same_elements,
+                !wider || other.distinctness != leaf.distinctness || !same_elements,
                 "merging left two leaves carrying the same facets"
             );
-            if wider && ((leaf.unique && !other.unique) || looser_items) {
+            let free_of_distinctness = matches!(other.distinctness, Distinctness::Unconstrained)
+                && !matches!(leaf.distinctness, Distinctness::Unconstrained);
+            if wider && (free_of_distinctness || looser_items) {
                 keep[index] = false;
             }
         }

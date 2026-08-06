@@ -6,9 +6,9 @@ use serde_json::{json, Map, Value};
 use crate::{
     canonical::{
         ir::{
-            ArrayLeaf, BoundCardinality, BoundRational, CanonicalJson, ContainsFacet, Divisors,
-            ExcludedDivisors, IntegerLeaf, NumberLeaf, ObjectLeaf, ObjectViolation, Schema,
-            SchemaKind, StringLeaf,
+            ArrayLeaf, BoundCardinality, BoundRational, CanonicalJson, ContainsFacet, Distinctness,
+            Divisors, ExcludedDivisors, IntegerLeaf, NumberLeaf, ObjectLeaf, ObjectViolation,
+            Schema, SchemaKind, StringLeaf,
         },
         DefinitionMap, CANONICAL_REFERENCE_PREFIX,
     },
@@ -297,7 +297,7 @@ fn emit_number(leaf: &NumberLeaf, draft: Draft) -> Value {
     Value::Object(map)
 }
 
-/// Emit an array leaf as `{"type":"array"}` plus its length bounds, uniqueness and element schemas.
+/// Emit an array leaf as `{"type":"array"}` plus its length bounds, distinctness and element schemas.
 /// A tuple prefix is spelled `prefixItems` with an `items` tail in 2020-12, and array-form `items`
 /// with an `additionalItems` tail in 2019-09 and earlier.
 fn emit_array(leaf: &ArrayLeaf, draft: Draft) -> Value {
@@ -347,8 +347,16 @@ fn emit_array(leaf: &ArrayLeaf, draft: Draft) -> Value {
             Value::Object(entry)
         }));
     }
-    if leaf.unique {
-        map.insert("uniqueItems".into(), Value::Bool(true));
+    match leaf.distinctness {
+        Distinctness::Unconstrained => {}
+        Distinctness::AllDistinct => {
+            map.insert("uniqueItems".into(), Value::Bool(true));
+        }
+        // A bare `uniqueItems` holds on every non-array, so the barred clause needs the type
+        // beside it or it would reject every value that is not an array.
+        Distinctness::SomeRepeated => {
+            surplus.push(json!({"not": {"type": "array", "uniqueItems": true}}));
+        }
     }
     if let Some(min) = &leaf.lengths.minimum {
         map.insert("minItems".into(), Value::Number(min.to_number()));

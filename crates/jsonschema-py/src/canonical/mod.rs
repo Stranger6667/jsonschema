@@ -198,7 +198,7 @@ impl PyCanonicalSchema {
                             crate::value_to_python(py, &serde_json::Value::Number(number))
                         })
                         .transpose()?,
-                    unique_items: view.unique_items,
+                    distinctness: view.distinctness.as_str(),
                     prefix_items: view
                         .prefix_items
                         .into_iter()
@@ -482,7 +482,7 @@ pub(crate) struct ArrayView {
     #[pyo3(get)]
     max_items: Option<Py<PyAny>>,
     #[pyo3(get)]
-    unique_items: bool,
+    distinctness: &'static str,
     #[pyo3(get)]
     prefix_items: Vec<Py<PyCanonicalSchema>>,
     #[pyo3(get)]
@@ -505,7 +505,7 @@ impl ArrayView {
         (
             "min_items",
             "max_items",
-            "unique_items",
+            "distinctness",
             "prefix_items",
             "items",
             "contains",
