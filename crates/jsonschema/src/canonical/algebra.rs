@@ -22,6 +22,13 @@ use crate::{
 
 /// The schema accepting exactly the values that BOTH `left` and `right` accept (set intersection, `allOf`).
 pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationContext) -> Schema {
+    // A side that decides the meet on its own hands back the node it already holds. Answering here
+    // beats reaching the cache below, whose key comparison walks the other side's whole subtree.
+    match (left.kind(), right.kind()) {
+        (SchemaKind::False, _) | (_, SchemaKind::True) => return left,
+        (SchemaKind::True, _) | (_, SchemaKind::False) => return right,
+        _ => {}
+    }
     // A node reached from two places is a node the product will reach again, and answering from the
     // first visit stops the whole subtree below it from being walked a second time. A node held
     // nowhere else cannot come back, so remembering it would only cost the room.
@@ -4075,8 +4082,7 @@ fn intersect_property_entries(
     keys.dedup();
     let mut entries = BTreeMap::new();
     for key in keys {
-        let mut entry = Schema::new(SchemaKind::True);
-        for applicable in [
+        let entry = [
             first.properties.get(key),
             governing_shield(first, key, ctx),
             second.properties.get(key),
@@ -4084,9 +4090,9 @@ fn intersect_property_entries(
         ]
         .into_iter()
         .flatten()
-        {
-            entry = intersect(entry, applicable.clone(), ctx);
-        }
+        .cloned()
+        .reduce(|held, applicable| intersect(held, applicable, ctx))
+        .expect("a key of the union is named by one of the two property maps");
         entries.insert(Arc::clone(key), entry);
     }
     entries
