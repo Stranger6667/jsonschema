@@ -1772,6 +1772,16 @@ fn drop_object_branch_covered_by_siblings(
     let packed = packed_leaves(leaves, ctx);
     for index in 0..leaves.len() {
         let siblings = siblings_of(&packed, index);
+        // Siblings sharing no value with the branch cover no part of it, and every piece the walks
+        // below cut out is part of it.
+        if siblings.iter().all(|sibling| {
+            matches!(
+                intersect(packed[index].clone(), sibling.clone(), ctx).kind(),
+                SchemaKind::False
+            )
+        }) {
+            continue;
+        }
         let keys = keys_beside(leaves, index);
         if split_piece_is_covered(leaves[index].clone(), &siblings, &keys, ctx) {
             leaves.remove(index);
