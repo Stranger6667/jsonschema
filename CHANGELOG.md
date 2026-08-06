@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Up to 150x faster canonicalization of `not` over a union of many branches.
+
 ## [0.49.6] - 2026-08-06
 
 ### Added

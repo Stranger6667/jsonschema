@@ -29,6 +29,12 @@ const RESOLUTION_BUDGET: usize = 1024;
 /// use.
 const OVERLAP_BUDGET: usize = 64;
 
+/// Branches the conjunction of a union's branch complements may spell. Intersecting complements
+/// multiplies their branch counts, so a union of branches that each rule out a value in several
+/// independent ways has a union form exponential in the branch count. Past this many the symbolic
+/// complement is both exact and smaller.
+const CONJUNCTION_BUDGET: usize = 16;
+
 /// State of one resolving negation walk.
 struct NegationWalk<'a> {
     definitions: &'a DefinitionMap,
@@ -111,6 +117,21 @@ pub(crate) fn negate_with_definitions(
     Some(complement)
 }
 
+/// The node's own complement, left symbolic. A conjunction too wide to spell as a union is not a
+/// gap in what the IR can express, so it holds whether or not the walk resolves references.
+fn keep_symbolic(schema: &Schema) -> Option<Schema> {
+    Some(Schema::new(SchemaKind::Not(schema.clone())))
+}
+
+/// How many branches a node spells as a union.
+fn union_width(schema: &Schema) -> usize {
+    if let SchemaKind::AnyOf(branches) = schema.kind() {
+        branches.as_slice().len()
+    } else {
+        1
+    }
+}
+
 /// The exact `Not` re-wrap of a node the walk cannot open, for a walk that accepts one.
 fn bar(schema: &Schema, walk: &NegationWalk<'_>) -> Option<Schema> {
     match walk.unspellable {
@@ -150,6 +171,9 @@ fn negate_within(
             let mut result = Schema::new(SchemaKind::True);
             for branch in branches.as_slice() {
                 result = algebra::intersect(result, negate_within(branch, walk, ctx)?, ctx);
+                if union_width(&result) > CONJUNCTION_BUDGET {
+                    return keep_symbolic(schema);
+                }
             }
             Some(result)
         }
@@ -165,7 +189,7 @@ fn negate_within(
             }
             Some(algebra::union(complements, ctx))
         }
-        SchemaKind::OneOf(branches) => negate_one_of(branches, walk, ctx),
+        SchemaKind::OneOf(branches) => negate_one_of(schema, branches, walk, ctx),
         SchemaKind::Reference(uri) => negate_reference(schema, uri, walk, ctx),
         SchemaKind::TypedGroup { ty, body } => negate_typed_group(*ty, body, walk, ctx),
         SchemaKind::Raw(_) => None,
@@ -184,6 +208,7 @@ fn negate_within(
 ///                              {"not": {"$ref": "#/$defs/a"}}]}]
 /// ```
 fn negate_one_of(
+    schema: &Schema,
     branches: &[Schema],
     walk: &mut NegationWalk<'_>,
     ctx: &CanonicalizationContext,
@@ -207,6 +232,9 @@ fn negate_one_of(
     for branch in branches {
         matched_by_none =
             algebra::intersect(matched_by_none, negate_within(branch, walk, ctx)?, ctx);
+        if union_width(&matched_by_none) > CONJUNCTION_BUDGET {
+            return keep_symbolic(schema);
+        }
     }
     // The branch complements resolve references through the same walk, so they leave the path they
     // found and can only have spent budget on it.

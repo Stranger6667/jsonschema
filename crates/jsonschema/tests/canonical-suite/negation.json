@@ -4332,5 +4332,238 @@
       {"data": [1, 2], "valid": false},
       {"data": [1], "valid": false}
     ]
+  },
+  {
+    "description": "a negated choice too wide to spell as a union keeps its complement symbolic",
+    "schema": {
+      "not": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "r0"
+              }
+            },
+            "required": [
+              "role",
+              "p0"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "r1"
+              }
+            },
+            "required": [
+              "role",
+              "p1"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "r2"
+              }
+            },
+            "required": [
+              "role",
+              "p2"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "r3"
+              }
+            },
+            "required": [
+              "role",
+              "p3"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "r4"
+              }
+            },
+            "required": [
+              "role",
+              "p4"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "r5"
+              }
+            },
+            "required": [
+              "role",
+              "p5"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "r6"
+              }
+            },
+            "required": [
+              "role",
+              "p6"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "r7"
+              }
+            },
+            "required": [
+              "role",
+              "p7"
+            ]
+          }
+        ]
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "r0"
+              }
+            },
+            "required": [
+              "p0",
+              "role"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "r1"
+              }
+            },
+            "required": [
+              "p1",
+              "role"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "r2"
+              }
+            },
+            "required": [
+              "p2",
+              "role"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "r3"
+              }
+            },
+            "required": [
+              "p3",
+              "role"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "r4"
+              }
+            },
+            "required": [
+              "p4",
+              "role"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "r5"
+              }
+            },
+            "required": [
+              "p5",
+              "role"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "r6"
+              }
+            },
+            "required": [
+              "p6",
+              "role"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "r7"
+              }
+            },
+            "required": [
+              "p7",
+              "role"
+            ]
+          }
+        ]
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "role": "r0",
+          "p0": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "role": "r0"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "p0": 1
+        },
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": true
+      }
+    ]
   }
 ]
