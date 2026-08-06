@@ -379,17 +379,16 @@ impl ObjectLeaf {
     #[must_use]
     pub(crate) fn admitted_key_count(&self) -> Option<BoundCardinality> {
         let values = self.property_names.as_ref()?.kind().finite_values()?;
-        let present = values
+        // Only a key whose own schema admits nothing drops out of the count. Those keys are the ones
+        // looked up in the name set, not the other way round: the property map hands them over in
+        // ascending order, so the set answers all of them in one pass.
+        let mut admitted = AscendingMembership::new(values);
+        let barred = self
+            .properties
             .iter()
-            .filter(|value| {
-                !matches!(value.as_value(), serde_json::Value::String(key)
-                    if self
-                        .properties
-                        .get(key.as_str())
-                        .is_some_and(|child| matches!(child.kind(), SchemaKind::False)))
-            })
+            .filter(|(key, child)| matches!(child.kind(), SchemaKind::False) && admitted.holds(key))
             .count();
-        Some(BoundCardinality::from(present as u64))
+        Some(BoundCardinality::from((values.len() - barred) as u64))
     }
 
     /// The size window with a finite set of admitted keys folded in as a ceiling: those keys are
@@ -470,6 +469,36 @@ pub(crate) struct StringLeaf {
 /// Sorted, deduplicated, and holding at least two elements; fewer collapses to a simpler node.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct AtLeastTwo<T>(Vec<T>);
+
+/// String membership in a sorted value set, for strings handed over in ascending order: the cursor
+/// never goes back, so a whole run of queries costs one pass over the set instead of one scan each.
+pub(crate) struct AscendingMembership<'a> {
+    values: &'a [CanonicalJson],
+    cursor: usize,
+}
+
+impl<'a> AscendingMembership<'a> {
+    pub(crate) fn new(values: &'a [CanonicalJson]) -> Self {
+        Self { values, cursor: 0 }
+    }
+
+    pub(crate) fn holds(&mut self, text: &str) -> bool {
+        while self.values.get(self.cursor).is_some_and(|value| {
+            raw::compare_value_to_str(value.as_value(), text) == Ordering::Less
+        }) {
+            self.cursor += 1;
+        }
+        debug_assert!(
+            self.cursor == 0
+                || raw::compare_value_to_str(self.values[self.cursor - 1].as_value(), text)
+                    == Ordering::Less,
+            "a string arrived out of order, so the walk had already passed where it belongs"
+        );
+        self.values.get(self.cursor).is_some_and(|value| {
+            raw::compare_value_to_str(value.as_value(), text) == Ordering::Equal
+        })
+    }
+}
 
 impl<T: Ord> AtLeastTwo<T> {
     /// Sorts and deduplicates; the survivors come back in `Err` when fewer than two remain.
