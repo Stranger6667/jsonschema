@@ -727,5 +727,21 @@
       {"data": ["a", "a"], "valid": false},
       {"data": [1, 2, 3, 4, 5], "valid": false}
     ]
+  },
+  {
+    "description": "a repeat-demanding leaf keeps only the repeating members of a value set",
+    "schema": {"allOf": [
+      {"type": "array", "not": {"uniqueItems": true}},
+      {"enum": [[1, 1], [1, 2], "x"]}
+    ]},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": [1, 1]
+    },
+    "tests": [
+      {"data": [1, 1], "valid": true},
+      {"data": [1, 2], "valid": false},
+      {"data": "x", "valid": false}
+    ]
   }
 ]
