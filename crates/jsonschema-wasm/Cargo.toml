@@ -1,6 +1,6 @@
 [package]
 name = "jsonschema-wasm"
-version = "0.49.5"
+version = "0.49.6"
 edition = "2021"
 rust-version = "1.83.0"
 license = "MIT"
@@ -13,7 +13,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 jsonschema = { path = "../jsonschema", default-features = false, features = ["resolve-async", "arbitrary-precision"] }
-referencing = { version = "0.49.5", path = "../jsonschema-referencing" }
+referencing = { version = "0.49.6", path = "../jsonschema-referencing" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

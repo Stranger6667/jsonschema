@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.49.6] - 2026-08-06
+
 ### Added
 
 - Canonicalization of a negated `uniqueItems`, where the complement demands a repeated element under the length floor two elements imply.
@@ -1522,7 +1524,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.5...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.6...HEAD
+[0.49.6]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.5...rust-v0.49.6
 [0.49.5]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.4...rust-v0.49.5
 [0.49.4]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.3...rust-v0.49.4
 [0.49.3]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.2...rust-v0.49.3
