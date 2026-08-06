@@ -1,0 +1,303 @@
+[
+  {
+    "description": "an unmodeled subschema under `oneOf` keeps the whole document raw",
+    "schema": {"oneOf": [{"if": {}, "unevaluatedProperties": false}, {"type": "string"}]},
+    "expected": {"oneOf": [{"if": {}, "unevaluatedProperties": false}, {"type": "string"}]},
+    "kind": "raw",
+    "tests": [
+      {"data": {"a": 1}},
+      {"data": [1, 2]},
+      {"data": "x"}
+    ]
+  },
+  {
+    "description": "an unmodeled subschema under `items` keeps the whole document raw",
+    "schema": {"items": {"if": {}, "unevaluatedProperties": false}},
+    "expected": {"items": {"if": {}, "unevaluatedProperties": false}},
+    "kind": "raw",
+    "tests": [
+      {"data": {"a": 1}},
+      {"data": [1, 2]},
+      {"data": "x"}
+    ]
+  },
+  {
+    "description": "an unmodeled subschema under `propertyNames` keeps the whole document raw",
+    "schema": {"propertyNames": {"if": {}, "unevaluatedProperties": false}},
+    "expected": {"propertyNames": {"if": {}, "unevaluatedProperties": false}},
+    "kind": "raw",
+    "tests": [
+      {"data": {"a": 1}},
+      {"data": [1, 2]},
+      {"data": "x"}
+    ]
+  },
+  {
+    "description": "an unmodeled subschema under `additionalProperties` keeps the whole document raw",
+    "schema": {"additionalProperties": {"if": {}, "unevaluatedProperties": false}},
+    "expected": {"additionalProperties": {"if": {}, "unevaluatedProperties": false}},
+    "kind": "raw",
+    "tests": [
+      {"data": {"a": 1}},
+      {"data": [1, 2]},
+      {"data": "x"}
+    ]
+  },
+  {
+    "description": "an unmodeled subschema under `not` keeps the whole document raw",
+    "schema": {"not": {"not": {"if": {}, "unevaluatedProperties": false}}},
+    "expected": {"not": {"not": {"if": {}, "unevaluatedProperties": false}}},
+    "kind": "raw",
+    "tests": [
+      {"data": {"a": 1}},
+      {"data": [1, 2]},
+      {"data": "x"}
+    ]
+  },
+  {
+    "description": "a condition whose complement declines keeps a `if`/`then` document raw",
+    "schema": {
+      "$defs": {
+        "d0": {"type": "object", "required": ["k0"]},
+        "d1": {"type": "object", "required": ["k1"]},
+        "d2": {"type": "object", "required": ["k2"]},
+        "d3": {"type": "object", "required": ["k3"]},
+        "d4": {"type": "object", "required": ["k4"]},
+        "d5": {"type": "object", "required": ["k5"]},
+        "d6": {"type": "object", "required": ["k6"]},
+        "d7": {"type": "object", "required": ["k7"]},
+        "d8": {"type": "object", "required": ["k8"]},
+        "d9": {"type": "object", "required": ["k9"]},
+        "d10": {"type": "object", "required": ["k10"]},
+        "d11": {"type": "object", "required": ["k11"]}
+      },
+      "if": {"oneOf": [
+          {"$ref": "#/$defs/d0"},
+          {"$ref": "#/$defs/d1"},
+          {"$ref": "#/$defs/d2"},
+          {"$ref": "#/$defs/d3"},
+          {"$ref": "#/$defs/d4"},
+          {"$ref": "#/$defs/d5"},
+          {"$ref": "#/$defs/d6"},
+          {"$ref": "#/$defs/d7"},
+          {"$ref": "#/$defs/d8"},
+          {"$ref": "#/$defs/d9"},
+          {"$ref": "#/$defs/d10"},
+          {"$ref": "#/$defs/d11"}
+        ]},
+      "then": {"type": "string"}
+    },
+    "expected": {
+      "$defs": {
+        "d0": {"type": "object", "required": ["k0"]},
+        "d1": {"type": "object", "required": ["k1"]},
+        "d2": {"type": "object", "required": ["k2"]},
+        "d3": {"type": "object", "required": ["k3"]},
+        "d4": {"type": "object", "required": ["k4"]},
+        "d5": {"type": "object", "required": ["k5"]},
+        "d6": {"type": "object", "required": ["k6"]},
+        "d7": {"type": "object", "required": ["k7"]},
+        "d8": {"type": "object", "required": ["k8"]},
+        "d9": {"type": "object", "required": ["k9"]},
+        "d10": {"type": "object", "required": ["k10"]},
+        "d11": {"type": "object", "required": ["k11"]}
+      },
+      "if": {"oneOf": [
+          {"$ref": "#/$defs/d0"},
+          {"$ref": "#/$defs/d1"},
+          {"$ref": "#/$defs/d2"},
+          {"$ref": "#/$defs/d3"},
+          {"$ref": "#/$defs/d4"},
+          {"$ref": "#/$defs/d5"},
+          {"$ref": "#/$defs/d6"},
+          {"$ref": "#/$defs/d7"},
+          {"$ref": "#/$defs/d8"},
+          {"$ref": "#/$defs/d9"},
+          {"$ref": "#/$defs/d10"},
+          {"$ref": "#/$defs/d11"}
+        ]},
+      "then": {"type": "string"}
+    },
+    "kind": "raw",
+    "tests": [
+      {"data": "x"},
+      {"data": {"k0": 1}},
+      {"data": 1}
+    ]
+  },
+  {
+    "description": "a condition whose complement declines keeps a `if`/`then`/`else` document raw",
+    "schema": {
+      "$defs": {
+        "d0": {"type": "object", "required": ["k0"]},
+        "d1": {"type": "object", "required": ["k1"]},
+        "d2": {"type": "object", "required": ["k2"]},
+        "d3": {"type": "object", "required": ["k3"]},
+        "d4": {"type": "object", "required": ["k4"]},
+        "d5": {"type": "object", "required": ["k5"]},
+        "d6": {"type": "object", "required": ["k6"]},
+        "d7": {"type": "object", "required": ["k7"]},
+        "d8": {"type": "object", "required": ["k8"]},
+        "d9": {"type": "object", "required": ["k9"]},
+        "d10": {"type": "object", "required": ["k10"]},
+        "d11": {"type": "object", "required": ["k11"]}
+      },
+      "if": {"oneOf": [
+          {"$ref": "#/$defs/d0"},
+          {"$ref": "#/$defs/d1"},
+          {"$ref": "#/$defs/d2"},
+          {"$ref": "#/$defs/d3"},
+          {"$ref": "#/$defs/d4"},
+          {"$ref": "#/$defs/d5"},
+          {"$ref": "#/$defs/d6"},
+          {"$ref": "#/$defs/d7"},
+          {"$ref": "#/$defs/d8"},
+          {"$ref": "#/$defs/d9"},
+          {"$ref": "#/$defs/d10"},
+          {"$ref": "#/$defs/d11"}
+        ]},
+      "then": {"type": "string"},
+      "else": {"type": "integer"}
+    },
+    "expected": {
+      "$defs": {
+        "d0": {"type": "object", "required": ["k0"]},
+        "d1": {"type": "object", "required": ["k1"]},
+        "d2": {"type": "object", "required": ["k2"]},
+        "d3": {"type": "object", "required": ["k3"]},
+        "d4": {"type": "object", "required": ["k4"]},
+        "d5": {"type": "object", "required": ["k5"]},
+        "d6": {"type": "object", "required": ["k6"]},
+        "d7": {"type": "object", "required": ["k7"]},
+        "d8": {"type": "object", "required": ["k8"]},
+        "d9": {"type": "object", "required": ["k9"]},
+        "d10": {"type": "object", "required": ["k10"]},
+        "d11": {"type": "object", "required": ["k11"]}
+      },
+      "if": {"oneOf": [
+          {"$ref": "#/$defs/d0"},
+          {"$ref": "#/$defs/d1"},
+          {"$ref": "#/$defs/d2"},
+          {"$ref": "#/$defs/d3"},
+          {"$ref": "#/$defs/d4"},
+          {"$ref": "#/$defs/d5"},
+          {"$ref": "#/$defs/d6"},
+          {"$ref": "#/$defs/d7"},
+          {"$ref": "#/$defs/d8"},
+          {"$ref": "#/$defs/d9"},
+          {"$ref": "#/$defs/d10"},
+          {"$ref": "#/$defs/d11"}
+        ]},
+      "then": {"type": "string"},
+      "else": {"type": "integer"}
+    },
+    "kind": "raw",
+    "tests": [
+      {"data": "x"},
+      {"data": {"k0": 1}},
+      {"data": 1}
+    ]
+  },
+  {
+    "description": "a repeated branch whose complement declines keeps the choice symbolic",
+    "schema": {
+      "$defs": {
+        "d0": {"type": "object", "required": ["k0"]},
+        "d1": {"type": "object", "required": ["k1"]},
+        "d2": {"type": "object", "required": ["k2"]},
+        "d3": {"type": "object", "required": ["k3"]},
+        "d4": {"type": "object", "required": ["k4"]},
+        "d5": {"type": "object", "required": ["k5"]},
+        "d6": {"type": "object", "required": ["k6"]},
+        "d7": {"type": "object", "required": ["k7"]},
+        "d8": {"type": "object", "required": ["k8"]},
+        "d9": {"type": "object", "required": ["k9"]},
+        "d10": {"type": "object", "required": ["k10"]},
+        "d11": {"type": "object", "required": ["k11"]}
+      },
+      "oneOf": [
+        {"oneOf": [
+            {"$ref": "#/$defs/d0"},
+            {"$ref": "#/$defs/d1"},
+            {"$ref": "#/$defs/d2"},
+            {"$ref": "#/$defs/d3"},
+            {"$ref": "#/$defs/d4"},
+            {"$ref": "#/$defs/d5"},
+            {"$ref": "#/$defs/d6"},
+            {"$ref": "#/$defs/d7"},
+            {"$ref": "#/$defs/d8"},
+            {"$ref": "#/$defs/d9"},
+            {"$ref": "#/$defs/d10"},
+            {"$ref": "#/$defs/d11"}
+          ]},
+        {"oneOf": [
+            {"$ref": "#/$defs/d0"},
+            {"$ref": "#/$defs/d1"},
+            {"$ref": "#/$defs/d2"},
+            {"$ref": "#/$defs/d3"},
+            {"$ref": "#/$defs/d4"},
+            {"$ref": "#/$defs/d5"},
+            {"$ref": "#/$defs/d6"},
+            {"$ref": "#/$defs/d7"},
+            {"$ref": "#/$defs/d8"},
+            {"$ref": "#/$defs/d9"},
+            {"$ref": "#/$defs/d10"},
+            {"$ref": "#/$defs/d11"}
+          ]},
+        {"type": "string"}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "d0": {"type": "object", "required": ["k0"]},
+        "d1": {"type": "object", "required": ["k1"]},
+        "d2": {"type": "object", "required": ["k2"]},
+        "d3": {"type": "object", "required": ["k3"]},
+        "d4": {"type": "object", "required": ["k4"]},
+        "d5": {"type": "object", "required": ["k5"]},
+        "d6": {"type": "object", "required": ["k6"]},
+        "d7": {"type": "object", "required": ["k7"]},
+        "d8": {"type": "object", "required": ["k8"]},
+        "d9": {"type": "object", "required": ["k9"]},
+        "d10": {"type": "object", "required": ["k10"]},
+        "d11": {"type": "object", "required": ["k11"]}
+      },
+      "oneOf": [
+        {"type": "string"},
+        {"oneOf": [
+            {"$ref": "#/$defs/d0"},
+            {"$ref": "#/$defs/d1"},
+            {"$ref": "#/$defs/d10"},
+            {"$ref": "#/$defs/d11"},
+            {"$ref": "#/$defs/d2"},
+            {"$ref": "#/$defs/d3"},
+            {"$ref": "#/$defs/d4"},
+            {"$ref": "#/$defs/d5"},
+            {"$ref": "#/$defs/d6"},
+            {"$ref": "#/$defs/d7"},
+            {"$ref": "#/$defs/d8"},
+            {"$ref": "#/$defs/d9"}
+          ]},
+        {"oneOf": [
+            {"$ref": "#/$defs/d0"},
+            {"$ref": "#/$defs/d1"},
+            {"$ref": "#/$defs/d10"},
+            {"$ref": "#/$defs/d11"},
+            {"$ref": "#/$defs/d2"},
+            {"$ref": "#/$defs/d3"},
+            {"$ref": "#/$defs/d4"},
+            {"$ref": "#/$defs/d5"},
+            {"$ref": "#/$defs/d6"},
+            {"$ref": "#/$defs/d7"},
+            {"$ref": "#/$defs/d8"},
+            {"$ref": "#/$defs/d9"}
+          ]}
+      ]
+    },
+    "tests": [
+      {"data": "x"},
+      {"data": {"k0": 1}}
+    ]
+  }
+]

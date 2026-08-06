@@ -1676,5 +1676,21 @@
       {"data": -1.5, "valid": true},
       {"data": -1, "valid": false}
     ]
+  },
+  {
+    "description": "ir: Draft 4, an integer value set meets a number interval",
+    "draft": "draft4",
+    "schema": {"allOf": [{"type": "integer", "enum": [1, 2, 3]}, {"type": "number", "minimum": 2}]},
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "integer",
+      "enum": [2, 3]
+    },
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": 2, "valid": true},
+      {"data": 2.0, "valid": false},
+      {"data": 3, "valid": true}
+    ]
   }
 ]
