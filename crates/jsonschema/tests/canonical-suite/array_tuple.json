@@ -506,5 +506,98 @@
       "maxItems": 1,
       "type": "array"
     }
+  },
+  {
+    "description": "ir: 2020-12 additionalItems alone constrains nothing",
+    "draft": "draft2020-12",
+    "schemas": [
+      {"additionalItems": true},
+      {"additionalItems": false},
+      {"additionalItems": {"type": "integer"}},
+      {}
+    ],
+    "tests": [
+      {"data": [1, "x"], "valid": true},
+      {"data": [], "valid": true},
+      {"data": 5, "valid": true}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
+    "description": "ir: 2020-12 additionalItems without a tuple is inert whatever its value",
+    "draft": "draft2020-12",
+    "schema": {"type": "array", "additionalItems": {"not": {"type": "string"}}},
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": ["x"], "valid": true},
+      {"data": 5, "valid": false}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array"
+    }
+  },
+  {
+    "description": "ir: 2020-12 additionalItems is inert beside a schema-form items",
+    "draft": "draft2020-12",
+    "schema": {"items": {"type": "string"}, "additionalItems": false},
+    "tests": [
+      {"data": ["x"], "valid": true},
+      {"data": ["x", 1], "valid": false},
+      {"data": [1], "valid": false},
+      {"data": 5, "valid": true}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "object"]},
+        {"type": "array", "items": {"type": "string"}}
+      ]
+    }
+  },
+  {
+    "description": "ir: 2020-12 additionalItems never becomes the tail of a prefixItems tuple",
+    "draft": "draft2020-12",
+    "schemas": [
+      {"type": "array", "prefixItems": [{"type": "string"}]},
+      {"type": "array", "prefixItems": [{"type": "string"}], "additionalItems": false},
+      {"type": "array", "prefixItems": [{"type": "string"}], "additionalItems": {"type": "integer"}}
+    ],
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": ["x"], "valid": true},
+      {"data": ["x", 1], "valid": true},
+      {"data": ["x", "y"], "valid": true},
+      {"data": [1], "valid": false},
+      {"data": 5, "valid": false}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "prefixItems": [{"type": "string"}]
+    }
+  },
+  {
+    "description": "raw: a 2020-12 array-form items tuple the metaschema never reaches keeps the document raw",
+    "draft": "draft2020-12",
+    "schema": {
+      "$ref": "#/hidden",
+      "hidden": {"items": [{"type": "string"}], "additionalItems": false}
+    },
+    "kind": "raw",
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": ["x"], "valid": true},
+      {"data": ["x", 1], "valid": false},
+      {"data": ["x", "y"], "valid": false},
+      {"data": [1], "valid": false},
+      {"data": 5, "valid": true}
+    ],
+    "expected": {
+      "$ref": "#/hidden",
+      "hidden": {"items": [{"type": "string"}], "additionalItems": false}
+    }
   }
 ]
