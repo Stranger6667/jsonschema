@@ -99,6 +99,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = jsonschema::validator_for(&schema)?;
             }
         }
+        "canonicalize" => {
+            for _ in 0..args.iterations {
+                let _ = jsonschema::canonicalize(&schema)?;
+            }
+        }
         "registry" => {
             for _ in 0..args.iterations {
                 let _ = Registry::new()

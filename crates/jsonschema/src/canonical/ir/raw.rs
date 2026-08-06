@@ -122,6 +122,16 @@ pub(crate) fn compare_values(left: &Value, right: &Value) -> Ordering {
     }
 }
 
+/// Where a string sits among values ordered by [`compare_values`], without spelling the string as a
+/// [`Value`] first.
+pub(crate) fn compare_value_to_str(value: &Value, text: &str) -> Ordering {
+    match value {
+        Value::String(member) => member.as_str().cmp(text),
+        Value::Null | Value::Bool(_) | Value::Number(_) => Ordering::Less,
+        Value::Array(_) | Value::Object(_) => Ordering::Greater,
+    }
+}
+
 fn number_tag(number: &Number) -> u8 {
     if number.as_u64().is_some() {
         0

@@ -9,11 +9,11 @@ use crate::{
         context::{CanonicalizationContext, CompiledMatcher},
         ir::{
             canonicalize_value_set, tighter, type_set_schema, typed_group, ArrayLeaf, ArrayLeaves,
-            AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber, BoundRational, CanonicalJson,
-            ContainsFacet, Discrete, Distinctness, Divisors, ExcludedDivisors, IntegerBounds,
-            IntegerLeaf, IntegerLeaves, LengthBounds, NonEmpty, NumberLeaf, NumberLeaves,
-            ObjectLeaf, ObjectLeaves, ObjectViolation, Round, Schema, SchemaKind, Side, StringLeaf,
-            StringLeaves, UncheckableFacet, Verdict,
+            AscendingMembership, AtLeastTwo, BoundCardinality, BoundInteger, BoundNumber,
+            BoundRational, CanonicalJson, ContainsFacet, Discrete, Distinctness, Divisors,
+            ExcludedDivisors, IntegerBounds, IntegerLeaf, IntegerLeaves, LengthBounds, NonEmpty,
+            NumberLeaf, NumberLeaves, ObjectLeaf, ObjectLeaves, ObjectViolation, Round, Schema,
+            SchemaKind, Side, StringLeaf, StringLeaves, UncheckableFacet, Verdict,
         },
         negate, oracle, parse, DefinitionMap,
     },
@@ -3614,14 +3614,22 @@ fn expand_additional_over_admitted_keys(leaf: &mut ObjectLeaf) {
 fn normalize_properties(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext) {
     let names = leaf.property_names.clone();
     let shielded = leaf.additional.is_some();
+    // A finite key constraint decides every key by membership, and the property map hands the keys
+    // over in the order the set is sorted in, so one walk over it settles the whole map.
+    let mut admitted = names
+        .as_ref()
+        .and_then(|names| names.kind().finite_values())
+        .map(AscendingMembership::new);
     leaf.properties.retain(|key, schema| {
         // Dropping the entry loses what it says about the key, so only a key the constraint
         // definitely rejects lets the entry go. Under a shield an unconstrained entry still
         // exempts its key, so it stays.
-        (shielded || !matches!(schema.kind(), SchemaKind::True))
-            && names
-                .as_ref()
-                .is_none_or(|names| !matches!(admits_key(names, key, ctx), Verdict::Rejects))
+        let named = match (&mut admitted, &names) {
+            (Some(admitted), _) => admitted.holds(key),
+            (None, Some(names)) => !matches!(admits_key(names, key, ctx), Verdict::Rejects),
+            (None, None) => true,
+        };
+        named && (shielded || !matches!(schema.kind(), SchemaKind::True))
     });
 }
 
