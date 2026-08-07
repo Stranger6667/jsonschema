@@ -646,13 +646,17 @@ fn concrete_one_of(
     let mut spelled = branches.clone();
     let mut result = union(branches, ctx);
     for overlap in overlaps {
-        result = intersect(
-            result,
-            negate::negate_in_place(&overlap, definitions, ctx)?,
-            ctx,
-        );
-        // Every shared region removed widens the union again, and the widths multiply, so past the
-        // budget the choice keeps the exactly-one spelling: it is exact and far smaller.
+        let removed = negate::negate_in_place(&overlap, definitions, ctx)?;
+        // Every shared region removed widens the union again, and the widths multiply, so their
+        // product bounds the intersection before it runs. Past the budget the choice keeps the
+        // exactly-one spelling, and the intersection would only have been discarded.
+        if negate::union_width(&result) * negate::union_width(&removed) > negate::CONJUNCTION_BUDGET
+        {
+            spelled.sort();
+            return Some(Schema::new(SchemaKind::OneOf(spelled)));
+        }
+        result = intersect(result, removed, ctx);
+        // Pruning only narrows the product, so the exact width still decides the round after.
         if negate::union_width(&result) > negate::CONJUNCTION_BUDGET {
             spelled.sort();
             return Some(Schema::new(SchemaKind::OneOf(spelled)));
