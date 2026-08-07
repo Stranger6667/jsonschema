@@ -484,8 +484,8 @@ fn parse_schema_in_scope<'a>(
     state: &mut ParseState<'a>,
 ) -> Result<Option<Schema>, CanonicalizationError> {
     let map = match value {
-        Value::Bool(true) => return Ok(Some(Schema::new(SchemaKind::True))),
-        Value::Bool(false) => return Ok(Some(Schema::new(SchemaKind::False))),
+        Value::Bool(true) => return Ok(Some(Schema::truthy())),
+        Value::Bool(false) => return Ok(Some(Schema::falsy())),
         Value::Object(map) => map,
         // Not a schema document; the root is rejected earlier, a nested one keeps the document raw.
         Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => return Ok(None),
@@ -1275,7 +1275,7 @@ fn parse_schema_in_scope<'a>(
     }
 
     let base = match (type_set, admitted_values(enum_values, const_value)) {
-        (None, None) => Schema::new(SchemaKind::True),
+        (None, None) => Schema::truthy(),
         (Some(set), None) => type_set_schema(set),
         (None, Some(values)) => canonicalize_value_set(values),
         (Some(set), Some(values)) => restrict_values_to_types(values, set, ctx),
@@ -1750,10 +1750,10 @@ fn reference_to_definition<'a>(
     {
         // The root is never keyed, so the fixpoint names it by the spelling emitted here.
         if state.assumes_empty(ROOT_DEFINITION_KEY) {
-            return Ok(Some(Schema::new(SchemaKind::False)));
+            return Ok(Some(Schema::falsy()));
         }
         if state.assumes_admits_all(ROOT_DEFINITION_KEY) {
-            return Ok(Some(Schema::new(SchemaKind::True)));
+            return Ok(Some(Schema::truthy()));
         }
         return Ok(Some(Schema::new(SchemaKind::Reference(Arc::from(
             ROOT_DEFINITION_KEY,
@@ -1775,10 +1775,10 @@ fn reference_to_definition<'a>(
     // Unlike the fold below, canonical URIs are not exempt: a cycle closed through an `$id`-bearing
     // subresource is keyed by a minted URI, and exempting it would leave it live once proven empty.
     if state.assumes_empty(&key) {
-        return Ok(Some(Schema::new(SchemaKind::False)));
+        return Ok(Some(Schema::falsy()));
     }
     if state.assumes_admits_all(&key) {
-        return Ok(Some(Schema::new(SchemaKind::True)));
+        return Ok(Some(Schema::truthy()));
     }
     // Folding an empty target lets the surrounding leaf normalization see the contradiction:
     // `required: ["a"]` beside `properties: {"a": false}` collapses, a symbolic `Reference` does
@@ -1789,7 +1789,7 @@ fn reference_to_definition<'a>(
             .get(&key)
             .is_some_and(|body| matches!(body.kind(), SchemaKind::False))
     {
-        return Ok(Some(Schema::new(SchemaKind::False)));
+        return Ok(Some(Schema::falsy()));
     }
     Ok(Some(Schema::new(SchemaKind::Reference(key))))
 }
@@ -2023,7 +2023,7 @@ fn dependency_conjunct(key: &str, consequent: Schema, ctx: &CanonicalizationCont
             sizes: LengthBounds::default(),
             required: Vec::new(),
             property_names: None,
-            properties: PropertyMap::from_iter([(Arc::from(key), Schema::new(SchemaKind::False))]),
+            properties: PropertyMap::from_iter([(Arc::from(key), Schema::falsy())]),
             pattern_properties: PropertyMap::default(),
             additional: None,
             violations: Vec::new(),

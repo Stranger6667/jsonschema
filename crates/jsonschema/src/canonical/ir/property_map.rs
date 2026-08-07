@@ -49,14 +49,6 @@ impl PropertyMap {
         }
     }
 
-    fn into_vec(self) -> Vec<Entry> {
-        match self {
-            Self::Empty => Vec::new(),
-            Self::One([entry]) => vec![entry],
-            Self::Many(entries) => entries,
-        }
-    }
-
     #[must_use]
     pub(crate) fn len(&self) -> usize {
         self.as_slice().len()
@@ -152,7 +144,7 @@ impl PropertyMap {
             .binary_search_by(|entry| (*entry.0).cmp(key))
             .ok()?;
         match std::mem::take(self) {
-            Self::Empty => None,
+            Self::Empty => unreachable!("the search found the key, so the map holds it"),
             Self::One([(_, schema)]) => Some(schema),
             Self::Many(mut entries) => {
                 let (_, schema) = entries.remove(index);
@@ -211,23 +203,6 @@ impl FromIterator<Entry> for PropertyMap {
         entries.sort_by(|left, right| left.0.cmp(&right.0));
         entries.dedup_by(|left, right| left.0 == right.0);
         Self::from_sorted(entries)
-    }
-}
-
-impl Extend<Entry> for PropertyMap {
-    fn extend<T: IntoIterator<Item = Entry>>(&mut self, iter: T) {
-        for (key, schema) in iter {
-            self.insert(key, schema);
-        }
-    }
-}
-
-impl IntoIterator for PropertyMap {
-    type Item = Entry;
-    type IntoIter = std::vec::IntoIter<Entry>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.into_vec().into_iter()
     }
 }
 

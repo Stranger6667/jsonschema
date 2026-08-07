@@ -13,7 +13,7 @@ use crate::{JsonType, JsonTypeSet};
 pub(crate) fn type_set_schema(set: JsonTypeSet) -> Schema {
     let set = SchemaKind::canonical_type_set(set);
     if SchemaKind::semantic_cover(set) == JsonTypeSet::all() {
-        return Schema::new(SchemaKind::True);
+        return Schema::truthy();
     }
     if set == JsonTypeSet::from(JsonType::Null) {
         return Schema::new(SchemaKind::Const(CanonicalJson::from_value(&Value::Null)));
@@ -41,7 +41,7 @@ pub(crate) fn canonicalize_value_set(members: Vec<CanonicalJson>) -> Schema {
         }
         Err(mut lone) => match lone.pop() {
             Some(only) => Schema::new(SchemaKind::Const(only)),
-            None => Schema::new(SchemaKind::False),
+            None => Schema::falsy(),
         },
     }
 }
@@ -49,7 +49,7 @@ pub(crate) fn canonicalize_value_set(members: Vec<CanonicalJson>) -> Schema {
 /// Type-guard a body, collapsing an empty one: a group with a `False` body admits nothing.
 pub(crate) fn typed_group(ty: JsonType, body: Schema) -> Schema {
     if matches!(body.kind(), SchemaKind::False) {
-        Schema::new(SchemaKind::False)
+        Schema::falsy()
     } else {
         Schema::new(SchemaKind::TypedGroup { ty, body })
     }

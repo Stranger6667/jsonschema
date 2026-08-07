@@ -10,6 +10,7 @@
 - Up to 14x faster canonicalization of a union whose object branches share no values.
 - 7% faster canonicalization of schemas that reach the same pair of nodes repeatedly.
 - 5% faster canonicalization of objects, whose property maps no longer reach the allocator.
+- Up to 8% faster canonicalization of schemas that reach `true` and `false` subschemas repeatedly.
 
 ### Added
 

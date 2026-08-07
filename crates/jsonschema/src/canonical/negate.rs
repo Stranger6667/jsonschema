@@ -146,8 +146,8 @@ fn negate_within(
     ctx: &CanonicalizationContext,
 ) -> Option<Schema> {
     match schema.kind() {
-        SchemaKind::True => Some(Schema::new(SchemaKind::False)),
-        SchemaKind::False => Some(Schema::new(SchemaKind::True)),
+        SchemaKind::True => Some(Schema::falsy()),
+        SchemaKind::False => Some(Schema::truthy()),
         SchemaKind::MultiType(set) => negate_type_set(*set, ctx),
         SchemaKind::Const(value) => negate_finite_values(std::slice::from_ref(value), ctx),
         SchemaKind::Enum(values) => negate_finite_values(values.as_slice(), ctx),
@@ -168,7 +168,7 @@ fn negate_within(
         // De Morgan: the complement of a union is the intersection of the branch complements, so
         // one inexpressible branch declines the whole node.
         SchemaKind::AnyOf(branches) => {
-            let mut result = Schema::new(SchemaKind::True);
+            let mut result = Schema::truthy();
             for branch in branches.as_slice() {
                 result = algebra::intersect(result, negate_within(branch, walk, ctx)?, ctx);
                 if union_width(&result) > CONJUNCTION_BUDGET {
@@ -228,7 +228,7 @@ fn negate_one_of(
     }
     let depth = walk.active.len();
     let budget = walk.budget;
-    let mut matched_by_none = Schema::new(SchemaKind::True);
+    let mut matched_by_none = Schema::truthy();
     for branch in branches {
         matched_by_none =
             algebra::intersect(matched_by_none, negate_within(branch, walk, ctx)?, ctx);
@@ -738,7 +738,7 @@ fn negate_array_leaf(
         "a positional leaf reached the position branches carrying a tail"
     );
     for (index, schema) in leaf.prefix.iter().enumerate() {
-        let mut prefix = vec![Schema::new(SchemaKind::True); index];
+        let mut prefix = vec![Schema::truthy(); index];
         prefix.push(negate_within(schema, walk, ctx)?);
         branches.push(algebra::array_leaf(
             ArrayLeaf {
@@ -832,7 +832,7 @@ fn negate_object_leaf(
         ));
     }
     for key in &leaf.required {
-        let absent = PropertyMap::from_iter([(key.clone(), Schema::new(SchemaKind::False))]);
+        let absent = PropertyMap::from_iter([(key.clone(), Schema::falsy())]);
         branches.push(object_branch(
             LengthBounds::default(),
             Vec::new(),
@@ -897,11 +897,11 @@ fn negate_object_leaf(
                     ObjectLeaf {
                         properties: names
                             .iter()
-                            .map(|name| (name.clone(), Schema::new(SchemaKind::True)))
+                            .map(|name| (name.clone(), Schema::truthy()))
                             .collect(),
                         pattern_properties: patterns
                             .iter()
-                            .map(|pattern| (pattern.clone(), Schema::new(SchemaKind::True)))
+                            .map(|pattern| (pattern.clone(), Schema::truthy()))
                             .collect(),
                         additional: Some(additional.clone()),
                         ..ObjectLeaf::default()
@@ -967,7 +967,7 @@ fn negate_type_set(set: JsonTypeSet, ctx: &CanonicalizationContext) -> Option<Sc
         complement = complement.insert(JsonType::Number);
     }
     if complement.is_empty() {
-        return Some(Schema::new(SchemaKind::False));
+        return Some(Schema::falsy());
     }
     // The shared constructor, so a complement spelling a lone `null` or `boolean` lands on the same
     // canonical node as the direct spelling.
@@ -1101,12 +1101,12 @@ mod tests {
     fn boolean_schemas_negate_to_each_other() {
         let ctx = context();
         assert!(matches!(
-            negate_in_place(&Schema::new(SchemaKind::True), &DefinitionMap::new(), &ctx)
+            negate_in_place(&Schema::truthy(), &DefinitionMap::new(), &ctx)
                 .map(|s| s.kind().clone()),
             Some(SchemaKind::False)
         ));
         assert!(matches!(
-            negate_in_place(&Schema::new(SchemaKind::False), &DefinitionMap::new(), &ctx)
+            negate_in_place(&Schema::falsy(), &DefinitionMap::new(), &ctx)
                 .map(|s| s.kind().clone()),
             Some(SchemaKind::True)
         ));
