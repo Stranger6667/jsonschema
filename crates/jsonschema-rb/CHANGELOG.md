@@ -5,6 +5,7 @@
 ### Fixed
 
 - Draft detection treating the version-less `http://json-schema.org/schema` meta-schema URI as a custom dialect, where it names the current draft.
+- A `patternProperties` entry matching every key leaving `additionalProperties: false` spelled as a key constraint, where it forbids nothing.
 
 ## [0.49.7] - 2026-08-08
 
