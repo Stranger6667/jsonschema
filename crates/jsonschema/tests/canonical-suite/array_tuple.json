@@ -599,5 +599,74 @@
       "$ref": "#/hidden",
       "hidden": {"items": [{"type": "string"}], "additionalItems": false}
     }
+  },
+  {
+    "description": "ir: a tail no length within the ceiling reaches drops out",
+    "schemas": [
+      {"type": "array", "minItems": 4, "maxItems": 4,
+       "prefixItems": [{"type": "number"}, {"type": "number"}, {"type": "number"}, {"type": "number"}],
+       "items": {"type": "string"}},
+      {"type": "array", "minItems": 4, "maxItems": 4,
+       "prefixItems": [{"type": "number"}, {"type": "number"}, {"type": "number"}, {"type": "number"}]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [{"type": "number"}, {"type": "number"}, {"type": "number"}, {"type": "number"}]
+    },
+    "tests": [
+      {"data": [1, 2, 3, 4], "valid": true},
+      {"data": [1, 2, 3], "valid": false},
+      {"data": [1, 2, 3, "x"], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a tail beside a ceiling at the prefix length drops out",
+    "schema": {"type": "array", "maxItems": 2, "prefixItems": [{"type": "string"}, {"type": "integer"}], "items": {"type": "boolean"}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "maxItems": 2,
+      "prefixItems": [{"type": "string"}, {"type": "integer"}]
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": ["x"], "valid": true},
+      {"data": ["x", 1], "valid": true},
+      {"data": ["x", 1, true], "valid": false},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a Draft 7 additionalItems schema beside a ceiling at the tuple length drops out",
+    "draft": "draft7",
+    "schema": {"type": "array", "maxItems": 2, "items": [{"type": "string"}, {"type": "integer"}], "additionalItems": {"type": "boolean"}},
+    "expected": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "array",
+      "maxItems": 2,
+      "items": [{"type": "string"}, {"type": "integer"}]
+    },
+    "tests": [
+      {"data": ["x", 1], "valid": true},
+      {"data": ["x", 1, true], "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a tail a length within the ceiling reaches stays",
+    "schema": {"type": "array", "maxItems": 3, "prefixItems": [{"type": "string"}, {"type": "integer"}], "items": {"type": "boolean"}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "maxItems": 3,
+      "prefixItems": [{"type": "string"}, {"type": "integer"}],
+      "items": {"type": "boolean"}
+    },
+    "tests": [
+      {"data": ["x", 1, true], "valid": true},
+      {"data": ["x", 1, 2], "valid": false}
+    ]
   }
 ]

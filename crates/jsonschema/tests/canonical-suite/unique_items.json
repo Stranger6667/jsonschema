@@ -567,7 +567,6 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "array",
       "prefixItems": [{"const": true}, {"const": true}],
-      "items": {"type": "boolean"},
       "uniqueItems": true,
       "maxItems": 2
     },
