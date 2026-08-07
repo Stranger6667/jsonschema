@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.49.7] - 2026-08-08
+
 ### Added
 
 - `retriever`, `registry`, and `base_uri` keyword arguments to `JSONSchema.canonicalize`.
@@ -360,7 +362,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.6...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.7...HEAD
+[0.49.7]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.6...ruby-v0.49.7
 [0.49.6]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.5...ruby-v0.49.6
 [0.49.5]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.4...ruby-v0.49.5
 [0.49.4]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.3...ruby-v0.49.4
