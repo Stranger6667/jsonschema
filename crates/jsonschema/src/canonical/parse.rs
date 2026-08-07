@@ -1781,13 +1781,39 @@ fn reference_to_definition<'a>(
 }
 
 fn canonical_reference_uri(reference: &str, location: &str, root_base_uri: &str) -> Arc<str> {
-    if let Some(uri) = canonical_definition_reference(reference) {
-        return uri;
-    }
-    if is_direct_definition_reference(reference)
-        && resource_uri(location) == resource_uri(root_base_uri)
-    {
-        return Arc::from(reference);
+    for prefix in ["#/$defs/", "#/definitions/"] {
+        let Some(encoded) = reference.strip_prefix(prefix) else {
+            continue;
+        };
+        if encoded.starts_with(CANONICAL_REFERENCE_PREFIX) {
+            if !encoded.contains('%') {
+                let uri = referencing::unescape_segment(encoded);
+                return Arc::from(uri.as_ref());
+            }
+        } else {
+            match encoded.bytes().find(|byte| matches!(byte, b'%' | b'/')) {
+                None if !encoded.is_empty()
+                    && resource_uri(location) == resource_uri(root_base_uri) =>
+                {
+                    return Arc::from(reference);
+                }
+                Some(b'%') => {}
+                None | Some(_) => break,
+            }
+        }
+        if let Ok(decoded) = percent_encoding::percent_decode_str(encoded).decode_utf8() {
+            if decoded.starts_with(CANONICAL_REFERENCE_PREFIX) {
+                let uri = referencing::unescape_segment(&decoded);
+                return Arc::from(uri.as_ref());
+            }
+            if !decoded.is_empty()
+                && !decoded.contains('/')
+                && resource_uri(location) == resource_uri(root_base_uri)
+            {
+                return Arc::from(reference);
+            }
+        }
+        break;
     }
     if location.starts_with(CANONICAL_REFERENCE_PREFIX) {
         return Arc::from(location);
@@ -1799,36 +1825,8 @@ fn canonical_reference_uri(reference: &str, location: &str, root_base_uri: &str)
     Arc::from(uri.as_str())
 }
 
-fn canonical_definition_reference(reference: &str) -> Option<Arc<str>> {
-    for prefix in ["#/$defs/", "#/definitions/"] {
-        let Some(encoded) = reference.strip_prefix(prefix) else {
-            continue;
-        };
-        let decoded = percent_encoding::percent_decode_str(encoded)
-            .decode_utf8()
-            .ok()?;
-        let uri = referencing::unescape_segment(&decoded);
-        if uri.starts_with(CANONICAL_REFERENCE_PREFIX) {
-            return Some(Arc::from(uri.as_ref()));
-        }
-    }
-    None
-}
-
 fn resource_uri(uri: &str) -> &str {
     uri.split_once('#').map_or(uri, |(resource, _)| resource)
-}
-
-fn is_direct_definition_reference(reference: &str) -> bool {
-    for prefix in ["#/$defs/", "#/definitions/"] {
-        if let Some(name) = reference.strip_prefix(prefix) {
-            let Ok(decoded) = percent_encoding::percent_decode_str(name).decode_utf8() else {
-                return false;
-            };
-            return !decoded.is_empty() && !decoded.contains('/');
-        }
-    }
-    false
 }
 
 fn ensure_definition<'a>(

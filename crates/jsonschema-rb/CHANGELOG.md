@@ -5,6 +5,7 @@
 ### Performance
 
 - 13% faster canonicalization of a non-dynamic OpenAPI document, which no longer scans every schema object for dynamic references.
+- Faster canonicalization of schemas with local `$defs` references, which avoid decoding unescaped definition names.
 - 23% faster canonicalization of an object whose keys a finite property-name set spells.
 - 3% faster intersection of schemas where one side constrains nothing.
 - Up to 31x faster canonicalization of a `oneOf` whose many branches overlap.
