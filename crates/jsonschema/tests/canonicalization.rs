@@ -2729,6 +2729,11 @@ fn negate_spells_the_draft_4_complement(schema: &Value, expected: &Value) {
     });
     "recursive choice reference"
 )]
+#[test_case(
+    &json!({"type": "array", "minItems": 2, "maxItems": 2,
+        "prefixItems": [{"type": "string"}, {"type": "integer"}], "items": {"type": "boolean"}});
+    "array tuple with a tail beyond its ceiling"
+)]
 fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
     let complement = canonicalize(schema)
         .expect("canonicalizes")

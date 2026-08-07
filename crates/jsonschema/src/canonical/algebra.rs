@@ -3060,10 +3060,14 @@ fn normalize_items(leaf: &mut ArrayLeaf) {
     // No array reaches a prefix index at or beyond the length ceiling, so those schemas never apply.
     if leaf.lengths.maximum.is_some() {
         let keep = reachable_prefix_len(leaf);
-        if keep < leaf.prefix.len() {
-            leaf.prefix.truncate(keep);
-            leaf.items = None;
-        }
+        leaf.prefix.truncate(keep);
+    }
+    // The tail governs the elements past the prefix, which an array capped at the prefix length
+    // has none of.
+    // e.g.  {"type": "array", "maxItems": 2, "prefixItems": [A, B], "items": C}
+    //       =>  {"type": "array", "maxItems": 2, "prefixItems": [A, B]}
+    if unreachable_tail(leaf) {
+        leaf.items = None;
     }
     // A trailing prefix schema that repeats the tail is already covered by it, tail-of-`true` included.
     // e.g.  {"type": "array", "prefixItems": [A, B], "items": B}
@@ -3085,6 +3089,20 @@ fn normalize_items(leaf: &mut ArrayLeaf) {
         reachable_prefix_len(leaf) == leaf.prefix.len(),
         "a prefix schema beyond the length ceiling survived normalization"
     );
+    debug_assert!(
+        !unreachable_tail(leaf),
+        "a tail beyond the length ceiling survived normalization"
+    );
+}
+
+/// Whether the length ceiling leaves no element for the tail to govern.
+fn unreachable_tail(leaf: &ArrayLeaf) -> bool {
+    leaf.items.is_some()
+        && leaf
+            .lengths
+            .maximum
+            .as_ref()
+            .is_some_and(|max| *max <= BoundCardinality::from(leaf.prefix.len() as u64))
 }
 
 /// The number of leading prefix schemas an array within the window can actually reach.

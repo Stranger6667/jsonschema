@@ -32,6 +32,7 @@
 ### Fixed
 
 - `CanonicalSchema::definition` and `CanonicalSchema::definitions` handing out a target that names the document root, where `#` points at the target instead of the document it was written in.
+- An `items` tail beyond an array's length ceiling surviving canonicalization, where it governs no element.
 
 ## [0.49.6] - 2026-08-06
 
