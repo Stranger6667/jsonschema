@@ -136,6 +136,11 @@ pub(crate) fn normalized_number(number: &Number) -> Number {
     }
 }
 
+thread_local! {
+    static TRUE: Schema = Schema::nullary(SchemaKind::True);
+    static FALSE: Schema = Schema::nullary(SchemaKind::False);
+}
+
 /// Reference-counted canonical IR handle, passed throughout canonicalization.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct Schema(Arc<SchemaData>);
@@ -145,6 +150,24 @@ impl Schema {
     pub(crate) fn new(kind: SchemaKind) -> Self {
         let hash = structural_hash(&kind);
         Self(Arc::new(SchemaData { kind, hash }))
+    }
+
+    fn nullary(kind: SchemaKind) -> Self {
+        let hash = structural_hash(&kind);
+        Self(Arc::new(SchemaData { kind, hash }))
+    }
+
+    /// Matches every value. Handed out from one node per thread: over half the tree is this, and no
+    /// two mentions of it differ.
+    #[must_use]
+    pub(crate) fn truthy() -> Self {
+        TRUE.with(Clone::clone)
+    }
+
+    /// Matches no value, shared for the same reason as [`Schema::truthy`].
+    #[must_use]
+    pub(crate) fn falsy() -> Self {
+        FALSE.with(Clone::clone)
     }
 
     #[inline]
@@ -468,8 +491,12 @@ pub(crate) struct StringLeaf {
 }
 
 /// Sorted, deduplicated, and holding at least two elements; fewer collapses to a simpler node.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct AtLeastTwo<T>(Vec<T>);
+/// Two is what nearly every one of these holds, so that shape stays out of the allocator.
+#[derive(Debug, Clone)]
+pub(crate) enum AtLeastTwo<T> {
+    Two([T; 2]),
+    Many(Vec<T>),
+}
 
 /// String membership in a sorted value set, for strings handed over in ascending order: the cursor
 /// never goes back, so a whole run of queries costs one pass over the set instead of one scan each.
@@ -513,24 +540,71 @@ impl<T: Ord> AtLeastTwo<T> {
             items.windows(2).all(|pair| pair[0] < pair[1]),
             "items left unsorted or duplicated"
         );
-        Ok(Self(items))
+        Ok(Self::from_sorted(items))
+    }
+}
+
+impl<T> AtLeastTwo<T> {
+    fn from_sorted(mut items: Vec<T>) -> Self {
+        if items.len() == 2 {
+            let second = items.pop().expect("two elements");
+            let first = items.pop().expect("two elements");
+            return Self::Two([first, second]);
+        }
+        Self::Many(items)
     }
 }
 
 impl<T> AtLeastTwo<T> {
     pub(crate) fn as_slice(&self) -> &[T] {
-        &self.0
+        match self {
+            Self::Two(items) => items,
+            Self::Many(items) => items,
+        }
     }
 
     pub(crate) fn into_vec(self) -> Vec<T> {
-        self.0
+        match self {
+            Self::Two([first, second]) => vec![first, second],
+            Self::Many(items) => items,
+        }
     }
 
     /// Split the last element off; the remainder still holds at least one.
     pub(crate) fn split_last(self) -> (Vec<T>, T) {
-        let mut items = self.0;
-        let last = items.pop().expect("at least two elements");
-        (items, last)
+        match self {
+            Self::Two([first, second]) => (vec![first], second),
+            Self::Many(mut items) => {
+                let last = items.pop().expect("at least two elements");
+                (items, last)
+            }
+        }
+    }
+}
+
+impl<T: PartialEq> PartialEq for AtLeastTwo<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl<T: Eq> Eq for AtLeastTwo<T> {}
+
+impl<T: PartialOrd> PartialOrd for AtLeastTwo<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.as_slice().partial_cmp(other.as_slice())
+    }
+}
+
+impl<T: Ord> Ord for AtLeastTwo<T> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_slice().cmp(other.as_slice())
+    }
+}
+
+impl<T: Hash> Hash for AtLeastTwo<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_slice().hash(state);
     }
 }
 
@@ -539,7 +613,7 @@ impl<T> IntoIterator for AtLeastTwo<T> {
     type IntoIter = std::vec::IntoIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+        self.into_vec().into_iter()
     }
 }
 

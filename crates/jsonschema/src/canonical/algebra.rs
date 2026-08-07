@@ -74,12 +74,12 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         )
         | (SchemaKind::Array(_), SchemaKind::Object(_))
         | (SchemaKind::Object(_), SchemaKind::Array(_)) => {
-            Schema::new(SchemaKind::False)
+            Schema::falsy()
         }
-        // `True` accepts every value, so "must satisfy both" collapses to just the other side.
-        (SchemaKind::True, right) => Schema::new(right),
-        // Same as above with the sides swapped: `True` on the right keeps the left side.
-        (left, SchemaKind::True) => Schema::new(left),
+        // `intersect` hands back the other side before dispatching here.
+        (SchemaKind::True, _) | (_, SchemaKind::True) => {
+            unreachable!("a `True` side is answered before the pair is dispatched")
+        }
         // References stay opaque. Equal references deduplicate; every other interaction remains an
         // exact symbolic conjunction rather than claiming facts about an unresolved target.
         (SchemaKind::Reference(left), SchemaKind::Reference(right)) if left == right => {
@@ -123,7 +123,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
             let cover =
                 SchemaKind::semantic_cover(first).intersect(SchemaKind::semantic_cover(second));
             if cover.is_empty() {
-                Schema::new(SchemaKind::False)
+                Schema::falsy()
             } else {
                 type_set_schema(cover)
             }
@@ -139,7 +139,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
             if SchemaKind::semantic_cover(set).contains(ty) {
                 Schema::new(SchemaKind::TypedGroup { ty, body })
             } else {
-                Schema::new(SchemaKind::False)
+                Schema::falsy()
             }
         }
         // Two `TypedGroup`s can overlap only if they use the same type. Same type: keep it and intersect
@@ -158,7 +158,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
             if first == second {
                 typed_group(first, intersect(body, other, ctx))
             } else {
-                Schema::new(SchemaKind::False)
+                Schema::falsy()
             }
         }
         // A string leaf constrains string values. A type set keeps it only when the set covers `string`;
@@ -168,7 +168,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
             if SchemaKind::semantic_cover(set).contains(JsonType::String) {
                 string_leaf(leaf.into_inner(), ctx)
             } else {
-                Schema::new(SchemaKind::False)
+                Schema::falsy()
             }
         }
         // Two string leaves: keep the strings both accept by tightening to the narrower length window.
@@ -185,7 +185,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
             if SchemaKind::semantic_cover(set).contains(JsonType::Integer) {
                 integer_leaf(bounds.into_inner(), ctx)
             } else {
-                Schema::new(SchemaKind::False)
+                Schema::falsy()
             }
         }
         // Two integer leaves: keep the integers both accept by tightening to the narrower interval.
@@ -230,7 +230,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
                 // `integer` is a subset of `number`, so the interval keeps its integers.
                 integer_within(&leaf.into_inner(), ctx)
             } else {
-                Schema::new(SchemaKind::False)
+                Schema::falsy()
             }
         }
         // An array leaf constrains array values. A type set keeps it only when the set covers
@@ -240,7 +240,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
             if set.contains(JsonType::Array) {
                 array_leaf(leaf.into_inner(), ctx)
             } else {
-                Schema::new(SchemaKind::False)
+                Schema::falsy()
             }
         }
         // Two array leaves: keep the arrays both accept - the narrower window, and the distinctness
@@ -248,7 +248,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         (SchemaKind::Array(first), SchemaKind::Array(second)) => {
             match intersect_array_leaves(first.into_inner(), second.into_inner(), ctx) {
                 Some(leaf) => array_leaf(leaf, ctx),
-                None => Schema::new(SchemaKind::False),
+                None => Schema::falsy(),
             }
         }
         // An object leaf constrains object values. A type set keeps it only when the set covers
@@ -258,7 +258,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
             if set.contains(JsonType::Object) {
                 object_leaf(leaf.into_inner(), ctx)
             } else {
-                Schema::new(SchemaKind::False)
+                Schema::falsy()
             }
         }
         // Two object leaves: keep the objects both accept - the narrower window, every required key.
@@ -284,7 +284,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
 
 fn opaque_intersection(left: Schema, right: Schema, ctx: &CanonicalizationContext) -> Schema {
     let mut symbolic = Vec::new();
-    let mut structural = Schema::new(SchemaKind::True);
+    let mut structural = Schema::truthy();
     let mut stack = vec![left, right];
     while let Some(schema) = stack.pop() {
         match schema.into_kind() {
@@ -358,7 +358,7 @@ fn opaque_conjunction(branches: Vec<Schema>) -> Schema {
     for branch in &branches {
         if let SchemaKind::Not(inner) = branch.kind() {
             if branches.iter().any(|candidate| candidate == inner) {
-                return Schema::new(SchemaKind::False);
+                return Schema::falsy();
             }
         }
     }
@@ -376,7 +376,7 @@ fn opaque_conjunction(branches: Vec<Schema>) -> Schema {
             );
             Schema::new(SchemaKind::AllOf(branches))
         }
-        Err(mut lone) => lone.pop().unwrap_or_else(|| Schema::new(SchemaKind::True)),
+        Err(mut lone) => lone.pop().unwrap_or_else(Schema::truthy),
     };
     debug_assert!(
         contains_reference(&schema),
@@ -431,7 +431,7 @@ pub(crate) fn one_of(
     let (duplicates, singles) = partition_by_multiplicity(&branches);
     if !duplicates.is_empty() {
         if singles.is_empty() {
-            return Some(Schema::new(SchemaKind::False));
+            return Some(Schema::falsy());
         }
         let mut complements = Vec::with_capacity(duplicates.len());
         for duplicate in &duplicates {
@@ -739,7 +739,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     while let Some(branch) = stack.pop() {
         match branch.into_kind() {
             // A branch that accepts everything makes the whole union accept everything.
-            SchemaKind::True => return Schema::new(SchemaKind::True),
+            SchemaKind::True => return Schema::truthy(),
             // A branch that accepts nothing contributes nothing to the union.
             SchemaKind::False => {}
             // A nested union flattens into this one: `anyOf` of `anyOf` is a single `anyOf`.
@@ -817,7 +817,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     let cover = SchemaKind::semantic_cover(types);
     // Once the collected types span every JSON type there is nothing left to exclude: accept everything.
     if cover == JsonTypeSet::all() {
-        return Schema::new(SchemaKind::True);
+        return Schema::truthy();
     }
 
     // A loose value or a group is redundant when the type set already accepts its whole type; drop those.
@@ -1251,7 +1251,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     if out.iter().any(
         |branch| matches!(branch.kind(), SchemaKind::Not(operand) if top_level.contains(operand)),
     ) {
-        return Schema::new(SchemaKind::True);
+        return Schema::truthy();
     }
     out.retain(|branch| {
         let SchemaKind::AllOf(conjuncts) = branch.kind() else {
@@ -1280,7 +1280,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         }
         Err(mut lone) => match lone.pop() {
             Some(only) => only,
-            None => Schema::new(SchemaKind::False),
+            None => Schema::falsy(),
         },
     }
 }
@@ -1670,9 +1670,7 @@ fn split_piece_is_covered(
         holding.required.insert(position, Arc::clone(key));
     }
     let mut missing = piece;
-    missing
-        .properties
-        .insert(Arc::clone(key), Schema::new(SchemaKind::False));
+    missing.properties.insert(Arc::clone(key), Schema::falsy());
     split_piece_is_covered(holding, leaves, rest, ctx)
         && split_piece_is_covered(missing, leaves, rest, ctx)
 }
@@ -1872,9 +1870,7 @@ fn drop_required_covered_by_sibling(
                     weakened.sizes.minimum = Some(implied_floor.clone());
                 }
                 let mut gained = weakened.clone();
-                gained
-                    .properties
-                    .insert(Arc::clone(&key), Schema::new(SchemaKind::False));
+                gained.properties.insert(Arc::clone(&key), Schema::falsy());
                 let gained = object_leaf(gained, ctx);
                 // An empty gained set means the two spellings tie, and the constructor's
                 // required spelling stays; rewriting here would depend on the route taken.
@@ -2320,7 +2316,7 @@ fn union_type_sets(left: JsonTypeSet, right: JsonTypeSet) -> JsonTypeSet {
 /// A `String` node, collapsed to `False` when its length window is empty.
 pub(crate) fn string_leaf(mut leaf: StringLeaf, ctx: &CanonicalizationContext) -> Schema {
     if formats_conflict(&leaf, ctx) || patterns_conflict(&leaf) {
-        return Schema::new(SchemaKind::False);
+        return Schema::falsy();
     }
     absorb_empty_exclusion(&mut leaf);
     // No barred-pattern counterpart: a format has a length window to test against, a regex has
@@ -2328,7 +2324,7 @@ pub(crate) fn string_leaf(mut leaf: StringLeaf, ctx: &CanonicalizationContext) -
     prune_excluded_formats(&mut leaf, ctx);
     prune_excluded(&mut leaf, ctx);
     let Some(leaf) = NonEmpty::new(leaf) else {
-        return Schema::new(SchemaKind::False);
+        return Schema::falsy();
     };
     // `maxLength: 0` accepts the empty string and nothing else. A leaf this narrow is spelled as
     // the constant before anything can exclude from it, so exclusions cannot reach here. Nothing
@@ -2535,11 +2531,9 @@ fn drop_covered_conjunctions(branches: &mut Vec<Schema>, ctx: &CanonicalizationC
 
 /// The values every member admits, built through the algebra so the result stays in normal form.
 fn conjoin(members: Vec<Schema>, ctx: &CanonicalizationContext) -> Schema {
-    members
-        .into_iter()
-        .fold(Schema::new(SchemaKind::True), |held, member| {
-            intersect(held, member, ctx)
-        })
+    members.into_iter().fold(Schema::truthy(), |held, member| {
+        intersect(held, member, ctx)
+    })
 }
 
 /// The demands a branch makes, which is the branch itself unless it spells several.
@@ -2690,7 +2684,7 @@ pub(crate) fn number_leaf(leaf: NumberLeaf, ctx: &CanonicalizationContext) -> Sc
         }
     }
     let Some(leaf) = NonEmpty::new(leaf) else {
-        return Schema::new(SchemaKind::False);
+        return Schema::falsy();
     };
     if let (Some(min), Some(max)) = (&leaf.get().minimum, &leaf.get().maximum) {
         if min.is_inclusive() && max.is_inclusive() && min.to_number() == max.to_number() {
@@ -2707,7 +2701,7 @@ pub(crate) fn number_leaf(leaf: NumberLeaf, ctx: &CanonicalizationContext) -> Sc
                     &Value::Number(point),
                 )))
             } else {
-                Schema::new(SchemaKind::False)
+                Schema::falsy()
             };
         }
     }
@@ -2722,14 +2716,14 @@ pub(crate) fn number_leaf(leaf: NumberLeaf, ctx: &CanonicalizationContext) -> Sc
 /// Pack an array facet set into a node, collapsing the leaves that say something simpler.
 pub(crate) fn array_leaf(mut leaf: ArrayLeaf, ctx: &CanonicalizationContext) -> Schema {
     if !normalize_contains(&mut leaf) {
-        return Schema::new(SchemaKind::False);
+        return Schema::falsy();
     }
     normalize_items(&mut leaf);
     if !reconcile_contains_window(&mut leaf, ctx) {
-        return Schema::new(SchemaKind::False);
+        return Schema::falsy();
     }
     if !reconcile_contains_positions(&leaf, ctx) {
-        return Schema::new(SchemaKind::False);
+        return Schema::falsy();
     }
     match leaf.distinctness {
         Distinctness::Unconstrained => {}
@@ -2751,7 +2745,7 @@ pub(crate) fn array_leaf(mut leaf: ArrayLeaf, ctx: &CanonicalizationContext) -> 
                         facet.effective_minimum() > BoundCardinality::from(domain)
                     })
             }) {
-                return Schema::new(SchemaKind::False);
+                return Schema::falsy();
             }
             if let Some(ceiling) = distinct_length_ceiling(&leaf, ctx) {
                 leaf.lengths.maximum = Some(match leaf.lengths.maximum.take() {
@@ -2794,7 +2788,7 @@ pub(crate) fn array_leaf(mut leaf: ArrayLeaf, ctx: &CanonicalizationContext) -> 
         }
     }
     let Some(leaf) = NonEmpty::new(leaf) else {
-        return Schema::new(SchemaKind::False);
+        return Schema::falsy();
     };
     // `maxItems: 0` accepts the empty array and nothing else.
     // e.g.  {"type": "array", "maxItems": 0}  =>  {"const": []}
@@ -3007,10 +3001,7 @@ fn reconcile_contains_positions(leaf: &ArrayLeaf, ctx: &CanonicalizationContext)
             .as_ref()
             .is_none_or(|max| BoundCardinality::from(leaf.prefix.len() as u64) < *max);
         if tail_reachable {
-            let tail = leaf
-                .items
-                .clone()
-                .unwrap_or_else(|| Schema::new(SchemaKind::True));
+            let tail = leaf.items.clone().unwrap_or_else(Schema::truthy);
             if !matches!(
                 intersect(tail, facet.schema.clone(), ctx).kind(),
                 SchemaKind::False
@@ -3174,7 +3165,7 @@ fn element_schema(leaf: &ArrayLeaf, index: usize) -> Option<&Schema> {
 fn element_constraint(leaf: &ArrayLeaf, index: usize) -> Schema {
     element_schema(leaf, index)
         .cloned()
-        .unwrap_or_else(|| Schema::new(SchemaKind::True))
+        .unwrap_or_else(Schema::truthy)
 }
 
 /// Whether any two elements are the same value. Members are normalized, so `1` and `1.0` compare
@@ -3372,14 +3363,14 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
                 continue;
             };
             if violated == names {
-                return Schema::new(SchemaKind::False);
+                return Schema::falsy();
             }
             if let Some(values) = names.kind().finite_values() {
                 if values.iter().all(|value| {
                     matches!(value.as_value(), Value::String(key)
                     if matches!(admits_key(violated, key, ctx), Verdict::Admits))
                 }) {
-                    return Schema::new(SchemaKind::False);
+                    return Schema::falsy();
                 }
             }
         }
@@ -3397,7 +3388,7 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
                     && leaf.properties.keys().eq(names.iter())
                     && leaf.pattern_properties.keys().eq(patterns.iter())
                 {
-                    return Schema::new(SchemaKind::False);
+                    return Schema::falsy();
                 }
             }
         }
@@ -3442,7 +3433,7 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
             }),
         })
     {
-        return Schema::new(SchemaKind::False);
+        return Schema::falsy();
     }
     expand_additional_over_admitted_keys(&mut leaf);
     // A leaf no facet survives on admits every object, which the bare type set already spells;
@@ -3470,7 +3461,7 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
         .iter()
         .any(|key| matches!(key_schema(&leaf, key, ctx).kind(), SchemaKind::False))
     {
-        return Schema::new(SchemaKind::False);
+        return Schema::falsy();
     }
     // A key the property names reject can never be present, so demanding it admits nothing.
     // Collapsing to `False` narrows the schema, so only a definite rejection collapses.
@@ -3482,7 +3473,7 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
             .iter()
             .any(|key| matches!(admits_key(names, key, ctx), Verdict::Rejects))
         {
-            return Schema::new(SchemaKind::False);
+            return Schema::falsy();
         }
     }
     // Property entries saying nothing go first, or a vacuous named key becomes a fold target and
@@ -3529,7 +3520,7 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
         }
     }
     let Some(leaf) = NonEmpty::new(leaf) else {
-        return Schema::new(SchemaKind::False);
+        return Schema::falsy();
     };
     // A ceiling of zero present keys accepts the empty object and nothing else, whether spelled as
     // `maxProperties: 0` or as a finite key set whose every key is forbidden; a required key would
@@ -3738,7 +3729,7 @@ fn key_schema(leaf: &ObjectLeaf, key: &str, ctx: &CanonicalizationContext) -> Sc
         .get(key)
         .or_else(|| governing_shield(leaf, key, ctx))
         .cloned()
-        .unwrap_or_else(|| Schema::new(SchemaKind::True));
+        .unwrap_or_else(Schema::truthy);
     for (pattern, pattern_schema) in &leaf.pattern_properties {
         if matches_key(pattern, key, ctx) {
             schema = intersect(schema, pattern_schema.clone(), ctx);
@@ -4475,7 +4466,7 @@ fn tightest(
 /// The integers a number interval admits. Endpoints are whole here, so an excluded one steps by one.
 fn integer_within(leaf: &NumberLeaf, ctx: &CanonicalizationContext) -> Schema {
     if leaf.excludes_integers {
-        return Schema::new(SchemaKind::False);
+        return Schema::falsy();
     }
     let bounds = integer_bounds_within(leaf)
         .expect("a number leaf admitting integers holds ends the integer bounds can spell");
@@ -4617,14 +4608,14 @@ pub(crate) fn integer_leaf(leaf: IntegerLeaf, ctx: &CanonicalizationContext) -> 
         return type_set_schema(JsonTypeSet::from(JsonType::Integer));
     }
     let Some(leaf) = snap_to_multiples(leaf).and_then(NonEmpty::new) else {
-        return Schema::new(SchemaKind::False);
+        return Schema::falsy();
     };
     if let (Some(min), Some(max)) = (&leaf.get().bounds.minimum, &leaf.get().bounds.maximum) {
         if min == max {
             let point = min.to_number();
             // Only a divisor snapping could not pull onto the progression is left to check here.
             if !leaf.get().multiple_of.divide(&point) || leaf.get().not_multiple_of.bars(&point) {
-                return Schema::new(SchemaKind::False);
+                return Schema::falsy();
             }
             let value = Schema::new(SchemaKind::Const(CanonicalJson::from_value(
                 &Value::Number(point),

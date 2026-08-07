@@ -517,5 +517,24 @@
       {"data": {"b": 1}, "valid": false},
       {"data": {}, "valid": false}
     ]
+  },
+  {
+    "description": "a key constraint listing values no key can be keeps only the ones a key can",
+    "schema": {
+      "type": "object",
+      "propertyNames": {"enum": ["a", 1, null]},
+      "properties": {"a": {"type": "string"}}
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"const": "a"},
+      "properties": {"a": {"type": "string"}}
+    },
+    "tests": [
+      {"data": {"a": "x"}, "valid": true},
+      {"data": {}, "valid": true},
+      {"data": {"b": 1}, "valid": false}
+    ]
   }
 ]
