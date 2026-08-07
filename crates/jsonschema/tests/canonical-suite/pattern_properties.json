@@ -988,5 +988,44 @@
       },
       "type": "object"
     }
+  },
+  {
+    "description": "ir: a pattern matching every key leaves additionalProperties:false forbidding nothing",
+    "schemas": [
+      {"type": "object", "patternProperties": {"": {"type": "integer"}}, "additionalProperties": false},
+      {"type": "object", "patternProperties": {"": {"type": "integer"}}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "patternProperties": {"": {"type": "integer"}}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {"a": 1, "b": 2}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a pattern matching every key beside a named one leaves the key constraint wide",
+    "schemas": [
+      {"type": "object", "properties": {"a": {"type": "string"}},
+       "patternProperties": {"": {"type": "integer"}}, "additionalProperties": false},
+      {"type": "object", "properties": {"a": {"type": "string"}},
+       "patternProperties": {"": {"type": "integer"}}}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"a": false},
+      "patternProperties": {"": {"type": "integer"}}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"b": 1}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": "x"}, "valid": false}
+    ]
   }
 ]

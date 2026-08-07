@@ -1141,10 +1141,16 @@ fn parse_schema_in_scope<'a>(
             ))));
         }
         for pattern in pattern_properties.keys() {
+            // An empty pattern matches every key, so it names them all rather than a subset.
+            let patterns = if pattern.is_empty() {
+                Vec::new()
+            } else {
+                vec![Arc::clone(pattern)]
+            };
             allowed.push(algebra::string_leaf(
                 StringLeaf {
                     lengths: LengthBounds::default(),
-                    patterns: vec![Arc::clone(pattern)],
+                    patterns,
                     excluded_patterns: Vec::new(),
                     formats: Vec::new(),
                     excluded_formats: Vec::new(),
