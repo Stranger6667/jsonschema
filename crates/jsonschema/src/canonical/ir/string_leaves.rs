@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::canonical::ir::{Bounds, LengthBounds, StringLeaf};
+use crate::canonical::ir::{Bounds, LengthBounds, StringFormat, StringLeaf};
 
 /// String leaves merged per pattern set and free of subsumed windows. Inserts are batched; the form
 /// is restored before any read, so the order in which leaves arrive cannot change the result.
@@ -77,8 +77,8 @@ impl IntoIterator for StringLeaves {
 struct Facets {
     patterns: Vec<Arc<str>>,
     excluded_patterns: Vec<Arc<str>>,
-    formats: Vec<Arc<str>>,
-    excluded_formats: Vec<Arc<str>>,
+    formats: Vec<StringFormat>,
+    excluded_formats: Vec<StringFormat>,
     content_media_types: Vec<Arc<str>>,
     content_encodings: Vec<Arc<str>>,
     excluded: Vec<Arc<str>>,

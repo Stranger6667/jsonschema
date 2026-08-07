@@ -7,7 +7,10 @@ use std::{
 use serde_json::{Number, Value};
 use strum::{EnumDiscriminants, IntoStaticStr};
 
-use crate::{JsonType, JsonTypeSet};
+use crate::{
+    keywords::format::{builtin_format, BuiltinFormat},
+    Draft, JsonType, JsonTypeSet,
+};
 
 mod array_leaves;
 mod bound_cardinality;
@@ -38,6 +41,57 @@ pub(crate) use property_map::PropertyMap;
 pub(crate) use raw::RawJson;
 pub(crate) use string_leaves::StringLeaves;
 pub(crate) use verdict::{UncheckableFacet, Verdict};
+
+/// A format name kept inline for the built-in set and shared only when the draft does not recognize
+/// it. Canonicalization preserves the latter because it cannot decide its assertion semantics.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum StringFormat {
+    Builtin(BuiltinFormat),
+    Unknown(Arc<str>),
+}
+
+impl StringFormat {
+    #[must_use]
+    pub(crate) fn from_name(draft: Draft, name: &str) -> Self {
+        builtin_format(draft, name).map_or_else(|| Self::Unknown(Arc::from(name)), Self::Builtin)
+    }
+
+    #[must_use]
+    pub(crate) fn as_str(&self) -> &str {
+        match self {
+            Self::Builtin(format) => format.as_str(),
+            Self::Unknown(name) => name,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn length_window(&self) -> Option<(u64, u64)> {
+        match self {
+            Self::Builtin(format) => format.length_window(),
+            Self::Unknown(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn is_valid(&self, text: &str) -> Option<bool> {
+        match self {
+            Self::Builtin(format) => Some(format.is_valid(text)),
+            Self::Unknown(_) => None,
+        }
+    }
+}
+
+impl PartialOrd for StringFormat {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for StringFormat {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_str().cmp(other.as_str())
+    }
+}
 
 /// A `Const`/`Enum` member normalized at construction (`1.0` becomes `1`) so `Value` equality is value equality.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -481,10 +535,10 @@ pub(crate) struct StringLeaf {
     /// against `patterns` is decided, so a leaf can be spelled and still admit nothing.
     pub(crate) excluded_patterns: Vec<Arc<str>>,
     /// Sorted, deduplicated. A string must satisfy every format. Empty unless formats assert.
-    pub(crate) formats: Vec<Arc<str>>,
+    pub(crate) formats: Vec<StringFormat>,
     /// Sorted, deduplicated. A string must satisfy none of these formats. Empty unless formats
     /// assert.
-    pub(crate) excluded_formats: Vec<Arc<str>>,
+    pub(crate) excluded_formats: Vec<StringFormat>,
     /// Sorted, deduplicated. A string must satisfy every media type. Empty outside Draft 6/7, where
     /// `contentMediaType` is an annotation.
     pub(crate) content_media_types: Vec<Arc<str>>,

@@ -1397,8 +1397,8 @@ where
     }
 }
 
-#[derive(Clone, Copy)]
-enum BuiltinFormat {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum BuiltinFormat {
     Date,
     DateTime,
     Duration,
@@ -1421,7 +1421,7 @@ enum BuiltinFormat {
     Uuid,
 }
 
-fn builtin_format(draft: Draft, format: &str) -> Option<BuiltinFormat> {
+pub(crate) fn builtin_format(draft: Draft, format: &str) -> Option<BuiltinFormat> {
     match format {
         "date" => Some(BuiltinFormat::Date),
         "date-time" => Some(BuiltinFormat::DateTime),
@@ -1451,45 +1451,69 @@ fn builtin_format(draft: Draft, format: &str) -> Option<BuiltinFormat> {
     }
 }
 
-/// The length every string of this format has, when its grammar pins one. `None` leaves the format
-/// unconstrained in length, which keeps it from ever proving a conflict.
-pub(crate) fn length_window(draft: Draft, format: &str) -> Option<(u64, u64)> {
-    match builtin_format(draft, format)? {
-        // `YYYY-MM-DD`.
-        BuiltinFormat::Date => Some((10, 10)),
-        // Eight-four-four-four-twelve hex digits plus four hyphens.
-        BuiltinFormat::Uuid => Some((36, 36)),
-        // `0.0.0.0` through `255.255.255.255`.
-        BuiltinFormat::Ipv4 => Some((7, 15)),
-        _ => None,
+impl BuiltinFormat {
+    #[must_use]
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Date => "date",
+            Self::DateTime => "date-time",
+            Self::Duration => "duration",
+            Self::Email => "email",
+            Self::Hostname | Self::HostnameDraft4 => "hostname",
+            Self::IdnEmail => "idn-email",
+            Self::IdnHostname => "idn-hostname",
+            Self::Ipv4 => "ipv4",
+            Self::Ipv6 => "ipv6",
+            Self::Iri => "iri",
+            Self::IriReference => "iri-reference",
+            Self::JsonPointer => "json-pointer",
+            Self::Regex => "regex",
+            Self::RelativeJsonPointer => "relative-json-pointer",
+            Self::Time => "time",
+            Self::Uri => "uri",
+            Self::UriReference => "uri-reference",
+            Self::UriTemplate => "uri-template",
+            Self::Uuid => "uuid",
+        }
     }
-}
 
-/// Whether `text` satisfies `format`, or `None` when the draft does not recognize it - an unknown
-/// format is an annotation and constrains nothing.
-pub(crate) fn is_valid(draft: Draft, format: &str, text: &str) -> Option<bool> {
-    Some(match builtin_format(draft, format)? {
-        BuiltinFormat::Date => is_valid_date(text),
-        BuiltinFormat::DateTime => is_valid_datetime(text),
-        BuiltinFormat::Duration => is_valid_duration(text),
-        BuiltinFormat::Email => is_valid_email(text, None),
-        BuiltinFormat::Hostname => is_valid_hostname(text),
-        BuiltinFormat::HostnameDraft4 => is_valid_hostname_rfc1034(text),
-        BuiltinFormat::IdnEmail => is_valid_idn_email(text, None),
-        BuiltinFormat::IdnHostname => is_valid_idn_hostname(text),
-        BuiltinFormat::Ipv4 => is_valid_ipv4(text),
-        BuiltinFormat::Ipv6 => is_valid_ipv6(text),
-        BuiltinFormat::Iri => is_valid_iri(text),
-        BuiltinFormat::IriReference => is_valid_iri_reference(text),
-        BuiltinFormat::JsonPointer => is_valid_json_pointer(text),
-        BuiltinFormat::Regex => is_valid_regex(text),
-        BuiltinFormat::RelativeJsonPointer => is_valid_relative_json_pointer(text),
-        BuiltinFormat::Time => is_valid_time(text),
-        BuiltinFormat::Uri => is_valid_uri(text),
-        BuiltinFormat::UriReference => is_valid_uri_reference(text),
-        BuiltinFormat::UriTemplate => is_valid_uri_template(text),
-        BuiltinFormat::Uuid => is_valid_uuid(text),
-    })
+    #[must_use]
+    pub(crate) const fn length_window(self) -> Option<(u64, u64)> {
+        match self {
+            // `YYYY-MM-DD`.
+            Self::Date => Some((10, 10)),
+            // Eight-four-four-four-twelve hex digits plus four hyphens.
+            Self::Uuid => Some((36, 36)),
+            // `0.0.0.0` through `255.255.255.255`.
+            Self::Ipv4 => Some((7, 15)),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn is_valid(self, text: &str) -> bool {
+        match self {
+            Self::Date => is_valid_date(text),
+            Self::DateTime => is_valid_datetime(text),
+            Self::Duration => is_valid_duration(text),
+            Self::Email => is_valid_email(text, None),
+            Self::Hostname => is_valid_hostname(text),
+            Self::HostnameDraft4 => is_valid_hostname_rfc1034(text),
+            Self::IdnEmail => is_valid_idn_email(text, None),
+            Self::IdnHostname => is_valid_idn_hostname(text),
+            Self::Ipv4 => is_valid_ipv4(text),
+            Self::Ipv6 => is_valid_ipv6(text),
+            Self::Iri => is_valid_iri(text),
+            Self::IriReference => is_valid_iri_reference(text),
+            Self::JsonPointer => is_valid_json_pointer(text),
+            Self::Regex => is_valid_regex(text),
+            Self::RelativeJsonPointer => is_valid_relative_json_pointer(text),
+            Self::Time => is_valid_time(text),
+            Self::Uri => is_valid_uri(text),
+            Self::UriReference => is_valid_uri_reference(text),
+            Self::UriTemplate => is_valid_uri_template(text),
+            Self::Uuid => is_valid_uuid(text),
+        }
+    }
 }
 
 #[inline]

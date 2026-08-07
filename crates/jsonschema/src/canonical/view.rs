@@ -388,11 +388,15 @@ fn string_view(leaf: &StringLeaf) -> StringView {
             .iter()
             .map(ToString::to_string)
             .collect(),
-        formats: leaf.formats.iter().map(ToString::to_string).collect(),
+        formats: leaf
+            .formats
+            .iter()
+            .map(|format| format.as_str().to_owned())
+            .collect(),
         excluded_formats: leaf
             .excluded_formats
             .iter()
-            .map(ToString::to_string)
+            .map(|format| format.as_str().to_owned())
             .collect(),
         content_media_types: leaf
             .content_media_types
