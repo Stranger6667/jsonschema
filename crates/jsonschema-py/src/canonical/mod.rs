@@ -325,11 +325,17 @@ impl PyCanonicalSchema {
     }
 
     /// The reference target registered under `uri`.
+    ///
+    /// A target that names the document root, directly or through the targets it reaches, has no
+    /// meaning on its own and is not handed out.
     fn definition(&self, uri: &str) -> Option<Self> {
         self.inner.definition(uri).map(|inner| Self { inner })
     }
 
     /// Map of reference URI -> canonical target for every known target reachable from this schema.
+    ///
+    /// A target that names the document root, directly or through the targets it reaches, has no
+    /// meaning on its own and is left out.
     fn definitions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
         let dict = pyo3::types::PyDict::new(py);
         for (uri, target) in self.inner.definitions() {

@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use ahash::AHashSet;
 use referencing::Draft;
 use serde_json::Value;
 
@@ -12,10 +13,10 @@ use crate::{
     canonical::{
         algebra,
         context::CanonicalizationContext,
-        emit,
+        emit, emptiness,
         error::OperandMismatch,
         ir::{Schema, SchemaKind, UncheckableFacet, Verdict},
-        negate, oracle, parse, CanonicalizationError,
+        negate, oracle, parse, CanonicalizationError, ROOT_DEFINITION_KEY,
     },
     options::PatternEngineOptions,
 };
@@ -128,17 +129,64 @@ impl CanonicalSchema {
     }
 
     /// The reference target registered under `uri`.
+    ///
+    /// A target that names the document root, directly or through the targets it reaches, has no
+    /// meaning on its own and is not handed out.
     #[must_use]
     pub fn definition(&self, uri: &str) -> Option<CanonicalSchema> {
-        self.definitions.get(uri).map(|body| self.wrap_child(body))
+        let body = self.definitions.get(uri)?;
+        (!self.root_bound_targets().contains(uri)).then(|| self.wrap_child(body))
     }
 
     /// Every reachable reference target known to this document, keyed by its URI.
+    ///
+    /// A target that names the document root, directly or through the targets it reaches, has no
+    /// meaning on its own and is left out.
     #[must_use]
-    pub fn definitions(&self) -> impl ExactSizeIterator<Item = (String, CanonicalSchema)> + '_ {
+    pub fn definitions(&self) -> impl ExactSizeIterator<Item = (String, CanonicalSchema)> {
+        let root_bound = self.root_bound_targets();
         self.definitions
             .iter()
+            .filter(|(uri, _)| !root_bound.contains(uri.as_ref()))
             .map(|(uri, body)| (uri.to_string(), self.wrap_child(body)))
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
+    /// Targets whose meaning rests on the document root: `#` resolves against whichever document
+    /// reads it, so such a target read on its own would name itself instead. Naming one is as
+    /// binding as naming the root, so the set grows until it stops.
+    fn root_bound_targets(&self) -> AHashSet<&str> {
+        let mut references_by_target: Vec<(&str, Vec<&str>)> =
+            Vec::with_capacity(self.definitions.len());
+        let mut bound = AHashSet::new();
+        for (uri, body) in self.definitions.iter() {
+            let mut references = Vec::new();
+            emptiness::collect_classified_references(
+                body,
+                emptiness::Position::InPlace,
+                &mut references,
+            );
+            let names: Vec<&str> = references
+                .into_iter()
+                .map(|(name, _)| name.as_ref())
+                .collect();
+            if names.contains(&ROOT_DEFINITION_KEY) {
+                bound.insert(uri.as_ref());
+            }
+            references_by_target.push((uri.as_ref(), names));
+        }
+        let mut growing = !bound.is_empty();
+        while growing {
+            growing = false;
+            for (uri, names) in &references_by_target {
+                if !bound.contains(uri) && names.iter().any(|name| bound.contains(name)) {
+                    bound.insert(uri);
+                    growing = true;
+                }
+            }
+        }
+        bound
     }
 
     /// Every value both schemas admit.

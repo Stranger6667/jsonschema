@@ -1601,6 +1601,33 @@ fn definition_looks_up_one_target() {
     assert_eq!(schema.definition("#/$defs/absent"), None);
 }
 
+// `#` names whichever document the target is read against, so a target reaching the root cannot be
+// handed out on its own: it would name itself instead of the document it was written in.
+#[test_case(
+    &json!({
+        "not": {"$ref": "#/$defs/A"},
+        "$defs": {"A": {"allOf": [{"type": "null"}, {"$ref": "#"}]}}
+    }),
+    "#/$defs/A";
+    "direct"
+)]
+#[test_case(
+    &json!({
+        "not": {"$ref": "#/$defs/A"},
+        "$defs": {
+            "A": {"type": "object", "properties": {"a": {"$ref": "#/$defs/B"}}},
+            "B": {"allOf": [{"type": "object"}, {"$ref": "#"}]}
+        }
+    }),
+    "#/$defs/A";
+    "through another target"
+)]
+fn definition_declines_a_target_naming_the_document_root(schema: &Value, uri: &str) {
+    let canonical = canonicalize(schema).expect("canonicalizes");
+    assert_eq!(canonical.definition(uri), None);
+    assert!(!canonical.definitions().any(|(name, _)| name == uri));
+}
+
 // Same `Reference` root, different targets: unequal handles the hash no longer separates.
 #[test]
 fn hash_ignores_the_definition_map() {
@@ -2399,6 +2426,120 @@ fn is_subset_of_rejects_operands_with_distinct_definition_maps() {
     });
     "pointer at a choice"
 )]
+// A pointer back to a target already being negated keeps its complement symbolic, so the walk
+// spells one level and stops instead of unrolling a cycle that has no end.
+#[test_case(
+    &json!({
+        "$defs": {"A": {"type": "object", "properties": {"a": {"$ref": "#/$defs/A"}}}},
+        "$ref": "#/$defs/A"
+    }),
+    &json!({
+        "$defs": {"A": {"type": "object", "properties": {"a": {"$ref": "#/$defs/A"}}}},
+        "anyOf": [
+            {"type": ["null", "boolean", "number", "string", "array"]},
+            {"type": "object", "required": ["a"],
+             "properties": {"a": {"not": {"$ref": "#/$defs/A"}}}}
+        ]
+    });
+    "self-recursive reference"
+)]
+#[test_case(
+    &json!({
+        "$defs": {
+            "A": {"type": "object", "properties": {"b": {"$ref": "#/$defs/B"}}},
+            "B": {"type": "object", "properties": {"a": {"$ref": "#/$defs/A"}}}
+        },
+        "$ref": "#/$defs/A"
+    }),
+    &json!({
+        "$defs": {
+            "A": {"type": "object", "properties": {"b": {"$ref": "#/$defs/B"}}},
+            "B": {"type": "object", "properties": {"a": {"$ref": "#/$defs/A"}}}
+        },
+        "anyOf": [
+            {"type": ["null", "boolean", "number", "string", "array"]},
+            {"type": "object", "required": ["b"], "properties": {"b": {"anyOf": [
+                {"type": ["null", "boolean", "number", "string", "array"]},
+                {"type": "object", "required": ["a"],
+                 "properties": {"a": {"not": {"$ref": "#/$defs/A"}}}}
+            ]}}}
+        ]
+    });
+    "mutually recursive references"
+)]
+#[test_case(
+    &json!({
+        "$defs": {"A": {"type": "array", "items": {"$ref": "#/$defs/A"}}},
+        "$ref": "#/$defs/A"
+    }),
+    &json!({
+        "$defs": {"A": {"type": "array", "items": {"$ref": "#/$defs/A"}}},
+        "anyOf": [
+            {"type": ["null", "boolean", "number", "string", "object"]},
+            {"type": "array", "contains": {"not": {"$ref": "#/$defs/A"}}}
+        ]
+    });
+    "recursive array reference"
+)]
+#[test_case(
+    &json!({
+        "$defs": {"node": {"oneOf": [
+            {"type": "string"},
+            {"type": "object", "properties": {"next": {"$ref": "#/$defs/node"}}, "required": ["next"]}
+        ]}},
+        "$ref": "#/$defs/node"
+    }),
+    &json!({
+        "$defs": {"node": {"anyOf": [
+            {"type": "string"},
+            {"type": "object", "required": ["next"],
+             "properties": {"next": {"$ref": "#/$defs/node"}}}
+        ]}},
+        "anyOf": [
+            {"type": ["null", "boolean", "number", "array"]},
+            {"type": "object", "properties": {"next": {"not": {"$ref": "#/$defs/node"}}}}
+        ]
+    });
+    "recursive choice reference"
+)]
+#[test_case(
+    &json!({
+        "$defs": {
+            "left": {"oneOf": [
+                {"type": "string"},
+                {"type": "object", "properties": {"next": {"$ref": "#/$defs/right"}}, "required": ["next"]}
+            ]},
+            "right": {"oneOf": [
+                {"type": "integer"},
+                {"type": "object", "properties": {"back": {"$ref": "#/$defs/left"}}, "required": ["back"]}
+            ]}
+        },
+        "$ref": "#/$defs/left"
+    }),
+    &json!({
+        "$defs": {
+            "left": {"anyOf": [
+                {"type": "string"},
+                {"type": "object", "required": ["next"],
+                 "properties": {"next": {"$ref": "#/$defs/right"}}}
+            ]},
+            "right": {"anyOf": [
+                {"type": "integer"},
+                {"type": "object", "required": ["back"],
+                 "properties": {"back": {"$ref": "#/$defs/left"}}}
+            ]}
+        },
+        "anyOf": [
+            {"type": ["null", "boolean", "number", "array"]},
+            {"type": "object", "properties": {"next": {"anyOf": [
+                {"type": ["null", "boolean", "string", "array"]},
+                {"type": "number", "not": {"multipleOf": 1}},
+                {"type": "object", "properties": {"back": {"not": {"$ref": "#/$defs/left"}}}}
+            ]}}}
+        ]
+    });
+    "mutually recursive choice references"
+)]
 fn negate_spells_the_complement(schema: &Value, expected: &Value) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     let mut expected = expected.as_object().expect("object").clone();
@@ -2554,6 +2695,40 @@ fn negate_spells_the_draft_4_complement(schema: &Value, expected: &Value) {
     &json!({"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}});
     "value shield beside a declared property"
 )]
+#[test_case(
+    &json!({
+        "$defs": {"A": {"type": "object", "properties": {"a": {"$ref": "#/$defs/A"}}}},
+        "$ref": "#/$defs/A"
+    });
+    "self-recursive reference"
+)]
+#[test_case(
+    &json!({
+        "$defs": {
+            "A": {"type": "object", "properties": {"b": {"$ref": "#/$defs/B"}}},
+            "B": {"type": "object", "properties": {"a": {"$ref": "#/$defs/A"}}}
+        },
+        "$ref": "#/$defs/A"
+    });
+    "mutually recursive references"
+)]
+#[test_case(
+    &json!({
+        "$defs": {"A": {"type": "array", "items": {"$ref": "#/$defs/A"}}},
+        "$ref": "#/$defs/A"
+    });
+    "recursive array reference"
+)]
+#[test_case(
+    &json!({
+        "$defs": {"node": {"oneOf": [
+            {"type": "string"},
+            {"type": "object", "properties": {"next": {"$ref": "#/$defs/node"}}, "required": ["next"]}
+        ]}},
+        "$ref": "#/$defs/node"
+    });
+    "recursive choice reference"
+)]
 fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
     let complement = canonicalize(schema)
         .expect("canonicalizes")
@@ -2587,6 +2762,12 @@ fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
         json!({"inner": {}}),
         json!({"inner": {"x": "s"}}),
         json!({"inner": {"x": 1}}),
+        json!({"a": {"a": 1}}),
+        json!({"a": {"a": {}}}),
+        json!({"next": "a"}),
+        json!({"next": {"next": 1}}),
+        json!([[1]]),
+        json!([["a"]]),
     ] {
         assert_ne!(
             source.is_valid(&instance),
@@ -2601,58 +2782,6 @@ fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
 #[test_case(
     &json!({"type": "array", "contains": {"type": "string"}, "minContains": 2});
     "counted array existential demand"
-)]
-#[test_case(
-    &json!({
-        "$defs": {
-            "A": {"type": "object", "properties": {"a": {"$ref": "#/$defs/A"}}}
-        },
-        "$ref": "#/$defs/A"
-    });
-    "self-recursive reference"
-)]
-#[test_case(
-    &json!({
-        "$defs": {
-            "A": {"type": "object", "properties": {"b": {"$ref": "#/$defs/B"}}},
-            "B": {"type": "object", "properties": {"a": {"$ref": "#/$defs/A"}}}
-        },
-        "$ref": "#/$defs/A"
-    });
-    "mutually recursive references"
-)]
-#[test_case(
-    &json!({
-        "$defs": {"A": {"type": "array", "items": {"$ref": "#/$defs/A"}}},
-        "$ref": "#/$defs/A"
-    });
-    "recursive array reference"
-)]
-#[test_case(
-    &json!({
-        "$defs": {"node": {"oneOf": [
-            {"type": "string"},
-            {"type": "object", "properties": {"next": {"$ref": "#/$defs/node"}}, "required": ["next"]}
-        ]}},
-        "$ref": "#/$defs/node"
-    });
-    "recursive choice reference"
-)]
-#[test_case(
-    &json!({
-        "$defs": {
-            "left": {"oneOf": [
-                {"type": "string"},
-                {"type": "object", "properties": {"next": {"$ref": "#/$defs/right"}}, "required": ["next"]}
-            ]},
-            "right": {"oneOf": [
-                {"type": "integer"},
-                {"type": "object", "properties": {"back": {"$ref": "#/$defs/left"}}, "required": ["back"]}
-            ]}
-        },
-        "$ref": "#/$defs/left"
-    });
-    "mutually recursive choice references"
 )]
 #[test_case(
     &json!({"type": "object", "properties": {"a": {"$ref": "#"}}});

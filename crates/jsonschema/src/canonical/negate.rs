@@ -86,10 +86,9 @@ pub(crate) fn negate_in_place(
     negate_within(schema, &mut walk, ctx)
 }
 
-/// [`negate_in_place`], for a complement that replaces the document root instead. A walk that
-/// reaches a reference already being negated on the current path has no finite complement and
-/// declines; a complement still naming the root would name the wrong document once it takes the
-/// root's place, and declines as well.
+/// [`negate_in_place`], for a complement that replaces the document root instead. A complement
+/// still naming the root would name the wrong document once it takes the root's place, so it
+/// declines.
 pub(crate) fn negate_with_definitions(
     schema: &Schema,
     definitions: &DefinitionMap,
@@ -252,9 +251,9 @@ fn negate_one_of(
 }
 
 /// The complement of the reference's target. A target already being negated on the current path
-/// admits no finite complement, and a target this map does not name leaves the reference opaque.
-/// A complement that merely re-wraps the target hands the caller back the problem it asked about,
-/// so it declines instead.
+/// would resolve forever, and a target this map does not name leaves the reference opaque; both
+/// keep the complement symbolic. A complement that merely re-wraps the target hands the caller back
+/// the problem it asked about, so it declines instead.
 fn negate_reference(
     schema: &Schema,
     uri: &Arc<str>,
@@ -262,7 +261,7 @@ fn negate_reference(
     ctx: &CanonicalizationContext,
 ) -> Option<Schema> {
     if walk.active.iter().any(|name| name == uri) {
-        return None;
+        return bar(schema, walk);
     }
     let Some(target) = walk.definitions.get(uri.as_ref()) else {
         return bar(schema, walk);
