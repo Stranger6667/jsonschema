@@ -638,7 +638,11 @@ class CanonicalSchema:
         ...
 
     def to_json_schema(self) -> JsonValue:
-        """Convert this canonical schema back to a plain Python JSON value."""
+        """Convert this canonical schema back to a plain Python JSON value.
+
+        A node below the document root carries that root along, so a ``#`` inside it keeps naming
+        the document.
+        """
         ...
 
     def is_satisfiable(self) -> bool:

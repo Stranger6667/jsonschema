@@ -14,6 +14,8 @@ pub(crate) struct PyCanonicalSchema {
 #[pymethods]
 impl PyCanonicalSchema {
     /// Convert this canonical schema back to a plain Python JSON value.
+    /// A node below the document root carries that root along, so a `#` inside it keeps naming
+    /// the document.
     fn to_json_schema(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         crate::value_to_python(py, &self.inner.to_json_schema())
     }
