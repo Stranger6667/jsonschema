@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Draft detection treating the version-less `http://json-schema.org/schema` meta-schema URI as a custom dialect, where it names the current draft.
+
 ## [0.49.7] - 2026-08-08
 
 ### Added
