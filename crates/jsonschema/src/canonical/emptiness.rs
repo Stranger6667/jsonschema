@@ -306,6 +306,7 @@ pub(crate) fn fold_definitions<'a>(
     let mut assumptions = Assumptions::default();
     loop {
         let mut grew = false;
+        let edges = reference_edges(&parsed.root, &parsed.definitions);
         // Proving a target empty can leave a cycle with nothing on it, and folding one away can
         // leave a target provably empty, so neither ordering settles - only running both to a
         // fixed point does.
@@ -316,10 +317,10 @@ pub(crate) fn fold_definitions<'a>(
             !inverts_an_operand(&parsed) || assumptions.admits_all.is_empty(),
             "resolving a target as `true` never puts an inversion over a later round"
         );
-        for uri in unconstrained_members(&parsed) {
+        for uri in unconstrained_members(&parsed, &edges) {
             grew |= assumptions.admits_all.insert(uri);
         }
-        for uri in resolve_empty_definitions(&parsed, value, ctx, resolver, &assumptions)? {
+        for uri in resolve_empty_definitions(&parsed, &edges, value, ctx, resolver, &assumptions)? {
             grew |= assumptions.empty.insert(uri);
         }
         if !grew {
@@ -337,7 +338,7 @@ pub(crate) fn fold_definitions<'a>(
 ///
 /// Closed under the reference edges and free of assertions, so every walk out of a member stays
 /// inside the set forever without meeting one.
-fn unconstrained_members(parsed: &ParseOutput) -> AHashSet<Arc<str>> {
+fn unconstrained_members(parsed: &ParseOutput, edges: &ReferenceEdges) -> AHashSet<Arc<str>> {
     // `reference_to_definition` is the only producer of `Reference`, so without one no body
     // qualifies. `not` and `oneOf` invert their operand, so a reference resolved to `true` under
     // one can reject a value the validator admits - and a member is named from anywhere in the
@@ -346,19 +347,12 @@ fn unconstrained_members(parsed: &ParseOutput) -> AHashSet<Arc<str>> {
     if !parsed.has_references || inverts_an_operand(parsed) {
         return AHashSet::default();
     }
-    let mut members: AHashSet<Arc<str>> = std::iter::once(Arc::from(ROOT_DEFINITION_KEY))
-        .chain(parsed.definitions.keys().map(Arc::clone))
-        .collect();
+    let mut members: AHashSet<Arc<str>> = edges.keys().cloned().collect();
     // Who names each key, so dropping one revisits only the bodies that named it rather than
     // re-testing every member - a plain alias chain drops one key per sweep otherwise.
     let mut named_by: AHashMap<Arc<str>, Vec<Arc<str>>> = AHashMap::default();
-    for key in &members {
-        let Some(body) = body_of(parsed, key) else {
-            continue;
-        };
-        let mut found = Vec::new();
-        collect_classified_references(body, Position::InPlace, &mut found);
-        for (target, _) in found {
+    for (key, targets) in edges {
+        for (target, _) in targets {
             named_by
                 .entry(Arc::clone(target))
                 .or_default()
@@ -462,6 +456,7 @@ fn names_only(schema: &Schema, members: &AHashSet<Arc<str>>) -> bool {
 /// hypothesis carries `proven` beside the assumptions under test.
 fn resolve_empty_definitions<'a>(
     parsed: &ParseOutput,
+    edges: &ReferenceEdges,
     value: &'a Value,
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'a>,
@@ -472,8 +467,7 @@ fn resolve_empty_definitions<'a>(
     if !parsed.has_references {
         return Ok(AHashSet::default());
     }
-    let edges = reference_edges(&parsed.root, &parsed.definitions);
-    let mut assumed = guarded_members(&edges);
+    let mut assumed = guarded_members(edges);
     // A target resolved as `true` cannot also be resolved as `false`: `reference_to_definition`
     // reads one set before the other, so an overlap would silently pick a winner.
     assumed.retain(|key| !proven.admits_all.contains(key));
