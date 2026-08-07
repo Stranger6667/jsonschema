@@ -626,19 +626,15 @@ class CanonicalSchema:
         ...
 
     def definition(self, uri: str) -> CanonicalSchema | None:
-        """The reference target registered under ``uri``.
+        """The reference target registered under ``uri``, or the document itself under ``#``.
 
-        A target that names the document root, directly or through the targets it reaches, has no
-        meaning on its own and is not handed out.
+        The target keeps the document it was written in, so a ``#`` inside it names that document
+        and not the target standing in for it.
         """
         ...
 
     def definitions(self) -> dict[str, CanonicalSchema]:
-        """Map of reference uri -> canonical target.
-
-        A target that names the document root, directly or through the targets it reaches, has no
-        meaning on its own and is left out.
-        """
+        """Map of reference uri -> canonical target."""
         ...
 
     def to_json_schema(self) -> JsonValue:

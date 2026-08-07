@@ -1601,31 +1601,33 @@ fn definition_looks_up_one_target() {
     assert_eq!(schema.definition("#/$defs/absent"), None);
 }
 
-// `#` names whichever document the target is read against, so a target reaching the root cannot be
-// handed out on its own: it would name itself instead of the document it was written in.
+// A target naming `#` keeps the document it was written in, so the pointer resolves to that
+// document rather than to the target standing in for it.
 #[test_case(
     &json!({
-        "not": {"$ref": "#/$defs/A"},
-        "$defs": {"A": {"allOf": [{"type": "null"}, {"$ref": "#"}]}}
+        "$ref": "#/$defs/A",
+        "$defs": {"A": {"type": "object", "properties": {"child": {"$ref": "#"}}}}
     }),
     "#/$defs/A";
     "direct"
 )]
 #[test_case(
     &json!({
-        "not": {"$ref": "#/$defs/A"},
+        "$ref": "#/$defs/A",
         "$defs": {
             "A": {"type": "object", "properties": {"a": {"$ref": "#/$defs/B"}}},
-            "B": {"allOf": [{"type": "object"}, {"$ref": "#"}]}
+            "B": {"type": "object", "properties": {"child": {"$ref": "#"}}}
         }
     }),
     "#/$defs/A";
     "through another target"
 )]
-fn definition_declines_a_target_naming_the_document_root(schema: &Value, uri: &str) {
+fn definition_binds_a_target_naming_the_document_root(schema: &Value, uri: &str) {
     let canonical = canonicalize(schema).expect("canonicalizes");
-    assert_eq!(canonical.definition(uri), None);
-    assert!(!canonical.definitions().any(|(name, _)| name == uri));
+    let target = canonical.definition(uri).expect("target");
+    assert!(canonical.definitions().any(|(name, _)| name == uri));
+    let document = target.definition("#").expect("document");
+    assert_eq!(document.to_json_schema(), canonical.to_json_schema());
 }
 
 // Same `Reference` root, different targets: unequal handles the hash no longer separates.
