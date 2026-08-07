@@ -59,6 +59,8 @@ impl Draft {
             | "http://json-schema.org/draft-06/schema" => Draft::Draft6,
             "https://json-schema.org/draft-04/schema"
             | "http://json-schema.org/draft-04/schema" => Draft::Draft4,
+            // The version-less URI names whichever draft is current rather than a custom meta-schema.
+            "https://json-schema.org/schema" | "http://json-schema.org/schema" => Draft::default(),
             // Custom/unknown meta-schemas return Unknown
             // Validation of custom meta-schemas happens during registry building
             _ => Draft::Unknown,
@@ -284,6 +286,9 @@ mod tests {
     #[test_case(&json!({"$schema": "https://json-schema.org/draft-06/schema"}), Draft::Draft6; "detect Draft 6 https")]
     #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema"}), Draft::Draft4; "detect Draft 4")]
     #[test_case(&json!({"$schema": "https://json-schema.org/draft-04/schema"}), Draft::Draft4; "detect Draft 4 https")]
+    #[test_case(&json!({"$schema": "http://json-schema.org/schema"}), Draft::Draft202012; "detect the version-less URI")]
+    #[test_case(&json!({"$schema": "http://json-schema.org/schema#"}), Draft::Draft202012; "detect the version-less URI with fragment")]
+    #[test_case(&json!({"$schema": "https://json-schema.org/schema"}), Draft::Draft202012; "detect the version-less URI https")]
     #[test_case(&json!({}), Draft::Draft7; "default to Draft 7 when no $schema")]
     fn test_detect(contents: &serde_json::Value, expected: Draft) {
         let result = Draft::Draft7.detect(contents);

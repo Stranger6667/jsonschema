@@ -1589,6 +1589,29 @@ fn an_invalid_schema_type_error_has_no_cause() {
     assert!(std::error::Error::source(&error).is_none());
 }
 
+// The version-less meta-schema URI names whichever draft is current, so a document spelling it
+// models like one naming that draft outright.
+#[test_case("http://json-schema.org/schema"; "http")]
+#[test_case("http://json-schema.org/schema#"; "http with fragment")]
+#[test_case("https://json-schema.org/schema"; "https")]
+fn the_version_less_meta_schema_uri_models(uri: &str) {
+    let canonical = canonicalize(&json!({
+        "$schema": uri,
+        "type": "object",
+        "properties": {"a": {"type": "string", "minLength": 2}}
+    }))
+    .expect("canonicalizes");
+    assert_eq!(canonical.draft(), Draft::Draft202012);
+    assert_eq!(
+        canonical.to_json_schema(),
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {"a": {"type": "string", "minLength": 2}}
+        })
+    );
+}
+
 #[test]
 fn definition_looks_up_one_target() {
     let schema = canonicalize(&json!({
