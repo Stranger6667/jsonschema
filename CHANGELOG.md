@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.49.7] - 2026-08-07
+
 ### Added
 
 - `CanonicalizeOptions::with_retriever` to fetch external resources absent from the registry.
@@ -1558,7 +1560,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.6...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.7...HEAD
+[0.49.7]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.6...rust-v0.49.7
 [0.49.6]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.5...rust-v0.49.6
 [0.49.5]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.4...rust-v0.49.5
 [0.49.4]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.3...rust-v0.49.4
