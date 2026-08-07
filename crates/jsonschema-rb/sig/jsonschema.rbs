@@ -202,7 +202,10 @@ module JSONSchema
     untyped schema,
     ?draft: draft?,
     ?validate_formats: bool?,
-    ?pattern_options: (RegexOptions | FancyRegexOptions)?
+    ?pattern_options: (RegexOptions | FancyRegexOptions)?,
+    ?retriever: (^(String) -> untyped)?,
+    ?registry: Registry?,
+    ?base_uri: String?
   ) -> Canonical::CanonicalSchema
 
   # Create a validator with auto-detected draft version.

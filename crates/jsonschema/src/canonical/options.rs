@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use referencing::{Draft, Registry};
+use referencing::{Draft, Registry, Retrieve};
 use serde_json::Value;
 
 use crate::{
@@ -30,6 +30,8 @@ pub fn options() -> CanonicalizeOptions<'static> {
 #[derive(Default)]
 pub struct CanonicalizeOptions<'r> {
     registry: Option<&'r Registry<'r>>,
+    retriever: Option<Arc<dyn Retrieve>>,
+    base_uri: Option<String>,
     pattern_options: PatternEngineOptions,
     draft: Option<Draft>,
     validate_formats: Option<bool>,
@@ -40,6 +42,22 @@ impl<'r> CanonicalizeOptions<'r> {
     #[must_use]
     pub fn with_registry(mut self, registry: &'r Registry<'r>) -> Self {
         self.registry = Some(registry);
+        self
+    }
+
+    /// Fetch external resources that are not present in the registry.
+    #[must_use]
+    pub fn with_retriever(mut self, retriever: impl Retrieve + 'static) -> Self {
+        self.retriever = Some(Arc::new(retriever));
+        self
+    }
+
+    /// Use this URI as the base for resolving relative references in the root schema.
+    ///
+    /// Takes precedence over the root `$id`.
+    #[must_use]
+    pub fn with_base_uri(mut self, base_uri: impl Into<String>) -> Self {
+        self.base_uri = Some(base_uri.into());
         self
     }
 
@@ -74,23 +92,14 @@ impl<'r> CanonicalizeOptions<'r> {
     ///
     /// Same as [`crate::canonicalize`].
     pub fn canonicalize(self, value: &Value) -> Result<CanonicalSchema, CanonicalizationError> {
-        build(
-            value,
-            self.draft,
-            self.registry,
-            self.validate_formats,
-            self.pattern_options,
-        )
+        build(value, &self)
     }
 }
 
 /// Validate the document and reduce it to a [`CanonicalSchema`].
 fn build(
     value: &Value,
-    draft: Option<Draft>,
-    registry: Option<&Registry<'_>>,
-    validate_formats: Option<bool>,
-    pattern_options: PatternEngineOptions,
+    options: &CanonicalizeOptions<'_>,
 ) -> Result<CanonicalSchema, CanonicalizationError> {
     // Only a boolean or object is a schema document.
     match value {
@@ -99,31 +108,31 @@ fn build(
             return Err(CanonicalizationError::InvalidSchemaType(other.to_string()))
         }
     }
-    let draft = detect_draft(value, draft, registry)?;
+    let pattern_options = options.pattern_options;
+    let draft = detect_draft(value, options.draft, options.registry)?;
     if draft == Draft::Unknown {
         return Ok(CanonicalSchema::new(
             Schema::new(SchemaKind::Raw(RawJson::new(value.clone()))),
             draft,
             pattern_options,
-            validate_formats.unwrap_or(false),
+            options.validate_formats.unwrap_or(false),
             Arc::new(DefinitionMap::new()),
         ));
     }
-    let validate_formats =
-        validate_formats.unwrap_or_else(|| formats_are_assertions_by_default(draft));
+    let validate_formats = options
+        .validate_formats
+        .unwrap_or_else(|| formats_are_assertions_by_default(draft));
     validate_schema(draft, value)?;
     let resource = draft.create_resource_ref(value);
-    let base_uri = resolve_base_uri(None, resource.id())?;
-    let registry = match registry {
-        Some(registry) => registry
-            .add(base_uri.as_str(), resource)?
-            .draft(draft)
-            .prepare()?,
-        None => Registry::new()
-            .add(base_uri.as_str(), resource)?
-            .draft(draft)
-            .prepare()?,
+    let base_uri = resolve_base_uri(options.base_uri.as_ref(), resource.id())?;
+    let mut builder = match options.registry {
+        Some(registry) => registry.add(base_uri.as_str(), resource)?,
+        None => Registry::new().add(base_uri.as_str(), resource)?,
     };
+    if let Some(retriever) = &options.retriever {
+        builder = builder.retriever(Arc::clone(retriever));
+    }
+    let registry = builder.draft(draft).prepare()?;
     let base_uri = normalize_base_uri(&registry, &base_uri);
     let resolver = registry.resolver(base_uri);
     let context = CanonicalizationContext::new(draft, pattern_options, validate_formats);

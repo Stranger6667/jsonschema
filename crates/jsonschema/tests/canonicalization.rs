@@ -10,6 +10,7 @@ use jsonschema::{
         OperandMismatch,
     },
     canonicalize, validator_for, CanonicalizationError, Draft, JsonType, PatternOptions, Registry,
+    Retrieve, Uri,
 };
 use serde_json::{json, Map, Number, Value};
 use test_case::test_case;
@@ -113,6 +114,54 @@ fn dynamic_reference_only_in_an_external_resource_is_modeled() {
         jsonschema::validator_for(&emitted).expect("canonical output is self-contained");
     assert!(validator.is_valid(&json!(1)));
     assert!(!validator.is_valid(&json!("x")));
+}
+
+struct StaticRetriever;
+
+impl Retrieve for StaticRetriever {
+    fn retrieve(
+        &self,
+        uri: &Uri<String>,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        if uri.as_str() == "https://example.com/remote" {
+            Ok(json!({"type": "string"}))
+        } else {
+            Err(format!("Unknown reference: {uri}").into())
+        }
+    }
+}
+
+#[test]
+fn retriever_fetches_a_reference_absent_from_the_registry() {
+    let canonical = options()
+        .with_retriever(StaticRetriever)
+        .canonicalize(&json!({"$ref": "https://example.com/remote"}))
+        .expect("canonicalizes");
+
+    let emitted = canonical.to_json_schema();
+    let validator = validator_for(&emitted).expect("canonical output is self-contained");
+    assert!(validator.is_valid(&json!("value")));
+    assert!(!validator.is_valid(&json!(1)));
+}
+
+#[test]
+fn base_uri_resolves_a_relative_reference_into_the_registry() {
+    let external = json!({"type": "string"});
+    let registry = Registry::new()
+        .add("https://example.com/external", &external)
+        .expect("resource URI is valid")
+        .prepare()
+        .expect("registry prepares");
+    let canonical = options()
+        .with_registry(&registry)
+        .with_base_uri("https://example.com/root")
+        .canonicalize(&json!({"$ref": "external"}))
+        .expect("canonicalizes");
+
+    let emitted = canonical.to_json_schema();
+    let validator = validator_for(&emitted).expect("canonical output is self-contained");
+    assert!(validator.is_valid(&json!("value")));
+    assert!(!validator.is_valid(&json!(1)));
 }
 
 fn assert_validation_parity(schema: &Value, instances: &[Value]) {

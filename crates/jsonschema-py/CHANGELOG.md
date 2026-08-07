@@ -14,6 +14,7 @@
 
 ### Added
 
+- `retriever`, `registry`, and `base_uri` arguments to `canonicalize`.
 - Canonicalization of a `oneOf` whose branches name disjoint targets, which degrades to a union.
 
 ### Performance
