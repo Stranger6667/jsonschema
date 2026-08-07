@@ -174,10 +174,9 @@ fn parse_once<'a>(
         };
     }
     let parsed = parse_schema_in_scope(value, ctx, true, resolver, &mut state)?;
-    // An in-between `additionalProperties` meeting `patternProperties` anywhere in the document
-    // has no exact intersection without pattern-overlap reasoning; nodes built before this check
-    // may already be wrong, so the whole document is discarded, not just the pairing site.
-    if state.facts.additional_schema && state.facts.pattern_properties {
+    // An in-between object meet the IR cannot spell may have produced nodes already, so discard
+    // the whole document rather than just that pairing site.
+    if ctx.saw_unspellable_meet() {
         return Ok(DocumentParse {
             output: None,
             needs_dynamic_scope: state.dynamic_scope.needs_tracking(),
@@ -226,8 +225,6 @@ struct ParseState<'a> {
 #[derive(Default)]
 #[allow(clippy::struct_excessive_bools)]
 struct DocumentFacts {
-    additional_schema: bool,
-    pattern_properties: bool,
     /// Set only under Draft 4, where it decides whether a pattern coverage can survive the algebra.
     merges_object_leaves: bool,
     /// `reference_to_definition` is the only producer of `Reference`, so this gates the emptiness
@@ -808,10 +805,7 @@ fn parse_schema_in_scope<'a>(
                     Some(schema) if matches!(schema.kind(), SchemaKind::False) => {
                         forbid_unmatched_keys = true;
                     }
-                    Some(schema) => {
-                        state.facts.additional_schema = true;
-                        additional_schema = Some(schema);
-                    }
+                    Some(schema) => additional_schema = Some(schema),
                     None => return Ok(None),
                 }
             }
@@ -1134,10 +1128,6 @@ fn parse_schema_in_scope<'a>(
     // the pattern goes. What is left decides whether this document meets the `additionalProperties`
     // pairing at all - `additionalProperties` already knows to skip a named key.
     fold_finite_key_patterns(&mut pattern_properties, &mut properties, ctx);
-    if !pattern_properties.is_empty() {
-        state.facts.pattern_properties = true;
-    }
-
     // Draft 4 holds a key constraint only as the closed map it was parsed from, which the algebra
     // can destroy by meeting two pattern maps. Bailing here, before the rest of the document is
     // parsed, keeps that cheap - and only a merging keyword can bring two leaves together.

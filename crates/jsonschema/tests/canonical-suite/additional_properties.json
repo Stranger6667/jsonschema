@@ -762,12 +762,22 @@
     ]
   },
   {
-    "description": "ir: an additionalProperties schema beside patternProperties keeps the document raw",
-    "schema": {"patternProperties": {"^x": {"type": "integer"}}, "additionalProperties": {"type": "string"}},
-    "expected": {"patternProperties": {"^x": {"type": "integer"}}, "additionalProperties": {"type": "string"}},
+    "description": "ir: a vacuous patternProperties entry exempts matching keys from an additionalProperties schema",
+    "schema": {"patternProperties": {"^x": {}}, "additionalProperties": {"type": "string"}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {
+          "type": "object",
+          "patternProperties": {"^x": true},
+          "additionalProperties": {"type": "string"}
+        }
+      ]
+    },
     "tests": [
       {"data": {"xa": 1}, "valid": true},
-      {"data": {"xa": "s"}, "valid": false},
+      {"data": {"xa": "s"}, "valid": true},
       {"data": {"b": "s"}, "valid": true},
       {"data": {"b": 1}, "valid": false}
     ]
