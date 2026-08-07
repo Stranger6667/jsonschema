@@ -1630,6 +1630,167 @@ fn definition_binds_a_target_naming_the_document_root(schema: &Value, uri: &str)
     assert_eq!(document.to_json_schema(), canonical.to_json_schema());
 }
 
+// A target emitted on its own carries the document it named, so `#` still points at that document
+// and not at the target standing in for it.
+#[test]
+fn emitting_a_target_carries_the_document_it_named() {
+    let canonical = canonicalize(&json!({
+        "type": "object",
+        "properties": {"allOf": {"$ref": "#/$defs/schemaArray"}},
+        "$defs": {"schemaArray": {"type": "array", "minItems": 1, "items": {"$ref": "#"}}}
+    }))
+    .expect("canonicalizes");
+    assert_eq!(
+        canonical
+            .definition("#/$defs/schemaArray")
+            .expect("target")
+            .to_json_schema(),
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {
+                "schemaArray": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/root"}},
+                "root": {"type": "object", "properties": {"allOf": {"$ref": "#/$defs/schemaArray"}}}
+            },
+            "type": "array",
+            "minItems": 1,
+            "items": {"$ref": "#/$defs/root"}
+        })
+    );
+}
+
+// The document takes a name of its own, so an entry already holding that name keeps it.
+#[test]
+fn emitting_a_target_names_the_document_around_a_taken_name() {
+    let canonical = canonicalize(&json!({
+        "type": "object",
+        "properties": {"allOf": {"$ref": "#/$defs/schemaArray"}, "root": {"$ref": "#/$defs/root"}},
+        "$defs": {
+            "schemaArray": {"type": "array", "minItems": 1, "items": {"$ref": "#"}},
+            "root": {"type": "string"}
+        }
+    }))
+    .expect("canonicalizes");
+    assert_eq!(
+        canonical
+            .definition("#/$defs/schemaArray")
+            .expect("target")
+            .to_json_schema(),
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {
+                "schemaArray": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/root0"}},
+                "root": {"type": "string"},
+                "root0": {"type": "object", "properties": {
+                    "allOf": {"$ref": "#/$defs/schemaArray"}, "root": {"$ref": "#/$defs/root"}
+                }}
+            },
+            "type": "array",
+            "minItems": 1,
+            "items": {"$ref": "#/$defs/root0"}
+        })
+    );
+}
+
+// A key naming the document root is a pointer only where a schema sits; under `properties` it is a
+// property name, and the schema it holds carries pointers of its own.
+#[test]
+fn emitting_a_target_reaches_a_property_named_after_a_value_keyword() {
+    let canonical = canonicalize(&json!({
+        "type": "object",
+        "properties": {"body": {"$ref": "#/$defs/body"}},
+        "$defs": {"body": {"type": "object", "properties": {"const": {"$ref": "#"}}}}
+    }))
+    .expect("canonicalizes");
+    assert_eq!(
+        canonical
+            .definition("#/$defs/body")
+            .expect("target")
+            .to_json_schema(),
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {
+                "body": {"type": "object", "properties": {"const": {"$ref": "#/$defs/root"}}},
+                "root": {"type": "object", "properties": {"body": {"$ref": "#/$defs/body"}}}
+            },
+            "type": "object",
+            "properties": {"const": {"$ref": "#/$defs/root"}}
+        })
+    );
+}
+
+// A `const` holds an instance, so a value spelled like a pointer stays the value it is.
+#[test]
+fn emitting_a_target_leaves_a_value_spelled_like_a_pointer() {
+    let canonical = canonicalize(&json!({
+        "type": "object",
+        "properties": {"body": {"$ref": "#/$defs/body"}},
+        "$defs": {"body": {"type": "object", "properties": {
+            "kind": {"const": {"$ref": "#"}},
+            "self": {"$ref": "#"}
+        }}}
+    }))
+    .expect("canonicalizes");
+    let emitted = canonical
+        .definition("#/$defs/body")
+        .expect("target")
+        .to_json_schema();
+    assert_eq!(
+        emitted["properties"]["kind"],
+        json!({"const": {"$ref": "#"}})
+    );
+    assert_eq!(
+        emitted["properties"]["self"],
+        json!({"$ref": "#/$defs/root"})
+    );
+}
+
+// The emitted document admits what the target admits, which the pointer it carries decides.
+#[test]
+fn an_emitted_target_admits_what_the_target_admits() {
+    let canonical = canonicalize(&json!({
+        "type": "object",
+        "properties": {"allOf": {"$ref": "#/$defs/schemaArray"}},
+        "$defs": {"schemaArray": {"type": "array", "minItems": 1, "items": {"$ref": "#"}}}
+    }))
+    .expect("canonicalizes");
+    let emitted = canonical
+        .definition("#/$defs/schemaArray")
+        .expect("target")
+        .to_json_schema();
+    let emitted = jsonschema::validator_for(&emitted).expect("emitted builds");
+    for (instance, valid) in [
+        (json!([{}]), true),
+        (json!([{"allOf": [{}]}]), true),
+        (json!([[]]), false),
+        (json!([]), false),
+    ] {
+        assert_eq!(emitted.is_valid(&instance), valid, "{instance}");
+    }
+}
+
+// A target naming no document root stands alone already, so it takes no copy of one.
+#[test]
+fn emitting_a_target_naming_no_document_root_adds_nothing() {
+    let canonical = canonicalize(&json!({
+        "type": "object",
+        "properties": {"a": {"$ref": "#/$defs/A"}},
+        "$defs": {"A": {"type": "string", "minLength": 2}}
+    }))
+    .expect("canonicalizes");
+    assert_eq!(
+        canonical
+            .definition("#/$defs/A")
+            .expect("target")
+            .to_json_schema(),
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {"A": {"type": "string", "minLength": 2}},
+            "type": "string",
+            "minLength": 2
+        })
+    );
+}
+
 // Same `Reference` root, different targets: unequal handles the hash no longer separates.
 #[test]
 fn hash_ignores_the_definition_map() {

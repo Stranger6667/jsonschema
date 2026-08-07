@@ -10,7 +10,7 @@ use crate::{
             Divisors, ExcludedDivisors, IntegerLeaf, NumberLeaf, ObjectLeaf, ObjectViolation,
             Schema, SchemaKind, StringLeaf,
         },
-        DefinitionMap, CANONICAL_REFERENCE_PREFIX,
+        DefinitionMap, CANONICAL_REFERENCE_PREFIX, ROOT_DEFINITION_KEY,
     },
     JsonTypeSet,
 };
@@ -130,6 +130,93 @@ fn attach_definitions(mut value: Value, definitions: &DefinitionMap, draft: Draf
         }
     }
     value
+}
+
+/// The name the document root takes when a node below it is emitted on its own.
+const ROOT_DEFINITION_NAME: &str = "root";
+
+/// Instance data, not schemas: a `$ref` spelled inside one is a value that happens to look like a
+/// pointer.
+const VALUE_KEYWORDS: [&str; 2] = ["const", "enum"];
+
+/// Keyword values holding a name-to-schema map rather than a schema.
+const SCHEMA_MAP_KEYWORDS: [&str; 4] = ["properties", "patternProperties", "$defs", "definitions"];
+
+/// Give the document root a name of its own inside `value`, so the pointers a node carries keep
+/// naming that root once the node is read as a document. A node naming no root stands alone
+/// already and takes no copy of one.
+pub(crate) fn rebind_document_root(mut value: Value, root: &Schema, draft: Draft) -> Value {
+    let keyword = definition_keyword(draft);
+    let name = free_definition_name(value.get(keyword));
+    let pointer = format!("#/{keyword}/{name}");
+    if !rebind_root_pointers(&mut value, &pointer) {
+        return value;
+    }
+    let mut body = emit(root.kind(), draft);
+    rebind_root_pointers(&mut body, &pointer);
+    if let Value::Object(map) = &mut value {
+        if let Some(Value::Object(entries)) = map.get_mut(keyword) {
+            entries.insert(name, body);
+        } else {
+            map.insert(keyword.to_owned(), keyed(&name, body));
+        }
+    }
+    value
+}
+
+fn free_definition_name(entries: Option<&Value>) -> String {
+    let Some(entries) = entries.and_then(Value::as_object) else {
+        return ROOT_DEFINITION_NAME.to_owned();
+    };
+    if !entries.contains_key(ROOT_DEFINITION_NAME) {
+        return ROOT_DEFINITION_NAME.to_owned();
+    }
+    // One more name than the map holds leaves one of them free.
+    (0..=entries.len())
+        .map(|suffix| format!("{ROOT_DEFINITION_NAME}{suffix}"))
+        .find(|name| !entries.contains_key(name))
+        .expect("names outnumber the entries a map holds")
+}
+
+/// Point every root pointer in a schema at `pointer`, reporting whether it found one.
+fn rebind_root_pointers(value: &mut Value, pointer: &str) -> bool {
+    let Value::Object(map) = value else {
+        return false;
+    };
+    let mut found = false;
+    if map.get("$ref").and_then(Value::as_str) == Some(ROOT_DEFINITION_KEY) {
+        map.insert("$ref".to_owned(), Value::String(pointer.to_owned()));
+        found = true;
+    }
+    for (keyword, child) in map.iter_mut() {
+        if VALUE_KEYWORDS.contains(&keyword.as_str()) {
+            continue;
+        }
+        let children: Box<dyn Iterator<Item = &mut Value>> =
+            if SCHEMA_MAP_KEYWORDS.contains(&keyword.as_str()) {
+                match child {
+                    Value::Object(entries) => Box::new(entries.values_mut()),
+                    Value::Null
+                    | Value::Bool(_)
+                    | Value::Number(_)
+                    | Value::String(_)
+                    | Value::Array(_) => continue,
+                }
+            } else {
+                match child {
+                    Value::Array(items) => Box::new(items.iter_mut()),
+                    child @ (Value::Null
+                    | Value::Bool(_)
+                    | Value::Number(_)
+                    | Value::String(_)
+                    | Value::Object(_)) => Box::new(std::iter::once(child)),
+                }
+            };
+        for child in children {
+            found |= rebind_root_pointers(child, pointer);
+        }
+    }
+    found
 }
 
 fn definition_name(uri: &str, prefix: &str) -> Option<String> {

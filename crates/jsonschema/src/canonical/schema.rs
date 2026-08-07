@@ -143,7 +143,11 @@ impl CanonicalSchema {
     /// Emit this canonical schema back to JSON Schema.
     #[must_use]
     pub fn to_json_schema(&self) -> Value {
-        emit::to_json_schema(&self.inner, self.draft, &self.document.definitions)
+        let value = emit::to_json_schema(&self.inner, self.draft, &self.document.definitions);
+        if self.inner == self.document.root {
+            return value;
+        }
+        emit::rebind_document_root(value, &self.document.root, self.draft)
     }
 
     /// Return `false` when this schema provably admits no instances.

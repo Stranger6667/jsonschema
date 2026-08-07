@@ -34,6 +34,7 @@
 
 - `CanonicalSchema::definition` and `CanonicalSchema::definitions` handing out a target that names the document root without that document, where `#` points at the target instead.
 - An `items` tail beyond an array's length ceiling surviving canonicalization, where it governs no element.
+- `CanonicalSchema::to_json_schema` leaving the document root out of a node emitted below it, where `#` points at that node instead.
 
 ## [0.49.6] - 2026-08-06
 
