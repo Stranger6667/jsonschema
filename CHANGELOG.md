@@ -11,6 +11,7 @@
 - Canonicalization of a Draft 4 closed pattern map with a reference nested under a property.
 - Canonicalization of Draft 4 closed pattern maps that meet through an applicator.
 - The complement of a reference back to a target already being negated, which stays symbolic instead of declining.
+- `CanonicalSchema::definition` resolving `#` to the document the handle was read against.
 
 ### Performance
 
@@ -31,7 +32,7 @@
 
 ### Fixed
 
-- `CanonicalSchema::definition` and `CanonicalSchema::definitions` handing out a target that names the document root, where `#` points at the target instead of the document it was written in.
+- `CanonicalSchema::definition` and `CanonicalSchema::definitions` handing out a target that names the document root without that document, where `#` points at the target instead.
 - An `items` tail beyond an array's length ceiling surviving canonicalization, where it governs no element.
 
 ## [0.49.6] - 2026-08-06
