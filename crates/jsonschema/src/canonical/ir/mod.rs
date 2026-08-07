@@ -176,6 +176,12 @@ impl Schema {
         &self.0.kind
     }
 
+    #[inline]
+    #[must_use]
+    pub(crate) fn cached_hash(&self) -> u64 {
+        self.0.hash
+    }
+
     /// Take the kind out, cloning only when the node is shared.
     #[must_use]
     pub(crate) fn into_kind(self) -> SchemaKind {
