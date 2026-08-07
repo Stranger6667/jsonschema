@@ -166,14 +166,12 @@ fn parse_once<'a>(
     tracks_dynamic_scope: bool,
 ) -> Result<DocumentParse, CanonicalizationError> {
     let mut state = ParseState::new(value, resolver.base_uri().as_str(), assumptions);
-    state.facts.merges_object_leaves =
-        matches!(ctx.draft(), Draft::Draft4) && merges_object_leaves(value);
     if !tracks_dynamic_scope {
         state.dynamic_scope = DynamicScope::Untracked {
             needs_tracking: false,
         };
     }
-    let parsed = parse_schema_in_scope(value, ctx, true, resolver, &mut state)?;
+    let parsed = parse_schema_in_scope(value, ctx, true, resolver, &mut state, false)?;
     // An in-between object meet the IR cannot spell may have produced nodes already, so discard
     // the whole document rather than just that pairing site.
     if ctx.saw_unspellable_meet() {
@@ -225,8 +223,6 @@ struct ParseState<'a> {
 #[derive(Default)]
 #[allow(clippy::struct_excessive_bools)]
 struct DocumentFacts {
-    /// Set only under Draft 4, where it decides whether a pattern coverage can survive the algebra.
-    merges_object_leaves: bool,
     /// `reference_to_definition` is the only producer of `Reference`, so this gates the emptiness
     /// pass.
     has_references: bool,
@@ -295,9 +291,17 @@ fn parse_schema<'a>(
     is_root: bool,
     resolver: &Resolver<'a>,
     state: &mut ParseState<'a>,
+    inside_merging_applicator: bool,
 ) -> Result<Option<Schema>, CanonicalizationError> {
     let resolver = resolver.in_subresource(ctx.draft().create_resource_ref(value))?;
-    parse_schema_in_scope(value, ctx, is_root, &resolver, state)
+    parse_schema_in_scope(
+        value,
+        ctx,
+        is_root,
+        &resolver,
+        state,
+        inside_merging_applicator,
+    )
 }
 
 /// The dynamic-scope facts a target's parse can observe, derived from its resolver: for each
@@ -458,6 +462,7 @@ fn parse_schema_in_scope<'a>(
     is_root: bool,
     resolver: &Resolver<'a>,
     state: &mut ParseState<'a>,
+    inside_merging_applicator: bool,
 ) -> Result<Option<Schema>, CanonicalizationError> {
     let map = match value {
         Value::Bool(true) => return Ok(Some(Schema::truthy())),
@@ -472,7 +477,14 @@ fn parse_schema_in_scope<'a>(
         let Some(degraded) = degrade_unevaluated(map, ctx.draft()) else {
             return Ok(None);
         };
-        return parse_schema_in_scope(&degraded, ctx, is_root, resolver, state);
+        return parse_schema_in_scope(
+            &degraded,
+            ctx,
+            is_root,
+            resolver,
+            state,
+            inside_merging_applicator,
+        );
     }
 
     // An untracked attempt stops before resolving a dynamic reference. Re-running it with the
@@ -539,10 +551,15 @@ fn parse_schema_in_scope<'a>(
         // the base a second time when the clone re-enters below.
         siblings.remove("$id");
         siblings.remove("id");
-        return Ok(
-            parse_schema(&Value::Object(siblings), ctx, is_root, resolver, state)?
-                .map(|siblings| algebra::intersect(combined, siblings, ctx)),
-        );
+        return Ok(parse_schema(
+            &Value::Object(siblings),
+            ctx,
+            is_root,
+            resolver,
+            state,
+            inside_merging_applicator,
+        )?
+        .map(|siblings| algebra::intersect(combined, siblings, ctx)));
     }
 
     let mut type_set = None;
@@ -605,7 +622,7 @@ fn parse_schema_in_scope<'a>(
             | ("$defs" | "definitions", Value::Object(_)) => {}
             ("allOf", Value::Array(branches)) => {
                 for branch in branches {
-                    match parse_schema(branch, ctx, false, resolver, state)? {
+                    match parse_schema(branch, ctx, false, resolver, state, true)? {
                         Some(schema) => conjuncts.push(schema),
                         None => return Ok(None),
                     }
@@ -614,7 +631,7 @@ fn parse_schema_in_scope<'a>(
             ("anyOf", Value::Array(items)) => {
                 let mut branches = Vec::new();
                 for branch in items {
-                    match parse_schema(branch, ctx, false, resolver, state)? {
+                    match parse_schema(branch, ctx, false, resolver, state, true)? {
                         Some(schema) => branches.push(schema),
                         None => return Ok(None),
                     }
@@ -624,7 +641,7 @@ fn parse_schema_in_scope<'a>(
             ("oneOf", Value::Array(items)) => {
                 let mut branches = Vec::new();
                 for branch in items {
-                    match parse_schema(branch, ctx, false, resolver, state)? {
+                    match parse_schema(branch, ctx, false, resolver, state, true)? {
                         Some(schema) => branches.push(schema),
                         None => return Ok(None),
                     }
@@ -695,7 +712,7 @@ fn parse_schema_in_scope<'a>(
             ("items", value @ (Value::Object(_) | Value::Bool(_)))
                 if ctx.draft().is_known_keyword("items") =>
             {
-                match parse_schema(value, ctx, false, resolver, state)? {
+                match parse_schema(value, ctx, false, resolver, state, false)? {
                     Some(schema) => items = Some(schema),
                     None => return Ok(None),
                 }
@@ -731,7 +748,7 @@ fn parse_schema_in_scope<'a>(
             ("contains", value @ (Value::Object(_) | Value::Bool(_)))
                 if ctx.draft().is_known_keyword("contains") =>
             {
-                match parse_schema(value, ctx, false, resolver, state)? {
+                match parse_schema(value, ctx, false, resolver, state, false)? {
                     Some(schema) => contains_schema = Some(schema),
                     None => return Ok(None),
                 }
@@ -762,7 +779,7 @@ fn parse_schema_in_scope<'a>(
                 if ctx.draft().is_known_keyword("properties") =>
             {
                 for (key, value) in entries {
-                    match parse_schema(value, ctx, false, resolver, state)? {
+                    match parse_schema(value, ctx, false, resolver, state, false)? {
                         Some(schema) => {
                             properties.insert(Arc::from(key.as_str()), schema);
                         }
@@ -780,7 +797,7 @@ fn parse_schema_in_scope<'a>(
                             pattern: pattern.to_string(),
                         });
                     }
-                    match parse_schema(value, ctx, false, resolver, state)? {
+                    match parse_schema(value, ctx, false, resolver, state, false)? {
                         Some(schema) => {
                             pattern_properties.insert(pattern, schema);
                         }
@@ -789,7 +806,7 @@ fn parse_schema_in_scope<'a>(
                 }
             }
             ("propertyNames", value) if ctx.draft().is_known_keyword("propertyNames") => {
-                match parse_schema(value, ctx, false, resolver, state)? {
+                match parse_schema(value, ctx, false, resolver, state, false)? {
                     Some(schema) => property_names = Some(schema),
                     None => return Ok(None),
                 }
@@ -800,7 +817,7 @@ fn parse_schema_in_scope<'a>(
             ("additionalProperties", value @ (Value::Object(_) | Value::Bool(_)))
                 if ctx.draft().is_known_keyword("additionalProperties") =>
             {
-                match parse_schema(value, ctx, false, resolver, state)? {
+                match parse_schema(value, ctx, false, resolver, state, false)? {
                     Some(schema) if matches!(schema.kind(), SchemaKind::True) => {}
                     Some(schema) if matches!(schema.kind(), SchemaKind::False) => {
                         forbid_unmatched_keys = true;
@@ -899,19 +916,19 @@ fn parse_schema_in_scope<'a>(
                 draft4_exclusive_maximum = *flag;
             }
             ("if", value) if ctx.draft().is_known_keyword("if") => {
-                match parse_schema(value, ctx, false, resolver, state)? {
+                match parse_schema(value, ctx, false, resolver, state, false)? {
                     Some(schema) => if_schema = Some(schema),
                     None => return Ok(None),
                 }
             }
             ("then", value) if ctx.draft().is_known_keyword("then") => {
-                match parse_schema(value, ctx, false, resolver, state)? {
+                match parse_schema(value, ctx, false, resolver, state, false)? {
                     Some(schema) => then_schema = Some(schema),
                     None => return Ok(None),
                 }
             }
             ("else", value) if ctx.draft().is_known_keyword("else") => {
-                match parse_schema(value, ctx, false, resolver, state)? {
+                match parse_schema(value, ctx, false, resolver, state, false)? {
                     Some(schema) => else_schema = Some(schema),
                     None => return Ok(None),
                 }
@@ -926,7 +943,7 @@ fn parse_schema_in_scope<'a>(
                             conjuncts.push(required_dependency(key, names, ctx));
                         }
                         value @ (Value::Object(_) | Value::Bool(_)) => {
-                            match parse_schema(value, ctx, false, resolver, state)? {
+                            match parse_schema(value, ctx, false, resolver, state, true)? {
                                 Some(schema) => {
                                     conjuncts.push(schema_dependency(key, schema, ctx));
                                 }
@@ -962,7 +979,7 @@ fn parse_schema_in_scope<'a>(
                 for (key, entry) in entries {
                     match entry {
                         value @ (Value::Object(_) | Value::Bool(_)) => {
-                            match parse_schema(value, ctx, false, resolver, state)? {
+                            match parse_schema(value, ctx, false, resolver, state, true)? {
                                 Some(schema) => {
                                     conjuncts.push(schema_dependency(key, schema, ctx));
                                 }
@@ -984,7 +1001,7 @@ fn parse_schema_in_scope<'a>(
                 let body = inner
                     .get("not")
                     .expect("the double-complement guard found its body");
-                match parse_schema(body, ctx, false, resolver, state)? {
+                match parse_schema(body, ctx, false, resolver, state, true)? {
                     Some(schema) => conjuncts.push(schema),
                     None => return Ok(None),
                 }
@@ -992,7 +1009,7 @@ fn parse_schema_in_scope<'a>(
             // The complement of the negated schema, when the IR can spell it; an unmodeled child or
             // an inexpressible complement keeps the whole document raw.
             ("not", value) if ctx.draft().is_known_keyword("not") => {
-                match parse_schema(value, ctx, false, resolver, state)? {
+                match parse_schema(value, ctx, false, resolver, state, true)? {
                     Some(child) => match negate::negate_in_place(&child, &state.definitions, ctx) {
                         Some(complement) => conjuncts.push(complement),
                         None => return Ok(None),
@@ -1063,7 +1080,7 @@ fn parse_schema_in_scope<'a>(
             ) =>
         {
             let tail = match additional_items {
-                Some(value) => match parse_schema(value, ctx, false, resolver, state)? {
+                Some(value) => match parse_schema(value, ctx, false, resolver, state, false)? {
                     Some(schema) => Some(schema),
                     None => return Ok(None),
                 },
@@ -1130,8 +1147,13 @@ fn parse_schema_in_scope<'a>(
     fold_finite_key_patterns(&mut pattern_properties, &mut properties, ctx);
     // Draft 4 holds a key constraint only as the closed map it was parsed from, which the algebra
     // can destroy by meeting two pattern maps. Bailing here, before the rest of the document is
-    // parsed, keeps that cheap - and only a merging keyword can bring two leaves together.
-    if forbid_unmatched_keys && !pattern_properties.is_empty() && state.facts.merges_object_leaves {
+    // parsed, keeps that cheap - and only a merging keyword here or in its parent can bring two
+    // leaves together.
+    if matches!(ctx.draft(), Draft::Draft4)
+        && forbid_unmatched_keys
+        && !pattern_properties.is_empty()
+        && (inside_merging_applicator || merges_object_leaves(map))
+    {
         return Ok(None);
     }
     // `additionalProperties: false` forbids every key the property map does not name and no
@@ -1846,7 +1868,7 @@ fn ensure_definition<'a>(
     }
     state.sources.insert(Arc::clone(&key), target);
     state.in_progress.insert(Arc::clone(&key));
-    let parsed = parse_schema_in_scope(target, ctx, false, resolver, state);
+    let parsed = parse_schema_in_scope(target, ctx, false, resolver, state, false);
     // Removed before the `?`, keeping the restore-on-error contract.
     let was_in_progress = state.in_progress.remove(&key);
     debug_assert!(
@@ -1912,31 +1934,14 @@ pub(crate) fn prune_unreachable_definitions(root: &Schema, definitions: &mut Def
     }
 }
 
-/// Whether the document holds a keyword that can bring two object leaves together.
-fn merges_object_leaves(value: &Value) -> bool {
-    match value {
-        Value::Object(map) => {
-            map.keys().any(|key| {
-                matches!(
-                    key.as_str(),
-                    "$dynamicRef"
-                        | "$recursiveRef"
-                        | "$ref"
-                        | "allOf"
-                        | "anyOf"
-                        | "dependencies"
-                        | "dependentSchemas"
-                        | "else"
-                        | "if"
-                        | "not"
-                        | "oneOf"
-                        | "then"
-                )
-            }) || map.values().any(merges_object_leaves)
-        }
-        Value::Array(items) => items.iter().any(merges_object_leaves),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => false,
-    }
+/// Whether this schema object holds a keyword that can bring two object leaves together.
+fn merges_object_leaves(map: &serde_json::Map<String, Value>) -> bool {
+    map.keys().any(|key| {
+        matches!(
+            key.as_str(),
+            "$ref" | "allOf" | "anyOf" | "dependencies" | "not" | "oneOf"
+        )
+    })
 }
 
 fn collect_live_definition_references<'a>(schema: &'a Schema, references: &mut Vec<&'a str>) {
@@ -2128,7 +2133,7 @@ fn parse_prefix<'a>(
 ) -> Result<Option<Vec<Schema>>, CanonicalizationError> {
     let mut prefix = Vec::with_capacity(schemas.len());
     for schema in schemas {
-        match parse_schema(schema, ctx, false, resolver, state)? {
+        match parse_schema(schema, ctx, false, resolver, state, false)? {
             Some(schema) => prefix.push(schema),
             None => return Ok(None),
         }

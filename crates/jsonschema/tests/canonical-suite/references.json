@@ -1579,6 +1579,44 @@
     ]
   },
   {
+    "description": "a Draft 4 closed pattern map remains modeled when a reference is only nested under properties",
+    "draft": "draft4",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "child": {"$ref": "#/definitions/value"}
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "value": {"type": "string"}
+      }
+    },
+    "kind": "object",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "object",
+      "properties": {
+        "child": {"$ref": "#/definitions/value"}
+      },
+      "patternProperties": {
+        "^x-": {}
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "value": {"type": "string"}
+      }
+    },
+    "tests": [
+      {"data": {"child": "value"}, "valid": true},
+      {"data": {"child": 1}, "valid": false},
+      {"data": {"x-plugin": 1}, "valid": true},
+      {"data": {"other": 1}, "valid": false}
+    ]
+  },
+  {
     "description": "a Draft 4 pattern coverage beside a merging keyword keeps the document raw",
     "draft": "draft4",
     "schema": {
