@@ -121,7 +121,7 @@ fn attach_definitions(mut value: Value, definitions: &DefinitionMap, draft: Draf
         if keyword == generated_keyword {
             for (uri, schema) in definitions {
                 if uri.starts_with(CANONICAL_REFERENCE_PREFIX) {
-                    entries.insert(uri.to_string(), emit(schema.kind(), draft));
+                    entries.insert(uri.as_ref().to_owned(), emit(schema.kind(), draft));
                 }
             }
         }
@@ -451,7 +451,7 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
             Value::Array(
                 leaf.required
                     .iter()
-                    .map(|key| Value::String(key.to_string()))
+                    .map(|key| Value::String(key.as_ref().to_owned()))
                     .collect(),
             ),
         );
@@ -533,7 +533,7 @@ fn insert_fused_map(
     entries.extend(
         leaf.properties
             .iter()
-            .map(|(key, schema)| (key.to_string(), emit(schema.kind(), draft))),
+            .map(|(key, schema)| (key.as_ref().to_owned(), emit(schema.kind(), draft))),
     );
     if !entries.is_empty() {
         map.insert("properties".into(), Value::Object(entries));
@@ -546,7 +546,7 @@ fn insert_fused_map(
     patterns.extend(
         leaf.pattern_properties
             .iter()
-            .map(|(pattern, schema)| (pattern.to_string(), emit(schema.kind(), draft))),
+            .map(|(pattern, schema)| (pattern.as_ref().to_owned(), emit(schema.kind(), draft))),
     );
     if !patterns.is_empty() {
         map.insert("patternProperties".into(), Value::Object(patterns));
@@ -560,7 +560,7 @@ fn insert_entries(map: &mut Map<String, Value>, leaf: &ObjectLeaf, draft: Draft)
         let entries: Map<String, Value> = leaf
             .properties
             .iter()
-            .map(|(key, schema)| (key.to_string(), emit(schema.kind(), draft)))
+            .map(|(key, schema)| (key.as_ref().to_owned(), emit(schema.kind(), draft)))
             .collect();
         map.insert("properties".into(), Value::Object(entries));
     }
@@ -568,7 +568,7 @@ fn insert_entries(map: &mut Map<String, Value>, leaf: &ObjectLeaf, draft: Draft)
         let entries: Map<String, Value> = leaf
             .pattern_properties
             .iter()
-            .map(|(pattern, schema)| (pattern.to_string(), emit(schema.kind(), draft)))
+            .map(|(pattern, schema)| (pattern.as_ref().to_owned(), emit(schema.kind(), draft)))
             .collect();
         map.insert("patternProperties".into(), Value::Object(entries));
     }
