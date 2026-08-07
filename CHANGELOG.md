@@ -10,6 +10,7 @@
 - Canonicalization of a vacuous `patternProperties` entry beside schema-valued `additionalProperties`, where matching keys escape its value constraint.
 - Canonicalization of a Draft 4 closed pattern map with a reference nested under a property.
 - Canonicalization of Draft 4 closed pattern maps that meet through an applicator.
+- The complement of a reference back to a target already being negated, which stays symbolic instead of declining.
 
 ### Performance
 
@@ -27,6 +28,10 @@
 - 5% faster canonicalization of objects, whose property maps no longer reach the allocator.
 - Up to 8% faster canonicalization of schemas that reach `true` and `false` subschemas repeatedly.
 - 2% faster canonicalization of schemas that assert known string formats.
+
+### Fixed
+
+- `CanonicalSchema::definition` and `CanonicalSchema::definitions` handing out a target that names the document root, where `#` points at the target instead of the document it was written in.
 
 ## [0.49.6] - 2026-08-06
 
